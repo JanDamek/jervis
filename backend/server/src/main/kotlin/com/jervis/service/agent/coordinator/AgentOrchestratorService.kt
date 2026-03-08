@@ -498,6 +498,8 @@ class AgentOrchestratorService(
             chatTopics = chatTopics,
             sourceUrn = task.sourceUrn.value,
             maxOpenRouterTier = effectivePolicy.maxOpenRouterTier.name,
+            hasAttachments = task.hasAttachments,
+            attachmentCount = task.attachmentCount,
         )
 
         return try {

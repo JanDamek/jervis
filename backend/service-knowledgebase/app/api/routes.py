@@ -677,6 +677,30 @@ async def upload_kb_document(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@write_router.post("/documents/extract-text")
+async def extract_text_only(
+    file: UploadFile = File(...),
+    filename: str = Form(None),
+    mimeType: str = Form(None),
+):
+    """Extract text from a file without RAG indexing.
+
+    Uses VLM-first for images, Tika for documents. Returns extracted text
+    and the method used. No graph nodes or RAG chunks are created.
+
+    Used by Kotlin AttachmentExtractionService for Qualifier relevance assessment.
+    """
+    try:
+        actual_filename = filename or file.filename or "unknown"
+        actual_mime = mimeType or file.content_type or "application/octet-stream"
+        file_bytes = await file.read()
+
+        result = await service.extract_text_only(file_bytes, actual_filename, actual_mime)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @write_router.post("/documents/register", response_model=KbDocumentDto)
 async def register_kb_document(request: KbDocumentUploadRequest):
     """Register a document already stored on shared FS.

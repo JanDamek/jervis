@@ -733,10 +733,57 @@ class KnowledgeServiceRestClient(
         }
     }
 
+    /**
+     * Extract text from a file without RAG indexing.
+     *
+     * Uses the KB service's extraction pipeline (Tika for documents, VLM for images/PDFs)
+     * but only returns the extracted text — no graph nodes or RAG chunks are created.
+     *
+     * Used by AttachmentExtractionService to get text for Qualifier relevance assessment.
+     */
+    suspend fun extractText(
+        filename: String,
+        mimeType: String,
+        fileBytes: ByteArray,
+    ): TextExtractionResult {
+        logger.info { "KB extract-text: filename=$filename mime=$mimeType size=${fileBytes.size}" }
+
+        val httpResponse = client.submitFormWithBinaryData(
+            url = "$apiBaseUrl/documents/extract-text",
+            formData = formData {
+                append("filename", filename)
+                append("mimeType", mimeType)
+                append(
+                    "file",
+                    fileBytes,
+                    Headers.build {
+                        append(HttpHeaders.ContentDisposition, "filename=\"$filename\"")
+                        append(HttpHeaders.ContentType, mimeType)
+                    },
+                )
+            },
+        )
+
+        if (!httpResponse.status.isSuccess()) {
+            val errorBody = httpResponse.bodyAsText()
+            throw RuntimeException("KB extract-text failed ${httpResponse.status}: $errorBody")
+        }
+
+        return httpResponse.body()
+    }
+
     fun close() {
         client.close()
     }
 }
+
+@Serializable
+data class TextExtractionResult(
+    @SerialName("extracted_text")
+    val extractedText: String = "",
+    val method: String = "",
+    val error: String? = null,
+)
 
 // Python API DTOs (internal)
 

@@ -398,7 +398,43 @@ For indexer details see [knowledge-base.md § Continuous Indexers](knowledge-bas
 The `sourceKey` is sent to KB via multipart form field `sourceType` and stored in graph metadata.
 Python KB service uses matching `SourceType(str, Enum)` in `app/api/models.py`.
 
-#### 1.1 Link Handling Flow - SEPARATE PENDING TASKS
+#### 1.1 Attachment Extraction Pipeline
+
+**Email attachments** are processed through a dual-path pipeline:
+
+**Path A — Direct KB Registration (existing, preserved):**
+```
+EmailPollingHandler.storeAttachmentBinary() → kb-documents/{clientId}/
+  → EmailContinuousIndexer.indexEmailAttachments()
+  → AttachmentKbIndexingService.registerPreStoredAttachment()
+  → Python KB service (Tika/VLM → RAG + Graph)
+```
+
+**Path B — Qualifier Relevance Assessment (new):**
+```
+EmailContinuousIndexer → AttachmentExtractionService.createExtractsForAttachments()
+  → MongoDB: attachment_extracts (PENDING)
+  → async: AttachmentExtractionService.processPendingExtracts()
+    → Python KB /documents/extract-text (VLM-first for images, Tika for docs)
+  → MongoDB: attachment_extracts (SUCCESS, extractedText populated)
+  → Qualifier: _score_attachment_relevance()
+    → LLM scores relevance 0.0–1.0
+    → score >= 0.7 → register with KB (tag: qualifier-approved)
+```
+
+**Extraction strategy:**
+- **Images (PNG/JPG):** VLM-first (`qwen3-vl-tool:latest` on p40-2)
+- **Scanned PDFs:** Tika first, VLM fallback if < 100 chars extracted
+- **Structured docs (DOCX/XLSX):** Tika text extraction
+- **Plain text:** Direct decode (no extraction needed)
+
+**MongoDB: `attachment_extracts`** — tracks extraction and relevance:
+- `taskId`, `filename`, `mimeType`, `filePath`
+- `extractedText`, `tikaStatus` (PENDING/SUCCESS/FAILED), `extractionMethod`
+- `relevanceScore` (0.0–1.0), `relevanceReason`
+- `kbUploaded`, `kbDocId`
+
+#### 1.2 Link Handling Flow - SEPARATE PENDING TASKS
 
 **CRITICAL: Links are NEVER downloaded in continuous indexer!**
 

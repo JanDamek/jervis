@@ -77,43 +77,47 @@
 
 ---
 
-## Doporučený implementační plán
+## Implementace – HOTOVO
 
-### Fáze 1: MongoDB model + repository (základ)
-**Soubory:**
-- `backend/server/.../entity/AttachmentExtractDocument.kt` – nová entita
-- `backend/server/.../repository/AttachmentExtractRepository.kt` – nový repo
+### Fáze 1: MongoDB model + repository ✅
+- `backend/server/.../entity/AttachmentExtractDocument.kt` – entita s ExtractionStatus enum
+- `backend/server/.../repository/AttachmentExtractRepository.kt` – Spring Data repo
 
-### Fáze 2: kb_document_upload base64 rozšíření (samostatné)
-**Soubory:**
-- `backend/service-mcp/app/main.py` – přidat `file_content` + `file_name` parametry
-- Validace: buď `file_path` NEBO `file_content + file_name`
+### Fáze 2: kb_document_upload base64 rozšíření ✅
+- `backend/service-mcp/app/main.py` – `file_content` (base64) + `file_name` parametry
+- Validace: buď `file_path` NEBO `file_content + file_name`, whitelist přípon, max 20 MB
 
-### Fáze 3: TaskDocument rozšíření
-**Soubory:**
-- `backend/server/.../entity/TaskDocument.kt` – přidat `hasAttachments`, `attachmentCount`
-- `EmailContinuousIndexer` – nastavit při indexaci
+### Fáze 3: TaskDocument rozšíření ✅
+- `backend/server/.../entity/TaskDocument.kt` – `hasAttachments`, `attachmentCount`
+- `TaskService.createTask()` – nové parametry
+- `@PersistenceCreator` factory aktualizován
 
-### Fáze 4: Tika async extrakce + AttachmentExtract pipeline
-**Soubory:**
-- `backend/server/.../service/email/AttachmentExtractionService.kt` – nový service
-- `EmailContinuousIndexer` – změnit flow: vytvářet extract records místo přímého KB uploadu
+### Fáze 4: VLM-first text extraction pipeline ✅
+- `backend/server/.../service/indexing/AttachmentExtractionService.kt` – nový service
+- `backend/service-knowledgebase/app/api/routes.py` – `POST /documents/extract-text`
+- `backend/service-knowledgebase/app/services/knowledge_service.py` – `extract_text_only()`
+- `backend/server/.../configuration/KnowledgeServiceRestClient.kt` – `extractText()` + `TextExtractionResult`
+- Strategie: VLM-first pro obrázky, Tika pro dokumenty, VLM fallback pro scanned PDF
 
-### Fáze 5: Qualifier – relevance assessment
-**Soubory:**
-- `qualification_handler.py` – přidat attachment scoring logiku
-- `kotlin_client.py` – přidat endpoint pro čtení extracts
-- Internal API route pro attachment extracts
+### Fáze 5: EmailContinuousIndexer integrace ✅
+- Vytváří AttachmentExtractDocument záznamy při indexaci emailu
+- Fire-and-forget async text extrakce v pozadí
+- Existující KB registrace zachována (dual path: extract + direct upload)
 
-### Fáze 6: VLM OCR integrace
-- `AttachmentExtractionService` – image → VLM OCR místo Tika
+### Fáze 6: Qualifier – relevance assessment ✅
+- `qualification_handler.py` – `_score_attachment_relevance()` funkce
+- Čte extracts z MongoDB (attachment_extracts collection) přes motor
+- LLM scoring (0.0–1.0) s JSON výstupem
+- Score >= 0.7 → automatický KB upload s tagem "qualifier-approved"
+- `QualifyRequestDto` + `QualifyRequest` rozšířeny o `has_attachments`, `attachment_count`
+- `AgentOrchestratorService` předává nová pole
 
 ---
 
-## Otevřené otázky pro review
+## Rozhodnutí k otevřeným otázkám
 
-1. **Fallback strategy:** Co když Qualifier nedoběhne? Timeout → upload vše do KB?
-2. **Zpětná kompatibilita:** Existující emaily s přílohami – migrace nebo pouze nové?
-3. **QualifyRequest rozšíření:** Přidat attachment extracts do requestu, nebo qualifier čte z MongoDB přímo?
-4. **VLM OCR endpoint:** Je `qwen3-vl-tool:latest` dostupný jako REST API? Jaký formát?
-5. **Duplicity:** Pokud příloha jde do KB přes qualifier I přes stávající flow – deduplikace přes content hash?
+1. **Fallback strategy:** Existující flow (přímý KB upload) zachován jako dual-path. Pokud Qualifier selže, přílohy jsou v KB přes stávající `registerPreStoredAttachment()`.
+2. **Zpětná kompatibilita:** Pouze nové emaily. Existující nemají extract records – fungují přes stávající flow.
+3. **QualifyRequest rozšíření:** Qualifier čte z MongoDB přímo (motor client). Pouze `has_attachments` flag se posílá v requestu.
+4. **VLM OCR:** Přes `ImageService.describe_image()` v Python KB service (ChatOllama → Ollama Router → p40-2 GPU).
+5. **Duplicity:** Přijatelná. KB service deduplikuje přes content hash. Stávající flow + qualifier flow mohou registrovat stejný soubor – KB to zvládne.

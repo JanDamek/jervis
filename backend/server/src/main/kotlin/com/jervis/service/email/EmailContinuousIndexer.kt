@@ -6,6 +6,8 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.email.EmailMessageIndexDocument
 import com.jervis.repository.EmailMessageIndexRepository
 import com.jervis.service.background.TaskService
+import com.jervis.service.indexing.AttachmentExtractionService
+import com.jervis.service.indexing.AttachmentInfo
 import com.jervis.service.indexing.AttachmentKbIndexingService
 import com.jervis.service.text.TikaTextExtractionService
 import jakarta.annotation.PostConstruct
@@ -43,6 +45,7 @@ class EmailContinuousIndexer(
     private val taskService: TaskService,
     private val tikaTextExtractionService: TikaTextExtractionService,
     private val attachmentKbIndexingService: AttachmentKbIndexingService,
+    private val attachmentExtractionService: AttachmentExtractionService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -154,7 +157,17 @@ class EmailContinuousIndexer(
                     }
                 }
 
-            taskService.createTask(
+            val attachmentsWithStorage = doc.attachments.filter { it.storagePath != null }
+            val attachmentInfos = attachmentsWithStorage.map { att ->
+                AttachmentInfo(
+                    filename = att.filename,
+                    mimeType = att.contentType,
+                    sizeBytes = att.size,
+                    storagePath = att.storagePath,
+                )
+            }
+
+            val task = taskService.createTask(
                 taskType = TaskTypeEnum.EMAIL_PROCESSING,
                 content = emailContent,
                 clientId = doc.clientId,
@@ -167,9 +180,33 @@ class EmailContinuousIndexer(
                     ),
                 projectId = doc.projectId,
                 taskName = doc.subject?.take(120) ?: "Email from ${doc.from}",
+                hasAttachments = attachmentsWithStorage.isNotEmpty(),
+                attachmentCount = attachmentsWithStorage.size,
             )
 
-            // Index email attachments as KB documents (stored during polling)
+            // Create extract records and trigger async text extraction for Qualifier
+            if (attachmentsWithStorage.isNotEmpty()) {
+                try {
+                    val created = attachmentExtractionService.createExtractsForAttachments(
+                        taskId = task.id.toString(),
+                        attachments = attachmentInfos,
+                    )
+                    if (created > 0) {
+                        // Fire-and-forget: extract text in background
+                        scope.launch {
+                            try {
+                                attachmentExtractionService.processPendingExtracts(task.id.toString())
+                            } catch (e: Exception) {
+                                logger.warn(e) { "Async text extraction failed for task ${task.id}" }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.warn(e) { "Failed to create attachment extract records for email '${doc.subject}'" }
+                }
+            }
+
+            // Also register attachments directly with KB (existing behavior preserved)
             indexEmailAttachments(doc)
 
             markAsIndexed(doc)
