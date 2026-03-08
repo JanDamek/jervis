@@ -302,6 +302,7 @@ data class TaskDocument(
             qualifierPreparedContext = qualifierPreparedContext,
             hasAttachments = hasAttachments ?: false,
             attachmentCount = attachmentCount ?: 0,
+        )
     }
 }
 
