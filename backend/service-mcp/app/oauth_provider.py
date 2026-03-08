@@ -1,12 +1,14 @@
 """OAuth 2.1 Authorization Server for Jervis MCP.
 
 Implements the OAuth 2.1 flow required by Claude.ai MCP connectors:
+- RFC 9728 Protected Resource Metadata (/.well-known/oauth-protected-resource)
 - RFC 8414 Server Metadata (/.well-known/oauth-authorization-server)
 - RFC 7591 Dynamic Client Registration (/oauth/register)
 - Authorization endpoint with Google IdP redirect (/oauth/authorize)
 - Google OAuth callback (/oauth/callback)
 - Token endpoint with PKCE validation (/oauth/token)
 
+Supports public clients (no client_secret, PKCE-only) — required by Claude.ai.
 Only whitelisted Google accounts (OAUTH_ALLOWED_EMAILS) can obtain tokens.
 """
 
@@ -73,6 +75,31 @@ def _validate_pkce(code_verifier: str, code_challenge: str) -> bool:
     return computed == code_challenge
 
 
+def _get_or_create_client(client_id: str, redirect_uri: str) -> dict[str, Any]:
+    """Get existing DCR client or auto-register a public client.
+
+    Claude.ai skips DCR and sends its own client_id directly to /oauth/authorize.
+    We auto-register unknown clients as public (no secret, PKCE-only).
+    Security is enforced by Google email whitelist + PKCE.
+    """
+    if client_id in _dcr_clients:
+        return _dcr_clients[client_id]
+
+    client_info = {
+        "client_id": client_id,
+        "client_secret": None,  # Public client
+        "client_name": "auto-registered",
+        "redirect_uris": [redirect_uri],
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none",
+        "created_at": _now(),
+    }
+    _dcr_clients[client_id] = client_info
+    logger.info("Auto-registered public client %s (redirect=%s)", client_id[:16], redirect_uri)
+    return client_info
+
+
 def _cleanup_expired() -> None:
     """Remove expired entries from in-memory stores."""
     now = _now()
@@ -117,6 +144,23 @@ def validate_oauth_token(token: str) -> dict[str, Any] | None:
 # ── Endpoints ─────────────────────────────────────────────────────────────
 
 
+async def protected_resource_metadata(request: Request) -> JSONResponse:
+    """RFC 9728 – OAuth 2.0 Protected Resource Metadata.
+
+    Claude.ai looks for this before falling back to authorization server metadata.
+    """
+    issuer = settings.oauth_issuer
+    return JSONResponse(
+        {
+            "resource": issuer,
+            "authorization_servers": [issuer],
+            "bearer_methods_supported": ["header"],
+            "scopes_supported": ["mcp:tools"],
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 async def well_known_metadata(request: Request) -> JSONResponse:
     """RFC 8414 – OAuth 2.0 Authorization Server Metadata."""
     issuer = settings.oauth_issuer
@@ -130,6 +174,7 @@ async def well_known_metadata(request: Request) -> JSONResponse:
             "grant_types_supported": ["authorization_code", "refresh_token"],
             "code_challenge_methods_supported": ["S256"],
             "token_endpoint_auth_methods_supported": [
+                "none",
                 "client_secret_post",
             ],
             "scopes_supported": ["mcp:tools"],
@@ -153,7 +198,8 @@ async def register_client(request: Request) -> JSONResponse:
         )
 
     client_id = _generate_token(16)
-    client_secret = _generate_token(32)
+    auth_method = body.get("token_endpoint_auth_method", "none")
+    client_secret = _generate_token(32) if auth_method != "none" else None
 
     client_info = {
         "client_id": client_id,
@@ -162,27 +208,25 @@ async def register_client(request: Request) -> JSONResponse:
         "redirect_uris": redirect_uris,
         "grant_types": body.get("grant_types", ["authorization_code"]),
         "response_types": body.get("response_types", ["code"]),
-        "token_endpoint_auth_method": body.get(
-            "token_endpoint_auth_method", "client_secret_post"
-        ),
+        "token_endpoint_auth_method": auth_method,
         "created_at": _now(),
     }
     _dcr_clients[client_id] = client_info
 
-    logger.info("DCR: registered client %s (%s)", client_id[:8], client_info["client_name"])
+    logger.info("DCR: registered client %s (%s, auth=%s)", client_id[:8], client_info["client_name"], auth_method)
 
-    return JSONResponse(
-        {
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "client_name": client_info["client_name"],
-            "redirect_uris": redirect_uris,
-            "grant_types": client_info["grant_types"],
-            "response_types": client_info["response_types"],
-            "token_endpoint_auth_method": client_info["token_endpoint_auth_method"],
-        },
-        status_code=201,
-    )
+    response = {
+        "client_id": client_id,
+        "client_name": client_info["client_name"],
+        "redirect_uris": redirect_uris,
+        "grant_types": client_info["grant_types"],
+        "response_types": client_info["response_types"],
+        "token_endpoint_auth_method": auth_method,
+    }
+    if client_secret:
+        response["client_secret"] = client_secret
+
+    return JSONResponse(response, status_code=201)
 
 
 async def authorize(request: Request) -> Response:
@@ -195,17 +239,9 @@ async def authorize(request: Request) -> Response:
     response_type = request.query_params.get("response_type", "code")
     scope = request.query_params.get("scope", "")
 
-    # Validate client
-    if client_id not in _dcr_clients:
+    if not client_id or not redirect_uri:
         return JSONResponse(
-            {"error": "invalid_client", "error_description": "Unknown client_id"},
-            status_code=400,
-        )
-
-    client = _dcr_clients[client_id]
-    if redirect_uri not in client["redirect_uris"]:
-        return JSONResponse(
-            {"error": "invalid_request", "error_description": "redirect_uri mismatch"},
+            {"error": "invalid_request", "error_description": "client_id and redirect_uri required"},
             status_code=400,
         )
 
@@ -220,6 +256,13 @@ async def authorize(request: Request) -> Response:
             {"error": "invalid_request", "error_description": "Only S256 supported"},
             status_code=400,
         )
+
+    # Auto-register unknown clients (Claude.ai skips DCR)
+    client = _get_or_create_client(client_id, redirect_uri)
+
+    # Add redirect_uri if not already registered
+    if redirect_uri not in client["redirect_uris"]:
+        client["redirect_uris"].append(redirect_uri)
 
     # Store session
     internal_state = _generate_token(16)
@@ -244,7 +287,7 @@ async def authorize(request: Request) -> Response:
     }
     google_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(google_params)
 
-    logger.info("OAuth authorize: redirecting to Google (client=%s)", client_id[:8])
+    logger.info("OAuth authorize: redirecting to Google (client=%s)", client_id[:16])
     return RedirectResponse(url=google_url, status_code=302)
 
 
@@ -380,25 +423,29 @@ async def _handle_auth_code_exchange(body: dict) -> JSONResponse:
 
     code_data = _auth_codes.pop(code)
 
-    # Validate client
-    if client_id not in _dcr_clients:
-        return JSONResponse({"error": "invalid_client"}, status_code=401)
-
-    dcr_client = _dcr_clients[client_id]
-    if dcr_client["client_secret"] != client_secret:
-        return JSONResponse({"error": "invalid_client"}, status_code=401)
-
-    if code_data["client_id"] != client_id:
+    # Validate client_id matches the one used in authorize
+    if client_id and code_data["client_id"] != client_id:
         return JSONResponse({"error": "invalid_grant"}, status_code=400)
 
-    if code_data["redirect_uri"] != redirect_uri:
+    # For confidential clients, verify client_secret
+    dcr_client = _dcr_clients.get(client_id or code_data["client_id"])
+    if dcr_client and dcr_client.get("client_secret"):
+        if dcr_client["client_secret"] != client_secret:
+            return JSONResponse({"error": "invalid_client"}, status_code=401)
+
+    if redirect_uri and code_data["redirect_uri"] != redirect_uri:
         return JSONResponse(
             {"error": "invalid_grant", "error_description": "redirect_uri mismatch"},
             status_code=400,
         )
 
-    # Validate PKCE
-    if code_data.get("code_challenge") and code_verifier:
+    # Validate PKCE (mandatory for public clients)
+    if code_data.get("code_challenge"):
+        if not code_verifier:
+            return JSONResponse(
+                {"error": "invalid_grant", "error_description": "code_verifier required"},
+                status_code=400,
+            )
         if not _validate_pkce(code_verifier, code_data["code_challenge"]):
             return JSONResponse(
                 {"error": "invalid_grant", "error_description": "PKCE validation failed"},
@@ -406,13 +453,14 @@ async def _handle_auth_code_exchange(body: dict) -> JSONResponse:
             )
 
     # Issue tokens
+    effective_client_id = client_id or code_data["client_id"]
     now = _now()
     access_token = _generate_token(32)
     refresh_token = _generate_token(32)
 
     token_data = {
         "email": code_data["email"],
-        "client_id": client_id,
+        "client_id": effective_client_id,
         "scope": code_data.get("scope", ""),
         "issued_at": now,
         "expires_at": now + settings.oauth_token_expiry,
@@ -421,7 +469,7 @@ async def _handle_auth_code_exchange(body: dict) -> JSONResponse:
     _access_tokens[access_token] = token_data
     _refresh_tokens[refresh_token] = {
         "email": code_data["email"],
-        "client_id": client_id,
+        "client_id": effective_client_id,
         "scope": code_data.get("scope", ""),
         "issued_at": now,
         "expires_at": now + settings.oauth_refresh_expiry,
@@ -430,7 +478,7 @@ async def _handle_auth_code_exchange(body: dict) -> JSONResponse:
     logger.info(
         "Token issued for %s (client=%s, expires=%ds)",
         code_data["email"],
-        client_id[:8],
+        effective_client_id[:16],
         settings.oauth_token_expiry,
     )
 
@@ -457,9 +505,10 @@ async def _handle_refresh_token(body: dict) -> JSONResponse:
 
     rt_data = _refresh_tokens[refresh_token]
 
-    # Validate client
+    # For confidential clients, verify client_secret
     if client_id and client_id in _dcr_clients:
-        if _dcr_clients[client_id]["client_secret"] != client_secret:
+        dcr_client = _dcr_clients[client_id]
+        if dcr_client.get("client_secret") and dcr_client["client_secret"] != client_secret:
             return JSONResponse({"error": "invalid_client"}, status_code=401)
 
     # Issue new access token
@@ -474,7 +523,7 @@ async def _handle_refresh_token(body: dict) -> JSONResponse:
         "expires_at": now + settings.oauth_token_expiry,
     }
 
-    # Optionally rotate refresh token
+    # Rotate refresh token
     new_refresh_token = _generate_token(32)
     _refresh_tokens[new_refresh_token] = {
         "email": rt_data["email"],
@@ -499,6 +548,11 @@ async def _handle_refresh_token(body: dict) -> JSONResponse:
 # ── Starlette routes ─────────────────────────────────────────────────────
 
 oauth_routes = [
+    Route(
+        "/.well-known/oauth-protected-resource",
+        protected_resource_metadata,
+        methods=["GET"],
+    ),
     Route(
         "/.well-known/oauth-authorization-server",
         well_known_metadata,
