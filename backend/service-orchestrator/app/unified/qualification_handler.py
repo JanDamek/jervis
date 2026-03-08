@@ -319,12 +319,13 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
             "QUALIFY_DECISION | task=%s | decision=%s | priority=%s | reason=%s",
             request.task_id, decision["decision"], decision.get("priority_score"), decision.get("reason", "")[:100],
         )
+        await _record_incoming_vertex(request, decision)
         return decision
 
     # Max iterations reached — default to QUEUED
     logger.warning("QUALIFY_MAX_ITERATIONS | task=%s — defaulting to QUEUED", request.task_id)
     last_content = messages[-1].get("content", "") if messages else ""
-    return _parse_decision(last_content) if "DECISION:" in last_content else {
+    decision = _parse_decision(last_content) if "DECISION:" in last_content else {
         "decision": "QUEUED",
         "priority_score": 5,
         "reason": "Max iterations reached",
@@ -333,3 +334,31 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
         "action_type": "",
         "estimated_complexity": "",
     }
+    await _record_incoming_vertex(request, decision)
+    return decision
+
+
+async def _record_incoming_vertex(request: QualifyRequest, decision: dict) -> None:
+    """Record an INCOMING vertex in Paměťová mapa for qualified items."""
+    if decision.get("decision") == "DONE":
+        return  # No vertex for items that don't need processing
+
+    try:
+        from app.agent.persistence import agent_store
+        from app.agent.graph import add_incoming_vertex
+
+        memory_map = await agent_store.get_or_create_memory_map()
+        add_incoming_vertex(
+            memory_map,
+            task_id=request.task_id,
+            title=decision.get("context_summary", request.summary)[:80] or request.task_id,
+            prepared_context=decision.get("suggested_approach", ""),
+            client_id=request.client_id,
+            client_name=request.client_name or "",
+            project_id=request.project_id,
+            project_name=request.project_name or "",
+            urgency=request.urgency or "normal",
+        )
+        agent_store.mark_dirty(memory_map.task_id)
+    except Exception as e:
+        logger.warning("Failed to record INCOMING vertex for task %s: %s", request.task_id, e)

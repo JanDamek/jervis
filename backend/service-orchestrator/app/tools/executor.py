@@ -522,6 +522,22 @@ async def execute_tool(
             )
         elif tool_name == "list_unclassified_meetings":
             result = await _execute_list_unclassified_meetings()
+        # --- MongoDB self-management ---
+        elif tool_name == "mongo_list_collections":
+            result = await _execute_mongo_list_collections()
+        elif tool_name == "mongo_get_document":
+            result = await _execute_mongo_get_document(
+                collection=arguments.get("collection", ""),
+                filter_doc=arguments.get("filter"),
+                limit=arguments.get("limit", 10),
+            )
+        elif tool_name == "mongo_update_document":
+            result = await _execute_mongo_update_document(
+                collection=arguments.get("collection", ""),
+                filter_doc=arguments.get("filter", {}),
+                update_doc=arguments.get("update", {}),
+                upsert=arguments.get("upsert", False),
+            )
         # --- Coding agent dispatch (graph agent + chat) ---
         elif tool_name == "dispatch_coding_agent":
             result = await _execute_dispatch_coding_agent(
@@ -3079,9 +3095,105 @@ async def _execute_dispatch_coding_agent(
             if match:
                 child_id = match.group(0)
             if child_id:
-                from app.graph_agent.persistence import task_graph_store
-                task_graph_store.register_task_parent(child_id, parent_task_id)
+                from app.agent.persistence import agent_store
+                agent_store.register_task_parent(child_id, parent_task_id)
         except Exception as e:
             logger.debug("Failed to register task parent: %s", e)
 
     return f"Coding agent dispatched: {result}"
+
+
+# ---------------------------------------------------------------------------
+# MongoDB self-management tools
+# ---------------------------------------------------------------------------
+
+# Collections that have Kotlin in-memory cache — must invalidate after writes
+_CACHED_COLLECTIONS = {
+    "clients", "projects", "project_groups", "cloud_model_policies",
+    "openrouter_settings", "polling_intervals", "whisper_settings", "guidelines",
+}
+
+
+async def _execute_mongo_list_collections() -> str:
+    """List all MongoDB collections in the Jervis database."""
+    from app.config import settings
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    client = AsyncIOMotorClient(settings.mongodb_uri)
+    db = client[settings.mongodb_database]
+    names = await db.list_collection_names()
+    return "\n".join(sorted(names))
+
+
+async def _execute_mongo_get_document(
+    collection: str,
+    filter_doc: dict | None,
+    limit: int = 10,
+) -> str:
+    """Read documents from a MongoDB collection."""
+    import json
+    from app.config import settings
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    if not collection:
+        return "Error: collection name is required."
+
+    client = AsyncIOMotorClient(settings.mongodb_uri)
+    db = client[settings.mongodb_database]
+    coll = db[collection]
+
+    mongo_filter = filter_doc or {}
+    cursor = coll.find(mongo_filter).limit(limit)
+    docs = await cursor.to_list(length=limit)
+
+    # Convert ObjectId to string for JSON serialization
+    for doc in docs:
+        if "_id" in doc:
+            doc["_id"] = str(doc["_id"])
+
+    if not docs:
+        return f"No documents found in '{collection}' with filter {mongo_filter}"
+
+    return json.dumps(docs, ensure_ascii=False, indent=2, default=str)
+
+
+async def _execute_mongo_update_document(
+    collection: str,
+    filter_doc: dict,
+    update_doc: dict,
+    upsert: bool = False,
+) -> str:
+    """Update a document in MongoDB and invalidate Kotlin cache if needed."""
+    from app.config import settings
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    if not collection:
+        return "Error: collection name is required."
+    if not filter_doc:
+        return "Error: filter is required (safety: no unfiltered updates)."
+    if not update_doc:
+        return "Error: update document is required."
+
+    client = AsyncIOMotorClient(settings.mongodb_uri)
+    db = client[settings.mongodb_database]
+    coll = db[collection]
+
+    result = await coll.update_one(filter_doc, update_doc, upsert=upsert)
+
+    # Invalidate Kotlin cache for collections that have in-memory cache
+    if collection in _CACHED_COLLECTIONS and (result.modified_count > 0 or result.upserted_id):
+        try:
+            from app.tools.kotlin_client import kotlin_client
+            await kotlin_client.invalidate_cache(collection)
+            logger.info("CACHE_INVALIDATED | collection=%s", collection)
+        except Exception as e:
+            logger.warning("Cache invalidation failed for %s: %s", collection, e)
+
+    parts = [
+        f"matched={result.matched_count}",
+        f"modified={result.modified_count}",
+    ]
+    if result.upserted_id:
+        parts.append(f"upserted_id={result.upserted_id}")
+
+    return f"Update result: {', '.join(parts)}"

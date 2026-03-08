@@ -1,4 +1,4 @@
-"""Graph validation — structural and semantic checks on TaskGraph.
+"""Graph validation — structural and semantic checks on AgentGraph.
 
 Validates that the graph is well-formed before execution:
 - No cycles
@@ -14,16 +14,16 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from app.graph_agent.graph import (
+from app.agent.graph import (
     get_fan_in_count,
     get_incoming_edges,
     get_outgoing_edges,
     has_cycle,
     topological_order,
 )
-from app.graph_agent.models import (
+from app.agent.models import (
     GraphVertex,
-    TaskGraph,
+    AgentGraph,
     VertexStatus,
     VertexType,
 )
@@ -53,7 +53,7 @@ class ValidationResult:
         self.warnings.append(msg)
 
 
-def validate_graph(graph: TaskGraph) -> ValidationResult:
+def validate_graph(graph: AgentGraph) -> ValidationResult:
     """Run all validation checks on a graph.
 
     Returns ValidationResult with errors (fatal) and warnings (non-fatal).
@@ -86,7 +86,7 @@ def validate_graph(graph: TaskGraph) -> ValidationResult:
     return result
 
 
-def _check_root(graph: TaskGraph, result: ValidationResult) -> None:
+def _check_root(graph: AgentGraph, result: ValidationResult) -> None:
     """Verify root vertex exists."""
     if graph.root_vertex_id not in graph.vertices:
         result.add_error(
@@ -94,13 +94,13 @@ def _check_root(graph: TaskGraph, result: ValidationResult) -> None:
         )
 
 
-def _check_cycles(graph: TaskGraph, result: ValidationResult) -> None:
+def _check_cycles(graph: AgentGraph, result: ValidationResult) -> None:
     """Verify graph is acyclic (DAG)."""
     if has_cycle(graph):
         result.add_error("Graph contains a cycle — cannot execute")
 
 
-def _check_vertex_limits(graph: TaskGraph, result: ValidationResult) -> None:
+def _check_vertex_limits(graph: AgentGraph, result: ValidationResult) -> None:
     """Check total vertex count is within limits."""
     count = len(graph.vertices)
     if count > MAX_TOTAL_VERTICES:
@@ -113,7 +113,7 @@ def _check_vertex_limits(graph: TaskGraph, result: ValidationResult) -> None:
         )
 
 
-def _check_edge_references(graph: TaskGraph, result: ValidationResult) -> None:
+def _check_edge_references(graph: AgentGraph, result: ValidationResult) -> None:
     """Verify all edges reference existing vertices."""
     for edge in graph.edges:
         if edge.source_id not in graph.vertices:
@@ -126,7 +126,7 @@ def _check_edge_references(graph: TaskGraph, result: ValidationResult) -> None:
             )
 
 
-def _check_orphans(graph: TaskGraph, result: ValidationResult) -> None:
+def _check_orphans(graph: AgentGraph, result: ValidationResult) -> None:
     """Check for vertices with no edges (except root)."""
     for vid, vertex in graph.vertices.items():
         if vid == graph.root_vertex_id:
@@ -139,7 +139,7 @@ def _check_orphans(graph: TaskGraph, result: ValidationResult) -> None:
             )
 
 
-def _check_fan_limits(graph: TaskGraph, result: ValidationResult) -> None:
+def _check_fan_limits(graph: AgentGraph, result: ValidationResult) -> None:
     """Check fan-in and fan-out are within limits."""
     for vid, vertex in graph.vertices.items():
         fan_in = get_fan_in_count(graph, vid)
@@ -157,7 +157,7 @@ def _check_fan_limits(graph: TaskGraph, result: ValidationResult) -> None:
             )
 
 
-def _check_vertex_content(graph: TaskGraph, result: ValidationResult) -> None:
+def _check_vertex_content(graph: AgentGraph, result: ValidationResult) -> None:
     """Check that TASK vertices have descriptions."""
     for vid, vertex in graph.vertices.items():
         if vertex.vertex_type == VertexType.TASK:
@@ -171,7 +171,7 @@ def _check_vertex_content(graph: TaskGraph, result: ValidationResult) -> None:
                 )
 
 
-def _check_depth_limits(graph: TaskGraph, result: ValidationResult) -> None:
+def _check_depth_limits(graph: AgentGraph, result: ValidationResult) -> None:
     """Check that no vertex exceeds max decomposition depth."""
     for vid, vertex in graph.vertices.items():
         if vertex.depth > MAX_DEPTH:

@@ -1025,13 +1025,13 @@ OLLAMA_KEEP_ALIVE=1h
 
 ---
 
-## Multi-Agent Delegation System Data Models
+## ~~Multi-Agent Delegation System Data Models~~ (REMOVED)
 
-The Python Orchestrator uses a multi-agent delegation architecture where a top-level orchestrator decomposes tasks and delegates them to specialist agents. This section documents the data structures that power the delegation graph, agent communication, and execution tracking.
-
-> **Related docs:**
-> - [orchestrator-detailed.md](orchestrator-detailed.md) – Full technical description of all nodes, LLM, K8s Jobs, communication, state, approval flow
-> - [orchestrator-final-spec.md](orchestrator-final-spec.md) – Async dispatch, approval flow, concurrency
+> **REMOVED:** The multi-agent delegation system (19 specialist agents, DelegationMessage, ExecutionPlan, etc.)
+> has been replaced by the Unified Agent architecture. See [graph-agent-architecture.md](graph-agent-architecture.md).
+>
+> All models below (DomainType, DelegationStatus, DelegationMessage, AgentOutput, ExecutionPlan,
+> AgentCapability, DelegationMetrics, SessionEntry, ProcedureNode) are no longer used.
 
 ### Domain & Status Enums
 
@@ -1209,60 +1209,19 @@ The parent agent (or orchestrator aggregator node) parses this format and uses t
 
 ---
 
-## Multi-Agent Delegation System
+## ~~Multi-Agent Delegation System~~ (REMOVED)
 
-### Overview
-
-The Python Orchestrator supports two execution paths controlled by feature flags:
-
-1. **Legacy graph (default):** 14-node graph for 4 task categories (ADVICE, SINGLE_TASK, EPIC, GENERATIVE)
-2. **Delegation graph (opt-in):** 7-node graph for multi-agent orchestration with 19 specialist agents
-
-### Delegation Graph Flow
-
-```
-intake → evidence_pack → plan_delegations → execute_delegation(s) → synthesize → finalize → END
-```
-
-**plan_delegations:** LLM selects agents from AgentRegistry and builds ExecutionPlan (DAG)
-**execute_delegation:** Dispatches to agents, supports parallel groups via DAGExecutor
-**synthesize:** Merges results, RAG cross-check, translates to response language
-
-### Agent Tiers
-
-| Tier | Agents | Domains |
-|------|--------|---------|
-| 1 — Core | Coding, Git, CodeReview, Test, Research | Code, testing, KB/web search |
-| 2 — DevOps & PM | IssueTracker, Wiki, Documentation, DevOps, ProjectManagement, Security | Tracking, docs, CI/CD, security |
-| 3 — Communication | Communication, Email, Calendar, Administrative | Messaging, scheduling, admin |
-| 4 — Business | Legal, Financial, Personal, Learning | Legal, financial, personal |
-
-### Memory Architecture
-
-| Layer | Storage | TTL |
-|-------|---------|-----|
-| Working Memory | LangGraph state | Per-orchestration |
-| Chat History | MongoDB `chat_messages` + `ChatSummaryDocument` | Permanent (compressed) |
-| Task Outcomes | KB via `task-outcome:{taskId}` sourceUrn | Permanent |
-| Session Memory | MongoDB `session_memory` | 7 days |
-| Semantic Memory | KB (Weaviate + ArangoDB) | Permanent |
-| Procedural Memory | ArangoDB `ProcedureNode` | Permanent (usage-decay) |
-
-### Feature Flags
-
-All default to `False` (opt-in):
-- `use_delegation_graph` — Switch to 7-node delegation graph
-- `use_specialist_agents` — Use specialist agents instead of LegacyAgent
-- `use_dag_execution` — Enable parallel delegation execution
-- `use_procedural_memory` — Enable learning from successful orchestrations
+> **REMOVED:** Replaced by Unified Agent. See [graph-agent-architecture.md](graph-agent-architecture.md).
 
 ---
 
-## Graph Agent — Task Decomposition via Vertex/Edge DAG
+## Agent — Task Decomposition via Vertex/Edge DAG
+
+> **SSOT:** [graph-agent-architecture.md](graph-agent-architecture.md) — full architecture including Paměťová/Myšlenková mapa, unified agent, Phase 4.
 
 ### Overview
 
-The Graph Agent is a new execution model that replaces the fixed delegation pipeline with a dynamic vertex/edge DAG. Uses **LangGraph** (proven framework) for execution, with **TaskGraph** as the planning structure. Each vertex type has a distinct **responsibility** — determining its system prompt, default tool set, and behavior.
+The Agent uses a dynamic vertex/edge DAG for task decomposition. Uses **LangGraph** for execution, with **AgentGraph** as the planning structure. Each vertex type has a distinct **responsibility** — determining its system prompt, default tool set, and behavior.
 
 **Key principles:**
 - **Input → vertices → edges → result**: a request is decomposed into vertices, each further decomposable
@@ -1274,7 +1233,7 @@ The Graph Agent is a new execution model that replaces the fixed delegation pipe
 
 ### Data Model
 
-**Source:** `backend/service-orchestrator/app/graph_agent/models.py`
+**Source:** `backend/service-orchestrator/app/agent/models.py`
 
 ```python
 class VertexType(str, Enum):
@@ -1288,6 +1247,13 @@ class VertexType(str, Enum):
     GATE = "gate"               # Decision / approval point
     TASK = "task"               # Legacy alias for EXECUTOR
     DECOMPOSE = "decompose"     # Alias for PLANNER
+    SETUP = "setup"             # Project scaffolding, repo creation
+    ASK_USER = "ask_user"       # Blocked — needs user input
+    REQUEST = "request"         # Chat message → agent execution → response
+    TASK_REF = "task_ref"       # Reference to Myšlenková mapa
+    INCOMING = "incoming"       # Qualified item from indexation
+    CLIENT = "client"           # Client hierarchy node
+    PROJECT = "project"         # Project hierarchy node
 
 class VertexStatus(str, Enum):
     PENDING = "pending"         # Waiting for incoming edges
@@ -1295,6 +1261,7 @@ class VertexStatus(str, Enum):
     RUNNING = "running"         # Currently processing
     COMPLETED = "completed"     # Done
     FAILED = "failed"
+    BLOCKED = "blocked"         # Waiting for external input (ASK_USER)
     SKIPPED = "skipped"         # Unreachable (upstream failed)
 
 class EdgeType(str, Enum):
@@ -1337,16 +1304,25 @@ class GraphVertex(BaseModel):
     # Hierarchy
     parent_id: str | None           # Parent vertex (decomposition tree)
     depth: int                      # Decomposition depth
+
+    # Per-vertex state (Phase 4 — unified agent)
+    agent_messages: list[dict]      # LLM message history for resume
+    agent_iteration: int            # How many iterations completed
 ```
 
-### TaskGraph
+### AgentGraph
 
 ```python
-class TaskGraph(BaseModel):
+class GraphType(str, Enum):
+    MEMORY_MAP = "memory_map"       # Global Paměťová mapa (one per user)
+    THINKING_MAP = "thinking_map"   # Myšlenková mapa (per-task decomposition)
+
+class AgentGraph(BaseModel):
     id: str
     task_id: str
     client_id: str
     project_id: str | None
+    graph_type: GraphType           # MEMORY_MAP or THINKING_MAP
 
     root_vertex_id: str
     vertices: dict[str, GraphVertex]
@@ -1356,11 +1332,11 @@ class TaskGraph(BaseModel):
 
 ### Graph Operations
 
-**Source:** `backend/service-orchestrator/app/graph_agent/graph.py`
+**Source:** `backend/service-orchestrator/app/agent/graph.py`
 
 | Operation | Description |
 |-----------|-------------|
-| `create_task_graph()` | Create graph with root vertex |
+| `create_agent_graph()` | Create graph with root vertex |
 | `add_vertex()` | Add vertex (auto-calculates depth from parent) |
 | `add_edge()` | Add directed edge, recalculate target readiness |
 | `get_ready_vertices()` | Vertices where all incoming edges have payloads |
@@ -1392,7 +1368,7 @@ v3 executes with access to both upstream contexts
 
 ### MongoDB Persistence
 
-**Source:** `backend/service-orchestrator/app/graph_agent/persistence.py`
+**Source:** `backend/service-orchestrator/app/agent/persistence.py`
 
 | Collection | Key | TTL |
 |------------|-----|-----|
@@ -1402,20 +1378,20 @@ Supports atomic vertex status updates via MongoDB dot notation without rewriting
 
 ### Progress Reporting
 
-**Source:** `backend/service-orchestrator/app/graph_agent/progress.py`
+**Source:** `backend/service-orchestrator/app/agent/progress.py`
 
 Uses existing `kotlin_client.report_progress()` API with delegation fields (`delegation_id`, `delegation_agent`, `delegation_depth`) to communicate graph execution state.
 
 ### LangGraph Execution
 
-**Source:** `backend/service-orchestrator/app/graph_agent/langgraph_runner.py`
+**Source:** `backend/service-orchestrator/app/agent/langgraph_runner.py`
 
 LangGraph StateGraph flow:
 ```
 decompose → select_next → dispatch_vertex → select_next → ... → synthesize → END
 ```
 
-- `node_decompose` — calls LLM decomposer, creates TaskGraph in state
+- `node_decompose` — calls LLM decomposer, creates AgentGraph in state
 - `node_select_next` — finds next READY vertex (all incoming edges have payloads)
 - `node_dispatch_vertex` — runs the agentic tool loop for the vertex (type determines system prompt + tools)
 - `node_synthesize` — composes final result from completed vertices
@@ -1429,7 +1405,7 @@ decompose → select_next → dispatch_vertex → select_next → ... → synthe
 
 ### Default Tool Sets per Vertex Type
 
-**Source:** `backend/service-orchestrator/app/graph_agent/tool_sets.py`
+**Source:** `backend/service-orchestrator/app/agent/tool_sets.py`
 
 | Vertex Type | Default Tools |
 |-------------|--------------|
@@ -1453,7 +1429,7 @@ PLANNER/DECOMPOSE vertices don't execute via the agentic tool loop. Instead, `no
 
 ### ArangoDB Artifact Graph — Impact Analysis
 
-**Source:** `backend/service-orchestrator/app/graph_agent/artifact_graph.py`
+**Source:** `backend/service-orchestrator/app/agent/artifact_graph.py`
 
 ArangoDB-backed graph that tracks ALL entities Jervis manages — not just code. Entities include code artifacts (from Joern CPG via KB), documents, meetings, people, test plans, etc.
 
@@ -1480,7 +1456,7 @@ ArangoDB-backed graph that tracks ALL entities Jervis manages — not just code.
 5. If found → create VALIDATOR vertex (injected into graph, blocks affected vertices)
 6. Detect conflicts (two vertices modifying same entity)
 
-**Source:** `backend/service-orchestrator/app/graph_agent/impact.py`
+**Source:** `backend/service-orchestrator/app/agent/impact.py`
 
 Code artifacts link to existing KnowledgeNodes (Joern CPG) via `kb_node_key` — no duplication.
 
@@ -1488,16 +1464,16 @@ Code artifacts link to existing KnowledgeNodes (Joern CPG) via `kb_node_key` —
 
 | File | Purpose |
 |------|---------|
-| `app/graph_agent/models.py` | GraphVertex, GraphEdge, EdgePayload, TaskGraph, enums |
-| `app/graph_agent/graph.py` | Graph operations (topological sort, context accumulation, readiness) |
-| `app/graph_agent/persistence.py` | MongoDB save/load, atomic updates |
-| `app/graph_agent/progress.py` | Progress reporting to Kotlin server |
-| `app/graph_agent/decomposer.py` | LLM-driven decomposition (root + recursive, depth 8) |
-| `app/graph_agent/validation.py` | Structural validation (cycles, limits, orphans, fan-in/out) |
-| `app/graph_agent/langgraph_runner.py` | LangGraph execution: StateGraph, agentic tool loop, entry point |
-| `app/graph_agent/tool_sets.py` | Default tool sets per vertex type, dynamic `request_tools` meta-tool |
-| `app/graph_agent/artifact_graph.py` | ArangoDB artifact/entity graph — impact analysis, conflict detection |
-| `app/graph_agent/impact.py` | Impact propagation: extract touched entities, traverse deps, create validators |
+| `app/agent/models.py` | GraphVertex, GraphEdge, EdgePayload, TaskGraph, enums |
+| `app/agent/graph.py` | Graph operations (topological sort, context accumulation, readiness) |
+| `app/agent/persistence.py` | MongoDB save/load, atomic updates |
+| `app/agent/progress.py` | Progress reporting to Kotlin server |
+| `app/agent/decomposer.py` | LLM-driven decomposition (root + recursive, depth 8) |
+| `app/agent/validation.py` | Structural validation (cycles, limits, orphans, fan-in/out) |
+| `app/agent/langgraph_runner.py` | LangGraph execution: StateGraph, agentic tool loop, entry point |
+| `app/agent/tool_sets.py` | Default tool sets per vertex type, dynamic `request_tools` meta-tool |
+| `app/agent/artifact_graph.py` | ArangoDB artifact/entity graph — impact analysis, conflict detection |
+| `app/agent/impact.py` | Impact propagation: extract touched entities, traverse deps, create validators |
 
 ---
 
@@ -1663,7 +1639,7 @@ Sources:
 | FilteringRulesService | 10-S1 | `backend/server/.../service/filtering/FilteringRulesService.kt` |
 | TopicTracker | 9-S1 | `backend/service-orchestrator/app/chat/topic_tracker.py` |
 | MemoryConsolidation | 9-S2 | `backend/service-orchestrator/app/memory/consolidation.py` |
-| IntentDecomposer | 9-S3 | `backend/service-orchestrator/app/chat/intent_decomposer.py` |
+| IntentDecomposer | 9-S3 | REMOVED — replaced by `agent/chat_router.py` |
 | SourceAttribution | 14-S2 | `backend/service-orchestrator/app/chat/source_attribution.py` |
 | ApprovalQueueDocument | 4-S3 | `backend/server/.../entity/ApprovalQueueDocument.kt` |
 | ApprovalStatisticsDocument | 4-S5 | `backend/server/.../entity/ApprovalStatisticsDocument.kt` |

@@ -15,22 +15,22 @@ from typing import TYPE_CHECKING
 
 from app.config import settings
 from app.graph.nodes._helpers import llm_with_cloud_fallback, parse_json_response
-from app.graph_agent.graph import (
+from app.agent.graph import (
     add_edge,
     add_vertex,
     get_children,
     has_cycle,
     topological_order,
 )
-from app.graph_agent.models import (
+from app.agent.models import (
     EdgeType,
     GraphStatus,
     GraphVertex,
-    TaskGraph,
+    AgentGraph,
     VertexStatus,
     VertexType,
 )
-from app.graph_agent.progress import report_decomposition_progress
+from app.agent.progress import report_decomposition_progress
 
 if TYPE_CHECKING:
     from app.models import EvidencePack
@@ -51,11 +51,11 @@ MAX_DECOMPOSE_DEPTH = 8
 
 
 async def decompose_root(
-    graph: TaskGraph,
+    graph: AgentGraph,
     state: dict,
     evidence: dict | None = None,
     guidelines: str = "",
-) -> TaskGraph:
+) -> AgentGraph:
     """Decompose the root vertex into sub-vertices.
 
     This is the entry point for graph construction. Takes the root vertex's
@@ -113,11 +113,11 @@ async def decompose_root(
 
 
 async def decompose_vertex(
-    graph: TaskGraph,
+    graph: AgentGraph,
     vertex_id: str,
     state: dict,
     guidelines: str = "",
-) -> TaskGraph:
+) -> AgentGraph:
     """Recursively decompose a DECOMPOSE-type vertex into sub-vertices.
 
     Called during execution when a vertex is marked as DECOMPOSE type
@@ -338,7 +338,7 @@ async def _llm_decompose(
 
 
 def _build_subgraph(
-    graph: TaskGraph,
+    graph: AgentGraph,
     parent: GraphVertex,
     vertices_data: list[dict],
 ) -> list[GraphVertex]:
@@ -410,7 +410,7 @@ def _build_subgraph(
 # ---------------------------------------------------------------------------
 
 
-def _single_vertex_fallback(graph: TaskGraph, root: GraphVertex) -> TaskGraph:
+def _single_vertex_fallback(graph: AgentGraph, root: GraphVertex) -> AgentGraph:
     """Create a minimal single-vertex graph when decomposition fails."""
     v = add_vertex(
         graph=graph,

@@ -1,4 +1,4 @@
-"""TaskGraph operations — traversal, context accumulation, readiness detection.
+"""AgentGraph operations — traversal, context accumulation, readiness detection.
 
 This module provides the core graph engine:
 - add/remove vertices and edges
@@ -17,14 +17,14 @@ import uuid
 from collections import deque
 
 from app.config import estimate_tokens
-from app.graph_agent.models import (
+from app.agent.models import (
     EdgePayload,
     EdgeType,
     GraphEdge,
     GraphStatus,
     GraphType,
     GraphVertex,
-    TaskGraph,
+    AgentGraph,
     VertexStatus,
     VertexType,
 )
@@ -43,7 +43,7 @@ def create_task_graph(
     project_id: str | None,
     root_title: str,
     root_description: str,
-) -> TaskGraph:
+) -> AgentGraph:
     """Create a new task sub-graph with a root vertex.
 
     Client isolation: client_id is set on the graph and used for KB access
@@ -63,7 +63,7 @@ def create_task_graph(
         depth=0,
     )
 
-    return TaskGraph(
+    return AgentGraph(
         id=graph_id,
         task_id=task_id,
         client_id=client_id,
@@ -80,7 +80,7 @@ def create_task_graph(
 
 
 def add_vertex(
-    graph: TaskGraph,
+    graph: AgentGraph,
     title: str,
     description: str,
     vertex_type: VertexType = VertexType.TASK,
@@ -107,7 +107,7 @@ def add_vertex(
     return vertex
 
 
-def remove_vertex(graph: TaskGraph, vertex_id: str) -> bool:
+def remove_vertex(graph: AgentGraph, vertex_id: str) -> bool:
     """Remove a vertex and all its edges. Returns True if found."""
     if vertex_id not in graph.vertices:
         return False
@@ -128,14 +128,14 @@ def remove_vertex(graph: TaskGraph, vertex_id: str) -> bool:
 
 
 def add_edge(
-    graph: TaskGraph,
+    graph: AgentGraph,
     source_id: str,
     target_id: str,
     edge_type: EdgeType = EdgeType.DEPENDENCY,
 ) -> GraphEdge:
     """Add a directed edge from source to target. Returns the created edge.
 
-    Note: client isolation is enforced at the graph level (TaskGraph.client_id),
+    Note: client isolation is enforced at the graph level (AgentGraph.client_id),
     not per-vertex. All vertices in a single graph belong to the same client.
     Cross-graph edges are not supported — sub-graphs link via TASK_REF vertices.
     """
@@ -160,7 +160,7 @@ def add_edge(
     return edge
 
 
-def remove_edge(graph: TaskGraph, edge_id: str) -> bool:
+def remove_edge(graph: AgentGraph, edge_id: str) -> bool:
     """Remove an edge by ID. Returns True if found."""
     before = len(graph.edges)
     graph.edges = [e for e in graph.edges if e.id != edge_id]
@@ -172,32 +172,32 @@ def remove_edge(graph: TaskGraph, edge_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def get_incoming_edges(graph: TaskGraph, vertex_id: str) -> list[GraphEdge]:
+def get_incoming_edges(graph: AgentGraph, vertex_id: str) -> list[GraphEdge]:
     """Get all edges pointing TO this vertex."""
     return [e for e in graph.edges if e.target_id == vertex_id]
 
 
-def get_outgoing_edges(graph: TaskGraph, vertex_id: str) -> list[GraphEdge]:
+def get_outgoing_edges(graph: AgentGraph, vertex_id: str) -> list[GraphEdge]:
     """Get all edges going FROM this vertex."""
     return [e for e in graph.edges if e.source_id == vertex_id]
 
 
-def get_fan_in_count(graph: TaskGraph, vertex_id: str) -> int:
+def get_fan_in_count(graph: AgentGraph, vertex_id: str) -> int:
     """Number of incoming edges to a vertex."""
     return len(get_incoming_edges(graph, vertex_id))
 
 
-def get_fan_out_count(graph: TaskGraph, vertex_id: str) -> int:
+def get_fan_out_count(graph: AgentGraph, vertex_id: str) -> int:
     """Number of outgoing edges from a vertex."""
     return len(get_outgoing_edges(graph, vertex_id))
 
 
-def get_children(graph: TaskGraph, vertex_id: str) -> list[GraphVertex]:
+def get_children(graph: AgentGraph, vertex_id: str) -> list[GraphVertex]:
     """Get vertices that were decomposed from this vertex (parent_id match)."""
     return [v for v in graph.vertices.values() if v.parent_id == vertex_id]
 
 
-def get_vertex(graph: TaskGraph, vertex_id: str) -> GraphVertex | None:
+def get_vertex(graph: AgentGraph, vertex_id: str) -> GraphVertex | None:
     """Get a vertex by ID."""
     return graph.vertices.get(vertex_id)
 
@@ -207,7 +207,7 @@ def get_vertex(graph: TaskGraph, vertex_id: str) -> GraphVertex | None:
 # ---------------------------------------------------------------------------
 
 
-def get_ready_vertices(graph: TaskGraph) -> list[GraphVertex]:
+def get_ready_vertices(graph: AgentGraph) -> list[GraphVertex]:
     """Get all vertices that are READY for execution.
 
     A vertex is READY when:
@@ -231,7 +231,7 @@ def get_ready_vertices(graph: TaskGraph) -> list[GraphVertex]:
     return ready
 
 
-def accumulate_context(graph: TaskGraph, vertex_id: str) -> list[EdgePayload]:
+def accumulate_context(graph: AgentGraph, vertex_id: str) -> list[EdgePayload]:
     """Gather all incoming edge payloads for a vertex.
 
     Returns the list of EdgePayloads from all incoming edges.
@@ -247,7 +247,7 @@ def accumulate_context(graph: TaskGraph, vertex_id: str) -> list[EdgePayload]:
 # ---------------------------------------------------------------------------
 
 
-def start_vertex(graph: TaskGraph, vertex_id: str) -> GraphVertex | None:
+def start_vertex(graph: AgentGraph, vertex_id: str) -> GraphVertex | None:
     """Mark a vertex as RUNNING. Populates incoming_context from edges."""
     vertex = graph.vertices.get(vertex_id)
     if not vertex:
@@ -267,7 +267,7 @@ def start_vertex(graph: TaskGraph, vertex_id: str) -> GraphVertex | None:
 
 
 def complete_vertex(
-    graph: TaskGraph,
+    graph: AgentGraph,
     vertex_id: str,
     result: str,
     result_summary: str,
@@ -323,7 +323,7 @@ def complete_vertex(
 
 
 def fail_vertex(
-    graph: TaskGraph,
+    graph: AgentGraph,
     vertex_id: str,
     error: str,
 ) -> GraphVertex | None:
@@ -354,7 +354,7 @@ def fail_vertex(
     return vertex
 
 
-def skip_vertex(graph: TaskGraph, vertex_id: str) -> GraphVertex | None:
+def skip_vertex(graph: AgentGraph, vertex_id: str) -> GraphVertex | None:
     """Mark a vertex as SKIPPED (e.g. conditional branch not taken)."""
     vertex = graph.vertices.get(vertex_id)
     if not vertex:
@@ -370,7 +370,7 @@ def skip_vertex(graph: TaskGraph, vertex_id: str) -> GraphVertex | None:
 # ---------------------------------------------------------------------------
 
 
-def topological_order(graph: TaskGraph) -> list[str]:
+def topological_order(graph: AgentGraph) -> list[str]:
     """Return vertex IDs in topological execution order (Kahn's algorithm).
 
     Raises ValueError if the graph has a cycle.
@@ -404,7 +404,7 @@ def topological_order(graph: TaskGraph) -> list[str]:
     return order
 
 
-def has_cycle(graph: TaskGraph) -> bool:
+def has_cycle(graph: AgentGraph) -> bool:
     """Check if the graph contains a cycle."""
     try:
         topological_order(graph)
@@ -418,7 +418,7 @@ def has_cycle(graph: TaskGraph) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def get_stats(graph: TaskGraph) -> dict:
+def get_stats(graph: AgentGraph) -> dict:
     """Get graph statistics."""
     statuses = {}
     for v in graph.vertices.values():
@@ -438,7 +438,7 @@ def get_stats(graph: TaskGraph) -> dict:
     }
 
 
-def get_final_result(graph: TaskGraph) -> str:
+def get_final_result(graph: AgentGraph) -> str:
     """Compose the final result from completed vertices.
 
     Collects result_summary from all completed leaf vertices
@@ -484,7 +484,7 @@ def get_final_result(graph: TaskGraph) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _update_vertex_readiness(graph: TaskGraph, vertex_id: str) -> None:
+def _update_vertex_readiness(graph: AgentGraph, vertex_id: str) -> None:
     """Recalculate readiness of a vertex based on incoming edges."""
     vertex = graph.vertices.get(vertex_id)
     if not vertex or vertex.status not in (VertexStatus.PENDING, VertexStatus.READY):
@@ -499,7 +499,7 @@ def _update_vertex_readiness(graph: TaskGraph, vertex_id: str) -> None:
         vertex.status = VertexStatus.PENDING
 
 
-def _propagate_failure(graph: TaskGraph, failed_vertex_id: str) -> None:
+def _propagate_failure(graph: AgentGraph, failed_vertex_id: str) -> None:
     """Mark downstream vertices as SKIPPED if they can't execute.
 
     A downstream vertex is skipped if ALL its incoming paths go through
@@ -539,18 +539,18 @@ def _propagate_failure(graph: TaskGraph, failed_vertex_id: str) -> None:
                 queue.append(edge.target_id)
 
 
-def _is_graph_complete(graph: TaskGraph) -> bool:
+def _is_graph_complete(graph: AgentGraph) -> bool:
     """Check if all vertices are in a terminal state."""
     terminal = {VertexStatus.COMPLETED, VertexStatus.FAILED, VertexStatus.SKIPPED}
     return all(v.status in terminal for v in graph.vertices.values())
 
 
-def _check_graph_completion(graph: TaskGraph) -> None:
+def _check_graph_completion(graph: AgentGraph) -> None:
     """Update graph status if all vertices are done.
 
     Master maps are never "completed" — they grow with each interaction.
     """
-    if graph.graph_type == GraphType.MASTER:
+    if graph.graph_type == GraphType.MEMORY_MAP:
         return  # Master map never completes
     if _is_graph_complete(graph):
         has_failures = any(
@@ -565,7 +565,7 @@ def _check_graph_completion(graph: TaskGraph) -> None:
 # ---------------------------------------------------------------------------
 
 
-def create_master_graph(client_id: str = "") -> TaskGraph:
+def create_memory_map(client_id: str = "") -> AgentGraph:
     """Create a new master map (global singleton).
 
     The master map is a persistent graph that holds all chat interactions
@@ -583,11 +583,11 @@ def create_master_graph(client_id: str = "") -> TaskGraph:
         depth=0,
     )
 
-    return TaskGraph(
+    return AgentGraph(
         id=graph_id,
         task_id="master",
         client_id=client_id,
-        graph_type=GraphType.MASTER,
+        graph_type=GraphType.MEMORY_MAP,
         root_vertex_id=root_id,
         vertices={root_id: root},
         status=GraphStatus.EXECUTING,  # Master is always "executing"
@@ -596,7 +596,7 @@ def create_master_graph(client_id: str = "") -> TaskGraph:
 
 
 def ensure_hierarchy(
-    graph: TaskGraph,
+    graph: AgentGraph,
     client_id: str = "",
     client_name: str = "",
     project_id: str | None = None,
@@ -663,8 +663,8 @@ def ensure_hierarchy(
     return project_vertex.id
 
 
-def add_chat_vertex(
-    graph: TaskGraph,
+def add_request_vertex(
+    graph: AgentGraph,
     message: str,
     response: str,
     response_summary: str = "",
@@ -673,7 +673,7 @@ def add_chat_vertex(
     project_id: str | None = None,
     project_name: str = "",
 ) -> GraphVertex:
-    """Add a CHAT_EXCHANGE vertex to the master map.
+    """Add a REQUEST vertex to the master map.
 
     Records a chat message→response pair. Nested under client/project if known.
     """
@@ -686,7 +686,7 @@ def add_chat_vertex(
         id=f"v-chat-{uuid.uuid4().hex[:12]}",
         title=message[:80] if message else "Chat",
         description=message,
-        vertex_type=VertexType.CHAT_EXCHANGE,
+        vertex_type=VertexType.REQUEST,
         status=VertexStatus.COMPLETED,
         result=response,
         result_summary=response_summary or response[:200],
@@ -699,7 +699,7 @@ def add_chat_vertex(
 
 
 def add_task_ref_vertex(
-    graph: TaskGraph,
+    graph: AgentGraph,
     task_id: str,
     sub_graph_id: str,
     title: str,
@@ -784,8 +784,46 @@ def add_task_ref_vertex(
     return vertex
 
 
+def add_incoming_vertex(
+    graph: AgentGraph,
+    task_id: str,
+    title: str,
+    prepared_context: str = "",
+    client_id: str = "",
+    client_name: str = "",
+    project_id: str | None = None,
+    project_name: str = "",
+    urgency: str = "normal",
+) -> GraphVertex:
+    """Add an INCOMING vertex — qualified item waiting for user decision.
+
+    Created by the qualifier after processing an indexed item.
+    Status = READY (waiting for user to decide action).
+    """
+    parent_id = ensure_hierarchy(graph, client_id, client_name, project_id, project_name)
+    depth = 1
+    if parent_id and parent_id in graph.vertices:
+        depth = graph.vertices[parent_id].depth + 1
+
+    vertex = GraphVertex(
+        id=f"v-incoming-{uuid.uuid4().hex[:12]}",
+        title=title[:80],
+        description=prepared_context[:500] if prepared_context else title,
+        vertex_type=VertexType.INCOMING,
+        status=VertexStatus.READY,
+        input_request=task_id,
+        local_context=prepared_context,
+        parent_id=parent_id,
+        depth=depth,
+        started_at=str(int(time.time())),
+    )
+    graph.vertices[vertex.id] = vertex
+    logger.info("Added INCOMING vertex %s for task %s (urgency=%s)", vertex.id, task_id, urgency)
+    return vertex
+
+
 def create_ask_user_vertex(
-    graph: TaskGraph,
+    graph: AgentGraph,
     question: str,
     context: str = "",
     parent_vertex_id: str | None = None,
@@ -815,7 +853,7 @@ def create_ask_user_vertex(
     return vertex
 
 
-def block_vertex(graph: TaskGraph, vertex_id: str, reason: str = "") -> GraphVertex | None:
+def block_vertex(graph: AgentGraph, vertex_id: str, reason: str = "") -> GraphVertex | None:
     """Block a running vertex (e.g. waiting for user input)."""
     vertex = graph.vertices.get(vertex_id)
     if not vertex:
@@ -827,7 +865,7 @@ def block_vertex(graph: TaskGraph, vertex_id: str, reason: str = "") -> GraphVer
 
 
 def resume_vertex(
-    graph: TaskGraph,
+    graph: AgentGraph,
     vertex_id: str,
     answer: str,
 ) -> GraphVertex | None:
@@ -849,7 +887,7 @@ def resume_vertex(
     )
 
 
-def find_blocked_vertices(graph: TaskGraph) -> list[GraphVertex]:
+def find_blocked_vertices(graph: AgentGraph) -> list[GraphVertex]:
     """Find all BLOCKED (ASK_USER) vertices in the graph."""
     return [
         v for v in graph.vertices.values()
@@ -857,7 +895,7 @@ def find_blocked_vertices(graph: TaskGraph) -> list[GraphVertex]:
     ]
 
 
-def master_map_summary(graph: TaskGraph, max_tokens: int = 2000) -> str:
+def memory_map_summary(graph: AgentGraph, max_tokens: int = 2000) -> str:
     """Generate a compact summary of the master map for LLM context injection.
 
     Priority order:
@@ -910,7 +948,7 @@ def master_map_summary(graph: TaskGraph, max_tokens: int = 2000) -> str:
     # 3. Recent chat exchanges (newest first, title only — brief)
     chats = sorted(
         [v for v in graph.vertices.values()
-         if v.vertex_type == VertexType.CHAT_EXCHANGE],
+         if v.vertex_type == VertexType.REQUEST],
         key=lambda v: v.completed_at or "0",
         reverse=True,
     )

@@ -1653,5 +1653,92 @@ TOOL_TASK_QUEUE_SET_PRIORITY: dict = {
 
 QUEUE_TOOLS: list[dict] = [TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY]
 
+
+# ---------------------------------------------------------------------------
+# MongoDB self-management tools
+# ---------------------------------------------------------------------------
+
+TOOL_MONGO_LIST_COLLECTIONS: dict = {
+    "type": "function",
+    "function": {
+        "name": "mongo_list_collections",
+        "description": "Seznam všech MongoDB kolekcí v Jervis databázi.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+}
+
+TOOL_MONGO_GET_DOCUMENT: dict = {
+    "type": "function",
+    "function": {
+        "name": "mongo_get_document",
+        "description": (
+            "Načti dokument(y) z MongoDB kolekce. "
+            "Vrací JSON. Limit default 10."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "collection": {
+                    "type": "string",
+                    "description": "Název kolekce (e.g. 'clients', 'projects', 'cloud_model_policies').",
+                },
+                "filter": {
+                    "type": "object",
+                    "description": "MongoDB filter (e.g. {\"_id\": \"...\"}, {\"name\": \"Moneta\"}).",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max počet výsledků (default 10).",
+                    "default": 10,
+                },
+            },
+            "required": ["collection"],
+        },
+    },
+}
+
+TOOL_MONGO_UPDATE_DOCUMENT: dict = {
+    "type": "function",
+    "function": {
+        "name": "mongo_update_document",
+        "description": (
+            "Zapiš/aktualizuj dokument v MongoDB. "
+            "Posílej CELÝ JSON dokumentu (upsert = nahradí nebo vytvoří). "
+            "POZOR: Po zápisu se automaticky invaliduje cache v Kotlin serveru."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "collection": {
+                    "type": "string",
+                    "description": "Název kolekce.",
+                },
+                "filter": {
+                    "type": "object",
+                    "description": "MongoDB filter pro identifikaci dokumentu.",
+                },
+                "update": {
+                    "type": "object",
+                    "description": "MongoDB update operace (e.g. {\"$set\": {\"field\": \"value\"}}).",
+                },
+                "upsert": {
+                    "type": "boolean",
+                    "description": "Vytvořit pokud neexistuje (default false).",
+                },
+            },
+            "required": ["collection", "filter", "update"],
+        },
+    },
+}
+
+MONGO_TOOLS: list[dict] = [
+    TOOL_MONGO_LIST_COLLECTIONS,
+    TOOL_MONGO_GET_DOCUMENT,
+    TOOL_MONGO_UPDATE_DOCUMENT,
+]
+
 # Backward compatibility alias
 LEGACY_AGENT_TOOLS: list[dict] = ALL_AGENT_TOOLS

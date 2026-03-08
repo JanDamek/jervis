@@ -10,6 +10,7 @@ import com.jervis.common.types.ClientId
 import com.jervis.entity.OpenRouterTier
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.TaskStateEnum
+import com.jervis.repository.ClientRepository
 import com.jervis.repository.ProjectRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.service.CloudModelPolicyResolver
@@ -40,6 +41,7 @@ import org.springframework.stereotype.Component
 class ChatRpcImpl(
     private val chatService: ChatService,
     private val backgroundEngine: BackgroundEngine,
+    private val clientRepository: ClientRepository,
     private val projectRepository: ProjectRepository,
     private val cloudModelPolicyResolver: CloudModelPolicyResolver,
     private val taskRepository: TaskRepository,
@@ -140,6 +142,11 @@ class ChatRpcImpl(
         backgroundScope.launch {
             try {
                 // Resolve CloudModelPolicy (project → group → client hierarchy) and groupId
+                val client = try {
+                    safeClientId?.let { cid ->
+                        clientRepository.getById(ClientId(ObjectId(cid)))
+                    }
+                } catch (_: Exception) { null }
                 val project = try {
                     safeProjectId?.let { pid ->
                         projectRepository.getById(ProjectId(ObjectId(pid)))
@@ -159,6 +166,8 @@ class ChatRpcImpl(
                     activeClientId = safeClientId,
                     activeProjectId = safeProjectId,
                     activeGroupId = activeGroupId,
+                    activeClientName = client?.name,
+                    activeProjectName = project?.name,
                     contextTaskId = contextTaskId,
                     maxOpenRouterTier = maxOpenRouterTier,
                 )

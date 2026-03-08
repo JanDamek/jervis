@@ -1,4 +1,4 @@
-"""MongoDB persistence for TaskGraph + in-memory master map cache.
+"""MongoDB persistence for AgentGraph + in-memory Paměťová mapa cache.
 
 Stores the complete graph (vertices, edges) as a single document.
 Supports:
@@ -6,8 +6,8 @@ Supports:
 - atomic vertex status updates (without rewriting entire document)
 - edge payload updates
 - TTL-based auto-cleanup (30 days)
-- In-memory master map singleton (DB = restart recovery only)
-- RAM cache for active task sub-graphs
+- In-memory Paměťová mapa singleton (DB = restart recovery only)
+- RAM cache for active Myšlenkové mapy
 """
 
 from __future__ import annotations
@@ -19,13 +19,13 @@ from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 
 from app.config import settings
-from app.graph_agent.models import (
+from app.agent.models import (
     EdgePayload,
     GraphEdge,
     GraphStatus,
     GraphType,
     GraphVertex,
-    TaskGraph,
+    AgentGraph,
     VertexStatus,
     VertexType,
 )
@@ -40,7 +40,7 @@ _KEEP_CHAT_VERTICES = 5  # Keep last N chat exchanges
 _KEEP_TASK_VERTICES = 5  # Keep last N completed/failed task refs
 
 
-class TaskGraphStore:
+class AgentStore:
     """MongoDB-backed persistence for task graphs with RAM cache.
 
     Master map is held in RAM as a singleton. Task sub-graphs are cached
@@ -52,8 +52,8 @@ class TaskGraphStore:
         self._collection: AsyncIOMotorCollection | None = None
 
         # RAM cache
-        self._master_graph: TaskGraph | None = None
-        self._subgraphs: dict[str, TaskGraph] = {}  # task_id → TaskGraph
+        self._memory_map: AgentGraph | None = None
+        self._subgraphs: dict[str, AgentGraph] = {}  # task_id → AgentGraph
         self._dirty: set[str] = set()  # task_ids that need DB flush
         self._flush_task: asyncio.Task | None = None
         self._cleanup_task: asyncio.Task | None = None
@@ -83,7 +83,7 @@ class TaskGraphStore:
             expireAfterSeconds=_TTL_DAYS * 86400,
         )
         logger.info(
-            "TaskGraphStore initialized (collection=%s, ttl=%dd)",
+            "AgentStore initialized (collection=%s, ttl=%dd)",
             _COLLECTION_NAME, _TTL_DAYS,
         )
 
@@ -101,7 +101,7 @@ class TaskGraphStore:
 
     # --- Full graph operations ---
 
-    async def save(self, graph: TaskGraph) -> None:
+    async def save(self, graph: AgentGraph) -> None:
         """Save or update the entire graph document."""
         coll = await self._ensure_collection()
         doc = graph.model_dump()
@@ -112,7 +112,7 @@ class TaskGraphStore:
             upsert=True,
         )
 
-    async def load(self, task_id: str) -> TaskGraph | None:
+    async def load(self, task_id: str) -> AgentGraph | None:
         """Load a graph by task_id. Returns None if not found."""
         coll = await self._ensure_collection()
         doc = await coll.find_one({"task_id": task_id})
@@ -120,7 +120,7 @@ class TaskGraphStore:
             return None
         doc.pop("_id", None)
         doc.pop("updated_at", None)
-        return TaskGraph(**doc)
+        return AgentGraph(**doc)
 
     async def delete(self, task_id: str) -> bool:
         """Delete a graph by task_id. Returns True if found."""
@@ -219,52 +219,52 @@ class TaskGraphStore:
 
     # --- Master Map (RAM singleton) ---
 
-    async def get_or_create_master_graph(self, client_id: str = "") -> TaskGraph:
+    async def get_or_create_memory_map(self, client_id: str = "") -> AgentGraph:
         """Get or create the global master map (one per orchestrator instance).
 
         RAM-first: returns cached graph if available. Falls back to DB on
         cold start. Creates new master map if none exists.
         """
-        if self._master_graph is not None:
-            return self._master_graph
+        if self._memory_map is not None:
+            return self._memory_map
 
         # Try loading from DB
         coll = await self._ensure_collection()
-        doc = await coll.find_one({"graph_type": GraphType.MASTER.value})
+        doc = await coll.find_one({"graph_type": GraphType.MEMORY_MAP.value})
         if doc:
             doc.pop("_id", None)
             doc.pop("updated_at", None)
-            self._master_graph = TaskGraph(**doc)
+            self._memory_map = AgentGraph(**doc)
             logger.info("Master map loaded from DB (id=%s, vertices=%d)",
-                        self._master_graph.id, len(self._master_graph.vertices))
+                        self._memory_map.id, len(self._memory_map.vertices))
             # Immediate cleanup on load — archive removed vertices
             removed = self.cleanup_master_map()
             if removed > 0:
                 if hasattr(self, "_pending_archive") and self._pending_archive:
                     await self._archive_vertices(self._pending_archive)
                     self._pending_archive = []
-                self._dirty.add(self._master_graph.task_id)
-                logger.info("Master map after cleanup: %d vertices", len(self._master_graph.vertices))
-            return self._master_graph
+                self._dirty.add(self._memory_map.task_id)
+                logger.info("Master map after cleanup: %d vertices", len(self._memory_map.vertices))
+            return self._memory_map
 
         # Create new master map
-        from app.graph_agent.graph import create_master_graph
-        self._master_graph = create_master_graph(client_id)
-        self._dirty.add(self._master_graph.task_id)
-        logger.info("New master map created (id=%s)", self._master_graph.id)
-        return self._master_graph
+        from app.agent.graph import create_memory_map
+        self._memory_map = create_memory_map(client_id)
+        self._dirty.add(self._memory_map.task_id)
+        logger.info("New master map created (id=%s)", self._memory_map.id)
+        return self._memory_map
 
-    def get_master_graph_cached(self) -> TaskGraph | None:
+    def get_memory_map_cached(self) -> AgentGraph | None:
         """Get master map from RAM only (no DB fallback). For sync callers."""
-        return self._master_graph
+        return self._memory_map
 
     # --- Sub-graph RAM cache ---
 
-    def cache_subgraph(self, graph: TaskGraph) -> None:
+    def cache_subgraph(self, graph: AgentGraph) -> None:
         """Put a task sub-graph into the RAM cache."""
         self._subgraphs[graph.task_id] = graph
 
-    def get_cached_subgraph(self, task_id: str) -> TaskGraph | None:
+    def get_cached_subgraph(self, task_id: str) -> AgentGraph | None:
         """Get a sub-graph from RAM cache."""
         return self._subgraphs.get(task_id)
 
@@ -285,16 +285,16 @@ class TaskGraphStore:
 
     def _find_parent_vertex_id(self, parent_task_id: str) -> str | None:
         """Find the master map vertex ID for a parent task_id."""
-        if not self._master_graph:
+        if not self._memory_map:
             return None
-        for v in self._master_graph.vertices.values():
+        for v in self._memory_map.vertices.values():
             if v.vertex_type == VertexType.TASK_REF and v.input_request == parent_task_id:
                 return v.id
         return None
 
     # --- Link master ↔ sub-graph ---
 
-    async def link_task_subgraph(
+    async def link_thinking_map(
         self,
         task_id: str,
         sub_graph_id: str,
@@ -313,8 +313,8 @@ class TaskGraphStore:
         1. Task parent (sub-task nesting via _task_parent_map)
         2. Client/project hierarchy (auto-creates CLIENT/PROJECT vertices)
         """
-        master = await self.get_or_create_master_graph()
-        from app.graph_agent.graph import add_task_ref_vertex
+        master = await self.get_or_create_memory_map()
+        from app.agent.graph import add_task_ref_vertex
 
         # Find parent vertex for nesting (sub-task → parent task)
         parent_vertex_id: str | None = None
@@ -341,10 +341,10 @@ class TaskGraphStore:
         results: list[tuple[str, GraphVertex]] = []
 
         # Check master map
-        if self._master_graph:
-            for v in self._master_graph.vertices.values():
+        if self._memory_map:
+            for v in self._memory_map.vertices.values():
                 if v.status == VertexStatus.BLOCKED:
-                    results.append((self._master_graph.task_id, v))
+                    results.append((self._memory_map.task_id, v))
 
         # Check cached sub-graphs
         for task_id, graph in self._subgraphs.items():
@@ -365,11 +365,11 @@ class TaskGraphStore:
         Looks up graph in RAM cache (master or sub-graph), resumes vertex,
         marks graph as dirty for DB flush.
         """
-        from app.graph_agent.graph import resume_vertex
+        from app.agent.graph import resume_vertex
 
-        graph: TaskGraph | None = None
-        if self._master_graph and self._master_graph.task_id == task_id:
-            graph = self._master_graph
+        graph: AgentGraph | None = None
+        if self._memory_map and self._memory_map.task_id == task_id:
+            graph = self._memory_map
         elif task_id in self._subgraphs:
             graph = self._subgraphs[task_id]
         else:
@@ -400,7 +400,7 @@ class TaskGraphStore:
 
         Keeps:
         - All active vertices (PENDING, READY, RUNNING, BLOCKED)
-        - Last N CHAT_EXCHANGE vertices (for summary context)
+        - Last N REQUEST vertices (for summary context)
         - Last N completed/failed TASK_REF vertices (for summary context)
         - Root vertex
         - All edges referencing kept vertices
@@ -410,10 +410,10 @@ class TaskGraphStore:
 
         Returns number of removed vertices.
         """
-        if not self._master_graph:
+        if not self._memory_map:
             return 0
 
-        graph = self._master_graph
+        graph = self._memory_map
         keep_ids: set[str] = set()
 
         # Always keep active (non-terminal) vertices
@@ -424,7 +424,7 @@ class TaskGraphStore:
         # Keep last N chat exchanges (sorted by completed_at desc)
         chats = sorted(
             [(vid, v) for vid, v in graph.vertices.items()
-             if v.vertex_type == VertexType.CHAT_EXCHANGE],
+             if v.vertex_type == VertexType.REQUEST],
             key=lambda x: x[1].completed_at or "0",
             reverse=True,
         )
@@ -543,9 +543,9 @@ class TaskGraphStore:
         self._dirty.clear()
 
         for task_id in dirty_ids:
-            graph: TaskGraph | None = None
-            if self._master_graph and self._master_graph.task_id == task_id:
-                graph = self._master_graph
+            graph: AgentGraph | None = None
+            if self._memory_map and self._memory_map.task_id == task_id:
+                graph = self._memory_map
             elif task_id in self._subgraphs:
                 graph = self._subgraphs[task_id]
 
@@ -610,4 +610,4 @@ class TaskGraphStore:
 
 
 # Singleton
-task_graph_store = TaskGraphStore()
+agent_store = AgentStore()

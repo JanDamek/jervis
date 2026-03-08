@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import logging
 
-from app.graph_agent.models import (
+from app.agent.models import (
     GraphStatus,
-    TaskGraph,
+    AgentGraph,
     VertexStatus,
 )
 from app.tools.kotlin_client import kotlin_client
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 async def report_vertex_started(
-    graph: TaskGraph,
+    graph: AgentGraph,
     vertex_id: str,
 ) -> None:
     """Report that a vertex has started execution."""
@@ -50,7 +50,7 @@ async def report_vertex_started(
 
 
 async def report_vertex_completed(
-    graph: TaskGraph,
+    graph: AgentGraph,
     vertex_id: str,
 ) -> None:
     """Report that a vertex has completed."""
@@ -80,7 +80,7 @@ async def report_vertex_completed(
 
 
 async def report_graph_status(
-    graph: TaskGraph,
+    graph: AgentGraph,
     message: str,
 ) -> None:
     """Report overall graph status change."""
@@ -107,7 +107,7 @@ async def report_graph_status(
 
 
 async def report_decomposition_progress(
-    graph: TaskGraph,
+    graph: AgentGraph,
     message: str,
     depth: int = 0,
 ) -> None:
@@ -134,7 +134,7 @@ def _calc_percent(completed: int, total: int) -> int:
 
 
 async def _report(
-    graph: TaskGraph,
+    graph: AgentGraph,
     node: str,
     message: str,
     percent: int,

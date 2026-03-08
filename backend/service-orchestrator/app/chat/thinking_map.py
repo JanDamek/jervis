@@ -1,6 +1,6 @@
 """Thinking Map — graph-based planning in chat.
 
-Creates and manages TaskGraph instances during chat conversation.
+Creates and manages AgentGraph instances during chat conversation.
 The LLM calls create/add/update/remove tools, and when ready,
 dispatch_map converts it into a background task for execution.
 
@@ -13,16 +13,16 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from app.graph_agent.models import (
+from app.agent.models import (
     EdgeType,
     GraphEdge,
     GraphStatus,
     GraphVertex,
-    TaskGraph,
+    AgentGraph,
     VertexStatus,
     VertexType,
 )
-from app.graph_agent.persistence import task_graph_store
+from app.agent.persistence import agent_store
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ async def create_map(
     session_id: str,
     client_id: str | None = None,
     project_id: str | None = None,
-) -> TaskGraph:
+) -> AgentGraph:
     """Create a new thinking map with a root vertex."""
     graph_id = str(uuid.uuid4())
     root_id = "root"
@@ -62,7 +62,7 @@ async def create_map(
         depth=0,
     )
 
-    graph = TaskGraph(
+    graph = AgentGraph(
         id=graph_id,
         task_id=graph_id,  # Use graph_id as task_id until dispatch
         client_id=client_id or "",
@@ -74,7 +74,7 @@ async def create_map(
         created_at=now,
     )
 
-    await task_graph_store.save(graph)
+    await agent_store.save(graph)
     _active_maps[session_id] = graph_id
     logger.info("Created thinking map: %s (%s) for session %s", title, graph_id, session_id)
     return graph
@@ -86,7 +86,7 @@ async def add_vertex(
     description: str,
     vertex_type: str = "executor",
     depends_on: list[str] | None = None,
-) -> tuple[TaskGraph, GraphVertex]:
+) -> tuple[AgentGraph, GraphVertex]:
     """Add a vertex to the active thinking map.
 
     depends_on: list of vertex titles (matched by title, not ID).
@@ -142,7 +142,7 @@ async def add_vertex(
         )
         graph.edges.append(edge)
 
-    await task_graph_store.save(graph)
+    await agent_store.save(graph)
     logger.info("Added vertex '%s' (%s) to map %s", title, vertex_id, graph.id)
     return graph, vertex
 
@@ -153,7 +153,7 @@ async def update_vertex(
     title: str | None = None,
     description: str | None = None,
     vertex_type: str | None = None,
-) -> tuple[TaskGraph, GraphVertex]:
+) -> tuple[AgentGraph, GraphVertex]:
     """Update an existing vertex in the active map."""
     graph = await get_active_map(session_id)
     if not graph:
@@ -170,7 +170,7 @@ async def update_vertex(
     if vertex_type:
         vertex.vertex_type = _VERTEX_TYPE_MAP.get(vertex_type, vertex.vertex_type)
 
-    await task_graph_store.save(graph)
+    await agent_store.save(graph)
     logger.info("Updated vertex '%s' in map %s", vertex_id, graph.id)
     return graph, vertex
 
@@ -178,7 +178,7 @@ async def update_vertex(
 async def remove_vertex(
     session_id: str,
     vertex_id: str,
-) -> TaskGraph:
+) -> AgentGraph:
     """Remove a vertex and its edges from the active map."""
     graph = await get_active_map(session_id)
     if not graph:
@@ -193,7 +193,7 @@ async def remove_vertex(
     del graph.vertices[vertex_id]
     graph.edges = [e for e in graph.edges if e.source_id != vertex_id and e.target_id != vertex_id]
 
-    await task_graph_store.save(graph)
+    await agent_store.save(graph)
     logger.info("Removed vertex '%s' from map %s", vertex_id, graph.id)
     return graph
 
@@ -234,7 +234,7 @@ async def dispatch_map(
 
     # Re-key the graph to the real task_id
     graph.task_id = task_id
-    await task_graph_store.save(graph)
+    await agent_store.save(graph)
 
     # Clear session mapping
     _active_maps.pop(session_id, None)
@@ -243,12 +243,12 @@ async def dispatch_map(
     return task_id
 
 
-async def get_active_map(session_id: str) -> TaskGraph | None:
+async def get_active_map(session_id: str) -> AgentGraph | None:
     """Get the active thinking map for a session."""
     graph_id = _active_maps.get(session_id)
     if not graph_id:
         return None
-    graph = await task_graph_store.load(graph_id)
+    graph = await agent_store.load(graph_id)
     if not graph:
         _active_maps.pop(session_id, None)
         return None
@@ -292,7 +292,7 @@ async def run_vertex(
     # Store correlation: task_id → (graph_id, vertex_id, session_id)
     _vertex_tasks[task_id] = (graph.id, vertex_id, session_id)
 
-    await task_graph_store.save(graph)
+    await agent_store.save(graph)
     logger.info(
         "Dispatched vertex '%s' (%s) from map %s as task %s",
         vertex.title, vertex_id, graph.id, task_id,
@@ -303,7 +303,7 @@ async def run_vertex(
 async def handle_vertex_result(
     task_id: str,
     result: str,
-) -> tuple[TaskGraph, str] | None:
+) -> tuple[AgentGraph, str] | None:
     """Handle a background task result that corresponds to a dispatched vertex.
 
     Returns (updated graph, session_id) if this was a vertex task, None otherwise.
@@ -313,7 +313,7 @@ async def handle_vertex_result(
         return None
 
     graph_id, vertex_id, session_id = correlation
-    graph = await task_graph_store.load(graph_id)
+    graph = await agent_store.load(graph_id)
     if not graph:
         logger.warning("Graph %s not found for vertex result (task %s)", graph_id, task_id)
         return None
@@ -322,7 +322,7 @@ async def handle_vertex_result(
     if vertex:
         vertex.status = VertexStatus.COMPLETED
         vertex.result_summary = result[:500] if result else ""
-        await task_graph_store.save(graph)
+        await agent_store.save(graph)
         logger.info("Updated vertex '%s' with background result (task %s)", vertex_id, task_id)
 
     return graph, session_id

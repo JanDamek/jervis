@@ -1,14 +1,14 @@
-"""Data models for the graph-based task decomposition engine.
+"""Data models for the unified agent graph engine.
 
 Core concepts:
 - GraphVertex: a processing unit (decompose, execute, synthesize)
 - GraphEdge: connection carrying summary + full context between vertices
 - EdgePayload: the data that flows through an edge after source completes
-- TaskGraph: the complete DAG for one task (or the master map)
+- AgentGraph: the complete DAG (Paměťová mapa or Myšlenková mapa)
 
 Graph types:
-- MASTER: one global master map per user — all interactions are vertices
-- TASK_SUBGRAPH: sub-graph for a specific background task, linked to master
+- MEMORY_MAP: one global Paměťová mapa per user — all interactions are vertices
+- THINKING_MAP: Myšlenková mapa for a specific background task, linked to memory map
 """
 
 from __future__ import annotations
@@ -23,10 +23,14 @@ from pydantic import BaseModel, Field
 
 
 class GraphType(str, Enum):
-    """Whether this graph is the master map or a task sub-graph."""
+    """Whether this graph is the Paměťová mapa or Myšlenková mapa."""
 
-    MASTER = "master"                   # Global master map (one per user)
-    TASK_SUBGRAPH = "task_subgraph"     # Sub-graph for a background task
+    MEMORY_MAP = "memory_map"           # Global Paměťová mapa (one per user)
+    THINKING_MAP = "thinking_map"       # Myšlenková mapa for a background task
+
+    # Legacy aliases for DB compatibility
+    MASTER = "master"
+    TASK_SUBGRAPH = "task_subgraph"
 
 
 class VertexType(str, Enum):
@@ -46,12 +50,16 @@ class VertexType(str, Enum):
     GATE = "gate"               # Decision / approval point
     SETUP = "setup"             # Project scaffolding + environment provisioning
 
-    # Master map vertex types
+    # Paměťová mapa vertex types
     CLIENT = "client"           # Client organization in hierarchy
     PROJECT = "project"         # Project within client
     ASK_USER = "ask_user"       # Blocked — needs user input via chat
-    CHAT_EXCHANGE = "chat_exchange"  # Chat message → response pair
-    TASK_REF = "task_ref"       # Reference to a task sub-graph
+    REQUEST = "request"         # Chat message → agent execution → response
+    TASK_REF = "task_ref"       # Reference to a Myšlenková mapa
+    INCOMING = "incoming"       # Qualified item from indexation
+
+    # Legacy alias for DB compatibility
+    CHAT_EXCHANGE = "chat_exchange"
 
     # Legacy aliases (backward compat)
     TASK = "task"               # Generic task — auto-routed by agent_name
@@ -166,6 +174,10 @@ class GraphVertex(BaseModel):
     parent_id: str | None = None            # Parent vertex (if decomposed from)
     depth: int = 0                          # Decomposition depth
 
+    # Per-vertex agent state (for resume)
+    agent_messages: list[dict] = Field(default_factory=list)   # LLM message history
+    agent_iteration: int = 0                                    # Completed iterations
+
     # Execution metadata
     tools_used: list[str] = Field(default_factory=list)
     token_count: int = 0
@@ -176,19 +188,19 @@ class GraphVertex(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# TaskGraph
+# AgentGraph
 # ---------------------------------------------------------------------------
 
 
-class TaskGraph(BaseModel):
-    """Complete execution DAG for one task (or the master map).
+class AgentGraph(BaseModel):
+    """Complete execution DAG — Paměťová mapa or Myšlenková mapa.
 
     Contains all vertices and edges. Provides methods for graph traversal,
     topological ordering, context accumulation, and readiness detection.
 
     graph_type:
-    - MASTER: global singleton, all chat interactions + task refs
-    - TASK_SUBGRAPH: per-task sub-graph, linked to master via parent_graph_id
+    - MEMORY_MAP: global singleton, all chat interactions + task refs
+    - THINKING_MAP: per-task sub-graph, linked to Paměťová mapa
     """
 
     id: str
@@ -196,8 +208,8 @@ class TaskGraph(BaseModel):
     client_id: str
     project_id: str | None = None
 
-    graph_type: GraphType = GraphType.TASK_SUBGRAPH
-    parent_graph_id: str | None = None  # Master graph ID (for sub-graphs)
+    graph_type: GraphType = GraphType.THINKING_MAP
+    parent_graph_id: str | None = None  # Memory map ID (for Myšlenkové mapy)
 
     root_vertex_id: str
     vertices: dict[str, GraphVertex] = Field(default_factory=dict)
@@ -210,3 +222,7 @@ class TaskGraph(BaseModel):
     completed_at: str | None = None
     total_token_count: int = 0
     total_llm_calls: int = 0
+
+
+# Backward compatibility alias
+TaskGraph = AgentGraph

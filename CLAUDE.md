@@ -89,6 +89,7 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Environment mapper: `backend/server/.../mapper/EnvironmentMapper.kt` (toDto, toDocument, toAgentContext, toAgentContextJson)
 - Environment services: `backend/server/.../service/environment/` (EnvironmentService, EnvironmentK8sService, ComponentDefaults)
 - Environment internal API: `backend/server/.../rpc/internal/InternalEnvironmentRouting.kt` (CRUD REST for MCP/orchestrator)
+- Cache invalidation API: `backend/server/.../rpc/internal/InternalCacheRouting.kt` (POST /internal/cache/invalidate, calls GuidelinesService.clearCache())
 - Environment MCP tools: `backend/service-mcp/app/main.py` (environment_list, _get, _create, _deploy, etc.)
 - Environment orchestrator tools: `backend/service-orchestrator/app/tools/definitions.py` (ENVIRONMENT_TOOLS, DEVOPS_AGENT_TOOLS)
 - KB document DTOs: `shared/common-dto/.../kb/KbDocumentDtos.kt`
@@ -96,10 +97,12 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - KB document storage: `backend/server/.../storage/DirectoryStructureService.kt` (storeKbDocument, readKbDocument, deleteKbDocument)
 - KB document Python endpoints: `backend/service-knowledgebase/app/api/routes.py` (/documents/*)
 - KB document MCP tools: `backend/service-mcp/app/main.py` (kb_document_upload, kb_document_list, kb_document_delete)
-- Graph Agent: `backend/service-orchestrator/app/graph_agent/` (models.py, graph.py, decomposer.py, validation.py, langgraph_runner.py, tool_sets.py, persistence.py, progress.py, artifact_graph.py, impact.py)
+- Agent (unified): `backend/service-orchestrator/app/agent/` (models.py, graph.py, decomposer.py, validation.py, langgraph_runner.py, tool_sets.py, persistence.py, progress.py, artifact_graph.py, impact.py, vertex_executor.py, chat_router.py, sse_handler.py)
+- MongoDB tools + cache invalidation: `backend/service-orchestrator/app/tools/definitions.py` (MONGO_TOOLS), `backend/service-orchestrator/app/tools/executor.py` (handlers + auto cache invalidation), `backend/service-orchestrator/app/tools/kotlin_client.py` (invalidate_cache)
 - Graph UI visualization: `shared/ui-common/.../chat/TaskGraphComponents.kt` (TaskGraphSection, VertexCard, EdgeRow)
 - Graph DTOs: `shared/common-dto/.../graph/TaskGraphDtos.kt`, `shared/common-api/.../ITaskGraphService.kt`, `backend/server/.../rpc/TaskGraphRpcImpl.kt`
-- Graph Agent background dispatch: `backend/service-orchestrator/app/background/handler.py` (_run_graph_agent_background)
+- Agent background dispatch: `backend/service-orchestrator/app/background/handler.py` (_run_graph_agent_background)
+- Qualifier handler: `backend/service-orchestrator/app/unified/qualification_handler.py` (_record_incoming_vertex — creates INCOMING vertex in memory map after QUEUED qualification)
 - Task queue API: `backend/server/.../rpc/internal/InternalTaskApiRouting.kt` (GET /internal/tasks/queue, POST /internal/tasks/{id}/priority)
 - Queue tools: `backend/service-orchestrator/app/tools/definitions.py` (TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY, QUEUE_TOOLS)
 - Project management internal API: `backend/server/.../rpc/internal/InternalProjectManagementRouting.kt` (create client/project/connection REST)

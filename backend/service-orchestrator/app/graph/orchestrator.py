@@ -551,7 +551,7 @@ async def run_orchestration(
         request.processing_mode, request.task_id,
     )
 
-    from app.graph_agent.langgraph_runner import run_graph_agent
+    from app.agent.langgraph_runner import run_graph_agent
     return await run_graph_agent(request, thread_id)
 
     graph = get_orchestrator_graph()

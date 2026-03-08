@@ -161,6 +161,10 @@ class GuidelinesService(
         }
     }
 
+    fun clearCache() {
+        mergedCache.clear()
+    }
+
     private fun invalidateCache(clientId: ClientId?, projectId: ProjectId?) {
         // Invalidate all entries that could be affected by this scope change
         val keysToRemove = mergedCache.keys.filter { key ->

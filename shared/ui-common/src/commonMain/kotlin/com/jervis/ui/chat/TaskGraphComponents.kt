@@ -522,7 +522,9 @@ private fun statusLabel(status: String): String = when (status) {
 private fun vertexTypeIcon(type: String): ImageVector = when (type) {
     "client" -> Icons.Default.Business
     "project" -> Icons.Default.Folder
-    "chat_exchange" -> Icons.Default.ArrowForward
+    "request" -> Icons.Default.ArrowForward
+    "chat_exchange" -> Icons.Default.ArrowForward  // Legacy
+    "incoming" -> Icons.Default.Email
     "task_ref" -> Icons.Default.PlayArrow
     "planner" -> Icons.Default.AccountTree
     "investigator" -> Icons.Default.Schedule
@@ -537,7 +539,9 @@ private fun vertexTypeIcon(type: String): ImageVector = when (type) {
 private fun vertexTypeLabel(type: String): String = when (type) {
     "client" -> "Klient"
     "project" -> "Projekt"
-    "chat_exchange" -> "Chat"
+    "request" -> "Požadavek"
+    "chat_exchange" -> "Požadavek"  // Legacy
+    "incoming" -> "Příchozí"
     "task_ref" -> "Úloha"
     "planner" -> "Plánovač"
     "investigator" -> "Průzkumník"

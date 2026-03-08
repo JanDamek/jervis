@@ -80,8 +80,8 @@ async def _run_graph_agent_background(
         thread_id: Thread ID for LangGraph checkpointing. If None, generates one.
                    Must match what's tracked in _active_tasks for interrupt/resume to work.
     """
-    from app.graph_agent.langgraph_runner import run_graph_agent
-    from app.graph_agent.persistence import task_graph_store
+    from app.agent.langgraph_runner import run_graph_agent
+    from app.agent.persistence import agent_store
 
     if not thread_id:
         thread_id = f"graph-{request.task_id}-{uuid.uuid4().hex[:8]}"
@@ -101,7 +101,7 @@ async def _run_graph_agent_background(
     success = graph_status not in ("failed", "cancelled")
     summary = state.get("final_result", "")
     try:
-        await task_graph_store.link_task_subgraph(
+        await agent_store.link_thinking_map(
             task_id=request.task_id,
             sub_graph_id=graph_id,
             title=request.query[:80] if request.query else f"Task {request.task_id}",
@@ -152,7 +152,7 @@ async def _run_coding_agent_background(
     """
     from app.agents.job_runner import job_runner
     from app.agents.workspace_manager import workspace_manager
-    from app.graph_agent.persistence import task_graph_store
+    from app.agent.persistence import agent_store
     from app.tools.kotlin_client import kotlin_client
 
     agent_type = request.agent_preference if request.agent_preference != "auto" else "claude"
@@ -238,7 +238,7 @@ async def _run_coding_agent_background(
 
     # 6. Link to master map (not completed yet — watcher will update)
     try:
-        await task_graph_store.link_task_subgraph(
+        await agent_store.link_thinking_map(
             task_id=request.task_id,
             sub_graph_id="",
             title=request.query[:80] if request.query else f"Coding {request.task_id}",

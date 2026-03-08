@@ -4,10 +4,13 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * DTOs for transferring TaskGraph data to the UI.
+ * DTOs for transferring AgentGraph data to the UI.
  *
- * Mirrors the Python graph_agent models (snake_case in MongoDB)
+ * Mirrors the Python agent models (snake_case in MongoDB)
  * with Kotlin naming conventions.
+ *
+ * GraphType values: "memory_map" (Paměťová mapa), "thinking_map" (Myšlenková mapa)
+ * Legacy DB values "master" and "task_subgraph" are also accepted.
  */
 
 @Serializable

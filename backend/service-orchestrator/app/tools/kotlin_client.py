@@ -752,6 +752,19 @@ class KotlinServerClient:
             logger.warning("Failed to remove filter rule %s: %s", rule_id, e)
             return f"Error: {e}"
 
+    async def invalidate_cache(self, collection: str) -> None:
+        """Invalidate Kotlin in-memory cache for a collection after MongoDB write."""
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                "/internal/cache/invalidate",
+                json={"collection": collection},
+            )
+            if resp.status_code != 200:
+                logger.warning("Cache invalidation returned %d for %s", resp.status_code, collection)
+        except Exception as e:
+            logger.warning("Cache invalidation failed for %s: %s", collection, e)
+
     async def close(self):
         if self._client and not self._client.is_closed:
             await self._client.aclose()

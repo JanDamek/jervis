@@ -1,6 +1,6 @@
 """LangGraph-based runner for Graph Agent.
 
-Uses LangGraph (proven framework) for execution, with TaskGraph as the
+Uses LangGraph (proven framework) for execution, with AgentGraph as the
 planning structure. Each vertex type maps to a LangGraph node handler
 that performs a specific responsibility:
 
@@ -17,7 +17,7 @@ The graph is a loop:
   decompose → select_next → dispatch_vertex → complete_vertex → [loop back to select_next]
                                                               → synthesize (when all done)
 
-TaskGraph is carried in LangGraph state — LangGraph handles checkpointing,
+AgentGraph is carried in LangGraph state — LangGraph handles checkpointing,
 interrupt/resume, and execution flow. We just teach it HOW to think.
 """
 
@@ -40,8 +40,8 @@ from app.graph.nodes._helpers import (
     llm_with_cloud_fallback,
     parse_json_response,
 )
-from app.graph_agent.decomposer import decompose_root, decompose_vertex
-from app.graph_agent.graph import (
+from app.agent.decomposer import decompose_root, decompose_vertex
+from app.agent.graph import (
     complete_vertex,
     fail_vertex,
     get_ready_vertices,
@@ -49,25 +49,25 @@ from app.graph_agent.graph import (
     get_final_result,
     get_stats,
 )
-from app.graph_agent.models import (
+from app.agent.models import (
     EdgeType,
     GraphStatus,
     GraphVertex,
-    TaskGraph,
+    AgentGraph,
     VertexStatus,
     VertexType,
 )
-from app.graph_agent.graph import create_task_graph
-from app.graph_agent.persistence import task_graph_store
-from app.graph_agent.progress import (
+from app.agent.graph import create_task_graph
+from app.agent.persistence import agent_store
+from app.agent.progress import (
     report_decomposition_progress,
     report_graph_status,
     report_vertex_completed,
     report_vertex_started,
 )
-from app.graph_agent.impact import analyze_impact
-from app.graph_agent.tool_sets import get_default_tools, get_tools_by_category
-from app.graph_agent.validation import validate_graph
+from app.agent.impact import analyze_impact
+from app.agent.tool_sets import get_default_tools, get_tools_by_category
+from app.agent.validation import validate_graph
 from app.models import ChatHistoryPayload, CodingTask, DelegationMessage, OrchestrateRequest
 from app.tools.executor import AskUserInterrupt, execute_tool
 from app.tools.ollama_parsing import extract_tool_calls
@@ -93,7 +93,7 @@ class GraphAgentState(TypedDict, total=False):
     allow_cloud_prompt: bool
 
     # Graph Agent specific
-    task_graph: dict | None             # TaskGraph serialized
+    task_graph: dict | None             # AgentGraph serialized
     current_vertex_id: str | None       # Vertex being processed
     ready_vertex_ids: list[str]         # All READY vertices for parallel execution
     graph_error: str | None             # Error if graph-level failure
@@ -106,7 +106,7 @@ class GraphAgentState(TypedDict, total=False):
 
 
 async def node_decompose(state: GraphAgentState) -> dict:
-    """Decompose the user request into a TaskGraph (vertices + edges).
+    """Decompose the user request into a AgentGraph (vertices + edges).
 
     ALWAYS goes through LLM decomposition — even simple questions like
     "kolik je hodin?" because complexity can't be judged from text length.
@@ -176,8 +176,8 @@ async def node_decompose(state: GraphAgentState) -> dict:
         }
 
     # Cache in RAM + mark dirty for async DB flush
-    task_graph_store.cache_subgraph(graph)
-    task_graph_store.mark_dirty(graph.task_id)
+    agent_store.cache_subgraph(graph)
+    agent_store.mark_dirty(graph.task_id)
     await report_graph_status(graph, f"Decomposed into {len(graph.vertices) - 1} vertices")
 
     return {
@@ -202,7 +202,7 @@ async def node_select_next(state: GraphAgentState) -> dict:
     if not graph_data:
         return {"current_vertex_id": None}
 
-    graph = TaskGraph(**graph_data)
+    graph = AgentGraph(**graph_data)
 
     # Stop scheduling if graph is cancelled or failed
     if graph.status == GraphStatus.CANCELLED:
@@ -242,7 +242,7 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
     - PLANNER/DECOMPOSE → recursive decomposition
     - All others        → agentic tool loop
     """
-    graph = TaskGraph(**state["task_graph"])
+    graph = AgentGraph(**state["task_graph"])
     ready_ids = state.get("ready_vertex_ids", [])
 
     # Fallback to single vertex for backward compat
@@ -263,8 +263,8 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
     # on shared mutable state (vertices dict, edges, token counts).
     import copy
 
-    async def _run(vid: str) -> TaskGraph:
-        graph_copy = TaskGraph(**copy.deepcopy(graph.model_dump()))
+    async def _run(vid: str) -> AgentGraph:
+        graph_copy = AgentGraph(**copy.deepcopy(graph.model_dump()))
         return await _execute_single_vertex(graph_copy, vid, state)
 
     results = await asyncio.gather(
@@ -278,7 +278,7 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
         if isinstance(res, Exception):
             logger.error("Parallel vertex %s failed: %s", vid, res)
             fail_vertex(graph, vid, str(res))
-        elif isinstance(res, TaskGraph):
+        elif isinstance(res, AgentGraph):
             # 1. Merge the executed vertex itself
             if vid in res.vertices:
                 graph.vertices[vid] = res.vertices[vid]
@@ -304,7 +304,7 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
                 graph.total_llm_calls += src_v.llm_calls
 
     # Recalculate downstream readiness after all merges are done
-    from app.graph_agent.graph import get_outgoing_edges
+    from app.agent.graph import get_outgoing_edges
     for vid in ready_ids:
         for edge in get_outgoing_edges(graph, vid):
             target = graph.vertices.get(edge.target_id)
@@ -319,10 +319,10 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
 
 
 async def _execute_single_vertex(
-    graph: TaskGraph,
+    graph: AgentGraph,
     vertex_id: str,
     state: dict,
-) -> TaskGraph:
+) -> AgentGraph:
     """Execute a single vertex (shared logic for serial and parallel paths)."""
     vertex = start_vertex(graph, vertex_id)
     if not vertex:
@@ -380,8 +380,8 @@ async def _execute_single_vertex(
             logger.warning("Impact analysis failed for vertex %s: %s", vertex_id, e)
 
     # Update RAM cache + mark dirty (periodic flush handles DB write)
-    task_graph_store.cache_subgraph(graph)
-    task_graph_store.mark_dirty(graph.task_id)
+    agent_store.cache_subgraph(graph)
+    agent_store.mark_dirty(graph.task_id)
 
     return graph
 
@@ -397,7 +397,7 @@ async def node_synthesize(state: GraphAgentState) -> dict:
     if not graph_data:
         return {"final_result": state.get("graph_error", "No graph available")}
 
-    graph = TaskGraph(**graph_data)
+    graph = AgentGraph(**graph_data)
     has_failures = any(v.status == VertexStatus.FAILED for v in graph.vertices.values())
     graph.status = GraphStatus.FAILED if has_failures else GraphStatus.COMPLETED
     graph.completed_at = str(int(time.time()))
@@ -442,8 +442,8 @@ async def node_synthesize(state: GraphAgentState) -> dict:
         result = raw_result
 
     # Final save — synchronous (graph is complete, flush immediately)
-    await task_graph_store.save(graph)
-    task_graph_store.remove_cached_subgraph(graph.task_id)
+    await agent_store.save(graph)
+    agent_store.remove_cached_subgraph(graph.task_id)
     await report_graph_status(graph, "Graph execution completed")
 
     logger.info(
@@ -511,16 +511,16 @@ _checkpointer: MongoDBSaver | None = None
 
 
 async def init_graph_agent_checkpointer() -> None:
-    """Initialize MongoDB checkpointer + TaskGraphStore for Graph Agent."""
+    """Initialize MongoDB checkpointer + AgentStore for Graph Agent."""
     global _checkpointer, _compiled_graph
     client = MongoClient(settings.mongodb_url)
     _checkpointer = MongoDBSaver(client, db_name="jervis_graph_agent")
     _compiled_graph = None
 
-    # Initialize TaskGraphStore (MongoDB + RAM cache + periodic flush)
-    await task_graph_store.init()
+    # Initialize AgentStore (MongoDB + RAM cache + periodic flush)
+    await agent_store.init()
 
-    logger.info("Graph Agent LangGraph checkpointer + TaskGraphStore initialized")
+    logger.info("Graph Agent LangGraph checkpointer + AgentStore initialized")
 
 
 def _get_compiled_graph():
@@ -758,7 +758,7 @@ async def _agentic_vertex(
         # --- Cancellation check: bail out if graph was cancelled externally ---
         graph_data = state.get("task_graph")
         if graph_data:
-            live_graph = TaskGraph(**graph_data) if isinstance(graph_data, dict) else graph_data
+            live_graph = AgentGraph(**graph_data) if isinstance(graph_data, dict) else graph_data
             if live_graph.status == GraphStatus.CANCELLED:
                 logger.info("Vertex %s: graph cancelled, aborting agentic loop", vertex.id)
                 vertex.status = VertexStatus.CANCELLED
@@ -970,10 +970,10 @@ async def _dispatch_vertex_handler(
 
 
 async def _handle_decompose_vertex(
-    graph: TaskGraph,
+    graph: AgentGraph,
     vertex: GraphVertex,
     state: dict,
-) -> TaskGraph:
+) -> AgentGraph:
     """Handle PLANNER/DECOMPOSE vertex — recursive decomposition.
 
     Instead of executing the vertex via LLM tool loop, calls decompose_vertex()
@@ -983,7 +983,7 @@ async def _handle_decompose_vertex(
     If decomposition fails or hits depth/count limits, the vertex is converted
     to EXECUTOR and falls through to the agentic tool loop on next dispatch.
     """
-    from app.graph_agent.decomposer import MAX_DECOMPOSE_DEPTH, MAX_TOTAL_VERTICES
+    from app.agent.decomposer import MAX_DECOMPOSE_DEPTH, MAX_TOTAL_VERTICES
 
     vertex_id = vertex.id
 

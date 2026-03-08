@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.graph_agent.models import VertexType
+from app.agent.models import VertexType
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +196,7 @@ def get_tools_by_category(category: str) -> list[dict]:
         TOOL_TASK_QUEUE_SET_PRIORITY,
         ENVIRONMENT_TOOLS,
         PROJECT_MANAGEMENT_TOOLS,
+        MONGO_TOOLS,
     )
     from app.chat.tools import (
         TOOL_DISPATCH_CODING_AGENT,
@@ -221,6 +222,7 @@ def get_tools_by_category(category: str) -> list[dict]:
         "queue": [TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY],
         "environment": ENVIRONMENT_TOOLS,
         "project_management": PROJECT_MANAGEMENT_TOOLS,
+        "settings": MONGO_TOOLS,
         "setup": ENVIRONMENT_TOOLS + PROJECT_MANAGEMENT_TOOLS + [
                  TOOL_ASK_USER, TOOL_DISPATCH_CODING_AGENT,
                  TOOL_GET_REPOSITORY_INFO, TOOL_GET_REPOSITORY_STRUCTURE],
@@ -245,10 +247,12 @@ def _build_request_tools_definition() -> dict:
             "description": (
                 "Request additional tools if the current set is insufficient. "
                 "Available categories: kb, web, git, code, memory, scheduling, "
-                "interactive, guidelines, meetings, queue, environment, project_management, setup, all. "
+                "interactive, guidelines, meetings, queue, environment, "
+                "project_management, settings, setup, all. "
                 "Use 'interactive' to get ask_user for dialog with the user. "
                 "Use 'guidelines' to read/update project rules. "
                 "Use 'meetings' to classify/list meeting recordings. "
+                "Use 'settings' to read/write MongoDB documents (self-management). "
                 "Use 'all' to get every available tool."
             ),
             "parameters": {
@@ -257,7 +261,7 @@ def _build_request_tools_definition() -> dict:
                     "categories": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Tool categories to add: kb, web, git, code, memory, scheduling, interactive, guidelines, meetings, queue, environment, project_management, setup, all",
+                        "description": "Tool categories to add: kb, web, git, code, memory, scheduling, interactive, guidelines, meetings, queue, environment, project_management, settings, setup, all",
                     },
                     "reason": {
                         "type": "string",

@@ -41,11 +41,11 @@ async def chat(request: ChatRequest):
     Flow: User message → agentic loop → streamed SSE events → Kotlin → UI.
     handle_chat is an async generator yielding ChatStreamEvent objects.
     """
-    from app.chat.handler import handle_chat
+    from app.agent.sse_handler import handle_chat_sse
 
     async def sse_stream():
         try:
-            async for event in handle_chat(request):
+            async for event in handle_chat_sse(request):
                 data = event.model_dump_json()
                 if event.type == "approval_request":
                     logger.info("SSE: emitting approval_request event to HTTP stream")
@@ -136,7 +136,7 @@ async def orchestrate(request: dict):
             if not result.get("summary") and not result.get("success", True):
                 # Likely an interrupt — check checkpoint for interrupt data
                 try:
-                    from app.graph_agent.langgraph_runner import _get_compiled_graph
+                    from app.agent.langgraph_runner import _get_compiled_graph
                     compiled = _get_compiled_graph()
                     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
                     graph_state = await compiled.aget_state(config)

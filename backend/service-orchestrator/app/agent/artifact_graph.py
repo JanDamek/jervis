@@ -6,12 +6,12 @@ Code structure is imported from Joern CPG (already in KB via KnowledgeNodes).
 
 - **Artifacts** (vertex collection): any entity (class, meeting, document, person, etc.)
 - **Dependencies** (edge collection): structural/organizational relationships
-- **TaskTouches** (edge collection): which TaskGraph vertex touches which entity
+- **TaskTouches** (edge collection): which AgentGraph vertex touches which entity
 
 **Impact analysis** — the core value:
 When a vertex completes with a change (e.g. renames a class, reschedules a meeting),
 we traverse dependencies to find ALL affected entities → check which planned
-TaskGraph vertices touch those entities → create new validation/fix vertices
+AgentGraph vertices touch those entities → create new validation/fix vertices
 or mark existing ones as needing re-execution.
 
 This is the mechanism that makes it impossible for a class rename in vertex A
@@ -177,12 +177,12 @@ class ArtifactDep(BaseModel):
 
 
 class TaskArtifactLink(BaseModel):
-    """Link between a TaskGraph vertex and an artifact it touches."""
+    """Link between a AgentGraph vertex and an artifact it touches."""
 
-    vertex_id: str                      # TaskGraph vertex ID
+    vertex_id: str                      # AgentGraph vertex ID
     artifact_key: str                   # Artifact key
     touch_kind: TouchKind
-    task_graph_id: str = ""             # Which TaskGraph this belongs to
+    task_graph_id: str = ""             # Which AgentGraph this belongs to
     detail: str = ""                    # What exactly changed
 
 
@@ -452,7 +452,7 @@ class ArtifactGraphStore:
     # -------------------------------------------------------------------
 
     async def link_task_to_artifact(self, link: TaskArtifactLink) -> str:
-        """Link a TaskGraph vertex to an artifact it touches.
+        """Link a AgentGraph vertex to an artifact it touches.
 
         Stored as a document (not edge) with explicit artifact_key reference.
         """

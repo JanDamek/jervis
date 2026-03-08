@@ -19,7 +19,7 @@ import uuid
 
 from app.config import settings
 from app.graph.nodes._helpers import llm_with_cloud_fallback
-from app.graph_agent.artifact_graph import (
+from app.agent.artifact_graph import (
     Artifact,
     ArtifactDep,
     ArtifactKind,
@@ -28,11 +28,11 @@ from app.graph_agent.artifact_graph import (
     TouchKind,
     artifact_graph_store,
 )
-from app.graph_agent.graph import add_edge
-from app.graph_agent.models import (
+from app.agent.graph import add_edge
+from app.agent.models import (
     EdgeType,
     GraphVertex,
-    TaskGraph,
+    AgentGraph,
     VertexStatus,
     VertexType,
 )
@@ -184,7 +184,7 @@ async def extract_touched_artifacts(
 
 
 async def analyze_impact(
-    graph: TaskGraph,
+    graph: AgentGraph,
     vertex: GraphVertex,
     state: dict,
 ) -> list[str]:

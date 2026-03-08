@@ -151,7 +151,7 @@ async def _handle_create_background_task(args, client_id, project_id, kotlin_cli
 
 
 async def _handle_create_thinking_map(args, client_id, project_id, _kotlin_client):
-    """Create a new thinking map (TaskGraph) for the chat session."""
+    """Create a new thinking map (AgentGraph) for the chat session."""
     from app.chat.thinking_map import create_map
     # session_id is injected by _execute_chat_specific_tool
     session_id = args.pop("__session_id__", None)
@@ -418,17 +418,17 @@ async def _handle_query_action_log(args, client_id, _project_id, _kotlin_client)
 
 async def _handle_check_task_graph(args, _client_id, _project_id, _kotlin_client):
     """Check state of a task's thinking map (graph)."""
-    from app.graph_agent.persistence import task_graph_store
-    from app.graph_agent.graph import get_stats, find_blocked_vertices
+    from app.agent.persistence import agent_store
+    from app.agent.graph import get_stats, find_blocked_vertices
 
     task_id = args.get("task_id", "")
     if not task_id:
         return "Chyba: chybí task_id."
 
     # Try RAM cache first, then DB
-    graph = task_graph_store.get_cached_subgraph(task_id)
+    graph = agent_store.get_cached_subgraph(task_id)
     if not graph:
-        graph = await task_graph_store.load(task_id)
+        graph = await agent_store.load(task_id)
     if not graph:
         return f"Graf pro úkol {task_id} nenalezen."
 
@@ -451,7 +451,7 @@ async def _handle_check_task_graph(args, _client_id, _project_id, _kotlin_client
 
 async def _handle_answer_blocked_vertex(args, _client_id, _project_id, _kotlin_client):
     """Answer a blocked ASK_USER vertex to unblock graph processing."""
-    from app.graph_agent.persistence import task_graph_store
+    from app.agent.persistence import agent_store
 
     task_id = args.get("task_id", "")
     vertex_id = args.get("vertex_id", "")
@@ -460,7 +460,7 @@ async def _handle_answer_blocked_vertex(args, _client_id, _project_id, _kotlin_c
     if not task_id or not vertex_id or not answer:
         return "Chyba: chybí task_id, vertex_id nebo answer."
 
-    success = await task_graph_store.resume_blocked_vertex(task_id, vertex_id, answer)
+    success = await agent_store.resume_blocked_vertex(task_id, vertex_id, answer)
     if success:
         return f"Vertex {vertex_id} odemčen odpovědí. Graf pokračuje ve zpracování."
     return f"Nepodařilo se odemknout vertex {vertex_id} — buď neexistuje nebo není blokovaný."

@@ -19,12 +19,12 @@
 10. [Security Architecture](#security-architecture)
 11. [Resilience Patterns](#resilience-patterns)
 12. [Coding Agents](#coding-agents)
-13. [Python Orchestrator](#python-orchestrator)
+13. [Unified Agent (Python)](#unified-agent-python)
 14. [Dual-Queue System & Inline Message Delivery](#dual-queue-system--inline-message-delivery)
 15. [Notification System](#notification-system)
 16. [Foreground Chat (ChatSession)](#foreground-chat-chatsession)
 17. [Guidelines Engine](#guidelines-engine)
-18. [Intent Router](#intent-router-feature-flagged)
+18. [Chat Router](#chat-router)
 19. [Hierarchical Task System](#hierarchical-task-system)
 20. [Unified Chat Stream](#unified-chat-stream)
 
@@ -34,13 +34,12 @@
 
 The Jervis system is built on several key architectural patterns:
 
-- **Python Orchestrator (LangGraph)**: Agent runtime for coding workflows and complex task execution
-- **SimpleQualifierAgent**: CPU-based indexing agent calling KB microservice directly, with optional LLM qualification for complex items
+- **Unified Agent (LangGraph)**: ONE agent for all interactions — chat (foreground) and background tasks. Paměťová mapa (Memory Map) + Myšlenková mapa (Thinking Map). See [graph-agent-architecture.md](graph-agent-architecture.md)
+- **SimpleQualifierAgent**: CPU-based indexing agent calling KB microservice directly, with optional LLM qualification for complex items. Creates INCOMING vertices in Paměťová mapa.
 - **Kotlin RPC (kRPC)**: Type-safe, cross-platform messaging framework for client-server communication
 - **3-Stage Polling Pipeline**: Polling → Indexing → Pending Tasks → Qualifier Agent
 - **Knowledge Graph (ArangoDB)**: Centralized structured relationships between all entities
 - **Vision Processing**: Two-stage vision analysis for document understanding
-- **Multi-Agent Delegation**: 19 specialist agents orchestrated via delegation DAG (feature-flagged)
 
 ---
 
@@ -975,222 +974,109 @@ Each agent has its own build script in `k8s/build_<name>.sh` which calls the gen
 
 ---
 
-## Python Orchestrator
+## Unified Agent (Python)
 
-> Authoritative spec: [orchestrator-final-spec.md](orchestrator-final-spec.md).
+> **SSOT:** [graph-agent-architecture.md](graph-agent-architecture.md)
 
 ### Overview
 
-The Python Orchestrator (`backend/service-orchestrator/`) is a FastAPI service using LangGraph
-that centrally manages coding workflows. It runs as a separate K8s Deployment and communicates
-with the Kotlin server via REST.
+The Unified Agent (`backend/service-orchestrator/`) is a FastAPI service using LangGraph
+that handles ALL interactions — foreground chat AND background tasks. Runs as a separate
+K8s Deployment, communicates with Kotlin server via REST + SSE.
 
-**Key principle**: Orchestrator = brain, coding agents = hands. The orchestrator decides WHAT
-to do and WHEN; agents just execute.
+**Key principle**: ONE agent for everything. Chat messages create REQUEST vertices in the
+Paměťová mapa (Memory Map). Background tasks create Myšlenkové mapy (Thinking Maps).
+Qualifier creates INCOMING vertices. All share the same agentic loop (`vertex_executor.py`).
 
-### Architecture (KB-First, Push-Based Communication)
+### Architecture
 
 ```
-Kotlin Server (BackgroundEngine)
-    │
-    ├── POST /orchestrate/stream ──► Python Orchestrator (LangGraph)
-    │   (fire-and-forget,               │
-    │    returns thread_id)              ├── intake → evidence → route
-    │                                    │   ├── ADVICE → respond → finalize
-    │                                    │   ├── SINGLE_TASK → plan → execute loop → finalize
-    │                                    │   ├── EPIC → plan_epic → execution waves
-    │                                    │   └── GENERATIVE → design → execution
-    │                                    │
-    │   ◄── POST /internal/             │   Python pushes progress on each node:
-    │       orchestrator-progress ──────│   - node name, message, goal/step indices
-    │   (real-time node progress)        │   - updates stateChangedAt for stuck detection
-    │                                    │
-    │   ◄── POST /internal/             │   Python pushes status on completion:
-    │       orchestrator-status ────────│   - done/error/interrupted + details
-    │   (completion/error/interrupt)      │
-    │                                    └── interrupt() for approval (commit/push/epic plan)
-    ├── POST /approve/{thread_id} ──► resume from checkpoint
-    │   (after USER_TASK response)
-    │
-    ├── GET /status/{thread_id} ◄─── safety-net polling (60s, NOT primary)
-    │
-    ├── OrchestratorStatusHandler       (task state transitions)
-    └── TaskDocument (MongoDB) = SSOT for lifecycle state + stuck detection timestamps
+┌─────────────────┐        ┌──────────────────────────────────────────┐
+│   UI (Compose)  │        │   Python Unified Agent (FastAPI)         │
+│                 │ kRPC   │                                          │
+│ ChatViewModel   │◄──────►│  POST /chat ──► sse_handler.py           │
+│ subscribeTo-    │  SSE   │    ├── chat_router.py → route to vertex  │
+│ ChatEvents()    │        │    ├── vertex_executor.py (agentic loop) │
+│                 │        │    └── ChatStreamEvent SSE stream        │
+└────────┬────────┘        │                                          │
+         │                 │  POST /orchestrate/v2 ──► background     │
+┌────────▼────────┐        │    ├── langgraph_runner.py               │
+│  Kotlin Server  │ REST   │    ├── vertex_executor.py (shared)       │
+│  (Spring Boot)  │◄──────►│    └── callback to Kotlin                │
+│                 │        │                                          │
+│  ChatService    │        │  Paměťová mapa (RAM singleton)           │
+│  PythonChat-    │        │  AgentStore (persistence.py)             │
+│  Client (SSE)   │        └──────────────────────────────────────────┘
+│  BackgroundEng. │
+└─────────────────┘
 ```
 
-**4 task categories** with intelligent routing:
-- **ADVICE**: Direct LLM + KB answer (no coding, no K8s Jobs)
-- **SINGLE_TASK**: May or may not code — step types: respond, code, tracker_ops, mixed
-- **EPIC**: Batch execution in waves from tracker issues
-- **GENERATIVE**: Design full structure from high-level goal, then execute
-
-**Communication model**: Push-based (Python → Kotlin) with 60s safety-net polling.
-- **Primary**: Python pushes `orchestrator-progress` on each node transition and `orchestrator-status` on completion
-- **Safety net**: BackgroundEngine polls every 60s to catch missed callbacks (network failure, process restart)
-- **Stuck detection**: Timestamp-based — uses `orchestrationStartedAt` / `stateChangedAt` fields from DB; 15 min without progress = stuck (STUCK_THRESHOLD_MINUTES = 15)
-- **UI**: Kotlin broadcasts events via Flow-based subscriptions (no UI polling)
-- **task_id convention**: `task_id` sent to Python in `OrchestrateRequestDto` is `task.id.toString()` (MongoDB document `_id`). Python sends this same `task_id` back in all callbacks. `OrchestratorStatusHandler` resolves it via `taskRepository.findById(TaskId(ObjectId(taskId)))`. The `correlationId` field on `TaskDocument` is a separate identifier used for idempotency/deduplication, NOT sent to Python.
-
-**JERVIS Internal Project**: Each client has max 1 `isJervisInternal=true` project. Auto-created on first orchestration for tracker/wiki operations.
+**Communication model**: Push-based (Python → Kotlin) with safety-net polling.
+- **Foreground chat**: SSE stream (Python → Kotlin → UI)
+- **Background tasks**: Push callbacks (`orchestrator-progress`, `orchestrator-status`)
+- **Safety net**: BackgroundEngine polls every 60s
+- **Stuck detection**: Timestamp-based, 15 min without progress = stuck
 
 ### State Persistence
 
-- **TaskDocument** (Kotlin/MongoDB): SSOT for task lifecycle, `orchestratorThreadId`, USER_TASK state
-- **LangGraph checkpoints** (Python/MongoDB): Graph execution state, auto-saved after every node
-- **Checkpointer**: `AsyncMongoDBSaver` from `langgraph-checkpoint-mongodb` (same MongoDB instance)
-- Thread ID is the link between TaskDocument and LangGraph checkpoint
+- **TaskDocument** (Kotlin/MongoDB): SSOT for task lifecycle, USER_TASK state
+- **AgentGraph** (Python/MongoDB `task_graphs`): Graph structure — vertices, edges, status
+- **AgentStore** (Python RAM): In-memory singleton for Paměťová mapa, periodic DB flush (30s)
+- **Per-vertex state**: `agent_messages` + `agent_iteration` on GraphVertex for resume
 
 ### Chat Context Persistence
-
-Agent memory across conversations. Two paths:
 
 **Foreground chat:** Python `ChatContextAssembler` reads MongoDB directly (motor) to build LLM context.
 Messages keyed by `conversationId` (= `ChatSessionDocument._id`).
 
-**Background orchestration:** Kotlin prepares context payload and sends with dispatch request.
-
 **Three layers:**
 1. **Recent messages** (verbatim): Last 20 `ChatMessageDocument` records
-2. **Rolling summaries** (compressed): `ChatSummaryDocument` collection — LLM-compressed blocks of 20 messages each
-3. **Search** (Phase 2): MongoDB full-text search for on-demand old context retrieval
-
-**Data flow (background orchestration):**
-```
-AgentOrchestratorService.dispatchToPythonOrchestrator()
-    → ChatHistoryService.prepareChatHistoryPayload(conversationId)
-    → OrchestrateRequestDto.chat_history = { recent_messages, summary_blocks, total_message_count }
-    ↓
-Python orchestrator uses chat_history in nodes:
-    - intake.py: last 5 messages for classification context
-    - respond.py: full conversation context in LLM prompt
-    - evidence.py: populates EvidencePack.chat_history_summary
-    ↓
-After orchestration completes (handleDone()):
-    → async: ChatHistoryService.compressIfNeeded(conversationId)
-    → if >20 unsummarized messages → POST /internal/compress-chat (Python LLM)
-    → Store ChatSummaryDocument in MongoDB
-```
-
-**Data flow (foreground chat):**
-```
-User sends message → Kotlin ChatService saves to chat_messages (conversationId = session._id)
-    → PythonChatClient POST /chat with session_id
-    → Python ChatContextAssembler reads chat_messages + chat_summaries from MongoDB (motor)
-    → Agentic loop with full context
-    → Fire-and-forget compression after response
-```
-
-**Token budget:** ~4000 tokens total (2000 recent + 1500 summaries + 500 decisions)
+2. **Rolling summaries** (compressed): `ChatSummaryDocument` collection
+3. **Paměťová mapa summary**: Injected into every system prompt (~2000 tokens)
 
 **MongoDB collections:**
-- `chat_messages` — individual messages (`conversationId` field, was `taskId`)
-- `chat_summaries` — compressed summary blocks (`conversationId` field, was `taskId`)
-- `chat_sessions` — session lifecycle (new, one active per user)
+- `chat_messages` — individual messages (`conversationId` field)
+- `chat_summaries` — compressed summary blocks
+- `chat_sessions` — session lifecycle (one active per user)
+- `task_graphs` — AgentGraph persistence (Paměťová mapa + Myšlenkové mapy)
 
-### Task State Machine (Python orchestrator path)
+### Task State Machine
 
 ```
-QUEUED → PROCESSING → done → DONE / DELETE
-                    │                → error → ERROR
-                    └── interrupted → USER_TASK → user responds → QUEUED (loop)
+QUEUED → PROCESSING → done → DONE
+                    │         → error → ERROR
+                    └── ASK_USER vertex → BLOCKED → user answers via chat → graph continues
 ```
 
-### Approval Flow (USER_TASK)
+### Approval Flow
 
-1. LangGraph hits `interrupt()` at `git_operations` node (commit/push approval)
-2. Checkpoint saved to MongoDB automatically
-3. Python pushes `orchestrator-status` with `status=interrupted` to Kotlin
-4. `OrchestratorStatusHandler` creates USER_TASK with notification
-5. UI receives `OrchestratorTaskStatusChange` event via Flow subscription
-6. User responds via UI → `UserTaskRpcImpl.sendToAgent()` → state = QUEUED
-7. BackgroundEngine picks up task → `resumePythonOrchestrator()` → POST /approve/{thread_id}
-8. LangGraph resumes from MongoDB checkpoint → continues from interrupt point
+**Foreground (chat):** SSE-based — `approval_request` event → UI dialog → `POST /chat/approve`
+**Background:** ASK_USER vertex → BLOCKED status → user answers via chat → `answer_blocked_vertex` tool
 
 ### Concurrency Control
 
-Only **one orchestration at a time** (LLM cannot handle concurrent requests efficiently).
-
-Two layers:
-1. **Kotlin** (early guard): `countByState(PROCESSING) > 0` → skip dispatch
-2. **Python**: No artificial concurrency limits — router manages GPU queue
-
-`/approve/{thread_id}` is fire-and-forget: returns immediately, Python resumes graph in background.
+Only **one background orchestration at a time**. Foreground chat runs independently (SSE stream).
+- **Kotlin**: `countByState(PROCESSING) > 0` → skip background dispatch
+- **Foreground preempts background**: CRITICAL priority on GPU queue
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `backend/service-orchestrator/app/main.py` | FastAPI endpoints, concurrency, MongoDB lifecycle, crash handler (atexit + SIGTERM) |
-| `backend/service-orchestrator/app/graph/orchestrator.py` | LangGraph StateGraph, 4-category routing, checkpointing |
-| `backend/service-orchestrator/app/graph/nodes/` | Modular nodes: intake, evidence, respond, plan, execute, evaluate, git_ops, finalize, coding, epic, design |
-| `backend/service-orchestrator/app/context/context_store.py` | MongoDB hierarchical context store (orchestrator_context) |
-| `backend/service-orchestrator/app/context/context_assembler.py` | Per-node LLM context assembly (step/goal/epic levels) |
+| `backend/service-orchestrator/app/main.py` | FastAPI endpoints (/chat, /orchestrate/v2, /chat/approve, /chat/stop) |
+| `backend/service-orchestrator/app/agent/vertex_executor.py` | Unified agentic loop (LLM + tools) |
+| `backend/service-orchestrator/app/agent/chat_router.py` | Chat message → vertex routing |
+| `backend/service-orchestrator/app/agent/sse_handler.py` | SSE adapter for foreground chat |
+| `backend/service-orchestrator/app/agent/langgraph_runner.py` | LangGraph execution for background tasks |
+| `backend/service-orchestrator/app/agent/models.py` | AgentGraph, GraphVertex, enums |
+| `backend/service-orchestrator/app/agent/persistence.py` | AgentStore — RAM cache + DB flush |
+| `backend/service-orchestrator/app/agent/tool_sets.py` | Per-vertex-type tool sets + request_tools |
+| `backend/service-orchestrator/app/agent/graph.py` | Graph operations, hierarchy, vertex creation |
 | `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers) |
-| `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, JERVIS project resolution, concurrency guard |
-| `backend/server/.../BackgroundEngine.kt` | Safety-net polling (60s), timestamp-based stuck detection (STUCK_THRESHOLD_MINUTES = 15) |
-| `backend/server/.../OrchestratorStatusHandler.kt` | Task state transitions (push-based from Python callbacks) |
-| `backend/server/.../PythonOrchestratorClient.kt` | REST client for Python orchestrator (429 handling) |
+| `backend/server/.../BackgroundEngine.kt` | Safety-net polling, stuck detection, foreground preemption |
+| `backend/server/.../OrchestratorStatusHandler.kt` | Task state transitions (push-based from Python) |
 | `backend/service-orchestrator/app/tools/kotlin_client.py` | Push client: progress + status callbacks to Kotlin |
-| `backend/service-orchestrator/app/llm/provider.py` | LLM provider with streaming + token-arrival liveness |
-| `backend/service-orchestrator/app/agents/workspace_manager.py` | Workspace preparation (instructions, KB, environment context) |
-| `backend/service-orchestrator/app/agents/base.py` | BaseAgent abstract class, communication protocol, agentic loop |
-| `backend/service-orchestrator/app/agents/registry.py` | AgentRegistry singleton — agent discovery and capability listing |
-| `backend/service-orchestrator/app/agents/specialists/` | 19 specialist agents (code, git, review, test, research, tracker, wiki, docs, devops, PM, security, communication, email, calendar, admin, legal, financial, personal, learning) |
-| `backend/service-orchestrator/app/graph/nodes/plan_delegations.py` | LLM-driven agent selection and ExecutionPlan construction |
-| `backend/service-orchestrator/app/graph/nodes/execute_delegation.py` | Delegation dispatch and DAG parallel execution |
-| `backend/service-orchestrator/app/graph/nodes/synthesize.py` | Result merging, RAG cross-check, translation |
-| `backend/service-orchestrator/app/graph/dag_executor.py` | DAG executor for parallel delegation groups |
-| `backend/service-orchestrator/app/context/session_memory.py` | MongoDB session memory (7-day TTL, per-client/project) |
-| `backend/service-orchestrator/app/context/procedural_memory.py` | ArangoDB procedural memory (learned workflows) |
-| `backend/service-orchestrator/app/monitoring/delegation_metrics.py` | Per-agent delegation metrics collection |
-
-### Multi-Agent Delegation System (New)
-
-The orchestrator now supports a second execution path: the **7-node delegation graph** for multi-agent orchestration. This is controlled by the `use_delegation_graph` feature flag (default: `False`).
-
-**Delegation graph (7 nodes):**
-```
-intake → evidence_pack → plan_delegations → execute_delegation(s) → synthesize → finalize → END
-```
-
-**Key concepts:**
-- **plan_delegations**: LLM selects agents from AgentRegistry and builds an ExecutionPlan (DAG of delegations)
-- **execute_delegation**: Dispatches DelegationMessage to agents, supports parallel execution via DAG executor
-- **synthesize**: Merges AgentOutput results, performs RAG cross-check, translates to response language
-
-**19 Specialist Agents** across 4 tiers:
-
-| Tier | Agents | Purpose |
-|------|--------|---------|
-| **Tier 1 — Core** | CodingAgent, GitAgent, CodeReviewAgent, TestAgent, ResearchAgent | Code, git, review, testing, KB/web research |
-| **Tier 2 — DevOps & PM** | IssueTrackerAgent, WikiAgent, DocumentationAgent, DevOpsAgent, ProjectManagementAgent, SecurityAgent | Issue tracking, wiki, docs, CI/CD, project management, security |
-| **Tier 3 — Communication** | CommunicationAgent, EmailAgent, CalendarAgent, AdministrativeAgent | Communication hub, email, calendar, admin |
-| **Tier 4 — Business** | LegalAgent, FinancialAgent, PersonalAgent, LearningAgent | Legal, financial, personal assistance, learning |
-
-**Agent Communication Protocol:**
-Agents respond in a structured compact format (STATUS/RESULT/ARTIFACTS/ISSUES/CONFIDENCE/NEEDS_VERIFICATION). No hard truncation of agent outputs — agents are instructed to be maximally compact but include ALL substantive content.
-
-**Memory Layers:**
-
-| Layer | Storage | TTL | Purpose |
-|-------|---------|-----|---------|
-| Working Memory | LangGraph state | Per-orchestration | Current delegation stack, intermediate results |
-| Session Memory | MongoDB `session_memory` | 7 days | Per-client/project recent decisions |
-| Semantic Memory | KB (Weaviate + ArangoDB) | Permanent | Facts, conventions, decisions |
-| Procedural Memory | ArangoDB `ProcedureNode` | Permanent (usage-decay) | Learned workflow procedures |
-
-**Delegation protocol:**
-- Max depth: 4 (agents can sub-delegate recursively)
-- Cycle detection prevents infinite delegation loops
-- Token budgets per depth: 48k → 16k → 8k → 4k
-- Internal chain runs in English, final response translated to detected input language
-
-**Feature flags (all default False):**
-- `use_delegation_graph` — New 7-node graph vs legacy 14-node graph
-- `use_specialist_agents` — Specialist agents vs LegacyAgent fallback
-- `use_dag_execution` — Parallel DAG delegation execution
-- `use_procedural_memory` — Learning from successful orchestrations
-
+| `backend/service-orchestrator/app/llm/provider.py` | LLM provider with capability-based routing |
 ---
 
 ## Dual-Queue System & Inline Message Delivery
@@ -1719,13 +1605,13 @@ KB /internal/kb-done → KbResultRouter.routeTask()
 
 ### Overview
 
-Foreground chat uses a **direct agentic loop** (LLM + tools) instead of the LangGraph StateGraph.
+Foreground chat uses the **unified agent** — same `vertex_executor.py` agentic loop as background tasks.
 The user chats with Jervis like iMessage/WhatsApp — one global conversation (not per client/project).
-Jervis acts as a personal assistant with access to tools (KB search, task creation, meeting classification, etc.).
+Jervis acts as a personal assistant. Each chat message creates a REQUEST vertex in the Paměťová mapa.
 
-**Key difference from background orchestration:**
-- Background tasks still flow through LangGraph StateGraph (intake → evidence → plan → execute → finalize)
-- Foreground chat is a simple agentic loop: LLM decides → tool call → result → repeat (max 15 iterations)
+**Both foreground and background use the same agentic loop** (`vertex_executor.py`):
+- Foreground: SSE streaming via `sse_handler.py`, `chat_router.py` routes to correct vertex
+- Background: LangGraph StateGraph via `langgraph_runner.py`, delegates to `vertex_executor.py`
 
 ### Architecture
 
@@ -1930,63 +1816,26 @@ LLM reduction fails → return full content (NIKDY neořezávat!)
 - LLM prompt building (context_switch, composer, consolidation)
 - Agent output extraction (retention_policy facts)
 
-### Python Chat Tools
+### Agent Tools
 
-Available tools in the agentic loop, organized by tier:
+> Tool definitions are in `agent/tool_sets.py`. See [graph-agent-architecture.md](graph-agent-architecture.md) for full tool list.
 
-**CORE tools** (available in all modes):
+REQUEST vertex gets base tools (always available) + `request_tools` meta-tool for on-demand categories
+(calendar, email, slack, settings, project_management, environment, git, code, meetings, guidelines, queue).
+The `settings` category provides MongoDB self-management tools (`mongo_list_collections`, `mongo_get_document`,
+`mongo_update_document`) with auto cache invalidation after writes.
 
-| Tool | Purpose |
-|------|---------|
-| `kb_search` | Search knowledge base (Weaviate RAG) |
-| `kb_delete` | Delete KB items |
-| `web_search` | Search the internet |
-| `store_knowledge` | Store new knowledge into KB |
-| `get_kb_stats` | KB statistics (document counts, types) |
-| `get_indexed_items` | List indexed items for client/project |
-| `memory_store` | Store fact/decision for later recall |
-| `memory_recall` | Recall previously stored facts |
-| `push_urgent_alert` | Push urgent alert to chat |
-| `get_active_chat_topics` | Get recent chat topics for context |
-| `select_tier` | Request different LLM tier for next call |
-
-**EXTENDED tools** (CORE + background/research):
-
-| Tool | Purpose |
-|------|---------|
-| `dispatch_coding_agent` | Dispatch coding agent |
-| `create_background_task` | Create task for background processing |
-| `search_tasks` | Search all tasks by text + optional state filter |
-| `respond_to_user_task` | Respond to approval/clarification |
-| `list_recent_tasks` | Recent tasks with time/state/client filters |
-| `classify_meeting` | Classify ad-hoc meeting |
-| `list_unclassified_meetings` | List unclassified meetings |
-| `set_filter_rule` / `list_filter_rules` / `remove_filter_rule` | Manage content filter rules |
-
-**FULL tools** (EXTENDED + chat-only):
-
-| Tool | Purpose |
-|------|---------|
-| `switch_context` | Switch client/project context |
-| `list_affairs` | List ongoing affairs/matters |
-| Work plan tools | `create_work_plan`, etc. |
-| Guidelines tools | Manage project guidelines |
-| Environment tools | Environment CRUD |
-| Action logging | Record actions taken |
-
-**Chat-specific tools** (Kotlin internal API):
+**Chat-specific Kotlin internal endpoints:**
 
 | Tool | Endpoint | Purpose |
 |------|----------|---------|
 | `create_background_task` | `POST /internal/create-background-task` | Create task for background processing |
 | `dispatch_coding_agent` | `POST /internal/dispatch-coding-agent` | Dispatch coding agent |
-| `search_tasks` | `GET /internal/tasks/search` | Search all tasks by text + optional state filter |
-| `get_task_status` | `GET /internal/tasks/{id}/status` | Get task detail (state, content, error) |
-| `list_recent_tasks` | `GET /internal/tasks/recent` | Recent tasks with time/state/client filters |
+| `search_tasks` | `GET /internal/tasks/search` | Search all tasks |
 | `respond_to_user_task` | `POST /internal/respond-to-user-task` | Respond to approval/clarification |
 | `classify_meeting` | `POST /internal/classify-meeting` | Classify ad-hoc meeting |
-| `list_unclassified_meetings` | `GET /internal/unclassified-meetings` | List unclassified meetings |
-| `list_affairs` | Direct Python | List ongoing affairs/matters |
+| MCP bridge | `POST /internal/mcp/{tool_name}` | Calendar/Gmail/Slack proxy |
+| Cache invalidation | `POST /internal/cache/invalidate` | Invalidate Kotlin caches after MongoDB write |
 
 ### Internal API Routing (Ktor Modules)
 
@@ -1996,8 +1845,9 @@ Chat-specific Kotlin internal endpoints are organized as **Ktor routing modules*
 |--------|------|-----------|
 | `installInternalChatContextApi()` | `rpc/internal/InternalChatContextRouting.kt` | `/internal/clients-projects`, `/internal/pending-user-tasks/summary`, `/internal/unclassified-meetings/count` |
 | `installInternalTaskApi()` | `rpc/internal/InternalTaskApiRouting.kt` | `/internal/tasks/{id}/status`, `/internal/tasks/search`, `/internal/tasks/recent` |
+| `installInternalCacheApi()` | `rpc/internal/InternalCacheRouting.kt` | `/internal/cache/invalidate` |
 
-Installed in `KtorRpcServer` routing block via extension functions on `Routing`. Dependencies injected as function parameters (clientService, projectService, taskRepository, userTaskService).
+Installed in `KtorRpcServer` routing block via extension functions on `Routing`. Dependencies injected as function parameters (clientService, projectService, taskRepository, userTaskService, guidelinesService).
 
 ### Key Files
 
@@ -2009,21 +1859,18 @@ Installed in `KtorRpcServer` routing block via extension functions on `Routing`.
 | `backend/server/.../rpc/ChatRpcImpl.kt` | kRPC bridge: UI ↔ ChatService ↔ Python |
 | `backend/server/.../rpc/internal/InternalChatContextRouting.kt` | Ktor routing: clients-projects, pending tasks, meetings count |
 | `backend/server/.../rpc/internal/InternalTaskApiRouting.kt` | Ktor routing: task status, search, recent tasks |
+| `backend/server/.../rpc/internal/InternalCacheRouting.kt` | Ktor routing: cache invalidation after MongoDB writes |
 | `shared/common-api/.../service/IChatService.kt` | kRPC interface (subscribeToChatEvents, sendMessage, getChatHistory, archiveSession). `getChatHistory` has `excludeBackground: Boolean = true` for filtering |
 | `backend/server/.../entity/ChatSessionDocument.kt` | MongoDB session entity |
 | `backend/server/.../repository/ChatSessionRepository.kt` | Spring Data repo |
-| `backend/service-orchestrator/app/chat/handler.py` | Chat entry-point: context, intent, decompose, agentic loop |
-| `backend/service-orchestrator/app/chat/handler_agentic.py` | Main agentic loop (LLM → tools → iterate) |
-| `backend/service-orchestrator/app/chat/handler_decompose.py` | Long message processing: summarize, decompose, sub-topics |
-| `backend/service-orchestrator/app/chat/handler_tools.py` | Tool execution, descriptions, switch_context resolution |
+| `backend/service-orchestrator/app/agent/sse_handler.py` | Chat entry-point: route → vertex_executor → SSE stream |
+| `backend/service-orchestrator/app/agent/chat_router.py` | Message → vertex routing (new/resume/answer/direct) |
+| `backend/service-orchestrator/app/agent/vertex_executor.py` | Unified agentic loop (shared with background) |
+| `backend/service-orchestrator/app/chat/handler_tools.py` | Tool execution handlers |
 | `backend/service-orchestrator/app/chat/handler_streaming.py` | LLM calls, token streaming, message saving |
-| `backend/service-orchestrator/app/chat/handler_context.py` | Runtime context loading, message building |
-| `backend/service-orchestrator/app/chat/drift.py` | Multi-signal drift detection (shared by agentic + decompose) |
 | `backend/service-orchestrator/app/chat/models.py` | ChatRequest, ChatStreamEvent models |
-| `backend/service-orchestrator/app/chat/tools.py` | Chat tool definitions (26 tools) |
 | `backend/service-orchestrator/app/chat/context.py` | ChatContextAssembler (MongoDB motor) |
 | `backend/service-orchestrator/app/chat/system_prompt.py` | System prompt builder + RuntimeContext |
-| `backend/service-orchestrator/app/chat/router.py` | Tool routing |
 | `backend/service-orchestrator/app/tools/ollama_parsing.py` | Shared Ollama JSON tool-call parsing |
 | `backend/service-orchestrator/app/tools/kotlin_client.py` | Python HTTP client for Kotlin internal API |
 | `backend/service-orchestrator/app/main.py` | FastAPI endpoints incl. /chat, /chat/stop |
@@ -2051,54 +1898,18 @@ The old foreground chat flow (`IAgentOrchestratorService.subscribeToChat/sendMes
 
 ---
 
-## Intent Router (feature-flagged)
+## Chat Router
 
-**Status:** Implemented, disabled by default (`use_intent_router=False`)
+**Status:** Replaces old Intent Router (deleted).
 
-Two-pass intent classification that routes chat messages to focused specialist agents with category-specific tools and prompts.
+Chat messages are routed to vertices in the Paměťová mapa via `agent/chat_router.py`:
 
-### Architecture
+1. `context_task_id` set → `answer_ask_user` (resume blocked vertex)
+2. Greeting pattern → `direct_response` (fast LLM, no tools)
+3. RUNNING/BLOCKED vertex for client/project → `resume_vertex`
+4. Default → `new_vertex` (create REQUEST vertex, run agentic loop)
 
-```
-User message → classify_intent() (regex)
-                     │
-              ┌──────▼──────┐
-              │ Pass 1:     │ Regex fast-path (0ms, ~60% of messages)
-              │ CORE only?  │──► DIRECT (no tools, P40)
-              │ Single hit? │──► Map directly to category
-              └──────┬──────┘
-                     │ Multiple regex hits (ambiguous)
-              ┌──────▼──────┐
-              │ Pass 2:     │ LLM call (LOCAL_FAST, ~2-3s)
-              │ P40 classify│──► Category + confidence
-              └──────┬──────┘
-                     │
-              ┌──────▼──────┐
-              │ Route       │ Category-specific prompt + tools + cloud routing
-              └─────────────┘
-```
-
-### Categories
-
-| Category | Tools | Max Iterations | Routing |
-|----------|-------|----------------|---------|
-| DIRECT | 0 | 1 | P40 (LOCAL_FAST) |
-| RESEARCH | 5 (kb_search, web_search, memory_recall, switch_context) | 3 | Cloud-first |
-| TASK_MGMT | 11 (task lifecycle + meetings + KB) | 4 | Cloud-first |
-| COMPLEX | 9 (work plans, iterative planning, coding, research) | 6 | Cloud-first |
-| MEMORY | 6 (kb_search, kb_delete, memory_store, store_knowledge, memory_recall, code_search) | 3 | Cloud-first |
-
-### Files
-
-- `app/chat/intent_router.py` — Two-pass classification, `_CATEGORY_TOOL_NAMES` mapping
-- `app/chat/prompts/` — Per-category focused prompts (core.py, direct.py, research.py, task_mgmt.py, complex.py, memory.py, builder.py)
-- `app/chat/tools.py` — `select_tools_by_names()`, `_TOOL_BY_NAME` lookup
-- `app/llm/openrouter_resolver.py` — `CHAT_CLOUD` queue (claude-sonnet-4 → gpt-4o → p40 fallback)
-
-### Feature Flag
-
-When `use_intent_router=False` (default), the original monolithic flow is used unchanged.
-When `True`: handler.py calls `route_intent()` → builds routed prompt → selects focused tools → runs agentic loop with `max_iterations_override` and `use_case_override="chat_cloud"`.
+> See [graph-agent-architecture.md](graph-agent-architecture.md) for details.
 
 ---
 

@@ -331,7 +331,7 @@ class ChatViewModel(
                     // Add/update maps list
                     val summary = ThinkingMapSummary(
                         id = graph.taskId.ifEmpty { "master" },
-                        title = "Master Map",
+                        title = "Paměťová mapa",
                         vertexCount = graph.vertices.size,
                         status = graph.status,
                     )

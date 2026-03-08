@@ -184,10 +184,10 @@ async def lifespan(app: FastAPI):
             logger.info("Procedural memory ready")
 
     # Initialize Graph Agent (sole orchestrator)
-    from app.graph_agent.persistence import task_graph_store
-    from app.graph_agent.langgraph_runner import init_graph_agent_checkpointer
-    from app.graph_agent.artifact_graph import artifact_graph_store
-    await task_graph_store.init()
+    from app.agent.persistence import agent_store
+    from app.agent.langgraph_runner import init_graph_agent_checkpointer
+    from app.agent.artifact_graph import artifact_graph_store
+    await agent_store.init()
     await init_graph_agent_checkpointer()
     await artifact_graph_store.init()
     logger.info("Graph Agent ready (LangGraph + MongoDB + ArangoDB artifact graph)")
@@ -265,7 +265,7 @@ async def chat_endpoint(request_body: dict, request: Request):
     - Explicit POST /chat/stop → sets asyncio.Event for session
     """
     from app.chat.models import ChatRequest
-    from app.chat.handler import handle_chat
+    from app.agent.sse_handler import handle_chat_sse as handle_chat
 
     chat_request = ChatRequest(**request_body)
     logger.info("CHAT_REQUEST | session=%s | message=%s", chat_request.session_id, chat_request.message[:100])
@@ -341,7 +341,7 @@ async def status(thread_id: str):
         status: "running" | "interrupted" | "done" | "error" | "unknown"
         Plus additional fields depending on status.
     """
-    from app.graph_agent.langgraph_runner import _get_compiled_graph
+    from app.agent.langgraph_runner import _get_compiled_graph
     compiled = _get_compiled_graph()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
     graph_state = await compiled.aget_state(config)
@@ -432,7 +432,7 @@ async def approve(thread_id: str, request: Request):
 
     async def _run_resume():
         try:
-            from app.graph_agent.langgraph_runner import _get_compiled_graph
+            from app.agent.langgraph_runner import _get_compiled_graph
             from langgraph.types import Command
             compiled = _get_compiled_graph()
             config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
@@ -533,12 +533,12 @@ async def cancel(thread_id: str):
 
     # Mark graph as CANCELLED in persistence so agentic loop stops gracefully
     try:
-        from app.graph_agent.persistence import task_graph_store
-        from app.graph_agent.models import GraphStatus
-        graph = await task_graph_store.load(cancel_task_id)
+        from app.agent.persistence import agent_store
+        from app.agent.models import GraphStatus
+        graph = await agent_store.load(cancel_task_id)
         if graph and graph.status not in (GraphStatus.COMPLETED, GraphStatus.FAILED):
             graph.status = GraphStatus.CANCELLED
-            await task_graph_store.save(graph)
+            await agent_store.save(graph)
             logger.info("Marked graph %s as CANCELLED", graph.id)
     except Exception as e:
         logger.warning("Failed to mark graph as cancelled: %s", e)
@@ -564,23 +564,23 @@ async def cancel(thread_id: str):
 
 @app.get("/graph/{task_id}")
 async def get_task_graph(task_id: str):
-    """Return the full TaskGraph for a given task_id.
+    """Return the full AgentGraph for a given task_id.
 
     Called by Kotlin to serve graph data to the UI.
     For master map, returns the live RAM version (always fresh).
     """
-    from app.graph_agent.persistence import task_graph_store
+    from app.agent.persistence import agent_store
 
     if task_id == "master":
         # Return live RAM version — always up-to-date
-        graph = task_graph_store.get_master_graph_cached()
+        graph = agent_store.get_memory_map_cached()
         if not graph:
-            graph = await task_graph_store.get_or_create_master_graph()
+            graph = await agent_store.get_or_create_memory_map()
     else:
         # Try RAM cache first (active sub-graphs), then DB
-        graph = task_graph_store.get_cached_subgraph(task_id)
+        graph = agent_store.get_cached_subgraph(task_id)
         if not graph:
-            graph = await task_graph_store.load(task_id)
+            graph = await agent_store.load(task_id)
 
     if not graph:
         raise HTTPException(status_code=404, detail=f"No graph for task {task_id}")
