@@ -34,6 +34,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -389,6 +391,9 @@ fun JVerticalSplitLayout(
     topContent: @Composable (Modifier) -> Unit,
     bottomContent: @Composable (Modifier) -> Unit,
 ) {
+    val currentFraction by rememberUpdatedState(splitFraction)
+    val currentOnChange by rememberUpdatedState(onSplitChange)
+
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val totalHeightPx = constraints.maxHeight.toFloat()
         val totalHeight = maxHeight
@@ -408,8 +413,8 @@ fun JVerticalSplitLayout(
                     .pointerInput(Unit) {
                         detectDragGestures { _, dragAmount ->
                             val delta = dragAmount.y / totalHeightPx
-                            val newFraction = (splitFraction + delta).coerceIn(0.1f, 0.9f)
-                            onSplitChange(newFraction)
+                            val newFraction = (currentFraction + delta).coerceIn(0.1f, 0.9f)
+                            currentOnChange(newFraction)
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -445,6 +450,9 @@ fun JHorizontalSplitLayout(
     leftContent: @Composable (Modifier) -> Unit,
     rightContent: @Composable (Modifier) -> Unit,
 ) {
+    val currentFraction by rememberUpdatedState(splitFraction)
+    val currentOnChange by rememberUpdatedState(onSplitChange)
+
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val totalWidthPx = constraints.maxWidth.toFloat()
         val totalWidth = maxWidth
@@ -465,8 +473,8 @@ fun JHorizontalSplitLayout(
                     .pointerInput(Unit) {
                         detectDragGestures { _, dragAmount ->
                             val delta = dragAmount.x / totalWidthPx
-                            val newFraction = (splitFraction + delta).coerceIn(minFraction, maxFraction)
-                            onSplitChange(newFraction)
+                            val newFraction = (currentFraction + delta).coerceIn(minFraction, maxFraction)
+                            currentOnChange(newFraction)
                         }
                     },
                 contentAlignment = Alignment.Center,
