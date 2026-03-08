@@ -110,6 +110,8 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Git repo creation: `backend/server/.../service/git/GitRepositoryCreationService.kt` (GitHub/GitLab API)
 - Project templates: `backend/server/.../service/project/ProjectTemplateService.kt` (KMP/Spring Boot/full-stack scaffolding)
 - Project management MCP tools: `backend/service-mcp/app/main.py` (create_client, create_project, create_connection, create_git_repository, init_workspace)
+- MCP OAuth provider: `backend/service-mcp/app/oauth_provider.py` (OAuth 2.1 server: DCR, Google IdP, token issuance for Claude.ai/iOS)
+- MCP config: `backend/service-mcp/app/config.py` (Settings — tokens, OAuth, MongoDB, service URLs)
 - Content reducer: `backend/service-orchestrator/app/memory/content_reducer.py` (reduce_for_prompt, reduce_messages_for_prompt, trim_for_display)
 - Memory Agent: `backend/service-orchestrator/app/memory/agent.py` (MemoryAgent, LQM singleton)
 - Memory affairs: `backend/service-orchestrator/app/memory/affairs.py` (create, park, resume, resolve)
