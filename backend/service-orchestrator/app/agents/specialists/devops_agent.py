@@ -87,7 +87,7 @@ TOOL_DEPLOY: dict = {
                 "dry_run": {
                     "type": "boolean",
                     "description": "If true, only show what would be deployed without applying (default false).",
-                    "default": false,
+                    "default": False,
                 },
             },
             "required": ["service", "environment"],

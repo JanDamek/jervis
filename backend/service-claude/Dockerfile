@@ -91,6 +91,10 @@ COPY backend/shared-entrypoints/entrypoint-job.sh /opt/jervis/entrypoint-job.sh
 RUN chmod +x /opt/jervis/entrypoint-job.sh
 COPY backend/service-claude/claude_sdk_runner.py /opt/jervis/claude_sdk_runner.py
 
+# === Non-root user for Claude Code CLI (refuses --dangerously-skip-permissions as root) ===
+RUN useradd -m -s /bin/bash -u 1000 jervis && \
+    chown -R jervis:jervis /opt/jervis /opt/venv
+
 ENV PORT=3400 \
     JAVA_OPTS="-Xmx1g -Xms256m"
 EXPOSE 3400

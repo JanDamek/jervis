@@ -136,11 +136,15 @@ except:
 " 2>/dev/null || echo "[]")
     fi
 
+    # Convert bash true/false to Python True/False
+    local py_success="False"
+    [ "$success" = "true" ] && py_success="True"
+
     python3 -c "
 import json, datetime
 result = {
     'taskId': '$TASK_ID',
-    'success': $success,
+    'success': $py_success,
     'summary': '''$summary''',
     'agentType': '$AGENT_TYPE',
     'changedFiles': $changed_files,

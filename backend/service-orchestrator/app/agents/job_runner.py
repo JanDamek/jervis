@@ -493,6 +493,10 @@ class JobRunner:
                                     requests={"memory": "256Mi", "cpu": "250m"},
                                     limits={"memory": "1Gi", "cpu": "1000m"},
                                 ),
+                                security_context=client.V1SecurityContext(
+                                    run_as_user=1000,
+                                    run_as_group=1000,
+                                ),
                                 volume_mounts=[
                                     client.V1VolumeMount(
                                         name="jervis-data",
