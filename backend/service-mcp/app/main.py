@@ -982,30 +982,31 @@ async def submit_task(
         task_name: Display name for the task (auto-generated if empty)
         processing_mode: FOREGROUND (interactive) or BACKGROUND (autonomous)
     """
-    import uuid
+    from bson import ObjectId as BsonObjectId
 
     db = await get_db()
-    task_id = str(uuid.uuid4())[:24]
+    task_id = BsonObjectId()
+    correlation_id = str(BsonObjectId())
     now = datetime.now(tz=None)
 
     task_doc = {
         "_id": task_id,
-        "type": "USER_TASK",
+        "type": "USER_INPUT_PROCESSING",
         "taskName": task_name or query[:60],
         "content": query,
-        "projectId": project_id or None,
-        "clientId": client_id,
+        "projectId": BsonObjectId(project_id) if project_id else None,
+        "clientId": BsonObjectId(client_id),
         "createdAt": now,
-        "state": "NEW",
+        "state": "QUEUED",
         "processingMode": processing_mode,
-        "correlationId": str(uuid.uuid4()),
-        "sourceUrn": "mcp://claude-desktop",
+        "correlationId": correlation_id,
+        "sourceUrn": "chat:coding-agent",
         "qualificationRetries": 0,
         "dispatchRetryCount": 0,
     }
 
     await db["tasks"].insert_one(task_doc)
-    return f"Task created: id={task_id}, state=NEW, mode={processing_mode}"
+    return f"Task created: id={task_id}, state=QUEUED, mode={processing_mode}"
 
 
 # ── Scheduled Task Tools ─────────────────────────────────────────────────
