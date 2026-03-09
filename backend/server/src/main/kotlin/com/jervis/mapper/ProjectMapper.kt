@@ -38,6 +38,7 @@ fun ProjectDocument.toDto(): ProjectDto =
         autoUseOpenai = this.cloudModelPolicy?.autoUseOpenai,
         autoUseGemini = this.cloudModelPolicy?.autoUseGemini,
         maxOpenRouterTier = this.cloudModelPolicy?.maxOpenRouterTier?.name,
+        reviewLanguage = this.reviewLanguage,
         isJervisInternal = this.isJervisInternal,
         workspaceStatus = this.workspaceStatus?.name,
         workspaceError = this.lastWorkspaceError,
@@ -88,6 +89,7 @@ fun ProjectDto.toDocument(): ProjectDocument {
             null
         },
         gitCommitConfig = gitCommitConfig,
+        reviewLanguage = this.reviewLanguage,
         connectionCapabilities = this.connectionCapabilities.map { it.toEntity() },
         resources = this.resources.map { it.toEntity() },
         resourceLinks = this.resourceLinks.map { it.toEntity() },

@@ -34,6 +34,8 @@ data class ClientDto(
     val autoUseOpenai: Boolean = false,
     val autoUseGemini: Boolean = false,
     val maxOpenRouterTier: String = "FREE",  // "NONE" / "FREE" / "PAID" / "PREMIUM"
+    // Review language (default for all projects, overridable at group/project level)
+    val reviewLanguage: String = "English",
 )
 
 /**

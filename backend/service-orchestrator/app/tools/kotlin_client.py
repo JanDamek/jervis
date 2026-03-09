@@ -820,6 +820,20 @@ class KotlinServerClient:
             logger.warning("Failed to get MR diff for task %s: %s", task_id, e)
             return None
 
+    async def get_review_language(self, client_id: str, project_id: str | None = None) -> str:
+        """Resolve review language via Kotlin internal API (project → group → client → default)."""
+        try:
+            client = await self._get_client()
+            params = {"clientId": client_id}
+            if project_id:
+                params["projectId"] = project_id
+            resp = await client.get("/internal/resolve-review-language", params=params)
+            if resp.status_code == 200:
+                return resp.json().get("language", "English")
+        except Exception as e:
+            logger.debug("Failed to resolve review language: %s", e)
+        return "English"
+
     async def post_mr_inline_comments(
         self,
         task_id: str,

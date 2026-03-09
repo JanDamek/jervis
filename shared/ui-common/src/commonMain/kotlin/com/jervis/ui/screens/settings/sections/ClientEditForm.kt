@@ -72,6 +72,9 @@ internal fun ClientEditForm(
     var autoUseGemini by remember { mutableStateOf(client.autoUseGemini) }
     var maxOpenRouterTier by remember { mutableStateOf(client.maxOpenRouterTier) }
 
+    // Review language
+    var reviewLanguage by remember { mutableStateOf(client.reviewLanguage) }
+
     // Connections
     var selectedConnectionIds by remember { mutableStateOf(client.connectionIds.toMutableSet()) }
     var availableConnections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
@@ -211,6 +214,7 @@ internal fun ClientEditForm(
                     autoUseOpenai = autoUseOpenai,
                     autoUseGemini = autoUseGemini,
                     maxOpenRouterTier = maxOpenRouterTier,
+                    reviewLanguage = reviewLanguage,
                 ),
             )
         },
@@ -459,6 +463,21 @@ internal fun ClientEditForm(
                                 else -> tier
                             }
                         },
+                    )
+                }
+
+                JSection(title = "Code review") {
+                    Text(
+                        "Jazyk, ve kterém se píšou review komentáře na MR/PR.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(androidx.compose.ui.Modifier.height(8.dp))
+                    JTextField(
+                        value = reviewLanguage,
+                        onValueChange = { reviewLanguage = it },
+                        label = "Jazyk review komentářů",
+                        placeholder = "English, Czech, Deutsch, ...",
                     )
                 }
 

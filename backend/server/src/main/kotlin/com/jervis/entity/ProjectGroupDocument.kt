@@ -41,4 +41,6 @@ data class ProjectGroupDocument(
     val resourceLinks: List<ResourceLink> = emptyList(),
     /** Cloud model policy at group level (overrides client, overridden by project) */
     val cloudModelPolicy: CloudModelPolicy? = null,
+    /** Review language override at group level (null = inherit from client) */
+    val reviewLanguage: String? = null,
 )

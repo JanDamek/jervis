@@ -33,6 +33,7 @@ fun ClientDocument.toDto(): ClientDto =
         autoUseOpenai = this.cloudModelPolicy.autoUseOpenai,
         autoUseGemini = this.cloudModelPolicy.autoUseGemini,
         maxOpenRouterTier = this.cloudModelPolicy.maxOpenRouterTier.name,
+        reviewLanguage = this.reviewLanguage,
     )
 
 fun ClientDto.toDocument(): ClientDocument {
@@ -71,6 +72,7 @@ fun ClientDto.toDocument(): ClientDocument {
             autoUseGemini = this.autoUseGemini,
             maxOpenRouterTier = try { com.jervis.entity.OpenRouterTier.valueOf(this.maxOpenRouterTier) } catch (_: Exception) { com.jervis.entity.OpenRouterTier.NONE },
         ),
+        reviewLanguage = this.reviewLanguage,
     )
 }
 

@@ -31,6 +31,8 @@ data class ProjectDocument(
     val communicationLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
     val buildConfig: ProjectBuildConfig? = null,
     val cloudModelPolicy: CloudModelPolicy? = null, // null = inherit from client
+    /** Review language override (null = inherit from group/client) */
+    val reviewLanguage: String? = null,
     val gitCommitConfig: GitCommitConfig? = null, // Overrides client's config
     /**
      * Connection capabilities assigned to this project.

@@ -95,6 +95,7 @@ class KtorRpcServer(
     private val applicationEventPublisher: org.springframework.context.ApplicationEventPublisher,
     private val gitHubClient: com.jervis.service.github.GitHubClient,
     private val gitLabClient: com.jervis.service.gitlab.GitLabClient,
+    private val reviewLanguageResolver: com.jervis.service.ReviewLanguageResolver,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -126,7 +127,7 @@ class KtorRpcServer(
                             installInternalOpenRouterApi(openRouterSettingsRpcImpl)
                             installInternalProjectManagementApi(clientService, projectService, connectionService, projectTemplateService)
                             installInternalGitApi(gitRepoCreationService, projectService, applicationEventPublisher)
-                            installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient)
+                            installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)
                             installInternalCacheApi(guidelinesService)
 
                             get("/") {

@@ -38,6 +38,8 @@ data class ClientDocument(
      */
     val connectionCapabilities: List<ClientConnectionCapability> = emptyList(),
     val cloudModelPolicy: CloudModelPolicy = CloudModelPolicy(),
+    /** Default review language for code reviews (hierarchy: project → group → client → English) */
+    val reviewLanguage: String = "English",
 )
 
 /**

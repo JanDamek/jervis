@@ -108,7 +108,14 @@ async def run_code_review(
         except Exception as e:
             logger.debug("KB prefetch failed (non-fatal): %s", e)
 
-    # 5. Write diff + KB context to workspace files for the review agent
+    # 5. Resolve review language (project → group → client → default)
+    review_language = "English"
+    try:
+        review_language = await kotlin_client.get_review_language(client_id, project_id)
+    except Exception:
+        pass  # Use default
+
+    # 6. Write diff + KB context + language to workspace files for the review agent
     import os
     jervis_dir = os.path.join(workspace_path, ".jervis")
     os.makedirs(jervis_dir, exist_ok=True)
@@ -122,7 +129,12 @@ async def run_code_review(
         with open(kb_path, "w") as f:
             f.write(kb_context)
 
-    # 6. Build review instructions (task description for review agent)
+    # Write review language for workspace_manager to pick up
+    lang_path = os.path.join(jervis_dir, "review-language.txt")
+    with open(lang_path, "w") as f:
+        f.write(review_language)
+
+    # 7. Build review instructions (task description for review agent)
     guidelines_summary = _format_guidelines_summary(guidelines)
     static_text = ""
     if static_issues:
@@ -153,7 +165,7 @@ async def run_code_review(
         f"6. Output your review verdict as a JSON object (see CLAUDE.md for format)\n"
     )
 
-    # 7. Dispatch review agent K8s Job
+    # 8. Dispatch review agent K8s Job
     try:
         import httpx
         from app.config import settings

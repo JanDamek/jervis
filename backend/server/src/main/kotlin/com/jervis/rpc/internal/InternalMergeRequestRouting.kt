@@ -36,7 +36,19 @@ fun Routing.installInternalMergeRequestApi(
     connectionService: ConnectionService,
     gitHubClient: GitHubClient,
     gitLabClient: GitLabClient,
+    reviewLanguageResolver: com.jervis.service.ReviewLanguageResolver,
 ) {
+    // Resolve review language for a client/project — called before review dispatch
+    get("/internal/resolve-review-language") {
+        val clientId = call.parameters["clientId"]?.let { com.jervis.common.types.ClientId(ObjectId(it)) }
+        val projectId = call.parameters["projectId"]?.takeIf { it.isNotBlank() }?.let { com.jervis.common.types.ProjectId(ObjectId(it)) }
+        val language = reviewLanguageResolver.resolve(clientId, projectId)
+        call.respondText(
+            """{"language":"$language"}""",
+            ContentType.Application.Json,
+        )
+    }
+
     // Create MR/PR for a coding task — called by AgentTaskWatcher after successful coding job
     post("/internal/tasks/{taskId}/create-merge-request") {
         try {

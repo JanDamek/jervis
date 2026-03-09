@@ -69,6 +69,10 @@ internal fun ProjectGroupEditForm(
     var autoUseGemini by remember { mutableStateOf(group.autoUseGemini ?: false) }
     var maxOpenRouterTier by remember { mutableStateOf(group.maxOpenRouterTier ?: "NONE") }
 
+    // Review language override
+    var overrideReviewLanguage by remember { mutableStateOf(group.reviewLanguage != null) }
+    var reviewLanguage by remember { mutableStateOf(group.reviewLanguage ?: "English") }
+
     // Resources model (same pattern as ProjectEditForm)
     var resources by remember { mutableStateOf(group.resources.toMutableList()) }
     var resourceLinks by remember { mutableStateOf(group.resourceLinks.toMutableList()) }
@@ -159,6 +163,7 @@ internal fun ProjectGroupEditForm(
                     autoUseOpenai = if (overrideCloudPolicy) autoUseOpenai else null,
                     autoUseGemini = if (overrideCloudPolicy) autoUseGemini else null,
                     maxOpenRouterTier = if (overrideCloudPolicy) maxOpenRouterTier else null,
+                    reviewLanguage = if (overrideReviewLanguage) reviewLanguage else null,
                 ),
             )
         },
@@ -345,6 +350,27 @@ internal fun ProjectGroupEditForm(
                                     else -> tier
                                 }
                             },
+                        )
+                    }
+                }
+
+                // Review language override (group level)
+                JSection(title = "Code review – jazyk") {
+                    JCheckboxRow(
+                        label = "Přepsat jazyk review",
+                        checked = overrideReviewLanguage,
+                        onCheckedChange = {
+                            overrideReviewLanguage = it
+                            if (!it) reviewLanguage = "English"
+                        },
+                    )
+                    if (overrideReviewLanguage) {
+                        Spacer(Modifier.height(8.dp))
+                        JTextField(
+                            value = reviewLanguage,
+                            onValueChange = { reviewLanguage = it },
+                            label = "Jazyk review komentářů",
+                            placeholder = "English, Czech, Deutsch, ...",
                         )
                     }
                 }

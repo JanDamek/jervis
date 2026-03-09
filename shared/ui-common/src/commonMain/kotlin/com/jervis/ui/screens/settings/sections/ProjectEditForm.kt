@@ -101,6 +101,10 @@ internal fun ProjectEditForm(
     var autoUseGemini by remember { mutableStateOf(project.autoUseGemini ?: false) }
     var maxOpenRouterTier by remember { mutableStateOf(project.maxOpenRouterTier ?: "NONE") }
 
+    // Review language override
+    var overrideReviewLanguage by remember { mutableStateOf(project.reviewLanguage != null) }
+    var reviewLanguage by remember { mutableStateOf(project.reviewLanguage ?: "English") }
+
     val scope = rememberCoroutineScope()
 
     // Load client, groups and connections
@@ -205,6 +209,7 @@ internal fun ProjectEditForm(
                     autoUseOpenai = if (overrideCloudPolicy) autoUseOpenai else null,
                     autoUseGemini = if (overrideCloudPolicy) autoUseGemini else null,
                     maxOpenRouterTier = if (overrideCloudPolicy) maxOpenRouterTier else null,
+                    reviewLanguage = if (overrideReviewLanguage) reviewLanguage else null,
                 ),
             )
         },
@@ -448,6 +453,32 @@ internal fun ProjectEditForm(
                                     else -> tier
                                 }
                             },
+                        )
+                    }
+                }
+
+                JSection(title = "Code review – jazyk") {
+                    Text(
+                        "Jazyk review komentářů. Pokud nepřepíšete, dědí se od skupiny/klienta.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    JCheckboxRow(
+                        label = "Přepsat jazyk review",
+                        checked = overrideReviewLanguage,
+                        onCheckedChange = {
+                            overrideReviewLanguage = it
+                            if (!it) reviewLanguage = "English"
+                        },
+                    )
+                    if (overrideReviewLanguage) {
+                        Spacer(Modifier.height(8.dp))
+                        JTextField(
+                            value = reviewLanguage,
+                            onValueChange = { reviewLanguage = it },
+                            label = "Jazyk review komentářů",
+                            placeholder = "English, Czech, Deutsch, ...",
                         )
                     }
                 }

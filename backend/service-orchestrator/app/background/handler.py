@@ -204,7 +204,15 @@ async def _run_coding_agent_background(
             "git_message_format": msg_format,
         }
 
-    # 4. Prepare workspace (instructions, KB, environment, git config, guidelines, CLAUDE.md)
+    # 4. Resolve review language for review tasks
+    review_language = None
+    if is_review:
+        try:
+            review_language = await kotlin_client.get_review_language(request.client_id, request.project_id)
+        except Exception:
+            pass  # Default English
+
+    # 5. Prepare workspace (instructions, KB, environment, git config, guidelines, CLAUDE.md)
     workspace_path = await workspace_manager.prepare_workspace(
         task_id=request.task_id,
         client_id=request.client_id,
@@ -218,6 +226,7 @@ async def _run_coding_agent_background(
         git_config=git_config,
         guidelines_text=guidelines_text,
         review_mode=is_review,
+        review_language=review_language,
     )
 
     # Write sourceUrn to task.json so claude_sdk_runner can detect review mode
@@ -232,7 +241,7 @@ async def _run_coding_agent_background(
             except Exception:
                 pass
 
-    # 5. Dispatch K8s Job (returns immediately)
+    # 6. Dispatch K8s Job (returns immediately)
     dispatch_info = await job_runner.dispatch_coding_agent(
         task_id=request.task_id,
         agent_type=agent_type,
@@ -245,7 +254,7 @@ async def _run_coding_agent_background(
     )
     job_name = dispatch_info["job_name"]
 
-    # 5. Notify Kotlin — task state → CODING
+    # 7. Notify Kotlin — task state → CODING
     await kotlin_client.notify_agent_dispatched(
         task_id=request.task_id,
         job_name=job_name,

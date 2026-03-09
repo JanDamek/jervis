@@ -27,4 +27,6 @@ data class ProjectGroupDto(
     val autoUseOpenai: Boolean? = null,
     val autoUseGemini: Boolean? = null,
     val maxOpenRouterTier: String? = null,
+    /** Review language override at group level (null = inherit from client) */
+    val reviewLanguage: String? = null,
 )

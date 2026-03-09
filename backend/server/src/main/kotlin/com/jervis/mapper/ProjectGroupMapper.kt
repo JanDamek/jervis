@@ -21,6 +21,7 @@ fun ProjectGroupDocument.toDto(): ProjectGroupDto =
         autoUseOpenai = this.cloudModelPolicy?.autoUseOpenai,
         autoUseGemini = this.cloudModelPolicy?.autoUseGemini,
         maxOpenRouterTier = this.cloudModelPolicy?.maxOpenRouterTier?.name,
+        reviewLanguage = this.reviewLanguage,
     )
 
 fun ProjectGroupDto.toDocument(): ProjectGroupDocument {
@@ -49,5 +50,6 @@ fun ProjectGroupDto.toDocument(): ProjectGroupDocument {
         resources = this.resources.map { it.toEntity() },
         resourceLinks = this.resourceLinks.map { it.toEntity() },
         cloudModelPolicy = cloudModelPolicy,
+        reviewLanguage = this.reviewLanguage,
     )
 }
