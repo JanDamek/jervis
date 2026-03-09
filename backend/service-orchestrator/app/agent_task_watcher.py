@@ -148,7 +148,7 @@ class AgentTaskWatcher:
                 # Review agent completed — parse verdict, post MR comment, create fix task
                 await self._handle_review_completed(task_id, task_data, result, job_name, job_status, source_urn)
             elif is_direct_coding or is_fix_task:
-                # Direct coding task — two-step: CODING→PROCESSING→DONE
+                # Direct coding task — three-step: CODING→PROCESSING→(MR)→DONE
                 # Step 1: agent-completed moves CODING→PROCESSING
                 try:
                     async with httpx.AsyncClient(timeout=15) as client:
@@ -162,20 +162,10 @@ class AgentTaskWatcher:
                 except Exception as e:
                     logger.error("Failed to mark agent-completed for direct task %s: %s", task_id, e)
 
-                # Step 2: report_status_change moves PROCESSING→DONE
-                try:
-                    await kotlin_client.report_status_change(
-                        task_id=task_id,
-                        thread_id=thread_id or "",
-                        status="done" if result.get("success") else "error",
-                        summary=result.get("summary", "Coding agent completed"),
-                        error=None if result.get("success") else result.get("summary"),
-                    )
-                    logger.info("Direct coding task completed: task=%s job=%s success=%s", task_id, job_name, result.get("success"))
-                except Exception as e:
-                    logger.error("Failed to report coding task done %s: %s", task_id, e)
-
-                # Create MR/PR if agent pushed a branch, then run code review
+                # Step 2: Create MR/PR BEFORE marking DONE (prevents race condition
+                # where task.copy(mergeRequestUrl=...) overwrites DONE state back to PROCESSING)
+                mr_url = ""
+                review_round = 1
                 if result.get("success") and result.get("branch"):
                     branch = result["branch"]
                     task_title = (
@@ -183,17 +173,13 @@ class AgentTaskWatcher:
                         or (task_data.get("content", "") or "")[:80]
                         or f"Coding: {task_id[:12]}"
                     )
-                    mr_url = ""
 
                     # Determine review round from source_urn (fix tasks carry round info)
-                    review_round = 1
                     if source_urn.startswith("code-review-fix:"):
                         # Fix task — don't create new MR, branch + MR already exist
-                        # Parse round from task content: "## Code Review Fix (Round N)"
                         import re as _re
                         round_match = _re.search(r"Code Review Fix \(Round (\d+)\)", task_data.get("content", ""))
                         review_round = int(round_match.group(1)) if round_match else 2
-                        # Get MR URL from task document
                         mr_url = task_data.get("mergeRequestUrl") or ""
                     else:
                         # New coding task — create MR
@@ -212,22 +198,26 @@ class AgentTaskWatcher:
                         except Exception as e:
                             logger.warning("Failed to create MR for task %s: %s", task_id, e)
 
-                    # Run code review (async, non-blocking for watcher)
-                    if mr_url and workspace_path:
-                        try:
-                            from app.review.code_review_handler import run_code_review
-                            asyncio.create_task(run_code_review(
-                                task_id=task_id,
-                                workspace_path=workspace_path,
-                                mr_url=mr_url,
-                                task_content=task_data.get("content", ""),
-                                client_id=str(task_data.get("clientId", "")),
-                                project_id=str(task_data.get("projectId", "")) if task_data.get("projectId") else None,
-                                source_urn=source_urn,
-                                review_round=review_round,
-                            ))
-                        except Exception as e:
-                            logger.warning("Failed to start code review for task %s: %s", task_id, e)
+                # Step 3: report_status_change moves PROCESSING→DONE (MUST be last DB write)
+                try:
+                    await kotlin_client.report_status_change(
+                        task_id=task_id,
+                        thread_id=thread_id or "",
+                        status="done" if result.get("success") else "error",
+                        summary=result.get("summary", "Coding agent completed"),
+                        error=None if result.get("success") else result.get("summary"),
+                    )
+                    logger.info("Direct coding task completed: task=%s job=%s success=%s", task_id, job_name, result.get("success"))
+                except Exception as e:
+                    logger.error("Failed to report coding task done %s: %s", task_id, e)
+
+                # Code review is NOT auto-triggered here. MR/PR creation is enough.
+                # Review will be triggered when:
+                # 1. MR gets indexed through GitLab webhooks/polling
+                # 2. Review is assigned to the user
+                # 3. BackgroundEngine creates a review task from the indexed MR
+                if mr_url:
+                    logger.info("MR ready for review: task=%s url=%s", task_id, mr_url)
 
                 # Update memory map TASK_REF vertex → completed
                 try:
@@ -486,6 +476,23 @@ class AgentTaskWatcher:
                 )
             except Exception:
                 pass  # Non-fatal
+
+        # Record code review result in memory map
+        try:
+            from app.agent.persistence import agent_store
+            review_title = f"Code Review: {verdict} (score {score}/100, round {review_round})"
+            await agent_store.link_thinking_map(
+                task_id=task_id,
+                sub_graph_id="",
+                title=review_title,
+                completed=(verdict == "APPROVE"),
+                failed=(verdict in ("REJECT",)),
+                result_summary=f"{review_summary[:300]}\nMR: {mr_url}",
+                client_id=str(task_data.get("clientId", "")),
+                project_id=str(task_data.get("projectId", "")) if task_data.get("projectId") else None,
+            )
+        except Exception:
+            pass  # Non-fatal
 
         logger.info(
             "REVIEW_COMPLETED | task=%s | verdict=%s | blockers=%d | round=%d | posted=%s",
