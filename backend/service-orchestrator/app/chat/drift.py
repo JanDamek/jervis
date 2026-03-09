@@ -10,6 +10,27 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Workflow chains: sets of domains that naturally occur together.
+# If all observed domains fit within a single chain, it's NOT drift —
+# it's a coherent multi-step workflow (e.g. search → store → dispatch).
+_WORKFLOW_CHAINS: list[set[str]] = [
+    {"search", "memory", "task"},       # research → store findings → create task
+    {"search", "memory"},               # research → store
+    {"search", "task"},                 # research → dispatch
+    {"memory", "task"},                 # recall → act
+    {"search", "memory", "scope"},      # research with context switch
+    {"search", "guidelines"},           # research → update guidelines
+    {"memory", "task", "scope"},        # context switch → recall → act
+]
+
+
+def _domains_form_workflow(all_domains: set[str]) -> bool:
+    """Check if all observed domains fit within a known workflow chain."""
+    for chain in _WORKFLOW_CHAINS:
+        if all_domains <= chain:
+            return True
+    return False
+
 
 def detect_drift(
     consecutive_same: int,
@@ -26,7 +47,7 @@ def detect_drift(
     1. Consecutive same: 2x identical tool+args -> stuck in loop
     2. Same tool repeated: 3+ times across ANY iterations
     3. Alternating tool pair: A->B->A->B pattern (same-domain ping-pong)
-    4. Domain drift: 3 iterations with 3+ distinct domains, no common domain
+    4. Domain drift: 4+ iterations with 3+ distinct domains outside workflow chains
     5. Excessive tools: 8+ distinct tools after 4+ iterations
     """
     # Signal 1: Identical tool+args in consecutive iterations
@@ -43,10 +64,10 @@ def detect_drift(
                 tool_name = sig.split(":")[0]
                 return f"tool '{tool_name}' volán {count}× se stejnými argumenty — odpověz s tím co máš"
 
-        # Signal 2b: Same tool called 3+ times total (even with different args)
+        # Signal 2b: Same tool called 4+ times total (even with different args)
         tool_name_counts = Counter(name for name, _ in tool_call_history)
         for tool_name, count in tool_name_counts.items():
-            if count >= 3:
+            if count >= 4:
                 return f"tool '{tool_name}' volán {count}× — opakuješ se, odpověz s tím co máš"
 
         # Signal 3: Alternating tool pair pattern (A->B->A->B)
@@ -61,15 +82,18 @@ def detect_drift(
                 )
 
     # Signal 4: Domain drift across iterations
-    if len(domain_history) >= 3:
-        last_three = domain_history[-3:]
+    # Only trigger after 4+ iterations AND when domains don't form a known workflow.
+    if len(domain_history) >= 4:
+        last_four = domain_history[-4:]
         all_domains = set()
-        for d in last_three:
+        for d in last_four:
             all_domains.update(d)
-        common = last_three[0]
-        for d in last_three[1:]:
+        # Ignore "unknown" domain — it's a catch-all, not a real signal
+        all_domains.discard("unknown")
+        common = last_four[0]
+        for d in last_four[1:]:
             common = common & d
-        if not common and len(all_domains) >= 3:
+        if not common and len(all_domains) >= 3 and not _domains_form_workflow(all_domains):
             return f"tool calls přeskakují mezi nesouvisejícími oblastmi ({', '.join(sorted(all_domains))})"
 
     # Signal 5: Too many distinct tools

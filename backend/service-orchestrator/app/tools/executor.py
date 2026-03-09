@@ -618,7 +618,7 @@ async def _execute_web_search(query: str, max_results: int = 5) -> str:
     params = {
         "q": query,
         "format": "json",
-        "engines": "google,bing",
+        "engines": "duckduckgo,brave",
         "pageno": 1,
     }
 
