@@ -52,15 +52,24 @@ fun Routing.installInternalTaskApi(
                 ?: throw IllegalArgumentException("Either 'description' or 'query' must be provided")
             val taskName = body.title ?: content.take(100)
 
+            // Parse scheduledAt if provided → SCHEDULED_TASK type
+            val scheduledInstant = body.scheduledAt?.let {
+                try { java.time.Instant.parse(it) } catch (_: Exception) { null }
+            }
+            val isScheduled = scheduledInstant != null
+            val taskType = if (isScheduled) TaskTypeEnum.SCHEDULED_TASK else TaskTypeEnum.USER_INPUT_PROCESSING
+            val taskState = if (isScheduled) TaskStateEnum.NEW else TaskStateEnum.INDEXING
+
             val task = taskService.createTask(
-                taskType = TaskTypeEnum.USER_INPUT_PROCESSING,
+                taskType = taskType,
                 content = content,
                 clientId = clientId,
                 correlationId = "chat-tool-${java.util.UUID.randomUUID().toString().take(8)}",
                 sourceUrn = SourceUrn(body.createdBy?.let { "agent://$it" } ?: "chat://foreground"),
                 projectId = projectId,
-                state = TaskStateEnum.INDEXING,
+                state = taskState,
                 taskName = taskName,
+                scheduledAt = scheduledInstant,
             )
             call.respondText(
                 Json.encodeToString(mapOf(
@@ -469,7 +478,9 @@ data class InternalCreateTaskRequest(
     val description: String? = null,
     val schedule: String? = null,
     val daysOffset: Int? = null,
+    val scheduledAt: String? = null,
     val createdBy: String? = null,
+    val metadata: Map<String, String>? = null,
 )
 
 @Serializable

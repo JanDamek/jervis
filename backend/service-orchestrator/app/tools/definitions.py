@@ -433,6 +433,20 @@ TOOL_CREATE_SCHEDULED_TASK: dict = {
                     "enum": ["when_code_available", "in_1_day", "in_1_week", "in_1_month", "manual"],
                     "default": "manual",
                 },
+                "scheduled_at": {
+                    "type": "string",
+                    "description": (
+                        "Specific date/time in ISO-8601 format (e.g., '2026-03-09T15:00:00'). "
+                        "Use this instead of 'schedule' when user specifies an exact time. "
+                        "Takes precedence over 'schedule' if both provided."
+                    ),
+                },
+                "urgency": {
+                    "type": "string",
+                    "description": "Task urgency when it fires: 'urgent' sends URGENT_ALERT to user, 'normal' creates background task.",
+                    "enum": ["urgent", "normal"],
+                    "default": "normal",
+                },
             },
             "required": ["title", "description", "reason"],
         },

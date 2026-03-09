@@ -89,6 +89,7 @@ class TaskService(
         taskName: String? = null,
         hasAttachments: Boolean = false,
         attachmentCount: Int = 0,
+        scheduledAt: java.time.Instant? = null,
     ): TaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
@@ -107,6 +108,7 @@ class TaskService(
                 attachments = attachments,
                 hasAttachments = hasAttachments,
                 attachmentCount = attachmentCount,
+                scheduledAt = scheduledAt,
             )
 
         val saved = taskRepository.save(task)

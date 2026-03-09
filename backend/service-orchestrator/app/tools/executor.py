@@ -197,6 +197,8 @@ async def execute_tool(
                 description=arguments.get("description", ""),
                 reason=arguments.get("reason", ""),
                 schedule=arguments.get("schedule", "manual"),
+                scheduled_at=arguments.get("scheduled_at"),
+                urgency=arguments.get("urgency", "normal"),
                 client_id=client_id,
                 project_id=project_id,
             )
@@ -930,6 +932,8 @@ async def _execute_create_scheduled_task(
     description: str,
     reason: str,
     schedule: str = "manual",
+    scheduled_at: str | None = None,
+    urgency: str = "normal",
     client_id: str = "",
     project_id: str | None = None,
 ) -> str:
@@ -943,32 +947,55 @@ async def _execute_create_scheduled_task(
     if not description.strip():
         return "Error: Task description cannot be empty."
 
-    # Map schedule enum to days offset
-    schedule_map = {
-        "when_code_available": None,  # Trigger-based, not time-based
-        "in_1_day": 1,
-        "in_1_week": 7,
-        "in_1_month": 30,
-        "manual": None,  # No automatic scheduling
-    }
-
-    days_offset = schedule_map.get(schedule)
+    # Resolve scheduling: explicit ISO time takes precedence
+    scheduled_at_iso = None
+    if scheduled_at:
+        # Validate and normalize ISO-8601 datetime
+        from datetime import datetime, timezone
+        try:
+            dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                # Assume local timezone (CET/CEST)
+                import zoneinfo
+                dt = dt.replace(tzinfo=zoneinfo.ZoneInfo("Europe/Prague"))
+            scheduled_at_iso = dt.astimezone(timezone.utc).isoformat()
+        except (ValueError, KeyError) as e:
+            return f"Error: Invalid scheduled_at format '{scheduled_at}': {e}"
+    else:
+        # Map schedule enum to days offset → compute ISO time
+        schedule_map = {
+            "when_code_available": None,
+            "in_1_day": 1,
+            "in_1_week": 7,
+            "in_1_month": 30,
+            "manual": None,
+        }
+        days_offset = schedule_map.get(schedule)
+        if days_offset:
+            from datetime import datetime, timedelta, timezone
+            scheduled_at_iso = (datetime.now(timezone.utc) + timedelta(days=days_offset)).isoformat()
 
     # Use Kotlin server's internal task creation endpoint
     kotlin_url = settings.kotlin_server_url or "http://jervis-server:8080"
     url = f"{kotlin_url}/internal/tasks/create"
 
+    # Prepend urgency marker so qualification agent routes correctly
+    task_description = f"{description}\n\nReason: {reason}"
+    if urgency == "urgent":
+        task_description = f"[URGENT REMINDER] {task_description}\n\nThis task should be treated as URGENT and shown as an alert to the user."
+
     payload = {
         "clientId": client_id,
         "projectId": project_id,
         "title": title,
-        "description": f"{description}\n\nReason: {reason}",
-        "schedule": schedule,
-        "daysOffset": days_offset,
+        "description": task_description,
+        "schedule": schedule if not scheduled_at else "custom",
+        "scheduledAt": scheduled_at_iso,
         "createdBy": "orchestrator_agent",
         "metadata": {
             "reason": reason,
-            "schedule_type": schedule,
+            "schedule_type": "custom" if scheduled_at else schedule,
+            "urgency": urgency,
             "created_from": "agent_tool",
         },
     }
@@ -987,11 +1014,18 @@ async def _execute_create_scheduled_task(
         return f"Error: Task creation failed: {str(e)[:200]}"
 
     # Success response
-    schedule_info = f"scheduled for {schedule.replace('_', ' ')}" if schedule != "manual" else "created for manual review"
+    if scheduled_at_iso:
+        schedule_info = f"naplánováno na {scheduled_at or scheduled_at_iso}"
+    elif schedule != "manual":
+        schedule_info = f"scheduled for {schedule.replace('_', ' ')}"
+    else:
+        schedule_info = "created for manual review"
+
+    urgency_info = " (URGENT — zobrazí se jako upozornění)" if urgency == "urgent" else ""
     return (
         f"✓ Task created successfully!\n"
         f"Title: {title}\n"
-        f"Schedule: {schedule_info}\n"
+        f"Schedule: {schedule_info}{urgency_info}\n"
         f"Task ID: {task_id}\n"
         f"The task is now in your task list and will be executed when appropriate."
     )
