@@ -170,6 +170,60 @@ class AgentTaskWatcher:
                 except Exception as e:
                     logger.error("Failed to report coding task done %s: %s", task_id, e)
 
+                # Create MR/PR if agent pushed a branch, then run code review
+                if result.get("success") and result.get("branch"):
+                    branch = result["branch"]
+                    task_title = (
+                        task_data.get("taskName")
+                        or (task_data.get("content", "") or "")[:80]
+                        or f"Coding: {task_id[:12]}"
+                    )
+                    mr_url = ""
+
+                    # Determine review round from source_urn (fix tasks carry round info)
+                    review_round = 1
+                    if source_urn.startswith("code-review-fix:"):
+                        # Fix task — don't create new MR, branch + MR already exist
+                        # Parse round from task content: "## Code Review Fix (Round N)"
+                        import re as _re
+                        round_match = _re.search(r"Code Review Fix \(Round (\d+)\)", task_data.get("content", ""))
+                        review_round = int(round_match.group(1)) if round_match else 2
+                        # Get MR URL from task document
+                        mr_url = task_data.get("mergeRequestUrl") or ""
+                    else:
+                        # New coding task — create MR
+                        try:
+                            mr_result = await kotlin_client.create_merge_request(
+                                task_id=task_id,
+                                branch=branch,
+                                title=task_title,
+                                description=result.get("summary", ""),
+                            )
+                            mr_url = mr_result.get("url", "")
+                            if mr_url:
+                                logger.info("MR created for task %s: %s", task_id, mr_url)
+                            else:
+                                logger.warning("MR creation returned no URL for task %s: %s", task_id, mr_result)
+                        except Exception as e:
+                            logger.warning("Failed to create MR for task %s: %s", task_id, e)
+
+                    # Run code review (async, non-blocking for watcher)
+                    if mr_url and workspace_path:
+                        try:
+                            from app.review.code_review_handler import run_code_review
+                            asyncio.create_task(run_code_review(
+                                task_id=task_id,
+                                workspace_path=workspace_path,
+                                mr_url=mr_url,
+                                task_content=task_data.get("content", ""),
+                                client_id=str(task_data.get("clientId", "")),
+                                project_id=str(task_data.get("projectId", "")) if task_data.get("projectId") else None,
+                                source_urn=source_urn,
+                                review_round=review_round,
+                            ))
+                        except Exception as e:
+                            logger.warning("Failed to start code review for task %s: %s", task_id, e)
+
                 # Update memory map TASK_REF vertex → completed
                 try:
                     from app.agent.persistence import agent_store

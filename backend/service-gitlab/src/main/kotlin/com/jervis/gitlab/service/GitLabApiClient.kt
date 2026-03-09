@@ -230,6 +230,94 @@ class GitLabApiClient(
         return json.decodeFromString(GitLabNote.serializer(), responseText)
     }
 
+    // ── Merge Request operations ────────────────────────────────────────
+
+    suspend fun createMergeRequest(
+        baseUrl: String,
+        token: String,
+        projectId: String,
+        sourceBranch: String,
+        targetBranch: String,
+        title: String,
+        description: String? = null,
+    ): GitLabMergeRequest {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/merge_requests"
+        rateLimit(url)
+        val payload = buildJsonObject {
+            put("source_branch", sourceBranch)
+            put("target_branch", targetBranch)
+            put("title", title)
+            description?.let { put("description", it) }
+            put("remove_source_branch", false)
+        }
+        val response = httpClient.post(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val responseText = response.checkProviderResponse("GitLab", "createMergeRequest($projectId)")
+        return json.decodeFromString(GitLabMergeRequest.serializer(), responseText)
+    }
+
+    suspend fun getMergeRequest(
+        baseUrl: String,
+        token: String,
+        projectId: String,
+        mrIid: Int,
+    ): GitLabMergeRequest {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/merge_requests/$mrIid"
+        rateLimit(url)
+        val response = httpClient.get(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        val responseText = response.checkProviderResponse("GitLab", "getMergeRequest(#$mrIid)")
+        return json.decodeFromString(GitLabMergeRequest.serializer(), responseText)
+    }
+
+    suspend fun listMergeRequests(
+        baseUrl: String,
+        token: String,
+        projectId: String,
+        state: String = "opened",
+        sourceBranch: String? = null,
+    ): List<GitLabMergeRequest> {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/merge_requests"
+        rateLimit(url)
+        val response = httpClient.get(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            parameter("state", state)
+            parameter("per_page", 100)
+            sourceBranch?.let { parameter("source_branch", it) }
+        }
+        val responseText = response.checkProviderResponse("GitLab", "listMergeRequests($projectId)")
+        return json.decodeFromString(responseText)
+    }
+
+    suspend fun addMergeRequestNote(
+        baseUrl: String,
+        token: String,
+        projectId: String,
+        mrIid: Int,
+        body: String,
+    ): GitLabNote {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/merge_requests/$mrIid/notes"
+        rateLimit(url)
+        val payload = buildJsonObject {
+            put("body", body)
+        }
+        val response = httpClient.post(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val responseText = response.checkProviderResponse("GitLab", "addMergeRequestNote(#$mrIid)")
+        return json.decodeFromString(GitLabNote.serializer(), responseText)
+    }
+
     // ── Wiki write operations ─────────────────────────────────────────
 
     suspend fun createWikiPage(
@@ -348,4 +436,19 @@ data class GitLabFile(
     val content: String,
     val ref: String,
     val blob_id: String
+)
+
+@Serializable
+data class GitLabMergeRequest(
+    val id: Long,
+    val iid: Int,
+    val project_id: Long,
+    val title: String,
+    val description: String? = null,
+    val state: String,
+    val source_branch: String,
+    val target_branch: String,
+    val web_url: String,
+    val draft: Boolean = false,
+    val created_at: String,
 )

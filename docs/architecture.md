@@ -972,6 +972,44 @@ Each agent has its own build script in `k8s/build_<name>.sh` which calls the gen
 3. Push to `registry.damek-soft.eu/jandamek/jervis-<name>:latest`
 4. Apply K8s deployment and restart pods
 
+### Coding Agent → MR/PR → Code Review Pipeline
+
+After a coding agent K8s Job completes:
+
+```
+Coding agent → commit + push → AgentTaskWatcher detects completion →
+Server creates MR/PR (GitHub PR / GitLab MR) → Code review runs →
+ReviewEngine (static + LLM) → Posts review comment on MR/PR →
+  ├─ APPROVE → User merges manually
+  ├─ REQUEST_CHANGES (BLOCKERs only) → new fix coding task (max 2 rounds)
+  └─ After max rounds → Escalation comment, user decides
+```
+
+**Key components:**
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Result with branch | `entrypoint-job.sh`, `claude_sdk_runner.py` | result.json includes `branch` field |
+| MR/PR creation | `InternalMergeRequestRouting.kt` | `POST /internal/tasks/{id}/create-merge-request` — resolves provider from project |
+| MR comment posting | `InternalMergeRequestRouting.kt` | `POST /internal/tasks/{id}/post-mr-comment` — posts review to MR/PR |
+| Code review handler | `app/review/code_review_handler.py` | Orchestrates: diff → static → LLM → MR comment → fix task |
+| Review engine | `app/review/review_engine.py` | Static analysis + LLM review with strict scope |
+| Task watcher integration | `app/agent_task_watcher.py` | Creates MR + triggers review after coding job success |
+| Python client methods | `app/tools/kotlin_client.py` | `create_merge_request()`, `post_mr_comment()` |
+
+**Provider support:** GitHub (PR) and GitLab (MR). Provider auto-detected from `ConnectionDocument.provider`.
+
+**Review scope (BLOCKERs only):**
+1. Guidelines compliance (project, client, global)
+2. Correctness — does the fix solve the problem completely?
+3. No regressions — doesn't break existing code
+4. Scope adherence — agent fixed ONLY what was in the task
+5. Critical safety — SQL injection, race conditions, data loss
+
+**Feedback loop protection:** Max 2 rounds of review→fix. Only BLOCKER issues trigger new coding round. Style suggestions never block.
+
+**CLAUDE.md template** (`workspace_manager.py`): Push is allowed, merge/force-push forbidden.
+
 ---
 
 ## Unified Agent (Python)

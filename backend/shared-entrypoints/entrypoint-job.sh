@@ -123,9 +123,11 @@ write_result() {
     local summary=$2
     mkdir -p "$(dirname "$RESULT_FILE")"
 
-    # Capture changed files via git diff (if git repo)
+    # Capture changed files and current branch via git (if git repo)
     local changed_files="[]"
+    local current_branch=""
     if [ -d ".git" ]; then
+        current_branch=$(git branch --show-current 2>/dev/null || echo "")
         changed_files=$(python3 -c "
 import json, subprocess
 try:
@@ -147,6 +149,7 @@ except:
 
     # Use env var for summary to avoid shell quoting issues with arbitrary text
     export _JERVIS_SUMMARY="$summary"
+    export _JERVIS_BRANCH="$current_branch"
     python3 - "$TASK_ID" "$py_success" "$AGENT_TYPE" "$RESULT_FILE" "$changed_files" <<'PYEOF'
 import json, datetime, sys, os
 result = {
@@ -155,6 +158,7 @@ result = {
     'summary': os.environ.get("_JERVIS_SUMMARY", ""),
     'agentType': sys.argv[3],
     'changedFiles': json.loads(sys.argv[5]) if len(sys.argv) > 5 else [],
+    'branch': os.environ.get("_JERVIS_BRANCH", ""),
     'timestamp': datetime.datetime.now().isoformat()
 }
 with open(sys.argv[4], 'w') as f:

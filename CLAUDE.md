@@ -107,6 +107,10 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Graph UI visualization: `shared/ui-common/.../chat/TaskGraphComponents.kt` (TaskGraphSection, VertexCard, EdgeRow)
 - Graph DTOs: `shared/common-dto/.../graph/TaskGraphDtos.kt`, `shared/common-api/.../ITaskGraphService.kt`, `backend/server/.../rpc/TaskGraphRpcImpl.kt`
 - Agent background dispatch: `backend/service-orchestrator/app/background/handler.py` (_run_graph_agent_background)
+- Agent task watcher: `backend/service-orchestrator/app/agent_task_watcher.py` (monitors CODING tasks, creates MR/PR, triggers code review)
+- Code review pipeline: `backend/service-orchestrator/app/review/code_review_handler.py` (diff → static → LLM → MR comment → fix task)
+- Review engine: `backend/service-orchestrator/app/review/review_engine.py` (static analysis + LLM review)
+- MR/PR internal API: `backend/server/.../rpc/internal/InternalMergeRequestRouting.kt` (create-merge-request, post-mr-comment)
 - Qualifier handler: `backend/service-orchestrator/app/unified/qualification_handler.py` (_record_incoming_vertex — creates INCOMING vertex in memory map after QUEUED qualification)
 - Task queue API: `backend/server/.../rpc/internal/InternalTaskApiRouting.kt` (GET /internal/tasks/queue, POST /internal/tasks/{id}/priority)
 - Queue tools: `backend/service-orchestrator/app/tools/definitions.py` (TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY, QUEUE_TOOLS)

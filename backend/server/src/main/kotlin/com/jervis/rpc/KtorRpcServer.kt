@@ -26,6 +26,7 @@ import com.jervis.rpc.internal.installInternalGitApi
 import com.jervis.rpc.internal.installInternalGuidelinesApi
 import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalProjectManagementApi
+import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -92,6 +93,8 @@ class KtorRpcServer(
     private val gitRepoCreationService: com.jervis.service.git.GitRepositoryCreationService,
     private val projectTemplateService: com.jervis.service.project.ProjectTemplateService,
     private val applicationEventPublisher: org.springframework.context.ApplicationEventPublisher,
+    private val gitHubClient: com.jervis.service.github.GitHubClient,
+    private val gitLabClient: com.jervis.service.gitlab.GitLabClient,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -123,6 +126,7 @@ class KtorRpcServer(
                             installInternalOpenRouterApi(openRouterSettingsRpcImpl)
                             installInternalProjectManagementApi(clientService, projectService, connectionService, projectTemplateService)
                             installInternalGitApi(gitRepoCreationService, projectService, applicationEventPublisher)
+                            installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient)
                             installInternalCacheApi(guidelinesService)
 
                             get("/") {
@@ -618,6 +622,11 @@ class KtorRpcServer(
                                                 "sourceUrn" to task.sourceUrn.value,
                                                 "agentJobWorkspacePath" to task.agentJobWorkspacePath,
                                                 "agentJobAgentType" to task.agentJobAgentType,
+                                                "taskName" to task.taskName,
+                                                "content" to task.content.take(500),
+                                                "clientId" to task.clientId.toString(),
+                                                "projectId" to task.projectId?.toString(),
+                                                "mergeRequestUrl" to task.mergeRequestUrl,
                                             ),
                                         )
                                     }
@@ -1134,16 +1143,22 @@ class KtorRpcServer(
                                     val projectId = com.jervis.common.types.ProjectId.fromString(body.projectId)
                                     val correlationId = ObjectId().toHexString()
 
-                                    val task = taskService.createTask(
+                                    val sourceUrn = body.sourceUrn ?: "chat:coding-agent"
+                                    var task = taskService.createTask(
                                         taskType = com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING,
                                         content = body.taskDescription,
                                         clientId = clientId,
                                         correlationId = correlationId,
-                                        sourceUrn = com.jervis.common.types.SourceUrn("chat:coding-agent"),
+                                        sourceUrn = com.jervis.common.types.SourceUrn(sourceUrn),
                                         projectId = projectId,
                                         state = com.jervis.dto.TaskStateEnum.QUEUED,
                                         taskName = body.taskDescription.take(100),
                                     )
+                                    // Persist review metadata if this is a code-review fix task
+                                    if (body.mergeRequestUrl != null) {
+                                        task = task.copy(mergeRequestUrl = body.mergeRequestUrl)
+                                        taskRepository.save(task)
+                                    }
 
                                     call.respondText(
                                         """{"taskId":"${task.id}","dispatched":true}""",
@@ -1493,6 +1508,9 @@ data class DispatchCodingAgentRequest(
     val taskDescription: String,
     val clientId: String,
     val projectId: String,
+    val sourceUrn: String? = null,
+    val reviewRound: Int? = null,
+    val mergeRequestUrl: String? = null,
 )
 
 @kotlinx.serialization.Serializable

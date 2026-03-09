@@ -152,8 +152,9 @@ class WorkspaceManager:
             "",
             "## Git Rules",
             "- After making changes, commit them with a clear commit message.",
-            "- Do NOT push — the orchestrator handles pushing.",
-            "- Do NOT force-push, rebase, or modify git history.",
+            "- Push the branch to origin after committing.",
+            "- Do NOT merge branches or accept/merge MRs/PRs.",
+            "- Do NOT force-push or modify git history (no rebase, amend, reset).",
             "- Report any errors with full details so the orchestrator can diagnose and fix them.",
         ]
 

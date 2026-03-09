@@ -4,10 +4,15 @@ import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.common.http.checkProviderResponse
 import io.ktor.client.*
 import io.ktor.client.request.*
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -70,6 +75,66 @@ class GitLabClient(
         val body = response.checkProviderResponse("GitLab", "listIssues")
         return json.decodeFromString(body)
     }
+
+    // ── Merge Request operations ──────────────────────────────────
+
+    suspend fun createMergeRequest(
+        connection: ConnectionDocument,
+        projectId: String,
+        sourceBranch: String,
+        targetBranch: String,
+        title: String,
+        description: String? = null,
+    ): GitLabMergeRequest {
+        val token = requireToken(connection)
+        val baseUrl = getBaseUrl(connection)
+        val payload = buildJsonObject {
+            put("source_branch", sourceBranch)
+            put("target_branch", targetBranch)
+            put("title", title)
+            description?.let { put("description", it) }
+            put("remove_source_branch", false)
+        }
+        val response = httpClient.post("$baseUrl/projects/${projectId.encodeURLParameter()}/merge_requests") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val body = response.checkProviderResponse("GitLab", "createMergeRequest")
+        return json.decodeFromString(GitLabMergeRequest.serializer(), body)
+    }
+
+    suspend fun getMergeRequest(
+        connection: ConnectionDocument,
+        projectId: String,
+        mrIid: Int,
+    ): GitLabMergeRequest {
+        val token = requireToken(connection)
+        val baseUrl = getBaseUrl(connection)
+        val response = httpClient.get("$baseUrl/projects/${projectId.encodeURLParameter()}/merge_requests/$mrIid") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        val body = response.checkProviderResponse("GitLab", "getMergeRequest(#$mrIid)")
+        return json.decodeFromString(GitLabMergeRequest.serializer(), body)
+    }
+
+    suspend fun addMergeRequestNote(
+        connection: ConnectionDocument,
+        projectId: String,
+        mrIid: Int,
+        noteBody: String,
+    ): GitLabNote {
+        val token = requireToken(connection)
+        val baseUrl = getBaseUrl(connection)
+        val payload = buildJsonObject { put("body", noteBody) }
+        val response = httpClient.post("$baseUrl/projects/${projectId.encodeURLParameter()}/merge_requests/$mrIid/notes") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val body = response.checkProviderResponse("GitLab", "addMergeRequestNote(#$mrIid)")
+        return json.decodeFromString(GitLabNote.serializer(), body)
+    }
 }
 
 @Serializable
@@ -104,4 +169,25 @@ data class GitLabIssue(
     val web_url: String,
     val created_at: String,
     val updated_at: String
+)
+
+@Serializable
+data class GitLabMergeRequest(
+    val id: Long,
+    val iid: Int,
+    val title: String,
+    val description: String? = null,
+    val state: String,
+    val source_branch: String,
+    val target_branch: String,
+    val web_url: String,
+    val draft: Boolean = false,
+    val created_at: String,
+)
+
+@Serializable
+data class GitLabNote(
+    val id: Long,
+    val body: String,
+    val created_at: String,
 )

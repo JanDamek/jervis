@@ -126,7 +126,32 @@ def run_static_analysis(
 # E3-S1/S2: LLM Review Agent
 # ---------------------------------------------------------------------------
 
-_REVIEW_SYSTEM_PROMPT = """You are a senior code reviewer. Review the following code diff against the provided rules.
+_REVIEW_SYSTEM_PROMPT = """You are a senior code reviewer for an automated coding agent pipeline.
+Your review determines whether an automated fix is correct and safe to merge.
+
+CRITICAL: You are reviewing code written by an AI coding agent, not a human.
+The agent was given a specific task. Your job is to verify the agent did it correctly.
+
+## What to CHECK (mark as BLOCKER if violated):
+1. **Guidelines compliance** — Does the code follow project/client/global coding guidelines?
+2. **Correctness** — Does the fix actually solve the problem described in the task?
+3. **Completeness** — Does the fix handle ALL cases, not just the one mentioned?
+4. **No regressions** — Does the change break any existing functionality?
+5. **Scope adherence** — Did the agent ONLY fix what was asked? No unrelated changes?
+6. **Critical safety** — SQL injection, race conditions, data loss, security vulnerabilities
+
+## What NOT to block (mark as INFO/MINOR only):
+- Code style preferences (unless guidelines explicitly require it)
+- "Better alternatives" that aren't wrong, just different
+- Missing tests (unless the task specifically required tests)
+- Refactoring suggestions outside the task scope
+- Documentation improvements
+
+## Severity guide:
+- BLOCKER: Factual error, regression, security issue, scope violation, guidelines violation
+- MAJOR: Significant concern but not a blocker
+- MINOR: Suggestion for improvement
+- INFO: Observation, no action needed
 
 Output JSON:
 {
@@ -148,12 +173,11 @@ Output JSON:
 }
 
 Rules:
-- BLOCKER issues → verdict must be REJECT or REQUEST_CHANGES
+- BLOCKER issues → verdict must be REQUEST_CHANGES
+- Only use REJECT for critical security issues or completely wrong fixes
 - Score 80+ for APPROVE, 50-79 for REQUEST_CHANGES, <50 for REJECT
-- Check EVERY item in the review checklist
 - Be specific: include file:line references for issues
-- Focus on correctness, security, and guideline compliance
-- Do NOT review style unless guidelines explicitly require it"""
+- Focus on whether the fix is CORRECT and COMPLETE, not on style"""
 
 
 async def run_llm_review(
@@ -238,10 +262,37 @@ Review Checklist:
         )
 
 
+def _extract_json_from_response(content: str) -> dict | None:
+    """Extract JSON object from LLM response (may be wrapped in markdown code block)."""
+    import json as json_module
+
+    # Try direct parse
+    try:
+        return json_module.loads(content)
+    except (json_module.JSONDecodeError, TypeError):
+        pass
+
+    # Try extracting from ```json ... ``` block
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", content, re.DOTALL)
+    if match:
+        try:
+            return json_module.loads(match.group(1))
+        except (json_module.JSONDecodeError, TypeError):
+            pass
+
+    # Try finding first { ... } block
+    match = re.search(r"\{.*\}", content, re.DOTALL)
+    if match:
+        try:
+            return json_module.loads(match.group(0))
+        except (json_module.JSONDecodeError, TypeError):
+            pass
+
+    return None
+
+
 def _parse_review_response(content: str, static_issues: list[str]) -> ReviewReport:
     """Parse LLM review response into structured ReviewReport."""
-    from app.background.handler import _extract_json_from_response
-
     data = _extract_json_from_response(content)
     if not data:
         logger.warning("Could not parse review JSON, treating as APPROVE with caveats")

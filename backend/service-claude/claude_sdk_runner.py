@@ -97,8 +97,9 @@ async def main():
         error_msg = f"{type(e).__name__}: {e}\n{tb[-500:]}"
         print(f"=== SDK Error: {error_msg} ===", file=sys.stderr)
 
-    # Detect changed files via git
+    # Detect changed files and current branch via git
     changed_files = _get_changed_files(workspace)
+    branch = _get_current_branch(workspace)
 
     # Build summary
     if error_msg:
@@ -108,14 +109,14 @@ async def main():
     else:
         summary = "Agent completed successfully." if success else "Agent completed with no output."
 
-    _write_result(result_file, task_id, success, summary, changed_files)
+    _write_result(result_file, task_id, success, summary, changed_files, branch)
 
     status = "SUCCESS" if success else "FAILED"
     print(f"=== Claude SDK Runner DONE: {status} | changed={len(changed_files)} files ===")
     sys.exit(0 if success else 1)
 
 
-def _write_result(result_file, task_id, success, summary, changed_files):
+def _write_result(result_file, task_id, success, summary, changed_files, branch=""):
     """Write result.json in the format expected by AgentTaskWatcher."""
     result = {
         "taskId": task_id,
@@ -123,10 +124,22 @@ def _write_result(result_file, task_id, success, summary, changed_files):
         "summary": summary,
         "agentType": "claude",
         "changedFiles": changed_files,
+        "branch": branch,
         "timestamp": datetime.datetime.now().isoformat(),
     }
     Path(result_file).parent.mkdir(parents=True, exist_ok=True)
     Path(result_file).write_text(json.dumps(result, indent=2))
+
+
+def _get_current_branch(workspace):
+    """Get the current git branch name."""
+    try:
+        return subprocess.check_output(
+            ["git", "branch", "--show-current"],
+            cwd=workspace, text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return ""
 
 
 def _get_changed_files(workspace):

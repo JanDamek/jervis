@@ -200,6 +200,8 @@ data class TaskDocument(
     /** JSON context prepared by the qualifying GPU agent (KB search results, suggested approach). */
     val qualifierPreparedContext: String? = null,
     // Attachment extraction tracking
+    /** MR/PR URL created by coding agent pipeline. */
+    val mergeRequestUrl: String? = null,
     /** Whether this task has email/source attachments with extract records. */
     val hasAttachments: Boolean = false,
     /** Number of attachment extract records created for this task. */
@@ -243,6 +245,8 @@ data class TaskDocument(
             agentJobName: String?,
             agentJobState: String?,
             agentJobStartedAt: Instant?,
+            agentJobWorkspacePath: String?,
+            agentJobAgentType: String?,
             qualificationStartedAt: Instant?,
             qualificationSteps: List<QualificationStepRecord>?,
             orchestratorSteps: List<OrchestratorStepRecord>?,
@@ -256,6 +260,7 @@ data class TaskDocument(
             orderInPhase: Int?,
             indexingClaimedAt: Instant?,
             qualifierPreparedContext: String?,
+            mergeRequestUrl: String?,
             hasAttachments: Boolean?,
             attachmentCount: Int?,
         ): TaskDocument = TaskDocument(
@@ -287,6 +292,8 @@ data class TaskDocument(
             agentJobName = agentJobName,
             agentJobState = agentJobState,
             agentJobStartedAt = agentJobStartedAt,
+            agentJobWorkspacePath = agentJobWorkspacePath,
+            agentJobAgentType = agentJobAgentType,
             qualificationStartedAt = qualificationStartedAt,
             qualificationSteps = qualificationSteps ?: emptyList(),
             orchestratorSteps = orchestratorSteps ?: emptyList(),
@@ -300,6 +307,7 @@ data class TaskDocument(
             orderInPhase = orderInPhase ?: 0,
             indexingClaimedAt = indexingClaimedAt,
             qualifierPreparedContext = qualifierPreparedContext,
+            mergeRequestUrl = mergeRequestUrl,
             hasAttachments = hasAttachments ?: false,
             attachmentCount = attachmentCount ?: 0,
         )

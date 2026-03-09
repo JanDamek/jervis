@@ -22,6 +22,7 @@ import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.github.GitHubClient
+import com.jervis.service.gitlab.GitLabClient
 import com.jervis.service.guidelines.GuidelinesService
 import com.jervis.service.task.UserTaskService
 import kotlinx.coroutines.flow.filter
@@ -55,6 +56,7 @@ class ActionExecutorService(
     private val approvalStatisticsRepository: ApprovalStatisticsRepository,
     private val chatReplyService: com.jervis.integration.chat.ChatReplyService,
     private val gitHubClient: GitHubClient,
+    private val gitLabClient: GitLabClient,
     private val connectionService: ConnectionService,
     private val clientRepository: ClientRepository,
 ) {
@@ -377,15 +379,32 @@ class ActionExecutorService(
 
     private suspend fun dispatchPrAction(request: ActionExecutionRequest): ActionExecutionResult {
         val payload = request.payload
-        val owner = payload["owner"] ?: error("Missing owner")
-        val repo = payload["repo"] ?: error("Missing repo")
 
-        val connection = findGitHubConnection(request.clientId)
+        val connection = findGitConnection(request.clientId)
             ?: return ActionExecutionResult(
                 success = false,
-                message = "No valid GitHub connection with REPOSITORY capability found for client ${request.clientId}",
+                message = "No valid git connection (GitHub/GitLab) with REPOSITORY capability found for client ${request.clientId}",
                 action = request.action,
             )
+
+        return when (connection.provider) {
+            ProviderEnum.GITHUB -> dispatchGitHubPrAction(request, connection, payload)
+            ProviderEnum.GITLAB -> dispatchGitLabMrAction(request, connection, payload)
+            else -> ActionExecutionResult(
+                success = false,
+                message = "Unsupported git provider: ${connection.provider}",
+                action = request.action,
+            )
+        }
+    }
+
+    private suspend fun dispatchGitHubPrAction(
+        request: ActionExecutionRequest,
+        connection: com.jervis.entity.connection.ConnectionDocument,
+        payload: Map<String, String>,
+    ): ActionExecutionResult {
+        val owner = payload["owner"] ?: error("Missing owner")
+        val repo = payload["repo"] ?: error("Missing repo")
 
         return when (request.action) {
             ApprovalAction.PR_CREATE -> {
@@ -462,13 +481,72 @@ class ActionExecutorService(
         }
     }
 
-    private suspend fun findGitHubConnection(clientId: String): com.jervis.entity.connection.ConnectionDocument? {
+    private suspend fun dispatchGitLabMrAction(
+        request: ActionExecutionRequest,
+        connection: com.jervis.entity.connection.ConnectionDocument,
+        payload: Map<String, String>,
+    ): ActionExecutionResult {
+        val projectId = payload["gitlab_project_id"] ?: payload["owner"]?.let { o ->
+            payload["repo"]?.let { r -> "$o/$r" }
+        } ?: error("Missing gitlab_project_id or owner/repo")
+
+        return when (request.action) {
+            ApprovalAction.PR_CREATE -> {
+                val mr = gitLabClient.createMergeRequest(
+                    connection = connection,
+                    projectId = projectId,
+                    sourceBranch = payload["head_branch"] ?: error("Missing head_branch"),
+                    targetBranch = payload["base_branch"] ?: "main",
+                    title = payload["title"] ?: "Untitled MR",
+                    description = payload["body"],
+                )
+                logger.info { "MR_CREATED: ${mr.web_url} (!${mr.iid})" }
+                ActionExecutionResult(
+                    success = true,
+                    message = "Created MR !${mr.iid}: ${mr.title}",
+                    action = request.action,
+                    artifactId = mr.web_url,
+                )
+            }
+
+            ApprovalAction.PR_COMMENT -> {
+                val mrIid = payload["pr_number"]?.toIntOrNull() ?: error("Missing or invalid pr_number (mr_iid)")
+                val note = gitLabClient.addMergeRequestNote(
+                    connection = connection,
+                    projectId = projectId,
+                    mrIid = mrIid,
+                    noteBody = payload["body"] ?: error("Missing body"),
+                )
+                logger.info { "MR_COMMENTED: MR !$mrIid" }
+                ActionExecutionResult(
+                    success = true,
+                    message = "Commented on MR !$mrIid",
+                    action = request.action,
+                    artifactId = note.id.toString(),
+                )
+            }
+
+            ApprovalAction.PR_MERGE -> ActionExecutionResult(
+                success = false,
+                message = "GitLab MR merge is not supported (user-only operation)",
+                action = request.action,
+            )
+
+            else -> ActionExecutionResult(
+                success = false,
+                message = "Unknown MR action: ${request.action}",
+                action = request.action,
+            )
+        }
+    }
+
+    suspend fun findGitConnection(clientId: String): com.jervis.entity.connection.ConnectionDocument? {
         val client = clientRepository.getById(ClientId.fromString(clientId)) ?: return null
         val clientConnectionIds = client.connectionIds.toSet()
         return connectionService.findAllValid()
             .filter { conn ->
                 conn.id.value in clientConnectionIds &&
-                    conn.provider == ProviderEnum.GITHUB &&
+                    conn.provider in setOf(ProviderEnum.GITHUB, ProviderEnum.GITLAB) &&
                     conn.availableCapabilities.contains(ConnectionCapability.REPOSITORY)
             }
             .firstOrNull()

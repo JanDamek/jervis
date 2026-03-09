@@ -770,6 +770,62 @@ class KotlinServerClient:
             logger.warning("Failed to remove filter rule %s: %s", rule_id, e)
             return f"Error: {e}"
 
+    # ------------------------------------------------------------------
+    # Merge Request / Pull Request operations
+    # ------------------------------------------------------------------
+
+    async def create_merge_request(
+        self,
+        task_id: str,
+        branch: str,
+        target_branch: str | None = None,
+        title: str = "",
+        description: str | None = None,
+    ) -> dict:
+        """Create MR/PR via Kotlin internal API (resolves provider from project)."""
+        try:
+            client = await self._get_client()
+            payload: dict = {
+                "branch": branch,
+                "title": title or f"Coding: {task_id[:12]}",
+            }
+            if target_branch:
+                payload["targetBranch"] = target_branch
+            if description:
+                payload["description"] = description
+            resp = await client.post(
+                f"/internal/tasks/{task_id}/create-merge-request",
+                json=payload,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            logger.warning("create_merge_request failed: %d %s", resp.status_code, resp.text[:200])
+            return {"ok": False, "error": f"HTTP {resp.status_code}"}
+        except Exception as e:
+            logger.warning("Failed to create MR for task %s: %s", task_id, e)
+            return {"ok": False, "error": str(e)}
+
+    async def post_mr_comment(
+        self,
+        task_id: str,
+        comment: str,
+        merge_request_url: str | None = None,
+    ) -> bool:
+        """Post a comment on an existing MR/PR via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            payload: dict = {"comment": comment}
+            if merge_request_url:
+                payload["mergeRequestUrl"] = merge_request_url
+            resp = await client.post(
+                f"/internal/tasks/{task_id}/post-mr-comment",
+                json=payload,
+            )
+            return resp.status_code == 200
+        except Exception as e:
+            logger.warning("Failed to post MR comment for task %s: %s", task_id, e)
+            return False
+
     async def invalidate_cache(self, collection: str) -> None:
         """Invalidate Kotlin in-memory cache for a collection after MongoDB write."""
         try:
