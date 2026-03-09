@@ -66,7 +66,10 @@ internal fun GitCommitConfigFields(
         value = messageFormat,
         onValueChange = onMessageFormatChange,
         label = "Formát commit message (volitelné)",
-        placeholder = "[{project}] {message}",
+        placeholder = "[{project}] {message}\n\nDetailed description...",
+        singleLine = false,
+        minLines = 2,
+        maxLines = 6,
     )
 
     Spacer(Modifier.height(JervisSpacing.itemGap))
@@ -75,7 +78,10 @@ internal fun GitCommitConfigFields(
         value = messagePattern,
         onValueChange = onMessagePatternChange,
         label = "Pattern s placeholdery (volitelné)",
-        placeholder = "[\$project] \$message",
+        placeholder = "[\$project] \$message\n\n\$detail",
+        singleLine = false,
+        minLines = 2,
+        maxLines = 6,
     )
 
     Text(

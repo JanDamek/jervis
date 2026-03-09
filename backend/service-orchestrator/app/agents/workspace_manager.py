@@ -100,6 +100,7 @@ class WorkspaceManager:
             self._setup_claude_workspace(
                 workspace, client_id, project_id, kb_context, environment_context,
                 guidelines_text=guidelines_text,
+                git_config=git_config,
             )
 
         # 5. Git config (author, committer, GPG signing)
@@ -122,6 +123,7 @@ class WorkspaceManager:
         kb_context: str | None,
         environment_context: dict | None = None,
         guidelines_text: str | None = None,
+        git_config: dict | None = None,
     ):
         """Claude Code: HTTP MCP config + CLAUDE.md for runtime KB + environment access."""
 
@@ -148,10 +150,27 @@ class WorkspaceManager:
             "## Instructions",
             "Read `.jervis/instructions.md` for your task.",
             "",
-            "## FORBIDDEN ACTIONS",
-            "- NEVER run git commands (commit, push, branch, checkout, merge, rebase)",
-            "- Make the requested code changes and exit.",
+            "## Git Rules",
+            "- After making changes, commit them with a clear commit message.",
+            "- Do NOT push — the orchestrator handles pushing.",
+            "- Do NOT force-push, rebase, or modify git history.",
             "- Report any errors with full details so the orchestrator can diagnose and fix them.",
+        ]
+
+        # Inject git config details (author, message format) if available
+        if git_config:
+            author_name = git_config.get("git_author_name", "")
+            author_email = git_config.get("git_author_email", "")
+            message_format = git_config.get("git_message_format", "")
+            if author_name or author_email:
+                author = f"{author_name} <{author_email}>".strip()
+                claude_md_parts.append(f"- Git author/committer: {author} (already set in local git config)")
+            if message_format:
+                claude_md_parts.append(f"- Commit message format: `{message_format}`")
+            else:
+                claude_md_parts.append("- Write a concise, descriptive commit message summarizing the changes.")
+
+        claude_md_parts.extend([
             "",
             "## Knowledge Base",
             "You have access to the `jervis` MCP server with these tools:",
@@ -168,7 +187,7 @@ class WorkspaceManager:
             "",
             "Use KB to look up coding conventions, architecture decisions,",
             "and previous findings before making changes.",
-        ]
+        ])
 
         if guidelines_text:
             claude_md_parts.extend(
@@ -235,7 +254,7 @@ class WorkspaceManager:
         client_id: str,
         project_id: str | None,
     ):
-        """Claude Code: CLAUDE.md for GIT DELEGATION mode (ALLOW_GIT=true)."""
+        """Claude Code: CLAUDE.md for git delegation mode (commit/push jobs)."""
 
         claude_md = "\n".join(
             [
@@ -466,11 +485,10 @@ class WorkspaceManager:
         client_id: str,
         project_id: str | None,
     ):
-        """Prepare workspace for git delegation mode (ALLOW_GIT=true).
+        """Prepare workspace for git delegation mode (commit/push jobs).
 
-        Overwrites CLAUDE.md with git-specific instructions that ALLOW git
-        operations. Called from git_operations node before running the
-        git commit/push Job.
+        Overwrites CLAUDE.md with git-specific instructions for commit/push.
+        Called from git_operations node before running the git commit/push Job.
 
         Args:
             workspace_path: Absolute path to workspace on PVC.

@@ -3,7 +3,6 @@
 #
 # Universal entrypoint for coding agent K8s Jobs.
 # Agent is the EXECUTOR – performs the assigned step and exits.
-# Git operations, commit, push -> controlled by ORCHESTRATOR.
 #
 # Required env vars:
 #   WORKSPACE   – path to existing codebase on shared PVC
@@ -11,7 +10,6 @@
 #   AGENT_TYPE  – aider | openhands | claude | junie
 #
 # Optional env vars:
-#   ALLOW_GIT       – "true" to allow git operations (default: "false")
 #   CLAUDE_MODEL    – model override for Claude Code
 #   GPG_PRIVATE_KEY – armored GPG private key for commit signing
 #   GPG_KEY_ID      – GPG key ID (fingerprint) for signing
@@ -164,20 +162,10 @@ with open(sys.argv[4], 'w') as f:
 PYEOF
 }
 
-# Git permission mode
-ALLOW_GIT="${ALLOW_GIT:-false}"
-
 # Build agent command based on type
 case "$AGENT_TYPE" in
     aider)
-        CMD="aider --yes"
-        if [ "$ALLOW_GIT" = "true" ]; then
-            # Normal mode – Aider may commit
-            :
-        else
-            CMD="$CMD --no-auto-commits"
-        fi
-        CMD="$CMD --message \"$INSTRUCTIONS\""
+        CMD="aider --yes --message \"$INSTRUCTIONS\""
         if [ -n "$FILES" ]; then
             CMD="$CMD $FILES"
         fi
@@ -214,7 +202,6 @@ fi
 
 echo "=== JERVIS AGENT START: $AGENT_TYPE / $TASK_ID ==="
 echo "Workspace: $WORKSPACE"
-echo "Allow git: $ALLOW_GIT"
 echo "Instructions length: ${#INSTRUCTIONS} chars"
 echo "==================================================="
 

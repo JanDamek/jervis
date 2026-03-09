@@ -192,6 +192,8 @@ async def _run_coding_agent_background(
     # 3. Build git config from rules
     git_config = None
     if request.rules:
+        # Build commit message format: prefer message_pattern, fallback to commit_prefix
+        msg_format = request.rules.git_message_pattern or request.rules.commit_prefix
         git_config = {
             "git_author_name": request.rules.git_author_name,
             "git_author_email": request.rules.git_author_email,
@@ -199,6 +201,7 @@ async def _run_coding_agent_background(
             "git_committer_email": request.rules.git_committer_email,
             "git_gpg_sign": request.rules.git_gpg_sign,
             "git_gpg_key_id": request.rules.git_gpg_key_id,
+            "git_message_format": msg_format,
         }
 
     # 4. Prepare workspace (instructions, KB, environment, git config, guidelines, CLAUDE.md)
@@ -223,7 +226,6 @@ async def _run_coding_agent_background(
         client_id=request.client_id,
         project_id=request.project_id,
         workspace_path=str(workspace_path),
-        allow_git=False,
         gpg_key_id=request.rules.git_gpg_key_id if request.rules else None,
         git_user_name=request.rules.git_author_name if request.rules else None,
         git_user_email=request.rules.git_author_email if request.rules else None,

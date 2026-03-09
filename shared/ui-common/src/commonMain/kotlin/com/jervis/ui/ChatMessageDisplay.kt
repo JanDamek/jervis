@@ -823,15 +823,104 @@ private fun ChatMessageItem(
                     )
                 }
 
-                // Timestamp
-                message.timestamp?.let { ts ->
-                    if (ts.isNotBlank()) {
-                        Text(
-                            text = formatMessageTime(ts),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(top = 4.dp),
+                // Timestamp + action buttons
+                val alertSourceUrn = message.metadata["sourceUrn"]
+                var showAlertReply by remember { mutableStateOf(false) }
+                var alertReplyText by remember { mutableStateOf("") }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    message.timestamp?.let { ts ->
+                        if (ts.isNotBlank()) {
+                            Text(
+                                text = formatMessageTime(ts),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.5f),
+                            )
+                        }
+                    }
+                    if (!showAlertReply) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(
+                                onClick = { showAlertReply = true },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.height(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    "Reagovat",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Inline reply for alert
+                AnimatedVisibility(visible = showAlertReply) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        OutlinedTextField(
+                            value = alertReplyText,
+                            onValueChange = { alertReplyText = it },
+                            placeholder = {
+                                Text(
+                                    "Napište reakci...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            },
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f).heightIn(min = 44.dp, max = 88.dp),
+                            maxLines = 3,
+                            singleLine = false,
                         )
+                        IconButton(
+                            onClick = {
+                                if (alertReplyText.isNotBlank()) {
+                                    // Send reply as context-aware chat message
+                                    val context = alertSourceUrn?.let { "Re: alert ($it): " } ?: "Re: alert: "
+                                    onSendReply(alertSourceUrn ?: "alert", alertReplyText)
+                                    alertReplyText = ""
+                                    showAlertReply = false
+                                }
+                            },
+                            enabled = alertReplyText.isNotBlank(),
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Send,
+                                contentDescription = "Odeslat",
+                                tint = if (alertReplyText.isNotBlank()) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                },
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                showAlertReply = false
+                                alertReplyText = ""
+                            },
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Zrušit",
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
             }

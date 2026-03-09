@@ -71,7 +71,6 @@ class JobRunner:
         client_id: str,
         project_id: str | None,
         workspace_path: str,
-        allow_git: bool = False,
         instructions_override: str | None = None,
         on_log_line: callable | None = None,
         gpg_key_id: str | None = None,
@@ -87,7 +86,6 @@ class JobRunner:
             client_id: Client ID for scoping.
             project_id: Project ID (optional).
             workspace_path: Absolute path to workspace on shared PVC.
-            allow_git: If True, agent may perform git operations.
             instructions_override: Override workspace instructions (for git delegation).
             on_log_line: Callback for streaming log lines.
             gpg_key_id: Specific GPG key ID from project/client settings.
@@ -115,7 +113,7 @@ class JobRunner:
             (jervis_dir / "instructions.md").write_text(instructions_override)
 
         # Fetch GPG key for commit signing (if configured)
-        gpg_key = await self._fetch_gpg_key(client_id, gpg_key_id) if allow_git else None
+        gpg_key = await self._fetch_gpg_key(client_id, gpg_key_id)
 
         # Build and create Job
         job_name = f"jervis-{agent_type}-{task_id[:12]}"
@@ -126,7 +124,6 @@ class JobRunner:
             client_id=client_id,
             project_id=project_id or "",
             workspace_path=workspace_path,
-            allow_git=allow_git,
             gpg_key=gpg_key,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
@@ -249,7 +246,6 @@ class JobRunner:
         client_id: str,
         project_id: str | None,
         workspace_path: str,
-        allow_git: bool = False,
         instructions_override: str | None = None,
         gpg_key_id: str | None = None,
         git_user_name: str | None = None,
@@ -277,7 +273,7 @@ class JobRunner:
             (jervis_dir / "instructions.md").write_text(instructions_override)
 
         # Fetch GPG key for commit signing (if configured)
-        gpg_key = await self._fetch_gpg_key(client_id, gpg_key_id) if allow_git else None
+        gpg_key = await self._fetch_gpg_key(client_id, gpg_key_id)
 
         # Build and create Job
         job_name = f"jervis-{agent_type}-{task_id[:12]}"
@@ -288,7 +284,6 @@ class JobRunner:
             client_id=client_id,
             project_id=project_id or "",
             workspace_path=workspace_path,
-            allow_git=allow_git,
             gpg_key=gpg_key,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
@@ -391,7 +386,6 @@ class JobRunner:
         client_id: str,
         project_id: str,
         workspace_path: str,
-        allow_git: bool = False,
         gpg_key: dict | None = None,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
@@ -410,7 +404,6 @@ class JobRunner:
             client.V1EnvVar(name="PROJECT_ID", value=project_id),
             client.V1EnvVar(name="WORKSPACE", value=workspace_path),
             client.V1EnvVar(name="AGENT_TYPE", value=agent_type),
-            client.V1EnvVar(name="ALLOW_GIT", value=str(allow_git).lower()),
         ]
 
         # Auth: prefer direct token from orchestrator env, fallback to K8s secret

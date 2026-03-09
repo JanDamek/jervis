@@ -1056,57 +1056,58 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
                 len(content), max_content_chars, content_budget_tokens,
             )
 
-        prompt = f"""Analyze this {source_type or 'content'} and provide a JSON response:
+        prompt = f"""Analyzuj tento {source_type or 'obsah'} a vrať JSON odpověď.
+DŮLEŽITÉ: Pole "summary" piš ČESKY (čeština).
 
-Subject: {subject or 'N/A'}
+Předmět: {subject or 'N/A'}
 
-Content:
+Obsah:
 {truncated}
 
-Respond with JSON:
+Odpověz POUZE validním JSON:
 {{
-    "summary": "2-3 sentence summary of the main points",
-    "entities": ["list", "of", "key", "entities", "mentioned"],
+    "summary": "2-3 věty česky shrnující hlavní body",
+    "entities": ["seznam", "klíčových", "entit"],
     "hasActionableContent": true/false,
     "suggestedActions": ["action1", "action2"],
     "hasFutureDeadline": true/false,
-    "suggestedDeadline": "ISO-8601 datetime or null",
-    "assignedTo": "person or team name, or null",
+    "suggestedDeadline": "ISO-8601 datetime nebo null",
+    "assignedTo": "jméno osoby/týmu nebo null",
     "urgency": "urgent/normal/low"
 }}
 
-hasActionableContent is TRUE ONLY if:
-- This is a PERSONAL email/message that explicitly asks ME to do something or reply
-- This is a task/issue assigned to a specific person
-- This is a code review request directed at me
-- This contains a direct question needing MY answer
-- This is a meeting action item assigned to someone
+hasActionableContent je TRUE POUZE pokud:
+- Osobní email/zpráva která explicitně žádá MĚ o akci nebo odpověď
+- Úkol/issue přiřazený konkrétní osobě
+- Code review request směřovaný na mě
+- Přímá otázka vyžadující MOJI odpověď
+- Akční bod ze schůzky přiřazený někomu
 
-hasActionableContent is FALSE for:
-- Newsletters, announcements, marketing emails, event notifications
-- Automated system notifications (JIRA transitions, CI/CD, monitoring)
-- FYI/informational emails not requiring any response
-- Bulk/mass emails, mailing lists, promotional content
-- Holiday announcements, "World Day of X", company-wide announcements
-- Automated receipts, confirmations, shipping notifications
+hasActionableContent je FALSE pro:
+- Newslettery, oznámení, marketingové emaily, pozvánky na události
+- Automatické systémové notifikace (JIRA přechody, CI/CD, monitoring)
+- Informační emaily nevyžadující odpověď
+- Hromadné emaily, mailing listy, propagační obsah
+- Oznámení o svátcích, firemní oznámení
+- Automatické potvrzení, doručenky, notifikace o zásilkách
 
-hasFutureDeadline is TRUE if:
-- Content mentions a specific future deadline or due date
-- A sprint end date, milestone, or release date is referenced
-- "by Friday", "due March 15", "deadline: 2025-04-01", etc.
+hasFutureDeadline je TRUE pokud:
+- Obsah zmiňuje konkrétní budoucí deadline nebo termín
+- Konec sprintu, milník, release date
+- "do pátku", "termín 15. března", "deadline: 2025-04-01", apod.
 
-suggestedDeadline: If hasFutureDeadline is true, provide the deadline as ISO-8601 datetime string (e.g., "2025-04-01T00:00:00"). If unclear, set null.
+suggestedDeadline: Pokud hasFutureDeadline je true, uveď deadline jako ISO-8601 (např. "2025-04-01T00:00:00"). Pokud nejasné, nastav null.
 
-assignedTo: Extract the person or team this task/issue is assigned to. Look for patterns like "assigned to X", "assignee: X", "@mentions", "please X do this". Set null if no assignment found.
+assignedTo: Extrahuj osobu/tým kterému je úkol přiřazen. Hledej "assigned to X", "assignee: X", "@mentions". Nastav null pokud nenalezeno.
 
 urgency:
-- "urgent" if marked as urgent/critical/blocker/P0, or has very near deadline (<24h)
-- "normal" for regular tasks, standard priority
-- "low" for nice-to-have, low priority, informational
+- "urgent" pokud označeno jako urgent/critical/blocker/P0, nebo má blízký deadline (<24h)
+- "normal" pro běžné úkoly, standardní prioritu
+- "low" pro nice-to-have, nízkou prioritu, informační obsah
 
-suggestedActions examples: "reply_email", "review_code", "fix_issue", "answer_question", "schedule_meeting"
+suggestedActions příklady: "reply_email", "review_code", "fix_issue", "answer_question", "schedule_meeting", "pick_up_order"
 
-Respond ONLY with valid JSON."""
+Odpověz POUZE validním JSON."""
 
         try:
             logger.info("Calling LLM for summary generation model=%s source_type=%s",

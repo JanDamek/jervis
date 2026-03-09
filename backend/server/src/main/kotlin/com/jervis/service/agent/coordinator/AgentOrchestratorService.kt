@@ -563,7 +563,7 @@ class AgentOrchestratorService(
             gitCommitterEmail = effectiveGitConfig?.committerEmail,
             gitGpgSign = effectiveGitConfig?.gpgSign ?: false,
             gitGpgKeyId = effectiveGitConfig?.gpgKeyId,
-            gitMessagePattern = effectiveGitConfig?.messagePattern,
+            gitMessagePattern = effectiveGitConfig?.messagePattern ?: effectiveGitConfig?.messageFormat,
         )
     }
 

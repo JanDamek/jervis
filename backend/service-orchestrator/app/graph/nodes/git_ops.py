@@ -84,7 +84,7 @@ async def git_operations(state: dict) -> dict:
         from pathlib import Path
         workspace_manager._setup_git_config(Path(workspace_path), git_config)
 
-    # Delegate commit to coding agent (ALLOW_GIT=true, non-blocking)
+    # Delegate commit to coding agent (non-blocking)
     commit_lines = [
         f"Commit all current changes on branch '{branch}'.",
         "Rules:",
@@ -108,7 +108,6 @@ async def git_operations(state: dict) -> dict:
         client_id=task.client_id,
         project_id=task.project_id,
         workspace_path=workspace_path,
-        allow_git=True,
         instructions_override=commit_instructions,
         gpg_key_id=rules.git_gpg_key_id,
         git_user_name=rules.git_author_name,
@@ -154,7 +153,6 @@ async def git_operations(state: dict) -> dict:
             client_id=task.client_id,
             project_id=task.project_id,
             workspace_path=workspace_path,
-            allow_git=True,
             instructions_override=push_instructions,
             gpg_key_id=rules.git_gpg_key_id,
             git_user_name=rules.git_author_name,

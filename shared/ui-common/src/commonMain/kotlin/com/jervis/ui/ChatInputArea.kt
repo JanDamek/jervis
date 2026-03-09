@@ -129,8 +129,10 @@ internal fun InputArea(
                         .onPreviewKeyEvent { keyEvent ->
                             if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown) {
                                 if (keyEvent.isShiftPressed) {
-                                    // Shift+Enter → new line (let the event pass through)
-                                    false
+                                    // Shift+Enter → insert new line manually
+                                    // (Compose Desktop doesn't propagate Shift+Enter to text field)
+                                    onInputChanged(inputText + "\n")
+                                    true
                                 } else {
                                     // Enter → send message
                                     if (enabled && inputText.isNotBlank()) {
