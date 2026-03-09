@@ -8,46 +8,20 @@
 
 ## Agent Selection Strategy
 
-Orchestrátor volí coding agenta na základě **complexity** úkolu a **agent_preference** uživatele:
+Only two agent types remain. Claude is the default and only production agent:
 
-```python
-# backend/service-orchestrator/app/graph/nodes/_helpers.py:192
-def select_agent(complexity: Complexity, preference: str = "auto") -> AgentType:
-    """Select coding agent based on task complexity."""
-    if preference != "auto":
-        return AgentType(preference)  # Uživatel explicitně zvolil agenta
+| Agent | Use Case | Provider | Auth | Status |
+|-------|----------|----------|------|--------|
+| **Claude** | Default agent for all tasks (coding + review) | Anthropic (Claude SDK) | Setup token or API key | ✅ Active |
+| **Kilo** | Future alternative agent | — | — | Placeholder |
 
-    match complexity:
-        case Complexity.SIMPLE:     return AgentType.AIDER       # Malé opravy, lokální
-        case Complexity.MEDIUM:     return AgentType.OPENHANDS   # Levné zpracování, lokální
-        case Complexity.COMPLEX:    return AgentType.OPENHANDS   # Větší analýzy, lokální
-        case Complexity.CRITICAL:   return AgentType.CLAUDE      # TOP agent, nejlepší cena/výkon
-    return AgentType.CLAUDE  # Fallback na nejlepšího agenta
-```
+Agent type is always `claude` unless user explicitly selects otherwise.
 
-### Agent Profiles
+**Auth methods** (Claude):
+- **Setup Token** (recommended): `claude setup-token` → long-lived `sk-ant-oat01-...` token, stored in MongoDB
+- **API Key**: Anthropic Console pay-as-you-go key
 
-| Agent | Use Case | Provider | Model | API Key Required |
-|-------|----------|----------|-------|------------------|
-| **Claude** | **Default agent** pro všechny úkoly — nejlepší cena/výkon | Anthropic | `claude-3-5-sonnet-20241022` | ✅ Ano (nebo setup token) |
-| **Kilo** | Alternativní premium agent (placeholder) | — | — | — |
-
-### Configuration
-
-**Properties:** `backend/server/src/main/resources/application.yml:150-173`
-```yaml
-coding-tools:
-  claude:
-    default-provider: anthropic
-    default-model: claude-3-5-sonnet-20241022
-  kilo:
-    # placeholder — not yet implemented
-```
-
-**UI Settings:** `shared/ui-common/.../sections/CodingAgentsSettings.kt`
-- **Claude:** API key OR setup token (`claude setup-token` pro Max/Pro)
-
-> **Note:** Aider, OpenHands, and Junie agents were removed. Only Claude and Kilo (placeholder) remain.
+**Configuration:** `shared/ui-common/.../sections/CodingAgentsSettings.kt` (UI), `coding_agent_settings` collection (MongoDB).
 
 ---
 
@@ -987,11 +961,30 @@ AgentTaskWatcher._poll_once() → get_job_status() → [succeeded] → collect_r
 
 ```json
 {
+  "taskId": "69aedeb939184882a4a8609c",
   "success": true,
   "summary": "Implemented feature X...",
-  "changedFiles": ["src/main.kt", "src/test.kt"]
+  "agentType": "claude",
+  "changedFiles": ["src/main.kt", "src/test.kt"],
+  "branch": "bugfix/UFO-4166",
+  "timestamp": "2026-03-09T14:52:48.000Z"
 }
 ```
+
+The `branch` field is critical for MR/PR creation — `AgentTaskWatcher` uses it to call `create_merge_request()` after job completion. Written by `entrypoint-job.sh` (via `_JERVIS_BRANCH` env var) and `claude_sdk_runner.py` (via `_get_current_branch()`).
+
+### 10.5 Direct Coding Task Completion Flow
+
+Tasks dispatched from chat (`sourceUrn="chat:coding-agent"`) follow a two-step completion in `AgentTaskWatcher`:
+
+1. `POST /internal/tasks/{id}/agent-completed` → CODING → PROCESSING
+2. `POST /orchestrate/v2/report-status-change` → PROCESSING → DONE
+3. If `result.branch` exists → create MR/PR + dispatch code review (async)
+4. Memory map TASK_REF vertex → COMPLETED
+
+Fix tasks (`sourceUrn="code-review-fix:{id}"`) reuse existing MR URL, don't create new MR.
+
+See `docs/architecture.md` § "Coding Agent → MR/PR → Code Review Pipeline" for full flow.
 
 ---
 

@@ -156,6 +156,8 @@ class WorkspaceManager:
             "- Do NOT merge branches or accept/merge MRs/PRs.",
             "- Do NOT force-push or modify git history (no rebase, amend, reset).",
             "- Report any errors with full details so the orchestrator can diagnose and fix them.",
+            "- GPG signing is pre-configured by the environment. Do NOT search for or configure GPG keys.",
+            "- Do NOT run `find /` or scan the entire filesystem for any reason.",
         ]
 
         # Inject git config details (author, message format) if available
@@ -438,6 +440,15 @@ class WorkspaceManager:
 
         Called during workspace preparation so coding agents inherit these settings.
         """
+        # Ensure safe.directory for cross-user workspace access (PVC owned by nobody)
+        try:
+            subprocess.run(
+                ["git", "config", "--global", "--add", "safe.directory", str(workspace)],
+                check=True, capture_output=True,
+            )
+        except subprocess.CalledProcessError:
+            pass
+
         config_map = {
             "git_author_name": "user.name",
             "git_author_email": "user.email",

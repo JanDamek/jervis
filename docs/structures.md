@@ -1559,12 +1559,37 @@ Source: `backend/service-orchestrator/app/background/handler.py`
 
 ### Code Review Pipeline (EPIC 3)
 
-After coding agent dispatch, runs 2-phase review:
-1. **Static analysis**: Forbidden patterns, credentials scan, file restrictions
-2. **LLM review**: Independent reviewer (doesn't see coding agent reasoning)
-3. Verdict: APPROVE → continue, REQUEST_CHANGES → re-dispatch, REJECT → USER_TASK
+> **SSOT:** `docs/architecture.md` § "Coding Agent → MR/PR → Code Review Pipeline"
 
-Source: `backend/service-orchestrator/app/review/review_engine.py`
+Two-phase review triggered by `AgentTaskWatcher` after coding job success:
+
+**Phase 1 — Orchestrator (preparation):**
+1. Extract diff from workspace (`git diff`) or MR/PR API
+2. Static analysis: forbidden patterns, credentials scan, forbidden file changes
+3. KB prefetch: Jira issues, meeting discussions, chat decisions, architecture notes
+4. Dispatch review agent K8s Job with context
+
+**Phase 2 — Review Agent (Claude SDK, K8s Job):**
+1. Reads diff, instructions, pre-fetched KB context
+2. Deep KB search via MCP (`kb_search`) for additional context
+3. Web search (`web_search`) to verify stale best practices
+4. Full file analysis (not just diff) for context
+5. Structured verdict: APPROVE / REQUEST_CHANGES / REJECT
+
+**KB integration:**
+- **Search**: 3+ KB queries before dispatch (task, files, topics) + agent's own MCP searches
+- **Store**: Review outcome → `kb_store(kind="finding", sourceUrn="code-review:{taskId}")` for future reference
+
+**Verdict routing:**
+- APPROVE → MR comment posted, user merges manually
+- REQUEST_CHANGES (BLOCKERs) → new fix coding task dispatched (max 2 rounds)
+- After max rounds → escalation comment on MR
+
+Sources:
+- `backend/service-orchestrator/app/review/code_review_handler.py` (orchestration)
+- `backend/service-orchestrator/app/review/review_engine.py` (static analysis)
+- `backend/service-orchestrator/app/agent_task_watcher.py` (trigger + MR creation)
+- `backend/server/.../rpc/internal/InternalMergeRequestRouting.kt` (MR/PR API)
 
 ### Universal Approval Gate (EPIC 4)
 
@@ -1605,13 +1630,22 @@ Sources:
 
 ### Code Review Re-dispatch Loop (EPIC 3-S2)
 
-When code review returns REQUEST_CHANGES, background handler runs a re-dispatch loop (max 2 rounds):
-1. Inject review feedback into coding agent context
-2. Run short agentic sub-loop (max 3 iterations)
-3. Re-run code review on updated code
-4. If 2nd round still fails → escalate to USER_TASK
+When code review returns REQUEST_CHANGES with BLOCKER issues:
 
-Source: `backend/service-orchestrator/app/background/handler.py`
+1. `code_review_handler.py` creates fix task via `POST /internal/dispatch-coding-agent`
+   - `sourceUrn="code-review-fix:{originalTaskId}"` — identifies as fix task
+   - `reviewRound=N+1` — preserves round counter
+   - `mergeRequestUrl` — reuses existing MR (no new MR created)
+2. Coding agent receives: original task + BLOCKER issues + fix instructions
+3. Agent commits fix on same branch → push → `AgentTaskWatcher` detects
+4. Watcher recognizes fix task → triggers review round N+1
+5. Max 2 rounds — after that, escalation comment posted on MR
+
+Round tracking: `AgentTaskWatcher` parses `"Code Review Fix (Round N)"` from task content.
+
+Sources:
+- `backend/service-orchestrator/app/review/code_review_handler.py` (`_create_fix_task()`)
+- `backend/service-orchestrator/app/agent_task_watcher.py` (fix task detection, lines 183-208)
 
 ### Batch Approval & Analytics (EPIC 4-S4/S5)
 

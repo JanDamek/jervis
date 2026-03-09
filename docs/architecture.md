@@ -974,30 +974,99 @@ Each agent has its own build script in `k8s/build_<name>.sh` which calls the gen
 
 ### Coding Agent → MR/PR → Code Review Pipeline
 
-After a coding agent K8s Job completes:
+After a coding agent K8s Job completes successfully:
 
 ```
-Coding agent → commit + push → AgentTaskWatcher detects completion →
-Server creates MR/PR (GitHub PR / GitLab MR) → Code review runs →
-ReviewEngine (static + LLM) → Posts review comment on MR/PR →
-  ├─ APPROVE → User merges manually
-  ├─ REQUEST_CHANGES (BLOCKERs only) → new fix coding task (max 2 rounds)
-  └─ After max rounds → Escalation comment, user decides
+Coding agent (K8s Job) → commit + push → result.json with branch →
+AgentTaskWatcher detects completion →
+  ├─ CODING → PROCESSING → DONE (two-step via agent-completed + report_status_change)
+  ├─ Server creates MR/PR (GitHub PR / GitLab MR)
+  └─ Code review dispatched (async, non-blocking)
+
+Code Review (Coding Agent K8s Job — NOT orchestrator LLM):
+  Orchestrator: KB prefetch + static analysis → dispatch review agent job →
+  Review Agent (Claude SDK): reads diff, KB search, web search, file analysis →
+  Structured verdict → Posted as MR/PR comment →
+    ├─ APPROVE → User merges manually (NEVER auto-merge)
+    ├─ REQUEST_CHANGES (BLOCKERs only) → new fix coding task (max 2 rounds)
+    └─ After max rounds → Escalation comment, user decides
 ```
 
-**Key components:**
+#### Current State (implemented)
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| Result with branch | `entrypoint-job.sh`, `claude_sdk_runner.py` | result.json includes `branch` field |
-| MR/PR creation | `InternalMergeRequestRouting.kt` | `POST /internal/tasks/{id}/create-merge-request` — resolves provider from project |
-| MR comment posting | `InternalMergeRequestRouting.kt` | `POST /internal/tasks/{id}/post-mr-comment` — posts review to MR/PR |
-| Code review handler | `app/review/code_review_handler.py` | Orchestrates: diff → static → LLM → MR comment → fix task |
-| Review engine | `app/review/review_engine.py` | Static analysis + LLM review with strict scope |
-| Task watcher integration | `app/agent_task_watcher.py` | Creates MR + triggers review after coding job success |
-| Python client methods | `app/tools/kotlin_client.py` | `create_merge_request()`, `post_mr_comment()` |
+| Component | File | Purpose | Status |
+|-----------|------|---------|--------|
+| Result with branch | `entrypoint-job.sh`, `claude_sdk_runner.py` | result.json includes `branch` field | ✅ Done |
+| MR/PR creation | `InternalMergeRequestRouting.kt` | `POST /internal/tasks/{id}/create-merge-request` — resolves provider from project | ✅ Done |
+| MR comment posting | `InternalMergeRequestRouting.kt` | `POST /internal/tasks/{id}/post-mr-comment` — posts review to MR/PR | ✅ Done |
+| Code review handler | `app/review/code_review_handler.py` | Orchestrates: diff → static → LLM → MR comment → fix task | ✅ Done (orchestrator LLM) |
+| Review engine | `app/review/review_engine.py` | Static analysis + LLM review with strict scope | ✅ Done |
+| Task watcher integration | `app/agent_task_watcher.py` | Creates MR + triggers review after coding job success | ✅ Done |
+| Python client methods | `app/tools/kotlin_client.py` | `create_merge_request()`, `post_mr_comment()` | ✅ Done |
+| Fix task round tracking | `agent_task_watcher.py` | sourceUrn `code-review-fix:{id}` + round parsing | ✅ Done |
 
-**Provider support:** GitHub (PR) and GitLab (MR). Provider auto-detected from `ConnectionDocument.provider`.
+#### Planned: Review by Coding Agent (replaces orchestrator LLM review)
+
+Current review uses orchestrator's local 30b model (single-shot, limited context). Plan: **review as a coding agent K8s Job** with full Claude SDK + MCP access.
+
+| Component | Purpose | Status |
+|-----------|---------|--------|
+| Review KB Prefetch | Orchestrator pre-fetches KB context (Jira, meetings, chat, architecture) → `.jervis/review-context.md` | 🔜 Planned |
+| Review Agent Job | Claude SDK reviews diff with MCP tools (kb_search, web_search, file read) | 🔜 Planned |
+| KB Freshness | `observedAt` in search results — agent decides when to verify via web search | 🔜 Planned |
+| MR/PR Diff API | GitLab/GitHub diff/changes/commits API methods (review without workspace) | 🔜 Planned |
+| Review Outcome → KB | Store review findings in KB for future reference | 🔜 Planned |
+
+**Review agent responsibilities (via MCP):**
+1. Read diff + original task description
+2. KB search: Jira issues, meeting discussions, chat decisions, architecture notes
+3. Verify stale KB data (>30 days) against web search
+4. Read full files (not just diff) for context
+5. Output structured ReviewReport (same format as current engine)
+
+**Orchestrator responsibilities (before dispatch):**
+1. Extract diff from workspace or MR/PR API
+2. Run static analysis (forbidden patterns, credentials, forbidden files)
+3. Pre-fetch KB context (multiple queries: task, files, topics)
+4. Build review instructions + context
+5. Dispatch coding agent K8s Job in review mode
+
+#### Direct Coding Task Flow
+
+Tasks with `sourceUrn="chat:coding-agent"` follow a special two-step completion:
+
+```
+AgentTaskWatcher._poll_once():
+  1. Detect job completion (succeeded/failed)
+  2. POST /internal/tasks/{id}/agent-completed  → CODING → PROCESSING
+  3. POST /orchestrate/v2/report-status-change  → PROCESSING → DONE
+  4. If success + result.branch:
+     a. Create MR/PR via kotlin_client.create_merge_request()
+     b. asyncio.create_task(run_code_review(...))  # non-blocking
+  5. Update memory map TASK_REF vertex → COMPLETED
+```
+
+Fix tasks (`sourceUrn="code-review-fix:{originalTaskId}"`):
+- Do NOT create new MR (branch + MR already exist)
+- Parse review round from task content: `"## Code Review Fix (Round N)"`
+- Reuse existing `mergeRequestUrl` from task document
+
+#### KB Integration in Code Review
+
+**Search (gathering context):**
+- Pre-fetch: orchestrator runs 3+ KB queries before review dispatch
+  - Task name/description → Jira issues, requirements, acceptance criteria
+  - Changed files → file-specific architecture notes, previous changes
+  - Bug/error keywords → meeting discussions, chat decisions
+- Agent: Claude SDK uses MCP `kb_search` for deep dives during review
+- Sources tracked: `kb_sources_used` in review result
+
+**Store (updating state):**
+- Review outcome stored in KB via `kb_store(kind="finding")` after review completes
+- Enables future reviews to reference: "Similar issue was found in MR #42, fix was..."
+- `sourceUrn="code-review:{taskId}"` for provenance
+
+**Provider support:** GitHub (PR) and GitLab (MR). Provider auto-detected from `ConnectionDocument.provider` via project's REPOSITORY resource.
 
 **Review scope (BLOCKERs only):**
 1. Guidelines compliance (project, client, global)
@@ -1006,9 +1075,15 @@ ReviewEngine (static + LLM) → Posts review comment on MR/PR →
 4. Scope adherence — agent fixed ONLY what was in the task
 5. Critical safety — SQL injection, race conditions, data loss
 
-**Feedback loop protection:** Max 2 rounds of review→fix. Only BLOCKER issues trigger new coding round. Style suggestions never block.
+**Non-blocking items (INFO/MINOR only):**
+- Style preferences (unless guidelines explicitly require it)
+- "Better alternatives" that aren't wrong
+- Missing tests (unless task required them)
+- Refactoring outside task scope
 
-**CLAUDE.md template** (`workspace_manager.py`): Push is allowed, merge/force-push forbidden.
+**Feedback loop protection:** Max 2 rounds of review→fix. Only BLOCKER issues trigger new coding round.
+
+**CLAUDE.md template** (`workspace_manager.py`): Push is allowed, merge/force-push forbidden. GPG signing is pre-configured by entrypoint.
 
 ---
 
