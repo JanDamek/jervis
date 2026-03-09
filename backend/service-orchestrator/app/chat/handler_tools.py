@@ -132,14 +132,29 @@ async def execute_chat_tool(
 
 # Strategy map: tool_name → handler coroutine
 async def _handle_create_background_task(args, client_id, project_id, kotlin_client):
-    # Context IDs have priority over LLM-provided args (LLM often sends names instead of ObjectIds)
-    effective_client_id = client_id or args.get("client_id")
-    effective_project_id = project_id or args.get("project_id")
-    # Validate ObjectId format if provided (clientId is optional — None = global)
     import re
     _OID_RE = re.compile(r"^[0-9a-fA-F]{24}$")
+
+    # Client: context first, then LLM arg
+    effective_client_id = client_id or args.get("client_id")
     if effective_client_id and not _OID_RE.match(effective_client_id):
         return f"Chyba: client_id '{effective_client_id}' není platné ObjectId. Vyber klienta přes UI."
+
+    # Project: ONLY use if LLM explicitly provides it or task is project-specific.
+    # Don't blindly inherit chat context project — personal tasks (reminders, alerts)
+    # would incorrectly land under the currently-viewed project and block its queue
+    # if workspace is broken.
+    llm_project = args.get("project_id")
+    if llm_project and _OID_RE.match(llm_project):
+        effective_project_id = llm_project
+    elif llm_project:
+        # LLM tried to provide but it's not valid ObjectId — ignore
+        effective_project_id = None
+    else:
+        # LLM didn't provide project_id — use context only for project-specific tasks
+        # (coding, bugfix). For reminders/alerts, project is not relevant.
+        effective_project_id = project_id if args.get("is_project_task", False) else None
+
     result = await kotlin_client.create_background_task(
         title=args["title"],
         description=args["description"],

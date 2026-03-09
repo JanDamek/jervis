@@ -196,8 +196,10 @@ class AgentOrchestratorService(
             return false
         }
 
-        // Validate workspace is ready (for projects with git resources)
-        if (task.projectId != null) {
+        // Validate workspace is ready — only BLOCK coding tasks (sourceUrn=chat:coding-agent).
+        // Non-coding tasks (graph agent, reminders, alerts) proceed regardless of workspace status.
+        val isCodingTask = task.sourceUrn?.value?.contains("coding-agent") == true
+        if (isCodingTask && task.projectId != null) {
             val project = projectService.getProjectByIdOrNull(task.projectId)
             if (project != null) {
                 val hasGitResources = project.resources.any {

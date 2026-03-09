@@ -214,8 +214,11 @@ if [ "$AGENT_TYPE" = "claude" ] && [ "$(id -u)" = "0" ]; then
     chmod 644 /home/jervis/.gitconfig 2>/dev/null || true
     # safe.directory for jervis user too
     su jervis -c "git config --global --add safe.directory '$WORKSPACE'"
-    # Export env vars and use su --preserve-environment to pass them to jervis
+    # Fix identity env vars — su --preserve-environment keeps USER=root/LOGNAME=root
+    # which Claude CLI detects as "root/sudo privileges" and refuses --dangerously-skip-permissions
     export HOME=/home/jervis
+    export USER=jervis
+    export LOGNAME=jervis
     CMD="su --preserve-environment jervis -c '$CMD'"
 fi
 

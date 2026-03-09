@@ -42,7 +42,10 @@ TOOL_CREATE_BACKGROUND_TASK: dict = {
         "name": "create_background_task",
         "description": (
             "Vytvoř background task (úkol na pozadí). Použij když user zmíní něco co není urgentní. "
-            "Task bude zpracován orchestrátorem dle priorit."
+            "Task bude zpracován orchestrátorem dle priorit. "
+            "DŮLEŽITÉ: Nastav is_project_task=true POUZE pokud úkol přímo souvisí s konkrétním projektem "
+            "(oprava bugu, coding task). Pro osobní připomínky, upozornění, remindery NENASTAVUJ project_id "
+            "a nech is_project_task=false."
         ),
         "parameters": {
             "type": "object",
@@ -61,7 +64,12 @@ TOOL_CREATE_BACKGROUND_TASK: dict = {
                 },
                 "project_id": {
                     "type": "string",
-                    "description": "Project ID (volitelné).",
+                    "description": "Project ID — POUZE pro projektově-specifické úkoly (bugfix, coding). Pro remindery/alerty NENASTAVUJ.",
+                },
+                "is_project_task": {
+                    "type": "boolean",
+                    "description": "true = úkol souvisí s konkrétním projektem (coding, bugfix). false = osobní/obecný úkol (reminder, alert reakce).",
+                    "default": False,
                 },
                 "priority": {
                     "type": "string",

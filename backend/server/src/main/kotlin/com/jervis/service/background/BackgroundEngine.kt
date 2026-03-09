@@ -550,9 +550,10 @@ class BackgroundEngine(
 
                     val finalResponse = agentOrchestrator.run(task, task.content, onProgress)
 
-                    // Check if task was dispatched to Python orchestrator (fire-and-forget)
+                    // Check if task was dispatched to Python orchestrator (fire-and-forget).
+                    // Empty response = successfully dispatched; non-empty = error/unavailable.
                     val freshTask = taskRepository.getById(task.id)
-                    if (freshTask?.state == TaskStateEnum.PROCESSING) {
+                    if (freshTask?.state == TaskStateEnum.PROCESSING && finalResponse.message.isBlank()) {
                         // Reset dispatch retry count on successful dispatch
                         if (freshTask.dispatchRetryCount > 0) {
                             taskRepository.save(freshTask.copy(dispatchRetryCount = 0, nextDispatchRetryAt = null))
@@ -949,9 +950,26 @@ class BackgroundEngine(
      * 5. Otherwise delegate terminal states to OrchestratorStatusHandler
      */
     private suspend fun checkOrchestratorTaskStatus(task: TaskDocument) {
-        val threadId = task.orchestratorThreadId ?: return
         val taskIdStr = task.id.toString()
         val now = java.time.Instant.now()
+
+        // No threadId = dispatch failed but task stayed PROCESSING (edge case).
+        // Use createdAt as age proxy — if old enough, reset immediately.
+        val threadId = task.orchestratorThreadId
+        if (threadId == null) {
+            val taskAge = java.time.Duration.between(task.createdAt, now).toMinutes()
+            if (taskAge >= STUCK_THRESHOLD_MINUTES) {
+                logger.warn { "ORPHANED_PROCESSING: taskId=$taskIdStr age=${taskAge}min, no threadId → resetting to QUEUED" }
+                taskRepository.save(
+                    task.copy(
+                        state = TaskStateEnum.QUEUED,
+                        orchestratorThreadId = null,
+                        orchestrationStartedAt = null,
+                    ),
+                )
+            }
+            return
+        }
 
         // Timestamp-based: skip if task hasn't been orchestrating long enough
         val orchestrationAge = task.orchestrationStartedAt?.let {
