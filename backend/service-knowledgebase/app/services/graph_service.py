@@ -323,6 +323,9 @@ Text: {text}
                         except Exception:
                             pass
                 else:
+                    observed_at_str = ""
+                    if hasattr(request, "observedAt") and request.observedAt:
+                        observed_at_str = request.observedAt.isoformat() if hasattr(request.observedAt, "isoformat") else str(request.observedAt)
                     doc = {
                         "_key": arango_key,
                         "canonicalKey": canonical_key,
@@ -333,6 +336,7 @@ Text: {text}
                         "projectId": request.projectId or "",
                         "groupId": request.groupId or "",
                         "ragChunks": chunk_ids or [],
+                        "observedAt": observed_at_str,
                     }
                     try:
                         nodes_collection.insert(doc)

@@ -46,16 +46,26 @@ class RagService:
                     wvc.Property(name="graphRefs", data_type=wvc.DataType.TEXT_ARRAY),
                     # Content hash for idempotent re-ingest detection
                     wvc.Property(name="contentHash", data_type=wvc.DataType.TEXT),
+                    # When the source content was observed/created (ISO format)
+                    wvc.Property(name="observedAt", data_type=wvc.DataType.TEXT),
                 ]
             )
         else:
-            # Migration: add contentHash property if missing
+            # Migration: add missing properties
             try:
                 collection = self.client.collections.get("KnowledgeChunk")
                 collection.config.add_property(
                     wvc.Property(name="contentHash", data_type=wvc.DataType.TEXT)
                 )
                 logger.info("Added contentHash property to KnowledgeChunk schema")
+            except Exception:
+                pass
+            try:
+                collection = self.client.collections.get("KnowledgeChunk")
+                collection.config.add_property(
+                    wvc.Property(name="observedAt", data_type=wvc.DataType.TEXT)
+                )
+                logger.info("Added observedAt property to KnowledgeChunk schema")
             except Exception:
                 pass  # Already exists
 
@@ -148,6 +158,9 @@ class RagService:
             with collection.batch.dynamic() as batch:
                 for i, chunk in enumerate(chunks):
                     chunk_id = str(uuid.uuid4())
+                    observed_at_str = ""
+                    if hasattr(request, "observedAt") and request.observedAt:
+                        observed_at_str = request.observedAt.isoformat() if hasattr(request.observedAt, "isoformat") else str(request.observedAt)
                     batch.add_object(
                         uuid=chunk_id,
                         properties={
@@ -159,6 +172,7 @@ class RagService:
                             "kind": request.kind or "",
                             "graphRefs": graph_refs or [],
                             "contentHash": content_hash,
+                            "observedAt": observed_at_str,
                         },
                         vector=vectors[i]
                     )
@@ -302,7 +316,7 @@ class RagService:
             response = collection.query.fetch_objects(
                 filters=filters,
                 limit=limit,
-                return_properties=["content", "sourceUrn", "clientId", "projectId", "kind"],
+                return_properties=["content", "sourceUrn", "clientId", "projectId", "kind", "observedAt"],
             )
 
             results = []
