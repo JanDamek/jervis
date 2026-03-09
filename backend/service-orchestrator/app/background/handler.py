@@ -158,9 +158,10 @@ async def _run_coding_agent_background(
     from app.tools.kotlin_client import kotlin_client
 
     agent_type = request.agent_preference if request.agent_preference != "auto" else "claude"
+    is_review = request.source_urn.startswith("code-review:")
     logger.info(
-        "CODING_AGENT_BACKGROUND | task_id=%s | agent=%s | workspace=%s",
-        request.task_id, agent_type, request.workspace_path,
+        "CODING_AGENT_BACKGROUND | task_id=%s | agent=%s | workspace=%s | review=%s",
+        request.task_id, agent_type, request.workspace_path, is_review,
     )
 
     # 1. Fetch merged guidelines (global → client → project)
@@ -173,9 +174,9 @@ async def _run_coding_agent_background(
     except Exception as e:
         logger.debug("Guidelines fetch failed (non-fatal): %s", e)
 
-    # 2. Prefetch KB context (optional — best effort)
+    # 2. Prefetch KB context (optional — best effort; review tasks do their own prefetch)
     kb_context = None
-    if request.project_id:
+    if request.project_id and not is_review:
         try:
             from app.tools.executor import execute_tool
             kb_result = await execute_tool(
@@ -189,10 +190,9 @@ async def _run_coding_agent_background(
         except Exception as e:
             logger.debug("KB prefetch failed (non-fatal): %s", e)
 
-    # 3. Build git config from rules
+    # 3. Build git config from rules (skip for review — read-only agent)
     git_config = None
-    if request.rules:
-        # Build commit message format: prefer message_pattern, fallback to commit_prefix
+    if request.rules and not is_review:
         msg_format = request.rules.git_message_pattern or request.rules.commit_prefix
         git_config = {
             "git_author_name": request.rules.git_author_name,
@@ -211,13 +211,26 @@ async def _run_coding_agent_background(
         project_id=request.project_id,
         project_path=request.workspace_path,
         instructions=request.query,
-        files=[],  # Agent determines files to modify
+        files=[],
         agent_type=agent_type,
         kb_context=kb_context,
         environment_context=request.environment,
         git_config=git_config,
         guidelines_text=guidelines_text,
+        review_mode=is_review,
     )
+
+    # Write sourceUrn to task.json so claude_sdk_runner can detect review mode
+    if is_review:
+        import json as _json
+        task_json_path = workspace_path / ".jervis" / "task.json"
+        if task_json_path.exists():
+            try:
+                task_meta = _json.loads(task_json_path.read_text())
+                task_meta["sourceUrn"] = request.source_urn
+                task_json_path.write_text(_json.dumps(task_meta, indent=2))
+            except Exception:
+                pass
 
     # 5. Dispatch K8s Job (returns immediately)
     dispatch_info = await job_runner.dispatch_coding_agent(
@@ -226,9 +239,9 @@ async def _run_coding_agent_background(
         client_id=request.client_id,
         project_id=request.project_id,
         workspace_path=str(workspace_path),
-        gpg_key_id=request.rules.git_gpg_key_id if request.rules else None,
-        git_user_name=request.rules.git_author_name if request.rules else None,
-        git_user_email=request.rules.git_author_email if request.rules else None,
+        gpg_key_id=request.rules.git_gpg_key_id if request.rules and not is_review else None,
+        git_user_name=request.rules.git_author_name if request.rules and not is_review else None,
+        git_user_email=request.rules.git_author_email if request.rules and not is_review else None,
     )
     job_name = dispatch_info["job_name"]
 
@@ -287,7 +300,7 @@ async def handle_background(
     Returns:
         dict with {success, summary, ...} or {coding_dispatched: True, ...}
     """
-    if request.source_urn == "chat:coding-agent":
+    if request.source_urn == "chat:coding-agent" or request.source_urn.startswith("code-review:") or request.source_urn.startswith("code-review-fix:"):
         return await _run_coding_agent_background(request, thread_id=thread_id)
     return await _run_graph_agent_background(request, thread_id=thread_id)
 

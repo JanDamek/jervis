@@ -805,6 +805,21 @@ class KotlinServerClient:
             logger.warning("Failed to create MR for task %s: %s", task_id, e)
             return {"ok": False, "error": str(e)}
 
+    async def get_merge_request_diff(self, task_id: str) -> list[dict] | None:
+        """Fetch MR/PR diff via Kotlin internal API. Returns list of diff entries or None on error."""
+        try:
+            client = await self._get_client()
+            resp = await client.get(f"/internal/tasks/{task_id}/merge-request-diff")
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("ok"):
+                    return data.get("diffs", [])
+            logger.warning("get_merge_request_diff failed: %d %s", resp.status_code, resp.text[:200])
+            return None
+        except Exception as e:
+            logger.warning("Failed to get MR diff for task %s: %s", task_id, e)
+            return None
+
     async def post_mr_comment(
         self,
         task_id: str,

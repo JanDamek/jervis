@@ -992,44 +992,39 @@ Code Review (Coding Agent K8s Job — NOT orchestrator LLM):
     └─ After max rounds → Escalation comment, user decides
 ```
 
-#### Current State (implemented)
+#### Implementation Status
 
 | Component | File | Purpose | Status |
 |-----------|------|---------|--------|
 | Result with branch | `entrypoint-job.sh`, `claude_sdk_runner.py` | result.json includes `branch` field | ✅ Done |
-| MR/PR creation | `InternalMergeRequestRouting.kt` | `POST /internal/tasks/{id}/create-merge-request` — resolves provider from project | ✅ Done |
+| MR/PR creation | `InternalMergeRequestRouting.kt` | `POST /internal/tasks/{id}/create-merge-request` — resolves provider | ✅ Done |
 | MR comment posting | `InternalMergeRequestRouting.kt` | `POST /internal/tasks/{id}/post-mr-comment` — posts review to MR/PR | ✅ Done |
-| Code review handler | `app/review/code_review_handler.py` | Orchestrates: diff → static → LLM → MR comment → fix task | ✅ Done (orchestrator LLM) |
-| Review engine | `app/review/review_engine.py` | Static analysis + LLM review with strict scope | ✅ Done |
-| Task watcher integration | `app/agent_task_watcher.py` | Creates MR + triggers review after coding job success | ✅ Done |
-| Python client methods | `app/tools/kotlin_client.py` | `create_merge_request()`, `post_mr_comment()` | ✅ Done |
+| MR/PR Diff API | `InternalMergeRequestRouting.kt` | `GET /internal/tasks/{id}/merge-request-diff` — fetch diff without workspace | ✅ Done |
+| Code review handler | `app/review/code_review_handler.py` | Prepare context + dispatch review agent K8s Job | ✅ Done |
+| Review engine | `app/review/review_engine.py` | Static analysis (forbidden patterns, credentials) | ✅ Done |
+| Review as Coding Agent | `handler.py` + `workspace_manager.py` | Review runs as Claude SDK K8s Job, NOT local LLM | ✅ Done |
+| Review KB Prefetch | `code_review_handler.py` | KB search before dispatch (Jira, meetings, architecture) | ✅ Done |
+| KB Freshness | `rag_service.py`, `graph_service.py` | `observedAt` in search results — agent checks staleness | ✅ Done |
+| Review Outcome → KB | `agent_task_watcher.py` | Store review findings via `kb_store(kind="finding")` | ✅ Done |
+| Review CLAUDE.md | `workspace_manager.py` | Review-specific instructions (read-only, JSON verdict output) | ✅ Done |
+| Claude SDK review mode | `claude_sdk_runner.py` | Read-only tools (no Write/Edit), fewer turns | ✅ Done |
+| Task watcher integration | `app/agent_task_watcher.py` | Creates MR + dispatches review + handles review completion | ✅ Done |
+| Python client methods | `app/tools/kotlin_client.py` | `create_merge_request()`, `post_mr_comment()`, `get_merge_request_diff()` | ✅ Done |
 | Fix task round tracking | `agent_task_watcher.py` | sourceUrn `code-review-fix:{id}` + round parsing | ✅ Done |
 
-#### Planned: Review by Coding Agent (replaces orchestrator LLM review)
-
-Current review uses orchestrator's local 30b model (single-shot, limited context). Plan: **review as a coding agent K8s Job** with full Claude SDK + MCP access.
-
-| Component | Purpose | Status |
-|-----------|---------|--------|
-| Review KB Prefetch | Orchestrator pre-fetches KB context (Jira, meetings, chat, architecture) → `.jervis/review-context.md` | 🔜 Planned |
-| Review Agent Job | Claude SDK reviews diff with MCP tools (kb_search, web_search, file read) | 🔜 Planned |
-| KB Freshness | `observedAt` in search results — agent decides when to verify via web search | 🔜 Planned |
-| MR/PR Diff API | GitLab/GitHub diff/changes/commits API methods (review without workspace) | 🔜 Planned |
-| Review Outcome → KB | Store review findings in KB for future reference | 🔜 Planned |
-
-**Review agent responsibilities (via MCP):**
-1. Read diff + original task description
-2. KB search: Jira issues, meeting discussions, chat decisions, architecture notes
-3. Verify stale KB data (>30 days) against web search
-4. Read full files (not just diff) for context
-5. Output structured ReviewReport (same format as current engine)
+**Review agent (Claude SDK K8s Job) responsibilities:**
+1. Read diff from `.jervis/diff.txt` + pre-fetched KB context from `.jervis/review-kb-context.md`
+2. KB search via MCP: Jira issues, meeting discussions, chat decisions, architecture notes
+3. Verify stale KB data (observedAt > 7 days) against web search
+4. Read full files (not just diff) for context understanding
+5. Output structured JSON verdict (APPROVE / REQUEST_CHANGES / REJECT)
 
 **Orchestrator responsibilities (before dispatch):**
-1. Extract diff from workspace or MR/PR API
+1. Extract diff from MR/PR API (fallback: workspace git diff)
 2. Run static analysis (forbidden patterns, credentials, forbidden files)
-3. Pre-fetch KB context (multiple queries: task, files, topics)
-4. Build review instructions + context
-5. Dispatch coding agent K8s Job in review mode
+3. Pre-fetch KB context (task-related search, 8 results, 6k chars)
+4. Write diff + KB context to workspace `.jervis/` files
+5. Dispatch coding agent K8s Job with `review_mode=True`
 
 #### Direct Coding Task Flow
 
@@ -1042,9 +1037,16 @@ AgentTaskWatcher._poll_once():
   3. POST /orchestrate/v2/report-status-change  → PROCESSING → DONE
   4. If success + result.branch:
      a. Create MR/PR via kotlin_client.create_merge_request()
-     b. asyncio.create_task(run_code_review(...))  # non-blocking
+     b. asyncio.create_task(run_code_review(...))  # non-blocking — dispatches review K8s Job
   5. Update memory map TASK_REF vertex → COMPLETED
 ```
+
+Review tasks (`sourceUrn="code-review:{originalTaskId}"`):
+- Dispatched by `run_code_review()` via `/internal/dispatch-coding-agent`
+- Routed by `handler.py` to `_run_coding_agent_background()` with `review_mode=True`
+- `workspace_manager` generates review-specific CLAUDE.md (read-only instructions, JSON verdict)
+- `claude_sdk_runner` detects review mode from `task.json` → read-only tools, no Write/Edit
+- On completion → `_handle_review_completed()`: parse JSON → post MR comment → fix task if BLOCKERs
 
 Fix tasks (`sourceUrn="code-review-fix:{originalTaskId}"`):
 - Do NOT create new MR (branch + MR already exist)

@@ -318,6 +318,23 @@ class GitLabApiClient(
         return json.decodeFromString(GitLabNote.serializer(), responseText)
     }
 
+    suspend fun getMergeRequestDiffs(
+        baseUrl: String,
+        token: String,
+        projectId: String,
+        mrIid: Int,
+    ): List<GitLabMergeRequestDiff> {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/merge_requests/$mrIid/diffs"
+        rateLimit(url)
+        val response = httpClient.get(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            parameter("per_page", 100)
+        }
+        val responseText = response.checkProviderResponse("GitLab", "getMergeRequestDiffs(#$mrIid)")
+        return json.decodeFromString(responseText)
+    }
+
     // ── Wiki write operations ─────────────────────────────────────────
 
     suspend fun createWikiPage(
@@ -451,4 +468,16 @@ data class GitLabMergeRequest(
     val web_url: String,
     val draft: Boolean = false,
     val created_at: String,
+)
+
+@Serializable
+data class GitLabMergeRequestDiff(
+    val old_path: String,
+    val new_path: String,
+    val a_mode: String? = null,
+    val b_mode: String? = null,
+    val new_file: Boolean = false,
+    val renamed_file: Boolean = false,
+    val deleted_file: Boolean = false,
+    val diff: String = "",
 )

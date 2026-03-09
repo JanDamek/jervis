@@ -118,6 +118,21 @@ class GitLabClient(
         return json.decodeFromString(GitLabMergeRequest.serializer(), body)
     }
 
+    suspend fun getMergeRequestDiffs(
+        connection: ConnectionDocument,
+        projectId: String,
+        mrIid: Int,
+    ): List<GitLabMergeRequestDiff> {
+        val token = requireToken(connection)
+        val baseUrl = getBaseUrl(connection)
+        val response = httpClient.get("$baseUrl/projects/${projectId.encodeURLParameter()}/merge_requests/$mrIid/diffs") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            parameter("per_page", 100)
+        }
+        val body = response.checkProviderResponse("GitLab", "getMergeRequestDiffs(#$mrIid)")
+        return json.decodeFromString(body)
+    }
+
     suspend fun addMergeRequestNote(
         connection: ConnectionDocument,
         projectId: String,
@@ -190,4 +205,14 @@ data class GitLabNote(
     val id: Long,
     val body: String,
     val created_at: String,
+)
+
+@Serializable
+data class GitLabMergeRequestDiff(
+    val old_path: String,
+    val new_path: String,
+    val new_file: Boolean = false,
+    val renamed_file: Boolean = false,
+    val deleted_file: Boolean = false,
+    val diff: String = "",
 )

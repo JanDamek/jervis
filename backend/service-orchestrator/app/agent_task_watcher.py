@@ -141,8 +141,13 @@ class AgentTaskWatcher:
             # Check if this is a direct coding task (no graph to resume)
             source_urn = task_data.get("sourceUrn", "")
             is_direct_coding = source_urn == "chat:coding-agent"
+            is_review_task = source_urn.startswith("code-review:")
+            is_fix_task = source_urn.startswith("code-review-fix:")
 
-            if is_direct_coding:
+            if is_review_task:
+                # Review agent completed — parse verdict, post MR comment, create fix task
+                await self._handle_review_completed(task_id, task_data, result, job_name, job_status, source_urn)
+            elif is_direct_coding or is_fix_task:
                 # Direct coding task — two-step: CODING→PROCESSING→DONE
                 # Step 1: agent-completed moves CODING→PROCESSING
                 try:
@@ -278,6 +283,275 @@ class AgentTaskWatcher:
             # Cap processed set size (prevent unbounded memory growth)
             if len(self._processed_jobs) > 1000:
                 self._processed_jobs.clear()
+
+    async def _handle_review_completed(
+        self,
+        task_id: str,
+        task_data: dict,
+        result: dict,
+        job_name: str,
+        job_status: str,
+        source_urn: str,
+    ):
+        """Handle completed code review agent job — parse verdict, post MR comment, fix task."""
+        import httpx
+        import json
+        import re as _re
+        from app.review.review_engine import ReviewVerdict
+
+        # Mark task completed (CODING→PROCESSING→DONE)
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                await client.post(
+                    f"{settings.kotlin_server_url}/internal/tasks/{task_id}/agent-completed",
+                    json={"agentJobState": job_status, "result": result},
+                )
+        except Exception as e:
+            logger.error("Failed to mark review agent-completed %s: %s", task_id, e)
+
+        try:
+            await kotlin_client.report_status_change(
+                task_id=task_id,
+                thread_id="",
+                status="done" if result.get("success") else "error",
+                summary=result.get("summary", "Review completed")[:500],
+                error=None if result.get("success") else result.get("summary"),
+            )
+        except Exception as e:
+            logger.error("Failed to report review done %s: %s", task_id, e)
+
+        if not result.get("success"):
+            logger.warning("Review agent failed for task %s: %s", task_id, result.get("summary", "")[:200])
+            return
+
+        # Parse review verdict from agent output (JSON in summary)
+        summary = result.get("summary", "")
+        review_data = _extract_review_json(summary)
+
+        if not review_data:
+            logger.warning("Could not parse review JSON from task %s summary", task_id)
+            # Post raw summary as MR comment (best effort)
+            mr_url = task_data.get("mergeRequestUrl", "")
+            if mr_url and summary:
+                try:
+                    # Find original task ID from sourceUrn: "code-review:{originalTaskId}"
+                    original_task_id = source_urn.replace("code-review:", "")
+                    await kotlin_client.post_mr_comment(
+                        task_id=original_task_id,
+                        comment=f"### Jervis Code Review\n\n{summary[:3000]}",
+                        merge_request_url=mr_url,
+                    )
+                except Exception:
+                    pass
+            return
+
+        verdict = review_data.get("verdict", "APPROVE")
+        score = review_data.get("score", 70)
+        review_summary = review_data.get("summary", "")
+        issues = review_data.get("issues", [])
+        checklist = review_data.get("checklist", {})
+
+        # Determine review round from task content
+        review_round = 1
+        round_match = _re.search(r"Round (\d+)/", task_data.get("content", ""))
+        if round_match:
+            review_round = int(round_match.group(1))
+
+        # Format review comment for MR
+        comment_lines = [
+            f"### Jervis Code Review (Round {review_round}/{2})",
+            f"**Verdict:** {verdict} | **Score:** {score}/100",
+            "",
+            review_summary,
+        ]
+
+        if issues:
+            comment_lines.append("")
+            comment_lines.append("### Issues")
+            for issue in issues:
+                sev = issue.get("severity", "INFO")
+                file_ref = issue.get("file", "?")
+                line = issue.get("line")
+                if line:
+                    file_ref += f":{line}"
+                comment_lines.append(f"- **[{sev}]** `{file_ref}`: {issue.get('message', '')}")
+                if issue.get("suggestion"):
+                    comment_lines.append(f"  > Fix: {issue['suggestion']}")
+
+        if checklist:
+            comment_lines.append("")
+            comment_lines.append("### Checklist")
+            for item, passed in checklist.items():
+                icon = "+" if passed else "-"  # Avoid emoji
+                comment_lines.append(f"- [{icon}] {item}")
+
+        comment_body = "\n".join(comment_lines)
+
+        # Post comment on MR
+        original_task_id = source_urn.replace("code-review:", "")
+        mr_url = task_data.get("mergeRequestUrl", "")
+        posted = False
+        if mr_url:
+            try:
+                posted = await kotlin_client.post_mr_comment(
+                    task_id=original_task_id,
+                    comment=comment_body,
+                    merge_request_url=mr_url,
+                )
+                if posted:
+                    logger.info("REVIEW_POSTED | task=%s | verdict=%s | score=%d", task_id, verdict, score)
+            except Exception as e:
+                logger.warning("Failed to post review comment: %s", e)
+
+        # If BLOCKERs and within round limit → create fix task
+        blocker_issues = [i for i in issues if i.get("severity") == "BLOCKER"]
+        has_blockers = len(blocker_issues) > 0
+
+        if has_blockers and verdict in ("REQUEST_CHANGES", "REJECT") and review_round < 2:
+            try:
+                await self._create_review_fix_task(
+                    original_task_id=original_task_id,
+                    task_content=task_data.get("content", ""),
+                    blocker_issues=blocker_issues,
+                    mr_url=mr_url,
+                    client_id=str(task_data.get("clientId", "")),
+                    project_id=str(task_data.get("projectId", "")) if task_data.get("projectId") else None,
+                    review_round=review_round,
+                )
+            except Exception as e:
+                logger.warning("Failed to create fix task from review %s: %s", task_id, e)
+        elif has_blockers and review_round >= 2:
+            # Max rounds reached — post escalation
+            try:
+                await kotlin_client.post_mr_comment(
+                    task_id=original_task_id,
+                    comment=(
+                        "\n\n---\n**Max review rounds (2) reached.** "
+                        "Remaining issues require manual review."
+                    ),
+                    merge_request_url=mr_url,
+                )
+            except Exception:
+                pass
+
+        # Store review findings in KB for future reference
+        if review_summary:
+            try:
+                from app.tools.executor import execute_tool
+                client_id = str(task_data.get("clientId", ""))
+                project_id = str(task_data.get("projectId", "")) if task_data.get("projectId") else None
+                kb_content = (
+                    f"Code review ({verdict}, score {score}/100): {review_summary}\n"
+                    f"Task: {task_data.get('content', '')[:200]}\n"
+                    f"MR: {mr_url}"
+                )
+                await execute_tool(
+                    tool_name="kb_store",
+                    arguments={
+                        "content": kb_content,
+                        "kind": "finding",
+                        "source_urn": f"code-review:{original_task_id}",
+                    },
+                    client_id=client_id,
+                    project_id=project_id,
+                )
+            except Exception:
+                pass  # Non-fatal
+
+        logger.info(
+            "REVIEW_COMPLETED | task=%s | verdict=%s | blockers=%d | round=%d | posted=%s",
+            task_id, verdict, len(blocker_issues), review_round, posted,
+        )
+
+    async def _create_review_fix_task(
+        self,
+        original_task_id: str,
+        task_content: str,
+        blocker_issues: list[dict],
+        mr_url: str,
+        client_id: str,
+        project_id: str | None,
+        review_round: int,
+    ):
+        """Create a new coding task to fix BLOCKERs found in code review."""
+        import httpx
+
+        issues_text = ""
+        for issue in blocker_issues:
+            loc = issue.get("file", "?")
+            line = issue.get("line")
+            if line:
+                loc += f":{line}"
+            issues_text += f"- [{loc}] {issue.get('message', '')}"
+            if issue.get("suggestion"):
+                issues_text += f"\n  Fix: {issue['suggestion']}"
+            issues_text += "\n"
+
+        fix_instructions = (
+            f"## Code Review Fix (Round {review_round + 1})\n\n"
+            f"The previous code review found BLOCKER issues that must be fixed.\n"
+            f"Fix ONLY the issues listed below. Do NOT make other changes.\n\n"
+            f"### Original Task\n{task_content[:1000]}\n\n"
+            f"### Issues to Fix\n{issues_text}\n\n"
+            f"### MR/PR\n{mr_url}\n"
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"{settings.kotlin_server_url}/internal/dispatch-coding-agent",
+                    json={
+                        "taskDescription": fix_instructions,
+                        "clientId": client_id,
+                        "projectId": project_id or "",
+                        "sourceUrn": f"code-review-fix:{original_task_id}",
+                        "mergeRequestUrl": mr_url,
+                    },
+                )
+                if resp.status_code == 200:
+                    logger.info(
+                        "FIX_TASK_CREATED | original=%s | round=%d",
+                        original_task_id, review_round + 1,
+                    )
+                else:
+                    logger.warning(
+                        "FIX_TASK_CREATE_FAILED | original=%s | status=%d",
+                        original_task_id, resp.status_code,
+                    )
+        except Exception as e:
+            logger.warning("Failed to create fix task: %s", e)
+
+
+def _extract_review_json(text: str) -> dict | None:
+    """Extract JSON review verdict from agent output text."""
+    import json
+    import re
+
+    # Try direct parse
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Try extracting from ```json ... ``` block
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Try finding last { ... } block (review JSON is usually at the end)
+    matches = list(re.finditer(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.DOTALL))
+    for match in reversed(matches):
+        try:
+            data = json.loads(match.group(0))
+            if "verdict" in data:
+                return data
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    return None
 
 
 # Singleton

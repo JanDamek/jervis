@@ -116,6 +116,24 @@ class GitHubClient(
         return json.decodeFromString(GitHubComment.serializer(), response.bodyAsText())
     }
 
+    suspend fun getPullRequestFiles(
+        connection: ConnectionDocument,
+        owner: String,
+        repo: String,
+        prNumber: Int,
+    ): List<GitHubPullRequestFile> {
+        val token = requireToken(connection)
+        val response = httpClient.get("https://api.github.com/repos/$owner/$repo/pulls/$prNumber/files") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            parameter("per_page", 100)
+        }
+        if (!response.status.isSuccess()) {
+            error("GitHub PR files failed: ${response.status} — ${response.bodyAsText()}")
+        }
+        return json.decodeFromString(response.bodyAsText())
+    }
+
     suspend fun mergePullRequest(
         connection: ConnectionDocument,
         owner: String,
@@ -205,3 +223,14 @@ data class GitHubComment(val id: Long, val body: String, val html_url: String)
 
 @Serializable
 data class GitHubMergeResult(val sha: String? = null, val merged: Boolean, val message: String)
+
+@Serializable
+data class GitHubPullRequestFile(
+    val sha: String? = null,
+    val filename: String,
+    val status: String,
+    val additions: Int = 0,
+    val deletions: Int = 0,
+    val changes: Int = 0,
+    val patch: String? = null,
+)

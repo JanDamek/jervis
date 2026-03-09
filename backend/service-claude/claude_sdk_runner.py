@@ -45,17 +45,33 @@ async def main():
         mcp_data = json.loads(mcp_json_path.read_text())
         mcp_servers = mcp_data.get("mcpServers", {})
 
-    # SDK options
+    # Detect review mode from task.json or CLAUDE.md
+    is_review = False
+    task_json_path = Path(workspace) / ".jervis" / "task.json"
+    if task_json_path.exists():
+        try:
+            task_data = json.loads(task_json_path.read_text())
+            source_urn = task_data.get("sourceUrn", "")
+            if source_urn.startswith("code-review:"):
+                is_review = True
+        except Exception:
+            pass
+
+    # SDK options — review mode: read-only tools, fewer turns
+    if is_review:
+        allowed_tools = ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"]
+        max_turns = 50
+    else:
+        allowed_tools = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"]
+        max_turns = 100
+
     options = ClaudeAgentOptions(
         cwd=workspace,
-        allowed_tools=[
-            "Read", "Write", "Edit", "Glob", "Grep", "Bash",
-            "WebSearch", "WebFetch",
-        ],
+        allowed_tools=allowed_tools,
         permission_mode="bypassPermissions",
         mcp_servers=mcp_servers,
         system_prompt=system_prompt,
-        max_turns=100,
+        max_turns=max_turns,
     )
 
     print(f"=== Claude SDK Runner: task={task_id} workspace={workspace} ===")

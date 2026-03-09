@@ -14,8 +14,10 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
+import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -228,6 +230,117 @@ fun Routing.installInternalMergeRequestApi(
             )
         }
     }
+    // Get MR/PR diff — used by code review pipeline to review without workspace
+    get("/internal/tasks/{taskId}/merge-request-diff") {
+        try {
+            val taskIdStr = call.parameters["taskId"] ?: ""
+            val taskId = TaskId(ObjectId(taskIdStr))
+
+            val task = taskRepository.getById(taskId)
+                ?: return@get call.respondText(
+                    """{"ok":false,"error":"Task not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+
+            val mrUrl = task.mergeRequestUrl
+                ?: return@get call.respondText(
+                    """{"ok":false,"error":"No MR URL on task"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                )
+
+            val projectId = task.projectId
+                ?: return@get call.respondText(
+                    """{"ok":false,"error":"Task has no projectId"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                )
+
+            val project = projectService.getProjectByIdOrNull(projectId)
+                ?: return@get call.respondText(
+                    """{"ok":false,"error":"Project not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+
+            val repoResource = project.resources.firstOrNull {
+                it.capability == ConnectionCapability.REPOSITORY
+            } ?: return@get call.respondText(
+                """{"ok":false,"error":"No REPOSITORY resource on project"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest,
+            )
+
+            val connection = connectionService.findById(ConnectionId(repoResource.connectionId))
+                ?: return@get call.respondText(
+                    """{"ok":false,"error":"Connection not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+
+            val diffs: List<DiffEntry> = when (connection.provider) {
+                ProviderEnum.GITHUB -> {
+                    val match = Regex("""/([^/]+)/([^/]+)/pull/(\d+)""").find(mrUrl)
+                        ?: error("Cannot parse GitHub PR URL: $mrUrl")
+                    val (owner, repo, prNumber) = match.destructured
+                    val files = gitHubClient.getPullRequestFiles(
+                        connection = connection,
+                        owner = owner,
+                        repo = repo,
+                        prNumber = prNumber.toInt(),
+                    )
+                    files.map { f ->
+                        DiffEntry(
+                            oldPath = f.filename,
+                            newPath = f.filename,
+                            newFile = f.status == "added",
+                            deletedFile = f.status == "removed",
+                            renamedFile = f.status == "renamed",
+                            diff = f.patch ?: "",
+                        )
+                    }
+                }
+
+                ProviderEnum.GITLAB -> {
+                    val match = Regex("""/merge_requests/(\d+)""").find(mrUrl)
+                        ?: error("Cannot parse GitLab MR URL: $mrUrl")
+                    val mrIid = match.groupValues[1].toInt()
+                    gitLabClient.getMergeRequestDiffs(
+                        connection = connection,
+                        projectId = repoResource.resourceIdentifier,
+                        mrIid = mrIid,
+                    ).map { d ->
+                        DiffEntry(
+                            oldPath = d.old_path,
+                            newPath = d.new_path,
+                            newFile = d.new_file,
+                            deletedFile = d.deleted_file,
+                            renamedFile = d.renamed_file,
+                            diff = d.diff,
+                        )
+                    }
+                }
+
+                else -> error("Unsupported provider: ${connection.provider}")
+            }
+
+            val diffJson = Json.encodeToString(diffs)
+
+            logger.info { "MR_DIFF | task=$taskIdStr | provider=${connection.provider}" }
+            call.respondText(
+                """{"ok":true,"diffs":$diffJson}""",
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=merge-request-diff | taskId=${call.parameters["taskId"]}" }
+            call.respondText(
+                """{"ok":false,"error":"${e.message?.replace("\"", "\\\"")?.take(500)}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
 }
 
 // --- DTOs ---
@@ -244,4 +357,14 @@ data class CreateMergeRequestRequest(
 data class PostMrCommentRequest(
     val comment: String,
     val mergeRequestUrl: String? = null,
+)
+
+@Serializable
+data class DiffEntry(
+    val oldPath: String,
+    val newPath: String,
+    val newFile: Boolean = false,
+    val deletedFile: Boolean = false,
+    val renamedFile: Boolean = false,
+    val diff: String = "",
 )
