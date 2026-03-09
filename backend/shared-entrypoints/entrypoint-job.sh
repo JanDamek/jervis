@@ -223,7 +223,11 @@ if [ "$AGENT_TYPE" = "claude" ] && [ "$(id -u)" = "0" ]; then
     export HOME=/home/jervis
     export USER=jervis
     export LOGNAME=jervis
+    # Set umask 000 so all files created by agent are world-readable/writable.
+    # Without this, NFS root_squash prevents root from fixing UID 1000 file permissions post-agent.
+    CMD="umask 000 && $CMD"
     CMD="su --preserve-environment jervis -c '$CMD'"
+    AGENT_UID=1000
 fi
 
 # Capture output for error reporting — orchestrator needs detailed error messages
@@ -245,11 +249,19 @@ else
     echo "=== JERVIS AGENT DONE: $AGENT_TYPE / $TASK_ID (FAILED: $EXIT_CODE) ==="
     rm -f "$AGENT_OUTPUT_FILE"
     # Restore workspace permissions so server (root→nobody via NFS root_squash) can manage files
-    # Agent may have created files/dirs as jervis (UID 1000) with restricted perms
-    chmod -R a+rwX "$WORKSPACE" 2>/dev/null || true
+    # Must run as the agent user (UID 1000) because NFS root_squash prevents root from chmodding UID 1000 files
+    if [ -n "${AGENT_UID:-}" ]; then
+        su -c "chmod -R a+rwX '$WORKSPACE'" "$(id -un $AGENT_UID)" 2>/dev/null || true
+    else
+        chmod -R a+rwX "$WORKSPACE" 2>/dev/null || true
+    fi
     exit $EXIT_CODE
 fi
 rm -f "$AGENT_OUTPUT_FILE"
 
 # Restore workspace permissions (same as failure path above)
-chmod -R a+rwX "$WORKSPACE" 2>/dev/null || true
+if [ -n "${AGENT_UID:-}" ]; then
+    su -c "chmod -R a+rwX '$WORKSPACE'" "$(id -un $AGENT_UID)" 2>/dev/null || true
+else
+    chmod -R a+rwX "$WORKSPACE" 2>/dev/null || true
+fi
