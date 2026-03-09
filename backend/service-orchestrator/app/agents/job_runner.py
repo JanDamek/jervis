@@ -239,6 +239,102 @@ class JobRunner:
         except Exception:
             pass  # Pod terminated
 
+    async def stream_job_logs_sse(self, job_name: str):
+        """Async generator yielding SSE-formatted log lines from a K8s Job pod.
+
+        Used by the /job-logs/{task_id} SSE endpoint.
+        """
+        ns = settings.k8s_namespace
+
+        # Wait for pod to enter Running state
+        pod_name = None
+        for _ in range(60):
+            try:
+                pods = self.core_v1.list_namespaced_pod(
+                    namespace=ns,
+                    label_selector=f"job-name={job_name}",
+                )
+                if pods.items:
+                    pod = pods.items[0]
+                    phase = pod.status.phase
+                    if phase in ("Running", "Succeeded", "Failed"):
+                        pod_name = pod.metadata.name
+                        break
+                    yield f"data: {{\"type\":\"status\",\"content\":\"Pod {pod.metadata.name}: {phase}\"}}\n\n"
+            except Exception as e:
+                logger.debug("stream_job_logs_sse: pod lookup error: %s", e)
+            await asyncio.sleep(2)
+
+        if not pod_name:
+            yield 'data: {"type":"error","content":"Pod not found after timeout"}\n\n'
+            return
+
+        yield f'data: {{"type":"status","content":"Streaming logs from {pod_name}..."}}\n\n'
+
+        # Stream pod logs
+        w = watch.Watch()
+        try:
+            for line in w.stream(
+                self.core_v1.read_namespaced_pod_log,
+                name=pod_name,
+                namespace=ns,
+                follow=True,
+            ):
+                # Parse Claude SDK JSON events for human-readable display
+                parsed = self._parse_log_line(line)
+                if parsed:
+                    import json as _json
+                    yield f"data: {_json.dumps(parsed)}\n\n"
+        except Exception:
+            pass  # Pod terminated
+
+        yield 'data: {"type":"done","content":"Log stream ended"}\n\n'
+
+    @staticmethod
+    def _parse_log_line(line: str) -> dict | None:
+        """Parse a log line into a displayable event.
+
+        Claude SDK produces JSON events. We extract meaningful info.
+        """
+        stripped = line.strip()
+        if not stripped:
+            return None
+
+        # Try to parse as JSON (Claude SDK output)
+        try:
+            data = json.loads(stripped)
+            event_type = data.get("type", "")
+
+            # Claude SDK event types → human-readable
+            if event_type == "assistant" and "content" in data:
+                content = data["content"]
+                if isinstance(content, list):
+                    texts = [c.get("text", "") for c in content if c.get("type") == "text"]
+                    tool_uses = [c for c in content if c.get("type") == "tool_use"]
+                    if texts:
+                        return {"type": "text", "content": " ".join(t for t in texts if t)[:500]}
+                    if tool_uses:
+                        for tu in tool_uses:
+                            return {"type": "tool_call", "content": f"{tu.get('name', '?')}()", "tool": tu.get("name", "")}
+                return None
+
+            if event_type == "result":
+                return {"type": "result", "content": data.get("result", "")[:500]}
+
+            # Generic fallback for recognized events
+            if event_type in ("system", "error"):
+                return {"type": event_type, "content": str(data.get("message", data.get("error", "")))[:500]}
+
+            return None
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Plain text lines — show if they look useful (skip empty/debug noise)
+        if len(stripped) > 3 and not stripped.startswith("{\""):
+            return {"type": "log", "content": stripped[:500]}
+
+        return None
+
     async def dispatch_coding_agent(
         self,
         task_id: str,

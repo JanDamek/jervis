@@ -25,6 +25,7 @@ import com.jervis.service.IGuidelinesService
 import com.jervis.service.IOpenRouterSettingsService
 import com.jervis.service.ISpeakerService
 import com.jervis.service.ISystemConfigService
+import com.jervis.service.IJobLogsService
 import com.jervis.service.ITaskGraphService
 
 /**
@@ -62,4 +63,5 @@ class JervisRepository(
     val openRouterSettings: IOpenRouterSettingsService get() = servicesProvider().openRouterSettingsService
     val speakers: ISpeakerService get() = servicesProvider().speakerService
     val taskGraphs: ITaskGraphService get() = servicesProvider().taskGraphService
+    val jobLogs: IJobLogsService get() = servicesProvider().jobLogsService
 }

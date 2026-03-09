@@ -254,6 +254,52 @@ async def qualify(request: dict):
 # Request/Response models
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Job Logs SSE endpoint — live K8s pod log streaming
+# ---------------------------------------------------------------------------
+
+@router.get("/job-logs/{task_id}")
+async def stream_job_logs(task_id: str):
+    """Stream K8s pod logs for a CODING task as SSE events.
+
+    Looks up the task's agentJobName, finds the K8s pod, streams logs.
+    Used by Kotlin server to relay live output to UI.
+    """
+    from app.agents.job_runner import job_runner
+    from app.config import settings
+    import httpx as _httpx
+
+    # Fetch task data to get job name
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"{settings.kotlin_server_url}/internal/tasks/{task_id}",
+            )
+            if resp.status_code != 200:
+                return StreamingResponse(
+                    iter(['data: {"type":"error","content":"Task not found"}\n\n']),
+                    media_type="text/event-stream",
+                )
+            task_data = resp.json()
+    except Exception as e:
+        return StreamingResponse(
+            iter([f'data: {{"type":"error","content":"Failed to fetch task: {e}"}}\n\n']),
+            media_type="text/event-stream",
+        )
+
+    job_name = task_data.get("agentJobName")
+    if not job_name:
+        return StreamingResponse(
+            iter(['data: {"type":"error","content":"Task has no agentJobName"}\n\n']),
+            media_type="text/event-stream",
+        )
+
+    return StreamingResponse(
+        job_runner.stream_job_logs_sse(job_name),
+        media_type="text/event-stream",
+    )
+
+
 class PrepareChatContextRequest(BaseModel):
     task_id: str = ""
     conversation_id: str = ""

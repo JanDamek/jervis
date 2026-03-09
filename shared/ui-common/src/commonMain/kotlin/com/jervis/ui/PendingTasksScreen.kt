@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.PendingTaskDto
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.coding.CodingAgentLogPanel
 import com.jervis.ui.design.*
 import com.jervis.ui.util.*
 import kotlinx.coroutines.launch
@@ -217,6 +218,7 @@ fun PendingTasksScreen(
                             items(tasks, key = { it.id }) { task ->
                                 PendingTaskCard(
                                     task = task,
+                                    repository = repository,
                                     onDelete = { pendingDeleteTaskId = task.id },
                                 )
                             }
@@ -270,8 +272,11 @@ fun PendingTasksScreen(
 @Composable
 private fun PendingTaskCard(
     task: PendingTaskDto,
+    repository: JervisRepository,
     onDelete: () -> Unit,
 ) {
+    var showLogs by remember { mutableStateOf(false) }
+
     JCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -318,6 +323,18 @@ private fun PendingTaskCard(
                         },
                     )
                 }
+                // Show logs toggle for CODING tasks
+                if (task.state == "CODING") {
+                    SuggestionChip(
+                        onClick = { showLogs = !showLogs },
+                        label = {
+                            Text(
+                                if (showLogs) "Skrýt logy" else "Zobrazit logy",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
+                    )
+                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -350,6 +367,16 @@ private fun PendingTaskCard(
                     text = "Přílohy: ${task.attachments.size}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            // Live coding agent logs
+            if (showLogs && task.state == "CODING") {
+                Spacer(Modifier.height(12.dp))
+                CodingAgentLogPanel(
+                    jobLogsService = repository.jobLogs,
+                    taskId = task.id,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
