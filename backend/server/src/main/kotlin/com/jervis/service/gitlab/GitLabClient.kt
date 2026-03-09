@@ -150,6 +150,60 @@ class GitLabClient(
         val body = response.checkProviderResponse("GitLab", "addMergeRequestNote(#$mrIid)")
         return json.decodeFromString(GitLabNote.serializer(), body)
     }
+
+    suspend fun getMergeRequestVersions(
+        connection: ConnectionDocument,
+        projectId: String,
+        mrIid: Int,
+    ): List<GitLabMergeRequestVersion> {
+        val token = requireToken(connection)
+        val baseUrl = getBaseUrl(connection)
+        val response = httpClient.get("$baseUrl/projects/${projectId.encodeURLParameter()}/merge_requests/$mrIid/versions") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        val body = response.checkProviderResponse("GitLab", "getMergeRequestVersions(#$mrIid)")
+        return json.decodeFromString(body)
+    }
+
+    suspend fun createMergeRequestDiscussion(
+        connection: ConnectionDocument,
+        projectId: String,
+        mrIid: Int,
+        body: String,
+        newPath: String? = null,
+        newLine: Int? = null,
+        oldPath: String? = null,
+        oldLine: Int? = null,
+        baseSha: String? = null,
+        headSha: String? = null,
+        startSha: String? = null,
+    ): GitLabNote {
+        val token = requireToken(connection)
+        val baseUrl = getBaseUrl(connection)
+        val payload = buildJsonObject {
+            put("body", body)
+            if (newPath != null && baseSha != null && headSha != null && startSha != null) {
+                put("position", buildJsonObject {
+                    put("position_type", "text")
+                    put("base_sha", baseSha)
+                    put("head_sha", headSha)
+                    put("start_sha", startSha)
+                    put("new_path", newPath)
+                    put("old_path", oldPath ?: newPath)
+                    newLine?.let { put("new_line", it) }
+                    oldLine?.let { put("old_line", it) }
+                })
+            }
+        }
+        val response = httpClient.post("$baseUrl/projects/${projectId.encodeURLParameter()}/merge_requests/$mrIid/discussions") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val bodyText = response.checkProviderResponse("GitLab", "createMergeRequestDiscussion(#$mrIid)")
+        val discussion: GitLabDiscussion = json.decodeFromString(bodyText)
+        return discussion.notes.firstOrNull() ?: GitLabNote(id = 0, body = body, created_at = "")
+    }
 }
 
 @Serializable
@@ -215,4 +269,19 @@ data class GitLabMergeRequestDiff(
     val renamed_file: Boolean = false,
     val deleted_file: Boolean = false,
     val diff: String = "",
+)
+
+@Serializable
+data class GitLabMergeRequestVersion(
+    val id: Long,
+    val head_commit_sha: String,
+    val base_commit_sha: String,
+    val start_commit_sha: String,
+    val created_at: String,
+)
+
+@Serializable
+data class GitLabDiscussion(
+    val id: String,
+    val notes: List<GitLabNote> = emptyList(),
 )

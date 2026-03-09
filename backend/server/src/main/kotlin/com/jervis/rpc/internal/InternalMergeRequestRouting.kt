@@ -341,6 +341,155 @@ fun Routing.installInternalMergeRequestApi(
             )
         }
     }
+
+    // Post inline review comments on MR/PR — file:line level comments
+    post("/internal/tasks/{taskId}/post-mr-inline-comments") {
+        try {
+            val taskIdStr = call.parameters["taskId"] ?: ""
+            val body = call.receive<PostInlineCommentsRequest>()
+            val taskId = TaskId(ObjectId(taskIdStr))
+
+            val task = taskRepository.getById(taskId)
+                ?: return@post call.respondText(
+                    """{"ok":false,"error":"Task not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+
+            val mrUrl = body.mergeRequestUrl ?: task.mergeRequestUrl
+                ?: return@post call.respondText(
+                    """{"ok":false,"error":"No MR URL"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                )
+
+            val projectId = task.projectId
+                ?: return@post call.respondText(
+                    """{"ok":false,"error":"Task has no projectId"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                )
+
+            val project = projectService.getProjectByIdOrNull(projectId)
+                ?: return@post call.respondText(
+                    """{"ok":false,"error":"Project not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+
+            val repoResource = project.resources.firstOrNull {
+                it.capability == ConnectionCapability.REPOSITORY
+            } ?: return@post call.respondText(
+                """{"ok":false,"error":"No REPOSITORY resource"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest,
+            )
+
+            val connection = connectionService.findById(ConnectionId(repoResource.connectionId))
+                ?: return@post call.respondText(
+                    """{"ok":false,"error":"Connection not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+
+            when (connection.provider) {
+                ProviderEnum.GITHUB -> {
+                    val match = Regex("""/([^/]+)/([^/]+)/pull/(\d+)""").find(mrUrl)
+                        ?: error("Cannot parse GitHub PR URL: $mrUrl")
+                    val (owner, repo, prNumber) = match.destructured
+
+                    val reviewComments = body.comments.mapNotNull { c ->
+                        if (c.file.isNotBlank() && c.line != null && c.line > 0) {
+                            com.jervis.service.github.GitHubReviewComment(
+                                path = c.file,
+                                line = c.line,
+                                body = c.body,
+                            )
+                        } else null
+                    }
+
+                    val event = when (body.verdict) {
+                        "APPROVE" -> "APPROVE"
+                        "REQUEST_CHANGES" -> "REQUEST_CHANGES"
+                        else -> "COMMENT"
+                    }
+
+                    gitHubClient.createPullRequestReview(
+                        connection = connection,
+                        owner = owner,
+                        repo = repo,
+                        prNumber = prNumber.toInt(),
+                        body = body.summary,
+                        event = event,
+                        comments = reviewComments,
+                    )
+                }
+
+                ProviderEnum.GITLAB -> {
+                    val match = Regex("""/merge_requests/(\d+)""").find(mrUrl)
+                        ?: error("Cannot parse GitLab MR URL: $mrUrl")
+                    val mrIid = match.groupValues[1].toInt()
+
+                    // Get MR versions for SHA references (needed for inline comments)
+                    val versions = gitLabClient.getMergeRequestVersions(
+                        connection = connection,
+                        projectId = repoResource.resourceIdentifier,
+                        mrIid = mrIid,
+                    )
+                    val latestVersion = versions.firstOrNull()
+
+                    // Post summary as regular note
+                    if (body.summary.isNotBlank()) {
+                        gitLabClient.addMergeRequestNote(
+                            connection = connection,
+                            projectId = repoResource.resourceIdentifier,
+                            mrIid = mrIid,
+                            noteBody = body.summary,
+                        )
+                    }
+
+                    // Post inline comments as discussions (with position)
+                    for (c in body.comments) {
+                        if (c.file.isBlank() || c.line == null || c.line <= 0) continue
+                        try {
+                            gitLabClient.createMergeRequestDiscussion(
+                                connection = connection,
+                                projectId = repoResource.resourceIdentifier,
+                                mrIid = mrIid,
+                                body = c.body,
+                                newPath = c.file,
+                                newLine = c.line,
+                                baseSha = latestVersion?.base_commit_sha,
+                                headSha = latestVersion?.head_commit_sha,
+                                startSha = latestVersion?.start_commit_sha,
+                            )
+                        } catch (e: Exception) {
+                            logger.warn { "Failed to post inline comment on ${c.file}:${c.line}: ${e.message}" }
+                            // Fallback: post as regular note with file reference
+                            gitLabClient.addMergeRequestNote(
+                                connection = connection,
+                                projectId = repoResource.resourceIdentifier,
+                                mrIid = mrIid,
+                                noteBody = "**${c.file}:${c.line}** — ${c.body}",
+                            )
+                        }
+                    }
+                }
+
+                else -> error("Unsupported provider: ${connection.provider}")
+            }
+
+            logger.info { "MR_INLINE_COMMENTS | task=$taskIdStr | comments=${body.comments.size}" }
+            call.respondText("""{"ok":true}""", ContentType.Application.Json)
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=post-mr-inline-comments | taskId=${call.parameters["taskId"]}" }
+            call.respondText(
+                """{"ok":false,"error":"${e.message?.replace("\"", "\\\"")?.take(500)}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
 }
 
 // --- DTOs ---
@@ -357,6 +506,21 @@ data class CreateMergeRequestRequest(
 data class PostMrCommentRequest(
     val comment: String,
     val mergeRequestUrl: String? = null,
+)
+
+@Serializable
+data class PostInlineCommentsRequest(
+    val summary: String = "",
+    val verdict: String = "COMMENT",
+    val mergeRequestUrl: String? = null,
+    val comments: List<InlineComment> = emptyList(),
+)
+
+@Serializable
+data class InlineComment(
+    val file: String,
+    val line: Int? = null,
+    val body: String,
 )
 
 @Serializable

@@ -820,6 +820,33 @@ class KotlinServerClient:
             logger.warning("Failed to get MR diff for task %s: %s", task_id, e)
             return None
 
+    async def post_mr_inline_comments(
+        self,
+        task_id: str,
+        summary: str,
+        verdict: str = "COMMENT",
+        comments: list[dict] | None = None,
+        merge_request_url: str | None = None,
+    ) -> bool:
+        """Post inline review comments on MR/PR (file:line level)."""
+        try:
+            client = await self._get_client()
+            payload: dict = {
+                "summary": summary,
+                "verdict": verdict,
+                "comments": comments or [],
+            }
+            if merge_request_url:
+                payload["mergeRequestUrl"] = merge_request_url
+            resp = await client.post(
+                f"/internal/tasks/{task_id}/post-mr-inline-comments",
+                json=payload,
+            )
+            return resp.status_code == 200
+        except Exception as e:
+            logger.warning("Failed to post inline comments for task %s: %s", task_id, e)
+            return False
+
     async def post_mr_comment(
         self,
         task_id: str,

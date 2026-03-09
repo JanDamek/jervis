@@ -7,8 +7,10 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -114,6 +116,46 @@ class GitHubClient(
             error("GitHub PR comment failed: ${response.status} — ${response.bodyAsText()}")
         }
         return json.decodeFromString(GitHubComment.serializer(), response.bodyAsText())
+    }
+
+    suspend fun createPullRequestReview(
+        connection: ConnectionDocument,
+        owner: String,
+        repo: String,
+        prNumber: Int,
+        body: String,
+        event: String = "COMMENT",
+        comments: List<GitHubReviewComment> = emptyList(),
+        commitId: String? = null,
+    ): GitHubReviewResult {
+        val token = requireToken(connection)
+        val requestBody = buildJsonObject {
+            put("body", body)
+            put("event", event)
+            commitId?.let { put("commit_id", it) }
+            if (comments.isNotEmpty()) {
+                putJsonArray("comments") {
+                    for (c in comments) {
+                        add(buildJsonObject {
+                            put("path", c.path)
+                            put("line", c.line)
+                            put("side", "RIGHT")
+                            put("body", c.body)
+                        })
+                    }
+                }
+            }
+        }.toString()
+        val response = httpClient.post("https://api.github.com/repos/$owner/$repo/pulls/$prNumber/reviews") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        if (!response.status.isSuccess()) {
+            error("GitHub PR review failed: ${response.status} — ${response.bodyAsText()}")
+        }
+        return json.decodeFromString(GitHubReviewResult.serializer(), response.bodyAsText())
     }
 
     suspend fun getPullRequestFiles(
@@ -233,4 +275,19 @@ data class GitHubPullRequestFile(
     val deletions: Int = 0,
     val changes: Int = 0,
     val patch: String? = null,
+)
+
+@Serializable
+data class GitHubReviewComment(
+    val path: String,
+    val line: Int,
+    val body: String,
+)
+
+@Serializable
+data class GitHubReviewResult(
+    val id: Long,
+    val state: String,
+    val body: String? = null,
+    val html_url: String? = null,
 )

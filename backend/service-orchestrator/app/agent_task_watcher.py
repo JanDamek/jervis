@@ -334,11 +334,11 @@ class AgentTaskWatcher:
             mr_url = task_data.get("mergeRequestUrl", "")
             if mr_url and summary:
                 try:
-                    # Find original task ID from sourceUrn: "code-review:{originalTaskId}"
                     original_task_id = source_urn.replace("code-review:", "")
-                    await kotlin_client.post_mr_comment(
+                    await kotlin_client.post_mr_inline_comments(
                         task_id=original_task_id,
-                        comment=f"### Jervis Code Review\n\n{summary[:3000]}",
+                        summary=f"### Jervis Code Review\n\n{summary[:3000]}",
+                        verdict="COMMENT",
                         merge_request_url=mr_url,
                     )
                 except Exception:
@@ -357,49 +357,77 @@ class AgentTaskWatcher:
         if round_match:
             review_round = int(round_match.group(1))
 
-        # Format review comment for MR
-        comment_lines = [
+        # Build summary for MR overview comment
+        summary_lines = [
             f"### Jervis Code Review (Round {review_round}/{2})",
             f"**Verdict:** {verdict} | **Score:** {score}/100",
             "",
             review_summary,
         ]
 
-        if issues:
-            comment_lines.append("")
-            comment_lines.append("### Issues")
-            for issue in issues:
-                sev = issue.get("severity", "INFO")
-                file_ref = issue.get("file", "?")
-                line = issue.get("line")
-                if line:
-                    file_ref += f":{line}"
-                comment_lines.append(f"- **[{sev}]** `{file_ref}`: {issue.get('message', '')}")
-                if issue.get("suggestion"):
-                    comment_lines.append(f"  > Fix: {issue['suggestion']}")
-
         if checklist:
-            comment_lines.append("")
-            comment_lines.append("### Checklist")
+            summary_lines.append("")
+            summary_lines.append("### Checklist")
             for item, passed in checklist.items():
                 icon = "+" if passed else "-"  # Avoid emoji
-                comment_lines.append(f"- [{icon}] {item}")
+                summary_lines.append(f"- [{icon}] {item}")
 
-        comment_body = "\n".join(comment_lines)
+        # Separate issues into inline (file:line) and general
+        inline_comments = []
+        general_issues = []
+        for issue in issues:
+            sev = issue.get("severity", "INFO")
+            file_path = issue.get("file")
+            line_num = issue.get("line")
+            msg = issue.get("message", "")
+            suggestion = issue.get("suggestion", "")
+            body = f"**[{sev}]** {msg}"
+            if suggestion:
+                body += f"\n\n> Suggestion: {suggestion}"
 
-        # Post comment on MR
+            if file_path and line_num:
+                inline_comments.append({"file": file_path, "line": line_num, "body": body})
+            else:
+                general_issues.append(issue)
+
+        # Append general issues (no file:line) to summary
+        if general_issues:
+            summary_lines.append("")
+            summary_lines.append("### General Issues")
+            for issue in general_issues:
+                sev = issue.get("severity", "INFO")
+                file_ref = issue.get("file", "")
+                if file_ref:
+                    summary_lines.append(f"- **[{sev}]** `{file_ref}`: {issue.get('message', '')}")
+                else:
+                    summary_lines.append(f"- **[{sev}]** {issue.get('message', '')}")
+                if issue.get("suggestion"):
+                    summary_lines.append(f"  > Fix: {issue['suggestion']}")
+
+        summary_body = "\n".join(summary_lines)
+
+        # Map review verdict to GitHub event / GitLab action
+        verdict_map = {"APPROVE": "APPROVE", "REQUEST_CHANGES": "REQUEST_CHANGES", "REJECT": "REQUEST_CHANGES"}
+        review_event = verdict_map.get(verdict, "COMMENT")
+
+        # Post inline comments + summary on MR
         original_task_id = source_urn.replace("code-review:", "")
         mr_url = task_data.get("mergeRequestUrl", "")
         posted = False
         if mr_url:
             try:
-                posted = await kotlin_client.post_mr_comment(
+                posted = await kotlin_client.post_mr_inline_comments(
                     task_id=original_task_id,
-                    comment=comment_body,
+                    summary=summary_body,
+                    verdict=review_event,
+                    comments=inline_comments if inline_comments else None,
                     merge_request_url=mr_url,
                 )
                 if posted:
-                    logger.info("REVIEW_POSTED | task=%s | verdict=%s | score=%d", task_id, verdict, score)
+                    logger.info(
+                        "REVIEW_POSTED | task=%s | verdict=%s | score=%d | inline=%d",
+                        task_id, verdict, score, len(inline_comments),
+                    )
             except Exception as e:
                 logger.warning("Failed to post review comment: %s", e)
 
@@ -423,12 +451,13 @@ class AgentTaskWatcher:
         elif has_blockers and review_round >= 2:
             # Max rounds reached — post escalation
             try:
-                await kotlin_client.post_mr_comment(
+                await kotlin_client.post_mr_inline_comments(
                     task_id=original_task_id,
-                    comment=(
-                        "\n\n---\n**Max review rounds (2) reached.** "
+                    summary=(
+                        "---\n**Max review rounds (2) reached.** "
                         "Remaining issues require manual review."
                     ),
+                    verdict="COMMENT",
                     merge_request_url=mr_url,
                 )
             except Exception:
