@@ -34,22 +34,29 @@ _trap_exit() {
     echo "ERROR at line $line_no (exit $exit_code)"
     # Try to write result.json even if workspace setup failed
     mkdir -p "$(dirname "$RESULT_FILE")" 2>/dev/null || true
-    python3 -c "
-import json, datetime
+    export _JERVIS_SUMMARY="Entrypoint failed at line $line_no with exit code $exit_code. Check job logs for details."
+    python3 - "$TASK_ID" "$AGENT_TYPE" "$RESULT_FILE" <<'PYEOF' 2>/dev/null || true
+import json, datetime, sys, os
 result = {
-    'taskId': '${TASK_ID}',
+    'taskId': sys.argv[1],
     'success': False,
-    'summary': 'Entrypoint failed at line $line_no with exit code $exit_code. Check job logs for details.',
-    'agentType': '${AGENT_TYPE}',
+    'summary': os.environ.get("_JERVIS_SUMMARY", ""),
+    'agentType': sys.argv[2],
     'changedFiles': [],
     'timestamp': datetime.datetime.now().isoformat()
 }
-with open('${RESULT_FILE}', 'w') as f:
+with open(sys.argv[3], 'w') as f:
     json.dump(result, f, indent=2)
-" 2>/dev/null || true
+PYEOF
 }
 
 cd "$WORKSPACE"
+
+# --- Git safe.directory: PVC ownership may differ from container UID ---
+git config --global --add safe.directory "$WORKSPACE"
+
+# --- Remove stale index.lock (left by crashed processes on shared PVC) ---
+rm -f .git/index.lock 2>/dev/null || true
 
 # --- Global gitignore: prevent coding agent artifacts from leaking into commits ---
 GLOBAL_GITIGNORE="/tmp/.jervis-global-gitignore"
@@ -140,19 +147,21 @@ except:
     local py_success="False"
     [ "$success" = "true" ] && py_success="True"
 
-    python3 -c "
-import json, datetime
+    # Use env var for summary to avoid shell quoting issues with arbitrary text
+    export _JERVIS_SUMMARY="$summary"
+    python3 - "$TASK_ID" "$py_success" "$AGENT_TYPE" "$RESULT_FILE" "$changed_files" <<'PYEOF'
+import json, datetime, sys, os
 result = {
-    'taskId': '$TASK_ID',
-    'success': $py_success,
-    'summary': '''$summary''',
-    'agentType': '$AGENT_TYPE',
-    'changedFiles': $changed_files,
+    'taskId': sys.argv[1],
+    'success': sys.argv[2] == "True",
+    'summary': os.environ.get("_JERVIS_SUMMARY", ""),
+    'agentType': sys.argv[3],
+    'changedFiles': json.loads(sys.argv[5]) if len(sys.argv) > 5 else [],
     'timestamp': datetime.datetime.now().isoformat()
 }
-with open('$RESULT_FILE', 'w') as f:
+with open(sys.argv[4], 'w') as f:
     json.dump(result, f, indent=2)
-"
+PYEOF
 }
 
 # Git permission mode
@@ -186,8 +195,8 @@ case "$AGENT_TYPE" in
             write_result "false" "Missing Claude authentication — add ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN to jervis-secrets"
             exit 1
         fi
-        # Claude Agent SDK (Python) — replaces direct CLI invocation
-        CMD="python3 /opt/jervis/claude_sdk_runner.py"
+        # Claude Agent SDK (Python) — use venv python explicitly (su may not preserve PATH)
+        CMD="/opt/venv/bin/python3 /opt/jervis/claude_sdk_runner.py"
         ;;
     junie)
         CMD="junie \"$INSTRUCTIONS\""
@@ -209,18 +218,44 @@ echo "Allow git: $ALLOW_GIT"
 echo "Instructions length: ${#INSTRUCTIONS} chars"
 echo "==================================================="
 
+# Claude Code CLI refuses root — run agent subprocess as non-root user
+if [ "$AGENT_TYPE" = "claude" ] && [ "$(id -u)" = "0" ]; then
+    # Make workspace writable by all users (NFS root_squash maps root→nobody=owner, so chmod works)
+    chmod -R a+w "$WORKSPACE" 2>/dev/null || true
+    # Copy global gitconfig to jervis user
+    cp /root/.gitconfig /home/jervis/.gitconfig 2>/dev/null || true
+    chmod 644 /home/jervis/.gitconfig 2>/dev/null || true
+    # safe.directory for jervis user too
+    su jervis -c "git config --global --add safe.directory '$WORKSPACE'"
+    # Export env vars and use su --preserve-environment to pass them to jervis
+    export HOME=/home/jervis
+    CMD="su --preserve-environment jervis -c '$CMD'"
+fi
+
 # Capture output for error reporting — orchestrator needs detailed error messages
 AGENT_OUTPUT_FILE="/tmp/jervis-agent-output-$$"
 if eval "$CMD" 2>&1 | tee "$AGENT_OUTPUT_FILE"; then
-    write_result "true" "Agent completed successfully."
+    # Claude SDK runner writes result.json itself (as jervis user).
+    # Other agents rely on entrypoint's write_result (as root).
+    if [ "$AGENT_TYPE" != "claude" ] || [ ! -f "$RESULT_FILE" ]; then
+        write_result "true" "Agent completed successfully."
+    fi
     echo "=== JERVIS AGENT DONE: $AGENT_TYPE / $TASK_ID (SUCCESS) ==="
 else
     EXIT_CODE=${PIPESTATUS[0]}
     # Capture last 50 lines of output for error diagnosis
     LAST_OUTPUT=$(tail -50 "$AGENT_OUTPUT_FILE" 2>/dev/null || echo "No output captured")
-    write_result "false" "Agent exited with code $EXIT_CODE. Output: $LAST_OUTPUT"
+    if [ "$AGENT_TYPE" != "claude" ] || [ ! -f "$RESULT_FILE" ]; then
+        write_result "false" "Agent exited with code $EXIT_CODE. Output: $LAST_OUTPUT"
+    fi
     echo "=== JERVIS AGENT DONE: $AGENT_TYPE / $TASK_ID (FAILED: $EXIT_CODE) ==="
     rm -f "$AGENT_OUTPUT_FILE"
+    # Restore workspace permissions so server (root→nobody via NFS root_squash) can manage files
+    # Agent may have created files/dirs as jervis (UID 1000) with restricted perms
+    chmod -R a+rwX "$WORKSPACE" 2>/dev/null || true
     exit $EXIT_CODE
 fi
 rm -f "$AGENT_OUTPUT_FILE"
+
+# Restore workspace permissions (same as failure path above)
+chmod -R a+rwX "$WORKSPACE" 2>/dev/null || true

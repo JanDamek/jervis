@@ -211,6 +211,9 @@ data:
   KOTLIN_SERVER_URL: "http://jervis-server:5500"
   KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
   SEARXNG_URL: "http://nas.lan.mazlusek.com:30053"
+  # -- MCP Server (internal K8s endpoint for coding agents) -------------------
+  MCP_URL: "http://jervis-mcp:8100"
+  MCP_API_TOKEN: "72f78904b9974741fd4d2d6eef3055418b90f4a190096b631cf0266df34c5304"
   # -- Ollama endpoints (via Ollama Router on :11430) -------------------------
   OLLAMA_API_BASE: "http://jervis-ollama-router:11430"
 

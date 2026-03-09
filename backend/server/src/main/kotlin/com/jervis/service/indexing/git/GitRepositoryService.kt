@@ -29,6 +29,7 @@ import java.io.InputStreamReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 
 private val logger = KotlinLogging.logger {}
@@ -306,11 +307,20 @@ class GitRepositoryService(
 
         val isCloned = agentRepoDir.resolve(".git").exists()
 
+        // Remove stale index.lock from previous crashed operations (shared PVC)
+        val indexLock = agentRepoDir.resolve(".git/index.lock")
+        if (indexLock.exists()) {
+            logger.warn { "Removing stale index.lock from $agentRepoDir" }
+            indexLock.deleteIfExists()
+        }
+
         try {
             if (!isCloned) {
                 logger.info { "Cloning agent workspace ${resource.resourceIdentifier} into $agentRepoDir" }
                 cloneRepository(repoUrl, agentRepoDir, connection)
             } else {
+                // Repair limited refspec from legacy single-branch clones
+                repairRefspec(agentRepoDir)
                 logger.debug { "Agent workspace ${resource.resourceIdentifier} already cloned, pulling latest" }
                 fetchAll(agentRepoDir, connection)
             }
@@ -451,7 +461,8 @@ class GitRepositoryService(
 
         val cmd = listOf(
             "git", "clone",
-            "--depth", "50", // Shallow clone for speed, enough history for indexing
+            "--depth", "50",
+            "--no-single-branch", // Fetch all branches (agents need develop, feature branches etc.)
             authUrl,
             targetDir.toString(),
         )
@@ -472,6 +483,22 @@ class GitRepositoryService(
         configureCredentials(targetDir, connection)
 
         logger.info { "Cloned $repoUrl into $targetDir" }
+    }
+
+    private fun repairRefspec(repoDir: Path) {
+        val result = executeGitCommand(
+            listOf("git", "config", "--get", "remote.origin.fetch"),
+            workingDir = repoDir,
+        )
+        val currentRefspec = result.output.trim()
+        val fullRefspec = "+refs/heads/*:refs/remotes/origin/*"
+        if (result.success && currentRefspec != fullRefspec) {
+            logger.info { "Repairing limited refspec in $repoDir: $currentRefspec -> $fullRefspec" }
+            executeGitCommand(
+                listOf("git", "config", "remote.origin.fetch", fullRefspec),
+                workingDir = repoDir,
+            )
+        }
     }
 
     private suspend fun fetchAll(

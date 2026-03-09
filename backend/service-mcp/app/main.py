@@ -38,7 +38,11 @@ logger = logging.getLogger("jervis-mcp")
 
 
 class HybridTokenVerifier(TokenVerifier):
-    """Accepts both legacy static API tokens and OAuth-issued access tokens."""
+    """Accepts internal (no-auth), static Bearer tokens, and OAuth tokens.
+
+    Internal K8s access: no Authorization header → allowed (internal client).
+    External access: valid Bearer token or OAuth token required.
+    """
 
     def __init__(self, static_tokens: dict[str, dict] | None = None) -> None:
         super().__init__()
@@ -47,6 +51,14 @@ class HybridTokenVerifier(TokenVerifier):
         )
 
     async def verify_token(self, token: str) -> AccessToken | None:
+        # 0. No token → internal K8s access (service-to-service, no auth needed)
+        if not token:
+            return AccessToken(
+                token="internal",
+                client_id="k8s-internal",
+                scopes=[],
+            )
+
         # 1. Try static token
         if self._static:
             result = await self._static.verify_token(token)
