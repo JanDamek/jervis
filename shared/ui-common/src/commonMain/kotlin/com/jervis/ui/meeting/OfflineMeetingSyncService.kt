@@ -108,7 +108,6 @@ class OfflineMeetingSyncService(
         updateMeetingState(meeting.localId, OfflineSyncState.SYNCING, null)
 
         try {
-            // 1. Create meeting on server
             val audioInputType = try {
                 AudioInputType.valueOf(meeting.audioInputType)
             } catch (_: Exception) {
@@ -118,23 +117,32 @@ class OfflineMeetingSyncService(
                 try { MeetingTypeEnum.valueOf(it) } catch (_: Exception) { null }
             }
 
-            val serverMeeting = repository.meetings.startRecording(
-                MeetingCreateDto(
-                    clientId = meeting.clientId,
-                    projectId = meeting.projectId,
-                    audioInputType = audioInputType,
-                    title = meeting.title,
-                    meetingType = meetingType,
-                ),
-            )
-            println("[OfflineSync] Server created meeting: ${serverMeeting.id}")
+            // 1. Create meeting on server (or reuse existing from previous attempt)
+            val serverMeetingId = if (meeting.serverMeetingId != null) {
+                println("[OfflineSync] Resuming upload for server meeting: ${meeting.serverMeetingId}")
+                meeting.serverMeetingId
+            } else {
+                val serverMeeting = repository.meetings.startRecording(
+                    MeetingCreateDto(
+                        clientId = meeting.clientId,
+                        projectId = meeting.projectId,
+                        audioInputType = audioInputType,
+                        title = meeting.title,
+                        meetingType = meetingType,
+                    ),
+                )
+                println("[OfflineSync] Server created meeting: ${serverMeeting.id}")
+                // Persist server ID immediately so we can resume on failure
+                updateMeetingField(meeting.localId) { it.copy(serverMeetingId = serverMeeting.id) }
+                serverMeeting.id
+            }
 
-            // 2. Upload all disk chunks
+            // 2. Upload disk chunks (skip already uploaded ones)
             val pendingChunks = AudioChunkQueue.getAllPending()
                 .filter { it.meetingId == meeting.localId }
                 .sortedBy { it.chunkIndex }
 
-            var chunkIndex = 0
+            var chunkIndex = meeting.uploadedChunks
             for (chunk in pendingChunks) {
                 val rawData = AudioChunkQueue.readChunk(chunk) ?: continue
 
@@ -145,7 +153,7 @@ class OfflineMeetingSyncService(
                     val subChunk = rawData.copyOfRange(offset, end)
                     repository.meetings.uploadAudioChunk(
                         AudioChunkDto(
-                            meetingId = serverMeeting.id,
+                            meetingId = serverMeetingId,
                             chunkIndex = chunkIndex,
                             data = Base64.encode(subChunk),
                         ),
@@ -154,12 +162,14 @@ class OfflineMeetingSyncService(
                     offset = end
                 }
                 AudioChunkQueue.dequeue(chunk)
+                // Persist progress after each disk chunk
+                updateMeetingField(meeting.localId) { it.copy(uploadedChunks = chunkIndex) }
             }
 
             // 3. Finalize
             repository.meetings.finalizeRecording(
                 MeetingFinalizeDto(
-                    meetingId = serverMeeting.id,
+                    meetingId = serverMeetingId,
                     title = meeting.title,
                     meetingType = meetingType ?: MeetingTypeEnum.MEETING,
                     durationSeconds = meeting.durationSeconds,
@@ -169,7 +179,7 @@ class OfflineMeetingSyncService(
             // 4. Mark as synced
             AudioChunkQueue.clearMeeting(meeting.localId)
             updateMeetingState(meeting.localId, OfflineSyncState.SYNCED, null)
-            println("[OfflineSync] Meeting ${meeting.localId} synced as ${serverMeeting.id}")
+            println("[OfflineSync] Meeting ${meeting.localId} synced as $serverMeetingId")
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             val newRetryCount = meeting.retryCount + 1
@@ -179,14 +189,19 @@ class OfflineMeetingSyncService(
     }
 
     private fun updateMeetingState(localId: String, state: OfflineSyncState, error: String?, retryCount: Int? = null) {
+        updateMeetingField(localId) {
+            it.copy(
+                syncState = state,
+                syncError = error,
+                retryCount = retryCount ?: it.retryCount,
+            )
+        }
+    }
+
+    /** Update a single meeting in storage by applying a transform. */
+    private fun updateMeetingField(localId: String, transform: (OfflineMeeting) -> OfflineMeeting) {
         val all = OfflineMeetingStorage.load().map { m ->
-            if (m.localId == localId) {
-                m.copy(
-                    syncState = state,
-                    syncError = error,
-                    retryCount = retryCount ?: m.retryCount,
-                )
-            } else m
+            if (m.localId == localId) transform(m) else m
         }
         OfflineMeetingStorage.save(all)
         _pendingMeetings.value = all.filter { it.syncState != OfflineSyncState.SYNCED }

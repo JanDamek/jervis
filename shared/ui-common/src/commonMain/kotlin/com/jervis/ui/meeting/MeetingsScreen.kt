@@ -756,6 +756,22 @@ private fun OfflineMeetingListItem(
         "${duration / 60}:${(duration % 60).toString().padStart(2, '0')}"
     } else "—"
 
+    // Format start date/time from epoch millis
+    val startDateTime = remember(meeting.startedAtMs) {
+        val instant = kotlinx.datetime.Instant.fromEpochMilliseconds(meeting.startedAtMs)
+        val local = instant.toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
+        "${local.date} ${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+    }
+
+    // Meeting type label
+    val typeLabel = remember(meeting.meetingType) {
+        meeting.meetingType?.let {
+            try {
+                meetingTypeLabel(com.jervis.dto.meeting.MeetingTypeEnum.valueOf(it))
+            } catch (_: Exception) { null }
+        }
+    }
+
     androidx.compose.material3.OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -772,7 +788,16 @@ private fun OfflineMeetingListItem(
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(
-                    text = "$stateText · $durationText · ${meeting.chunkCount} chunků",
+                    text = buildString {
+                        append(startDateTime)
+                        if (typeLabel != null) append("  $typeLabel")
+                        append("  $durationText")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "$stateText · ${meeting.chunkCount} chunků",
                     style = MaterialTheme.typography.bodySmall,
                     color = stateColor,
                 )

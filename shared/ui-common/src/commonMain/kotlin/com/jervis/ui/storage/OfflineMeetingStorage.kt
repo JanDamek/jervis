@@ -21,6 +21,10 @@ data class OfflineMeeting(
     val syncState: OfflineSyncState = OfflineSyncState.PENDING,
     val syncError: String? = null,
     val retryCount: Int = 0,
+    /** Server-assigned meeting ID. Set after startRecording succeeds — enables resumable upload. */
+    val serverMeetingId: String? = null,
+    /** Number of chunks already uploaded to server. Resume from this index on retry. */
+    val uploadedChunks: Int = 0,
 )
 
 @Serializable
