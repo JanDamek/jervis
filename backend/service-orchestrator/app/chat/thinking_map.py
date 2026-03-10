@@ -76,6 +76,7 @@ async def create_map(
     )
 
     await agent_store.save(graph)
+    agent_store.cache_subgraph(graph)
     _active_maps[session_id] = graph_id
     logger.info("Created thinking map: %s (%s) for session %s", title, graph_id, session_id)
     return graph
@@ -145,6 +146,7 @@ async def add_vertex(
         graph.edges.append(edge)
 
     await agent_store.save(graph)
+    agent_store.cache_subgraph(graph)
     logger.info("Added vertex '%s' (%s) to map %s", title, vertex_id, graph.id)
     return graph, vertex
 
@@ -173,6 +175,7 @@ async def update_vertex(
         vertex.vertex_type = _VERTEX_TYPE_MAP.get(vertex_type, vertex.vertex_type)
 
     await agent_store.save(graph)
+    agent_store.cache_subgraph(graph)
     logger.info("Updated vertex '%s' in map %s", vertex_id, graph.id)
     return graph, vertex
 
@@ -196,6 +199,7 @@ async def remove_vertex(
     graph.edges = [e for e in graph.edges if e.source_id != vertex_id and e.target_id != vertex_id]
 
     await agent_store.save(graph)
+    agent_store.cache_subgraph(graph)
     logger.info("Removed vertex '%s' from map %s", vertex_id, graph.id)
     return graph
 
@@ -237,6 +241,7 @@ async def dispatch_map(
     # Re-key the graph to the real task_id
     graph.task_id = task_id
     await agent_store.save(graph)
+    agent_store.cache_subgraph(graph)
 
     # Clear session mapping
     _active_maps.pop(session_id, None)

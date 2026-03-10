@@ -44,6 +44,7 @@ async def handle_chat_sse(
     """
     _response_chunks: list[str] = []
     _trace_parts: list[str] = []
+    _live_vertex_id: str | None = None
     try:
         # ── 1. Load context ──────────────────────────────────────────
         context = await chat_context_assembler.assemble_context(
@@ -146,6 +147,31 @@ async def handle_chat_sse(
 
         yield ChatStreamEvent(type="thinking", content="Připravuji odpověď...")
 
+        # ── 4b'. Create RUNNING vertex in memory map immediately ───
+        if memory_map:
+            try:
+                from app.agent.graph import add_request_vertex
+                from app.agent.models import VertexStatus
+                _live_vertex = add_request_vertex(
+                    memory_map,
+                    message=request.message[:200],
+                    response="",
+                    response_summary="Zpracovávám…",
+                    client_id=request.active_client_id or "",
+                    client_name=request.active_client_name or "",
+                    group_id=request.active_group_id,
+                    group_name=request.active_group_name or "",
+                    project_id=request.active_project_id,
+                    project_name=request.active_project_name or "",
+                    status=VertexStatus.RUNNING,
+                )
+                _live_vertex_id = _live_vertex.id
+                agent_store.mark_dirty(memory_map.task_id)
+                from app.tools.kotlin_client import kotlin_client
+                await kotlin_client.notify_memory_map_changed()
+            except Exception as e:
+                logger.debug("SSE: failed to create live vertex: %s", e)
+
         # ── 4c. Agentic loop (all tools) ────────────────────────────
         async for event in run_agentic_loop(
             request=request,
@@ -183,16 +209,15 @@ async def handle_chat_sse(
         )
 
     finally:
-        # Record REQUEST vertex in Paměťová mapa
+        # Update REQUEST vertex in Paměťová mapa with final state
         try:
             from app.agent.persistence import agent_store
-            from app.agent.graph import add_request_vertex
             from app.agent.models import VertexStatus
+            from datetime import datetime, timezone
             master = agent_store.get_memory_map_cached()
             if master:
                 _full_response = "".join(_response_chunks) if _response_chunks else ""
                 _trace_str = "\n".join(_trace_parts) if _trace_parts else ""
-                # Full trace: thinking + tools + final response (for context in memory map)
                 _full_record = (_trace_str + "\n---\n" + _full_response) if _trace_str else _full_response
 
                 # Determine vertex status from trace analysis
@@ -205,33 +230,43 @@ async def handle_chat_sse(
                     any(t in p for t in _bg_tools)
                     for p in _trace_parts if p.startswith("[tool]")
                 ) and not _has_errors
-                _has_tool_calls = any(p.startswith("[tool]") for p in _trace_parts)
 
                 if _has_errors:
                     _vertex_status = VertexStatus.FAILED
                 elif _has_bg_dispatch:
                     _vertex_status = VertexStatus.RUNNING
-                elif _has_tool_calls:
-                    # Tool calls succeeded, no background dispatch → completed
-                    _vertex_status = VertexStatus.COMPLETED
                 else:
-                    # Simple Q&A, no tool calls → completed
                     _vertex_status = VertexStatus.COMPLETED
 
-                add_request_vertex(
-                    master,
-                    message=request.message[:200],
-                    response=_full_record[:2000] if _full_record else "(no response)",
-                    response_summary=_full_response[:120] if _full_response else request.message[:80],
-                    client_id=request.active_client_id or "",
-                    client_name=request.active_client_name or "",
-                    group_id=request.active_group_id,
-                    group_name=request.active_group_name or "",
-                    project_id=request.active_project_id,
-                    project_name=request.active_project_name or "",
-                    status=_vertex_status,
-                )
+                # Update existing live vertex if created, otherwise create new
+                if _live_vertex_id and _live_vertex_id in master.vertices:
+                    v = master.vertices[_live_vertex_id]
+                    v.result = _full_record[:2000] if _full_record else "(no response)"
+                    v.result_summary = _full_response[:120] if _full_response else request.message[:80]
+                    v.status = _vertex_status
+                    if _vertex_status != VertexStatus.RUNNING:
+                        v.completed_at = datetime.now(timezone.utc).isoformat()
+                else:
+                    from app.agent.graph import add_request_vertex
+                    add_request_vertex(
+                        master,
+                        message=request.message[:200],
+                        response=_full_record[:2000] if _full_record else "(no response)",
+                        response_summary=_full_response[:120] if _full_response else request.message[:80],
+                        client_id=request.active_client_id or "",
+                        client_name=request.active_client_name or "",
+                        group_id=request.active_group_id,
+                        group_name=request.active_group_name or "",
+                        project_id=request.active_project_id,
+                        project_name=request.active_project_name or "",
+                        status=_vertex_status,
+                    )
                 agent_store.mark_dirty(master.task_id)
+                from app.tools.kotlin_client import kotlin_client
+                try:
+                    await kotlin_client.notify_memory_map_changed()
+                except Exception:
+                    pass
         except Exception as e:
             logger.debug("Failed to record vertex in memory map: %s", e)
 

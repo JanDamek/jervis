@@ -818,7 +818,15 @@ class ChatViewModel(
             }
 
             ChatMessage.MessageType.THINKING_MAP_UPDATE -> {
-                // Refresh memory map when background updates arrive
+                // Show live thinking map being built
+                val graphId = response.metadata["graph_id"]
+                if (!graphId.isNullOrBlank()) {
+                    // Auto-open panel and navigate to the live graph
+                    if (!_thinkingMapPanelVisible.value) {
+                        _thinkingMapPanelVisible.value = true
+                    }
+                    openSubGraph(graphId)
+                }
                 loadMemoryMap()
             }
         }
