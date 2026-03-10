@@ -77,6 +77,10 @@ print('  all models ready')
 
 # Step 5: Create/update systemd service
 echo "Step 5/6: Setting up systemd service..."
+# HF_TOKEN: use env var, or auto-fetch from K8s secret
+if [ -z "$HF_TOKEN" ]; then
+    HF_TOKEN=$(kubectl get secret jervis-secrets -n jervis -o jsonpath='{.data.HF_TOKEN}' 2>/dev/null | base64 -d 2>/dev/null || true)
+fi
 HF_TOKEN_LINE=""
 if [ -n "$HF_TOKEN" ]; then
     HF_TOKEN_LINE="Environment=HF_TOKEN=$HF_TOKEN"
