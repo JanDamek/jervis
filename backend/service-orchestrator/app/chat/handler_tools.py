@@ -169,11 +169,24 @@ async def _handle_create_background_task(args, client_id, project_id, kotlin_cli
 
 async def _handle_create_thinking_map(args, client_id, project_id, _kotlin_client):
     """Create a new thinking map (AgentGraph) for the chat session."""
-    from app.chat.thinking_map import create_map
+    from app.chat.thinking_map import create_map, get_active_map
     # session_id is injected by _execute_chat_specific_tool
     session_id = args.pop("__session_id__", None)
     if not session_id:
         return "Chyba: interní chyba — chybí session_id."
+
+    # Guard: if session already has an active map, refuse and point to add_map_vertex
+    existing = await get_active_map(session_id)
+    if existing:
+        root = existing.vertices.get(existing.root_vertex_id)
+        existing_title = root.title if root else existing.id
+        vertex_count = len(existing.vertices)
+        return (
+            f"CHYBA: Už existuje aktivní mapa '{existing_title}' ({vertex_count} kroků). "
+            f"NEVYTVÁŘEJ novou — přidej kroky přes add_map_vertex nebo uprav existující přes update_map_vertex. "
+            f"Jeden problém = jedna mapa."
+        )
+
     effective_client_id = client_id or args.get("client_id")
     effective_project_id = project_id or args.get("project_id")
     graph = await create_map(

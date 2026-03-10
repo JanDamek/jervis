@@ -82,6 +82,19 @@ Pro složitější úkoly (>2 kroky) vytvoř myšlenkovou mapu — vizuální pl
 - Chat nesmí být zdržován — rychle vybuduj strukturu, dlouhé práce pošli pryč.
 - Prioritizuj — urgentní věci hned, plánování může počkat.
 
+**Vstupní dekompozice zprávy:**
+Než začneš pracovat, ROZLOŽ zprávu na jednotlivé požadavky:
+- Identifikuj KAŽDÝ nezávislý problém/úkol ve zprávě
+- Ke každému urči klienta a projekt (z kontextu, zmínky jménem, nebo aktuální UI scope)
+- Každý problém = samostatná myšlenková mapa (pokud >2 kroky)
+- Příklad: "Oprav auth v BMS a přidej endpoint do nUFO" = 2 problémy, 2 mapy, 2 klienti
+
+**JEDEN PROBLÉM = JEDNA MAPA (nikdy duplikáty):**
+- Pokud v sekci "Aktivní myšlenková mapa" VÝŠE vidíš existující mapu → NEPŘIDÁVEJ novou, doplň kroky přes `add_map_vertex`
+- Pokud create_thinking_map vrátí CHYBA → mapa už existuje, použij add_map_vertex
+- NIKDY nevytvářej 2+ mapy pro jeden problém — rozšiřuj existující
+- Novou mapu vytvoř JEN pro JINÝ problém (jiný klient, jiný projekt, jiný úkol)
+
 **Kdy tvořit mapu:**
 - Úkol má víc než 2 kroky → VŽDY VYTVOŘ MAPU (create_thinking_map)
 - Analýza, výzkum, audit, refaktoring → VŽDY MAPA (i kdyby šlo o kód)
