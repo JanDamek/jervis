@@ -280,33 +280,29 @@ class ChatViewModel(
      * Bypasses chat pipeline — calls server directly via kRPC respondToTask.
      */
     fun sendReplyToTask(taskId: String, text: String) {
-        if (_isLoading.value) return
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
 
-        _isLoading.value = true
+        // Optimistically update UI first — user sees response immediately
+        _chatMessages.value = _chatMessages.value.map { msg ->
+            if (msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT &&
+                msg.metadata["taskId"] == taskId
+            ) {
+                msg.copy(userResponse = trimmed)
+            } else {
+                msg
+            }
+        }
+        _userTaskCount.update { (it - 1).coerceAtLeast(0) }
 
+        // Send to server asynchronously (doesn't block chat)
         scope.launch {
             try {
                 repository.userTasks.respondToTask(taskId, trimmed)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                // Task may have been deleted/cancelled — still mark response in UI
                 println("ChatViewModel: respondToTask failed (task may no longer exist): ${e.message}")
             }
-            // Always update UI — user wrote the response regardless of server state
-            _chatMessages.value = _chatMessages.value.map { msg ->
-                if (msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT &&
-                    msg.metadata["taskId"] == taskId
-                ) {
-                    msg.copy(userResponse = trimmed)
-                } else {
-                    msg
-                }
-            }
-            // Decrement user task counter
-            _userTaskCount.update { (it - 1).coerceAtLeast(0) }
-            _isLoading.value = false
         }
     }
 

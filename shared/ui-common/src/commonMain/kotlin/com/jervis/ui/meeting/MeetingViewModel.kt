@@ -819,6 +819,16 @@ class MeetingViewModel(
         if (_selectedMeeting.value?.id == meetingId) {
             _selectedMeeting.value = updated
         }
+        // Also update summary in currentWeekMeetings (state/title may have changed)
+        _currentWeekMeetings.value = _currentWeekMeetings.value.map { summary ->
+            if (summary.id == meetingId) {
+                summary.copy(
+                    state = updated.state,
+                    title = updated.title,
+                    meetingType = updated.meetingType,
+                )
+            } else summary
+        }
     }
 
     fun deleteMeeting(meetingId: String) {
