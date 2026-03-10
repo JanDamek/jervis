@@ -283,7 +283,7 @@ class ChatViewModel(
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
 
-        // Optimistically update UI first — user sees response immediately
+        // Optimistically update both chatMessages AND pendingUserTasks
         _chatMessages.value = _chatMessages.value.map { msg ->
             if (msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT &&
                 msg.metadata["taskId"] == taskId
@@ -293,6 +293,8 @@ class ChatViewModel(
                 msg
             }
         }
+        // Remove from pending user tasks list ("K reakci" tab)
+        _pendingUserTasks.value = _pendingUserTasks.value.filter { it.metadata["taskId"] != taskId }
         _userTaskCount.update { (it - 1).coerceAtLeast(0) }
 
         // Send to server asynchronously (doesn't block chat)
