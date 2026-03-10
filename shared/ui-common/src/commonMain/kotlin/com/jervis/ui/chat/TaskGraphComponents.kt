@@ -420,7 +420,28 @@ private fun VertexCard(
                         ExpandableTextSection("Plný výsledek", vertex.result)
                     }
 
-                    // Local context (non-task_ref only; task_ref link is on header)
+                    // Sub-graph link in detail (also on header, but repeated here for discoverability)
+                    if (hasSubGraph) {
+                        Row(
+                            modifier = Modifier.padding(top = 2.dp).clickable { onOpenSubGraph!!(subGraphId!!) },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.AccountTree,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                "Zobrazit myšlenkovou mapu",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+
+                    // Local context (non-task_ref only)
                     if (vertex.localContext.isNotBlank() && vertex.vertexType != "task_ref") {
                         ExpandableTextSection("Lokální kontext", vertex.localContext)
                     }
