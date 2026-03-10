@@ -54,7 +54,7 @@ if [ "$USE_SIMULATOR" = true ]; then
     xcrun simctl install "$DEVICE_ID" "build/ios/Build/Products/Debug-iphonesimulator/iosApp.app"
 
     echo "Launching app..."
-    xcrun simctl launch --console "$DEVICE_ID" com.jervis.iosApp
+    xcrun simctl launch --console "$DEVICE_ID" com.jervis
 else
     # Physical device mode
     echo "Building Xcode project..."
@@ -86,7 +86,7 @@ else
         xcrun devicectl device install app --device "$DEVICE_ID" "build/ios/Build/Products/Debug-iphoneos/iosApp.app"
         
         echo "Launching app..."
-        xcrun devicectl device process launch --device "$DEVICE_ID" com.jervis.iosApp
+        xcrun devicectl device process launch --device "$DEVICE_ID" com.jervis
     else
         echo "Error: Could not find device ID for '$DEVICE_NAME'. Please ensure it's connected and paired."
         echo "You can check connected devices with: xcrun devicectl list devices"
