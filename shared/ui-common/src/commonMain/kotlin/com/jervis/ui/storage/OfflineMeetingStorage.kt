@@ -20,6 +20,7 @@ data class OfflineMeeting(
     val chunkCount: Int = 0,
     val syncState: OfflineSyncState = OfflineSyncState.PENDING,
     val syncError: String? = null,
+    val retryCount: Int = 0,
 )
 
 @Serializable

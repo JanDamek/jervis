@@ -20,6 +20,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -28,8 +30,11 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  * Automatically syncs offline meetings to the server when connection is restored.
  *
  * Watches [RpcConnectionManager.state] and, when Connected, uploads all
- * PENDING/FAILED offline meetings: creates server meeting, uploads audio chunks,
+ * PENDING offline meetings: creates server meeting, uploads audio chunks,
  * and finalizes.
+ *
+ * Retry policy: max [MAX_RETRIES] attempts per meeting. After that,
+ * the meeting stays FAILED and requires manual [retryMeeting] call.
  */
 class OfflineMeetingSyncService(
     private val connectionManager: RpcConnectionManager,
@@ -45,19 +50,23 @@ class OfflineMeetingSyncService(
 
     companion object {
         private const val CHUNK_SIZE_BYTES = 4 * 1024 * 1024
+        private const val MAX_RETRIES = 3
     }
 
     init {
         _pendingMeetings.value = OfflineMeetingStorage.load()
             .filter { it.syncState != OfflineSyncState.SYNCED }
 
-        // Watch connection state — sync when connected
+        // Watch connection state — sync ONLY on Connected transitions (deduplicated)
         scope.launch {
-            connectionManager.state.collect { state ->
-                if (state is RpcConnectionState.Connected) {
-                    syncPendingMeetings()
+            connectionManager.state
+                .map { it is RpcConnectionState.Connected }
+                .distinctUntilChanged()
+                .collect { connected ->
+                    if (connected) {
+                        syncPendingMeetings()
+                    }
                 }
-            }
         }
     }
 
@@ -67,12 +76,12 @@ class OfflineMeetingSyncService(
 
         scope.launch {
             try {
+                // Only sync PENDING meetings (not FAILED — those need manual retry)
                 val meetings = OfflineMeetingStorage.load()
-                    .filter { it.syncState == OfflineSyncState.PENDING || it.syncState == OfflineSyncState.FAILED }
+                    .filter { it.syncState == OfflineSyncState.PENDING }
 
                 for (meeting in meetings) {
                     syncMeeting(meeting)
-                    // Brief delay between meetings to avoid overwhelming the server
                     delay(1000)
                 }
             } finally {
@@ -85,7 +94,7 @@ class OfflineMeetingSyncService(
 
     @OptIn(ExperimentalEncodingApi::class)
     private suspend fun syncMeeting(meeting: OfflineMeeting) {
-        println("[OfflineSync] Syncing offline meeting ${meeting.localId}")
+        println("[OfflineSync] Syncing offline meeting ${meeting.localId} (attempt ${meeting.retryCount + 1}/$MAX_RETRIES)")
         updateMeetingState(meeting.localId, OfflineSyncState.SYNCING, null)
 
         try {
@@ -153,22 +162,29 @@ class OfflineMeetingSyncService(
             println("[OfflineSync] Meeting ${meeting.localId} synced as ${serverMeeting.id}")
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            println("[OfflineSync] Failed to sync meeting ${meeting.localId}: ${e.message}")
-            updateMeetingState(meeting.localId, OfflineSyncState.FAILED, e.message)
+            val newRetryCount = meeting.retryCount + 1
+            println("[OfflineSync] Failed to sync meeting ${meeting.localId} (attempt $newRetryCount/$MAX_RETRIES): ${e.message}")
+            updateMeetingState(meeting.localId, OfflineSyncState.FAILED, e.message, newRetryCount)
         }
     }
 
-    private fun updateMeetingState(localId: String, state: OfflineSyncState, error: String?) {
+    private fun updateMeetingState(localId: String, state: OfflineSyncState, error: String?, retryCount: Int? = null) {
         val all = OfflineMeetingStorage.load().map { m ->
-            if (m.localId == localId) m.copy(syncState = state, syncError = error) else m
+            if (m.localId == localId) {
+                m.copy(
+                    syncState = state,
+                    syncError = error,
+                    retryCount = retryCount ?: m.retryCount,
+                )
+            } else m
         }
         OfflineMeetingStorage.save(all)
         _pendingMeetings.value = all.filter { it.syncState != OfflineSyncState.SYNCED }
     }
 
-    /** Retry a single failed meeting sync. */
+    /** Retry a single failed meeting sync (resets retry counter). */
     fun retryMeeting(localId: String) {
-        updateMeetingState(localId, OfflineSyncState.PENDING, null)
+        updateMeetingState(localId, OfflineSyncState.PENDING, null, retryCount = 0)
         scope.launch {
             val meeting = OfflineMeetingStorage.load().find { it.localId == localId } ?: return@launch
             syncMeeting(meeting)
