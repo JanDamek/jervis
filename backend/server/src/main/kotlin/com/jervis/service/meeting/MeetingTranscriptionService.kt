@@ -1,12 +1,16 @@
 package com.jervis.service.meeting
 
 import com.jervis.dto.meeting.MeetingStateEnum
+import com.jervis.entity.SpeakerDocument
 import com.jervis.entity.meeting.MeetingDocument
 import com.jervis.entity.meeting.TranscriptSegment
 import com.jervis.repository.MeetingRepository
+import com.jervis.repository.SpeakerRepository
+import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Instant
+import kotlin.math.sqrt
 
 private val logger = KotlinLogging.logger {}
 
@@ -19,6 +23,7 @@ private val logger = KotlinLogging.logger {}
 @Service
 class MeetingTranscriptionService(
     private val meetingRepository: MeetingRepository,
+    private val speakerRepository: SpeakerRepository,
     private val whisperJobRunner: WhisperJobRunner,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
 ) {
@@ -85,20 +90,34 @@ class MeetingTranscriptionService(
             // Re-read from DB — user may have classified the meeting (set clientId/projectId)
             // during the long-running transcription. Using stale `transcribing` would overwrite those fields.
             val current = meetingRepository.findById(meeting.id) ?: transcribing
+
+            // Auto-match speakers using voice embeddings
+            val autoMapping = if (!result.speakerEmbeddings.isNullOrEmpty() && current.clientId != null) {
+                autoMatchSpeakers(result.speakerEmbeddings, current.clientId)
+            } else {
+                emptyMap()
+            }
+
             val transcribed = meetingRepository.save(
                 current.copy(
                     state = MeetingStateEnum.TRANSCRIBED,
                     stateChangedAt = Instant.now(),
                     transcriptText = result.text,
                     transcriptSegments = segments,
+                    speakerEmbeddings = result.speakerEmbeddings,
+                    speakerMapping = if (autoMapping.isNotEmpty()) autoMapping else current.speakerMapping,
                 ),
             )
             val currentClientId = current.clientId?.toString().orEmpty()
             notificationRpc.emitMeetingStateChanged(meetingIdStr, currentClientId, MeetingStateEnum.TRANSCRIBED.name, current.title)
 
+            if (autoMapping.isNotEmpty()) {
+                logger.info { "Auto-matched ${autoMapping.size} speakers for meeting ${meeting.id}" }
+            }
             logger.info {
                 "Transcription complete for meeting ${meeting.id}: " +
-                    "${result.text.length} chars, ${segments.size} segments"
+                    "${result.text.length} chars, ${segments.size} segments" +
+                    (result.speakerEmbeddings?.let { ", ${it.size} speaker embeddings" } ?: "")
             }
 
             return transcribed
@@ -121,4 +140,64 @@ class MeetingTranscriptionService(
             return failed
         }
     }
+
+    /**
+     * Auto-match speaker embeddings against known speakers for a client.
+     * Returns a mapping of diarization label → speakerId for matches above threshold.
+     */
+    private suspend fun autoMatchSpeakers(
+        embeddings: Map<String, List<Float>>,
+        clientId: com.jervis.common.types.ClientId,
+    ): Map<String, String> {
+        val knownSpeakers = speakerRepository.findByClientIdOrderByNameAsc(clientId)
+            .toList()
+            .filter { it.voiceEmbedding != null }
+
+        if (knownSpeakers.isEmpty()) return emptyMap()
+
+        val mapping = mutableMapOf<String, String>()
+        val usedSpeakers = mutableSetOf<String>() // prevent same speaker matched twice
+
+        for ((label, embedding) in embeddings) {
+            var bestSpeaker: SpeakerDocument? = null
+            var bestSim = 0f
+
+            for (speaker in knownSpeakers) {
+                if (speaker.id.toHexString() in usedSpeakers) continue
+                val sim = cosineSimilarity(embedding, speaker.voiceEmbedding!!)
+                if (sim > bestSim) {
+                    bestSim = sim
+                    bestSpeaker = speaker
+                }
+            }
+
+            if (bestSpeaker != null && bestSim > SPEAKER_MATCH_THRESHOLD) {
+                val speakerId = bestSpeaker.id.toHexString()
+                mapping[label] = speakerId
+                usedSpeakers.add(speakerId)
+                logger.info { "Auto-matched $label → ${bestSpeaker.name} (similarity=${bestSim})" }
+            }
+        }
+
+        return mapping
+    }
+
+    companion object {
+        /** Minimum cosine similarity for automatic speaker identification */
+        const val SPEAKER_MATCH_THRESHOLD = 0.70f
+    }
+}
+
+private fun cosineSimilarity(a: List<Float>, b: List<Float>): Float {
+    require(a.size == b.size) { "Embedding dimensions must match: ${a.size} vs ${b.size}" }
+    var dot = 0f
+    var normA = 0f
+    var normB = 0f
+    for (i in a.indices) {
+        dot += a[i] * b[i]
+        normA += a[i] * a[i]
+        normB += b[i] * b[i]
+    }
+    val denom = sqrt(normA) * sqrt(normB)
+    return if (denom > 0f) dot / denom else 0f
 }

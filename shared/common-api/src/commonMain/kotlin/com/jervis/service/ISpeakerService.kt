@@ -2,6 +2,7 @@ package com.jervis.service
 
 import com.jervis.dto.meeting.SpeakerCreateDto
 import com.jervis.dto.meeting.SpeakerDto
+import com.jervis.dto.meeting.SpeakerEmbeddingDto
 import com.jervis.dto.meeting.SpeakerMappingDto
 import com.jervis.dto.meeting.SpeakerUpdateDto
 import com.jervis.dto.meeting.VoiceSampleRefDto
@@ -15,4 +16,5 @@ interface ISpeakerService {
     suspend fun deleteSpeaker(speakerId: String): Boolean
     suspend fun assignSpeakers(request: SpeakerMappingDto): Boolean
     suspend fun setVoiceSample(speakerId: String, voiceSample: VoiceSampleRefDto): SpeakerDto
+    suspend fun setVoiceEmbedding(request: SpeakerEmbeddingDto): SpeakerDto
 }

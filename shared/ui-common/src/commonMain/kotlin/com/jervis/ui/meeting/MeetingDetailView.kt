@@ -52,6 +52,7 @@ import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.dto.meeting.SpeakerCreateDto
 import com.jervis.dto.meeting.SpeakerDto
+import com.jervis.dto.meeting.SpeakerEmbeddingDto
 import com.jervis.dto.meeting.VoiceSampleRefDto
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JDeleteButton
@@ -95,6 +96,7 @@ internal fun MeetingDetailView(
     onAssignSpeakers: (mapping: Map<String, String>) -> Unit = {},
     onCreateSpeaker: (SpeakerCreateDto) -> Unit = {},
     onSetVoiceSample: (speakerId: String, voiceSample: VoiceSampleRefDto) -> Unit = { _, _ -> },
+    onSetVoiceEmbedding: (SpeakerEmbeddingDto) -> Unit = {},
 ) {
     // Toggle between corrected and raw transcript
     var showCorrected by remember { mutableStateOf(true) }
@@ -404,6 +406,7 @@ internal fun MeetingDetailView(
                             onAssignSpeakers = onAssignSpeakers,
                             onCreateSpeaker = onCreateSpeaker,
                             onSetVoiceSample = onSetVoiceSample,
+                            onSetVoiceEmbedding = onSetVoiceEmbedding,
                             modifier = Modifier.fillMaxWidth().height(220.dp),
                         )
                     } else {
@@ -457,6 +460,7 @@ internal fun MeetingDetailView(
                                 onAssignSpeakers = onAssignSpeakers,
                                 onCreateSpeaker = onCreateSpeaker,
                                 onSetVoiceSample = onSetVoiceSample,
+                                onSetVoiceEmbedding = onSetVoiceEmbedding,
                                 modifier = mod,
                             )
                         } else {

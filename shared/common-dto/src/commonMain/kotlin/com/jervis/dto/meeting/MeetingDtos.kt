@@ -57,6 +57,10 @@ data class MeetingDto(
     val errorMessage: String? = null,
     val correctionChatHistory: List<CorrectionChatMessageDto> = emptyList(),
     val speakerMapping: Map<String, String> = emptyMap(),
+    /** Speaker voice embeddings from diarization (label → 256-dim float vector) */
+    val speakerEmbeddings: Map<String, List<Float>>? = null,
+    /** Auto-matched speakers based on voice embedding similarity */
+    val autoSpeakerMapping: Map<String, AutoSpeakerMatchDto>? = null,
     val deleted: Boolean = false,
     val deletedAt: String? = null,
 )
@@ -78,6 +82,13 @@ data class CorrectionAnswerDto(
     val original: String,
     val corrected: String,
     val category: String = "general",
+)
+
+@Serializable
+data class AutoSpeakerMatchDto(
+    val speakerId: String,
+    val speakerName: String,
+    val confidence: Float,
 )
 
 @Serializable

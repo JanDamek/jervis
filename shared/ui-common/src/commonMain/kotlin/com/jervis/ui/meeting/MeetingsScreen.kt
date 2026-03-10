@@ -184,6 +184,7 @@ fun MeetingsScreen(
             onAssignSpeakers = { mapping -> viewModel.assignSpeakers(currentDetail.id, mapping) },
             onCreateSpeaker = { request -> viewModel.createSpeaker(request) },
             onSetVoiceSample = { speakerId, voiceSample -> viewModel.setVoiceSample(speakerId, voiceSample) },
+            onSetVoiceEmbedding = { request -> viewModel.setVoiceEmbedding(request) },
         )
         return
     }

@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.SpeakerCreateDto
 import com.jervis.dto.meeting.SpeakerDto
+import com.jervis.dto.meeting.SpeakerEmbeddingDto
 import com.jervis.dto.meeting.VoiceSampleRefDto
 import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JPrimaryButton
@@ -46,6 +47,7 @@ internal fun SpeakerAssignmentPanel(
     onAssignSpeakers: (mapping: Map<String, String>) -> Unit,
     onCreateSpeaker: (SpeakerCreateDto) -> Unit,
     onSetVoiceSample: (speakerId: String, voiceSample: VoiceSampleRefDto) -> Unit,
+    onSetVoiceEmbedding: (SpeakerEmbeddingDto) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Extract unique speaker labels from transcript
@@ -87,6 +89,7 @@ internal fun SpeakerAssignmentPanel(
             uniqueLabels.forEach { label ->
                 val selectedId = localMapping[label]
                 val selectedSpeaker = speakers.find { it.id == selectedId }
+                val autoMatch = meeting.autoSpeakerMapping?.get(label)
 
                 // Build items: existing speakers + null for "not assigned"
                 val dropdownItems = listOf<SpeakerDto?>(null) + speakers
@@ -95,12 +98,25 @@ internal fun SpeakerAssignmentPanel(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 16.dp),
-                    )
+                    Column(modifier = Modifier.padding(top = 12.dp)) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        // Show auto-match confidence badge
+                        if (autoMatch != null) {
+                            val pct = (autoMatch.confidence * 100).toInt()
+                            Text(
+                                text = "${autoMatch.speakerName} ($pct%)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (autoMatch.confidence > 0.70f)
+                                    MaterialTheme.colorScheme.tertiary
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     JDropdown(
                         items = dropdownItems,
                         selectedItem = selectedSpeaker,
@@ -147,9 +163,24 @@ internal fun SpeakerAssignmentPanel(
 
             HorizontalDivider()
 
-            // Save mapping button
+            // Save mapping button — also auto-saves voice embeddings
             JPrimaryButton(
-                onClick = { onAssignSpeakers(localMapping.toMap()) },
+                onClick = {
+                    onAssignSpeakers(localMapping.toMap())
+                    // Auto-save voice embeddings for speakers that don't have voiceprint yet
+                    val embeddings = meeting.speakerEmbeddings
+                    if (embeddings != null) {
+                        for ((lbl, speakerId) in localMapping) {
+                            val speaker = speakers.find { it.id == speakerId }
+                            if (speaker != null && !speaker.hasVoiceprint) {
+                                val emb = embeddings[lbl]
+                                if (emb != null) {
+                                    onSetVoiceEmbedding(SpeakerEmbeddingDto(speakerId = speakerId, embedding = emb))
+                                }
+                            }
+                        }
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Uložit mapování")

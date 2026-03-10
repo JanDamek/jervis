@@ -2,6 +2,7 @@ package com.jervis.rpc
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
+import com.jervis.dto.meeting.AutoSpeakerMatchDto
 import com.jervis.dto.meeting.AudioChunkDto
 import com.jervis.dto.meeting.CorrectionAnswerDto
 import com.jervis.dto.meeting.CorrectionQuestionDto
@@ -195,7 +196,9 @@ class MeetingRpcImpl(
     }
 
     private suspend fun buildSpeakerMap(meeting: com.jervis.entity.meeting.MeetingDocument): Map<String, com.jervis.entity.SpeakerDocument> {
-        if (meeting.speakerMapping.isEmpty() || meeting.clientId == null) return emptyMap()
+        if (meeting.clientId == null) return emptyMap()
+        // Load speakers when there's a mapping OR embeddings (for auto-match display)
+        if (meeting.speakerMapping.isEmpty() && meeting.speakerEmbeddings.isNullOrEmpty()) return emptyMap()
         val speakers = speakerRepository.findByClientIdOrderByNameAsc(meeting.clientId).toList()
         return speakers.associateBy { it.id.toHexString() }
     }
@@ -945,11 +948,55 @@ private fun MeetingDocument.toDto(
             )
         },
         speakerMapping = speakerMapping,
+        speakerEmbeddings = speakerEmbeddings,
+        autoSpeakerMapping = buildAutoSpeakerMapping(speakerEmbeddings, speakerMap),
         stateChangedAt = stateChangedAt?.toString(),
         errorMessage = errorMessage,
         deleted = deleted,
         deletedAt = deletedAt?.toString(),
     )
+
+/**
+ * Build auto-speaker mapping with confidence scores for the UI.
+ * Compares meeting speaker embeddings against known speaker voiceprints.
+ */
+private fun buildAutoSpeakerMapping(
+    embeddings: Map<String, List<Float>>?,
+    speakerMap: Map<String, com.jervis.entity.SpeakerDocument>,
+): Map<String, AutoSpeakerMatchDto>? {
+    if (embeddings.isNullOrEmpty()) return null
+    val knownWithEmbeddings = speakerMap.values.filter { it.voiceEmbedding != null }
+    if (knownWithEmbeddings.isEmpty()) return null
+
+    val result = mutableMapOf<String, AutoSpeakerMatchDto>()
+    for ((label, embedding) in embeddings) {
+        var bestSpeaker: com.jervis.entity.SpeakerDocument? = null
+        var bestSim = 0f
+        for (speaker in knownWithEmbeddings) {
+            val sim = cosineSimilarity(embedding, speaker.voiceEmbedding!!)
+            if (sim > bestSim) {
+                bestSim = sim
+                bestSpeaker = speaker
+            }
+        }
+        if (bestSpeaker != null && bestSim > 0.50f) { // lower threshold for display (UI shows confidence)
+            result[label] = AutoSpeakerMatchDto(
+                speakerId = bestSpeaker.id.toHexString(),
+                speakerName = bestSpeaker.name,
+                confidence = bestSim,
+            )
+        }
+    }
+    return result.ifEmpty { null }
+}
+
+private fun cosineSimilarity(a: List<Float>, b: List<Float>): Float {
+    if (a.size != b.size) return 0f
+    var dot = 0f; var normA = 0f; var normB = 0f
+    for (i in a.indices) { dot += a[i] * b[i]; normA += a[i] * a[i]; normB += b[i] * b[i] }
+    val denom = kotlin.math.sqrt(normA) * kotlin.math.sqrt(normB)
+    return if (denom > 0f) dot / denom else 0f
+}
 
 private fun MeetingDocument.toSummaryDto(): MeetingSummaryDto =
     MeetingSummaryDto(

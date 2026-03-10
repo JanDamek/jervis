@@ -219,8 +219,12 @@ def get_model(model_name: str):
         return _model_cache[model_name]
 
 
-def run_diarization(audio_path: str, request_id: str = "") -> list[dict] | None:
-    """Run speaker diarization on audio file. Returns list of speaker turns or None."""
+def run_diarization(audio_path: str, request_id: str = "") -> dict | None:
+    """Run speaker diarization on audio file.
+
+    Returns dict with 'turns' (list of speaker turns) and 'embeddings'
+    (dict mapping speaker label → 256-dim float list), or None on failure.
+    """
     if not _diarization_available or _diarization_pipeline is None:
         return None
     try:
@@ -236,14 +240,22 @@ def run_diarization(audio_path: str, request_id: str = "") -> list[dict] | None:
                 "end": round(turn.end, 3),
                 "speaker": speaker,
             })
+        # Extract speaker embeddings (256-dim float32 per speaker)
+        embeddings = {}
+        raw_embeddings = getattr(result, "speaker_embeddings", None)
+        if raw_embeddings is not None:
+            labels = list(annotation.labels())
+            for i, label in enumerate(labels):
+                if i < len(raw_embeddings):
+                    embeddings[label] = raw_embeddings[i].tolist()
         elapsed = time.time() - start
         unique_speakers = len(set(t["speaker"] for t in turns))
         print(
             f"[{request_id}] Diarization complete: {len(turns)} turns, "
-            f"{unique_speakers} speakers, {elapsed:.1f}s",
+            f"{unique_speakers} speakers, {len(embeddings)} embeddings, {elapsed:.1f}s",
             flush=True,
         )
-        return turns
+        return {"turns": turns, "embeddings": embeddings}
     except Exception as e:
         print(f"[{request_id}] Diarization failed: {e}", flush=True)
         traceback.print_exc()
@@ -634,9 +646,12 @@ def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue, reques
 
     # Speaker diarization
     speaker_turns = None
+    speaker_embeddings = None
     if do_diarize and _diarization_available:
-        speaker_turns = run_diarization(audio_path, request_id)
-        if speaker_turns:
+        diarize_result = run_diarization(audio_path, request_id)
+        if diarize_result:
+            speaker_turns = diarize_result["turns"]
+            speaker_embeddings = diarize_result.get("embeddings")
             out_segments = assign_speakers_to_segments(out_segments, speaker_turns)
 
     # Build result
@@ -662,6 +677,8 @@ def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue, reques
     if speaker_turns is not None:
         result["speakers"] = list(set(t["speaker"] for t in speaker_turns))
         result["speaker_turns"] = speaker_turns
+    if speaker_embeddings:
+        result["speaker_embeddings"] = speaker_embeddings
 
     if cleanup_dir:
         shutil.rmtree(cleanup_dir, ignore_errors=True)

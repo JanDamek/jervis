@@ -252,6 +252,9 @@ data class WhisperResult(
     val textBySegment: Map<String, String> = emptyMap(),
     /** Speaker labels from diarization */
     val speakers: List<String>? = null,
+    /** Speaker voice embeddings from pyannote (256-dim float per speaker label) */
+    @SerialName("speaker_embeddings")
+    val speakerEmbeddings: Map<String, List<Float>>? = null,
 )
 
 @Serializable

@@ -1259,4 +1259,15 @@ class MeetingViewModel(
             }
         }
     }
+
+    fun setVoiceEmbedding(request: com.jervis.dto.meeting.SpeakerEmbeddingDto) {
+        scope.launch {
+            try {
+                repository.speakers.setVoiceEmbedding(request)
+                _selectedMeeting.value?.clientId?.let { loadSpeakers(it) }
+            } catch (e: Exception) {
+                _error.value = "Chyba při ukládání hlasového otisku: ${e.message}"
+            }
+        }
+    }
 }

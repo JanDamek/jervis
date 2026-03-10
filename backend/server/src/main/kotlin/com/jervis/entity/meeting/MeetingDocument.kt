@@ -59,6 +59,8 @@ data class MeetingDocument(
     val chunkCount: Int = 0,
     val correctionChatHistory: List<CorrectionChatMessage> = emptyList(),
     val speakerMapping: Map<String, String> = emptyMap(),
+    /** Speaker voice embeddings from pyannote diarization (label → 256-dim float vector) */
+    val speakerEmbeddings: Map<String, List<Float>>? = null,
     val qualified: Boolean = false,
     val deleted: Boolean = false,
     val deletedAt: Instant? = null,

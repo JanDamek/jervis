@@ -3,6 +3,7 @@ package com.jervis.rpc
 import com.jervis.common.types.ClientId
 import com.jervis.dto.meeting.SpeakerCreateDto
 import com.jervis.dto.meeting.SpeakerDto
+import com.jervis.dto.meeting.SpeakerEmbeddingDto
 import com.jervis.dto.meeting.SpeakerMappingDto
 import com.jervis.dto.meeting.SpeakerUpdateDto
 import com.jervis.dto.meeting.VoiceSampleRefDto
@@ -87,6 +88,19 @@ class SpeakerRpcImpl(
         logger.info { "Set voice sample for speaker $speakerId: meeting=${voiceSample.meetingId} ${voiceSample.startSec}-${voiceSample.endSec}s" }
         return saved.toDto()
     }
+
+    override suspend fun setVoiceEmbedding(request: SpeakerEmbeddingDto): SpeakerDto {
+        val id = ObjectId(request.speakerId)
+        val existing = speakerRepository.findById(id) ?: error("Speaker not found: ${request.speakerId}")
+        require(request.embedding.size == 256) { "Voice embedding must be 256-dimensional, got ${request.embedding.size}" }
+        val updated = existing.copy(
+            voiceEmbedding = request.embedding,
+            updatedAt = Instant.now(),
+        )
+        val saved = speakerRepository.save(updated)
+        logger.info { "Set voice embedding for speaker ${request.speakerId} (${saved.name})" }
+        return saved.toDto()
+    }
 }
 
 private fun SpeakerDocument.toDto(): SpeakerDto =
@@ -104,6 +118,7 @@ private fun SpeakerDocument.toDto(): SpeakerDto =
                 endSec = it.endSec,
             )
         },
+        hasVoiceprint = voiceEmbedding != null,
         createdAt = createdAt.toString(),
         updatedAt = updatedAt.toString(),
     )

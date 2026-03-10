@@ -18,6 +18,8 @@ data class SpeakerDocument(
     val languagesSpoken: List<String> = emptyList(),
     val notes: String? = null,
     val voiceSampleRef: VoiceSampleRef? = null,
+    /** 256-dim pyannote speaker voice embedding for automatic identification */
+    val voiceEmbedding: List<Float>? = null,
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )
