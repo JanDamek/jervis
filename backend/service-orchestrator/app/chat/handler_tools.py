@@ -302,6 +302,25 @@ async def _handle_dispatch_coding_agent(args, client_id, project_id, kotlin_clie
         project_id=effective_project_id,
         agent_preference=args.get("agent_preference", "auto"),
     )
+
+    # Link to memory map immediately so the task appears in UI right away
+    # (orchestrator also links when it picks up the task, but there can be a delay)
+    try:
+        if isinstance(result, dict) and result.get("taskId"):
+            from app.agent.persistence import agent_store
+            await agent_store.link_thinking_map(
+                task_id=result["taskId"],
+                sub_graph_id="",
+                title=args.get("task_description", "")[:80] or "Coding task",
+                completed=False,
+                failed=False,
+                result_summary="",
+                client_id=effective_client_id or "",
+                project_id=effective_project_id,
+            )
+    except Exception as e:
+        logger.warning("Failed to link dispatched coding task to memory map: %s", e)
+
     return f"Coding agent dispatched: {result}"
 
 
