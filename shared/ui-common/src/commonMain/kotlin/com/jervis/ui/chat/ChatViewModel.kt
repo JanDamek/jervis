@@ -284,22 +284,22 @@ class ChatViewModel(
         scope.launch {
             try {
                 repository.userTasks.respondToTask(taskId, trimmed)
-                // Update existing BACKGROUND_RESULT message with user response (inline)
-                _chatMessages.value = _chatMessages.value.map { msg ->
-                    if (msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT &&
-                        msg.metadata["taskId"] == taskId
-                    ) {
-                        msg.copy(userResponse = trimmed)
-                    } else {
-                        msg
-                    }
-                }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                onError("Chyba odeslání odpovědi: ${e.message}")
-            } finally {
-                _isLoading.value = false
+                // Task may have been deleted/cancelled — still mark response in UI
+                println("ChatViewModel: respondToTask failed (task may no longer exist): ${e.message}")
             }
+            // Always update UI — user wrote the response regardless of server state
+            _chatMessages.value = _chatMessages.value.map { msg ->
+                if (msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT &&
+                    msg.metadata["taskId"] == taskId
+                ) {
+                    msg.copy(userResponse = trimmed)
+                } else {
+                    msg
+                }
+            }
+            _isLoading.value = false
         }
     }
 

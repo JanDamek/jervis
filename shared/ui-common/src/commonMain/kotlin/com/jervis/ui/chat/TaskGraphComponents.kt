@@ -332,13 +332,9 @@ private fun VertexCard(
                         )
                     }
 
-                    // Input request — for task_ref show as "Úloha (ID)"
-                    if (vertex.inputRequest.isNotBlank()) {
-                        val inputLabel = when (vertex.vertexType) {
-                            "task_ref" -> "Úloha"
-                            else -> "Vstupní požadavek"
-                        }
-                        ExpandableTextSection(inputLabel, vertex.inputRequest)
+                    // Input request — hide raw task IDs for task_ref (not useful for user)
+                    if (vertex.inputRequest.isNotBlank() && vertex.vertexType != "task_ref") {
+                        ExpandableTextSection("Vstupní požadavek", vertex.inputRequest)
                     }
 
                     // Result summary / full result
@@ -350,14 +346,20 @@ private fun VertexCard(
                     }
 
                     // Sub-graph link — clickable for task_ref with thinking map
-                    if (vertex.vertexType == "task_ref" && vertex.localContext.startsWith("tg-") && onOpenSubGraph != null) {
+                    // localContext has tg- prefix (graph ID), or fall back to task ID lookup
+                    val subGraphId = when {
+                        vertex.localContext.startsWith("tg-") -> vertex.localContext
+                        vertex.vertexType == "task_ref" && vertex.inputRequest.isNotBlank() -> vertex.inputRequest
+                        else -> null
+                    }
+                    if (subGraphId != null && onOpenSubGraph != null) {
                         Row(
                             modifier = Modifier.padding(top = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             androidx.compose.material3.TextButton(
-                                onClick = { onOpenSubGraph(vertex.localContext) },
+                                onClick = { onOpenSubGraph(subGraphId) },
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                                 modifier = Modifier.height(28.dp),
                             ) {
@@ -373,7 +375,7 @@ private fun VertexCard(
                                 )
                             }
                         }
-                    } else if (vertex.localContext.isNotBlank()) {
+                    } else if (vertex.localContext.isNotBlank() && vertex.vertexType != "task_ref") {
                         ExpandableTextSection("Lokální kontext", vertex.localContext)
                     }
 

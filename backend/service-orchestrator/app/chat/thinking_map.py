@@ -284,12 +284,17 @@ async def run_vertex(
     effective_project_id = project_id or graph.project_id
 
     # Create background task with vertex correlation
-    task_id = await kotlin_client.create_background_task(
+    result = await kotlin_client.create_background_task(
         title=f"[Mapa] {vertex.title}",
         description=vertex.description,
         client_id=effective_client_id,
         project_id=effective_project_id,
     )
+    # Result is a dict {"taskId": "...", "title": "..."} or error string
+    if isinstance(result, dict):
+        task_id = result.get("taskId", str(result))
+    else:
+        task_id = str(result)
 
     # Store correlation: task_id → (graph_id, vertex_id, session_id)
     _vertex_tasks[task_id] = (graph.id, vertex_id, session_id)

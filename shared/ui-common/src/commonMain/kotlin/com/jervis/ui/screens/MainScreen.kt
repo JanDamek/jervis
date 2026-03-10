@@ -54,7 +54,6 @@ fun MainScreen(
     val taskGraphs by viewModel.chat.taskGraphs.collectAsState()
     val activeThinkingMap by viewModel.chat.activeThinkingMap.collectAsState()
     val detailThinkingMap by viewModel.chat.detailThinkingMap.collectAsState()
-    val liveLogTaskId by viewModel.chat.liveLogTaskId.collectAsState()
     val thinkingMapPanelVisible by viewModel.chat.thinkingMapPanelVisible.collectAsState()
     val thinkingMapPanelWidthFraction by viewModel.chat.thinkingMapPanelWidthFraction.collectAsState()
 
@@ -131,12 +130,11 @@ fun MainScreen(
                 isCompact = isCompact,
                 onClose = viewModel.chat::closeThinkingMapPanel,
                 detailGraph = detailThinkingMap,
-                liveLogTaskId = liveLogTaskId,
-                jobLogsService = viewModel.chat.jobLogsService,
                 onOpenSubGraph = viewModel.chat::openSubGraph,
                 onCloseSubGraph = viewModel.chat::closeSubGraph,
-                onOpenLiveLog = viewModel.chat::openLiveLog,
-                onCloseLiveLog = viewModel.chat::closeLiveLog,
+                // Live log disabled — only coding agent K8s Jobs have SSE logs,
+                // graph agent tasks don't. Will enable when vertex metadata
+                // can distinguish coding vs graph tasks.
             )
         },
         hasEnvironment = environments.isNotEmpty(),
