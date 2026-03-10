@@ -524,6 +524,17 @@ async def execute_tool(
             )
         elif tool_name == "list_unclassified_meetings":
             result = await _execute_list_unclassified_meetings()
+        elif tool_name == "get_meeting_transcript":
+            result = await kotlin_client.get_meeting_transcript(
+                meeting_id=arguments.get("meeting_id", ""),
+            )
+        elif tool_name == "list_meetings":
+            result = await kotlin_client.list_meetings(
+                client_id=arguments.get("client_id") or client_id,
+                project_id=arguments.get("project_id") or project_id,
+                state=arguments.get("state"),
+                limit=arguments.get("limit", 20),
+            )
         # --- MongoDB self-management ---
         elif tool_name == "mongo_list_collections":
             result = await _execute_mongo_list_collections()

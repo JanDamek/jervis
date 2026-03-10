@@ -43,6 +43,8 @@ _EXTENDED_ONLY_NAMES: set[str] = {
     "classify_meeting",
     "list_unclassified_meetings",
     "count_unclassified_meetings",
+    "get_meeting_transcript",
+    "list_meetings",
     "set_filter_rule",
     "list_filter_rules",
     "remove_filter_rule",

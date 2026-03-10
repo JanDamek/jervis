@@ -26,6 +26,7 @@ import com.jervis.rpc.internal.installInternalGitApi
 import com.jervis.rpc.internal.installInternalGuidelinesApi
 import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalProjectManagementApi
+import com.jervis.rpc.internal.installInternalMeetingApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import kotlinx.coroutines.launch
@@ -130,6 +131,7 @@ class KtorRpcServer(
                             installInternalGitApi(gitRepoCreationService, projectService, applicationEventPublisher)
                             installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)
                             installInternalCacheApi(guidelinesService)
+                            installInternalMeetingApi(meetingRpcImpl)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)

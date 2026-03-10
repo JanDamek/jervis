@@ -52,6 +52,8 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
         TOOL_UPDATE_GUIDELINE,
         TOOL_CLASSIFY_MEETING,
         TOOL_LIST_UNCLASSIFIED_MEETINGS,
+        TOOL_GET_MEETING_TRANSCRIPT,
+        TOOL_LIST_MEETINGS,
     )
 
     # --- Tool sets by responsibility ---
@@ -75,7 +77,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             _request_tools,
         ]
 
-    # INVESTIGATOR: researches context (KB, web, code)
+    # INVESTIGATOR: researches context (KB, web, code, meetings)
     if vertex_type == VertexType.INVESTIGATOR:
         return _base + [
             TOOL_WEB_SEARCH,
@@ -87,6 +89,8 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_GIT_BRANCH_LIST,
             TOOL_GET_KB_STATS,
             TOOL_GET_INDEXED_ITEMS,
+            TOOL_LIST_MEETINGS,
+            TOOL_GET_MEETING_TRANSCRIPT,
             TOOL_LIST_UNCLASSIFIED_MEETINGS,
             _request_tools,
         ]
@@ -107,6 +111,8 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_UPDATE_GUIDELINE,
             TOOL_CLASSIFY_MEETING,
             TOOL_LIST_UNCLASSIFIED_MEETINGS,
+            TOOL_LIST_MEETINGS,
+            TOOL_GET_MEETING_TRANSCRIPT,
             _request_tools,
         ]
 
@@ -204,6 +210,8 @@ def get_tools_by_category(category: str) -> list[dict]:
         TOOL_UPDATE_GUIDELINE,
         TOOL_CLASSIFY_MEETING,
         TOOL_LIST_UNCLASSIFIED_MEETINGS,
+        TOOL_GET_MEETING_TRANSCRIPT,
+        TOOL_LIST_MEETINGS,
     )
 
     categories = {
@@ -218,7 +226,8 @@ def get_tools_by_category(category: str) -> list[dict]:
         "scheduling": [TOOL_CREATE_SCHEDULED_TASK],
         "interactive": [TOOL_ASK_USER],
         "guidelines": [TOOL_GET_GUIDELINES, TOOL_UPDATE_GUIDELINE],
-        "meetings": [TOOL_CLASSIFY_MEETING, TOOL_LIST_UNCLASSIFIED_MEETINGS],
+        "meetings": [TOOL_CLASSIFY_MEETING, TOOL_LIST_UNCLASSIFIED_MEETINGS,
+                     TOOL_LIST_MEETINGS, TOOL_GET_MEETING_TRANSCRIPT],
         "queue": [TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY],
         "environment": ENVIRONMENT_TOOLS,
         "project_management": PROJECT_MANAGEMENT_TOOLS,

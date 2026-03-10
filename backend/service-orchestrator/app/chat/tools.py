@@ -319,6 +319,60 @@ TOOL_LIST_UNCLASSIFIED_MEETINGS: dict = {
     },
 }
 
+TOOL_GET_MEETING_TRANSCRIPT: dict = {
+    "type": "function",
+    "function": {
+        "name": "get_meeting_transcript",
+        "description": (
+            "Přečti přepis (transcript) schůzky/nahrávky. "
+            "Vrátí opravený přepis (pokud existuje), jinak surový. "
+            "Použij pro analýzu obsahu meetingu, shrnutí, hledání konkrétních informací."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "meeting_id": {
+                    "type": "string",
+                    "description": "ID meetingu (z list_meetings nebo KB).",
+                },
+            },
+            "required": ["meeting_id"],
+        },
+    },
+}
+
+TOOL_LIST_MEETINGS: dict = {
+    "type": "function",
+    "function": {
+        "name": "list_meetings",
+        "description": (
+            "Zobraz seznam meetingů/nahrávek. Volitelně filtruj podle klienta, projektu nebo stavu."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Filtruj podle klienta (volitelné).",
+                },
+                "project_id": {
+                    "type": "string",
+                    "description": "Filtruj podle projektu (volitelné).",
+                },
+                "state": {
+                    "type": "string",
+                    "enum": ["TRANSCRIBED", "INDEXED", "CORRECTED", "FAILED"],
+                    "description": "Filtruj podle stavu (volitelné).",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max počet výsledků (default 20).",
+                },
+            },
+        },
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Guidelines tools
@@ -751,6 +805,8 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_RETRY_FAILED_TASK,
     TOOL_CLASSIFY_MEETING,
     TOOL_LIST_UNCLASSIFIED_MEETINGS,
+    TOOL_GET_MEETING_TRANSCRIPT,
+    TOOL_LIST_MEETINGS,
     TOOL_SWITCH_CONTEXT,
     TOOL_GET_GUIDELINES,
     TOOL_UPDATE_GUIDELINE,
@@ -830,6 +886,8 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_RETRY_FAILED_TASK,
         TOOL_CLASSIFY_MEETING,
         TOOL_LIST_UNCLASSIFIED_MEETINGS,
+        TOOL_GET_MEETING_TRANSCRIPT,
+        TOOL_LIST_MEETINGS,
         TOOL_SWITCH_CONTEXT,
         TOOL_MEMORY_STORE,
         TOOL_GET_GUIDELINES,
@@ -858,6 +916,7 @@ TOOL_DOMAINS: dict[str, str] = {
     "retry_failed_task": "task",
     "check_task_graph": "task", "answer_blocked_vertex": "task",
     "classify_meeting": "meeting", "list_unclassified_meetings": "meeting",
+    "get_meeting_transcript": "meeting", "list_meetings": "meeting",
     "switch_context": "scope",
     "get_guidelines": "guidelines", "update_guideline": "guidelines",
     "set_filter_rule": "filtering", "list_filter_rules": "filtering",

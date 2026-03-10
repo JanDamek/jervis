@@ -519,6 +519,64 @@ class KotlinServerClient:
             logger.warning("Failed to list unclassified meetings: %s", e)
             return f"Error: {e}"
 
+    async def get_meeting_transcript(self, meeting_id: str) -> str:
+        """Get meeting transcript (corrected preferred) via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            resp = await client.get(f"/internal/meetings/{meeting_id}/transcript")
+            if resp.status_code == 200:
+                data = resp.json()
+                title = data.get("title", "")
+                state = data.get("state", "")
+                transcript = data.get("transcript", "")
+                fmt = data.get("format", "text")
+                if not transcript:
+                    return f"Meeting '{title}' ({state}): transcript not available yet."
+                header = f"# {title}\nState: {state} | Format: {fmt}\n\n"
+                return header + transcript
+            elif resp.status_code == 404:
+                return f"Meeting not found: {meeting_id}"
+            return f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to get meeting transcript %s: %s", meeting_id, e)
+            return f"Error: {e}"
+
+    async def list_meetings(
+        self,
+        client_id: str = "",
+        project_id: str | None = None,
+        state: str | None = None,
+        limit: int = 20,
+    ) -> str:
+        """List meetings via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            params: dict = {"limit": limit}
+            if client_id:
+                params["client_id"] = client_id
+            if project_id:
+                params["project_id"] = project_id
+            if state:
+                params["state"] = state
+            resp = await client.get("/internal/meetings", params=params)
+            if resp.status_code == 200:
+                meetings = resp.json()
+                if not meetings:
+                    return "No meetings found."
+                lines = []
+                for m in meetings:
+                    dur = m.get("durationSeconds", "")
+                    dur_str = f" ({dur}s)" if dur else ""
+                    lines.append(
+                        f"- {m.get('title', '?')} (id={m['id']}) [{m.get('state', '?')}] "
+                        f"{m.get('startedAt', '')}{dur_str}"
+                    )
+                return "\n".join(lines)
+            return f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to list meetings: %s", e)
+            return f"Error: {e}"
+
     # ------------------------------------------------------------------
     # Chat runtime context (for system prompt enrichment)
     # ------------------------------------------------------------------

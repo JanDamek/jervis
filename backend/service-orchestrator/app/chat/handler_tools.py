@@ -51,6 +51,8 @@ _TOOL_DESCRIPTIONS = {
     "retry_failed_task": lambda a: f"Opakuji selhávající úkol: {a.get('task_id', '')}",
     "classify_meeting": lambda a: f"Klasifikuji nahrávku: {a.get('meeting_id', '')}",
     "list_unclassified_meetings": lambda _: "Kontroluji neklasifikované nahrávky",
+    "get_meeting_transcript": lambda a: f"Čtu přepis meetingu: {a.get('meeting_id', '')}",
+    "list_meetings": lambda a: f"Hledám meetingy{' pro ' + a.get('client_id', '') if a.get('client_id') else ''}",
     "switch_context": lambda a: f"Přepínám na: {a.get('client', '')} {a.get('project', '')}".strip(),
     "set_filter_rule": lambda a: f"Vytvářím filtr: {a.get('condition_type', '')} = {a.get('condition_value', '')}",
     "list_filter_rules": lambda _: "Kontroluji filtrační pravidla",
@@ -93,6 +95,8 @@ _CHAT_SPECIFIC_TOOLS = {
     "retry_failed_task",
     "classify_meeting",
     "list_unclassified_meetings",
+    "get_meeting_transcript",
+    "list_meetings",
     "get_guidelines",
     "update_guideline",
     "set_filter_rule",
@@ -392,6 +396,22 @@ async def _handle_list_unclassified_meetings(_args, _client_id, _project_id, kot
     return await kotlin_client.list_unclassified_meetings()
 
 
+async def _handle_get_meeting_transcript(args, _client_id, _project_id, kotlin_client):
+    meeting_id = args.get("meeting_id")
+    if not meeting_id:
+        return "Chyba: meeting_id je povinný."
+    return await kotlin_client.get_meeting_transcript(meeting_id)
+
+
+async def _handle_list_meetings(args, client_id, project_id, kotlin_client):
+    return await kotlin_client.list_meetings(
+        client_id=args.get("client_id") or client_id or "",
+        project_id=args.get("project_id") or project_id,
+        state=args.get("state"),
+        limit=args.get("limit", 20),
+    )
+
+
 async def _handle_get_guidelines(args, client_id, project_id, kotlin_client):
     effective_client_id = args.get("client_id") or client_id
     effective_project_id = args.get("project_id") or project_id
@@ -540,6 +560,8 @@ _TOOL_HANDLER_MAP = {
     "retry_failed_task": _handle_retry_failed_task,
     "classify_meeting": _handle_classify_meeting,
     "list_unclassified_meetings": _handle_list_unclassified_meetings,
+    "get_meeting_transcript": _handle_get_meeting_transcript,
+    "list_meetings": _handle_list_meetings,
     "get_guidelines": _handle_get_guidelines,
     "update_guideline": _handle_update_guideline,
     "set_filter_rule": _handle_set_filter_rule,

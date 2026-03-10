@@ -41,7 +41,13 @@ from app.tools.definitions import (
     TOOL_MEMORY_RECALL,
 )
 
-from app.chat.tools import TOOL_DISPATCH_CODING_AGENT
+from app.chat.tools import (
+    TOOL_DISPATCH_CODING_AGENT,
+    TOOL_GET_MEETING_TRANSCRIPT,
+    TOOL_LIST_MEETINGS,
+    TOOL_CLASSIFY_MEETING,
+    TOOL_LIST_UNCLASSIFIED_MEETINGS,
+)
 
 # Tier system available for future unified handler
 from app.unified.tool_sets import ToolTier, get_tools, get_tool_names  # noqa: F401
@@ -70,4 +76,9 @@ ALL_BACKGROUND_TOOLS: list[dict] = [
     TOOL_MEMORY_RECALL,
     # Coding agent dispatch
     TOOL_DISPATCH_CODING_AGENT,
+    # Meeting tools
+    TOOL_GET_MEETING_TRANSCRIPT,
+    TOOL_LIST_MEETINGS,
+    TOOL_CLASSIFY_MEETING,
+    TOOL_LIST_UNCLASSIFIED_MEETINGS,
 ]
