@@ -12,9 +12,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -336,6 +340,7 @@ fun MeetingsScreen(
                                     OfflineMeetingListItem(
                                         meeting = offline,
                                         onRetry = { offlineSyncService?.retryMeeting(offline.localId) },
+                                        onDelete = { offlineSyncService?.deleteMeeting(offline.localId) },
                                     )
                                 }
                                 item(key = "offline_divider") {
@@ -732,6 +737,7 @@ private fun EditMeetingDialog(
 private fun OfflineMeetingListItem(
     meeting: com.jervis.ui.storage.OfflineMeeting,
     onRetry: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val stateText = when (meeting.syncState) {
         com.jervis.ui.storage.OfflineSyncState.PENDING -> "Čeká na odeslání"
@@ -786,6 +792,17 @@ private fun OfflineMeetingListItem(
             }
             if (meeting.syncState == com.jervis.ui.storage.OfflineSyncState.SYNCING) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Smazat",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }

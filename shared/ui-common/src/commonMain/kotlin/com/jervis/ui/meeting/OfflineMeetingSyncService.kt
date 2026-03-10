@@ -54,8 +54,18 @@ class OfflineMeetingSyncService(
     }
 
     init {
-        _pendingMeetings.value = OfflineMeetingStorage.load()
-            .filter { it.syncState != OfflineSyncState.SYNCED }
+        // Recovery: reset SYNCING → PENDING (interrupted uploads from previous session)
+        val loaded = OfflineMeetingStorage.load()
+        val needsRecovery = loaded.any { it.syncState == OfflineSyncState.SYNCING }
+        if (needsRecovery) {
+            val recovered = loaded.map { m ->
+                if (m.syncState == OfflineSyncState.SYNCING) m.copy(syncState = OfflineSyncState.PENDING) else m
+            }
+            OfflineMeetingStorage.save(recovered)
+            _pendingMeetings.value = recovered.filter { it.syncState != OfflineSyncState.SYNCED }
+        } else {
+            _pendingMeetings.value = loaded.filter { it.syncState != OfflineSyncState.SYNCED }
+        }
 
         // Watch connection state — sync ONLY on Connected transitions (deduplicated)
         scope.launch {
@@ -191,5 +201,13 @@ class OfflineMeetingSyncService(
             _pendingMeetings.value = OfflineMeetingStorage.load()
                 .filter { it.syncState != OfflineSyncState.SYNCED }
         }
+    }
+
+    /** Delete an offline meeting permanently (removes metadata + audio chunks). */
+    fun deleteMeeting(localId: String) {
+        AudioChunkQueue.clearMeeting(localId)
+        val remaining = OfflineMeetingStorage.load().filter { it.localId != localId }
+        OfflineMeetingStorage.save(remaining)
+        _pendingMeetings.value = remaining.filter { it.syncState != OfflineSyncState.SYNCED }
     }
 }
