@@ -1036,30 +1036,32 @@ private fun ChatMessageItem(
                         // Message content - Markdown for Assistant, plain text for User
                         SelectionContainer {
                             if (isMe) {
-                                // User messages - plain text
-                                Text(
-                                    text = message.text,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                // Attachment indicator
-                                val attachmentNames = message.metadata["attachments"]
-                                if (!attachmentNames.isNullOrBlank()) {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        Icon(
-                                            Icons.Default.InsertDriveFile,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        )
-                                        Text(
-                                            text = attachmentNames,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        )
+                                Column {
+                                    // User messages - plain text
+                                    Text(
+                                        text = message.text,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    // Attachment indicator
+                                    val attachmentNames = message.metadata["attachments"]
+                                    if (!attachmentNames.isNullOrBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.Default.InsertDriveFile,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            )
+                                            Text(
+                                                text = attachmentNames,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            )
+                                        }
                                     }
                                 }
                             } else {

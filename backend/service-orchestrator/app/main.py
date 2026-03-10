@@ -581,6 +581,10 @@ async def get_task_graph(task_id: str):
         graph = agent_store.get_cached_subgraph(task_id)
         if not graph:
             graph = await agent_store.load(task_id)
+        if not graph:
+            # Fallback: localContext stores graph.id ("tg-..."), but load() queries by task_id.
+            # Try searching by the graph's own id field.
+            graph = await agent_store.load_by_graph_id(task_id)
 
     if not graph:
         raise HTTPException(status_code=404, detail=f"No graph for task {task_id}")

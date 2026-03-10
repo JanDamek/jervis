@@ -194,6 +194,7 @@ fun ThinkingMapPanel(
                         TaskGraphSection(
                             graph = graphToShow,
                             modifier = Modifier.fillMaxWidth(),
+                            alwaysExpanded = true,
                             onOpenSubGraph = onOpenSubGraph,
                             onOpenLiveLog = onOpenLiveLog,
                         )

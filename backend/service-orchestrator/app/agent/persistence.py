@@ -197,6 +197,16 @@ class AgentStore:
         doc.pop("updated_at", None)
         return AgentGraph(**doc)
 
+    async def load_by_graph_id(self, graph_id: str) -> AgentGraph | None:
+        """Load a graph by its own id field (not task_id). Fallback for sub-graph lookup."""
+        coll = await self._ensure_collection()
+        doc = await coll.find_one({"id": graph_id})
+        if not doc:
+            return None
+        doc.pop("_id", None)
+        doc.pop("updated_at", None)
+        return AgentGraph(**doc)
+
     async def delete(self, task_id: str) -> bool:
         """Delete a graph by task_id. Returns True if found."""
         coll = await self._ensure_collection()
