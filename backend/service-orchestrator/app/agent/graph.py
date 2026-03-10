@@ -87,11 +87,17 @@ def add_vertex(
     agent_name: str | None = None,
     parent_id: str | None = None,
     input_request: str = "",
+    client_id: str = "",
 ) -> GraphVertex:
     """Add a new vertex to the graph. Returns the created vertex."""
     depth = 0
+    effective_client_id = client_id
     if parent_id and parent_id in graph.vertices:
-        depth = graph.vertices[parent_id].depth + 1
+        parent = graph.vertices[parent_id]
+        depth = parent.depth + 1
+        # Inherit client_id from parent if not explicitly set
+        if not effective_client_id and parent.client_id:
+            effective_client_id = parent.client_id
 
     vertex = GraphVertex(
         id=f"v-{uuid.uuid4().hex[:12]}",
@@ -102,6 +108,7 @@ def add_vertex(
         parent_id=parent_id,
         depth=depth,
         input_request=input_request or description,
+        client_id=effective_client_id,
     )
     graph.vertices[vertex.id] = vertex
     return vertex
@@ -731,6 +738,7 @@ def add_request_vertex(
         description=message,
         vertex_type=VertexType.REQUEST,
         status=status,
+        client_id=client_id,
         result=response,
         result_summary=response_summary or response[:200],
         started_at=now,
@@ -793,6 +801,20 @@ def add_task_ref_vertex(
             existing = v
             break
 
+    # De-duplicate scheduled/recurring tasks: if a completed TASK_REF with same
+    # title+parent already exists (different task_id), replace it instead of creating duplicate
+    if not existing and effective_parent:
+        title_lower = title.strip().lower()
+        for vid, v in list(graph.vertices.items()):
+            if (
+                v.vertex_type == VertexType.TASK_REF
+                and v.status in (VertexStatus.COMPLETED, VertexStatus.FAILED)
+                and v.parent_id == effective_parent
+                and v.title.strip().lower() == title_lower
+            ):
+                existing = v
+                break
+
     if existing:
         # Update existing vertex
         existing.status = status
@@ -817,6 +839,7 @@ def add_task_ref_vertex(
         description=title,
         vertex_type=VertexType.TASK_REF,
         status=status,
+        client_id=client_id,
         input_request=task_id,
         local_context=sub_graph_id,
         result_summary=result_summary,
@@ -859,6 +882,7 @@ def add_incoming_vertex(
         description=prepared_context[:500] if prepared_context else title,
         vertex_type=VertexType.INCOMING,
         status=VertexStatus.READY,
+        client_id=client_id,
         input_request=task_id,
         local_context=prepared_context,
         parent_id=parent_id,
@@ -875,6 +899,7 @@ def create_ask_user_vertex(
     question: str,
     context: str = "",
     parent_vertex_id: str | None = None,
+    client_id: str = "",
 ) -> GraphVertex:
     """Create an ASK_USER vertex (BLOCKED — waiting for user input).
 
@@ -882,8 +907,13 @@ def create_ask_user_vertex(
     resume_vertex() fills the result and unblocks downstream processing.
     """
     depth = 1
+    effective_client_id = client_id
     if parent_vertex_id and parent_vertex_id in graph.vertices:
-        depth = graph.vertices[parent_vertex_id].depth + 1
+        parent = graph.vertices[parent_vertex_id]
+        depth = parent.depth + 1
+        # Inherit client_id from parent if not explicitly set
+        if not effective_client_id and parent.client_id:
+            effective_client_id = parent.client_id
 
     vertex = GraphVertex(
         id=f"v-ask-{uuid.uuid4().hex[:12]}",
@@ -895,6 +925,7 @@ def create_ask_user_vertex(
         local_context=context,
         parent_id=parent_vertex_id,
         depth=depth,
+        client_id=effective_client_id,
         started_at=datetime.now(timezone.utc).isoformat(),
     )
     graph.vertices[vertex.id] = vertex
@@ -943,7 +974,7 @@ def find_blocked_vertices(graph: AgentGraph) -> list[GraphVertex]:
     ]
 
 
-def memory_map_summary(graph: AgentGraph, max_tokens: int = 2000) -> str:
+def memory_map_summary(graph: AgentGraph, max_tokens: int = 2000, client_id: str = "") -> str:
     """Generate a compact summary of the master map for LLM context injection.
 
     Priority order:
@@ -953,9 +984,27 @@ def memory_map_summary(graph: AgentGraph, max_tokens: int = 2000) -> str:
     4. Recent completed tasks (last 5, title + brief summary)
 
     Skips scheduled/idle tasks — only user-initiated work matters for context.
+
+    CLIENT ISOLATION: When client_id is provided, only vertices belonging to that
+    client are included. This prevents cross-client data leaks (e.g., Commerzbank
+    data appearing in MMB context). Hierarchy vertices (CLIENT/GROUP/PROJECT) are
+    always excluded from the summary.
     """
     parts: list[str] = []
     token_count = 0
+
+    def _belongs_to_client(v: GraphVertex) -> bool:
+        """Check if vertex belongs to the given client (or no filter)."""
+        if not client_id:
+            return True
+        # Hierarchy vertices (CLIENT/GROUP/PROJECT) are organizational, skip them
+        if v.vertex_type in (VertexType.CLIENT, VertexType.GROUP, VertexType.PROJECT):
+            return False
+        # Vertices with explicit client_id must match
+        if v.client_id:
+            return v.client_id == client_id
+        # Legacy vertices without client_id — check parent hierarchy
+        return _is_under_client_hierarchy(graph, v, client_id)
 
     def _budget_ok() -> bool:
         return token_count < max_tokens
@@ -970,7 +1019,7 @@ def memory_map_summary(graph: AgentGraph, max_tokens: int = 2000) -> str:
         return True
 
     # 1. BLOCKED vertices (highest priority — user needs to act)
-    blocked = find_blocked_vertices(graph)
+    blocked = [v for v in find_blocked_vertices(graph) if _belongs_to_client(v)]
     if blocked:
         _add("## Waiting for your answer:")
         for v in blocked:
@@ -981,7 +1030,8 @@ def memory_map_summary(graph: AgentGraph, max_tokens: int = 2000) -> str:
     active_refs = sorted(
         [v for v in graph.vertices.values()
          if v.vertex_type == VertexType.TASK_REF
-         and v.status in (VertexStatus.RUNNING, VertexStatus.BLOCKED)],
+         and v.status in (VertexStatus.RUNNING, VertexStatus.BLOCKED)
+         and _belongs_to_client(v)],
         key=lambda v: v.started_at or "0",
         reverse=True,
     )
@@ -996,7 +1046,8 @@ def memory_map_summary(graph: AgentGraph, max_tokens: int = 2000) -> str:
     # 3. Recent chat exchanges (newest first, title only — brief)
     chats = sorted(
         [v for v in graph.vertices.values()
-         if v.vertex_type == VertexType.REQUEST],
+         if v.vertex_type == VertexType.REQUEST
+         and _belongs_to_client(v)],
         key=lambda v: v.completed_at or "0",
         reverse=True,
     )
@@ -1012,7 +1063,8 @@ def memory_map_summary(graph: AgentGraph, max_tokens: int = 2000) -> str:
     done_refs = sorted(
         [v for v in graph.vertices.values()
          if v.vertex_type == VertexType.TASK_REF
-         and v.status == VertexStatus.COMPLETED],
+         and v.status == VertexStatus.COMPLETED
+         and _belongs_to_client(v)],
         key=lambda v: v.completed_at or "0",
         reverse=True,
     )
@@ -1024,3 +1076,22 @@ def memory_map_summary(graph: AgentGraph, max_tokens: int = 2000) -> str:
                 break
 
     return "\n".join(parts) if parts else ""
+
+
+def _is_under_client_hierarchy(graph: AgentGraph, vertex: GraphVertex, client_id: str) -> bool:
+    """Walk up parent chain to check if vertex is nested under the given client.
+
+    Fallback for legacy vertices that don't have client_id set directly.
+    Walks parent_id chain up to 5 levels to find a CLIENT vertex with matching input_request.
+    """
+    current = vertex
+    for _ in range(5):  # Max 5 levels to prevent infinite loops
+        if not current.parent_id:
+            return False
+        parent = graph.vertices.get(current.parent_id)
+        if not parent:
+            return False
+        if parent.vertex_type == VertexType.CLIENT:
+            return parent.input_request == client_id
+        current = parent
+    return False

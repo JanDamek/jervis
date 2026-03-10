@@ -882,6 +882,18 @@ class KotlinServerClient:
             logger.warning("Failed to post MR comment for task %s: %s", task_id, e)
             return False
 
+    async def retry_failed_task(self, task_id: str) -> str:
+        """Retry a failed (ERROR) task — resets state to QUEUED for re-processing."""
+        try:
+            client = await self._get_client()
+            resp = await client.post(f"/internal/tasks/{task_id}/retry")
+            if resp.status_code == 200:
+                return json.dumps(resp.json(), ensure_ascii=False)
+            return f"Error: {resp.status_code} — {resp.text[:200]}"
+        except Exception as e:
+            logger.warning("Failed to retry task %s: %s", task_id, e)
+            return f"Error: {e}"
+
     async def invalidate_cache(self, collection: str) -> None:
         """Invalidate Kotlin in-memory cache for a collection after MongoDB write."""
         try:

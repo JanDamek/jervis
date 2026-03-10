@@ -90,6 +90,25 @@ async def _run_graph_agent_background(
         request.task_id, thread_id,
     )
 
+    # Link to memory map immediately (RUNNING state) so UI shows active task
+    try:
+        await agent_store.link_thinking_map(
+            task_id=request.task_id,
+            sub_graph_id="",
+            title=request.task_name or request.query[:80] or f"Task {request.task_id}",
+            completed=False,
+            failed=False,
+            result_summary="",
+            client_id=request.client_id,
+            client_name=request.client_name or "",
+            group_id=request.group_id,
+            group_name=request.group_name or "",
+            project_id=request.project_id,
+            project_name=request.project_name or "",
+        )
+    except Exception as e:
+        logger.warning("Failed to link running task to master map: %s", e)
+
     state = await run_graph_agent(request, thread_id)
 
     # Adapt LangGraph state to handle_background return format

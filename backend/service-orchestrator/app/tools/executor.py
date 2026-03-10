@@ -1037,31 +1037,48 @@ async def _execute_get_indexed_items(
     client_id: str = "",
     project_id: str | None = None,
 ) -> str:
-    """Get indexed items summary from KB via GET /api/v1/chunks/by-kind."""
+    """Get indexed items summary from KB via POST /api/v1/chunks/by-kind."""
     url = f"{settings.knowledgebase_url}/api/v1/chunks/by-kind"
-    payload = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "limit": limit,
+
+    # Map item_type to KB kind values
+    kind_map = {
+        "all": "all",
+        "git": "git_commit",
+        "jira": "jira_issue",
+        "confluence": "confluence_page",
+        "email": "email",
     }
+    kinds_to_query = [kind_map.get(item_type, item_type)] if item_type != "all" else list(kind_map.values())[1:]
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as e:
-        return f"Error fetching indexed items: {str(e)[:200]}"
+    all_results: dict[str, list] = {}
+    for kind in kinds_to_query:
+        payload = {
+            "clientId": client_id,
+            "projectId": project_id,
+            "kind": kind,
+            "maxResults": limit,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(url, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                if data:
+                    all_results[kind] = data if isinstance(data, list) else [data]
+        except Exception as e:
+            all_results[kind] = [{"error": str(e)[:100]}]
 
-    if not data:
+    if not any(v for v in all_results.values() if v and not v[0].get("error")):
         return "No indexed items found in Knowledge Base for this project."
 
     lines = ["## Indexed Items Summary\n"]
-    for kind, items in data.items():
+    for kind, items in all_results.items():
+        if items and items[0].get("error"):
+            continue
         count = len(items)
         lines.append(f"### {kind.upper()}: {count} items")
-        for item in items[:5]:  # Show first 5 examples
-            source = item.get("sourceUrn", "?")
+        for item in items[:5]:
+            source = item.get("sourceUrn", item.get("source_urn", "?"))
             lines.append(f"  - {source}")
         if count > 5:
             lines.append(f"  ... and {count - 5} more")

@@ -416,8 +416,11 @@ class AgentStore:
 
     # --- ASK_USER helpers ---
 
-    async def find_ask_user_vertices(self) -> list[tuple[str, GraphVertex]]:
+    async def find_ask_user_vertices(self, client_id: str = "") -> list[tuple[str, GraphVertex]]:
         """Find all BLOCKED ASK_USER vertices across master + cached sub-graphs.
+
+        CLIENT ISOLATION: When client_id is provided, only returns vertices
+        belonging to that client. Prevents cross-client question leaks.
 
         Returns list of (graph_task_id, vertex) tuples.
         """
@@ -427,15 +430,33 @@ class AgentStore:
         if self._memory_map:
             for v in self._memory_map.vertices.values():
                 if v.status == VertexStatus.BLOCKED:
-                    results.append((self._memory_map.task_id, v))
+                    if not client_id or v.client_id == client_id or self._vertex_in_client(v, client_id):
+                        results.append((self._memory_map.task_id, v))
 
         # Check cached sub-graphs
         for task_id, graph in self._subgraphs.items():
             for v in graph.vertices.values():
                 if v.status == VertexStatus.BLOCKED:
-                    results.append((task_id, v))
+                    if not client_id or v.client_id == client_id:
+                        results.append((task_id, v))
 
         return results
+
+    def _vertex_in_client(self, vertex: GraphVertex, client_id: str) -> bool:
+        """Walk parent chain in memory_map to check client ownership (legacy fallback)."""
+        if not self._memory_map:
+            return False
+        current = vertex
+        for _ in range(5):
+            if not current.parent_id:
+                return False
+            parent = self._memory_map.vertices.get(current.parent_id)
+            if not parent:
+                return False
+            if parent.vertex_type == VertexType.CLIENT:
+                return parent.input_request == client_id
+            current = parent
+        return False
 
     async def resume_blocked_vertex(
         self,
@@ -524,11 +545,11 @@ class AgentStore:
         for vid, _ in task_refs[:_KEEP_TASK_VERTICES]:
             keep_ids.add(vid)
 
-        # Always keep root, CLIENT, and PROJECT vertices (structural hierarchy)
+        # Always keep root, CLIENT, GROUP, and PROJECT vertices (structural hierarchy)
         if graph.root_vertex_id:
             keep_ids.add(graph.root_vertex_id)
         for vid, v in graph.vertices.items():
-            if v.vertex_type in (VertexType.CLIENT, VertexType.PROJECT):
+            if v.vertex_type in (VertexType.CLIENT, VertexType.GROUP, VertexType.PROJECT):
                 keep_ids.add(vid)
 
         # Identify vertices to remove

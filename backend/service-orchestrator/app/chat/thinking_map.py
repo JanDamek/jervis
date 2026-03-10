@@ -60,6 +60,7 @@ async def create_map(
         vertex_type=VertexType.ROOT,
         status=VertexStatus.READY,
         depth=0,
+        client_id=client_id or "",
     )
 
     graph = AgentGraph(
@@ -118,6 +119,7 @@ async def add_vertex(
         status=VertexStatus.PENDING,
         parent_id="root",
         depth=max_depth + 1 if dep_ids else 1,
+        client_id=graph.client_id,
     )
 
     graph.vertices[vertex_id] = vertex

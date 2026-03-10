@@ -164,6 +164,9 @@ class GraphVertex(BaseModel):
     result_summary: str = ""                # Summary for outgoing edges
     local_context: str = ""                 # Context generated during execution
 
+    # Client isolation — ensures vertices are scoped to their owner client
+    client_id: str = ""                     # Client ObjectId this vertex belongs to
+
     # Hierarchy (decomposition tree)
     parent_id: str | None = None            # Parent vertex (if decomposed from)
     depth: int = 0                          # Decomposition depth

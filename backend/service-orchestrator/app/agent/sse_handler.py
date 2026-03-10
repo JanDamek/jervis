@@ -58,7 +58,7 @@ async def handle_chat_sse(
             from app.agent.persistence import agent_store
             from app.agent.graph import memory_map_summary
             memory_map = await agent_store.get_or_create_memory_map()
-            map_ctx = memory_map_summary(memory_map, max_tokens=2000)
+            map_ctx = memory_map_summary(memory_map, max_tokens=2000, client_id=request.active_client_id or "")
         except Exception as e:
             logger.warning("SSE: failed to load memory map: %s", e)
 

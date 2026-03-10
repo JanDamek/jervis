@@ -37,6 +37,22 @@ class ChatRoute:
     reason: str = ""
 
 
+def _vertex_belongs_to_client(graph: AgentGraph, vertex: "GraphVertex", client_id: str) -> bool:
+    """Walk parent chain to check if vertex belongs to client (legacy fallback)."""
+    from app.agent.models import GraphVertex as GV
+    current = vertex
+    for _ in range(5):
+        if not current.parent_id:
+            return False
+        parent = graph.vertices.get(current.parent_id)
+        if not parent:
+            return False
+        if parent.vertex_type == VertexType.CLIENT:
+            return parent.input_request == client_id
+        current = parent
+    return False
+
+
 def route_chat_message(
     message: str,
     memory_map: AgentGraph | None,
@@ -75,11 +91,13 @@ def route_chat_message(
         )
 
     # 3. Resume existing RUNNING/BLOCKED REQUEST vertex for this scope
+    # CLIENT ISOLATION: Only resume vertices belonging to the current client
     if memory_map and client_id:
         for vid, v in memory_map.vertices.items():
             if (
                 v.vertex_type == VertexType.REQUEST
                 and v.status in (VertexStatus.RUNNING, VertexStatus.BLOCKED)
+                and (v.client_id == client_id or (not v.client_id and _vertex_belongs_to_client(memory_map, v, client_id)))
             ):
                 return ChatRoute(
                     action="resume_vertex",

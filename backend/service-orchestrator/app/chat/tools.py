@@ -228,6 +228,28 @@ TOOL_RESPOND_TO_USER_TASK: dict = {
     },
 }
 
+TOOL_RETRY_FAILED_TASK: dict = {
+    "type": "function",
+    "function": {
+        "name": "retry_failed_task",
+        "description": (
+            "Znovu spusť selhávající úkol (ve stavu ERROR). "
+            "Resetuje stav na QUEUED — orchestrátor ho znovu vyzvedne. "
+            "Použij když user chce opakovat zpracování úkolu který skončil chybou."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "TaskDocument ID úkolu k opakování.",
+                },
+            },
+            "required": ["task_id"],
+        },
+    },
+}
+
 TOOL_CLASSIFY_MEETING: dict = {
     "type": "function",
     "function": {
@@ -726,6 +748,7 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_GET_TASK_STATUS,
     TOOL_LIST_RECENT_TASKS,
     TOOL_RESPOND_TO_USER_TASK,
+    TOOL_RETRY_FAILED_TASK,
     TOOL_CLASSIFY_MEETING,
     TOOL_LIST_UNCLASSIFIED_MEETINGS,
     TOOL_SWITCH_CONTEXT,
@@ -785,6 +808,7 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_DISPATCH_CODING_AGENT,
         TOOL_CREATE_BACKGROUND_TASK,
         TOOL_RESPOND_TO_USER_TASK,
+        TOOL_RETRY_FAILED_TASK,
         TOOL_CHECK_TASK_GRAPH,
         TOOL_ANSWER_BLOCKED_VERTEX,
     ],
@@ -803,6 +827,7 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_SEARCH_TASKS,
         TOOL_GET_TASK_STATUS,
         TOOL_LIST_RECENT_TASKS,
+        TOOL_RETRY_FAILED_TASK,
         TOOL_CLASSIFY_MEETING,
         TOOL_LIST_UNCLASSIFIED_MEETINGS,
         TOOL_SWITCH_CONTEXT,
@@ -830,6 +855,7 @@ TOOL_DOMAINS: dict[str, str] = {
     "dispatch_coding_agent": "task",
     "search_tasks": "task", "get_task_status": "task",
     "list_recent_tasks": "task", "respond_to_user_task": "task",
+    "retry_failed_task": "task",
     "check_task_graph": "task", "answer_blocked_vertex": "task",
     "classify_meeting": "meeting", "list_unclassified_meetings": "meeting",
     "switch_context": "scope",

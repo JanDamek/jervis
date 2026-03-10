@@ -48,6 +48,7 @@ _TOOL_DESCRIPTIONS = {
     "respond_to_user_task": lambda a: f"Odpovídám na úkol: {a.get('task_id', '')}",
     "get_task_status": lambda a: f"Kontroluji stav úkolu: {a.get('task_id', '')}",
     "list_recent_tasks": lambda _: "Kontroluji nedávné úkoly",
+    "retry_failed_task": lambda a: f"Opakuji selhávající úkol: {a.get('task_id', '')}",
     "classify_meeting": lambda a: f"Klasifikuji nahrávku: {a.get('meeting_id', '')}",
     "list_unclassified_meetings": lambda _: "Kontroluji neklasifikované nahrávky",
     "switch_context": lambda a: f"Přepínám na: {a.get('client', '')} {a.get('project', '')}".strip(),
@@ -89,6 +90,7 @@ _CHAT_SPECIFIC_TOOLS = {
     "get_task_status",
     "list_recent_tasks",
     "respond_to_user_task",
+    "retry_failed_task",
     "classify_meeting",
     "list_unclassified_meetings",
     "get_guidelines",
@@ -336,6 +338,14 @@ async def _handle_respond_to_user_task(args, _client_id, _project_id, kotlin_cli
     return f"User task responded: {result}"
 
 
+async def _handle_retry_failed_task(args, _client_id, _project_id, kotlin_client):
+    task_id = args.get("task_id")
+    if not task_id:
+        return "Chyba: task_id je povinný."
+    result = await kotlin_client.retry_failed_task(task_id)
+    return f"Retry result: {result}"
+
+
 async def _handle_classify_meeting(args, _client_id, _project_id, kotlin_client):
     result = await kotlin_client.classify_meeting(
         meeting_id=args["meeting_id"],
@@ -495,6 +505,7 @@ _TOOL_HANDLER_MAP = {
     "get_task_status": _handle_get_task_status,
     "list_recent_tasks": _handle_list_recent_tasks,
     "respond_to_user_task": _handle_respond_to_user_task,
+    "retry_failed_task": _handle_retry_failed_task,
     "classify_meeting": _handle_classify_meeting,
     "list_unclassified_meetings": _handle_list_unclassified_meetings,
     "get_guidelines": _handle_get_guidelines,
