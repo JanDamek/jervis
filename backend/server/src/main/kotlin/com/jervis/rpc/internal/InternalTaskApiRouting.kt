@@ -119,6 +119,46 @@ fun Routing.installInternalTaskApi(
         }
     }
 
+    // Get full task data by ID — includes agentJob fields for log streaming
+    get("/internal/tasks/{taskId}") {
+        try {
+            val taskIdStr = call.parameters["taskId"] ?: ""
+            val taskId = TaskId(ObjectId(taskIdStr))
+            val task = taskRepository.getById(taskId)
+
+            if (task != null) {
+                val taskMap = mapOf(
+                    "id" to task.id.toString(),
+                    "state" to task.state.name,
+                    "agentJobName" to (task.agentJobName ?: ""),
+                    "agentJobState" to (task.agentJobState ?: ""),
+                    "agentJobWorkspacePath" to (task.agentJobWorkspacePath ?: ""),
+                    "agentJobAgentType" to (task.agentJobAgentType ?: ""),
+                    "clientId" to task.clientId.toString(),
+                    "projectId" to (task.projectId?.toString() ?: ""),
+                    "sourceUrn" to (task.sourceUrn?.value ?: ""),
+                )
+                call.respondText(
+                    Json.encodeToString(taskMap),
+                    ContentType.Application.Json,
+                )
+            } else {
+                call.respondText(
+                    """{"error":"Task not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+            }
+        } catch (e: Exception) {
+            logger.error("Failed to get task", e)
+            call.respondText(
+                """{"error":"${e.message}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
     // Get task status by ID — for chat tool get_task_status
     get("/internal/tasks/{taskId}/status") {
         try {
@@ -422,6 +462,66 @@ fun Routing.installInternalTaskApi(
         } catch (e: Exception) {
             logger.warn(e) { "INTERNAL_API_ERROR | endpoint=tasks/queue" }
             call.respondText("[]", ContentType.Application.Json)
+        }
+    }
+
+    // Retry a failed (ERROR) task — resets state to QUEUED for re-processing
+    post("/internal/tasks/{taskId}/retry") {
+        try {
+            val taskIdStr = call.parameters["taskId"] ?: ""
+            val taskId = TaskId(ObjectId(taskIdStr))
+            val task = taskRepository.getById(taskId)
+                ?: return@post call.respondText(
+                    """{"ok":false,"error":"Task not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+
+            if (task.state != TaskStateEnum.ERROR) {
+                return@post call.respondText(
+                    """{"ok":false,"error":"Task is not in ERROR state (current: ${task.state.name})"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                )
+            }
+
+            // Extract original content from error-wrapped content (failAndEscalateToUserTask wraps it)
+            // Use lastIndexOf to handle double-wrapped content from multiple failures
+            val originalContent = task.content.let { content ->
+                val marker = "Obsah úlohy:\n"
+                val idx = content.lastIndexOf(marker)
+                if (idx >= 0) content.substring(idx + marker.length).trim() else content
+            }
+
+            // Strip error prefix from taskName (e.g., "Typ selhalo: error msg" → original name)
+            val originalTitle = task.taskName.let { name ->
+                val failedMarker = " selhalo: "
+                val idx = name.indexOf(failedMarker)
+                if (idx >= 0) originalContent.take(100) else name
+            }
+
+            val updated = task.copy(
+                state = TaskStateEnum.QUEUED,
+                content = originalContent,
+                taskName = originalTitle,
+                errorMessage = null,
+                orchestratorThreadId = null,
+                dispatchRetryCount = 0,
+                nextDispatchRetryAt = null,
+            )
+            taskRepository.save(updated)
+            logger.info("TASK_RETRY | taskId=$taskIdStr | title=${updated.taskName} | previousError=${task.errorMessage?.take(100)}")
+            call.respondText(
+                """{"ok":true,"taskId":"$taskIdStr","state":"QUEUED"}""",
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=tasks/retry | taskId=${call.parameters["taskId"]}" }
+            call.respondText(
+                """{"ok":false,"error":"${e.message?.replace("\"", "\\\"")}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
         }
     }
 

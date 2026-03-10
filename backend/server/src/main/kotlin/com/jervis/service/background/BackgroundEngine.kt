@@ -552,16 +552,19 @@ class BackgroundEngine(
 
                     // Check if task was dispatched to Python orchestrator (fire-and-forget).
                     // Empty response = successfully dispatched; non-empty = error/unavailable.
+                    // Check for both PROCESSING (graph agent still running) and CODING
+                    // (K8s Job already dispatched — Python set state to CODING via agent-dispatched callback).
                     val freshTask = taskRepository.getById(task.id)
-                    if (freshTask?.state == TaskStateEnum.PROCESSING && finalResponse.message.isBlank()) {
+                    if (freshTask?.state in setOf(TaskStateEnum.PROCESSING, TaskStateEnum.CODING) && finalResponse.message.isBlank()) {
                         // Reset dispatch retry count on successful dispatch
-                        if (freshTask.dispatchRetryCount > 0) {
+                        if (freshTask != null && freshTask.dispatchRetryCount > 0) {
                             taskRepository.save(freshTask.copy(dispatchRetryCount = 0, nextDispatchRetryAt = null))
                         }
-                        logger.info { "PYTHON_DISPATCHED: taskId=${task.id} → releasing execution slot, result via orchestratorResultLoop" }
+                        val dispatchType = if (freshTask?.state == TaskStateEnum.CODING) "CODING_AGENT" else "ORCHESTRATOR"
+                        logger.info { "PYTHON_DISPATCHED: taskId=${task.id} type=$dispatchType → releasing execution slot" }
                         taskService.setRunningTask(null)
-                        // Don't emit idle — orchestrator is still running.
-                        // OrchestratorStatusHandler emits idle when orchestration finishes.
+                        // Don't emit idle — orchestrator/agent is still running.
+                        // OrchestratorStatusHandler (or AgentTaskWatcher for CODING) handles completion.
                         return@launch
                     }
 

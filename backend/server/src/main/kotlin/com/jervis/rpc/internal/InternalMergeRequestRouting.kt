@@ -131,8 +131,9 @@ fun Routing.installInternalMergeRequestApi(
                 )
             }
 
-            // Save MR URL on task document
-            taskRepository.save(task.copy(mergeRequestUrl = mrUrl))
+            // Save MR URL on task document — re-read to avoid overwriting concurrent state changes
+            val freshTask = taskRepository.getById(taskId) ?: task
+            taskRepository.save(freshTask.copy(mergeRequestUrl = mrUrl))
 
             logger.info { "MR_CREATED | task=$taskIdStr | provider=${connection.provider} | url=$mrUrl" }
 
