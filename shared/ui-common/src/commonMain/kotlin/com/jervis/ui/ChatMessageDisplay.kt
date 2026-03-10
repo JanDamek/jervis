@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -1040,6 +1041,27 @@ private fun ChatMessageItem(
                                     text = message.text,
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
+                                // Attachment indicator
+                                val attachmentNames = message.metadata["attachments"]
+                                if (!attachmentNames.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Default.InsertDriveFile,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        )
+                                        Text(
+                                            text = attachmentNames,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        )
+                                    }
+                                }
                             } else {
                                 // Assistant messages - Markdown rendering with safe fallback
                                 SafeMarkdown(

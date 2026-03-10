@@ -597,7 +597,8 @@ private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val 
 - `PROGRESS` — compact row with `CircularProgressIndicator` (16dp) + bodySmall text
 - `FINAL` — assistant bubble (secondaryContainer, left-aligned)
 - `ERROR` — compact row with `Icons.Default.Warning` (16dp, error tint) + bodySmall text in `MaterialTheme.colorScheme.error`
-- `BACKGROUND_RESULT` — background task result (surfaceVariant, hidden by default, shown via "Tasky" filter chip)
+- `BACKGROUND_RESULT` — background task result (surfaceVariant, hidden by default, shown via "Tasky" filter chip). Supports inline user response via `userResponse` field — after "Reagovat" reply, the response appears inside the card (Reply icon + text) and the "Reagovat" button hides
+- `THINKING_MAP_UPDATE` — thinking map (TaskGraph) update from chat planning
 - `URGENT_ALERT` — urgent notification (errorContainer border, always visible)
 - `APPROVAL_REQUEST` — handled via `ApprovalBanner`, not as a chat message
 
@@ -607,13 +608,13 @@ iMessage/WhatsApp-style chat with content-based width:
 - **Spacing**: LazyColumn `contentPadding = PaddingValues(24.dp)`, `verticalArrangement = Arrangement.spacedBy(20.dp)`, bubble internal padding `16.dp`
 - **Responsive max width**: Uses `BoxWithConstraints` to calculate max width as `maxWidth - 32.dp`
 - **Content-based width**: `Card` with `Modifier.widthIn(min = 48.dp, max = maxBubbleWidth)` adapts to content length
-- **User messages**: Plain text, `primaryContainer` background, right-aligned, with Edit + Copy icons
+- **User messages**: Plain text, `primaryContainer` background, right-aligned, with Edit + Copy icons. Attachment indicator (InsertDriveFile icon + filename list) shown below text when `metadata["attachments"]` present
 - **Assistant messages**: Markdown rendering, `secondaryContainer` background, left-aligned, with Copy icon
 - **Markdown support**: Uses `multiplatform-markdown-renderer:0.29.0` with Material 3 theme colors
 - **Workflow steps**: Collapsible step list with status icons (✓ completed, ✗ failed, ↻ in-progress, ⏰ pending) and tool usage
 - **Confidence badge** (E14-S4): Shown on assistant messages when fact-check metadata present. Reads `fact_check_confidence`, `fact_check_claims`, `fact_check_verified` from `ChatMessage.metadata`. Displays `Icons.Default.Verified` icon + "N% (X/Y)" text. Color: green (≥80%), amber (≥50%), red (<50%). Hidden when no claims.
 - **Background result messages** (BACKGROUND_RESULT): `surfaceVariant` background, `Icons.Default.CheckCircle` (success) or `Icons.Default.Error` (failure) icon, collapsible content. Shows task title + summary. When `taskId` is present in metadata, shows "Zobrazit graf" button that lazy-loads the task decomposition graph via `ITaskGraphService.getGraph()`. Graph section shows: stats row (status, vertex count, LLM calls, tokens), depth-indented vertex cards (expandable: description, agent, tools, timing, input/result/context), and incoming edge annotations.
-- **Task graph visualization** (`TaskGraphComponents.kt`): Embedded in BACKGROUND_RESULT card. `TaskGraphSection` — expandable header with graph summary + animated vertex tree. `VertexCard` — depth-indented, status-colored cards with expand/collapse for debug info (agent name, token count, LLM calls, tools used, timing, errors, input request, result summary, local context). `EdgeRow` — shows source vertex title, edge type, and payload summary. `StatChip` — compact label:value chips for statistics. `ExpandableTextSection` — collapsible text blocks for long content fields. All labels in Czech. **REQUEST vertex status colors**: REQUEST vertices in the memory map have dynamic status determined by trace analysis — `completed` (primary color, simple Q&A or successful tool calls), `running` (tertiary color, background tasks dispatched), `failed` (error color, tool errors). Same `statusColor()` mapping as other vertex types.
+- **Task graph visualization** (`TaskGraphComponents.kt`): Embedded in BACKGROUND_RESULT card. `TaskGraphSection` — expandable header with graph summary + animated vertex tree. `VertexCard` — depth-indented, status-colored cards with expand/collapse for debug info (agent name, token count, LLM calls, tools used, timing, errors, result summary). For `task_ref` vertices: raw task ID hidden from display; "Zobrazit myšlenkovou mapu" button when sub-graph available (uses `localContext` if starts with `tg-`, otherwise falls back to `inputRequest` task ID). Callbacks: `onOpenSubGraph: ((String) -> Unit)?`, `onOpenLiveLog: ((String) -> Unit)?`. `EdgeRow` — shows source vertex title, edge type, and payload summary. `StatChip` — compact label:value chips. `ExpandableTextSection` — collapsible text blocks. All labels in Czech. **Vertex status colors**: `statusColor()` and `statusLabel()` are `internal` (shared with `ThinkingMapPanel`).
 - **Urgent alert messages** (URGENT_ALERT): `errorContainer` border, `Icons.Default.Warning` icon, always expanded. Shows source + summary + optional suggested action. User can reply in chat.
 - **Timestamps**: Human-readable formatting via `formatMessageTime()` — today: "HH:mm", yesterday: "Včera HH:mm", this year: "d. M. HH:mm", older: "d. M. yyyy HH:mm"
 
@@ -653,6 +654,19 @@ iMessage/WhatsApp-style chat with content-based width:
 - Files encoded to base64 via `AttachmentDto.contentBase64` for RPC transport
 - Backend decodes and saves to storage directory
 - Platform file pickers: JVM full implementation (`JFileChooser`), Android/iOS stubs returning null
+- **Note**: Attachment data is currently NOT sent to server — `IChatService.sendMessage()` has no attachments parameter. Only the optimistic UI message shows attachment indicator via `metadata["attachments"]`
+
+**Thinking Map Panel** (`ThinkingMapPanel.kt`):
+
+Side panel showing Paměťová mapa (Memory Map) alongside chat. Resizable via drag handle.
+
+- **Navigation stack**: Memory map (default) → click TASK_REF "Zobrazit myšlenkovou mapu" → detail thinking map (with back arrow)
+- **Task history dropdown**: `Icons.Default.History` button in header → `DropdownMenu` with recent TASK_REF vertices sorted by `startedAt` desc (max 20). Each item shows status label/color, title, timestamp. Click navigates to sub-graph
+- **Parameters**: `activeMap: TaskGraphDto?`, `detailGraph: TaskGraphDto?`, `isCompact: Boolean`, `onOpenSubGraph`, `onCloseSubGraph`, `onClose`
+- **Live log overlay** (currently disabled): Split panel with `CodingAgentLogPanel` for SSE streaming. Disabled because graph agent tasks don't have K8s Jobs. Parameters `liveLogTaskId`, `jobLogsService`, `onOpenLiveLog`, `onCloseLiveLog` exist but are not wired
+- **Title logic**: Shows "Paměťová mapa" for memory_map, "Myšlenková mapa" for thinking_map, "Detail grafu" for other types
+- **Compact mode**: Uses `JTopBar` with back navigation; expanded mode has inline header with close button
+- **ChatViewModel integration**: `detailThinkingMap: StateFlow<TaskGraphDto?>`, `openSubGraph(id)` loads graph via `repository.taskGraphs.getGraph()`, `closeSubGraph()` clears detail. `jobLogsService` exposed from repository
 
 ```kotlin
 // Responsive max width calculation

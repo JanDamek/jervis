@@ -399,11 +399,17 @@ class ChatViewModel(
         val projectId = selectedProjectId.value
         val groupId = selectedGroupId.value
 
+        val attachmentMeta = if (currentAttachments.isNotEmpty()) {
+            mapOf("attachments" to currentAttachments.joinToString(", ") { it.filename })
+        } else {
+            emptyMap()
+        }
         val optimisticMsg = ChatMessage(
             from = ChatMessage.Sender.Me,
             text = text,
             contextId = projectId,
             messageType = ChatMessage.MessageType.USER_MESSAGE,
+            metadata = attachmentMeta,
         )
         _chatMessages.value = _chatMessages.value + optimisticMsg
 
