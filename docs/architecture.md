@@ -433,7 +433,8 @@ Weaviate and python-arango clients are thread-safe for read operations. Write op
 
 ### Overview
 
-Audio recordings are transcribed using **faster-whisper** (CTranslate2-optimized OpenAI Whisper).
+Audio recordings are transcribed using **faster-whisper** (CTranslate2-optimized OpenAI Whisper)
+with **pyannote-audio 4.x** diarization that produces 256-dim speaker embeddings for auto-identification.
 Two deployment modes are supported, configurable via UI (**Settings → Whisper → Režim nasazení**):
 
 1. **K8S_JOB** (default): Runs as short-lived K8s Jobs in-cluster (or Python subprocess in local dev).
@@ -525,13 +526,13 @@ State transitions (TRANSCRIBING → TRANSCRIBED/FAILED, CORRECTING → CORRECTED
 | File | Purpose |
 |------|---------|
 | `backend/service-whisper/whisper_runner.py` | Python entry point — faster-whisper with progress tracking |
-| `backend/service-whisper/whisper_rest_server.py` | FastAPI REST wrapper around whisper_runner (REST_REMOTE mode) |
+| `backend/service-whisper/whisper_rest_server.py` | FastAPI REST wrapper — diarization + 256-dim speaker embeddings (REST_REMOTE mode) |
 | `backend/service-whisper/entrypoint-whisper-job.sh` | K8s Job entrypoint — env parsing, error handling |
 | `backend/service-whisper/Dockerfile` | Docker image for K8s Job mode |
 | `backend/service-whisper/Dockerfile.rest` | Docker image for REST server mode (FastAPI + uvicorn) |
 | `backend/server/.../service/meeting/WhisperJobRunner.kt` | Orchestration — routes to K8s Job, REST, or local subprocess |
 | `backend/server/.../service/meeting/WhisperRestClient.kt` | Ktor HTTP client for REST_REMOTE mode |
-| `backend/server/.../service/meeting/MeetingTranscriptionService.kt` | High-level transcription API |
+| `backend/server/.../service/meeting/MeetingTranscriptionService.kt` | High-level transcription API + speaker auto-matching (cosine similarity) |
 | `backend/server/.../service/meeting/MeetingContinuousIndexer.kt` | 4 pipelines: transcribe → correct → index → purge |
 | `backend/server/.../entity/WhisperSettingsDocument.kt` | MongoDB singleton settings document |
 | `backend/server/.../rpc/WhisperSettingsRpcImpl.kt` | RPC service for settings CRUD |

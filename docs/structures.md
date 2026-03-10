@@ -195,7 +195,7 @@ Whisper transcription flow:
   1. Kotlin → POST /router/whisper-acquire → Router grants (blocks if VLM active)
   2. Kotlin → POST whisper:8786/transcribe → SSE stream
   3. whisper._acquire_gpu(): unload VLM via Ollama, load whisper model
-  4. Transcribe (+ pyannote diarization)
+  4. Transcribe (+ pyannote 4.x diarization → speaker embeddings)
   5. Kotlin → POST /router/whisper-release
   6. After 60s idle → whisper auto-unloads GPU
 
@@ -239,7 +239,7 @@ Persistent FastAPI service on `ollama.damek.local:8786`, sharing P40 GPU with Ol
 | **Deploy** | `k8s/deploy_whisper_gpu.sh` (systemd on GPU VM, not K8s) |
 | **Device** | CUDA (int8_float32 — P40 lacks efficient float16) |
 | **Models** | medium (default), large-v3 (on request) |
-| **Diarization** | pyannote-audio 3.1 (requires HF_TOKEN) |
+| **Diarization** | pyannote-audio 4.x (requires HF_TOKEN), returns 256-dim speaker embeddings |
 | **Idle timeout** | 60s → auto-unloads GPU |
 | **Startup** | Lazy — no model pre-loaded |
 
@@ -288,6 +288,64 @@ The correction agent (`backend/service-correction/app/agent.py`) processes trans
 | `backend/server/.../meeting/MeetingContinuousIndexer.kt` | Pipeline orchestration (index raw → correct qualified → re-index) |
 | `backend/server/.../meeting/TranscriptCorrectionService.kt` | State transitions, error recovery |
 | `backend/server/.../entity/meeting/MeetingDocument.kt` | Meeting entity with `qualified` flag |
+
+---
+
+## Speaker Auto-Identification via Embeddings
+
+### Overview
+
+Pyannote 4.x diarization produces 256-dimensional speaker embeddings alongside the standard `SPEAKER_XX` labels. These embeddings enable automatic speaker identification across meetings by comparing new embeddings against known speaker profiles using cosine similarity.
+
+### Data Flow
+
+```
+Meeting 1 (new speakers):
+  Whisper+Pyannote → SPEAKER_00, SPEAKER_01 + embeddings (256-dim each)
+  → Result JSON: speaker_embeddings: {"SPEAKER_00": [0.12, ...], "SPEAKER_01": [-0.05, ...]}
+  → WhisperJobRunner parses → MeetingDocument.speakerEmbeddings
+  → User assigns SPEAKER_00 = "Martin" in UI
+  → System saves Martin's embedding to SpeakerDocument.voiceEmbedding
+
+Meeting 2 (auto-match):
+  Whisper+Pyannote → SPEAKER_00, SPEAKER_01 + embeddings
+  → MeetingTranscriptionService.autoMatchSpeakers() runs after transcription
+  → Cosine similarity against all known speakers (threshold ≥ 0.70 for auto-mapping)
+  → Auto-maps: SPEAKER_01 = Martin (89%), SPEAKER_00 = unknown
+  → UI shows auto-match confidence badge (threshold ≥ 0.50 for display)
+```
+
+### Thresholds
+
+| Threshold | Value | Purpose |
+|-----------|-------|---------|
+| Auto-match (mapping) | 0.70 | Minimum cosine similarity to auto-assign speaker |
+| Display confidence | 0.50 | Minimum to show auto-match suggestion in UI |
+
+### Storage
+
+- `MeetingDocument.speakerEmbeddings: Map<String, List<Float>>?` -- per-meeting embeddings from pyannote
+- `SpeakerDocument.voiceEmbedding: List<Float>?` -- per-speaker profile voice fingerprint (256-dim)
+
+### DTOs
+
+- `AutoSpeakerMatchDto(speakerId, speakerName, confidence)` -- auto-match result per diarization label
+- `SpeakerEmbeddingDto(speakerId, embedding)` -- for setting voice embedding on speaker profile
+- `SpeakerDto.hasVoiceprint: Boolean` -- indicates if speaker has a stored voice embedding
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/service-whisper/whisper_rest_server.py` | Returns `speaker_embeddings` in result JSON |
+| `backend/server/.../service/meeting/WhisperJobRunner.kt` | Parses `speaker_embeddings` from whisper result |
+| `backend/server/.../service/meeting/MeetingTranscriptionService.kt` | Auto-matching after transcription (cosine similarity) |
+| `backend/server/.../entity/meeting/MeetingDocument.kt` | Stores `speakerEmbeddings` per meeting |
+| `backend/server/.../entity/SpeakerDocument.kt` | Stores `voiceEmbedding` per speaker profile |
+| `backend/server/.../rpc/MeetingRpcImpl.kt` | Builds `autoSpeakerMapping` for UI |
+| `backend/server/.../rpc/SpeakerRpcImpl.kt` | `setVoiceEmbedding` endpoint |
+| `shared/ui-common/.../meeting/SpeakerAssignmentPanel.kt` | Shows auto-match confidence, saves embedding on confirm |
+| `shared/common-dto/.../meeting/SpeakerDtos.kt` | `AutoSpeakerMatchDto`, `SpeakerEmbeddingDto`, `hasVoiceprint` |
 
 ---
 

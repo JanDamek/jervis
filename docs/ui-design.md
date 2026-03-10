@@ -1082,11 +1082,13 @@ Compact (<600dp):
 **Offline recording:** When server is unavailable, `MeetingViewModel.startRecording()` falls back to offline mode — generates a local UUID (prefix `offline_`), saves audio chunks to disk via `AudioChunkQueue`. On stop, metadata is saved via `OfflineMeetingStorage`. `OfflineMeetingSyncService` (created in `App.kt`) watches connection state and uploads offline meetings when connected. Offline meetings appear in a special "Offline nahrávky" section at the top of the list with sync state (PENDING/SYNCING/FAILED) and retry button.
 
 **Speaker management:**
-- `SpeakerDocument` (MongoDB collection `speakers`) -- per-client speaker profiles with name, nationality, languages, notes, voice sample reference
+- `SpeakerDocument` (MongoDB collection `speakers`) -- per-client speaker profiles with name, nationality, languages, notes, voice sample reference, `voiceEmbedding` (256-dim from pyannote)
 - `speakerMapping` on `MeetingDocument` -- maps diarization labels ("SPEAKER_00") to speaker profile IDs
+- `speakerEmbeddings` on `MeetingDocument` -- pyannote 4.x 256-dim embeddings per diarization label
 - `TranscriptSegmentDto.speakerName` -- resolved from mapping, shown in transcript instead of raw labels
-- `SpeakerAssignmentPanel` -- replaces chat panel when toggled via People icon. JDropdown per speaker label, inline create form, voice sample save.
-- `ISpeakerService` kRPC -- CRUD + assignSpeakers + setVoiceSample
+- `SpeakerAssignmentPanel` -- replaces chat panel when toggled via People icon. JDropdown per speaker label, inline create form, voice sample save. Shows auto-match confidence badge when system auto-identifies speakers via embedding cosine similarity. On user confirm, saves voice embedding to speaker profile.
+- `ISpeakerService` kRPC -- CRUD + assignSpeakers + setVoiceSample + setVoiceEmbedding
+- **Auto-identification flow:** After transcription, system compares new speaker embeddings against known profiles (cosine similarity >= 0.70 for auto-mapping, >= 0.50 for showing confidence in UI). User confirms or corrects in `SpeakerAssignmentPanel`.
 
 **MeetingDetailView** uses a split layout with transcript on top and agent chat (or speaker panel) on bottom:
 
