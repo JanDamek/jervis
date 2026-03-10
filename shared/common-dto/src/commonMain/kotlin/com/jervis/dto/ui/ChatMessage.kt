@@ -15,6 +15,8 @@ data class ChatMessage(
     val thinkingSteps: List<String> = emptyList(),
     val sequence: Long? = null,
     val id: String? = null,
+    /** User response to a BACKGROUND_RESULT task (set after "Reagovat" reply). */
+    val userResponse: String? = null,
 ) {
     @Serializable
     enum class Sender { Me, Assistant }

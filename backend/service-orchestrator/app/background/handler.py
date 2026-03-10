@@ -109,7 +109,15 @@ async def _run_graph_agent_background(
     except Exception as e:
         logger.warning("Failed to link running task to master map: %s", e)
 
-    state = await run_graph_agent(request, thread_id)
+    # Run graph agent — always update memory map on completion (even on crash)
+    state: dict = {}
+    agent_failed = False
+    try:
+        state = await run_graph_agent(request, thread_id)
+    except Exception as e:
+        logger.error("GRAPH_AGENT_CRASHED | task_id=%s | %s", request.task_id, e)
+        agent_failed = True
+        state = {"final_result": f"Agent crashed: {e}", "task_graph": {"status": "failed"}}
 
     # Adapt LangGraph state to handle_background return format
     graph_data = state.get("task_graph") or {}
@@ -117,7 +125,7 @@ async def _run_graph_agent_background(
     graph_status = graph_data.get("status", "") if isinstance(graph_data, dict) else ""
 
     # Link sub-graph to master map (with final status)
-    success = graph_status not in ("failed", "cancelled")
+    success = not agent_failed and graph_status not in ("failed", "cancelled")
     summary = state.get("final_result", "")
     try:
         await agent_store.link_thinking_map(
@@ -138,7 +146,7 @@ async def _run_graph_agent_background(
         logger.warning("Failed to link sub-graph to master map: %s", e)
 
     return {
-        "success": graph_status not in ("failed", "cancelled"),
+        "success": success,
         "summary": state.get("final_result", ""),
         "artifacts": state.get("artifacts", []),
         "step_results": [],

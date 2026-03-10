@@ -98,6 +98,17 @@ class ChatViewModel(
     /** Debounce job for memory map refresh — prevents rapid repeated requests. */
     private var memoryMapLoadJob: Job? = null
 
+    /** Detail sub-graph shown when user clicks on TASK_REF → thinking map link. */
+    private val _detailThinkingMap = MutableStateFlow<TaskGraphDto?>(null)
+    val detailThinkingMap: StateFlow<TaskGraphDto?> = _detailThinkingMap.asStateFlow()
+
+    /** Task ID for live log streaming (coding agent SSE). */
+    private val _liveLogTaskId = MutableStateFlow<String?>(null)
+    val liveLogTaskId: StateFlow<String?> = _liveLogTaskId.asStateFlow()
+
+    /** Job logs service for live SSE streaming in ThinkingMapPanel. */
+    val jobLogsService get() = repository.jobLogs
+
     /** Whether the map side panel is visible (user toggle). */
     private val _thinkingMapPanelVisible = MutableStateFlow(false)
     val thinkingMapPanelVisible: StateFlow<Boolean> = _thinkingMapPanelVisible.asStateFlow()
@@ -115,10 +126,42 @@ class ChatViewModel(
 
     fun closeThinkingMapPanel() {
         _thinkingMapPanelVisible.value = false
+        _detailThinkingMap.value = null
+        _liveLogTaskId.value = null
     }
 
     fun updateThinkingMapPanelWidthFraction(fraction: Float) {
         _thinkingMapPanelWidthFraction.value = fraction.coerceIn(0.2f, 0.6f)
+    }
+
+    /** Navigate into a sub-graph (thinking map) from a TASK_REF vertex. */
+    fun openSubGraph(subGraphId: String) {
+        scope.launch {
+            try {
+                val graph = repository.taskGraphs.getGraph(subGraphId)
+                if (graph != null && graph.vertices.isNotEmpty()) {
+                    _detailThinkingMap.value = graph
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("ChatViewModel: failed to load sub-graph $subGraphId: ${e.message}")
+            }
+        }
+    }
+
+    /** Return from sub-graph detail to memory map. */
+    fun closeSubGraph() {
+        _detailThinkingMap.value = null
+    }
+
+    /** Open live log streaming for a coding agent task. */
+    fun openLiveLog(taskId: String) {
+        _liveLogTaskId.value = taskId
+    }
+
+    /** Close live log panel. */
+    fun closeLiveLog() {
+        _liveLogTaskId.value = null
     }
 
     /** Show chat messages (user/assistant). Default ON. */
@@ -241,13 +284,16 @@ class ChatViewModel(
         scope.launch {
             try {
                 repository.userTasks.respondToTask(taskId, trimmed)
-                // Show brief confirmation — NOT a regular "Já" chat message
-                val confirmMsg = ChatMessage(
-                    from = ChatMessage.Sender.Assistant,
-                    text = "Odpověď zaznamenána, úkol bude znovu zpracován.",
-                    messageType = ChatMessage.MessageType.FINAL,
-                )
-                _chatMessages.value = _chatMessages.value + confirmMsg
+                // Update existing BACKGROUND_RESULT message with user response (inline)
+                _chatMessages.value = _chatMessages.value.map { msg ->
+                    if (msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT &&
+                        msg.metadata["taskId"] == taskId
+                    ) {
+                        msg.copy(userResponse = trimmed)
+                    } else {
+                        msg
+                    }
+                }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 onError("Chyba odeslání odpovědi: ${e.message}")

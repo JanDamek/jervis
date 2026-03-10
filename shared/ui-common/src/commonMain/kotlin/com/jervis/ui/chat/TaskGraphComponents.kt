@@ -65,6 +65,8 @@ import kotlinx.datetime.toLocalDateTime
 fun TaskGraphSection(
     graph: TaskGraphDto,
     modifier: Modifier = Modifier,
+    onOpenSubGraph: ((subGraphId: String) -> Unit)? = null,
+    onOpenLiveLog: ((taskId: String) -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -134,6 +136,8 @@ fun TaskGraphSection(
                         vertex = vertex,
                         incomingEdges = incomingEdges,
                         depthIndent = vertex.depth,
+                        onOpenSubGraph = onOpenSubGraph,
+                        onOpenLiveLog = onOpenLiveLog,
                     )
                 }
             }
@@ -221,6 +225,8 @@ private fun VertexCard(
     incomingEdges: List<GraphEdgeDto>,
     depthIndent: Int,
     modifier: Modifier = Modifier,
+    onOpenSubGraph: ((subGraphId: String) -> Unit)? = null,
+    onOpenLiveLog: ((taskId: String) -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val indentDp = (depthIndent * 16).dp
@@ -343,14 +349,55 @@ private fun VertexCard(
                         ExpandableTextSection("Plný výsledek", vertex.result)
                     }
 
-                    // Local context — for task_ref show as "Myšlenková mapa"
-                    if (vertex.localContext.isNotBlank()) {
-                        val contextLabel = when {
-                            vertex.vertexType == "task_ref" && vertex.localContext.startsWith("tg-") ->
-                                "Myšlenková mapa"
-                            else -> "Lokální kontext"
+                    // Sub-graph link — clickable for task_ref with thinking map
+                    if (vertex.vertexType == "task_ref" && vertex.localContext.startsWith("tg-") && onOpenSubGraph != null) {
+                        Row(
+                            modifier = Modifier.padding(top = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            androidx.compose.material3.TextButton(
+                                onClick = { onOpenSubGraph(vertex.localContext) },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.height(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.AccountTree,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    "Zobrazit myšlenkovou mapu",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
                         }
-                        ExpandableTextSection(contextLabel, vertex.localContext)
+                    } else if (vertex.localContext.isNotBlank()) {
+                        ExpandableTextSection("Lokální kontext", vertex.localContext)
+                    }
+
+                    // Live log button for running coding tasks
+                    if (vertex.vertexType == "task_ref" && vertex.status == "running" && onOpenLiveLog != null) {
+                        val taskIdForLog = vertex.inputRequest.ifBlank { null }
+                        if (taskIdForLog != null) {
+                            androidx.compose.material3.TextButton(
+                                onClick = { onOpenLiveLog(taskIdForLog) },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.height(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    "Živý výstup",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
                     }
 
                     // Incoming edges — why this vertex was triggered
@@ -517,7 +564,7 @@ private fun vertexContainerColor(status: String): Color {
 }
 
 @Composable
-private fun statusColor(status: String): Color {
+internal fun statusColor(status: String): Color {
     return when (status) {
         // Vertex statuses
         "completed" -> MaterialTheme.colorScheme.primary
@@ -534,7 +581,7 @@ private fun statusColor(status: String): Color {
     }
 }
 
-private fun statusLabel(status: String): String = when (status) {
+internal fun statusLabel(status: String): String = when (status) {
     // Vertex statuses
     "completed" -> "Dokončeno"
     "running" -> "Probíhá"
@@ -604,7 +651,7 @@ private fun formatTokens(count: Int): String {
     return if (count >= 1000) "${count / 1000}k" else count.toString()
 }
 
-private fun formatTimestamp(value: String): String {
+internal fun formatTimestamp(value: String): String {
     // Handle ISO timestamp (contains 'T')
     val timeStart = value.indexOf('T')
     if (timeStart >= 0) {

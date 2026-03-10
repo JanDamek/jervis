@@ -502,6 +502,34 @@ class AgentStore:
         VertexStatus.RUNNING, VertexStatus.BLOCKED,
     }
 
+    _STALE_RUNNING_AGE_S = 3 * 3600  # 3 hours — RUNNING vertex is likely stale
+
+    def _mark_stale_running_vertices(self) -> int:
+        """Mark RUNNING TASK_REF vertices as FAILED if older than threshold.
+
+        Prevents indefinite accumulation of stale vertices when the graph agent
+        crashes without calling link_thinking_map(completed=True).
+        """
+        if not self._memory_map:
+            return 0
+        graph = self._memory_map
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=self._STALE_RUNNING_AGE_S)).isoformat()
+        count = 0
+        for v in graph.vertices.values():
+            if v.status != VertexStatus.RUNNING:
+                continue
+            if v.vertex_type not in (VertexType.TASK_REF, VertexType.INCOMING):
+                continue
+            started = v.started_at or v.created_at or ""
+            if started and started < cutoff:
+                v.status = VertexStatus.FAILED
+                v.result_summary = v.result_summary or "Stale — no completion signal received"
+                v.completed_at = datetime.now(timezone.utc).isoformat()
+                count += 1
+        if count:
+            logger.info("Marked %d stale RUNNING vertices as FAILED", count)
+        return count
+
     def cleanup_memory_map(self) -> int:
         """Remove old completed/failed vertices from memory map.
 
@@ -519,6 +547,9 @@ class AgentStore:
         """
         if not self._memory_map:
             return 0
+
+        # First pass: mark stale RUNNING vertices as FAILED so they can be cleaned up
+        self._mark_stale_running_vertices()
 
         graph = self._memory_map
         keep_ids: set[str] = set()

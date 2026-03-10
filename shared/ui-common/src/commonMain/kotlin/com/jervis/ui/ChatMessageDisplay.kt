@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Verified
@@ -669,6 +670,28 @@ private fun ChatMessageItem(
                     }
                 }
 
+                // User response (shown inline after "Reagovat" reply)
+                val hasResponse = message.userResponse != null
+                if (hasResponse) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Icon(
+                            Icons.Default.Reply,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp).padding(top = 2.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        )
+                        Text(
+                            text = message.userResponse!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
                 // Timestamp + Reply row
                 val taskId = message.metadata["taskId"]
                 var showReplyInput by remember { mutableStateOf(false) }
@@ -688,7 +711,7 @@ private fun ChatMessageItem(
                             )
                         }
                     }
-                    if (taskId != null && !showReplyInput) {
+                    if (taskId != null && !showReplyInput && !hasResponse) {
                         TextButton(
                             onClick = { showReplyInput = true },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
