@@ -340,6 +340,39 @@ async def health():
     }
 
 
+@app.get("/diagnostic")
+async def diagnostic():
+    """Diagnostic endpoint — check why diarization may not work."""
+    diag = {
+        "hf_token_set": bool(HF_TOKEN),
+        "hf_token_prefix": HF_TOKEN[:8] + "..." if HF_TOKEN else "",
+        "diarization_available": _diarization_available,
+        "diarization_pipeline_loaded": _diarization_pipeline is not None,
+    }
+
+    # Check if pyannote is importable
+    try:
+        import pyannote.audio
+        diag["pyannote_installed"] = True
+        diag["pyannote_version"] = getattr(pyannote.audio, "__version__", "unknown")
+    except ImportError as e:
+        diag["pyannote_installed"] = False
+        diag["pyannote_import_error"] = str(e)
+
+    # Try loading pipeline if not loaded
+    if not _diarization_available and HF_TOKEN:
+        diag["load_attempt"] = "testing..."
+        try:
+            from pyannote.audio import Pipeline
+            # Don't actually load (it downloads GB of data), just check prereqs
+            diag["pipeline_class_available"] = True
+        except ImportError as e:
+            diag["pipeline_class_available"] = False
+            diag["pipeline_import_error"] = str(e)
+
+    return diag
+
+
 @app.post("/gpu/release")
 async def gpu_release():
     """Release GPU VRAM (called by router before loading VL model on p40-2).

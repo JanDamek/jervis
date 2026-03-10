@@ -55,15 +55,10 @@ echo "Step 2/6: Installing Python dependencies..."
 ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q \
     'numpy<2.0' \
     faster-whisper \
+    pyannote.audio \
     fastapi uvicorn python-multipart sse-starlette \
     torch torchaudio --index-url https://download.pytorch.org/whl/cu124 2>&1 | tail -3"
-
-# Install pyannote only if HF_TOKEN is provided (requires HuggingFace auth)
-if [ -n "$HF_TOKEN" ]; then
-    echo "  Installing pyannote-audio (HF_TOKEN provided)..."
-    ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q pyannote.audio 2>&1 | tail -3"
-fi
-echo "  dependencies OK"
+echo "  dependencies OK (including pyannote-audio for speaker diarization)"
 
 # Step 3: Copy server files
 echo "Step 3/6: Copying server files..."
