@@ -53,17 +53,16 @@ echo "  directory and venv OK"
 # Step 2: Install/upgrade Python dependencies
 echo "Step 2/6: Installing Python dependencies..."
 ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q \
-    'numpy<2.0' \
     faster-whisper \
     pyannote.audio \
     fastapi uvicorn python-multipart sse-starlette \
     torch torchaudio --index-url https://download.pytorch.org/whl/cu124 2>&1 | tail -3"
 echo "  dependencies OK (including pyannote-audio for speaker diarization)"
 
-# Step 3: Copy server files
+# Step 3: Copy server files (using ssh+cat — more reliable with sshpass than scp)
 echo "Step 3/6: Copying server files..."
-scp_cmd "$PROJECT_ROOT/backend/service-whisper/whisper_runner.py" "$GPU_USER@$GPU_HOST:$INSTALL_DIR/whisper_runner.py"
-scp_cmd "$PROJECT_ROOT/backend/service-whisper/whisper_rest_server.py" "$GPU_USER@$GPU_HOST:$INSTALL_DIR/whisper_rest_server.py"
+ssh_cmd "cat > $INSTALL_DIR/whisper_runner.py" < "$PROJECT_ROOT/backend/service-whisper/whisper_runner.py"
+ssh_cmd "cat > $INSTALL_DIR/whisper_rest_server.py" < "$PROJECT_ROOT/backend/service-whisper/whisper_rest_server.py"
 echo "  files copied"
 
 # Step 4: Pre-download whisper models (if not cached)
@@ -102,7 +101,7 @@ Environment=WHISPER_DEFAULT_MODEL=medium
 Environment=WHISPER_REST_PORT=8786
 Environment=WHISPER_REST_HOST=0.0.0.0
 Environment=WHISPER_REST_WORKERS=1
-Environment=ROUTER_URL=http://ollama-router.lan.mazlusek.com
+Environment=ROUTER_URL=http://jervis-router.lan.mazlusek.com
 $HF_TOKEN_LINE
 
 [Install]
