@@ -1261,7 +1261,7 @@ private fun ConfidenceBadge(
  * out-of-bounds source positions (StringIndexOutOfBoundsException).
  */
 @Composable
-private fun SafeMarkdown(
+internal fun SafeMarkdown(
     content: String,
     colors: MarkdownColors,
     typography: MarkdownTypography,

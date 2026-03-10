@@ -502,7 +502,7 @@ class AgentStore:
         VertexStatus.RUNNING, VertexStatus.BLOCKED,
     }
 
-    _STALE_RUNNING_AGE_S = 3 * 3600  # 3 hours — RUNNING vertex is likely stale
+    _STALE_RUNNING_AGE_S = 30 * 60  # 30 min — RUNNING vertex is likely stale
 
     def _mark_stale_running_vertices(self) -> int:
         """Mark RUNNING TASK_REF vertices as FAILED if older than threshold.

@@ -50,6 +50,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.jervis.ui.SafeMarkdown
+import com.mikepenz.markdown.m3.markdownColor
+import com.mikepenz.markdown.m3.markdownTypography
 import com.jervis.dto.graph.GraphEdgeDto
 import com.jervis.dto.graph.GraphVertexDto
 import com.jervis.dto.graph.TaskGraphDto
@@ -453,14 +456,21 @@ private fun ExpandableTextSection(
             }
         }
         AnimatedVisibility(visible = expanded) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            SafeMarkdown(
+                content = text,
+                colors = markdownColor(
+                    text = MaterialTheme.colorScheme.onSurfaceVariant,
+                    codeBackground = MaterialTheme.colorScheme.surface,
+                ),
+                typography = markdownTypography(
+                    text = MaterialTheme.typography.bodySmall,
+                    code = MaterialTheme.typography.bodySmall,
+                ),
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
                     .padding(6.dp),
+                fallbackStyle = MaterialTheme.typography.bodySmall,
             )
         }
     }
