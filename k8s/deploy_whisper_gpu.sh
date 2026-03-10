@@ -102,7 +102,7 @@ Environment=WHISPER_DEFAULT_MODEL=medium
 Environment=WHISPER_REST_PORT=8786
 Environment=WHISPER_REST_HOST=0.0.0.0
 Environment=WHISPER_REST_WORKERS=1
-Environment=ROUTER_URL=http://jervis-router.lan.mazlusek.com
+Environment=ROUTER_URL=http://ollama-router.lan.mazlusek.com
 $HF_TOKEN_LINE
 
 [Install]

@@ -82,24 +82,28 @@ _diarization_available = False
 
 
 def _load_diarization_pipeline():
-    """Try to load pyannote speaker diarization pipeline. Requires HF_TOKEN."""
+    """Try to load pyannote speaker diarization pipeline. Requires HF_TOKEN.
+
+    Always runs on CPU — P40 (Pascal, compute capability 6.1) lacks CUDA kernel
+    support for pyannote's neural network operations. Whisper uses CTranslate2
+    which has its own Pascal-compatible CUDA kernels, but PyTorch (used by pyannote)
+    ships without Pascal support in modern wheels.
+    """
     global _diarization_pipeline, _diarization_available
     if not HF_TOKEN:
         print("HF_TOKEN not set — speaker diarization disabled", flush=True)
         return
     try:
         from pyannote.audio import Pipeline
-        print("Loading pyannote speaker diarization pipeline...", flush=True)
+        import torch
+        print("Loading pyannote speaker diarization pipeline (CPU mode)...", flush=True)
         _diarization_pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
             token=HF_TOKEN,
         )
-        if DEVICE == "cuda":
-            import torch
-            _diarization_pipeline.to(torch.device("cuda"))
-            print("Diarization pipeline loaded on CUDA", flush=True)
-        else:
-            print("Diarization pipeline loaded on CPU", flush=True)
+        # Force CPU — P40 Pascal lacks CUDA kernels for PyTorch ops used by pyannote
+        _diarization_pipeline.to(torch.device("cpu"))
+        print("Diarization pipeline loaded on CPU (Pascal GPU not supported for pyannote)", flush=True)
         _diarization_available = True
     except Exception as e:
         print(f"Failed to load diarization pipeline: {e}", flush=True)
@@ -160,16 +164,16 @@ def _acquire_gpu():
 
 
 def _release_gpu():
-    """Release GPU VRAM: unload whisper model and diarization pipeline."""
-    global _model_cache, _gpu_loaded, _diarization_pipeline, _diarization_available
+    """Release GPU VRAM: unload whisper model only.
+
+    Diarization pipeline runs on CPU — no need to unload it.
+    """
+    global _model_cache, _gpu_loaded
     with _model_lock:
         if _model_cache:
             print(f"Unloading whisper model(s) from GPU: {list(_model_cache.keys())}", flush=True)
             _model_cache.clear()
-        if _diarization_pipeline is not None:
-            print("Unloading diarization pipeline from GPU", flush=True)
-            _diarization_pipeline = None
-            _diarization_available = False
+        # Note: diarization pipeline runs on CPU, keep it loaded
         _gpu_loaded = False
     # Force CUDA memory cleanup
     if DEVICE == "cuda":
