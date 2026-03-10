@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 
@@ -38,6 +38,8 @@ _FLUSH_INTERVAL_S = 30  # Periodic DB flush interval
 _CLEANUP_INTERVAL_S = 600  # Memory map cleanup every 10 min
 _KEEP_CHAT_VERTICES = 5  # Keep last N chat exchanges
 _KEEP_TASK_VERTICES = 5  # Keep last N completed/failed task refs
+_MAX_COMPLETED_AGE_S = 3600  # Remove completed vertices older than 1 hour
+_MIN_KEEP_VERTICES = 2  # Always keep at least N newest per category
 
 
 class AgentStore:
@@ -544,6 +546,26 @@ class AgentStore:
         )
         for vid, _ in task_refs[:_KEEP_TASK_VERTICES]:
             keep_ids.add(vid)
+
+        # Time-based: remove old completed vertices even if within count limit
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=_MAX_COMPLETED_AGE_S)).isoformat()
+
+        def _time_prune(kept_vids: list[str]) -> None:
+            """Remove vertices older than cutoff, keeping at least _MIN_KEEP_VERTICES."""
+            still_kept = sum(1 for vid in kept_vids if vid in keep_ids)
+            for vid in kept_vids:
+                if vid not in keep_ids:
+                    continue
+                v = graph.vertices.get(vid)
+                if not v or v.status in self._ACTIVE_STATUSES:
+                    continue
+                completed = v.completed_at or v.started_at or ""
+                if completed and completed < cutoff and still_kept > _MIN_KEEP_VERTICES:
+                    keep_ids.discard(vid)
+                    still_kept -= 1
+
+        _time_prune([vid for vid, _ in chats[:_KEEP_CHAT_VERTICES]])
+        _time_prune([vid for vid, _ in task_refs[:_KEEP_TASK_VERTICES]])
 
         # Always keep root, CLIENT, GROUP, and PROJECT vertices (structural hierarchy)
         if graph.root_vertex_id:

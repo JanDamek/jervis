@@ -33,4 +33,7 @@ interface IUserTaskService {
         additionalInput: String?,
         attachments: List<AttachmentDto> = emptyList(),
     ): UserTaskDto
+
+    /** Respond to a task inline (from chat "Reagovat" button). Bypasses chat pipeline. */
+    suspend fun respondToTask(taskId: String, response: String)
 }

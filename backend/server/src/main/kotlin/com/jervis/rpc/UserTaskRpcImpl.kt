@@ -200,4 +200,34 @@ class UserTaskRpcImpl(
 
         return task.toUserTaskDto()
     }
+
+    override suspend fun respondToTask(taskId: String, response: String) {
+        val task = taskRepository.getById(TaskId.fromString(taskId))
+            ?: throw IllegalArgumentException("Task not found: $taskId")
+
+        // Append response to task content, re-queue for processing
+        val updated = task.copy(
+            state = TaskStateEnum.INDEXING,
+            content = "${task.content}\n\n[User response]: $response",
+            pendingUserQuestion = null,
+        )
+        taskRepository.save(updated)
+
+        // Record in conversation history
+        val messageSequence = chatMessageRepository.countByConversationId(task.id.value) + 1
+        val userMessage = com.jervis.entity.ChatMessageDocument(
+            conversationId = task.id.value,
+            correlationId = task.correlationId,
+            role = com.jervis.entity.MessageRole.USER,
+            content = response,
+            sequence = messageSequence,
+            timestamp = Instant.now(),
+        )
+        chatMessageRepository.save(userMessage)
+
+        logger.info { "TASK_INLINE_RESPONSE | taskId=$taskId | state=INDEXING" }
+
+        // Notify client that task state changed
+        notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
+    }
 }

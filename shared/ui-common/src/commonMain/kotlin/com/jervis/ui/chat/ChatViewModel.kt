@@ -229,8 +229,8 @@ class ChatViewModel(
 
     /**
      * Send reply to a background task result directly (inline from the bubble).
+     * Bypasses chat pipeline — calls server directly via kRPC respondToTask.
      */
-    @OptIn(ExperimentalUuidApi::class)
     fun sendReplyToTask(taskId: String, text: String) {
         if (_isLoading.value) return
         val trimmed = text.trim()
@@ -238,35 +238,16 @@ class ChatViewModel(
 
         _isLoading.value = true
 
-        val clientId = selectedClientId.value
-        val projectId = selectedProjectId.value
-        val groupId = selectedGroupId.value
-
-        val optimisticMsg = ChatMessage(
-            from = ChatMessage.Sender.Me,
-            text = trimmed,
-            contextId = projectId,
-            messageType = ChatMessage.MessageType.USER_MESSAGE,
-        )
-        _chatMessages.value = _chatMessages.value + optimisticMsg
-
         scope.launch {
             try {
-                repository.chat.sendMessage(
-                    text = trimmed,
-                    clientMessageId = Uuid.random().toString(),
-                    activeClientId = clientId,
-                    activeProjectId = projectId,
-                    activeGroupId = groupId,
-                    contextTaskId = taskId,
-                )
-                val progressMsg = ChatMessage(
+                repository.userTasks.respondToTask(taskId, trimmed)
+                // Show brief confirmation — NOT a regular "Já" chat message
+                val confirmMsg = ChatMessage(
                     from = ChatMessage.Sender.Assistant,
-                    text = "Zpracovávám...",
-                    contextId = projectId,
-                    messageType = ChatMessage.MessageType.PROGRESS,
+                    text = "Odpověď zaznamenána, úkol bude znovu zpracován.",
+                    messageType = ChatMessage.MessageType.FINAL,
                 )
-                _chatMessages.value = _chatMessages.value + progressMsg
+                _chatMessages.value = _chatMessages.value + confirmMsg
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 onError("Chyba odeslání odpovědi: ${e.message}")
