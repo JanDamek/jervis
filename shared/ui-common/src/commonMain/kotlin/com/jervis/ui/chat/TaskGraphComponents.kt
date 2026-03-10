@@ -284,6 +284,14 @@ private fun VertexCard(
     var expanded by remember { mutableStateOf(false) }
     val indentDp = (depthIndent * 16).dp
 
+    // Compute sub-graph ID for task_ref vertices (used for header link)
+    val subGraphId = when {
+        vertex.localContext.startsWith("tg-") -> vertex.localContext
+        vertex.vertexType == "task_ref" && vertex.inputRequest.isNotBlank() -> vertex.inputRequest
+        else -> null
+    }
+    val hasSubGraph = subGraphId != null && onOpenSubGraph != null
+
     Card(
         colors = CardDefaults.cardColors(
             containerColor = vertexContainerColor(vertex.status),
@@ -294,9 +302,9 @@ private fun VertexCard(
             .padding(start = indentDp),
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
-            // Header: click entire row to expand/collapse
+            // Header row
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -306,23 +314,41 @@ private fun VertexCard(
                     modifier = Modifier.size(14.dp),
                     tint = statusColor(vertex.status),
                 )
+                // Title: task_ref with sub-graph → click opens thinking map; others → expand/collapse
                 Text(
                     text = vertex.title.ifBlank { vertex.vertexType },
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+                    color = if (hasSubGraph) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f).clickable {
+                        if (hasSubGraph) {
+                            onOpenSubGraph!!(subGraphId!!)
+                        } else {
+                            expanded = !expanded
+                        }
+                    },
                 )
+                // Sub-graph icon for task_ref (always visible, clickable)
+                if (hasSubGraph) {
+                    Icon(
+                        Icons.Default.AccountTree,
+                        contentDescription = "Myšlenková mapa",
+                        modifier = Modifier.size(14.dp).clickable { onOpenSubGraph!!(subGraphId!!) },
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 // Status badge
                 Text(
                     text = statusLabel(vertex.status),
                     style = MaterialTheme.typography.labelSmall,
                     color = statusColor(vertex.status),
                 )
+                // Expand/collapse arrow
                 Icon(
                     if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = null,
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(14.dp).clickable { expanded = !expanded },
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
@@ -394,37 +420,8 @@ private fun VertexCard(
                         ExpandableTextSection("Plný výsledek", vertex.result)
                     }
 
-                    // Sub-graph link — clickable for task_ref with thinking map
-                    // localContext has tg- prefix (graph ID), or fall back to task ID lookup
-                    val subGraphId = when {
-                        vertex.localContext.startsWith("tg-") -> vertex.localContext
-                        vertex.vertexType == "task_ref" && vertex.inputRequest.isNotBlank() -> vertex.inputRequest
-                        else -> null
-                    }
-                    if (subGraphId != null && onOpenSubGraph != null) {
-                        Row(
-                            modifier = Modifier.padding(top = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            androidx.compose.material3.TextButton(
-                                onClick = { onOpenSubGraph(subGraphId) },
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                modifier = Modifier.height(28.dp),
-                            ) {
-                                Icon(
-                                    Icons.Default.AccountTree,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp),
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    "Zobrazit myšlenkovou mapu",
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            }
-                        }
-                    } else if (vertex.localContext.isNotBlank() && vertex.vertexType != "task_ref") {
+                    // Local context (non-task_ref only; task_ref link is on header)
+                    if (vertex.localContext.isNotBlank() && vertex.vertexType != "task_ref") {
                         ExpandableTextSection("Lokální kontext", vertex.localContext)
                     }
 
@@ -711,6 +708,18 @@ private fun edgeTypeLabel(type: String): String = when (type) {
     else -> error("Unknown edge type: $type")
 }
 
+/** Sort priority: lower = shown first. Running → pending → completed → failed. */
+private fun statusSortPriority(status: String): Int = when (status) {
+    "running" -> 0
+    "ready" -> 1
+    "pending" -> 2
+    "blocked" -> 3
+    "completed" -> 4
+    "failed" -> 5
+    "cancelled", "skipped" -> 6
+    else -> 7
+}
+
 private fun formatTokens(count: Int): String {
     return if (count >= 1000) "${count / 1000}k" else count.toString()
 }
@@ -816,7 +825,9 @@ private fun buildTreeOrder(
 
     fun walk(parentId: String) {
         val children = byParent[parentId] ?: return
-        for (child in children.sortedByDescending { it.startedAt ?: it.completedAt ?: "0" }) {
+        // Sort: running first, then pending/ready, then completed/failed (newest first within each group)
+        for (child in children.sortedWith(compareBy<GraphVertexDto> { statusSortPriority(it.status) }
+            .thenByDescending { it.startedAt ?: it.completedAt ?: "0" })) {
             if (child.id in visited) continue
             visited.add(child.id)
             result.add(child)
