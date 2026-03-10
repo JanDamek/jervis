@@ -226,9 +226,11 @@ def run_diarization(audio_path: str, request_id: str = "") -> list[dict] | None:
     try:
         print(f"[{request_id}] Running speaker diarization...", flush=True)
         start = time.time()
-        diarization = _diarization_pipeline(audio_path)
+        result = _diarization_pipeline(audio_path)
+        # pyannote 4.x returns DiarizeOutput dataclass; 3.x returns Annotation directly
+        annotation = getattr(result, "speaker_diarization", result)
         turns = []
-        for turn, _, speaker in diarization.itertracks(yield_label=True):
+        for turn, _, speaker in annotation.itertracks(yield_label=True):
             turns.append({
                 "start": round(turn.start, 3),
                 "end": round(turn.end, 3),
