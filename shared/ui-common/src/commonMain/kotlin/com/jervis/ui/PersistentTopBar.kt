@@ -282,7 +282,7 @@ private fun MenuDropdown(
 
 /**
  * Compact client/project selector — shows "ClientName / ProjectName" as clickable text
- * that opens a dropdown.
+ * that opens a dropdown with search and sorted items (selected first).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -299,6 +299,12 @@ private fun ClientProjectCompactSelector(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    // Reset search when dropdown closes
+    if (!expanded && searchQuery.isNotEmpty()) {
+        searchQuery = ""
+    }
 
     val clientName = clients.find { it.id == selectedClientId }?.name
     val projectName = when {
@@ -342,28 +348,57 @@ private fun ClientProjectCompactSelector(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
-            // Clients section
-            Text(
-                text = "Klient",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            // Search field
+            androidx.compose.material3.OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Hledat...", style = MaterialTheme.typography.bodySmall) },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                textStyle = MaterialTheme.typography.bodySmall,
             )
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = "Global",
-                        fontWeight = if (selectedClientId == "__global__") {
-                            androidx.compose.ui.text.font.FontWeight.Bold
-                        } else null,
-                    )
-                },
-                onClick = {
-                    onClientSelected("__global__")
-                    // Don't close — let user pick project too
-                },
-            )
-            clients.forEach { client ->
+
+            val query = searchQuery.trim().lowercase()
+
+            // --- Clients section ---
+            // Sort: selected first, then alphabetical. Filter by search.
+            val sortedClients = clients
+                .filter { query.isEmpty() || it.name.lowercase().contains(query) }
+                .sortedWith(compareByDescending<ClientDto> { it.id == selectedClientId }.thenBy { it.name })
+
+            if (query.isEmpty() || "global".contains(query)) {
+                Text(
+                    text = "Klient",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "Global",
+                            fontWeight = if (selectedClientId == "__global__") {
+                                androidx.compose.ui.text.font.FontWeight.Bold
+                            } else null,
+                        )
+                    },
+                    onClick = {
+                        onClientSelected("__global__")
+                    },
+                )
+            } else if (sortedClients.isNotEmpty()) {
+                Text(
+                    text = "Klient",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+
+            sortedClients.forEach { client ->
                 DropdownMenuItem(
                     text = {
                         Text(
@@ -375,39 +410,55 @@ private fun ClientProjectCompactSelector(
                     },
                     onClick = {
                         onClientSelected(client.id)
-                        // Don't close — let user pick project too
                     },
                 )
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            // Projects section
-            Text(
-                text = "Projekt / Skupina",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
+            // --- Projects / Groups section ---
+            val ungroupedProjects = projects
+                .filter { it.groupId == null }
+                .filter { query.isEmpty() || it.name.lowercase().contains(query) }
+                .sortedWith(compareByDescending<ProjectDto> { it.id == selectedProjectId }.thenBy { it.name })
 
-            // "(Vše)" option — reset project selection
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = "(Vše)",
-                        fontWeight = if (selectedProjectId == null && selectedGroupId == null) {
-                            androidx.compose.ui.text.font.FontWeight.Bold
-                        } else null,
-                    )
-                },
-                onClick = {
-                    onProjectSelected(null)
-                    expanded = false
-                },
-            )
+            val filteredGroups = projectGroups
+                .filter { group ->
+                    if (query.isEmpty()) return@filter true
+                    val groupMatch = group.name.lowercase().contains(query)
+                    val childMatch = projects.any { it.groupId == group.id && it.name.lowercase().contains(query) }
+                    groupMatch || childMatch
+                }
+                .sortedWith(compareByDescending<ProjectGroupDto> { it.id == selectedGroupId }.thenBy { it.name })
+
+            if (ungroupedProjects.isNotEmpty() || filteredGroups.isNotEmpty() || query.isEmpty()) {
+                Text(
+                    text = "Projekt / Skupina",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+
+            // "(Vše)" option
+            if (query.isEmpty()) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "(Vše)",
+                            fontWeight = if (selectedProjectId == null && selectedGroupId == null) {
+                                androidx.compose.ui.text.font.FontWeight.Bold
+                            } else null,
+                        )
+                    },
+                    onClick = {
+                        onProjectSelected(null)
+                        expanded = false
+                    },
+                )
+            }
 
             // Ungrouped projects
-            val ungroupedProjects = projects.filter { it.groupId == null }
             ungroupedProjects.forEach { project ->
                 DropdownMenuItem(
                     text = {
@@ -426,12 +477,12 @@ private fun ClientProjectCompactSelector(
             }
 
             // Separator if both exist
-            if (ungroupedProjects.isNotEmpty() && projectGroups.isNotEmpty()) {
+            if (ungroupedProjects.isNotEmpty() && filteredGroups.isNotEmpty()) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             }
 
             // Project groups with their projects
-            projectGroups.forEach { group ->
+            filteredGroups.forEach { group ->
                 DropdownMenuItem(
                     text = {
                         Text(
@@ -446,8 +497,11 @@ private fun ClientProjectCompactSelector(
                         expanded = false
                     },
                 )
-                // Show projects within this group (indented)
-                val groupProjects = projects.filter { it.groupId == group.id }
+                // Show projects within this group (indented), filtered by search
+                val groupProjects = projects
+                    .filter { it.groupId == group.id }
+                    .filter { query.isEmpty() || it.name.lowercase().contains(query) }
+                    .sortedWith(compareByDescending<ProjectDto> { it.id == selectedProjectId }.thenBy { it.name })
                 groupProjects.forEach { project ->
                     DropdownMenuItem(
                         text = {
