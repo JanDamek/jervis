@@ -498,6 +498,92 @@ fun Routing.installInternalEnvironmentApi(
         }
     }
 
+    // --- Discover K8s namespace → create environment ---
+    post("/internal/environments/discover") {
+        try {
+            val body = call.receive<DiscoverNamespaceRequest>()
+            val tier = body.tier?.let { EnvironmentTier.valueOf(it.uppercase()) } ?: EnvironmentTier.DEV
+            val env = environmentK8sService.discoverFromNamespace(
+                namespace = body.namespace,
+                clientId = ClientId(ObjectId(body.clientId)),
+                name = body.name,
+                tier = tier,
+            )
+            val json = internalJson.encodeToString(
+                com.jervis.dto.environment.EnvironmentDto.serializer(),
+                env.toDto(),
+            )
+            call.respondText(json, ContentType.Application.Json, HttpStatusCode.Created)
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to discover namespace" }
+            call.respondText(
+                "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
+    // --- Replicate environment (clone + deploy in one step) ---
+    post("/internal/environments/{id}/replicate") {
+        try {
+            val id = call.parameters["id"] ?: return@post call.respondText(
+                "{\"error\":\"Missing id\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
+            )
+            val body = call.receive<ReplicateEnvironmentRequest>()
+            val newNamespace = body.newNamespace
+                ?: body.newName.lowercase().replace(Regex("[^a-z0-9-]"), "-")
+            val newTier = body.newTier?.let { EnvironmentTier.valueOf(it.uppercase()) }
+
+            // 1. Clone
+            val cloned = environmentService.cloneEnvironment(
+                sourceId = EnvironmentId(ObjectId(id)),
+                newName = body.newName,
+                newNamespace = newNamespace,
+                targetClientId = body.targetClientId?.let { ClientId(ObjectId(it)) },
+                newTier = newTier,
+            )
+
+            // 2. Deploy
+            val deployed = environmentK8sService.provisionEnvironment(cloned.id)
+
+            val json = internalJson.encodeToString(
+                com.jervis.dto.environment.EnvironmentDto.serializer(),
+                deployed.toDto(),
+            )
+            call.respondText(json, ContentType.Application.Json, HttpStatusCode.Created)
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to replicate environment" }
+            call.respondText(
+                "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
+    // --- Sync from K8s (K8s is source of truth) ---
+    post("/internal/environments/{id}/sync-from-k8s") {
+        try {
+            val id = call.parameters["id"] ?: return@post call.respondText(
+                "{\"error\":\"Missing id\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
+            )
+            val env = environmentK8sService.syncFromK8s(EnvironmentId(ObjectId(id)))
+            val json = internalJson.encodeToString(
+                com.jervis.dto.environment.EnvironmentDto.serializer(),
+                env.toDto(),
+            )
+            call.respondText(json, ContentType.Application.Json)
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to sync from K8s" }
+            call.respondText(
+                "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
     // --- Get component templates ---
     get("/internal/environments/templates") {
         try {
@@ -592,6 +678,22 @@ data class AddPropertyMappingRequest(
     val propertyName: String,
     val targetComponentId: String,
     val valueTemplate: String,
+)
+
+@Serializable
+data class DiscoverNamespaceRequest(
+    val namespace: String,
+    val clientId: String,
+    val name: String? = null,
+    val tier: String? = null,
+)
+
+@Serializable
+data class ReplicateEnvironmentRequest(
+    val newName: String,
+    val newNamespace: String? = null,
+    val newTier: String? = null,
+    val targetClientId: String? = null,
 )
 
 @Serializable

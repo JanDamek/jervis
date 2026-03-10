@@ -1,15 +1,20 @@
 package com.jervis.service.environment
 
+import com.jervis.common.types.ClientId
 import com.jervis.common.types.EnvironmentId
 import com.jervis.dto.environment.ComponentStatusDto
 import com.jervis.dto.environment.EnvironmentStateEnum
 import com.jervis.dto.environment.EnvironmentStatusDto
+import com.jervis.entity.ComponentState
 import com.jervis.entity.ComponentType
 import com.jervis.entity.EnvironmentComponent
 import com.jervis.entity.EnvironmentDocument
 import com.jervis.entity.EnvironmentState
+import com.jervis.entity.EnvironmentTier
 import com.jervis.entity.PortMapping
 import com.jervis.entity.PropertyMapping
+import io.fabric8.kubernetes.api.model.rbac.RoleBindingBuilder
+import io.fabric8.kubernetes.api.model.rbac.RoleBuilder
 import io.fabric8.kubernetes.api.model.ConfigMapBuilder
 import io.fabric8.kubernetes.api.model.ContainerPortBuilder
 import io.fabric8.kubernetes.api.model.EnvFromSourceBuilder
@@ -70,8 +75,9 @@ class EnvironmentK8sService(
         environmentService.updateState(environmentId, EnvironmentState.CREATING)
 
         try {
-            // 1. Create namespace
+            // 1. Create namespace + agent RBAC
             createNamespace(env.namespace)
+            ensureAgentRbac(env.namespace)
 
             // 2. Create shared PVC if any component needs persistent storage
             val hasStorage = env.components.any { comp ->
@@ -375,6 +381,67 @@ class EnvironmentK8sService(
                 logger.warn { "K8s: Namespace $namespace does not exist — auto-creating for environment sync" }
                 createNamespace(namespace)
             }
+        }
+    }
+
+    /**
+     * Ensure coding agent ServiceAccount has RBAC access to the given namespace.
+     * Creates a Role (full access) + RoleBinding (SA jervis-coding-agent from jervis ns).
+     * Idempotent via serverSideApply.
+     */
+    fun ensureAgentRbac(namespace: String) {
+        buildK8sClient().use { client ->
+            val roleName = "jervis-agent-role"
+            val bindingName = "jervis-agent-binding"
+
+            val role = RoleBuilder()
+                .withNewMetadata()
+                    .withName(roleName)
+                    .withNamespace(namespace)
+                    .addToLabels("managed-by", "jervis-server")
+                .endMetadata()
+                .addNewRule()
+                    .withApiGroups("", "apps", "batch")
+                    .withResources(
+                        "pods", "pods/log", "pods/exec",
+                        "deployments", "deployments/scale",
+                        "services", "configmaps", "secrets",
+                        "jobs", "statefulsets",
+                        "persistentvolumeclaims", "events",
+                    )
+                    .withVerbs("*")
+                .endRule()
+                .build()
+
+            client.rbac().roles()
+                .inNamespace(namespace)
+                .resource(role)
+                .serverSideApply()
+
+            val binding = RoleBindingBuilder()
+                .withNewMetadata()
+                    .withName(bindingName)
+                    .withNamespace(namespace)
+                    .addToLabels("managed-by", "jervis-server")
+                .endMetadata()
+                .withNewRoleRef()
+                    .withApiGroup("rbac.authorization.k8s.io")
+                    .withKind("Role")
+                    .withName(roleName)
+                .endRoleRef()
+                .addNewSubject()
+                    .withKind("ServiceAccount")
+                    .withName("jervis-coding-agent")
+                    .withNamespace("jervis")
+                .endSubject()
+                .build()
+
+            client.rbac().roleBindings()
+                .inNamespace(namespace)
+                .resource(binding)
+                .serverSideApply()
+
+            logger.info { "K8s: Ensured agent RBAC in namespace $namespace" }
         }
     }
 
@@ -708,6 +775,240 @@ class EnvironmentK8sService(
                 ready = false,
                 message = "Error: ${e.message}",
             )
+        }
+    }
+
+    /**
+     * Discover K8s namespace → create EnvironmentDocument from running resources.
+     * Reads deployments, services, and configmaps to populate components.
+     */
+    suspend fun discoverFromNamespace(
+        namespace: String,
+        clientId: ClientId,
+        name: String?,
+        tier: EnvironmentTier = EnvironmentTier.DEV,
+    ): EnvironmentDocument {
+        logger.info { "Discovering namespace: $namespace" }
+
+        val components = mutableListOf<EnvironmentComponent>()
+
+        buildK8sClient().use { client ->
+            // Check namespace exists
+            val ns = client.namespaces().withName(namespace).get()
+                ?: throw IllegalArgumentException("Namespace '$namespace' does not exist")
+
+            // Read deployments → components
+            val deployments = client.apps().deployments().inNamespace(namespace).list().items ?: emptyList()
+            for (dep in deployments) {
+                val depName = dep.metadata?.name ?: continue
+                val container = dep.spec?.template?.spec?.containers?.firstOrNull() ?: continue
+                val image = container.image ?: continue
+
+                val componentType = inferComponentType(image)
+                val ports = container.ports?.map { p ->
+                    PortMapping(
+                        containerPort = p.containerPort,
+                        name = p.name ?: "port-${p.containerPort}",
+                    )
+                } ?: emptyList()
+
+                // Read service for servicePort mapping
+                val svc = try {
+                    client.services().inNamespace(namespace).withName(depName).get()
+                } catch (_: Exception) { null }
+                val portsWithService = if (svc != null) {
+                    ports.map { pm ->
+                        val svcPort = svc.spec?.ports?.find { it.name == pm.name || it.targetPort?.intVal == pm.containerPort }
+                        pm.copy(servicePort = svcPort?.port)
+                    }
+                } else ports
+
+                // Read configmap for envVars
+                val envVars = mutableMapOf<String, String>()
+                try {
+                    val cm = client.configMaps().inNamespace(namespace).withName("$depName-config").get()
+                    if (cm?.data != null) {
+                        envVars.putAll(cm.data)
+                    }
+                } catch (_: Exception) {}
+
+                // Resource limits
+                val limits = container.resources?.limits
+                val cpuLimit = limits?.get("cpu")?.toString()
+                val memoryLimit = limits?.get("memory")?.toString()
+
+                // Volume mount path
+                val volumeMountPath = container.volumeMounts?.firstOrNull()?.mountPath
+
+                val componentId = depName.lowercase().replace(Regex("[^a-z0-9-]"), "-")
+                components.add(
+                    EnvironmentComponent(
+                        id = componentId,
+                        name = depName,
+                        type = componentType,
+                        image = image,
+                        ports = portsWithService,
+                        envVars = envVars,
+                        cpuLimit = cpuLimit,
+                        memoryLimit = memoryLimit,
+                        volumeMountPath = volumeMountPath,
+                        autoStart = true,
+                        startOrder = components.size * 10,
+                        componentState = ComponentState.RUNNING,
+                    ),
+                )
+            }
+        }
+
+        val envName = name ?: "env-$namespace"
+        val env = EnvironmentDocument(
+            clientId = clientId,
+            name = envName,
+            namespace = namespace,
+            tier = tier,
+            components = components,
+            state = EnvironmentState.RUNNING,
+        )
+        val saved = environmentService.saveEnvironment(env)
+
+        // Ensure agent RBAC
+        ensureAgentRbac(namespace)
+
+        logger.info { "Discovered namespace $namespace: ${components.size} components → environment ${saved.id}" }
+        return saved
+    }
+
+    /**
+     * Sync K8s state back to Jervis DB (K8s is source of truth).
+     * Reads current K8s resources and updates environment components.
+     */
+    suspend fun syncFromK8s(environmentId: EnvironmentId): EnvironmentDocument {
+        val env = environmentService.getEnvironmentById(environmentId)
+        logger.info { "Syncing from K8s: ${env.name} (ns=${env.namespace})" }
+
+        val updatedComponents = mutableListOf<EnvironmentComponent>()
+        val existingById = env.components.associateBy { it.name }
+
+        buildK8sClient().use { client ->
+            val ns = client.namespaces().withName(env.namespace).get()
+                ?: throw IllegalStateException("Namespace '${env.namespace}' does not exist")
+
+            val deployments = client.apps().deployments().inNamespace(env.namespace).list().items ?: emptyList()
+
+            for (dep in deployments) {
+                val depName = dep.metadata?.name ?: continue
+                val container = dep.spec?.template?.spec?.containers?.firstOrNull() ?: continue
+                val image = container.image ?: continue
+
+                val existing = existingById[depName]
+                val componentType = existing?.type ?: inferComponentType(image)
+
+                val ports = container.ports?.map { p ->
+                    PortMapping(
+                        containerPort = p.containerPort,
+                        name = p.name ?: "port-${p.containerPort}",
+                    )
+                } ?: emptyList()
+
+                // Read service for servicePort
+                val svc = try {
+                    client.services().inNamespace(env.namespace).withName(depName).get()
+                } catch (_: Exception) { null }
+                val portsWithService = if (svc != null) {
+                    ports.map { pm ->
+                        val svcPort = svc.spec?.ports?.find { it.name == pm.name || it.targetPort?.intVal == pm.containerPort }
+                        pm.copy(servicePort = svcPort?.port)
+                    }
+                } else ports
+
+                // Read configmap for envVars
+                val envVars = mutableMapOf<String, String>()
+                try {
+                    val cm = client.configMaps().inNamespace(env.namespace).withName("$depName-config").get()
+                    if (cm?.data != null) {
+                        envVars.putAll(cm.data)
+                    }
+                } catch (_: Exception) {}
+
+                val limits = container.resources?.limits
+                val cpuLimit = limits?.get("cpu")?.toString()
+                val memoryLimit = limits?.get("memory")?.toString()
+                val volumeMountPath = container.volumeMounts?.firstOrNull()?.mountPath
+
+                val replicas = dep.status?.availableReplicas ?: 0
+                val componentState = if (replicas > 0) ComponentState.RUNNING else ComponentState.STOPPED
+
+                val componentId = existing?.id ?: depName.lowercase().replace(Regex("[^a-z0-9-]"), "-")
+                updatedComponents.add(
+                    EnvironmentComponent(
+                        id = componentId,
+                        name = depName,
+                        type = componentType,
+                        image = image,
+                        ports = portsWithService,
+                        envVars = envVars,
+                        cpuLimit = cpuLimit,
+                        memoryLimit = memoryLimit,
+                        volumeMountPath = volumeMountPath,
+                        autoStart = existing?.autoStart ?: true,
+                        startOrder = existing?.startOrder ?: (updatedComponents.size * 10),
+                        componentState = componentState,
+                        sourceRepo = existing?.sourceRepo,
+                        sourceBranch = existing?.sourceBranch,
+                        dockerfilePath = existing?.dockerfilePath,
+                    ),
+                )
+            }
+
+            // Mark components not found in K8s as STOPPED
+            for (comp in env.components) {
+                if (updatedComponents.none { it.name == comp.name }) {
+                    updatedComponents.add(comp.copy(componentState = ComponentState.STOPPED))
+                }
+            }
+        }
+
+        // Re-resolve property mappings
+        val resolvedMappings = env.propertyMappings.map { mapping ->
+            val targetComponent = updatedComponents.find { it.id == mapping.targetComponentId }
+            if (targetComponent != null) {
+                val host = "${targetComponent.name}.${env.namespace}.svc.cluster.local"
+                val port = targetComponent.ports.firstOrNull()?.let { it.servicePort ?: it.containerPort }
+                var resolved = mapping.valueTemplate
+                    .replace("{host}", host)
+                    .replace("{port}", port?.toString() ?: "")
+                    .replace("{name}", targetComponent.name)
+                    .replace("{namespace}", env.namespace)
+                resolved = Regex("\\{env:([^}]+)}").replace(resolved) { matchResult ->
+                    val varName = matchResult.groupValues[1]
+                    targetComponent.envVars[varName] ?: matchResult.value
+                }
+                mapping.copy(resolvedValue = resolved)
+            } else mapping
+        }
+
+        val updated = env.copy(
+            components = updatedComponents,
+            propertyMappings = resolvedMappings,
+        )
+        val saved = environmentService.saveEnvironment(updated)
+        logger.info { "Synced from K8s: ${env.name} — ${updatedComponents.size} components" }
+        return saved
+    }
+
+    private fun inferComponentType(image: String): ComponentType {
+        val lower = image.lowercase()
+        return when {
+            "postgres" in lower -> ComponentType.POSTGRESQL
+            "mongo" in lower -> ComponentType.MONGODB
+            "redis" in lower -> ComponentType.REDIS
+            "rabbit" in lower -> ComponentType.RABBITMQ
+            "kafka" in lower -> ComponentType.KAFKA
+            "elasticsearch" in lower || "elastic" in lower -> ComponentType.ELASTICSEARCH
+            "oracle" in lower -> ComponentType.ORACLE
+            "mysql" in lower || "mariadb" in lower -> ComponentType.MYSQL
+            "minio" in lower -> ComponentType.MINIO
+            else -> ComponentType.CUSTOM_INFRA
         }
     }
 

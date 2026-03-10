@@ -77,6 +77,7 @@ class JobRunner:
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         claude_token: str | None = None,
+        kube_namespaces: list[str] | None = None,
     ) -> dict:
         """Run a coding agent as a K8s Job and wait for completion.
 
@@ -128,6 +129,7 @@ class JobRunner:
             git_user_name=git_user_name,
             git_user_email=git_user_email,
             claude_token=claude_token,
+            kube_namespaces=kube_namespaces,
         )
 
         logger.info("Creating K8s Job: %s (agent=%s, task=%s, gpg=%s)", job_name, agent_type, task_id, gpg_key is not None)
@@ -347,6 +349,7 @@ class JobRunner:
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         claude_token: str | None = None,
+        kube_namespaces: list[str] | None = None,
     ) -> dict:
         """Dispatch a coding agent as a K8s Job and return immediately (non-blocking).
 
@@ -384,6 +387,7 @@ class JobRunner:
             git_user_name=git_user_name,
             git_user_email=git_user_email,
             claude_token=claude_token,
+            kube_namespaces=kube_namespaces,
         )
 
         logger.info("Dispatching K8s Job (async): %s (agent=%s, task=%s, gpg=%s)", job_name, agent_type, task_id, gpg_key is not None)
@@ -486,6 +490,7 @@ class JobRunner:
         git_user_name: str | None = None,
         git_user_email: str | None = None,
         claude_token: str | None = None,
+        kube_namespaces: list[str] | None = None,
     ) -> client.V1Job:
         """Build K8s Job manifest for a coding agent."""
         image = AGENT_IMAGES.get(agent_type)
@@ -547,6 +552,13 @@ class JobRunner:
         if effective_email:
             env_vars.append(client.V1EnvVar(name="GIT_USER_EMAIL", value=effective_email))
 
+        # K8s namespace access for coding agents (kubectl)
+        if kube_namespaces:
+            env_vars.append(client.V1EnvVar(
+                name="KUBE_NAMESPACES",
+                value=",".join(kube_namespaces),
+            ))
+
         return client.V1Job(
             metadata=client.V1ObjectMeta(
                 name=job_name,
@@ -570,6 +582,8 @@ class JobRunner:
                         }
                     ),
                     spec=client.V1PodSpec(
+                        service_account_name="jervis-coding-agent" if kube_namespaces else None,
+                        automount_service_account_token=True if kube_namespaces else None,
                         restart_policy="Never",
                         containers=[
                             client.V1Container(

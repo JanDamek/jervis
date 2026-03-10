@@ -252,9 +252,23 @@ class WorkspaceManager:
                         "- `scale_deployment(namespace, name, replicas)` – scale up/down (0-10)",
                         "- `restart_deployment(namespace, name)` – trigger rolling restart",
                         "- `get_namespace_status(namespace)` – overall namespace health",
+                        "- `environment_sync_from_k8s(environment_id)` – sync K8s state back to Jervis DB",
                         "",
                         "Use `environment_status` to check if infra is ready before starting your project.",
                         "Use `get_pod_logs` to diagnose runtime issues.",
+                    ]
+                )
+
+                # kubectl direct access instructions
+                claude_md_parts.extend(
+                    [
+                        "",
+                        "## kubectl Access",
+                        f"You have direct kubectl access to namespace: `{ns}`",
+                        "kubectl is pre-configured with a service account that has full access.",
+                        "- Only operate within assigned namespace(s).",
+                        "- After making K8s changes, call `environment_sync_from_k8s` MCP tool to update Jervis DB.",
+                        f"- Examples: `kubectl get pods -n {ns}`, `kubectl logs -n {ns} <pod>`, `kubectl apply -n {ns} -f <file>`",
                     ]
                 )
 

@@ -1688,6 +1688,113 @@ async def environment_auto_suggest_mappings(environment_id: str) -> str:
         )
 
 
+@mcp.tool
+async def environment_discover_namespace(
+    namespace: str,
+    client_id: str,
+    name: str = "",
+    tier: str = "DEV",
+) -> str:
+    """Discover existing K8s namespace and create a Jervis Environment from running resources.
+
+    Reads deployments, services, and configmaps to auto-populate environment components.
+    Use this to import an existing K8s namespace into Jervis.
+
+    Args:
+        namespace: K8s namespace to discover (must already exist)
+        client_id: Client ID to scope the environment
+        name: Optional human-readable name (defaults to env-{namespace})
+        tier: Environment tier — DEV, STAGING, PROD (default: DEV)
+    """
+    async with httpx.AsyncClient(timeout=60) as client:
+        payload = {"namespace": namespace, "clientId": client_id, "tier": tier}
+        if name:
+            payload["name"] = name
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/environments/discover",
+            json=payload,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+        comp_count = len(env.get("components", []))
+        return (
+            f"Discovered namespace '{namespace}' → environment '{env['name']}' (id={env['id']}).\n"
+            f"Found {comp_count} components. State: {env.get('state', '?')}.\n"
+            f"Agent RBAC configured for namespace."
+        )
+
+
+@mcp.tool
+async def environment_replicate(
+    environment_id: str,
+    new_name: str,
+    new_namespace: str = "",
+    new_tier: str = "",
+    target_client_id: str = "",
+) -> str:
+    """Clone an environment and deploy it to a new K8s namespace in one step.
+
+    Creates a copy of the environment with all components and property mappings,
+    then provisions the new K8s namespace and deploys infrastructure.
+
+    Args:
+        environment_id: Source environment ID to clone from
+        new_name: Name for the new environment
+        new_namespace: K8s namespace for the clone (defaults to sanitized new_name)
+        new_tier: Override tier (DEV/STAGING/PROD, defaults to source tier)
+        target_client_id: Optional different client ID for the clone
+    """
+    async with httpx.AsyncClient(timeout=120) as client:
+        payload: dict = {"newName": new_name}
+        if new_namespace:
+            payload["newNamespace"] = new_namespace
+        if new_tier:
+            payload["newTier"] = new_tier
+        if target_client_id:
+            payload["targetClientId"] = target_client_id
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/replicate",
+            json=payload,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+        comp_count = len(env.get("components", []))
+        return (
+            f"Replicated environment → '{env['name']}' (id={env['id']}).\n"
+            f"Namespace: {env.get('namespace')}, {comp_count} components deployed.\n"
+            f"State: {env.get('state', '?')}."
+        )
+
+
+@mcp.tool
+async def environment_sync_from_k8s(environment_id: str) -> str:
+    """Sync K8s state back to Jervis DB (K8s is source of truth).
+
+    Reads current K8s resources (deployments, services, configmaps) and updates
+    the Jervis environment to match. Use this after making kubectl changes to
+    ensure Jervis DB reflects the actual K8s state.
+
+    Args:
+        environment_id: The environment ID to sync
+    """
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/sync-from-k8s",
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+        comp_count = len(env.get("components", []))
+        running = sum(1 for c in env.get("components", []) if c.get("componentState") == "RUNNING")
+        return (
+            f"Synced from K8s: '{env['name']}' (ns={env.get('namespace')}).\n"
+            f"{comp_count} components total, {running} running.\n"
+            f"Jervis DB now matches K8s state."
+        )
+
+
 # ── Environment / K8s Tools ──────────────────────────────────────────────
 # These tools call the Kotlin backend's internal REST endpoints which perform
 # the actual fabric8 K8s operations. K8s credentials stay server-side.

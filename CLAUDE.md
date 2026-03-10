@@ -90,7 +90,7 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Environment services: `backend/server/.../service/environment/` (EnvironmentService, EnvironmentK8sService, ComponentDefaults)
 - Environment internal API: `backend/server/.../rpc/internal/InternalEnvironmentRouting.kt` (CRUD REST for MCP/orchestrator)
 - Cache invalidation API: `backend/server/.../rpc/internal/InternalCacheRouting.kt` (POST /internal/cache/invalidate, calls GuidelinesService.clearCache())
-- Environment MCP tools: `backend/service-mcp/app/main.py` (environment_list, _get, _create, _deploy, etc.)
+- Environment MCP tools: `backend/service-mcp/app/main.py` (environment_list, _get, _create, _deploy, _discover_namespace, _replicate, _sync_from_k8s, etc.)
 - Environment orchestrator tools: `backend/service-orchestrator/app/tools/definitions.py` (ENVIRONMENT_TOOLS, DEVOPS_AGENT_TOOLS)
 - KB document DTOs: `shared/common-dto/.../kb/KbDocumentDtos.kt`
 - KB document service: `shared/common-api/.../IKbDocumentService.kt`, `backend/server/.../rpc/KbDocumentRpcImpl.kt`

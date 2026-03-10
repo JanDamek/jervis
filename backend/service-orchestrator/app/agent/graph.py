@@ -88,16 +88,20 @@ def add_vertex(
     parent_id: str | None = None,
     input_request: str = "",
     client_id: str = "",
+    project_id: str = "",
 ) -> GraphVertex:
     """Add a new vertex to the graph. Returns the created vertex."""
     depth = 0
     effective_client_id = client_id
+    effective_project_id = project_id
     if parent_id and parent_id in graph.vertices:
         parent = graph.vertices[parent_id]
         depth = parent.depth + 1
-        # Inherit client_id from parent if not explicitly set
+        # Inherit client_id/project_id from parent if not explicitly set
         if not effective_client_id and parent.client_id:
             effective_client_id = parent.client_id
+        if not effective_project_id and parent.project_id:
+            effective_project_id = parent.project_id
 
     vertex = GraphVertex(
         id=f"v-{uuid.uuid4().hex[:12]}",
@@ -109,6 +113,7 @@ def add_vertex(
         depth=depth,
         input_request=input_request or description,
         client_id=effective_client_id,
+        project_id=effective_project_id,
     )
     graph.vertices[vertex.id] = vertex
     return vertex
@@ -739,6 +744,7 @@ def add_request_vertex(
         vertex_type=VertexType.REQUEST,
         status=status,
         client_id=client_id,
+        project_id=project_id or "",
         result=response,
         result_summary=response_summary or response[:200],
         started_at=now,
@@ -840,6 +846,7 @@ def add_task_ref_vertex(
         vertex_type=VertexType.TASK_REF,
         status=status,
         client_id=client_id,
+        project_id=project_id or "",
         input_request=task_id,
         local_context=sub_graph_id,
         result_summary=result_summary,
@@ -883,6 +890,7 @@ def add_incoming_vertex(
         vertex_type=VertexType.INCOMING,
         status=VertexStatus.READY,
         client_id=client_id,
+        project_id=project_id or "",
         input_request=task_id,
         local_context=prepared_context,
         parent_id=parent_id,
@@ -900,6 +908,7 @@ def create_ask_user_vertex(
     context: str = "",
     parent_vertex_id: str | None = None,
     client_id: str = "",
+    project_id: str = "",
 ) -> GraphVertex:
     """Create an ASK_USER vertex (BLOCKED — waiting for user input).
 
@@ -908,12 +917,15 @@ def create_ask_user_vertex(
     """
     depth = 1
     effective_client_id = client_id
+    effective_project_id = project_id
     if parent_vertex_id and parent_vertex_id in graph.vertices:
         parent = graph.vertices[parent_vertex_id]
         depth = parent.depth + 1
-        # Inherit client_id from parent if not explicitly set
+        # Inherit client_id/project_id from parent if not explicitly set
         if not effective_client_id and parent.client_id:
             effective_client_id = parent.client_id
+        if not effective_project_id and parent.project_id:
+            effective_project_id = parent.project_id
 
     vertex = GraphVertex(
         id=f"v-ask-{uuid.uuid4().hex[:12]}",
@@ -926,6 +938,7 @@ def create_ask_user_vertex(
         parent_id=parent_vertex_id,
         depth=depth,
         client_id=effective_client_id,
+        project_id=effective_project_id,
         started_at=datetime.now(timezone.utc).isoformat(),
     )
     graph.vertices[vertex.id] = vertex

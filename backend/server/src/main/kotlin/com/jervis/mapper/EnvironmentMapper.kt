@@ -61,6 +61,7 @@ fun EnvironmentDocument.toAgentContext(): Map<String, Any?> {
     val projectComponents = components.filter { it.type == ComponentType.PROJECT }
 
     return mapOf(
+        "id" to id.toString(),
         "namespace" to namespace,
         "tier" to tier.name,
         "state" to state.name,
@@ -99,6 +100,7 @@ fun EnvironmentDocument.toAgentContext(): Map<String, Any?> {
  * Convert environment to JsonObject for passing to Python orchestrator via HTTP.
  */
 fun EnvironmentDocument.toAgentContextJson(): JsonObject = buildJsonObject {
+    put("id", id.toString())
     put("namespace", namespace)
     put("tier", tier.name)
     put("state", state.name)

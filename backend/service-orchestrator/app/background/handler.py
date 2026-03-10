@@ -260,6 +260,11 @@ async def _run_coding_agent_background(
             except Exception:
                 pass
 
+    # 5b. Resolve K8s namespace(s) from environment context for kubectl access
+    kube_namespaces: list[str] | None = None
+    if request.environment and request.environment.get("namespace"):
+        kube_namespaces = [request.environment["namespace"]]
+
     # 6. Dispatch K8s Job (returns immediately)
     dispatch_info = await job_runner.dispatch_coding_agent(
         task_id=request.task_id,
@@ -270,6 +275,7 @@ async def _run_coding_agent_background(
         gpg_key_id=request.rules.git_gpg_key_id if request.rules and not is_review else None,
         git_user_name=request.rules.git_author_name if request.rules and not is_review else None,
         git_user_email=request.rules.git_author_email if request.rules and not is_review else None,
+        kube_namespaces=kube_namespaces,
     )
     job_name = dispatch_info["job_name"]
 

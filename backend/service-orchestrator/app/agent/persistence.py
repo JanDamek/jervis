@@ -312,10 +312,11 @@ class AgentStore:
             self._memory_map = AgentGraph(**doc)
             logger.info("Memory map loaded from DB (id=%s, vertices=%d)",
                         self._memory_map.id, len(self._memory_map.vertices))
-            # Immediate cleanup on load — archive removed vertices
+            # Immediate cleanup on load — persist to KB + archive removed vertices
             removed = self.cleanup_memory_map()
             if removed > 0:
                 if hasattr(self, "_pending_archive") and self._pending_archive:
+                    await self._persist_to_kb(self._pending_archive)
                     await self._archive_vertices(self._pending_archive)
                     self._pending_archive = []
                 self._dirty.add(self._memory_map.task_id)
@@ -603,6 +604,64 @@ class AgentStore:
         )
         return len(to_remove)
 
+    async def _persist_to_kb(self, vertices: list[dict]) -> None:
+        """Persist completed task/request summaries to KB (fire-and-forget).
+
+        Writes meaningful summaries to the KB scoped by client_id/project_id,
+        so Jervis can "remember" what happened even after memory map cleanup.
+        """
+        import httpx
+
+        kb_url = settings.knowledgebase_write_url or settings.knowledgebase_url
+        if not kb_url:
+            return
+
+        persisted = 0
+        for v in vertices:
+            if v.get("vertex_type") not in ("task_ref", "request"):
+                continue
+            summary = v.get("result_summary") or ""
+            client_id = v.get("client_id", "")
+            if not summary or len(summary) < 50 or not client_id:
+                continue
+
+            # Resolve project_id: direct field or walk parent hierarchy
+            project_id = v.get("project_id") or ""
+
+            title = v.get("title", "Task")
+            vtype = v.get("vertex_type", "")
+            content = (
+                f"# {title}\n\n"
+                f"Type: {vtype}\n"
+                f"Status: {v.get('status')}\n"
+                f"Completed: {v.get('completed_at')}\n\n"
+                f"{summary}"
+            )
+            payload = {
+                "clientId": client_id,
+                "projectId": project_id or None,
+                "sourceUrn": f"agent://memory-map/{v.get('id')}",
+                "kind": "task_summary",
+                "content": content,
+                "metadata": {
+                    "vertex_type": vtype,
+                    "archived_from": "memory_map",
+                },
+            }
+            try:
+                async with httpx.AsyncClient(timeout=10) as http:
+                    await http.post(
+                        f"{kb_url}/api/v1/ingest",
+                        json=payload,
+                        headers={"X-Ollama-Priority": "0"},
+                    )
+                persisted += 1
+            except Exception as e:
+                logger.debug("KB persist failed for %s: %s", v.get("id"), e)
+
+        if persisted:
+            logger.info("Persisted %d vertices to KB", persisted)
+
     async def _archive_vertices(self, vertices: list[dict]) -> None:
         """Archive removed vertices to a separate MongoDB collection.
 
@@ -644,8 +703,9 @@ class AgentStore:
                 await asyncio.sleep(_CLEANUP_INTERVAL_S)
                 removed = self.cleanup_memory_map()
                 if removed > 0:
-                    # Archive first, then flush
+                    # Archive first, then persist to KB, then flush
                     if hasattr(self, "_pending_archive") and self._pending_archive:
+                        await self._persist_to_kb(self._pending_archive)
                         await self._archive_vertices(self._pending_archive)
                         self._pending_archive = []
                     await self.flush_dirty()

@@ -65,6 +65,11 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends postgresql-client && \
     rm -rf /var/lib/apt/lists/*
 
+# === kubectl (K8s namespace management for coding agents) ===
+RUN curl -fsSLo /usr/local/bin/kubectl \
+    "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+    chmod +x /usr/local/bin/kubectl
+
 # === Claude Code CLI (baked-in fallback — NAS-cached version takes precedence at runtime) ===
 RUN npm install -g @anthropic-ai/claude-code
 
