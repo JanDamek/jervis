@@ -14,6 +14,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -758,9 +761,11 @@ private fun OfflineMeetingListItem(
 
     // Format start date/time from epoch millis
     val startDateTime = remember(meeting.startedAtMs) {
-        val instant = kotlinx.datetime.Instant.fromEpochMilliseconds(meeting.startedAtMs)
-        val local = instant.toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
-        "${local.date} ${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+        try {
+            val instant = Instant.fromEpochMilliseconds(meeting.startedAtMs)
+            val local = instant.toLocalDateTime(TimeZone.currentSystemDefault())
+            "${local.date} ${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+        } catch (_: Exception) { "—" }
     }
 
     // Meeting type label

@@ -338,6 +338,18 @@ private fun VertexCard(
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
+                // Live log icon for running coding tasks (visible on header without expanding)
+                if (vertex.vertexType == "task_ref" && vertex.status == "running" && onOpenLiveLog != null) {
+                    val taskIdForLog = vertex.inputRequest.ifBlank { null }
+                    if (taskIdForLog != null) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Živý výstup",
+                            modifier = Modifier.size(16.dp).clickable { onOpenLiveLog(taskIdForLog) },
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
                 // Status badge
                 Text(
                     text = statusLabel(vertex.status),
