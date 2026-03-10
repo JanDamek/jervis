@@ -2,6 +2,7 @@ package com.jervis.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -61,89 +62,138 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 /**
- * Expandable section showing a task decomposition graph inside a BACKGROUND_RESULT bubble.
- * Initially collapsed — shows summary line. Expanded — shows vertex tree and edges.
+ * Section showing a task decomposition graph.
+ *
+ * When embedded in a chat bubble (default) — collapsible with header toggle.
+ * When used as the main panel content (alwaysExpanded=true) — no wrapper, direct content.
  */
 @Composable
 fun TaskGraphSection(
     graph: TaskGraphDto,
     modifier: Modifier = Modifier,
+    alwaysExpanded: Boolean = false,
     onOpenSubGraph: ((subGraphId: String) -> Unit)? = null,
     onOpenLiveLog: ((taskId: String) -> Unit)? = null,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(alwaysExpanded) }
+
+    // Pre-compute sorted vertices and which hierarchy nodes have children
+    val sortedVertices = remember(graph.vertices, graph.rootVertexId) {
+        buildTreeOrder(graph.vertices.values.toList(), graph.rootVertexId)
+    }
+    val hierarchyWithChildren = remember(sortedVertices) {
+        computeNonEmptyHierarchy(sortedVertices)
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 6.dp),
-            color = MaterialTheme.colorScheme.outlineVariant,
-        )
-
-        // Header row — graph icon + summary + expand toggle
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(
-                Icons.Default.AccountTree,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.primary,
+        if (!alwaysExpanded) {
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 6.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
-            Text(
-                text = graphSummaryLine(graph),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(
-                onClick = { expanded = !expanded },
-                modifier = Modifier.size(32.dp),
+            // Collapsible header for embedded graphs
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(
-                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (expanded) "Skrýt graf" else "Zobrazit graf",
+                    Icons.Default.AccountTree,
+                    contentDescription = null,
                     modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = graphSummaryLine(graph),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
 
-        // Expanded content — graph details
+        // Graph content
         AnimatedVisibility(visible = expanded) {
-            Column(
-                modifier = Modifier.padding(top = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                // Graph-level stats
-                GraphStatsRow(graph)
+            GraphContent(
+                graph = graph,
+                sortedVertices = sortedVertices,
+                hierarchyWithChildren = hierarchyWithChildren,
+                showStats = !alwaysExpanded,
+                onOpenSubGraph = onOpenSubGraph,
+                onOpenLiveLog = onOpenLiveLog,
+            )
+        }
+    }
+}
 
-                Spacer(modifier = Modifier.height(2.dp))
+/**
+ * Inner graph content — vertices with collapsible hierarchy.
+ */
+@Composable
+private fun GraphContent(
+    graph: TaskGraphDto,
+    sortedVertices: List<GraphVertexDto>,
+    hierarchyWithChildren: Set<String>,
+    showStats: Boolean,
+    onOpenSubGraph: ((subGraphId: String) -> Unit)?,
+    onOpenLiveLog: ((taskId: String) -> Unit)?,
+) {
+    // Track collapsed hierarchy nodes
+    val collapsedNodes = remember { mutableStateOf(setOf<String>()) }
 
-                // Vertices — tree-walk order (DFS by parent_id), root hidden
-                val sortedVertices = remember(graph.vertices, graph.rootVertexId) {
-                    buildTreeOrder(graph.vertices.values.toList(), graph.rootVertexId)
-                }
+    Column(
+        modifier = Modifier.padding(top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (showStats) {
+            GraphStatsRow(graph)
+            Spacer(modifier = Modifier.height(2.dp))
+        }
 
-                sortedVertices.forEach { vertex ->
-                    // CLIENT, GROUP, and PROJECT vertices — section headers, not cards
-                    if (vertex.vertexType == "client" || vertex.vertexType == "group" || vertex.vertexType == "project") {
-                        HierarchyHeader(vertex = vertex, depthIndent = vertex.depth - 1)
-                        return@forEach
-                    }
-
-                    val incomingEdges = remember(graph.edges, vertex.id) {
-                        graph.edges.filter { it.targetId == vertex.id }
-                    }
-                    VertexCard(
-                        vertex = vertex,
-                        incomingEdges = incomingEdges,
-                        depthIndent = vertex.depth,
-                        onOpenSubGraph = onOpenSubGraph,
-                        onOpenLiveLog = onOpenLiveLog,
-                    )
-                }
+        sortedVertices.forEach { vertex ->
+            // Check if any ancestor is collapsed → skip this vertex
+            if (isUnderCollapsed(vertex, sortedVertices, collapsedNodes.value)) {
+                return@forEach
             }
+
+            val isHierarchy = vertex.vertexType in setOf("client", "group", "project")
+
+            if (isHierarchy) {
+                // Skip hierarchy nodes with no task children
+                if (vertex.id !in hierarchyWithChildren) return@forEach
+
+                val isCollapsed = vertex.id in collapsedNodes.value
+                HierarchyHeader(
+                    vertex = vertex,
+                    depthIndent = vertex.depth - 1,
+                    isCollapsed = isCollapsed,
+                    onClick = {
+                        collapsedNodes.value = if (isCollapsed) {
+                            collapsedNodes.value - vertex.id
+                        } else {
+                            collapsedNodes.value + vertex.id
+                        }
+                    },
+                )
+                return@forEach
+            }
+
+            val incomingEdges = remember(graph.edges, vertex.id) {
+                graph.edges.filter { it.targetId == vertex.id }
+            }
+            VertexCard(
+                vertex = vertex,
+                incomingEdges = incomingEdges,
+                depthIndent = vertex.depth,
+                onOpenSubGraph = onOpenSubGraph,
+                onOpenLiveLog = onOpenLiveLog,
+            )
         }
     }
 }
@@ -244,9 +294,9 @@ private fun VertexCard(
             .padding(start = indentDp),
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
-            // Header: icon + title + status badge + expand toggle
+            // Header: click entire row to expand/collapse
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -269,16 +319,12 @@ private fun VertexCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = statusColor(vertex.status),
                 )
-                IconButton(
-                    onClick = { expanded = !expanded },
-                    modifier = Modifier.size(28.dp),
-                ) {
-                    Icon(
-                        if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                )
             }
 
             // Expanded content
@@ -514,12 +560,14 @@ private fun EdgeRow(
 }
 
 /**
- * Section header for CLIENT, GROUP, and PROJECT vertices — non-collapsible label with icon.
+ * Section header for CLIENT, GROUP, and PROJECT vertices — clickable row to collapse/expand children.
  */
 @Composable
 private fun HierarchyHeader(
     vertex: GraphVertexDto,
     depthIndent: Int,
+    isCollapsed: Boolean = false,
+    onClick: () -> Unit = {},
 ) {
     val indentDp = (depthIndent * 16).dp
     val isClient = vertex.vertexType == "client"
@@ -544,10 +592,17 @@ private fun HierarchyHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(start = indentDp, top = 4.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        Icon(
+            if (isCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = tint.copy(alpha = 0.6f),
+        )
         Icon(
             icon,
             contentDescription = null,
@@ -705,6 +760,48 @@ private fun formatDuration(startValue: String, endValue: String): String? {
         diffSec < 3600 -> "${diffSec / 60}m ${diffSec % 60}s"
         else -> "${diffSec / 3600}h ${(diffSec % 3600) / 60}m"
     }
+}
+
+/**
+ * Compute which hierarchy nodes (client/group/project) have at least one non-hierarchy descendant.
+ * Hierarchy nodes not in this set should be hidden (empty sections).
+ */
+private fun computeNonEmptyHierarchy(sortedVertices: List<GraphVertexDto>): Set<String> {
+    val hierarchyTypes = setOf("client", "group", "project")
+    val result = mutableSetOf<String>()
+
+    // For each non-hierarchy vertex, walk up the parent chain marking ancestors as non-empty
+    val vertexMap = sortedVertices.associateBy { it.id }
+    for (v in sortedVertices) {
+        if (v.vertexType in hierarchyTypes) continue
+        var parentId = v.parentId
+        while (parentId != null) {
+            val parent = vertexMap[parentId]
+            if (parent != null && parent.vertexType in hierarchyTypes) {
+                result.add(parent.id)
+            }
+            parentId = parent?.parentId
+        }
+    }
+    return result
+}
+
+/**
+ * Check if a vertex is under a collapsed hierarchy node.
+ */
+private fun isUnderCollapsed(
+    vertex: GraphVertexDto,
+    allVertices: List<GraphVertexDto>,
+    collapsedNodes: Set<String>,
+): Boolean {
+    if (collapsedNodes.isEmpty()) return false
+    val vertexMap = allVertices.associateBy { it.id }
+    var parentId = vertex.parentId
+    while (parentId != null) {
+        if (parentId in collapsedNodes) return true
+        parentId = vertexMap[parentId]?.parentId
+    }
+    return false
 }
 
 /**

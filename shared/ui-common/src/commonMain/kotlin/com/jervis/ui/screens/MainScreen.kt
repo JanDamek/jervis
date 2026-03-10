@@ -24,18 +24,16 @@ fun MainScreen(
     val showNeedReaction by viewModel.chat.showNeedReaction.collectAsState()
     val backgroundMessageCount by viewModel.chat.backgroundMessageCount.collectAsState()
     val userTaskCount by viewModel.chat.userTaskCount.collectAsState()
+    val pendingUserTasks by viewModel.chat.pendingUserTasks.collectAsState()
 
     // Client-side filtering — instant toggle, no server reload
-    val filteredMessages = remember(chatMessages, showChat, showTasks, showNeedReaction) {
-        chatMessages.filter { msg ->
-            when (msg.messageType) {
-                ChatMessage.MessageType.BACKGROUND_RESULT -> when {
-                    showTasks -> true   // "Tasky" shows ALL backgrounds
-                    showNeedReaction -> msg.metadata["needsReaction"] == "true"
-                    else -> false       // both off → hide backgrounds
-                }
-                else -> showChat
-            }
+    // "K reakci" uses separately loaded user tasks from API (global, all clients)
+    val filteredMessages = remember(chatMessages, pendingUserTasks, showChat, showTasks, showNeedReaction) {
+        when {
+            showNeedReaction -> pendingUserTasks  // All pending user tasks from DB
+            showTasks -> chatMessages.filter { it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT }
+            showChat -> chatMessages.filter { it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT }
+            else -> chatMessages
         }
     }
     val inputText by viewModel.chat.inputText.collectAsState()

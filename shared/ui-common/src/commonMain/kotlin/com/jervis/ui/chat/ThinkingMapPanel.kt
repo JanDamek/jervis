@@ -151,6 +151,7 @@ fun ThinkingMapPanel(
                             TaskGraphSection(
                                 graph = graphToShow,
                                 modifier = Modifier.fillMaxWidth(),
+                                alwaysExpanded = true,
                                 onOpenSubGraph = onOpenSubGraph,
                                 onOpenLiveLog = onOpenLiveLog,
                             )
@@ -272,8 +273,13 @@ private fun TaskHistoryDropdown(
                     },
                     onClick = {
                         expanded = false
-                        if (vertex.localContext.startsWith("tg-") && onOpenSubGraph != null) {
-                            onOpenSubGraph(vertex.localContext)
+                        val subGraphId = when {
+                            vertex.localContext.startsWith("tg-") -> vertex.localContext
+                            vertex.inputRequest.isNotBlank() -> vertex.inputRequest
+                            else -> null
+                        }
+                        if (subGraphId != null && onOpenSubGraph != null) {
+                            onOpenSubGraph(subGraphId)
                         }
                     },
                 )

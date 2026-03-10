@@ -184,6 +184,10 @@ class ChatViewModel(
     private val _userTaskCount = MutableStateFlow(0)
     val userTaskCount: StateFlow<Int> = _userTaskCount.asStateFlow()
 
+    /** All pending user tasks (global, not filtered by client). Loaded from API. */
+    private val _pendingUserTasks = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val pendingUserTasks: StateFlow<List<ChatMessage>> = _pendingUserTasks.asStateFlow()
+
     // Filtering is done at the Compose layer via remember() in screens/MainScreen.kt
     // to avoid stateIn timing issues with the initial empty emission.
 
@@ -224,8 +228,9 @@ class ChatViewModel(
                         if (e is CancellationException) throw e
                         println("ChatViewModel: history load failed: ${e.message}")
                     }
-                    // Load master map on connection ready
+                    // Load master map + pending user tasks on connection ready
                     loadMemoryMap()
+                    loadPendingUserTasks()
                 }
             }.collect { response ->
                 handleChatResponse(response)
@@ -299,6 +304,8 @@ class ChatViewModel(
                     msg
                 }
             }
+            // Decrement user task counter
+            _userTaskCount.update { (it - 1).coerceAtLeast(0) }
             _isLoading.value = false
         }
     }
@@ -363,7 +370,40 @@ class ChatViewModel(
 
     /** Toggle "K reakci" filter — backgrounds needing user reaction. */
     fun toggleNeedReaction() {
-        _showNeedReaction.value = !_showNeedReaction.value
+        val newValue = !_showNeedReaction.value
+        _showNeedReaction.value = newValue
+        if (newValue) loadPendingUserTasks()
+    }
+
+    /** Load ALL pending user tasks from API (global, not filtered by client). */
+    fun loadPendingUserTasks() {
+        scope.launch {
+            try {
+                val page = repository.userTasks.listAll(query = null, offset = 0, limit = 50)
+                val tasks = page.items.map { task ->
+                    val question = task.pendingQuestion ?: task.description ?: task.title
+                    ChatMessage(
+                        from = ChatMessage.Sender.Assistant,
+                        text = question,
+                        contextId = task.projectId ?: "",
+                        messageType = ChatMessage.MessageType.BACKGROUND_RESULT,
+                        metadata = mapOf(
+                            "taskId" to task.id,
+                            "needsReaction" to "true",
+                            "clientId" to task.clientId,
+                            "title" to task.title,
+                            "state" to task.state,
+                        ),
+                        timestamp = task.createdAtEpochMillis.toString(),
+                    )
+                }
+                _pendingUserTasks.value = tasks
+                _userTaskCount.value = page.totalCount
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("ChatViewModel: loadPendingUserTasks failed: ${e.message}")
+            }
+        }
     }
 
     fun attachFile() {
@@ -802,6 +842,9 @@ class ChatViewModel(
                 if (messageType == ChatMessage.MessageType.BACKGROUND_RESULT) {
                     _backgroundMessageCount.value++
                 }
+                // Clean up stale progress indicators
+                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+                thinkingHistory.clear()
                 // Append directly — no deduplication needed, these are push-only
                 messages.add(
                     ChatMessage(
