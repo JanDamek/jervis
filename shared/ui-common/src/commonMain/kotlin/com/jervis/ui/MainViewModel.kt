@@ -456,6 +456,7 @@ class MainViewModel(
     }
 
     fun selectGroup(groupId: String) {
+        println("MainViewModel: selectGroup($groupId) — previous group=${_selectedGroupId.value}, project=${_selectedProjectId.value}")
         if (_selectedGroupId.value == groupId) return
 
         _selectedGroupId.value = groupId

@@ -587,6 +587,217 @@ async def get_task_graph(task_id: str):
     return graph.model_dump()
 
 
+# --- Memory Map Admin Endpoints ---
+
+
+@app.delete("/graph/master/vertex/{vertex_id}")
+async def delete_memory_map_vertex(vertex_id: str):
+    """Delete a vertex from the memory map (RAM + DB flush)."""
+    from app.agent.persistence import agent_store
+
+    graph = agent_store.get_memory_map_cached()
+    if not graph:
+        raise HTTPException(status_code=404, detail="Memory map not loaded")
+
+    if vertex_id == graph.root_vertex_id:
+        raise HTTPException(status_code=400, detail="Cannot delete root vertex")
+
+    if vertex_id not in graph.vertices:
+        raise HTTPException(status_code=404, detail=f"Vertex '{vertex_id}' not found")
+
+    del graph.vertices[vertex_id]
+    graph.edges = [e for e in graph.edges if e.source_id != vertex_id and e.target_id != vertex_id]
+    agent_store._dirty.add(graph.task_id)
+    await agent_store.flush_dirty()
+    try:
+        await kotlin_client.notify_memory_map_changed()
+    except Exception:
+        pass
+    return {"deleted": vertex_id, "remaining_vertices": len(graph.vertices)}
+
+
+@app.patch("/graph/master/vertex/{vertex_id}")
+async def update_memory_map_vertex(vertex_id: str, request: Request):
+    """Update a vertex in the memory map (title, status, description).
+
+    Body: { "title": "...", "status": "completed", "description": "..." }
+    All fields optional.
+    """
+    from app.agent.persistence import agent_store
+    from app.agent.models import VertexStatus
+
+    graph = agent_store.get_memory_map_cached()
+    if not graph:
+        raise HTTPException(status_code=404, detail="Memory map not loaded")
+
+    vertex = graph.vertices.get(vertex_id)
+    if not vertex:
+        raise HTTPException(status_code=404, detail=f"Vertex '{vertex_id}' not found")
+
+    body = await request.json()
+    if "title" in body:
+        vertex.title = body["title"]
+    if "description" in body:
+        vertex.description = body["description"]
+    if "parent_id" in body:
+        vertex.parent_id = body["parent_id"]
+    if "input_request" in body:
+        vertex.input_request = body["input_request"]
+    if "status" in body:
+        try:
+            vertex.status = VertexStatus(body["status"])
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {body['status']}")
+
+    agent_store._dirty.add(graph.task_id)
+    await agent_store.flush_dirty()
+    try:
+        await kotlin_client.notify_memory_map_changed()
+    except Exception:
+        pass
+    return {"updated": vertex_id, "vertex": vertex.model_dump()}
+
+
+@app.post("/graph/master/vertex")
+async def create_memory_map_vertex(request: Request):
+    """Create a new vertex in the memory map.
+
+    Body: { "id": "v-...", "title": "...", "vertex_type": "group", "status": "completed",
+            "parent_id": "v-client-...", "input_request": "...", "client_id": "..." }
+    """
+    from app.agent.persistence import agent_store
+    from app.agent.models import GraphVertex, VertexType, VertexStatus
+
+    graph = agent_store.get_memory_map_cached()
+    if not graph:
+        raise HTTPException(status_code=404, detail="Memory map not loaded")
+
+    body = await request.json()
+    vertex_id = body.get("id")
+    if not vertex_id:
+        raise HTTPException(status_code=400, detail="'id' is required")
+    if vertex_id in graph.vertices:
+        raise HTTPException(status_code=409, detail=f"Vertex '{vertex_id}' already exists")
+
+    vertex = GraphVertex(
+        id=vertex_id,
+        title=body.get("title", ""),
+        description=body.get("description", ""),
+        vertex_type=VertexType(body.get("vertex_type", "executor")),
+        status=VertexStatus(body.get("status", "completed")),
+        parent_id=body.get("parent_id"),
+        depth=body.get("depth", 1),
+        client_id=body.get("client_id", ""),
+        input_request=body.get("input_request", ""),
+    )
+
+    graph.vertices[vertex_id] = vertex
+    agent_store._dirty.add(graph.task_id)
+    await agent_store.flush_dirty()
+    try:
+        await kotlin_client.notify_memory_map_changed()
+    except Exception:
+        pass
+    return {"created": vertex_id, "total_vertices": len(graph.vertices)}
+
+
+@app.post("/graph/master/cleanup")
+async def force_cleanup_memory_map():
+    """Force cleanup of the memory map — removes stale vertices."""
+    from app.agent.persistence import agent_store
+
+    graph = agent_store.get_memory_map_cached()
+    if not graph:
+        raise HTTPException(status_code=404, detail="Memory map not loaded")
+
+    removed = agent_store.cleanup_memory_map()
+    if removed > 0:
+        if hasattr(agent_store, "_pending_archive") and agent_store._pending_archive:
+            await agent_store._archive_vertices(agent_store._pending_archive)
+            agent_store._pending_archive = []
+        await agent_store.flush_dirty()
+
+    try:
+        await kotlin_client.notify_memory_map_changed()
+    except Exception:
+        pass
+    return {
+        "removed": removed,
+        "remaining_vertices": len(graph.vertices),
+    }
+
+
+@app.post("/graph/master/purge-stale")
+async def purge_stale_vertices():
+    """Purge stale RUNNING vertices and duplicates from memory map.
+
+    Targets:
+    - Duplicate vertices with same title (keeps most recent)
+    - RUNNING vertices older than 1 hour (marks as FAILED)
+    """
+    from app.agent.persistence import agent_store
+    from app.agent.models import VertexStatus
+    from datetime import datetime, timezone, timedelta
+
+    graph = agent_store.get_memory_map_cached()
+    if not graph:
+        raise HTTPException(status_code=404, detail="Memory map not loaded")
+
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=1)
+    purged = 0
+    failed = 0
+
+    # 1. Find and remove duplicate titles (keep most recent by completed_at)
+    title_groups: dict[str, list[str]] = {}
+    for vid, v in graph.vertices.items():
+        if v.vertex_type in ("task_ref", "request", "incoming") and vid != graph.root_vertex_id:
+            key = v.title.strip().lower()
+            title_groups.setdefault(key, []).append(vid)
+
+    for title, vids in title_groups.items():
+        if len(vids) > 1:
+            # Sort by completed_at desc, keep first
+            sorted_vids = sorted(
+                vids,
+                key=lambda vid: graph.vertices[vid].completed_at or "0",
+                reverse=True,
+            )
+            for vid in sorted_vids[1:]:  # Remove all but most recent
+                del graph.vertices[vid]
+                graph.edges = [e for e in graph.edges if e.source_id != vid and e.target_id != vid]
+                purged += 1
+
+    # 2. Mark stale RUNNING vertices as FAILED
+    for vid, v in list(graph.vertices.items()):
+        if v.status == VertexStatus.RUNNING:
+            started = None
+            if v.started_at:
+                try:
+                    started = datetime.fromisoformat(v.started_at.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    pass
+            if started and started < cutoff:
+                v.status = VertexStatus.FAILED
+                v.result_summary = "Stale RUNNING vertex — auto-failed by purge"
+                v.completed_at = now.isoformat()
+                failed += 1
+
+    if purged > 0 or failed > 0:
+        agent_store._dirty.add(graph.task_id)
+        await agent_store.flush_dirty()
+
+    try:
+        await kotlin_client.notify_memory_map_changed()
+    except Exception:
+        pass
+    return {
+        "duplicates_removed": purged,
+        "stale_running_failed": failed,
+        "remaining_vertices": len(graph.vertices),
+    }
+
+
 # --- Entry point ---
 
 if __name__ == "__main__":

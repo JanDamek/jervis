@@ -430,15 +430,41 @@ private fun ClientProjectCompactSelector(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             }
 
-            // Project groups
+            // Project groups with their projects
             projectGroups.forEach { group ->
                 DropdownMenuItem(
-                    text = { Text("${group.name}") },
+                    text = {
+                        Text(
+                            text = group.name,
+                            fontWeight = if (group.id == selectedGroupId) {
+                                androidx.compose.ui.text.font.FontWeight.Bold
+                            } else null,
+                        )
+                    },
                     onClick = {
                         onGroupSelected(group.id)
                         expanded = false
                     },
                 )
+                // Show projects within this group (indented)
+                val groupProjects = projects.filter { it.groupId == group.id }
+                groupProjects.forEach { project ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "    ${project.name}",
+                                fontWeight = if (project.id == selectedProjectId) {
+                                    androidx.compose.ui.text.font.FontWeight.Bold
+                                } else null,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        },
+                        onClick = {
+                            onProjectSelected(project.id)
+                            expanded = false
+                        },
+                    )
+                }
             }
         }
     }
