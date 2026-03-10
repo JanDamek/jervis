@@ -908,6 +908,8 @@ spec:
   ttlSecondsAfterFinished: 300
   template:
     spec:
+      serviceAccountName: jervis-coding-agent  # ← when environment has namespaces
+      automountServiceAccountToken: true
       containers:
         - name: agent
           image: {registry}/jervis-{image_name}:latest
@@ -917,6 +919,7 @@ spec:
             - OLLAMA_URL, KNOWLEDGEBASE_URL
             - ALLOW_GIT (true/false)
             - ANTHROPIC_API_KEY (pro Claude agenta)
+            - KUBE_NAMESPACES (comma-separated, when environment available)
           volumeMounts:
             - /opt/jervis/data (PVC shared s orchestrátorem)
           resources:
@@ -924,6 +927,8 @@ spec:
             limits: 1Gi memory, 1000m CPU
       restartPolicy: Never
 ```
+
+**kubectl access:** Agent image includes `kubectl` binary. When `KUBE_NAMESPACES` is set, the ServiceAccount `jervis-coding-agent` (from `jervis` namespace) has a dynamically created Role+RoleBinding in each target namespace granting full resource access. RBAC is created by `EnvironmentK8sService.ensureAgentRbac()` during environment provisioning.
 
 ### 10.3 Lifecycle (Non-blocking Async Dispatch)
 
@@ -1029,6 +1034,7 @@ Obsahuje:
 - Forbidden actions: NIKDY nepoužívej git příkazy
 - KB tools: 7 nástrojů pro runtime KB přístup (+ kb_resolve_alias)
 - Environment tools: 6 nástrojů pro K8s namespace inspekci
+- kubectl access section (when environment available): assigned namespace(s), `environment_sync_from_k8s` tool reference
 - Pravidla: write result to `.jervis/result.json`
 
 ### 11.4 CLAUDE.md pro git delegaci

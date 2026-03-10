@@ -1421,6 +1421,9 @@ Agents connect via HTTP instead of stdio subprocesses — smaller Docker images,
 | `environment_clone(environment_id, new_name, ...)` | Clone environment to new scope/tier |
 | `environment_keep_running(enabled)` | Override auto-stop — keep env running for user testing |
 | `environment_delete(environment_id)` | Delete environment + namespace |
+| `environment_discover_namespace(namespace, client_id, ...)` | Discover existing K8s namespace → create Jervis environment from running resources |
+| `environment_replicate(environment_id, new_name, ...)` | Clone environment + deploy to new namespace in one step |
+| `environment_sync_from_k8s(environment_id)` | Sync K8s state back to Jervis (K8s is source of truth) |
 
 **K8s Resource Inspection Tools (namespace as parameter):**
 
@@ -1465,6 +1468,9 @@ POST   /internal/environments/{id}/sync
 POST   /internal/environments/{id}/clone           → CloneEnvironmentRequest
 GET    /internal/environments/{id}/status
 GET    /internal/environments/templates
+POST   /internal/environments/discover              → DiscoverNamespaceRequest
+POST   /internal/environments/{id}/replicate        → ReplicateEnvironmentRequest
+POST   /internal/environments/{id}/sync-from-k8s    → (no body) K8s→Jervis sync
 
 # K8s resource inspection (existing)
 GET  /internal/environment/{ns}/resources?type=pods|deployments|services|all
@@ -1479,7 +1485,9 @@ GET  /internal/environment/{ns}/status
 - All endpoints validate namespace has `managed-by=jervis-server` label (prevents access to non-Jervis namespaces)
 - Secrets: only names returned, NEVER values
 - Replica scaling capped at 0-10
-- ClusterRole `jervis-server-environment-role` grants cross-namespace K8s access
+- ClusterRole `jervis-server-environment-role` grants cross-namespace K8s access (incl. RBAC roles/rolebindings management)
+- Coding agent ServiceAccount `jervis-coding-agent` (jervis namespace) with per-environment-namespace Role+RoleBinding (created by `ensureAgentRbac()`)
+- Coding agents get full kubectl access ONLY to their assigned namespace(s) via `KUBE_NAMESPACES` env var
 - MCP server dual-mode auth: legacy Bearer tokens (`MCP_API_TOKENS`) + OAuth 2.1 with Google IdP (for Claude.ai / iOS connectors)
 - OAuth whitelist: only configured Google accounts (`OAUTH_ALLOWED_EMAILS`) can obtain tokens
 - OAuth flow: Google login → email verification → Jervis access token (1h) + refresh token (30d)
@@ -1490,6 +1498,16 @@ GET  /internal/environment/{ns}/status
 - `CLAUDE.md` includes tool descriptions, namespace hint, connection strings, credentials, how-to-run
 - `.env` / `.env.{component}` files with resolved property mappings for `source .env` usage
 - Namespace passed as tool parameter (not env var)
+- **kubectl access**: When environment is available, CLAUDE.md includes kubectl instructions with assigned namespace(s)
+- Coding agent pod uses ServiceAccount `jervis-coding-agent` with per-namespace RBAC
+- `KUBE_NAMESPACES` env var on pod spec tells agent which namespaces it may access
+- Agent instructed to call `environment_sync_from_k8s` after kubectl changes to update Jervis DB
+
+**K8s Namespace Discovery + Sync-back (K8s = Source of Truth):**
+- `discoverFromNamespace()` reads existing K8s deployments/services/configmaps → creates EnvironmentDocument
+- Component type inferred from Docker image name (postgres→POSTGRESQL, mongo→MONGODB, redis→REDIS, etc.)
+- `syncFromK8s()` re-reads K8s state, updates existing components, adds new ones, marks missing as STOPPED
+- `environment_replicate()` = clone + deploy to new namespace in one atomic step
 
 **Key Files:**
 
@@ -1504,7 +1522,7 @@ GET  /internal/environment/{ns}/status
 | `backend/service-orchestrator/app/tools/definitions.py` | Tool definitions (ENVIRONMENT_TOOLS, DEVOPS_AGENT_TOOLS) |
 | `backend/service-orchestrator/app/tools/executor.py` | Tool execution (environment_* handlers) |
 | `backend/service-orchestrator/app/agents/workspace_manager.py` | MCP config injection |
-| `k8s/orchestrator-rbac.yaml` | ClusterRole for cross-namespace access (jervis-environment-manager) |
+| `k8s/orchestrator-rbac.yaml` | ClusterRole for cross-namespace access + ServiceAccount jervis-coding-agent |
 
 ---
 
