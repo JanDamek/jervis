@@ -82,8 +82,10 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Speaker entity: `backend/server/.../entity/SpeakerDocument.kt`, `backend/server/.../repository/SpeakerRepository.kt`
 - Speaker DTOs: `shared/common-dto/.../meeting/SpeakerDtos.kt` (`AutoSpeakerMatchDto`, `SpeakerEmbeddingDto`, `hasVoiceprint`)
 - Speaker RPC: `shared/common-api/.../ISpeakerService.kt`, `backend/server/.../rpc/SpeakerRpcImpl.kt` (incl. `setVoiceEmbedding`)
-- Speaker UI: `shared/ui-common/.../meeting/SpeakerAssignmentPanel.kt` (auto-match confidence badge, embedding save on confirm)
-- Speaker auto-ID: `MeetingTranscriptionService.kt` (cosine similarity matching), `MeetingDocument.speakerEmbeddings`, `SpeakerDocument.voiceEmbedding`
+- Speaker UI: `shared/ui-common/.../meeting/SpeakerAssignmentPanel.kt` (auto-match confidence badge with matchedEmbeddingLabel, multi-embedding save on confirm)
+- Speaker Settings: `shared/ui-common/.../screens/settings/sections/SpeakerSettings.kt` (CRUD, JListDetailLayout, voiceprint labels)
+- Segment speaker detail: `SegmentCorrectionDialog.kt` (speaker info + confidence + dropdown), `TranscriptPanel.kt` (confidence badge + embedding label)
+- Speaker auto-ID: `MeetingTranscriptionService.kt` (cosine similarity matching across all embeddings), `MeetingDocument.speakerEmbeddings`, `SpeakerDocument.voiceEmbeddings` (multi-embedding with VoiceEmbeddingEntry)
 - Whisper REST client: `backend/server/.../service/meeting/WhisperRestClient.kt`
 - Environment Manager: `shared/ui-common/.../screens/environment/` (EnvironmentManagerScreen, OverviewTab, ComponentsTab, ComponentEditPanel, PropertyMappingsTab, K8sResourcesTab, LogsEventsTab)
 - Environment sidebar: `shared/ui-common/.../environment/` (EnvironmentPanel, EnvironmentViewModel, EnvironmentTreeComponents)

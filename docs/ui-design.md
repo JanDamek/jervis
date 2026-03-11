@@ -502,6 +502,7 @@ enum class SettingsCategory(
     INDEXING("Indexace", Icons.Default.Schedule, "Intervaly automaticke kontroly novych polozek (Git, Jira, Wiki, Email)."),
     ENVIRONMENTS("Prostredi", Icons.Default.Language, "Definice K8s prostredi pro testovani."),
     CODING_AGENTS("Coding Agenti", Icons.Default.Code, "Nastaveni API klicu a konfigurace coding agentu."),
+    SPEAKERS("Řečníci", Icons.Default.RecordVoiceOver, "Správa řečníků a hlasových profilů pro automatickou identifikaci."),
     WHISPER("Whisper", Icons.Default.Mic, "Nastaveni prepisu reci na text a konfigurace modelu."),
     GPG_CERTIFICATES("GPG Certifikaty", Icons.Default.Lock, "Sprava GPG klicu pro podepisovani commitu coding agentu."),
     OPENROUTER("OpenRouter", Icons.Default.Route, "Smerovani LLM pozadavku pres OpenRouter AI – API klic, filtry, prioritni seznam modelu."),
@@ -1082,13 +1083,16 @@ Compact (<600dp):
 **Offline recording:** When server is unavailable, `MeetingViewModel.startRecording()` falls back to offline mode — generates a local UUID (prefix `offline_`), saves audio chunks to disk via `AudioChunkQueue`. On stop, metadata is saved via `OfflineMeetingStorage`. `OfflineMeetingSyncService` (created in `App.kt`) watches connection state and uploads offline meetings when connected. Offline meetings appear in a special "Offline nahrávky" section at the top of the list with sync state (PENDING/SYNCING/FAILED) and retry button.
 
 **Speaker management:**
-- `SpeakerDocument` (MongoDB collection `speakers`) -- per-client speaker profiles with name, nationality, languages, notes, voice sample reference, `voiceEmbedding` (256-dim from pyannote)
+- `SpeakerDocument` (MongoDB collection `speakers`) -- per-client speaker profiles with name, nationality, languages, notes, voice sample reference, multi-embedding support
+- **Multi-embedding**: `voiceEmbeddings: List<VoiceEmbeddingEntry>` — each entry has embedding (256-dim), label (e.g. meeting title), meetingId, createdAt. Legacy `voiceEmbedding` backward compat via `allEmbeddings()` migration method.
 - `speakerMapping` on `MeetingDocument` -- maps diarization labels ("SPEAKER_00") to speaker profile IDs
 - `speakerEmbeddings` on `MeetingDocument` -- pyannote 4.x 256-dim embeddings per diarization label
 - `TranscriptSegmentDto.speakerName` -- resolved from mapping, shown in transcript instead of raw labels
-- `SpeakerAssignmentPanel` -- replaces chat panel when toggled via People icon. JDropdown per speaker label, inline create form, voice sample save. Shows auto-match confidence badge when system auto-identifies speakers via embedding cosine similarity. On user confirm, saves voice embedding to speaker profile.
-- `ISpeakerService` kRPC -- CRUD + assignSpeakers + setVoiceSample + setVoiceEmbedding
-- **Auto-identification flow:** After transcription, system compares new speaker embeddings against known profiles (cosine similarity >= 0.70 for auto-mapping, >= 0.50 for showing confidence in UI). User confirms or corrects in `SpeakerAssignmentPanel`.
+- `SpeakerAssignmentPanel` -- replaces chat panel when toggled via People icon. JDropdown per speaker label, inline create form, voice sample save. Shows auto-match confidence badge with matched embedding label. Always adds embedding on save (multi-embedding, uses meeting title as label).
+- **Speaker Settings** (`sections/SpeakerSettings.kt`) -- standalone section in Settings (SPEAKERS category). JListDetailLayout with client dropdown, speaker list cards, edit form (name, nationality, languages, notes), voiceprint labels display, create/delete.
+- **Segment speaker detail** -- SegmentCorrectionDialog shows speaker with confidence badge + matched embedding label, JDropdown for speaker reassignment. TranscriptPanel shows confidence + embedding label in segment rows.
+- `ISpeakerService` kRPC -- CRUD + assignSpeakers + setVoiceSample + setVoiceEmbedding (additive, never replaces)
+- **Auto-identification flow:** After transcription, system compares new speaker embeddings against ALL known speaker embeddings (multi-embedding, best match across all conditions). Cosine similarity >= 0.70 for auto-mapping, >= 0.50 for showing confidence in UI. `AutoSpeakerMatchDto` includes `matchedEmbeddingLabel` showing which embedding variant matched. User confirms or corrects in `SpeakerAssignmentPanel` or directly in `SegmentCorrectionDialog`.
 
 **MeetingDetailView** uses a split layout with transcript on top and agent chat (or speaker panel) on bottom:
 
