@@ -45,10 +45,10 @@ fun formatMessageTime(isoTimestamp: String): String {
     val daysDiff = nowDate.toEpochDays() - messageDate.toEpochDays()
 
     return when {
-        daysDiff == 0 -> time
-        daysDiff == 1 -> "včera $time"
-        daysDiff == 2 -> "předevčírem $time"
-        daysDiff in 3..7 -> "${dayName(messageDate)} $time"
+        daysDiff == 0L -> time
+        daysDiff == 1L -> "včera $time"
+        daysDiff == 2L -> "předevčírem $time"
+        daysDiff in 3L..7L -> "${dayName(messageDate)} $time"
         else -> "${messageDate.dayOfMonth}. ${messageDate.monthNumber}. ${messageDate.year} $time"
     }
 }

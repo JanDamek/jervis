@@ -9,6 +9,16 @@ import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.ui.MainViewModel
 import com.jervis.ui.environment.EnvironmentPanel
 import com.jervis.ui.MainScreenView as MainScreenViewInternal
+import kotlinx.datetime.Instant
+
+/** Parse timestamp (ISO-8601 or epoch millis) to epoch millis for sorting. */
+private fun ChatMessage.epochMillis(): Long = timestamp?.let { ts ->
+    try {
+        Instant.parse(ts).toEpochMilliseconds()
+    } catch (_: Exception) {
+        ts.trim().toLongOrNull() ?: 0L
+    }
+} ?: 0L
 
 @Composable
 fun MainScreen(
@@ -27,10 +37,10 @@ fun MainScreen(
     val pendingUserTasks by viewModel.chat.pendingUserTasks.collectAsState()
 
     // Client-side filtering — instant toggle, no server reload
-    // "K reakci" prepends pending user tasks to chat messages (chat stays visible)
+    // "K reakci" merges user tasks into chat, sorted chronologically
     val filteredMessages = remember(chatMessages, pendingUserTasks, showChat, showTasks, showNeedReaction) {
         when {
-            showNeedReaction -> chatMessages + pendingUserTasks  // Chat history + user tasks at bottom (visible first)
+            showNeedReaction -> (chatMessages + pendingUserTasks).sortedBy { it.epochMillis() }
             showTasks -> chatMessages.filter { it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT }
             showChat -> chatMessages.filter { it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT }
             else -> chatMessages
