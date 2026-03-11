@@ -30,7 +30,7 @@ fun MainScreen(
     // "K reakci" prepends pending user tasks to chat messages (chat stays visible)
     val filteredMessages = remember(chatMessages, pendingUserTasks, showChat, showTasks, showNeedReaction) {
         when {
-            showNeedReaction -> pendingUserTasks + chatMessages  // User tasks first, then full chat
+            showNeedReaction -> chatMessages + pendingUserTasks  // Chat history + user tasks at bottom (visible first)
             showTasks -> chatMessages.filter { it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT }
             showChat -> chatMessages.filter { it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT }
             else -> chatMessages
