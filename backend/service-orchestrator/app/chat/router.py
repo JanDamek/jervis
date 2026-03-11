@@ -168,6 +168,16 @@ async def orchestrate(request: dict):
                 artifacts=result.get("artifacts", []),
                 keep_environment_running=result.get("keep_environment_running", False),
             )
+
+            # Update thinking map vertex if this was a dispatched vertex
+            try:
+                from app.chat.thinking_map import handle_vertex_result
+                await handle_vertex_result(
+                    orchestrate_request.task_id,
+                    result.get("summary", ""),
+                )
+            except Exception as e:
+                logger.debug("Thinking map vertex update (non-fatal): %s", e)
         except asyncio.CancelledError:
             # Preemption is NOT an error — Kotlin already reset task to QUEUED.
             # Do NOT send error status — it would show "Chyba" banner in UI.

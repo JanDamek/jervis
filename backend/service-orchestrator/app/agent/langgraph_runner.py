@@ -114,6 +114,18 @@ async def node_decompose(state: GraphAgentState) -> dict:
 
     The decomposer LLM decides: simple → 1 vertex, complex → multiple vertices.
     """
+    # Pre-built thinking map — skip decomposition, graph already has vertices
+    if state.get("task_graph"):
+        graph = AgentGraph(**state["task_graph"])
+        agent_store.cache_subgraph(graph)
+        agent_store.mark_dirty(graph.task_id)
+        logger.info(
+            "Skipping decomposition — pre-built thinking map with %d vertices",
+            len(graph.vertices),
+        )
+        await report_graph_status(graph, f"Pre-built map with {len(graph.vertices) - 1} vertices")
+        return {"current_vertex_id": None, "graph_error": None}
+
     if "task" not in state:
         return {"graph_error": "Missing task context — cannot decompose (stale checkpoint?)"}
     task = CodingTask(**state["task"])
@@ -598,6 +610,22 @@ async def run_graph_agent(
     compiled = _get_compiled_graph()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
 
+    # Check for pre-existing thinking map (created by dispatch_map in chat)
+    existing_graph = await agent_store.load(request.task_id)
+    pre_built_graph = None
+    if existing_graph and existing_graph.status in (GraphStatus.READY, GraphStatus.BUILDING):
+        logger.info(
+            "GRAPH_AGENT: found pre-existing thinking map for task %s (%d vertices)",
+            request.task_id, len(existing_graph.vertices),
+        )
+        # Mark root vertex as COMPLETED (decomposition already done by chat)
+        root = existing_graph.vertices.get(existing_graph.root_vertex_id)
+        if root and root.status != VertexStatus.COMPLETED:
+            root.status = VertexStatus.COMPLETED
+        existing_graph.status = GraphStatus.EXECUTING
+        agent_store.cache_subgraph(existing_graph)
+        pre_built_graph = existing_graph.model_dump()
+
     initial_state: GraphAgentState = {
         "task": CodingTask(
             id=request.task_id,
@@ -615,7 +643,7 @@ async def run_graph_agent(
         "processing_mode": request.processing_mode,
         "response_language": "en",
         "allow_cloud_prompt": False,
-        "task_graph": None,
+        "task_graph": pre_built_graph,
         "current_vertex_id": None,
         "graph_error": None,
         "final_result": None,
