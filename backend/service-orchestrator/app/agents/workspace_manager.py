@@ -65,6 +65,9 @@ class WorkspaceManager:
                 f"Server should prepare codebase before orchestration."
             )
 
+        # 0. Fix NFS root_squash permissions — ensure workspace is writable
+        self._ensure_writable(workspace)
+
         # 1. Write instructions and metadata
         jervis_dir = workspace / ".jervis"
         jervis_dir.mkdir(exist_ok=True)
@@ -400,6 +403,30 @@ class WorkspaceManager:
             ]
         )
         (workspace / "CLAUDE.md").write_text(claude_md)
+
+    @staticmethod
+    def _ensure_writable(workspace: Path) -> None:
+        """Fix NFS root_squash permissions on workspace directory tree.
+
+        NFS root_squash maps root to nobody, so files cloned by server (UID 1000)
+        may not be writable by orchestrator (also UID 1000 but different pod).
+        Uses chmod to make directories group/world writable.
+        """
+        try:
+            subprocess.run(
+                ["chmod", "-R", "a+rwX", str(workspace)],
+                check=True, capture_output=True, timeout=30,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            logger.warning("Could not fix workspace permissions (NFS root_squash?): %s", e)
+            # Try just the top-level directory at minimum
+            try:
+                subprocess.run(
+                    ["chmod", "a+rwx", str(workspace)],
+                    check=True, capture_output=True, timeout=5,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
 
     @staticmethod
     def _generate_env_files(workspace: Path, env: dict):

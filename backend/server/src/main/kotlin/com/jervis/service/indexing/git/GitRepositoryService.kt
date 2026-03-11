@@ -482,6 +482,9 @@ class GitRepositoryService(
         // Store credentials in git credential helper
         configureCredentials(targetDir, connection)
 
+        // Fix NFS root_squash permissions — ensure workspace is writable by all pods (UID 1000)
+        fixWorkspacePermissions(targetDir)
+
         logger.info { "Cloned $repoUrl into $targetDir" }
     }
 
@@ -986,6 +989,24 @@ echo "password=${connection.password}"
             "Tech stack: ${indicators.joinToString(", ")}"
         } else {
             "Tech stack: unknown"
+        }
+    }
+
+    /**
+     * Fix NFS root_squash permissions on workspace directory.
+     * Makes workspace world-writable so orchestrator/coding agent pods can write.
+     */
+    private fun fixWorkspacePermissions(dir: Path) {
+        try {
+            val pb = ProcessBuilder("chmod", "-R", "a+rwX", dir.toString())
+            pb.redirectErrorStream(true)
+            val process = pb.start()
+            val exitCode = process.waitFor()
+            if (exitCode != 0) {
+                logger.warn { "chmod failed on $dir (NFS root_squash?), exit=$exitCode" }
+            }
+        } catch (e: Exception) {
+            logger.warn { "Could not fix workspace permissions on $dir: ${e.message}" }
         }
     }
 
