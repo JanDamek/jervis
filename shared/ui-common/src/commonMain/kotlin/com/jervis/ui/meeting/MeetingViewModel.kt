@@ -70,6 +70,9 @@ class MeetingViewModel(
     private val _projects = MutableStateFlow<List<ProjectDto>>(emptyList())
     val projects: StateFlow<List<ProjectDto>> = _projects.asStateFlow()
 
+    private val _projectGroups = MutableStateFlow<List<com.jervis.dto.ProjectGroupDto>>(emptyList())
+    val projectGroups: StateFlow<List<com.jervis.dto.ProjectGroupDto>> = _projectGroups.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -259,6 +262,16 @@ class MeetingViewModel(
                 _projects.value = repository.projects.listProjectsForClient(clientId).filterVisible()
             } catch (_: Exception) {
                 _projects.value = emptyList()
+            }
+        }
+    }
+
+    fun loadProjectGroups(clientId: String) {
+        scope.launch {
+            try {
+                _projectGroups.value = repository.projectGroups.listGroupsForClient(clientId)
+            } catch (_: Exception) {
+                _projectGroups.value = emptyList()
             }
         }
     }
@@ -902,6 +915,7 @@ class MeetingViewModel(
         meetingId: String,
         clientId: String,
         projectId: String? = null,
+        groupId: String? = null,
         title: String? = null,
         meetingType: MeetingTypeEnum? = null,
     ) {
@@ -912,6 +926,7 @@ class MeetingViewModel(
                         meetingId = meetingId,
                         clientId = clientId,
                         projectId = projectId,
+                        groupId = groupId,
                         title = title,
                         meetingType = meetingType,
                     ),
@@ -930,6 +945,7 @@ class MeetingViewModel(
         meetingId: String,
         clientId: String,
         projectId: String? = null,
+        groupId: String? = null,
         title: String? = null,
         meetingType: MeetingTypeEnum? = null,
     ) {
@@ -940,6 +956,7 @@ class MeetingViewModel(
                         meetingId = meetingId,
                         clientId = clientId,
                         projectId = projectId,
+                        groupId = groupId,
                         title = title,
                         meetingType = meetingType,
                     ),

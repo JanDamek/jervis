@@ -1,6 +1,7 @@
 package com.jervis.entity.meeting
 
 import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectGroupId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.meeting.AudioInputType
 import com.jervis.dto.meeting.MeetingStateEnum
@@ -39,6 +40,7 @@ data class MeetingDocument(
     val id: ObjectId = ObjectId.get(),
     val clientId: ClientId? = null,
     val projectId: ProjectId? = null,
+    val groupId: ProjectGroupId? = null,
     val title: String? = null,
     val meetingType: MeetingTypeEnum? = null,
     val audioInputType: AudioInputType = AudioInputType.MIXED,

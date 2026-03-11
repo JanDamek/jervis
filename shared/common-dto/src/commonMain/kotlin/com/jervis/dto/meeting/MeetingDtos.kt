@@ -41,6 +41,7 @@ data class MeetingDto(
     val id: String,
     val clientId: String? = null,
     val projectId: String? = null,
+    val groupId: String? = null,
     val title: String? = null,
     val meetingType: MeetingTypeEnum? = null,
     val audioInputType: AudioInputType = AudioInputType.MIXED,
@@ -117,6 +118,7 @@ data class MeetingClassifyDto(
     val meetingId: String,
     val clientId: String,
     val projectId: String? = null,
+    val groupId: String? = null,
     val title: String? = null,
     val meetingType: MeetingTypeEnum? = null,
 )

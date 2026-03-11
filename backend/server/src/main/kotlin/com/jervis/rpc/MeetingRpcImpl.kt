@@ -522,6 +522,7 @@ class MeetingRpcImpl(
 
         val clientId = ClientId.fromString(request.clientId)
         val projectId = request.projectId?.let { ProjectId.fromString(it) }
+        val groupId = request.groupId?.let { com.jervis.common.types.ProjectGroupId.fromString(it) }
 
         // Move audio file and compute correct path via DirectoryStructureService
         val newAudioPath = directoryStructureService.meetingAudioFile(meeting.id, clientId, projectId)
@@ -542,6 +543,7 @@ class MeetingRpcImpl(
         val updated = meeting.copy(
             clientId = clientId,
             projectId = projectId,
+            groupId = groupId,
             title = request.title ?: meeting.title,
             meetingType = request.meetingType ?: meeting.meetingType,
             audioFilePath = newAudioPath.toString(),
@@ -553,7 +555,7 @@ class MeetingRpcImpl(
         if (needsReindex) {
             logger.info { "Meeting ${request.meetingId} classified and reset to TRANSCRIBED for KB indexing" }
         }
-        logger.info { "Classified meeting ${request.meetingId} to client=${request.clientId} project=${request.projectId}" }
+        logger.info { "Classified meeting ${request.meetingId} to client=${request.clientId} project=${request.projectId} group=${request.groupId}" }
         return saved.toDto()
     }
 
@@ -564,6 +566,7 @@ class MeetingRpcImpl(
 
         val newClientId = ClientId.fromString(request.clientId)
         val newProjectId = request.projectId?.let { ProjectId.fromString(it) }
+        val newGroupId = request.groupId?.let { com.jervis.common.types.ProjectGroupId.fromString(it) }
 
         val firstClassification = meeting.clientId == null && newClientId != null
         val clientChanged = meeting.clientId != null && newClientId != meeting.clientId
@@ -610,6 +613,7 @@ class MeetingRpcImpl(
         val updated = meeting.copy(
             clientId = newClientId,
             projectId = newProjectId,
+            groupId = newGroupId,
             title = request.title ?: meeting.title,
             meetingType = request.meetingType ?: meeting.meetingType,
             audioFilePath = newAudioPath.toString(),
@@ -623,7 +627,7 @@ class MeetingRpcImpl(
         }
         logger.info {
             "Updated meeting ${request.meetingId}: title=${request.title}, " +
-                "client=${request.clientId}, project=${request.projectId}, reassign=$reassign"
+                "client=${request.clientId}, project=${request.projectId}, group=${request.groupId}, reassign=$reassign"
         }
         return saved.toDto()
     }
@@ -897,6 +901,7 @@ private fun MeetingDocument.toDto(
         id = id.toHexString(),
         clientId = clientId?.toString(),
         projectId = projectId?.toString(),
+        groupId = groupId?.toString(),
         title = title,
         meetingType = meetingType,
         audioInputType = audioInputType,

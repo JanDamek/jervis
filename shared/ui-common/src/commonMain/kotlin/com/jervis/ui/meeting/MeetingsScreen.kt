@@ -67,6 +67,7 @@ fun MeetingsScreen(
     offlineSyncService: OfflineMeetingSyncService? = null,
 ) {
     val vmProjects by viewModel.projects.collectAsState()
+    val vmProjectGroups by viewModel.projectGroups.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isRecording by viewModel.isRecording.collectAsState()
     val recordingDuration by viewModel.recordingDuration.collectAsState()
@@ -137,13 +138,18 @@ fun MeetingsScreen(
             meeting = meeting,
             clients = clients,
             projects = vmProjects,
-            onLoadProjects = { clientId -> viewModel.loadProjects(clientId) },
-            onSave = { clientId, projectId, title, meetingType ->
+            projectGroups = vmProjectGroups,
+            onLoadProjects = { clientId ->
+                viewModel.loadProjects(clientId)
+                viewModel.loadProjectGroups(clientId)
+            },
+            onSave = { clientId, projectId, groupId, title, meetingType ->
                 if (meeting.clientId == null) {
                     viewModel.classifyMeeting(
                         meetingId = meeting.id,
                         clientId = clientId,
                         projectId = projectId,
+                        groupId = groupId,
                         title = title,
                         meetingType = meetingType,
                     )
@@ -152,6 +158,7 @@ fun MeetingsScreen(
                         meetingId = meeting.id,
                         clientId = clientId,
                         projectId = projectId,
+                        groupId = groupId,
                         title = title,
                         meetingType = meetingType,
                     )
@@ -599,14 +606,16 @@ private fun EditMeetingDialog(
     meeting: MeetingDto,
     clients: List<ClientDto>,
     projects: List<ProjectDto>,
+    projectGroups: List<com.jervis.dto.ProjectGroupDto> = emptyList(),
     onLoadProjects: (String) -> Unit,
-    onSave: (clientId: String, projectId: String?, title: String?, meetingType: MeetingTypeEnum?) -> Unit,
+    onSave: (clientId: String, projectId: String?, groupId: String?, title: String?, meetingType: MeetingTypeEnum?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val isClassification = meeting.clientId == null
 
     var selectedClientId by remember { mutableStateOf(meeting.clientId) }
     var selectedProjectId by remember { mutableStateOf(meeting.projectId) }
+    var selectedGroupId by remember { mutableStateOf(meeting.groupId) }
     var title by remember { mutableStateOf(meeting.title ?: "") }
     var selectedMeetingType by remember { mutableStateOf(meeting.meetingType) }
 
@@ -614,12 +623,13 @@ private fun EditMeetingDialog(
     val projectChanged = selectedProjectId != meeting.projectId
     val reassign = !isClassification && (clientChanged || projectChanged)
 
-    // Load projects when client changes
+    // Load projects + groups when client changes
     LaunchedEffect(selectedClientId) {
         selectedClientId?.let { onLoadProjects(it) }
     }
 
     val filteredProjects = projects.filter { it.clientId == selectedClientId }
+    val filteredGroups = projectGroups.filter { it.clientId == selectedClientId }
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
@@ -668,12 +678,45 @@ private fun EditMeetingDialog(
                                 onClick = {
                                     selectedClientId = client.id
                                     selectedProjectId = null
+                                    selectedGroupId = null
                                 },
                             )
                             Text(
                                 text = client.name,
                                 modifier = Modifier.padding(start = 4.dp),
                             )
+                        }
+                    }
+                }
+
+                // Project group selector
+                if (filteredGroups.isNotEmpty()) {
+                    Text("Skupina (volitelná)", style = MaterialTheme.typography.labelMedium)
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = selectedGroupId == null,
+                                onClick = { selectedGroupId = null },
+                            )
+                            Text("(Žádná)", modifier = Modifier.padding(start = 4.dp))
+                        }
+                        filteredGroups.forEach { group ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                androidx.compose.material3.RadioButton(
+                                    selected = selectedGroupId == group.id,
+                                    onClick = { selectedGroupId = group.id },
+                                )
+                                Text(
+                                    text = group.name,
+                                    modifier = Modifier.padding(start = 4.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -727,6 +770,7 @@ private fun EditMeetingDialog(
                     onSave(
                         clientId,
                         selectedProjectId,
+                        selectedGroupId,
                         title.takeIf { it.isNotBlank() },
                         selectedMeetingType,
                     )
