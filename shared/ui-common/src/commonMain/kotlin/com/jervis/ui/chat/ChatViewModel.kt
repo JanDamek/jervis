@@ -189,6 +189,13 @@ class ChatViewModel(
     private val _pendingUserTasks = MutableStateFlow<List<ChatMessage>>(emptyList())
     val pendingUserTasks: StateFlow<List<ChatMessage>> = _pendingUserTasks.asStateFlow()
 
+    /** Whether there are more user tasks to load (pagination). */
+    private val _userTaskHasMore = MutableStateFlow(false)
+    val userTaskHasMore: StateFlow<Boolean> = _userTaskHasMore.asStateFlow()
+
+    private val _userTaskLoadingMore = MutableStateFlow(false)
+    val userTaskLoadingMore: StateFlow<Boolean> = _userTaskLoadingMore.asStateFlow()
+
     // Filtering is done at the Compose layer via remember() in screens/MainScreen.kt
     // to avoid stateIn timing issues with the initial empty emission.
 
@@ -374,36 +381,59 @@ class ChatViewModel(
         if (newValue) loadPendingUserTasks()
     }
 
-    /** Load ALL pending user tasks from API (global, not filtered by client). */
+    companion object {
+        private const val USER_TASK_PAGE_SIZE = 20
+    }
+
+    /** Load first page of pending user tasks from API (global, not filtered by client). */
     fun loadPendingUserTasks() {
         scope.launch {
             try {
-                val page = repository.userTasks.listAll(query = null, offset = 0, limit = 50)
-                val tasks = page.items.map { task ->
-                    val question = task.pendingQuestion ?: task.description ?: task.title
-                    ChatMessage(
-                        from = ChatMessage.Sender.Assistant,
-                        text = question,
-                        contextId = task.projectId ?: "",
-                        messageType = ChatMessage.MessageType.BACKGROUND_RESULT,
-                        metadata = mapOf(
-                            "taskId" to task.id,
-                            "needsReaction" to "true",
-                            "clientId" to task.clientId,
-                            "title" to task.title,
-                            "state" to task.state,
-                        ),
-                        timestamp = task.createdAtEpochMillis.toString(),
-                    )
-                }
-                _pendingUserTasks.value = tasks
+                val page = repository.userTasks.listAll(query = null, offset = 0, limit = USER_TASK_PAGE_SIZE)
+                _pendingUserTasks.value = page.items.map { it.toChatMessage() }
                 _userTaskCount.value = page.totalCount
+                _userTaskHasMore.value = page.items.size < page.totalCount
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 println("ChatViewModel: loadPendingUserTasks failed: ${e.message}")
             }
         }
     }
+
+    /** Load next page of pending user tasks (scroll pagination). */
+    fun loadMoreUserTasks() {
+        if (_userTaskLoadingMore.value || !_userTaskHasMore.value) return
+        _userTaskLoadingMore.value = true
+        scope.launch {
+            try {
+                val currentSize = _pendingUserTasks.value.size
+                val page = repository.userTasks.listAll(query = null, offset = currentSize, limit = USER_TASK_PAGE_SIZE)
+                val newTasks = page.items.map { it.toChatMessage() }
+                _pendingUserTasks.value = _pendingUserTasks.value + newTasks
+                _userTaskHasMore.value = _pendingUserTasks.value.size < page.totalCount
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("ChatViewModel: loadMoreUserTasks failed: ${e.message}")
+            } finally {
+                _userTaskLoadingMore.value = false
+            }
+        }
+    }
+
+    private fun com.jervis.dto.user.UserTaskDto.toChatMessage() = ChatMessage(
+        from = ChatMessage.Sender.Assistant,
+        text = pendingQuestion ?: description ?: title,
+        contextId = projectId ?: "",
+        messageType = ChatMessage.MessageType.BACKGROUND_RESULT,
+        metadata = mapOf(
+            "taskId" to id,
+            "needsReaction" to "true",
+            "clientId" to clientId,
+            "title" to title,
+            "state" to state,
+        ),
+        timestamp = createdAtEpochMillis.toString(),
+    )
 
     fun attachFile() {
         val file = pickFile() ?: return

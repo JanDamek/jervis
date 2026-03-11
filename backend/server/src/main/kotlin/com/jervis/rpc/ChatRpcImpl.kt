@@ -19,6 +19,7 @@ import com.jervis.service.IChatService
 import com.jervis.service.background.BackgroundEngine
 import com.jervis.service.chat.ChatService
 import com.jervis.service.chat.ChatStreamEvent
+import com.jervis.service.graph.TaskGraphExistsService
 import org.bson.types.ObjectId
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -47,6 +48,7 @@ class ChatRpcImpl(
     private val projectGroupRepository: com.jervis.repository.ProjectGroupRepository,
     private val cloudModelPolicyResolver: CloudModelPolicyResolver,
     private val taskRepository: TaskRepository,
+    private val taskGraphExistsService: TaskGraphExistsService,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -63,6 +65,13 @@ class ChatRpcImpl(
         // Load recent history first
         try {
             val history = chatService.getHistory(limit = 15, excludeBackground = true)
+
+            // Batch check which tasks have graphs — single MongoDB $in query
+            val allTaskIds = history.messages.mapNotNull { msg ->
+                msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
+            }.toSet()
+            val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
+
             for (msg in history.messages) {
                 val responseType = when (msg.role) {
                     MessageRole.USER -> ChatResponseType.USER_MESSAGE
@@ -70,6 +79,7 @@ class ChatRpcImpl(
                     MessageRole.ALERT -> ChatResponseType.URGENT_ALERT
                     else -> ChatResponseType.FINAL
                 }
+                val msgTaskId = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
                 emit(
                     ChatResponseDto(
                         message = msg.content,
@@ -80,6 +90,9 @@ class ChatRpcImpl(
                             put("fromHistory", "true")
                             put("sequence", msg.sequence.toString())
                             putAll(msg.metadata)  // Preserve DB metadata (taskId, taskTitle, success, contextTaskId)
+                            if (msgTaskId != null) {
+                                put("hasGraph", (msgTaskId in taskIdsWithGraph).toString())
+                            }
                         },
                     ),
                 )
@@ -316,7 +329,14 @@ class ChatRpcImpl(
             excludeBackground = excludeBackground,
         )
 
+        // Batch check which tasks have graphs
+        val allTaskIds = result.messages.mapNotNull { msg ->
+            msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
+        }.toSet()
+        val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
+
         val messages = result.messages.map { msg ->
+            val msgTaskId = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
             ChatMessageDto(
                 role = when (msg.role) {
                     MessageRole.USER -> ChatRole.USER
@@ -328,7 +348,11 @@ class ChatRpcImpl(
                 content = msg.content,
                 timestamp = msg.timestamp.toString(),
                 correlationId = msg.correlationId,
-                metadata = msg.metadata,
+                metadata = if (msgTaskId != null) {
+                    msg.metadata + ("hasGraph" to (msgTaskId in taskIdsWithGraph).toString())
+                } else {
+                    msg.metadata
+                },
                 sequence = msg.sequence,
                 messageId = msg.id.toString(),
             )
@@ -404,12 +428,20 @@ class ChatRpcImpl(
             "[Background FAILED] $taskTitle: $summary"
         }
 
+        // Check if task has a graph — single existence check
+        val hasGraph = if (taskId != null) {
+            taskGraphExistsService.findExistingGraphTaskIds(listOf(taskId)).isNotEmpty()
+        } else false
+
         // Persist to DB — same metadata as live stream so history looks identical
         val persistMetadata = buildMap {
             put("sender", "background")
             put("taskTitle", taskTitle)
             put("success", success.toString())
-            if (taskId != null) put("taskId", taskId)
+            if (taskId != null) {
+                put("taskId", taskId)
+                put("hasGraph", hasGraph.toString())
+            }
             put("timestamp", java.time.Instant.now().toString())
             putAll(metadata)
         }
@@ -425,7 +457,10 @@ class ChatRpcImpl(
             put("sender", "background")
             put("taskTitle", taskTitle)
             put("success", success.toString())
-            if (taskId != null) put("taskId", taskId)
+            if (taskId != null) {
+                put("taskId", taskId)
+                put("hasGraph", hasGraph.toString())
+            }
             put("timestamp", java.time.Instant.now().toString())
             putAll(metadata)
         }

@@ -632,22 +632,14 @@ private fun ChatMessageItem(
                     }
                 }
 
-                // Task graph section — lazy-loaded on demand
-                // Background results use "taskId", chat messages use "contextTaskId"
+                // Task graph section — lazy-loaded on demand, only when graph exists (server-side check)
                 val graphTaskId = message.metadata["taskId"] ?: message.metadata["contextTaskId"]
-                if (graphTaskId != null) {
+                val hasGraph = message.metadata["hasGraph"] == "true"
+                if (graphTaskId != null && hasGraph) {
                     val graphEntry = taskGraphs[graphTaskId]
                     if (graphEntry != null && graphEntry.vertices.isNotEmpty()) {
                         // Graph loaded — show it
                         TaskGraphSection(graph = graphEntry)
-                    } else if (graphEntry != null && graphEntry.vertices.isEmpty()) {
-                        // Tried to load but no graph exists — show info
-                        Text(
-                            text = "Graf není k dispozici",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(vertical = 4.dp),
-                        )
                     } else if (graphTaskId !in taskGraphs) {
                         // Not loaded yet — show "load graph" button
                         TextButton(
@@ -663,6 +655,24 @@ private fun ChatMessageItem(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 "Zobrazit graf",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    } else if (graphEntry != null && graphEntry.vertices.isEmpty()) {
+                        // Graph exists but load returned empty — rare edge case
+                        TextButton(
+                            onClick = { onLoadTaskGraph(graphTaskId) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "Načíst graf znovu",
                                 style = MaterialTheme.typography.labelSmall,
                             )
                         }

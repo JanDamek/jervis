@@ -40,8 +40,15 @@ fun MainScreen(
     val isChatLoading by viewModel.chat.isLoading.collectAsState()
     val isInitialLoading by viewModel.connection.isInitialLoading.collectAsState()
     val queueSize by viewModel.queue.queueSize.collectAsState()
-    val hasMore by viewModel.chat.hasMore.collectAsState()
-    val isLoadingMore by viewModel.chat.isLoadingMore.collectAsState()
+    val chatHasMore by viewModel.chat.hasMore.collectAsState()
+    val chatIsLoadingMore by viewModel.chat.isLoadingMore.collectAsState()
+    val userTaskHasMore by viewModel.chat.userTaskHasMore.collectAsState()
+    val userTaskLoadingMore by viewModel.chat.userTaskLoadingMore.collectAsState()
+
+    // Use correct pagination source based on active filter
+    val hasMore = if (showNeedReaction) userTaskHasMore else chatHasMore
+    val isLoadingMore = if (showNeedReaction) userTaskLoadingMore else chatIsLoadingMore
+    val onLoadMore: () -> Unit = if (showNeedReaction) viewModel.chat::loadMoreUserTasks else viewModel.chat::loadMoreHistory
     val compressionBoundaries by viewModel.chat.compressionBoundaries.collectAsState()
     val attachments by viewModel.chat.attachments.collectAsState()
     val pendingMessageInfo by viewModel.chat.pendingMessageInfo.collectAsState()
@@ -96,7 +103,7 @@ fun MainScreen(
         onEditMessage = viewModel.chat::editMessage,
         onReplyToTask = viewModel.chat::replyToTask,
         onSendReply = viewModel.chat::sendReplyToTask,
-        onLoadMore = viewModel.chat::loadMoreHistory,
+        onLoadMore = onLoadMore,
         onAttachFile = viewModel.chat::attachFile,
         onRemoveAttachment = viewModel.chat::removeAttachment,
         pendingMessageInfo = pendingMessageInfo,
