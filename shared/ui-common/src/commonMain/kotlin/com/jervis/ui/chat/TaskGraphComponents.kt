@@ -169,9 +169,11 @@ private fun GraphContent(
                 if (vertex.id !in hierarchyWithChildren) return@forEach
 
                 val isCollapsed = vertex.id in collapsedNodes.value
+                // Client vertices always at root indent (depth 0), regardless of stored depth
+                val indent = if (vertex.vertexType == "client") 0 else (vertex.depth - 1).coerceAtLeast(0)
                 HierarchyHeader(
                     vertex = vertex,
-                    depthIndent = vertex.depth - 1,
+                    depthIndent = indent,
                     isCollapsed = isCollapsed,
                     onClick = {
                         collapsedNodes.value = if (isCollapsed) {
@@ -339,7 +341,7 @@ private fun VertexCard(
                     )
                 }
                 // Live log icon for running coding tasks (visible on header without expanding)
-                if (vertex.vertexType == "task_ref" && vertex.status == "running" && onOpenLiveLog != null) {
+                if (vertex.vertexType == "task_ref" && vertex.status == "running" && vertex.agentName == "coding" && onOpenLiveLog != null) {
                     val taskIdForLog = vertex.inputRequest.ifBlank { null }
                     if (taskIdForLog != null) {
                         Icon(
@@ -459,7 +461,7 @@ private fun VertexCard(
                     }
 
                     // Live log button for running coding tasks
-                    if (vertex.vertexType == "task_ref" && vertex.status == "running" && onOpenLiveLog != null) {
+                    if (vertex.vertexType == "task_ref" && vertex.status == "running" && vertex.agentName == "coding" && onOpenLiveLog != null) {
                         val taskIdForLog = vertex.inputRequest.ifBlank { null }
                         if (taskIdForLog != null) {
                             androidx.compose.material3.TextButton(
@@ -852,7 +854,11 @@ private fun buildTreeOrder(
     vertices: List<GraphVertexDto>,
     rootVertexId: String,
 ): List<GraphVertexDto> {
-    val byParent = vertices.groupBy { it.parentId ?: "" }
+    // Normalize: client vertices without valid parent → treat as children of root
+    val byParent = vertices.groupBy {
+        if (it.vertexType == "client") rootVertexId
+        else it.parentId ?: ""
+    }
     val result = mutableListOf<GraphVertexDto>()
     val visited = mutableSetOf<String>()
 

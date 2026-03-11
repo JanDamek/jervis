@@ -131,6 +131,37 @@ fun MeetingsScreen(
     // Corrections sub-view state
     var showCorrections by remember { mutableStateOf(false) }
 
+    // Edit / classify meeting dialog — must be above detail/list return branches
+    editTarget?.let { meeting ->
+        EditMeetingDialog(
+            meeting = meeting,
+            clients = clients,
+            projects = vmProjects,
+            onLoadProjects = { clientId -> viewModel.loadProjects(clientId) },
+            onSave = { clientId, projectId, title, meetingType ->
+                if (meeting.clientId == null) {
+                    viewModel.classifyMeeting(
+                        meetingId = meeting.id,
+                        clientId = clientId,
+                        projectId = projectId,
+                        title = title,
+                        meetingType = meetingType,
+                    )
+                } else {
+                    viewModel.updateMeeting(
+                        meetingId = meeting.id,
+                        clientId = clientId,
+                        projectId = projectId,
+                        title = title,
+                        meetingType = meetingType,
+                    )
+                }
+                editTarget = null
+            },
+            onDismiss = { editTarget = null },
+        )
+    }
+
     // Detail view
     val currentDetail = selectedMeeting
     if (currentDetail != null) {
@@ -498,36 +529,6 @@ fun MeetingsScreen(
         dismissText = "Zahodit",
     )
 
-    // Edit / classify meeting dialog
-    editTarget?.let { meeting ->
-        EditMeetingDialog(
-            meeting = meeting,
-            clients = clients,
-            projects = vmProjects,
-            onLoadProjects = { clientId -> viewModel.loadProjects(clientId) },
-            onSave = { clientId, projectId, title, meetingType ->
-                if (meeting.clientId == null) {
-                    viewModel.classifyMeeting(
-                        meetingId = meeting.id,
-                        clientId = clientId,
-                        projectId = projectId,
-                        title = title,
-                        meetingType = meetingType,
-                    )
-                } else {
-                    viewModel.updateMeeting(
-                        meetingId = meeting.id,
-                        clientId = clientId,
-                        projectId = projectId,
-                        title = title,
-                        meetingType = meetingType,
-                    )
-                }
-                editTarget = null
-            },
-            onDismiss = { editTarget = null },
-        )
-    }
 }
 
 /**

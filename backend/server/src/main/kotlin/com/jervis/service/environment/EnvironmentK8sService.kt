@@ -526,12 +526,12 @@ class EnvironmentK8sService(
 
     private fun createOrUpdateConfigMap(namespace: String, componentName: String, envVars: Map<String, String>) {
         buildK8sClient().use { client ->
-            val configMapName = "$componentName-config"
+            val configMapName = "$componentName-config".lowercase()
             val configMap = ConfigMapBuilder()
                 .withNewMetadata()
                     .withName(configMapName)
                     .withNamespace(namespace)
-                    .addToLabels("app", componentName)
+                    .addToLabels("app", componentName.lowercase())
                     .addToLabels("managed-by", "jervis-server")
                 .endMetadata()
                 .also { builder -> envVars.forEach { (k, v) -> builder.addToData(k, v) } }

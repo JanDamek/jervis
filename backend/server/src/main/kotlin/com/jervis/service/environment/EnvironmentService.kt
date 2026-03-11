@@ -62,6 +62,14 @@ class EnvironmentService(
         val existing = getEnvironmentByIdOrNull(env.id)
         val isNew = existing == null
 
+        // Prevent duplicate namespace (globally unique in K8s)
+        if (isNew) {
+            val byNamespace = environmentRepository.findByNamespace(env.namespace)
+            if (byNamespace != null) {
+                error("Environment with namespace '${env.namespace}' already exists: ${byNamespace.name}")
+            }
+        }
+
         val merged = existing?.copy(
             name = env.name,
             description = env.description,

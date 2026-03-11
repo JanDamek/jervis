@@ -105,6 +105,7 @@ async def _run_graph_agent_background(
             group_name=request.group_name or "",
             project_id=request.project_id,
             project_name=request.project_name or "",
+            agent_type="graph",
         )
     except Exception as e:
         logger.warning("Failed to link running task to master map: %s", e)
@@ -309,6 +310,7 @@ async def _run_coding_agent_background(
             group_name=request.group_name or "",
             project_id=request.project_id,
             project_name=request.project_name or "",
+            agent_type="coding",
         )
     except Exception as e:
         logger.warning("Failed to link coding task to master map: %s", e)

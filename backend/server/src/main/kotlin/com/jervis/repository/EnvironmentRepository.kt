@@ -39,4 +39,9 @@ interface EnvironmentRepository : CoroutineCrudRepository<EnvironmentDocument, E
      * Find client-level environment (no group and no project).
      */
     suspend fun findByClientIdAndGroupIdIsNullAndProjectIdIsNull(clientId: ClientId): EnvironmentDocument?
+
+    /**
+     * Find environment by namespace (globally unique in K8s).
+     */
+    suspend fun findByNamespace(namespace: String): EnvironmentDocument?
 }

@@ -401,6 +401,7 @@ class AgentStore:
         group_name: str = "",
         project_id: str | None = None,
         project_name: str = "",
+        agent_type: str | None = None,
     ) -> None:
         """Link a task sub-graph to the memory map via a TASK_REF vertex.
 
@@ -424,6 +425,7 @@ class AgentStore:
             client_id=client_id, client_name=client_name,
             group_id=group_id, group_name=group_name,
             project_id=project_id, project_name=project_name,
+            agent_type=agent_type,
         )
         self._dirty.add(master.task_id)
 

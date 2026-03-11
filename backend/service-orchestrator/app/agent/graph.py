@@ -771,6 +771,7 @@ def add_task_ref_vertex(
     group_name: str = "",
     project_id: str | None = None,
     project_name: str = "",
+    agent_type: str | None = None,
 ) -> GraphVertex:
     """Add or update a TASK_REF vertex linking to a task sub-graph.
 
@@ -845,6 +846,7 @@ def add_task_ref_vertex(
         description=title,
         vertex_type=VertexType.TASK_REF,
         status=status,
+        agent_name=agent_type,
         client_id=client_id,
         project_id=project_id or "",
         input_request=task_id,
