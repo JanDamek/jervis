@@ -19,6 +19,7 @@ import com.jervis.service.IChatService
 import com.jervis.service.background.BackgroundEngine
 import com.jervis.service.chat.ChatService
 import com.jervis.service.chat.ChatStreamEvent
+import com.jervis.service.chat.UnifiedTimelineService
 import com.jervis.service.graph.TaskGraphExistsService
 import org.bson.types.ObjectId
 import java.util.concurrent.CancellationException
@@ -49,6 +50,7 @@ class ChatRpcImpl(
     private val cloudModelPolicyResolver: CloudModelPolicyResolver,
     private val taskRepository: TaskRepository,
     private val taskGraphExistsService: TaskGraphExistsService,
+    private val unifiedTimelineService: UnifiedTimelineService,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -322,7 +324,40 @@ class ChatRpcImpl(
         }
     }
 
-    override suspend fun getChatHistory(limit: Int, beforeMessageId: String?, excludeBackground: Boolean): ChatHistoryDto {
+    override suspend fun getChatHistory(limit: Int, beforeMessageId: String?, excludeBackground: Boolean, includeUserTasks: Boolean): ChatHistoryDto {
+        val userTaskCount = taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toInt()
+
+        // Unified timeline: DB merges chat_messages + tasks via $unionWith, sorted by timestamp
+        if (includeUserTasks) {
+            val session = chatService.getOrCreateActiveSession()
+            val (messages, hasMore) = unifiedTimelineService.loadUnifiedTimeline(
+                conversationId = session.id,
+                limit = limit,
+                beforeTimestamp = beforeMessageId, // Reuse cursor param as timestamp cursor
+            )
+
+            // Batch check graphs
+            val allTaskIds = messages.mapNotNull { it.metadata["taskId"] ?: it.metadata["contextTaskId"] }.toSet()
+            val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
+            val enriched = messages.map { msg ->
+                val tid = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
+                if (tid != null) msg.copy(metadata = msg.metadata + ("hasGraph" to (tid in taskIdsWithGraph).toString()))
+                else msg
+            }
+
+            return ChatHistoryDto(
+                messages = enriched,
+                hasMore = hasMore,
+                oldestMessageId = messages.firstOrNull()?.timestamp, // Timestamp cursor for pagination
+                activeClientId = null,
+                activeProjectId = null,
+                activeGroupId = null,
+                userTaskCount = userTaskCount,
+                backgroundMessageCount = 0,
+            )
+        }
+
+        // Standard chat history (no user tasks mixed in)
         val result = chatService.getHistory(
             limit = limit,
             beforeMessageId = beforeMessageId,
@@ -357,8 +392,6 @@ class ChatRpcImpl(
                 messageId = msg.id.toString(),
             )
         }
-
-        val userTaskCount = taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toInt()
 
         return ChatHistoryDto(
             messages = messages,

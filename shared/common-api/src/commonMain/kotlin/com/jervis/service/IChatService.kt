@@ -48,7 +48,7 @@ interface IChatService {
      * @param limit Max messages to return
      * @param beforeMessageId Load messages before this message ID (cursor, ObjectId string)
      */
-    suspend fun getChatHistory(limit: Int = 20, beforeMessageId: String? = null, excludeBackground: Boolean = true): ChatHistoryDto
+    suspend fun getChatHistory(limit: Int = 20, beforeMessageId: String? = null, excludeBackground: Boolean = true, includeUserTasks: Boolean = false): ChatHistoryDto
 
     /**
      * Update active scope (client/project/group) in the chat session.

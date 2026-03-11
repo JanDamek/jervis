@@ -185,16 +185,7 @@ class ChatViewModel(
     private val _userTaskCount = MutableStateFlow(0)
     val userTaskCount: StateFlow<Int> = _userTaskCount.asStateFlow()
 
-    /** All pending user tasks (global, not filtered by client). Loaded from API. */
-    private val _pendingUserTasks = MutableStateFlow<List<ChatMessage>>(emptyList())
-    val pendingUserTasks: StateFlow<List<ChatMessage>> = _pendingUserTasks.asStateFlow()
-
-    /** Whether there are more user tasks to load (pagination). */
-    private val _userTaskHasMore = MutableStateFlow(false)
-    val userTaskHasMore: StateFlow<Boolean> = _userTaskHasMore.asStateFlow()
-
-    private val _userTaskLoadingMore = MutableStateFlow(false)
-    val userTaskLoadingMore: StateFlow<Boolean> = _userTaskLoadingMore.asStateFlow()
+    // pendingUserTasks removed — unified timeline handled server-side via $unionWith
 
     // Filtering is done at the Compose layer via remember() in screens/MainScreen.kt
     // to avoid stateIn timing issues with the initial empty emission.
@@ -237,9 +228,8 @@ class ChatViewModel(
                         if (e is CancellationException) throw e
                         println("ChatViewModel: history load failed: ${e.message}")
                     }
-                    // Load master map + pending user tasks on connection ready
+                    // Load master map on connection ready
                     loadMemoryMap()
-                    loadPendingUserTasks()
                 }
             }.collect { response ->
                 handleChatResponse(response)
@@ -292,7 +282,7 @@ class ChatViewModel(
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
 
-        // Optimistically update both chatMessages AND pendingUserTasks
+        // Optimistically update chatMessages
         _chatMessages.value = _chatMessages.value.map { msg ->
             if (msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT &&
                 msg.metadata["taskId"] == taskId
@@ -302,8 +292,6 @@ class ChatViewModel(
                 msg
             }
         }
-        // Remove from pending user tasks list ("K reakci" tab)
-        _pendingUserTasks.value = _pendingUserTasks.value.filter { it.metadata["taskId"] != taskId }
         _userTaskCount.update { (it - 1).coerceAtLeast(0) }
 
         // Send to server asynchronously (doesn't block chat)
@@ -375,63 +363,49 @@ class ChatViewModel(
         _showTasks.value = !_showTasks.value
     }
 
-    /** Toggle "K reakci" filter — backgrounds needing user reaction. */
+    /** Toggle "K reakci" filter — reloads unified timeline from server (DB-sorted). */
     fun toggleNeedReaction() {
         val newValue = !_showNeedReaction.value
         _showNeedReaction.value = newValue
-        if (newValue) loadPendingUserTasks()
-    }
-
-
-    /** Load first page of pending user tasks from API (global, not filtered by client). */
-    fun loadPendingUserTasks() {
-        scope.launch {
-            try {
-                val page = repository.userTasks.listAll(query = null, offset = 0, limit = USER_TASK_PAGE_SIZE)
-                _pendingUserTasks.value = page.items.map { it.toChatMessage() }
-                _userTaskCount.value = page.totalCount
-                _userTaskHasMore.value = page.items.size < page.totalCount
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                println("ChatViewModel: loadPendingUserTasks failed: ${e.message}")
-            }
+        if (newValue) {
+            loadUnifiedTimeline()
+        } else {
+            // Switching back to chat — reload normal history
+            reloadHistory()
         }
     }
 
-    /** Load next page of pending user tasks (scroll pagination). */
-    fun loadMoreUserTasks() {
-        if (_userTaskLoadingMore.value || !_userTaskHasMore.value) return
-        _userTaskLoadingMore.value = true
+    /** Load unified timeline (chat + user tasks) from server — DB does merge+sort. */
+    private fun loadUnifiedTimeline() {
         scope.launch {
+            _isLoadingMore.value = true
             try {
-                val currentSize = _pendingUserTasks.value.size
-                val page = repository.userTasks.listAll(query = null, offset = currentSize, limit = USER_TASK_PAGE_SIZE)
-                val newTasks = page.items.map { it.toChatMessage() }
-                _pendingUserTasks.value = _pendingUserTasks.value + newTasks
-                _userTaskHasMore.value = _pendingUserTasks.value.size < page.totalCount
+                val history = repository.chat.getChatHistory(
+                    limit = 30,
+                    includeUserTasks = true,
+                )
+                applyHistory(history)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                println("ChatViewModel: loadMoreUserTasks failed: ${e.message}")
+                println("ChatViewModel: loadUnifiedTimeline failed: ${e.message}")
             } finally {
-                _userTaskLoadingMore.value = false
+                _isLoadingMore.value = false
             }
         }
     }
 
-    private fun com.jervis.dto.user.UserTaskDto.toChatMessage() = ChatMessage(
-        from = ChatMessage.Sender.Assistant,
-        text = pendingQuestion ?: description ?: title,
-        contextId = projectId ?: "",
-        messageType = ChatMessage.MessageType.BACKGROUND_RESULT,
-        metadata = mapOf(
-            "taskId" to id,
-            "needsReaction" to "true",
-            "clientId" to clientId,
-            "title" to title,
-            "state" to state,
-        ),
-        timestamp = createdAtEpochMillis.toString(),
-    )
+    /** Reload normal chat history (no user tasks). */
+    private fun reloadHistory() {
+        scope.launch {
+            try {
+                val history = repository.chat.getChatHistory(limit = 20)
+                applyHistory(history)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("ChatViewModel: reloadHistory failed: ${e.message}")
+            }
+        }
+    }
 
     fun attachFile() {
         val file = pickFile() ?: return
@@ -640,7 +614,9 @@ class ChatViewModel(
             _isLoadingMore.value = true
             try {
                 val history = repository.chat.getChatHistory(
-                    limit = 20, beforeMessageId = beforeId,
+                    limit = 20,
+                    beforeMessageId = beforeId,
+                    includeUserTasks = _showNeedReaction.value,
                 )
                 val olderMessages = history.messages.map { msg ->
                     val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {

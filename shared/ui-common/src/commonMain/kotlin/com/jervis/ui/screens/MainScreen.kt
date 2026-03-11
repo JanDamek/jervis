@@ -5,20 +5,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import com.jervis.dto.ui.ChatMessage
-import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.ui.MainViewModel
 import com.jervis.ui.environment.EnvironmentPanel
 import com.jervis.ui.MainScreenView as MainScreenViewInternal
-import kotlinx.datetime.Instant
-
-/** Parse timestamp (ISO-8601 or epoch millis) to epoch millis for sorting. */
-private fun ChatMessage.epochMillis(): Long = timestamp?.let { ts ->
-    try {
-        Instant.parse(ts).toEpochMilliseconds()
-    } catch (_: Exception) {
-        ts.trim().toLongOrNull() ?: 0L
-    }
-} ?: 0L
 
 @Composable
 fun MainScreen(
@@ -34,13 +23,12 @@ fun MainScreen(
     val showNeedReaction by viewModel.chat.showNeedReaction.collectAsState()
     val backgroundMessageCount by viewModel.chat.backgroundMessageCount.collectAsState()
     val userTaskCount by viewModel.chat.userTaskCount.collectAsState()
-    val pendingUserTasks by viewModel.chat.pendingUserTasks.collectAsState()
 
-    // Client-side filtering — instant toggle, no server reload
-    // "K reakci" merges user tasks into chat, sorted chronologically
-    val filteredMessages = remember(chatMessages, pendingUserTasks, showChat, showTasks, showNeedReaction) {
+    // K reakci: server returns unified timeline (DB-sorted), no client-side merge needed
+    // Chat/Tasky: client-side filter on message type (same DB source, just visibility toggle)
+    val filteredMessages = remember(chatMessages, showChat, showTasks, showNeedReaction) {
         when {
-            showNeedReaction -> (chatMessages + pendingUserTasks).sortedBy { it.epochMillis() }
+            showNeedReaction -> chatMessages // Server already returned unified timeline
             showTasks -> chatMessages.filter { it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT }
             showChat -> chatMessages.filter { it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT }
             else -> chatMessages
@@ -50,15 +38,8 @@ fun MainScreen(
     val isChatLoading by viewModel.chat.isLoading.collectAsState()
     val isInitialLoading by viewModel.connection.isInitialLoading.collectAsState()
     val queueSize by viewModel.queue.queueSize.collectAsState()
-    val chatHasMore by viewModel.chat.hasMore.collectAsState()
-    val chatIsLoadingMore by viewModel.chat.isLoadingMore.collectAsState()
-    val userTaskHasMore by viewModel.chat.userTaskHasMore.collectAsState()
-    val userTaskLoadingMore by viewModel.chat.userTaskLoadingMore.collectAsState()
-
-    // Use correct pagination source based on active filter
-    val hasMore = if (showNeedReaction) userTaskHasMore else chatHasMore
-    val isLoadingMore = if (showNeedReaction) userTaskLoadingMore else chatIsLoadingMore
-    val onLoadMore: () -> Unit = if (showNeedReaction) viewModel.chat::loadMoreUserTasks else viewModel.chat::loadMoreHistory
+    val hasMore by viewModel.chat.hasMore.collectAsState()
+    val isLoadingMore by viewModel.chat.isLoadingMore.collectAsState()
     val compressionBoundaries by viewModel.chat.compressionBoundaries.collectAsState()
     val attachments by viewModel.chat.attachments.collectAsState()
     val pendingMessageInfo by viewModel.chat.pendingMessageInfo.collectAsState()
@@ -113,7 +94,7 @@ fun MainScreen(
         onEditMessage = viewModel.chat::editMessage,
         onReplyToTask = viewModel.chat::replyToTask,
         onSendReply = viewModel.chat::sendReplyToTask,
-        onLoadMore = onLoadMore,
+        onLoadMore = viewModel.chat::loadMoreHistory,
         onAttachFile = viewModel.chat::attachFile,
         onRemoveAttachment = viewModel.chat::removeAttachment,
         pendingMessageInfo = pendingMessageInfo,
