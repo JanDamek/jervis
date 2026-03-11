@@ -36,10 +36,10 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "qwen3:14b"                             # Graph extraction — complex reasoning, GPU-2 (permanent)
     VISION_MODEL: str = "qwen3-vl-tool:latest"               # VLM for image description (GPU-2, on-demand swap)
 
-    # Ingest model routing — dual extraction models on GPU-2.
+    # Ingest model routing — single extraction model on GPU-2.
     # GPU-1 (30b) freed for orchestrator/chat. GPU-2 runs extraction parallel.
-    INGEST_MODEL_SIMPLE: str = "qwen3:8b"                    # Link relevance, quick classification (GPU-2, ~6GB)
-    INGEST_MODEL_COMPLEX: str = "qwen3:14b"                  # Summary extraction, complex ingest (GPU-2, ~11GB)
+    INGEST_MODEL_SIMPLE: str = "qwen3:14b"                   # Link relevance, quick classification (GPU-2, permanent)
+    INGEST_MODEL_COMPLEX: str = "qwen3:14b"                  # Summary extraction, complex ingest (GPU-2, permanent)
 
     # -- Context window management (same pattern as chat/orchestrator) ---------
     # Chat/orchestrator uses: TOTAL_CONTEXT_WINDOW=32768, RESPONSE_RESERVE=4000,

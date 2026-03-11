@@ -177,9 +177,9 @@ data:
   OLLAMA_EMBEDDING_BASE_URL: "http://jervis-ollama-router:11430"   # Via router → GPU/CPU
   OLLAMA_INGEST_BASE_URL: "http://jervis-ollama-router:11430"      # Via router → GPU/CPU
   # -- Model routing (see docs/structures.md § "Model Routing") ---------------
-  LLM_MODEL: "qwen3:14b"                                      # Graph extraction — complex reasoning (GPU-2, permanent)
-  INGEST_MODEL_SIMPLE: "qwen3:8b"                              # Link relevance, quick classification (GPU-2, 8b permanent)
-  INGEST_MODEL_COMPLEX: "qwen3:14b"                            # Summary extraction, complex ingest (GPU-2, 14b permanent)
+  LLM_MODEL: "qwen3:14b"                                      # Graph extraction (GPU-2, permanent)
+  INGEST_MODEL_SIMPLE: "qwen3:14b"                             # Link relevance, quick classification (GPU-2, permanent)
+  INGEST_MODEL_COMPLEX: "qwen3:14b"                            # Summary extraction, complex ingest (GPU-2, permanent)
   INGEST_CONTEXT_CAP: "32768"                                  # GPU-2: 3 models in VRAM, limited KV cache budget
   # -- Storage backends -------------------------------------------------------
   WEAVIATE_URL: "http://nas.lan.mazlusek.com:8080"                  # Vector store (RAG)
@@ -232,7 +232,7 @@ data:
   ROUTER_PORT: "11430"
   GPU_BACKENDS: '[{"url":"http://nas.lan.mazlusek.com:11434","vram_gb":24,"name":"p40-1"},{"url":"http://ollama.lan.mazlusek.com:11434","vram_gb":24,"name":"p40-2"}]'
   ORCHESTRATOR_MODEL: "qwen3-coder-tool:30b"
-  GPU_MODEL_SETS: '{"p40-1":["qwen3-coder-tool:30b"],"p40-2":["qwen3-embedding:8b","qwen3:8b","qwen3:14b","qwen3-vl-tool:latest"]}'
+  GPU_MODEL_SETS: '{"p40-1":["qwen3-coder-tool:30b"],"p40-2":["qwen3-embedding:8b","qwen3:14b","qwen3-vl-tool:latest"]}'
   ORCHESTRATOR_RESERVATION_TIMEOUT_S: "600"
   ORCHESTRATOR_IDLE_TIMEOUT_S: "60"
   MODEL_LOAD_TIMEOUT_S: "300"

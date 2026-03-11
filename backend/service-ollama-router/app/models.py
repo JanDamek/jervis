@@ -40,7 +40,7 @@ class Capability(str, Enum):
 
 _DEFAULT_GPU_MODEL_SETS: dict[str, list[str]] = {
     "p40-1": ["qwen3-coder-tool:30b"],                                                   # 48k ctx, heavy LLM
-    "p40-2": ["qwen3-embedding:8b", "qwen3:8b", "qwen3:14b", "qwen3-vl-tool:latest"],   # embedding + extraction 8b/14b (permanent) + VLM (on-demand swap)
+    "p40-2": ["qwen3-embedding:8b", "qwen3:14b", "qwen3-vl-tool:latest"],   # embedding + extraction 14b (permanent) + VLM (on-demand swap)
 }
 
 def _load_gpu_model_sets() -> dict[str, list[str]]:
@@ -65,8 +65,7 @@ VLM_GPU = "p40-2"
 # _find_local_model_for_capability() returns FIRST match, so order matters.
 LOCAL_MODEL_CAPABILITIES: dict[str, list[str]] = {
     "qwen3-coder-tool:30b": ["thinking", "coding", "chat"],
-    "qwen3:8b": ["extraction"],    # Lightweight: qualification, KB simple extraction (GPU-2, permanent)
-    "qwen3:14b": [],               # KB complex extraction — called directly by model name, not via capability
+    "qwen3:14b": ["extraction"],   # KB extraction + qualification (GPU-2, permanent)
     "qwen3-embedding:8b": ["embedding"],
     "qwen3-vl-tool:latest": ["visual"],
 }
@@ -74,7 +73,7 @@ LOCAL_MODEL_CAPABILITIES: dict[str, list[str]] = {
 # Local model context limits (fixed num_ctx per GPU Modelfile)
 LOCAL_MODEL_CONTEXT: dict[str, int] = {
     "p40-1": 48_000,
-    "p40-2": 32_000,  # Extraction models (8b/14b). 3 models in VRAM → limited KV cache budget.
+    "p40-2": 32_000,  # Extraction 14b + embedding. 2 permanent models in VRAM.
 }
 
 
@@ -88,12 +87,7 @@ MODEL_SETS: dict[str, dict] = {
         "vram_gb": 18.5,
         "keep_alive": "-1",   # p40-1: always loaded
     },
-    "extraction_light": {
-        "models": ["qwen3:8b"],
-        "vram_gb": 6.0,
-        "keep_alive": "-1",   # p40-2: permanent (KB simple, qualification)
-    },
-    "extraction_complex": {
+    "extraction": {
         "models": ["qwen3:14b"],
         "vram_gb": 11.0,
         "keep_alive": "-1",   # p40-2: permanent (KB graph extraction, summaries)
@@ -119,7 +113,6 @@ for _set_name, _set_def in MODEL_SETS.items():
 # model → default priority lookup (CRITICAL is set via header, not model)
 MODEL_TO_PRIORITY: dict[str, Priority] = {
     "qwen3-coder-tool:30b": Priority.NORMAL,
-    "qwen3:8b": Priority.NORMAL,
     "qwen3:14b": Priority.NORMAL,
     "qwen3-embedding:8b": Priority.NORMAL,
     "qwen3-vl-tool:latest": Priority.NORMAL,

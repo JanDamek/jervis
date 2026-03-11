@@ -73,8 +73,7 @@ class GpuBackend:
 
 MODEL_VRAM_ESTIMATES: dict[str, float] = {
     "qwen3-coder-tool:30b": 18.5,  # ~18.5GB VRAM on P40
-    "qwen3:8b": 6.0,               # Lightweight extraction (GPU-2, permanent)
-    "qwen3:14b": 11.0,             # Complex extraction (GPU-2, permanent)
+    "qwen3:14b": 11.0,             # KB extraction + qualification (GPU-2, permanent)
     "qwen3-embedding:8b": 5.5,
     "qwen3-vl-tool:latest": 8.8,
 }
