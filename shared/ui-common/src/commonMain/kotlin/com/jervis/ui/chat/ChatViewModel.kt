@@ -282,10 +282,11 @@ class ChatViewModel(
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
 
-        // Optimistically update chatMessages
+        // Optimistically update chatMessages (BACKGROUND_RESULT or URGENT_ALERT)
         _chatMessages.value = _chatMessages.value.map { msg ->
-            if (msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT &&
-                msg.metadata["taskId"] == taskId
+            if ((msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT ||
+                    msg.messageType == ChatMessage.MessageType.URGENT_ALERT) &&
+                (msg.metadata["taskId"] == taskId || msg.metadata["sourceUrn"] == taskId)
             ) {
                 msg.copy(userResponse = trimmed)
             } else {

@@ -908,8 +908,31 @@ private fun ChatMessageItem(
                     )
                 }
 
+                // User response (shown inline after reply, same as BACKGROUND_RESULT)
+                val alertHasResponse = message.userResponse != null
+                if (alertHasResponse) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Icon(
+                            Icons.Default.Reply,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp).padding(top = 2.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        )
+                        Text(
+                            text = message.userResponse!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+
                 // Timestamp + action buttons
                 val alertSourceUrn = message.metadata["sourceUrn"]
+                val alertTaskId = message.metadata["taskId"]
                 var showAlertReply by remember { mutableStateOf(false) }
                 var alertReplyText by remember { mutableStateOf("") }
 
@@ -927,7 +950,7 @@ private fun ChatMessageItem(
                             )
                         }
                     }
-                    if (!showAlertReply) {
+                    if (!showAlertReply && !alertHasResponse) {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             TextButton(
                                 onClick = { showAlertReply = true },
@@ -970,7 +993,7 @@ private fun ChatMessageItem(
                                 .onPreviewKeyEvent { event ->
                                     if (event.key == Key.Enter && event.type == KeyEventType.KeyDown && !event.isShiftPressed) {
                                         if (alertReplyText.isNotBlank()) {
-                                            onSendReply(alertSourceUrn ?: "alert", alertReplyText)
+                                            onSendReply(alertTaskId ?: alertSourceUrn ?: "alert", alertReplyText)
                                             alertReplyText = ""
                                             showAlertReply = false
                                         }
@@ -985,7 +1008,7 @@ private fun ChatMessageItem(
                                 if (alertReplyText.isNotBlank()) {
                                     // Send reply as context-aware chat message
                                     val context = alertSourceUrn?.let { "Re: alert ($it): " } ?: "Re: alert: "
-                                    onSendReply(alertSourceUrn ?: "alert", alertReplyText)
+                                    onSendReply(alertTaskId ?: alertSourceUrn ?: "alert", alertReplyText)
                                     alertReplyText = ""
                                     showAlertReply = false
                                 }
