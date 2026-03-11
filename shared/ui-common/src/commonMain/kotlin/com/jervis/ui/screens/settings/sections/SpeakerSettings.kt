@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.RecordVoiceOver
@@ -33,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
-import com.jervis.dto.meeting.SpeakerCreateDto
 import com.jervis.dto.meeting.SpeakerDto
 import com.jervis.dto.meeting.SpeakerUpdateDto
 import com.jervis.repository.JervisRepository
@@ -44,7 +42,6 @@ import com.jervis.ui.design.JDestructiveButton
 import com.jervis.ui.design.JDetailScreen
 import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JListDetailLayout
-import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JSection
 import com.jervis.ui.design.JSnackbarHost
 import com.jervis.ui.design.JTextField
@@ -62,7 +59,6 @@ internal fun SpeakerSettings(repository: JervisRepository) {
     var speakers by remember { mutableStateOf<List<SpeakerDto>>(emptyList()) }
     var selectedSpeaker by remember { mutableStateOf<SpeakerDto?>(null) }
     var isLoading by remember { mutableStateOf(false) }
-    var isCreating by remember { mutableStateOf(false) }
 
     fun loadSpeakers() {
         val clientId = selectedClient?.id ?: return
@@ -109,24 +105,18 @@ internal fun SpeakerSettings(repository: JervisRepository) {
         if (selectedClient != null) {
             JListDetailLayout(
                 items = speakers,
-                selectedItem = if (isCreating) null else selectedSpeaker,
+                selectedItem = selectedSpeaker,
                 isLoading = isLoading,
-                onItemSelected = { isCreating = false; selectedSpeaker = it },
+                onItemSelected = { selectedSpeaker = it },
                 emptyMessage = "Žádní řečníci — vznikají automaticky z přepisu meetingů",
                 emptyIcon = "\uD83C\uDFA4",
                 listHeader = {
                     JActionBar {
                         RefreshIconButton(onClick = { loadSpeakers() })
-                        Spacer(Modifier.width(8.dp))
-                        JPrimaryButton(onClick = { isCreating = true; selectedSpeaker = null }) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Nový řečník")
-                        }
                     }
                 },
                 listItem = { speaker ->
-                    SpeakerListCard(speaker = speaker, onClick = { isCreating = false; selectedSpeaker = speaker })
+                    SpeakerListCard(speaker = speaker, onClick = { selectedSpeaker = speaker })
                 },
                 detailContent = { speaker ->
                     SpeakerEditForm(
@@ -159,25 +149,6 @@ internal fun SpeakerSettings(repository: JervisRepository) {
                     )
                 },
             )
-
-            if (isCreating) {
-                SpeakerCreateForm(
-                    clientId = selectedClient!!.id,
-                    onSave = { create ->
-                        scope.launch {
-                            try {
-                                repository.speakers.createSpeaker(create)
-                                isCreating = false
-                                loadSpeakers()
-                                snackbarHostState.showSnackbar("Řečník vytvořen")
-                            } catch (e: Exception) {
-                                snackbarHostState.showSnackbar("Chyba: ${e.message}")
-                            }
-                        }
-                    },
-                    onCancel = { isCreating = false },
-                )
-            }
         }
 
         JSnackbarHost(snackbarHostState)
@@ -343,80 +314,4 @@ private fun SpeakerEditForm(
     )
 }
 
-@Composable
-private fun SpeakerCreateForm(
-    clientId: String,
-    onSave: (SpeakerCreateDto) -> Unit,
-    onCancel: () -> Unit,
-) {
-    var name by remember { mutableStateOf("") }
-    var nationality by remember { mutableStateOf("") }
-    var languages by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-
-    JDetailScreen(
-        title = "Nový řečník",
-        onBack = onCancel,
-        onSave = {
-            onSave(
-                SpeakerCreateDto(
-                    clientId = clientId,
-                    name = name.trim(),
-                    nationality = nationality.trim().ifBlank { null },
-                    languagesSpoken = languages.split(",").map { it.trim() }.filter { it.isNotBlank() },
-                    notes = notes.trim().ifBlank { null },
-                ),
-            )
-        },
-        saveEnabled = name.isNotBlank(),
-    ) {
-        Column(
-            modifier = Modifier.verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            JSection(title = "Základní údaje") {
-                JTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = "Jméno",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                JTextField(
-                    value = nationality,
-                    onValueChange = { nationality = it },
-                    label = "Národnost",
-                    placeholder = "např. Čech, Slovák, Němec",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                JTextField(
-                    value = languages,
-                    onValueChange = { languages = it },
-                    label = "Jazyky (oddělené čárkou)",
-                    placeholder = "např. cs, sk, en",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
-            JSection(title = "Poznámky pro LLM") {
-                JTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = "Poznámky",
-                    placeholder = "Specifika řeči, zaměření, kontext pro korekci transkripce",
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = false,
-                    minLines = 3,
-                    maxLines = 6,
-                )
-            }
-
-            Text(
-                "Hlasový otisk se přiřadí automaticky při přiřazení řečníka v meetingu s diarizací.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-    }
-}
 

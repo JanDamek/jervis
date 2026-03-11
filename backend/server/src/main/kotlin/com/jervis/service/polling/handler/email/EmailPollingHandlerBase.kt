@@ -7,6 +7,7 @@ import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.email.EmailAttachment
+import com.jervis.entity.email.EmailDirection
 import com.jervis.entity.email.EmailMessageIndexDocument
 import com.jervis.repository.EmailMessageIndexRepository
 import com.jervis.service.polling.PollingResult
@@ -179,6 +180,16 @@ abstract class EmailPollingHandlerBase(
         val sentDate = message.sentDate?.toInstant() ?: Instant.now()
         val receivedDate = message.receivedDate?.toInstant() ?: Instant.now()
 
+        // Thread headers (RFC 2822)
+        val inReplyTo = message.getHeader("In-Reply-To")?.firstOrNull()?.trim()
+        val references = message.getHeader("References")?.firstOrNull()
+            ?.split("\\s+".toRegex())?.map { it.trim() }?.filter { it.isNotBlank() }
+            ?: emptyList()
+        val threadId = EmailMessageIndexDocument.computeThreadId(messageId, inReplyTo, references)
+
+        // Direction detection from folder name
+        val direction = detectDirection(folderName)
+
         // Parse body and attachments (may return null if content cannot be loaded)
         val contentResult = parseContent(message, clientId)
         val (textBody, htmlBody, attachments) =
@@ -208,7 +219,24 @@ abstract class EmailPollingHandlerBase(
             htmlBody = htmlBody,
             attachments = attachments,
             folder = folderName,
+            inReplyTo = inReplyTo,
+            references = references,
+            threadId = threadId,
+            direction = direction,
         )
+    }
+
+    private fun detectDirection(folderName: String): EmailDirection {
+        val sentFolderNames = setOf(
+            "sent", "inbox.sent", "sent items", "sent messages",
+            "[gmail]/sent mail", "[gmail]/odeslané",
+            "odeslané", "odeslane",
+        )
+        return if (sentFolderNames.any { folderName.equals(it, ignoreCase = true) }) {
+            EmailDirection.SENT
+        } else {
+            EmailDirection.RECEIVED
+        }
     }
 
     /**

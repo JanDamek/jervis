@@ -108,6 +108,8 @@ import java.time.Instant
     CompoundIndex(name = "state_type_createdAt", def = "{'state': 1, 'type': 1, 'createdAt': -1}"),
     CompoundIndex(name = "parent_state_idx", def = "{'parentTaskId': 1, 'state': 1}"),
     CompoundIndex(name = "queue_priority_idx", def = "{'processingMode': 1, 'state': 1, 'priorityScore': -1, 'createdAt': 1}"),
+    CompoundIndex(name = "user_task_priority_idx", def = "{'type': 1, 'state': 1, 'priorityScore': -1, 'lastActivityAt': -1}"),
+    CompoundIndex(name = "topic_idx", def = "{'topicId': 1, 'state': 1}"),
 )
 data class TaskDocument(
     @Id
@@ -206,6 +208,11 @@ data class TaskDocument(
     val hasAttachments: Boolean = false,
     /** Number of attachment extract records created for this task. */
     val attachmentCount: Int = 0,
+    /** Topic ID for conversation consolidation — groups related items across all sources.
+     * Format: "email-thread:<threadId>", "mr:<projectId>:<mrId>", "slack:<channelId>:<threadTs>", etc. */
+    val topicId: String? = null,
+    /** Last activity timestamp — updated when new thread messages arrive. Used for "K reakci" sorting. */
+    val lastActivityAt: Instant? = null,
 ) {
     companion object {
         /**
@@ -263,6 +270,8 @@ data class TaskDocument(
             mergeRequestUrl: String?,
             hasAttachments: Boolean?,
             attachmentCount: Int?,
+            topicId: String?,
+            lastActivityAt: Instant?,
         ): TaskDocument = TaskDocument(
             id = TaskId(id),
             type = type,
@@ -310,6 +319,8 @@ data class TaskDocument(
             mergeRequestUrl = mergeRequestUrl,
             hasAttachments = hasAttachments ?: false,
             attachmentCount = attachmentCount ?: 0,
+            topicId = topicId,
+            lastActivityAt = lastActivityAt,
         )
     }
 }

@@ -814,6 +814,11 @@ class ChatViewModel(
                 )
                 // Refresh master map after chat completion
                 loadMemoryMap()
+                // Proactively load graph for inline display in bubble
+                val graphId = response.metadata["graph_id"]
+                if (!graphId.isNullOrBlank() && graphId !in _taskGraphs.value) {
+                    loadTaskGraph(graphId)
+                }
             }
 
             ChatMessage.MessageType.ERROR -> {

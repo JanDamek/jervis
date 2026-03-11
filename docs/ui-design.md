@@ -617,6 +617,8 @@ iMessage/WhatsApp-style chat with content-based width:
 - **Background result messages** (BACKGROUND_RESULT): `surfaceVariant` background, `Icons.Default.CheckCircle` (success) or `Icons.Default.Error` (failure) icon, collapsible content. Shows task title + summary. When `taskId` is present in metadata, shows "Zobrazit graf" button that lazy-loads the task decomposition graph via `ITaskGraphService.getGraph()`. Graph section shows: stats row (status, vertex count, LLM calls, tokens), depth-indented vertex cards (expandable: description, agent, tools, timing, input/result/context), and incoming edge annotations.
 - **Task graph visualization** (`TaskGraphComponents.kt`): Embedded in BACKGROUND_RESULT card. `TaskGraphSection` — expandable header with graph summary + animated vertex tree. `VertexCard` — depth-indented, status-colored cards with expand/collapse for debug info (agent name, token count, LLM calls, tools used, timing, errors, result summary). For `task_ref` vertices: raw task ID hidden from display; "Zobrazit myšlenkovou mapu" button when sub-graph available (uses `localContext` if starts with `tg-`, otherwise falls back to `inputRequest` task ID). Callbacks: `onOpenSubGraph: ((String) -> Unit)?`, `onOpenLiveLog: ((String) -> Unit)?`. `EdgeRow` — shows source vertex title, edge type, and payload summary. `StatChip` — compact label:value chips. `ExpandableTextSection` — collapsible text blocks. All labels in Czech. **Vertex status colors**: `statusColor()` and `statusLabel()` are `internal` (shared with `ThinkingMapPanel`).
 - **Urgent alert messages** (URGENT_ALERT): `errorContainer` border, `Icons.Default.Warning` icon, always expanded. Shows source + summary + optional suggested action. User can reply in chat.
+- **Inline thinking map** (FINAL bubble): When `metadata["graph_id"]` present, shows `TaskGraphSection` inline after WorkflowStepsDisplay. Proactively loaded via `ChatViewModel.loadTaskGraph()` on FINAL. Shows load button if cache miss.
+- **Inline coding agent log** (FINAL bubble): When `metadata["coding_agent_task_id"]` present, shows `CodingAgentLogPanel` inline with expand/collapse. Uses existing `IJobLogsService.subscribeToJobLogs()` for live K8s Job log streaming. Max height 300dp.
 - **Timestamps**: Human-readable formatting via `formatMessageTime()` — today: "HH:mm", yesterday: "Včera HH:mm", this year: "d. M. HH:mm", older: "d. M. yyyy HH:mm"
 
 **Edit & Copy actions** (header row of each bubble):
@@ -1075,7 +1077,7 @@ Compact (<600dp):
 - `RecordingSetupDialog` -- Client, project, audio device selection, system audio toggle
 - `RecordingFinalizeDialog` -- Meeting type (radio buttons), optional title
 - `EditMeetingDialog` -- Edit name, type, client, project of classified meeting (with reassignment warning)
-- `SpeakerAssignmentPanel` -- Assign speaker profiles to diarization labels. Dropdown per label, create new speaker inline. Voice sample extraction. Toggle via People button in top bar.
+- `SpeakerAssignmentDialog` -- AlertDialog for assigning speaker profiles to diarization labels. "Nový řečník" button fixed at top (AnimatedVisibility inline form). Dropdown per label, voice sample extraction. Opened via People button in top bar (always shows AgentChatPanel underneath).
 - `RecordingIndicator` -- Animated red dot + elapsed time + stop button (shown during recording)
 
 **State icons:** RECORDING, UPLOADING, UPLOADED/TRANSCRIBING/CORRECTING, TRANSCRIBED/CORRECTED/INDEXED, FAILED
@@ -1088,13 +1090,13 @@ Compact (<600dp):
 - `speakerMapping` on `MeetingDocument` -- maps diarization labels ("SPEAKER_00") to speaker profile IDs
 - `speakerEmbeddings` on `MeetingDocument` -- pyannote 4.x 256-dim embeddings per diarization label
 - `TranscriptSegmentDto.speakerName` -- resolved from mapping, shown in transcript instead of raw labels
-- `SpeakerAssignmentPanel` -- replaces chat panel when toggled via People icon. JDropdown per speaker label, inline create form, voice sample save. Shows auto-match confidence badge with matched embedding label. Always adds embedding on save (multi-embedding, uses meeting title as label).
+- `SpeakerAssignmentDialog` -- AlertDialog (no longer replaces chat panel). Opened via People icon. JDropdown per speaker label, "Nový řečník" fixed at top with AnimatedVisibility inline form, voice sample save. Shows auto-match confidence badge with matched embedding label. Always adds embedding on save (multi-embedding, uses meeting title as label).
 - **Speaker Settings** (`sections/SpeakerSettings.kt`) -- standalone section in Settings (SPEAKERS category). JListDetailLayout with client dropdown, speaker list cards, edit form (name, nationality, languages, notes), voiceprint labels display, create/delete.
 - **Segment speaker detail** -- SegmentCorrectionDialog shows speaker with confidence badge + matched embedding label, JDropdown for speaker reassignment. TranscriptPanel shows confidence + embedding label in segment rows.
 - `ISpeakerService` kRPC -- CRUD + assignSpeakers + setVoiceSample + setVoiceEmbedding (additive, never replaces)
-- **Auto-identification flow:** After transcription, system compares new speaker embeddings against ALL known speaker embeddings (multi-embedding, best match across all conditions). Cosine similarity >= 0.70 for auto-mapping, >= 0.50 for showing confidence in UI. `AutoSpeakerMatchDto` includes `matchedEmbeddingLabel` showing which embedding variant matched. User confirms or corrects in `SpeakerAssignmentPanel` or directly in `SegmentCorrectionDialog`.
+- **Auto-identification flow:** After transcription, system compares new speaker embeddings against ALL known speaker embeddings (multi-embedding, best match across all conditions). Cosine similarity >= 0.70 for auto-mapping, >= 0.50 for showing confidence in UI. `AutoSpeakerMatchDto` includes `matchedEmbeddingLabel` showing which embedding variant matched. User confirms or corrects in `SpeakerAssignmentDialog` or directly in `SegmentCorrectionDialog`.
 
-**MeetingDetailView** uses a split layout with transcript on top and agent chat (or speaker panel) on bottom:
+**MeetingDetailView** uses a split layout with transcript on top and agent chat on bottom (speaker assignment is a separate dialog):
 
 **PipelineProgress** shows pipeline state with optional controls:
 - When `state == TRANSCRIBING`: a stop button (`Icons.Default.Stop`, error-tinted) appears on the right side. Calls `viewModel.stopTranscription()` which resets the meeting to UPLOADED and deletes the K8s Whisper job.
@@ -1530,6 +1532,9 @@ Toggled via K8s badge in `PersistentTopBar`. On compact layouts opens full-scree
 - User-selected env tracked via `selectedEnvironmentId` in EnvironmentViewModel
 - Settings icon → opens Environment Manager (deep-link)
 - Refresh button + auto-polling (30s for RUNNING/CREATING)
+- **Deploy/Stop buttons:** PlayArrow (green) / Stop (red) on environment tree nodes, based on environment state
+- **Component logs:** "Zobrazit logy" button on components → AlertDialog with monospace log viewer (SelectionContainer, verticalScroll)
+- Log viewer uses `IEnvironmentService.getComponentLogs()` → reads pod logs via fabric8 K8s client
 
 **Chat context bridge:**
 - `EnvironmentViewModel.activeEnvironmentId` — resolved (from project) or user-selected
@@ -1538,9 +1543,9 @@ Toggled via K8s badge in `PersistentTopBar`. On compact layouts opens full-scree
 - Panel shows "Chat kontext: ..." indicator so user sees what the agent knows
 
 **Key files:**
-- `EnvironmentPanel.kt` — panel composable
+- `EnvironmentPanel.kt` — panel composable (+ log viewer AlertDialog)
 - `EnvironmentTreeComponents.kt` — EnvironmentTreeNode, ComponentTreeNode, EnvironmentStateBadge
-- `EnvironmentViewModel.kt` — state management, polling, selection tracking
+- `EnvironmentViewModel.kt` — state management, polling, selection tracking, deploy/stop/logs
 
 ---
 

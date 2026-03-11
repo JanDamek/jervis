@@ -3,6 +3,7 @@ package com.jervis.service.email
 import com.jervis.common.types.SourceUrn
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.dto.TaskTypeEnum
+import com.jervis.entity.email.EmailDirection
 import com.jervis.entity.email.EmailMessageIndexDocument
 import com.jervis.repository.EmailMessageIndexRepository
 import com.jervis.service.background.TaskService
@@ -20,18 +21,21 @@ import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
+import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
 
 /**
  * Continuous indexer for email messages.
  *
- * ARCHITECTURE (Graph-Based Routing):
+ * ARCHITECTURE (Thread-Aware Routing):
  * - CentralPoller fetches FULL email data from IMAP/POP3 → stores in MongoDB as NEW
  * - This indexer reads NEW documents from MongoDB (NO email server calls)
- * - Creates PendingTask for Qualifier
+ * - Thread consolidation: groups related emails into single tasks via topicId
+ * - SENT emails: indexed to KB only (no task creation)
+ * - User replied externally: auto-resolves existing USER_TASK
+ * - Creates PendingTask for Qualifier (new conversations)
  * - Converts to INDEXED (minimal tracking record)
- * - Email content now lives in RAG/Graph, accessible via sourceUrn
  *
  * DATA LIFECYCLE (single instance, no locking needed):
  * - NEW: Full data (textBody, htmlBody, attachments, metadata)
@@ -46,6 +50,7 @@ class EmailContinuousIndexer(
     private val tikaTextExtractionService: TikaTextExtractionService,
     private val attachmentKbIndexingService: AttachmentKbIndexingService,
     private val attachmentExtractionService: AttachmentExtractionService,
+    private val emailThreadService: EmailThreadService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -98,65 +103,46 @@ class EmailContinuousIndexer(
             }
         }
 
+    /**
+     * Index a single email message with thread-aware consolidation.
+     *
+     * Decision matrix:
+     * | Situation                              | Action                                    |
+     * |----------------------------------------|-------------------------------------------|
+     * | SENT email                             | KB only (attachments), no task             |
+     * | Incoming + user already replied in thread | Auto-resolve existing USER_TASK → DONE  |
+     * | Incoming + existing task for thread     | Update task content, bump lastActivityAt  |
+     * | Incoming + new thread or standalone     | Create new task with topicId              |
+     */
     private suspend fun indexEmail(doc: EmailMessageIndexDocument) {
         require(doc.state == PollingStatusEnum.NEW) { "Can only index NEW emails, got: ${doc.state}" }
         logger.debug { "Processing email: ${doc.subject}" }
 
         try {
-            // Get email body and clean it through Tika (removes HTML/XML formatting)
-            val rawEmailBody = doc.textBody ?: doc.htmlBody ?: ""
-            val bodySource = when {
-                doc.textBody != null -> "textBody"
-                doc.htmlBody != null -> "htmlBody"
-                else -> "empty"
-            }
-            val emailBody =
-                tikaTextExtractionService.extractPlainText(
-                    content = rawEmailBody,
-                    fileName = "email-${doc.id}.html",
-                )
-            logger.info {
-                "Email body extraction: subject='${doc.subject}' source=$bodySource " +
-                    "rawLen=${rawEmailBody.length} tikaLen=${emailBody.length} " +
-                    "blank=${emailBody.isBlank()} preview='${emailBody.take(200)}'"
+            // SENT emails: index attachments to KB for context, but never create tasks
+            if (doc.direction == EmailDirection.SENT) {
+                indexEmailAttachments(doc)
+                markAsIndexed(doc)
+                logger.info { "SENT email indexed (KB only, no task): ${doc.subject}" }
+                return
             }
 
-            val emailContent =
-                buildString {
-                    // Body FIRST — RAG chunks body content in early chunks for better retrieval
-                    append("# Email: ${doc.subject}\n")
-                    append("From: ${doc.from} | Date: ${doc.sentDate ?: doc.receivedDate}\n\n")
+            // Analyze thread context for incoming emails
+            val threadContext = emailThreadService.analyzeThread(doc)
 
-                    if (emailBody.isNotBlank()) {
-                        append(emailBody)
-                        append("\n\n")
-                    }
-
-                    // Metadata AFTER body — less important for RAG retrieval
-                    append("---\n\n")
-                    append("## Email Metadata\n")
-                    append("- **From:** ${doc.from}\n")
-                    if (doc.to.isNotEmpty()) {
-                        append("- **To:** ${doc.to.joinToString(", ")}\n")
-                    }
-                    if (doc.cc.isNotEmpty()) {
-                        append("- **Cc:** ${doc.cc.joinToString(", ")}\n")
-                    }
-                    append("- **Date:** ${doc.sentDate ?: doc.receivedDate}\n")
-                    append("- **Folder:** ${doc.folder}\n")
-                    append("- **Message-ID:** ${doc.messageId}\n")
-                    append("- **Email ID:** ${doc.id}\n")
-                    append("- **Connection ID:** ${doc.connectionId}\n")
-                    append("- **Client ID:** ${doc.clientId}\n")
-
-                    if (doc.attachments.isNotEmpty()) {
-                        append("\n## Attachments\n")
-                        doc.attachments.forEach { att ->
-                            append("- ${att.filename} (${att.contentType}, ${att.size} bytes)\n")
-                        }
-                    }
+            // If user already replied in this thread → auto-resolve any existing USER_TASK
+            if (threadContext != null && threadContext.userReplied) {
+                if (threadContext.existingTask != null) {
+                    taskService.resolveAsHandledExternally(threadContext.existingTask.id)
                 }
+                indexEmailAttachments(doc)
+                markAsIndexed(doc)
+                logger.info { "Thread auto-resolved (user replied externally): ${doc.subject}" }
+                return
+            }
 
+            // Build email content for task
+            val emailContent = buildEmailContent(doc)
             val attachmentsWithStorage = doc.attachments.filter { it.storagePath != null }
             val attachmentInfos = attachmentsWithStorage.map { att ->
                 AttachmentInfo(
@@ -167,22 +153,54 @@ class EmailContinuousIndexer(
                 )
             }
 
+            // Thread with existing task → update task content with thread summary
+            if (threadContext?.existingTask != null) {
+                val updatedContent = buildString {
+                    append(emailContent)
+                    append("\n\n")
+                    append(threadContext.threadSummary)
+                }
+                taskService.updateThreadActivity(threadContext.existingTask.id, updatedContent)
+                indexEmailAttachments(doc)
+                markAsIndexed(doc)
+                logger.info {
+                    "Thread consolidated into existing task ${threadContext.existingTask.id}: ${doc.subject} " +
+                        "(${threadContext.messageCount} messages)"
+                }
+                return
+            }
+
+            // New email (standalone or first in thread) → create new task
+            val topicId = when {
+                threadContext != null -> threadContext.topicId
+                doc.threadId != null -> "email-thread:${doc.threadId}"
+                else -> null
+            }
+
             val task = taskService.createTask(
                 taskType = TaskTypeEnum.EMAIL_PROCESSING,
-                content = emailContent,
+                content = if (threadContext != null) {
+                    "$emailContent\n\n${threadContext.threadSummary}"
+                } else {
+                    emailContent
+                },
                 clientId = doc.clientId,
                 correlationId = "email:${doc.id}",
-                sourceUrn =
-                    SourceUrn.email(
-                        connectionId = doc.connectionId,
-                        messageId = doc.messageId ?: doc.messageUid,
-                        subject = doc.subject ?: "",
-                    ),
+                sourceUrn = SourceUrn.email(
+                    connectionId = doc.connectionId,
+                    messageId = doc.messageId ?: doc.messageUid,
+                    subject = doc.subject ?: "",
+                ),
                 projectId = doc.projectId,
                 taskName = doc.subject?.take(120) ?: "Email from ${doc.from}",
                 hasAttachments = attachmentsWithStorage.isNotEmpty(),
                 attachmentCount = attachmentsWithStorage.size,
             )
+
+            // Set topicId for thread consolidation (future messages in same thread will find this task)
+            if (topicId != null) {
+                taskService.setTopicId(task.id, topicId)
+            }
 
             // Create extract records and trigger async text extraction for Qualifier
             if (attachmentsWithStorage.isNotEmpty()) {
@@ -192,7 +210,6 @@ class EmailContinuousIndexer(
                         attachments = attachmentInfos,
                     )
                     if (created > 0) {
-                        // Fire-and-forget: extract text in background
                         scope.launch {
                             try {
                                 attachmentExtractionService.processPendingExtracts(task.id.toString())
@@ -206,14 +223,53 @@ class EmailContinuousIndexer(
                 }
             }
 
-            // Also register attachments directly with KB (existing behavior preserved)
             indexEmailAttachments(doc)
-
             markAsIndexed(doc)
-            logger.info { "Created EMAIL_PROCESSING task for email: ${doc.subject}" }
+            logger.info { "Created EMAIL_PROCESSING task for email: ${doc.subject} (topicId=$topicId)" }
         } catch (e: Exception) {
             logger.error(e) { "Failed to create task for email ${doc.subject}" }
             markAsFailed(doc, "Task creation failed: ${e.message}")
+        }
+    }
+
+    private fun buildEmailContent(doc: EmailMessageIndexDocument): String {
+        val rawEmailBody = doc.textBody ?: doc.htmlBody ?: ""
+        val emailBody = tikaTextExtractionService.extractPlainText(
+            content = rawEmailBody,
+            fileName = "email-${doc.id}.html",
+        )
+
+        return buildString {
+            append("# Email: ${doc.subject}\n")
+            append("From: ${doc.from} | Date: ${doc.sentDate ?: doc.receivedDate}\n\n")
+
+            if (emailBody.isNotBlank()) {
+                append(emailBody)
+                append("\n\n")
+            }
+
+            append("---\n\n")
+            append("## Email Metadata\n")
+            append("- **From:** ${doc.from}\n")
+            if (doc.to.isNotEmpty()) {
+                append("- **To:** ${doc.to.joinToString(", ")}\n")
+            }
+            if (doc.cc.isNotEmpty()) {
+                append("- **Cc:** ${doc.cc.joinToString(", ")}\n")
+            }
+            append("- **Date:** ${doc.sentDate ?: doc.receivedDate}\n")
+            append("- **Folder:** ${doc.folder}\n")
+            append("- **Message-ID:** ${doc.messageId}\n")
+            append("- **Email ID:** ${doc.id}\n")
+            append("- **Connection ID:** ${doc.connectionId}\n")
+            append("- **Client ID:** ${doc.clientId}\n")
+
+            if (doc.attachments.isNotEmpty()) {
+                append("\n## Attachments\n")
+                doc.attachments.forEach { att ->
+                    append("- ${att.filename} (${att.contentType}, ${att.size} bytes)\n")
+                }
+            }
         }
     }
 

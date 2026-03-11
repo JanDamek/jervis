@@ -298,6 +298,44 @@ Polling uses `project.resources` to determine which external resources belong to
 
 This ensures e.g. `JanDamek/jervis` issues are indexed under the correct project, not under a different client's project that shares the same GitHub connection.
 
+#### MR/PR Indexing (MergeRequestContinuousIndexer)
+
+Separate polling loop (120s interval) for merge request / pull request discovery:
+
+1. **Discovery:** Iterates all projects with REPOSITORY resources → calls GitLab `listOpenMergeRequests` / GitHub `listOpenPullRequests` → deduplicates against `merge_requests` MongoDB collection → saves NEW documents
+2. **Task creation (15s):** Picks up NEW MR documents → creates GIT_PROCESSING task with MR metadata (title, branches, URL, review instructions) → marks REVIEW_DISPATCHED
+3. **Orchestrator:** Detects `merge-request::` sourceUrn → dispatches code review agent → posts comments on MR/PR
+
+**Key files:** `MergeRequestContinuousIndexer.kt`, `MergeRequestDocument.kt`, `MergeRequestRepository.kt`
+
+#### Email Thread Consolidation
+
+Email indexer (`EmailContinuousIndexer`) is thread-aware — consolidates related emails into a single task:
+
+1. **SENT folder polling:** `ImapPollingHandler` auto-includes SENT folder alongside INBOX for full conversation context
+2. **Thread detection:** RFC 2822 `In-Reply-To`/`References` headers → `EmailMessageIndexDocument.computeThreadId()`
+3. **Direction detection:** Folder name → `EmailDirection.SENT` vs `RECEIVED`
+4. **Consolidation logic (`EmailThreadService.analyzeThread()`):**
+   - SENT email → KB only (attachments indexed), no task created
+   - Incoming + user already replied → auto-resolve existing USER_TASK → DONE
+   - Incoming + existing task for thread → update content + bump `lastActivityAt`
+   - Incoming + new conversation → create task with `topicId = "email-thread:<threadId>"`
+5. **topicId:** General-purpose grouping field on `TaskDocument` — works across all sources (email, MR, Slack, Teams). Format: `email-thread:<id>`, `mr:<projectId>:<mrId>`, `slack:<channelId>:<threadTs>`
+
+**Key files:** `EmailThreadService.kt`, `EmailContinuousIndexer.kt`, `EmailPollingHandlerBase.kt`, `ImapPollingHandler.kt`
+
+#### "K reakci" Priority Sorting
+
+USER_TASK list ("K reakci") sorts by priority instead of creation time:
+
+```
+Sort: priorityScore DESC → lastActivityAt DESC → createdAt ASC
+```
+
+- `priorityScore` (0-100) set on all USER_TASK creation paths: `AutoTaskCreationService`, `KbResultRouter`, `UserTaskService.failAndEscalateToUserTask()` (default 60 for escalated)
+- `lastActivityAt` bumped when new thread messages arrive
+- DB index: `{'type': 1, 'state': 1, 'priorityScore': -1, 'lastActivityAt': -1}`
+
 ### Initial Sync s Pagination
 
 ---

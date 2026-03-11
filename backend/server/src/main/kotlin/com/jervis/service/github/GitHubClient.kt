@@ -65,6 +65,23 @@ class GitHubClient(
         return json.decodeFromString(response.bodyAsText())
     }
 
+    // --- PR read operations ---
+
+    suspend fun listOpenPullRequests(
+        connection: ConnectionDocument,
+        owner: String,
+        repo: String,
+    ): List<GitHubPullRequest> {
+        val token = requireToken(connection)
+        val response = httpClient.get("https://api.github.com/repos/$owner/$repo/pulls") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            parameter("state", "open")
+            parameter("per_page", 50)
+        }
+        return json.decodeFromString(response.bodyAsText())
+    }
+
     // --- PR write operations ---
 
     suspend fun createPullRequest(

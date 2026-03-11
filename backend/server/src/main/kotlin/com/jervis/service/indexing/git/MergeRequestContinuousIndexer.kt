@@ -1,0 +1,237 @@
+package com.jervis.service.indexing.git
+
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
+import com.jervis.common.types.ProjectId
+import com.jervis.common.types.SourceUrn
+import com.jervis.dto.TaskTypeEnum
+import com.jervis.dto.connection.ConnectionCapability
+import com.jervis.dto.connection.ProviderEnum
+import com.jervis.entity.ProjectDocument
+import com.jervis.entity.ProjectResource
+import com.jervis.entity.connection.ConnectionDocument
+import com.jervis.repository.ConnectionRepository
+import com.jervis.repository.ProjectRepository
+import com.jervis.service.background.TaskService
+import com.jervis.service.github.GitHubClient
+import com.jervis.service.gitlab.GitLabClient
+import com.jervis.service.indexing.git.state.MergeRequestDocument
+import com.jervis.service.indexing.git.state.MergeRequestRepository
+import com.jervis.service.indexing.git.state.MergeRequestState
+import jakarta.annotation.PostConstruct
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import mu.KotlinLogging
+import org.springframework.core.annotation.Order
+import org.springframework.stereotype.Service
+
+private val logger = KotlinLogging.logger {}
+
+/**
+ * Continuous indexer for merge requests / pull requests.
+ *
+ * Polls GitLab/GitHub for open MRs/PRs on all projects with REPOSITORY resources.
+ * New MRs are saved to MongoDB and a GIT_PROCESSING task is created for code review.
+ * The orchestrator picks up these tasks and dispatches code review agents.
+ */
+@Service
+@Order(12)
+class MergeRequestContinuousIndexer(
+    private val mergeRequestRepository: MergeRequestRepository,
+    private val projectRepository: ProjectRepository,
+    private val connectionRepository: ConnectionRepository,
+    private val taskService: TaskService,
+    private val gitLabClient: GitLabClient,
+    private val gitHubClient: GitHubClient,
+) {
+    private val supervisor = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + supervisor)
+
+    @PostConstruct
+    fun start() {
+        logger.info { "Starting MergeRequestContinuousIndexer..." }
+        scope.launch {
+            delay(30_000) // Let other indexers start first
+            while (isActive) {
+                try {
+                    pollAllProjects()
+                } catch (e: Exception) {
+                    logger.error(e) { "MergeRequestContinuousIndexer cycle error" }
+                }
+                delay(120_000) // Poll every 2 minutes
+            }
+        }
+        scope.launch {
+            delay(35_000)
+            while (isActive) {
+                try {
+                    processNewMergeRequests()
+                } catch (e: Exception) {
+                    logger.error(e) { "MergeRequestContinuousIndexer task creation error" }
+                }
+                delay(15_000) // Check for new MRs every 15 seconds
+            }
+        }
+    }
+
+    // ── Polling: discover new MRs from providers ──────────────────────
+
+    private suspend fun pollAllProjects() {
+        val projects = projectRepository.findAll().toList()
+
+        for (project in projects) {
+            val repoResources = project.resources.filter { it.capability == ConnectionCapability.REPOSITORY }
+            for (resource in repoResources) {
+                try {
+                    pollProjectResource(project, resource)
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to poll MRs for ${project.name} / ${resource.resourceIdentifier}" }
+                }
+            }
+        }
+    }
+
+    private suspend fun pollProjectResource(project: ProjectDocument, resource: ProjectResource) {
+        val connection = connectionRepository.getById(ConnectionId(resource.connectionId)) ?: return
+
+        when (connection.provider) {
+            ProviderEnum.GITLAB -> pollGitLabMergeRequests(project, resource, connection)
+            ProviderEnum.GITHUB -> pollGitHubPullRequests(project, resource, connection)
+            else -> {} // No MR support for other providers
+        }
+    }
+
+    private suspend fun pollGitLabMergeRequests(
+        project: ProjectDocument,
+        resource: ProjectResource,
+        connection: ConnectionDocument,
+    ) {
+        val mrs = gitLabClient.listOpenMergeRequests(connection, resource.resourceIdentifier)
+        logger.debug { "GitLab: ${mrs.size} open MRs for ${resource.resourceIdentifier}" }
+
+        for (mr in mrs) {
+            val mrId = mr.iid.toString()
+            val existing = mergeRequestRepository.findByProjectIdAndMergeRequestIdAndProvider(
+                project.id.value, mrId, "gitlab",
+            )
+            if (existing != null) continue
+
+            val doc = MergeRequestDocument(
+                clientId = project.clientId.value,
+                projectId = project.id.value,
+                connectionId = connection.id.value,
+                provider = "gitlab",
+                mergeRequestId = mrId,
+                title = mr.title,
+                author = null, // GitLab MR response doesn't include author as string
+                sourceBranch = mr.source_branch,
+                targetBranch = mr.target_branch,
+                url = mr.web_url,
+            )
+            mergeRequestRepository.save(doc)
+            logger.info { "Discovered new GitLab MR !${mr.iid}: ${mr.title}" }
+        }
+    }
+
+    private suspend fun pollGitHubPullRequests(
+        project: ProjectDocument,
+        resource: ProjectResource,
+        connection: ConnectionDocument,
+    ) {
+        // resourceIdentifier = "owner/repo"
+        val parts = resource.resourceIdentifier.split("/", limit = 2)
+        if (parts.size != 2) {
+            logger.warn { "Invalid GitHub resource identifier: ${resource.resourceIdentifier}" }
+            return
+        }
+        val (owner, repo) = parts
+
+        val prs = gitHubClient.listOpenPullRequests(connection, owner, repo)
+        logger.debug { "GitHub: ${prs.size} open PRs for $owner/$repo" }
+
+        for (pr in prs) {
+            val prId = pr.number.toString()
+            val existing = mergeRequestRepository.findByProjectIdAndMergeRequestIdAndProvider(
+                project.id.value, prId, "github",
+            )
+            if (existing != null) continue
+
+            val doc = MergeRequestDocument(
+                clientId = project.clientId.value,
+                projectId = project.id.value,
+                connectionId = connection.id.value,
+                provider = "github",
+                mergeRequestId = prId,
+                title = pr.title,
+                author = null,
+                sourceBranch = pr.head.ref,
+                targetBranch = pr.base.ref,
+                url = pr.html_url,
+            )
+            mergeRequestRepository.save(doc)
+            logger.info { "Discovered new GitHub PR #${pr.number}: ${pr.title}" }
+        }
+    }
+
+    // ── Task creation: dispatch code review for NEW MRs ──────────────
+
+    private suspend fun processNewMergeRequests() {
+        val newMrs = mergeRequestRepository.findByStateOrderByCreatedAtAsc(MergeRequestState.NEW).toList()
+        if (newMrs.isEmpty()) return
+
+        logger.info { "Creating review tasks for ${newMrs.size} new merge requests" }
+
+        for (mr in newMrs.take(10)) { // Process max 10 at a time
+            try {
+                createReviewTask(mr)
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to create review task for MR ${mr.mergeRequestId}" }
+                mergeRequestRepository.save(mr.copy(state = MergeRequestState.FAILED))
+            }
+        }
+    }
+
+    private suspend fun createReviewTask(mr: MergeRequestDocument) {
+        val content = buildString {
+            appendLine("# Code Review: ${mr.title}")
+            appendLine()
+            appendLine("**Provider:** ${mr.provider}")
+            appendLine("**MR/PR:** ${if (mr.provider == "gitlab") "!" else "#"}${mr.mergeRequestId}")
+            appendLine("**Source branch:** ${mr.sourceBranch}")
+            appendLine("**Target branch:** ${mr.targetBranch}")
+            appendLine("**URL:** ${mr.url}")
+            mr.author?.let { appendLine("**Author:** $it") }
+            appendLine()
+            appendLine("Review this merge request: check code quality, potential bugs, security issues, and adherence to project conventions.")
+            appendLine("Post review comments directly on the MR/PR.")
+        }
+
+        val task = taskService.createTask(
+            taskType = TaskTypeEnum.GIT_PROCESSING,
+            content = content,
+            clientId = ClientId(mr.clientId),
+            projectId = ProjectId(mr.projectId),
+            correlationId = "merge-request:${mr.provider}:${mr.projectId}:${mr.mergeRequestId}",
+            sourceUrn = SourceUrn.mergeRequest(
+                projectId = ProjectId(mr.projectId),
+                provider = mr.provider,
+                mrId = mr.mergeRequestId,
+            ),
+            taskName = "Code review: ${mr.title}",
+        )
+
+        mergeRequestRepository.save(
+            mr.copy(
+                state = MergeRequestState.REVIEW_DISPATCHED,
+                reviewTaskId = task.id.value,
+            ),
+        )
+
+        logger.info { "Created code review task ${task.id} for ${mr.provider} MR ${mr.mergeRequestId}" }
+    }
+}

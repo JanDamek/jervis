@@ -67,6 +67,7 @@ fun MainScreen(
     val environmentLoading by viewModel.environment.loading.collectAsState()
     val environmentError by viewModel.environment.error.collectAsState()
     val selectedEnvironmentId by viewModel.environment.selectedEnvironmentId.collectAsState()
+    val environmentLogView by viewModel.environment.logView.collectAsState()
 
     // Compute active environment summary reactively from collected state
     val activeEnvId = resolvedEnvId ?: selectedEnvironmentId
@@ -157,8 +158,14 @@ fun MainScreen(
                 onClose = viewModel.environment::closePanel,
                 onRefresh = viewModel.environment::refreshEnvironments,
                 onOpenInManager = onOpenEnvironmentManager,
+                onDeploy = viewModel.environment::deployEnvironment,
+                onStop = viewModel.environment::stopEnvironment,
+                onViewLogs = viewModel.environment::viewComponentLogs,
+                logViewState = environmentLogView,
+                onCloseLogView = viewModel.environment::closeLogView,
                 activeEnvironmentSummary = activeEnvSummary,
             )
         },
+        jobLogsService = viewModel.chat.jobLogsService,
     )
 }

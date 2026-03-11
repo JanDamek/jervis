@@ -69,7 +69,9 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
+import com.jervis.service.IJobLogsService
 import com.jervis.ui.chat.TaskGraphSection
+import com.jervis.ui.coding.CodingAgentLogPanel
 import com.jervis.ui.queue.OrchestratorProgressInfo
 import com.jervis.ui.util.copyToClipboard
 import com.jervis.ui.util.formatMessageTime
@@ -115,6 +117,7 @@ internal fun ChatArea(
     onSendReply: (taskId: String, text: String) -> Unit = { _, _ -> },
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
     onLoadTaskGraph: (String) -> Unit = {},
+    jobLogsService: IJobLogsService? = null,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -175,6 +178,7 @@ internal fun ChatArea(
                         onSendReply = onSendReply,
                         taskGraphs = taskGraphs,
                         onLoadTaskGraph = onLoadTaskGraph,
+                        jobLogsService = jobLogsService,
                     )
 
                     // Compression boundary AFTER this message (before the next older one)
@@ -336,6 +340,7 @@ private fun ChatMessageItem(
     onSendReply: (taskId: String, text: String) -> Unit = { _, _ -> },
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
     onLoadTaskGraph: (String) -> Unit = {},
+    jobLogsService: IJobLogsService? = null,
     modifier: Modifier = Modifier,
 ) {
     val isMe = message.from == ChatMessage.Sender.Me
@@ -1105,6 +1110,85 @@ private fun ChatMessageItem(
                         if (!isMe && message.workflowSteps.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             WorkflowStepsDisplay(message.workflowSteps)
+                        }
+
+                        // Inline coding agent log panel for live streaming
+                        if (!isMe && jobLogsService != null) {
+                            val codingTaskId = message.metadata["coding_agent_task_id"]
+                            if (codingTaskId != null) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                var logExpanded by remember { mutableStateOf(true) }
+                                Column {
+                                    TextButton(
+                                        onClick = { logExpanded = !logExpanded },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(28.dp),
+                                    ) {
+                                        Icon(
+                                            if (logExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            if (logExpanded) "Skrýt log agenta" else "Zobrazit log agenta",
+                                            style = MaterialTheme.typography.labelSmall,
+                                        )
+                                    }
+                                    AnimatedVisibility(visible = logExpanded) {
+                                        CodingAgentLogPanel(
+                                            jobLogsService = jobLogsService,
+                                            taskId = codingTaskId,
+                                            modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Inline task graph for assistant messages with graph_id
+                        if (!isMe) {
+                            val graphId = message.metadata["graph_id"]
+                            if (graphId != null) {
+                                val graphEntry = taskGraphs[graphId]
+                                if (graphEntry != null && graphEntry.vertices.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    TaskGraphSection(graph = graphEntry)
+                                } else if (graphEntry == null && graphId !in taskGraphs) {
+                                    TextButton(
+                                        onClick = { onLoadTaskGraph(graphId) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(28.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Default.AccountTree,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            "Zobrazit graf",
+                                            style = MaterialTheme.typography.labelSmall,
+                                        )
+                                    }
+                                } else if (graphId in taskGraphs && taskGraphs[graphId] == null) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 1.5.dp,
+                                        )
+                                        Text(
+                                            "Načítání grafu…",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

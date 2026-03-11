@@ -105,8 +105,8 @@ internal fun MeetingDetailView(
     var segmentForCorrection by remember { mutableStateOf<SegmentEditState?>(null) }
     // Overflow menu for compact screens
     var showOverflowMenu by remember { mutableStateOf(false) }
-    // Bottom panel mode: chat or speaker assignment
-    var showSpeakerPanel by remember { mutableStateOf(false) }
+    // Speaker assignment dialog visibility
+    var showSpeakerDialog by remember { mutableStateOf(false) }
     // Splitter fraction for expanded mode (transcript/chat split)
     var splitFraction by remember { mutableStateOf(0.7f) }
     // Splitter fraction for correction panel (metadata+corrections / transcript+chat)
@@ -167,7 +167,7 @@ internal fun MeetingDetailView(
                                             Text("Mluvci")
                                         }
                                     },
-                                    onClick = { showSpeakerPanel = !showSpeakerPanel; showOverflowMenu = false },
+                                    onClick = { showSpeakerDialog = true; showOverflowMenu = false },
                                 )
                                 if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
                                     DropdownMenuItem(
@@ -205,10 +205,9 @@ internal fun MeetingDetailView(
                         JIconButton(onClick = onEdit, icon = Icons.Default.Edit, contentDescription = "Editovat")
                         JIconButton(onClick = onCorrections, icon = Icons.Default.MenuBook, contentDescription = "Pravidla oprav")
                         JIconButton(
-                            onClick = { showSpeakerPanel = !showSpeakerPanel },
+                            onClick = { showSpeakerDialog = true },
                             icon = Icons.Default.People,
                             contentDescription = "Mluvci",
-                            tint = if (showSpeakerPanel) MaterialTheme.colorScheme.primary else androidx.compose.material3.LocalContentColor.current,
                         )
                         if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
                             JIconButton(onClick = onRetranscribe, icon = Icons.Default.Replay, contentDescription = "Přepsat znovu")
@@ -404,26 +403,14 @@ internal fun MeetingDetailView(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
 
-                    // Bottom panel (chat or speaker assignment)
-                    if (showSpeakerPanel) {
-                        SpeakerAssignmentPanel(
-                            meeting = meeting,
-                            speakers = clientSpeakers,
-                            onAssignSpeakers = onAssignSpeakers,
-                            onCreateSpeaker = onCreateSpeaker,
-                            onSetVoiceSample = onSetVoiceSample,
-                            onSetVoiceEmbedding = onSetVoiceEmbedding,
-                            modifier = Modifier.fillMaxWidth().height(220.dp),
-                        )
-                    } else {
-                        AgentChatPanel(
-                            chatHistory = meeting.correctionChatHistory,
-                            pendingMessage = pendingChatMessage,
-                            isCorrecting = isCorrecting,
-                            onSendInstruction = onCorrectWithInstruction,
-                            modifier = Modifier.fillMaxWidth().height(180.dp),
-                        )
-                    }
+                    // Bottom panel (chat)
+                    AgentChatPanel(
+                        chatHistory = meeting.correctionChatHistory,
+                        pendingMessage = pendingChatMessage,
+                        isCorrecting = isCorrecting,
+                        onSendInstruction = onCorrectWithInstruction,
+                        modifier = Modifier.fillMaxWidth().height(180.dp),
+                    )
                 }
             } else {
                 // Expanded mode: draggable splitter
@@ -464,30 +451,30 @@ internal fun MeetingDetailView(
                         )
                     },
                     bottomContent = { mod ->
-                        if (showSpeakerPanel) {
-                            SpeakerAssignmentPanel(
-                                meeting = meeting,
-                                speakers = clientSpeakers,
-                                onAssignSpeakers = onAssignSpeakers,
-                                onCreateSpeaker = onCreateSpeaker,
-                                onSetVoiceSample = onSetVoiceSample,
-                                onSetVoiceEmbedding = onSetVoiceEmbedding,
-                                modifier = mod,
-                            )
-                        } else {
-                            AgentChatPanel(
-                                chatHistory = meeting.correctionChatHistory,
-                                pendingMessage = pendingChatMessage,
-                                isCorrecting = isCorrecting,
-                                onSendInstruction = onCorrectWithInstruction,
-                                modifier = mod,
-                            )
-                        }
+                        AgentChatPanel(
+                            chatHistory = meeting.correctionChatHistory,
+                            pendingMessage = pendingChatMessage,
+                            isCorrecting = isCorrecting,
+                            onSendInstruction = onCorrectWithInstruction,
+                            modifier = mod,
+                        )
                     },
                 )
             }
         }
     }
+
+    // Speaker assignment dialog
+    SpeakerAssignmentDialog(
+        visible = showSpeakerDialog,
+        meeting = meeting,
+        speakers = clientSpeakers,
+        onAssignSpeakers = onAssignSpeakers,
+        onCreateSpeaker = onCreateSpeaker,
+        onSetVoiceSample = onSetVoiceSample,
+        onSetVoiceEmbedding = onSetVoiceEmbedding,
+        onDismiss = { showSpeakerDialog = false },
+    )
 
     // Correction dialog for segment click — shows original + editable corrected text + audio playback
     if (segmentForCorrection != null) {

@@ -175,6 +175,7 @@ async def handle_chat_sse(
                 logger.debug("SSE: failed to create live vertex: %s", e)
 
         # ── 4c. Agentic loop (all tools) ────────────────────────────
+        _memory_map_id = memory_map.task_id if memory_map else None
         async for event in run_agentic_loop(
             request=request,
             messages=messages,
@@ -194,6 +195,9 @@ async def handle_chat_sse(
             elif event.type == "tool_result" and event.content:
                 tool = event.metadata.get("tool", "?")
                 _trace_parts.append(f"[result:{tool}] {event.content[:150]}")
+            # Inject graph_id into done event so UI can show inline graph
+            if event.type == "done" and _memory_map_id:
+                event.metadata["graph_id"] = _memory_map_id
             yield event
 
     except Exception as e:

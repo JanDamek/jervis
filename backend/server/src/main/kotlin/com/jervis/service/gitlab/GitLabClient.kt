@@ -78,6 +78,21 @@ class GitLabClient(
 
     // ── Merge Request operations ──────────────────────────────────
 
+    suspend fun listOpenMergeRequests(
+        connection: ConnectionDocument,
+        projectId: String,
+    ): List<GitLabMergeRequest> {
+        val token = requireToken(connection)
+        val baseUrl = getBaseUrl(connection)
+        val response = httpClient.get("$baseUrl/projects/${projectId.encodeURLParameter()}/merge_requests") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            parameter("state", "opened")
+            parameter("per_page", 50)
+        }
+        val body = response.checkProviderResponse("GitLab", "listOpenMergeRequests")
+        return json.decodeFromString(body)
+    }
+
     suspend fun createMergeRequest(
         connection: ConnectionDocument,
         projectId: String,

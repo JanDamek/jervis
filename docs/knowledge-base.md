@@ -583,17 +583,46 @@ graphRefLocks["client-abc|user:john"] = Mutex()
 
 ### EmailContinuousIndexer
 
-- **Purpose:** Creates EMAIL_PROCESSING task from emails + indexes attachments as KB documents
+- **Purpose:** Thread-aware email indexer — consolidates conversations, detects user replies, indexes attachments as KB documents
+- **Thread Consolidation (topicId-based):**
+  - SENT emails: indexed to KB only (attachments), no task created
+  - Incoming + user already replied in thread: auto-resolves existing USER_TASK → DONE
+  - Incoming + existing task for same thread: updates task content with thread summary, bumps `lastActivityAt`
+  - Incoming + new conversation: creates new EMAIL_PROCESSING task with `topicId = "email-thread:<threadId>"`
+- **Thread Detection:**
+  - RFC 2822 headers: `In-Reply-To`, `References` → `EmailMessageIndexDocument.computeThreadId()`
+  - SENT folder auto-indexed by `ImapPollingHandler.getFoldersToPoll()` for full conversation context
+  - `EmailDirection.SENT` vs `RECEIVED` detected from IMAP folder name
 - **Process:**
   1. Reads NEW emails from MongoDB
-  2. Cleans email body via Tika (HTML → plain text)
-  3. Creates EMAIL_PROCESSING task for email content
-  4. **Indexes email attachments as KB documents** (binary stored during polling):
-     - Each attachment with `storagePath` is registered with the Python KB service
-     - KB service extracts text (Tika/OCR/VLM) and indexes into RAG + Graph
-     - Attachments become searchable directly in the Knowledge Base
-     - Original files are preserved in `kb-documents/` directory
-     - SourceUrn format: `email-attachment::conn:{id},msgId:{msgId},file:{filename}`
+  2. Checks direction: SENT → KB only, RECEIVED → continues
+  3. `EmailThreadService.analyzeThread()` → checks thread context
+  4. Cleans email body via Tika (HTML → plain text)
+  5. Creates/updates task based on thread state
+  6. **Indexes email attachments as KB documents** (binary stored during polling)
+
+#### Email Thread Consolidation Flow
+
+```
+CentralPoller (IMAP/POP3) — polls INBOX + SENT folder
+  → EmailPollingHandlerBase.parseMessage()
+    → Extracts In-Reply-To, References headers → computes threadId
+    → Detects direction from folder name (SENT/RECEIVED)
+  → MongoDB (NEW state with threadId, direction)
+
+EmailContinuousIndexer
+  → SENT email?
+    → Yes: indexEmailAttachments() → INDEXED (no task)
+  → EmailThreadService.analyzeThread()
+    → Finds thread messages, checks for SENT replies, finds existing task by topicId
+  → User replied externally?
+    → Yes: resolveAsHandledExternally() → DONE + INDEXED
+  → Existing task for thread?
+    → Yes: updateThreadActivity() (append content, bump lastActivityAt) → INDEXED
+  → New conversation:
+    → createTask(EMAIL_PROCESSING) + setTopicId("email-thread:<threadId>")
+    → indexEmailAttachments() → INDEXED
+```
 
 #### Email Attachment Flow
 
@@ -606,7 +635,6 @@ CentralPoller (IMAP/POP3)
   → MongoDB (NEW state with storagePath)
 
 EmailContinuousIndexer
-  → Creates EMAIL_PROCESSING task
   → indexEmailAttachments():
     → For each attachment with storagePath:
       → AttachmentKbIndexingService.registerPreStoredAttachment()
@@ -734,6 +762,18 @@ GitContinuousIndexer.processCommit()
   2. **KB Indexing:** Polls for TRANSCRIBED meetings → builds markdown content (title, date, duration, type, full transcript with timestamps) → creates MEETING_PROCESSING task → INDEXED
 - **State machine:** RECORDING → UPLOADED → TRANSCRIBING → TRANSCRIBED → INDEXED (or FAILED at any step)
 - **sourceUrn format:** `meeting::id:{meetingId},title:{title}`
+
+### MergeRequestContinuousIndexer
+
+- **Purpose:** Polls GitLab/GitHub for open MRs/PRs and creates code review tasks
+- **Two-loop architecture:**
+  1. **Discovery loop (120s):** Polls all projects with REPOSITORY resources → fetches open MRs/PRs via GitLab/GitHub API → deduplicates against MongoDB → saves NEW documents
+  2. **Task creation loop (15s):** Picks up NEW MR documents → creates GIT_PROCESSING tasks with MR metadata → marks as REVIEW_DISPATCHED
+- **State machine:** NEW → REVIEW_DISPATCHED → DONE (or FAILED)
+- **Provider support:** GitLab (`listOpenMergeRequests`) and GitHub (`listOpenPullRequests`)
+- **sourceUrn format:** `merge-request::proj:{projectId},provider:{gitlab|github},mr:{mrId}`
+- **Task content:** Markdown with MR title, branches, URL, review instructions
+- **Key files:** `MergeRequestContinuousIndexer.kt`, `MergeRequestDocument.kt`, `MergeRequestRepository.kt`
 
 ---
 

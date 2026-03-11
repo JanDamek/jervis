@@ -116,6 +116,11 @@ class EnvironmentRpcImpl(
             }
         }
 
+    override suspend fun getComponentLogs(environmentId: String, componentName: String, tailLines: Int): String =
+        executeWithErrorHandling("getComponentLogs") {
+            environmentK8sService.getComponentLogs(EnvironmentId(ObjectId(environmentId)), componentName, tailLines)
+        }
+
     override suspend fun syncEnvironmentResources(id: String): EnvironmentDto =
         executeWithErrorHandling("syncEnvironmentResources") {
             environmentK8sService.syncEnvironmentResources(EnvironmentId(ObjectId(id))).toDto()

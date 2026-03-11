@@ -579,6 +579,54 @@ class TaskService(
     }
 
     /**
+     * Set topicId and lastActivityAt on a newly created task (for thread/topic consolidation).
+     */
+    suspend fun setTopicId(taskId: TaskId, topicId: String) {
+        val query = Query(Criteria.where("_id").`is`(taskId.value))
+        val update = Update()
+            .set("topicId", topicId)
+            .set("lastActivityAt", Instant.now())
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+        logger.debug { "SET_TOPIC_ID: id=$taskId topicId=$topicId" }
+    }
+
+    /**
+     * Update an existing thread task with new activity — appends content summary and bumps lastActivityAt.
+     * Used by thread consolidation: new messages in an existing conversation update the task instead of creating new ones.
+     */
+    suspend fun updateThreadActivity(taskId: TaskId, appendContent: String) {
+        val now = Instant.now()
+        val query = Query(Criteria.where("_id").`is`(taskId.value))
+        val update = Update()
+            .set("lastActivityAt", now)
+            .set("content", appendContent) // Replace with latest thread summary
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+        logger.info { "THREAD_ACTIVITY_UPDATE: id=$taskId lastActivityAt=$now" }
+    }
+
+    /**
+     * Auto-resolve a USER_TASK as handled externally (e.g., user replied from mobile).
+     * Only resolves tasks in USER_TASK state — tasks in other states continue processing normally.
+     *
+     * @return true if task was resolved, false if task was in a different state
+     */
+    suspend fun resolveAsHandledExternally(taskId: TaskId): Boolean {
+        val query = Query(
+            Criteria.where("_id").`is`(taskId.value)
+                .and("state").`is`(TaskStateEnum.USER_TASK.name),
+        )
+        val update = Update()
+            .set("state", TaskStateEnum.DONE.name)
+            .set("errorMessage", "Auto-resolved: user replied externally")
+        val result = mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+        val resolved = result.modifiedCount > 0
+        if (resolved) {
+            logger.info { "THREAD_AUTO_RESOLVED: id=$taskId (user replied externally)" }
+        }
+        return resolved
+    }
+
+    /**
      * Atomically claim a task for GPU execution using MongoDB findAndModify.
      * Returns null if the task was already claimed by another instance.
      */

@@ -226,10 +226,13 @@ async def run_agentic_loop(
             async for event in stream_text(final_text):
                 yield event
 
+            # Extract coding_agent_task_id for inline log streaming in UI bubble
+            _ca_tid = next((t["coding_agent_task_id"] for t in created_tasks if "coding_agent_task_id" in t), None)
             yield ChatStreamEvent(type="done", metadata={
                 "created_tasks": created_tasks, "responded_tasks": responded_tasks,
                 "used_tools": used_tools, "iterations": iteration + 1,
                 **({"contextTaskId": request.context_task_id} if request.context_task_id else {}),
+                **({"coding_agent_task_id": _ca_tid} if _ca_tid else {}),
                 **confidence_badge(fc_result),
                 **topic_metadata(topics),
                 **source_tracker.build_done_metadata(),
@@ -285,9 +288,11 @@ async def run_agentic_loop(
             async for event in stream_text(final_text):
                 yield event
 
+            _ca_tid2 = next((t["coding_agent_task_id"] for t in created_tasks if "coding_agent_task_id" in t), None)
             yield ChatStreamEvent(type="done", metadata={
                 "drift_break": drift_reason, "iterations": iteration + 1,
                 **({"contextTaskId": request.context_task_id} if request.context_task_id else {}),
+                **({"coding_agent_task_id": _ca_tid2} if _ca_tid2 else {}),
                 **confidence_badge(fc_result), **topic_metadata(drift_topics),
                 **source_tracker.build_done_metadata(),
             })
@@ -466,6 +471,12 @@ async def run_agentic_loop(
 
                 if tool_name in ("create_background_task", "dispatch_thinking_map"):
                     created_tasks.append(arguments)
+                if tool_name == "dispatch_coding_agent" and "taskId" in result:
+                    # Extract taskId from result string for inline log streaming
+                    import re as _re
+                    _task_id_match = _re.search(r"'taskId':\s*'([0-9a-fA-F]{24})'", result)
+                    if _task_id_match:
+                        created_tasks.append({"coding_agent_task_id": _task_id_match.group(1)})
                 if tool_name == "respond_to_user_task":
                     responded_tasks.append(arguments.get("task_id", ""))
 
@@ -561,8 +572,10 @@ async def run_agentic_loop(
         async for event in stream_text(final_text):
             yield event
 
+        _ca_tid3 = next((t["coding_agent_task_id"] for t in created_tasks if "coding_agent_task_id" in t), None)
         yield ChatStreamEvent(type="done", metadata={
             "max_iterations": True, "iterations": effective_max_iterations,
+            **({"coding_agent_task_id": _ca_tid3} if _ca_tid3 else {}),
             **confidence_badge(fc_result), **topic_metadata(max_iter_topics),
             **source_tracker.build_done_metadata(),
         })

@@ -16,7 +16,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -51,6 +53,9 @@ fun EnvironmentTreeNode(
     expandedComponentIds: Set<String>,
     onToggleComponent: (String) -> Unit,
     onManage: ((String) -> Unit)? = null,
+    onDeploy: ((String) -> Unit)? = null,
+    onStop: ((String) -> Unit)? = null,
+    onViewLogs: ((String, String) -> Unit)? = null,
 ) {
     val currentState = status?.state ?: environment.state
 
@@ -105,6 +110,40 @@ fun EnvironmentTreeNode(
                 }
             }
             EnvironmentStateBadge(currentState)
+            // Deploy/Stop action buttons based on environment state
+            val canDeploy = currentState in setOf(
+                EnvironmentStateEnum.PENDING, EnvironmentStateEnum.STOPPED, EnvironmentStateEnum.ERROR,
+            )
+            val canStop = currentState == EnvironmentStateEnum.RUNNING
+            if (canDeploy && onDeploy != null) {
+                Spacer(Modifier.width(4.dp))
+                androidx.compose.material3.IconButton(
+                    onClick = { onDeploy(environment.id) },
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    val semanticColors = LocalJervisSemanticColors.current
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Deploy",
+                        modifier = Modifier.size(18.dp),
+                        tint = semanticColors.success,
+                    )
+                }
+            }
+            if (canStop && onStop != null) {
+                Spacer(Modifier.width(4.dp))
+                androidx.compose.material3.IconButton(
+                    onClick = { onStop(environment.id) },
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Stop,
+                        contentDescription = "Zastavit",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
             if (onManage != null) {
                 Spacer(Modifier.width(4.dp))
                 androidx.compose.material3.IconButton(
@@ -140,6 +179,7 @@ fun EnvironmentTreeNode(
                         status = componentStatus,
                         expanded = expandedComponentIds.contains(component.id),
                         onToggleExpand = { onToggleComponent(component.id) },
+                        onViewLogs = onViewLogs?.let { { it(environment.id, component.name) } },
                     )
                 }
                 if (environment.components.isEmpty()) {
@@ -165,6 +205,7 @@ fun ComponentTreeNode(
     status: ComponentStatusDto?,
     expanded: Boolean,
     onToggleExpand: () -> Unit,
+    onViewLogs: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -238,6 +279,11 @@ fun ComponentTreeNode(
                     DetailRow("Repliky", "${status.availableReplicas}/${status.replicas}")
                     status.message?.let { msg ->
                         DetailRow("Stav", msg)
+                    }
+                }
+                if (onViewLogs != null) {
+                    androidx.compose.material3.TextButton(onClick = onViewLogs) {
+                        Text("Zobrazit logy", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }

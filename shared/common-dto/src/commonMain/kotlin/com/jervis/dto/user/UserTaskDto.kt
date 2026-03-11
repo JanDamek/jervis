@@ -16,6 +16,7 @@ data class UserTaskDto(
     val attachments: List<AttachmentDto> = emptyList(),
     val pendingQuestion: String? = null,
     val questionContext: String? = null,
+    val priorityScore: Int? = null,
 )
 
 /** Lightweight DTO for list view — excludes content, attachments, agentCheckpointJson. */
@@ -36,6 +37,7 @@ data class UserTaskListItemDto(
     val childCount: Int = 0,
     val completedChildCount: Int = 0,
     val phase: String? = null,
+    val priorityScore: Int? = null,
 )
 
 @Serializable

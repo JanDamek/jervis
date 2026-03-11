@@ -7,16 +7,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStatusDto
@@ -32,6 +39,7 @@ import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JErrorState
 import com.jervis.ui.design.JRefreshButton
+import com.jervis.ui.design.JTextButton
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.LocalJervisSemanticColors
 
@@ -54,6 +62,11 @@ fun EnvironmentPanel(
     onClose: () -> Unit,
     onRefresh: () -> Unit,
     onOpenInManager: (String) -> Unit = {},
+    onDeploy: (String) -> Unit = {},
+    onStop: (String) -> Unit = {},
+    onViewLogs: (String, String) -> Unit = { _, _ -> },
+    logViewState: EnvironmentViewModel.LogViewState? = null,
+    onCloseLogView: () -> Unit = {},
     activeEnvironmentSummary: String? = null,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -125,10 +138,45 @@ fun EnvironmentPanel(
                             expandedComponentIds = expandedComponentIds,
                             onToggleComponent = onToggleComponent,
                             onManage = onOpenInManager,
+                            onDeploy = onDeploy,
+                            onStop = onStop,
+                            onViewLogs = onViewLogs,
                         )
                     }
                 }
             }
         }
+    }
+
+    // Log viewer dialog
+    if (logViewState != null) {
+        AlertDialog(
+            onDismissRequest = onCloseLogView,
+            title = { Text("Logy: ${logViewState.componentName}", style = MaterialTheme.typography.titleMedium) },
+            text = {
+                if (logViewState.logs == null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text("Načítání logů…", style = MaterialTheme.typography.bodySmall)
+                    }
+                } else {
+                    SelectionContainer {
+                        Text(
+                            text = logViewState.logs,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            modifier = Modifier
+                                .verticalScroll(rememberScrollState())
+                                .heightIn(max = 400.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                JTextButton(onClick = onCloseLogView) { Text("Zavřít") }
+            },
+        )
     }
 }

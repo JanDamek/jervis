@@ -74,6 +74,25 @@ async def decompose_root(
     # Build context from evidence
     evidence_text = _format_evidence(evidence) if evidence else ""
 
+    # Check for large context → Gemini decomposition
+    full_context = f"{root.description}\n{evidence_text}\n{guidelines}"
+    from app.agent.gemini_decomposer import should_use_gemini_decomposition, decompose_large_context
+    if should_use_gemini_decomposition(full_context, state):
+        await report_decomposition_progress(
+            graph, "Large context detected — using Gemini for decomposition…", depth=0,
+        )
+        result = await decompose_large_context(
+            graph=graph,
+            parent_id=root.id,
+            content=full_context,
+            objective=root.description,
+            state=state,
+        )
+        if len(result.vertices) > 1:
+            graph.status = GraphStatus.READY
+            return result
+        logger.info("Gemini decomposition returned no vertices, falling through to standard decomposition")
+
     # Decompose root
     vertices_data = await _llm_decompose(
         vertex=root,

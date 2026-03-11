@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
+import com.jervis.service.IJobLogsService
 import com.jervis.ui.chat.ChatViewModel
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JHorizontalSplitLayout
@@ -96,6 +97,7 @@ fun MainScreenView(
     panelWidthFraction: Float = 0.35f,
     onPanelWidthChange: (Float) -> Unit = {},
     environmentPanelContent: @Composable (isCompact: Boolean) -> Unit = {},
+    jobLogsService: IJobLogsService? = null,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
@@ -379,6 +381,7 @@ private fun ChatContent(
             onSendReply = onSendReply,
             taskGraphs = taskGraphs,
             onLoadTaskGraph = onLoadTaskGraph,
+            jobLogsService = jobLogsService,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),

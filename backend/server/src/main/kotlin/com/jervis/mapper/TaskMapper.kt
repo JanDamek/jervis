@@ -18,6 +18,7 @@ fun TaskDocument.toUserTaskDto(): UserTaskDto =
         attachments = this.attachments.map { it.toDto() },
         pendingQuestion = this.pendingUserQuestion,
         questionContext = this.userQuestionContext,
+        priorityScore = this.priorityScore,
     )
 
 /** Lightweight mapper for list view — skips content, attachments, agentCheckpointJson. */
@@ -38,6 +39,7 @@ fun TaskDocument.toUserTaskListItemDto(
         childCount = childCount,
         completedChildCount = completedChildCount,
         phase = this.phase,
+        priorityScore = this.priorityScore,
     )
 
 fun TaskDocument.toPendingTaskDto(

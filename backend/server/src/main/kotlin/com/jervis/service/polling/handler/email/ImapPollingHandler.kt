@@ -131,25 +131,33 @@ class ImapPollingHandler(
 
     /**
      * Determine which folders to poll based on resource filter.
+     * Auto-includes SENT folder for thread context (user replies from mobile etc.).
      */
     private fun getFoldersToPoll(
         connectionDocument: ConnectionDocument,
         resourceFilter: ResourceFilter,
-    ): List<String> =
-        when (resourceFilter) {
-            is ResourceFilter.IndexAll -> {
-                // Use legacy folder name from connection document
-                listOf(connectionDocument.folderName)
-            }
+    ): List<String> {
+        val baseFolders = when (resourceFilter) {
+            is ResourceFilter.IndexAll -> listOf(connectionDocument.folderName)
             is ResourceFilter.IndexSelected -> {
-                if (resourceFilter.resources.isNotEmpty()) {
-                    resourceFilter.resources
-                } else {
-                    // No specific folders selected - fallback to legacy folder
-                    listOf(connectionDocument.folderName)
-                }
+                if (resourceFilter.resources.isNotEmpty()) resourceFilter.resources
+                else listOf(connectionDocument.folderName)
             }
         }
+        // Auto-add SENT folder if not already included
+        val hasSentFolder = baseFolders.any { isSentFolder(it) }
+        if (hasSentFolder) return baseFolders
+        val sentFolder = connectionDocument.sentFolderName ?: "Sent"
+        return baseFolders + sentFolder
+    }
+
+    private fun isSentFolder(name: String): Boolean {
+        val sentNames = setOf(
+            "sent", "inbox.sent", "sent items", "sent messages",
+            "[gmail]/sent mail", "odeslané", "odeslane",
+        )
+        return sentNames.any { name.equals(it, ignoreCase = true) }
+    }
 
     /**
      * Poll a single IMAP folder.
@@ -180,9 +188,9 @@ class ImapPollingHandler(
                 return PollingResult(errors = 1)
             }
 
-            // Load polling state (per folder)
-            val stateKey = "${connectionDocument.id}_$folderName"
-            val pollingState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider, "IMAP")
+            // Load polling state (per folder — unique tool key per folder)
+            val folderToolKey = "IMAP:$folderName"
+            val pollingState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider, folderToolKey)
             val lastFetchedUid = pollingState?.lastFetchedUid ?: 0L
 
             logger.debug { "IMAP sync state for $folderName: lastFetchedUid=$lastFetchedUid" }
@@ -250,7 +258,7 @@ class ImapPollingHandler(
 
             // Save polling state
             if (filteredMessages.isNotEmpty() && maxUidFetched > lastFetchedUid) {
-                pollingStateService.updateWithUid(connectionDocument.id, connectionDocument.provider, maxUidFetched, "IMAP")
+                pollingStateService.updateWithUid(connectionDocument.id, connectionDocument.provider, maxUidFetched, folderToolKey)
                 logger.debug {
                     "Updated lastFetchedUid for $folderName: $lastFetchedUid -> $maxUidFetched (created=$created, skipped=$skipped)"
                 }

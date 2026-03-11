@@ -71,6 +71,7 @@ data class ConnectionDocument(
     val useSsl: Boolean = true,
     val useTls: Boolean? = null,
     val folderName: String = "INBOX",
+    val sentFolderName: String? = null,
 
     // Provider-specific resource identifiers (optional)
     val jiraProjectKey: String? = null,

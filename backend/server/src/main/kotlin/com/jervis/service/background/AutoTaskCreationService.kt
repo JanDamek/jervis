@@ -174,6 +174,8 @@ class AutoTaskCreationService(
                     state = TaskStateEnum.USER_TASK,
                 )
 
+                updateTaskPriority(task, priority.score)
+
                 logger.info {
                     "AUTO_TASK_CREATED: type=CODE_FIX complexity=${inferred.estimatedComplexity} " +
                         "mode=USER_TASK taskId=${task.id} priority=${priority.score} " +
@@ -267,8 +269,10 @@ class AutoTaskCreationService(
             state = TaskStateEnum.USER_TASK,
         )
 
+        updateTaskPriority(task, priority.score)
+
         logger.info {
-            "AUTO_TASK_CREATED: type=RESPOND_EMAIL mode=USER_TASK taskId=${task.id} original=${originalTask.id}"
+            "AUTO_TASK_CREATED: type=RESPOND_EMAIL mode=USER_TASK taskId=${task.id} priority=${priority.score} original=${originalTask.id}"
         }
         return task
     }
@@ -307,8 +311,10 @@ class AutoTaskCreationService(
             state = TaskStateEnum.USER_TASK,
         )
 
+        updateTaskPriority(task, priority.score)
+
         logger.info {
-            "AUTO_TASK_CREATED: type=CREATE_TICKET mode=USER_TASK taskId=${task.id} original=${originalTask.id}"
+            "AUTO_TASK_CREATED: type=CREATE_TICKET mode=USER_TASK taskId=${task.id} priority=${priority.score} original=${originalTask.id}"
         }
         return task
     }

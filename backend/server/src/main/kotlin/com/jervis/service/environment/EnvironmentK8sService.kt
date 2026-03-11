@@ -328,6 +328,35 @@ class EnvironmentK8sService(
         return COMPONENT_DEFAULTS[component.type]?.healthProbe
     }
 
+    /**
+     * Get logs for a component (pod) in an environment.
+     * Finds pods by label selector matching the component deployment name.
+     */
+    suspend fun getComponentLogs(environmentId: EnvironmentId, componentName: String, tailLines: Int = 200): String {
+        val env = environmentService.getEnvironmentById(environmentId)
+        val deploymentName = componentName.lowercase().replace(Regex("[^a-z0-9-]"), "-")
+        buildK8sClient().use { client ->
+            val pods = client.pods()
+                .inNamespace(env.namespace)
+                .withLabel("app", deploymentName)
+                .list()
+                .items
+            if (pods.isEmpty()) {
+                return "Žádné pody nalezeny pro komponentu '$componentName' v namespace '${env.namespace}'"
+            }
+            val pod = pods.first()
+            return try {
+                client.pods()
+                    .inNamespace(env.namespace)
+                    .withName(pod.metadata.name)
+                    .tailingLines(tailLines)
+                    .log
+            } catch (e: Exception) {
+                "Chyba při čtení logů: ${e.message}"
+            }
+        }
+    }
+
     // --- K8s operations via fabric8 client ---
 
     private fun buildK8sClient(): KubernetesClient {

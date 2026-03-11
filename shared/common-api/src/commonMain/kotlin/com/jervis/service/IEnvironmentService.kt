@@ -45,6 +45,9 @@ interface IEnvironmentService {
     /** Sync K8s resources (ConfigMaps, re-apply deployments) for a RUNNING environment. */
     suspend fun syncEnvironmentResources(id: String): EnvironmentDto
 
+    /** Get logs for a component (pod) in an environment. */
+    suspend fun getComponentLogs(environmentId: String, componentName: String, tailLines: Int = 200): String
+
     /** Clone an environment to a new scope (different client, group, or project). */
     suspend fun cloneEnvironment(
         sourceId: String,

@@ -236,6 +236,11 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
 
     suspend fun findByCorrelationId(correlationId: String): TaskDocument?
 
+    suspend fun findFirstByTopicIdAndStateIn(
+        topicId: String,
+        states: List<TaskStateEnum>,
+    ): TaskDocument?
+
     // Work plan hierarchy queries
 
     /**

@@ -39,11 +39,18 @@ import java.time.Instant
  *
  * All emails will be re-indexed from IMAP/POP3 on next polling cycle.
  */
+enum class EmailDirection {
+    RECEIVED,
+    SENT,
+}
+
 @Document(collection = "email_message_index")
 @CompoundIndexes(
     CompoundIndex(name = "connection_state_idx", def = "{'connectionId': 1, 'state': 1}"),
     CompoundIndex(name = "connection_uid_idx", def = "{'connectionId': 1, 'messageUid': 1}", unique = true),
     CompoundIndex(name = "client_state_idx", def = "{'clientId': 1, 'state': 1}"),
+    CompoundIndex(name = "thread_id_idx", def = "{'threadId': 1, 'sentDate': 1}"),
+    CompoundIndex(name = "thread_direction_idx", def = "{'threadId': 1, 'direction': 1}"),
 )
 data class EmailMessageIndexDocument(
     val id: ObjectId = ObjectId.get(),
@@ -64,7 +71,19 @@ data class EmailMessageIndexDocument(
     val attachments: List<EmailAttachment> = emptyList(),
     val folder: String = "INBOX",
     val indexingError: String? = null,
-)
+    val inReplyTo: String? = null,
+    val references: List<String> = emptyList(),
+    val threadId: String? = null,
+    val direction: EmailDirection = EmailDirection.RECEIVED,
+) {
+    companion object {
+        fun computeThreadId(messageId: String?, inReplyTo: String?, references: List<String>): String? {
+            if (references.isNotEmpty()) return references.first()
+            if (inReplyTo != null) return inReplyTo
+            return messageId
+        }
+    }
+}
 
 /**
  * Email attachment metadata.

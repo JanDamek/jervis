@@ -103,6 +103,15 @@ value class SourceUrn(
                 "confluence-attachment::conn:${connectionId.toHexString()},pageId:${encodeValue(pageId)},file:${encodeValue(filename)}",
             )
 
+        fun mergeRequest(
+            projectId: ProjectId,
+            provider: String,
+            mrId: String,
+        ): SourceUrn =
+            SourceUrn(
+                "merge-request::proj:${projectId.value.toHexString()},provider:$provider,mr:${encodeValue(mrId)}",
+            )
+
         private fun encodeValue(value: String): String =
             value
                 .replace(",", "%2C")

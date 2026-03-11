@@ -70,6 +70,7 @@ class UserTaskService(
             }
 
         // Update existing task to USER_TASK and refresh its content for UI display.
+        // Default priority 60 for escalated tasks (higher than auto-discovered 50, lower than urgent 70+)
         val updatedTask =
             task.copy(
                 taskName = title,
@@ -78,6 +79,8 @@ class UserTaskService(
                 type = com.jervis.dto.TaskTypeEnum.USER_TASK,
                 pendingUserQuestion = pendingQuestion,
                 userQuestionContext = questionContext,
+                priorityScore = task.priorityScore ?: 60,
+                lastActivityAt = java.time.Instant.now(),
             )
         userTaskRepository.save(updatedTask)
 
@@ -161,6 +164,18 @@ class UserTaskService(
         )
     }
 
+    /**
+     * Priority-based sort for "K reakci" display:
+     * 1. priorityScore DESC (highest priority first, nulls last)
+     * 2. lastActivityAt DESC (recent activity first, nulls last)
+     * 3. createdAt ASC (oldest tasks first within same priority)
+     */
+    private fun prioritySort() = Sort.by(
+        Sort.Order.desc("priorityScore"),
+        Sort.Order.desc("lastActivityAt"),
+        Sort.Order.asc("createdAt"),
+    )
+
     data class PagedTasks(
         val items: List<TaskDocument>,
         val totalCount: Int,
@@ -192,7 +207,7 @@ class UserTaskService(
         val totalCount = mongoTemplate.count(countQuery, TaskDocument::class.java).awaitSingle().toInt()
 
         val dataQuery = Query(criteria)
-            .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+            .with(prioritySort())
             .skip(offset.toLong())
             .limit(limit)
 
@@ -228,13 +243,13 @@ class UserTaskService(
                     .matching(query)
                 val textQuery = org.springframework.data.mongodb.core.query.TextQuery.queryText(textCriteria)
                     .addCriteria(criteria)
-                    .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+                    .with(prioritySort())
 
                 val totalCount = mongoTemplate.count(textQuery, TaskDocument::class.java).awaitSingle().toInt()
 
                 val dataQuery = org.springframework.data.mongodb.core.query.TextQuery.queryText(textCriteria)
                     .addCriteria(criteria)
-                    .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+                    .with(prioritySort())
                     .skip(offset.toLong())
                     .limit(limit)
 
@@ -268,7 +283,7 @@ class UserTaskService(
         val totalCount = mongoTemplate.count(countQuery, TaskDocument::class.java).awaitSingle().toInt()
 
         val dataQuery = Query(criteria)
-            .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+            .with(prioritySort())
             .skip(offset.toLong())
             .limit(limit)
 

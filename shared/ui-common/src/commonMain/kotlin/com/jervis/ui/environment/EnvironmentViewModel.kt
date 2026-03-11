@@ -55,6 +55,12 @@ class EnvironmentViewModel(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    /** Log viewer state: environmentId + componentName + logs content */
+    data class LogViewState(val envId: String, val componentName: String, val logs: String? = null)
+
+    private val _logView = MutableStateFlow<LogViewState?>(null)
+    val logView: StateFlow<LogViewState?> = _logView.asStateFlow()
+
     /** ID of the environment the user last expanded/selected in the panel. */
     private val _selectedEnvironmentId = MutableStateFlow<String?>(null)
     val selectedEnvironmentId: StateFlow<String?> = _selectedEnvironmentId.asStateFlow()
@@ -165,6 +171,47 @@ class EnvironmentViewModel(
         val clientId = selectedClientId.value?.takeIf { it != "__global__" } ?: return
         loadEnvironments(clientId)
         pollStatuses()
+    }
+
+    fun deployEnvironment(envId: String) {
+        scope.launch {
+            try {
+                repository.environments.provisionEnvironment(envId)
+                refreshEnvironments()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _error.value = "Deploy selhal: ${e.message}"
+            }
+        }
+    }
+
+    fun stopEnvironment(envId: String) {
+        scope.launch {
+            try {
+                repository.environments.deprovisionEnvironment(envId)
+                refreshEnvironments()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _error.value = "Zastavení selhalo: ${e.message}"
+            }
+        }
+    }
+
+    fun viewComponentLogs(envId: String, componentName: String) {
+        _logView.value = LogViewState(envId, componentName)
+        scope.launch {
+            try {
+                val logs = repository.environments.getComponentLogs(envId, componentName)
+                _logView.value = LogViewState(envId, componentName, logs)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _logView.value = LogViewState(envId, componentName, "Chyba: ${e.message}")
+            }
+        }
+    }
+
+    fun closeLogView() {
+        _logView.value = null
     }
 
     /**

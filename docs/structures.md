@@ -442,10 +442,10 @@ For indexer details see [knowledge-base.md § Continuous Indexers](knowledge-bas
 
 | Enum value | `sourceKey` | Description |
 |------------|-------------|-------------|
-| `EMAIL_PROCESSING` | `email` | Email content from IMAP/POP3 |
+| `EMAIL_PROCESSING` | `email` | Email content from IMAP/POP3 (thread-consolidated via topicId) |
 | `WIKI_PROCESSING` | `confluence` | Confluence pages |
 | `BUGTRACKER_PROCESSING` | `jira` | Jira/GitHub/GitLab issues |
-| `GIT_PROCESSING` | `git` | Git commits and diffs |
+| `GIT_PROCESSING` | `git` | Git commits, diffs, and merge request code reviews |
 | `USER_INPUT_PROCESSING` | `chat` | User chat messages |
 | `USER_TASK` | `user_task` | User-created tasks |
 | `SCHEDULED_TASK` | `scheduled` | Cron-scheduled tasks |

@@ -82,7 +82,7 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Speaker entity: `backend/server/.../entity/SpeakerDocument.kt`, `backend/server/.../repository/SpeakerRepository.kt`
 - Speaker DTOs: `shared/common-dto/.../meeting/SpeakerDtos.kt` (`AutoSpeakerMatchDto`, `SpeakerEmbeddingDto`, `hasVoiceprint`)
 - Speaker RPC: `shared/common-api/.../ISpeakerService.kt`, `backend/server/.../rpc/SpeakerRpcImpl.kt` (incl. `setVoiceEmbedding`)
-- Speaker UI: `shared/ui-common/.../meeting/SpeakerAssignmentPanel.kt` (auto-match confidence badge with matchedEmbeddingLabel, multi-embedding save on confirm)
+- Speaker UI: `shared/ui-common/.../meeting/SpeakerAssignmentPanel.kt` → `SpeakerAssignmentDialog` (AlertDialog, auto-match confidence badge with matchedEmbeddingLabel, multi-embedding save on confirm)
 - Speaker Settings: `shared/ui-common/.../screens/settings/sections/SpeakerSettings.kt` (CRUD, JListDetailLayout, voiceprint labels)
 - Segment speaker detail: `SegmentCorrectionDialog.kt` (speaker info + confidence + dropdown), `TranscriptPanel.kt` (confidence badge + embedding label)
 - Speaker auto-ID: `MeetingTranscriptionService.kt` (cosine similarity matching across all embeddings), `MeetingDocument.speakerEmbeddings`, `SpeakerDocument.voiceEmbeddings` (multi-embedding with VoiceEmbeddingEntry)
@@ -100,12 +100,16 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - KB document storage: `backend/server/.../storage/DirectoryStructureService.kt` (storeKbDocument, readKbDocument, deleteKbDocument)
 - KB document Python endpoints: `backend/service-knowledgebase/app/api/routes.py` (/documents/*, /documents/extract-text)
 - KB document MCP tools: `backend/service-mcp/app/main.py` (kb_document_upload with base64 support, kb_document_list, kb_document_delete)
+- Email thread consolidation: `backend/server/.../service/email/EmailThreadService.kt` (thread analysis, auto-resolve), `backend/server/.../service/email/EmailContinuousIndexer.kt` (thread-aware indexing)
+- Email threading: `backend/server/.../entity/email/EmailMessageIndexDocument.kt` (threadId, direction, computeThreadId), `EmailDirection` enum
+- IMAP SENT folder: `backend/server/.../polling/handler/email/ImapPollingHandler.kt` (auto-includes SENT, per-folder polling state)
+- Topic consolidation: `TaskDocument.topicId` (general grouping: email-thread, mr, slack), `TaskDocument.lastActivityAt`
 - Attachment extraction: `backend/server/.../entity/AttachmentExtractDocument.kt`, `backend/server/.../repository/AttachmentExtractRepository.kt`
 - Attachment extraction service: `backend/server/.../service/indexing/AttachmentExtractionService.kt` (VLM-first text extraction)
 - Attachment KB indexing: `backend/server/.../service/indexing/AttachmentKbIndexingService.kt` (register pre-stored attachments)
 - VLM image service: `backend/service-knowledgebase/app/services/image_service.py` (qwen3-vl-tool, ChatOllama)
 - Text extraction endpoint: `backend/service-knowledgebase/app/services/knowledge_service.py` (extract_text_only — VLM/Tika without RAG)
-- Agent (unified): `backend/service-orchestrator/app/agent/` (models.py, graph.py, decomposer.py, validation.py, langgraph_runner.py, tool_sets.py, persistence.py, progress.py, artifact_graph.py, impact.py, vertex_executor.py, chat_router.py, sse_handler.py)
+- Agent (unified): `backend/service-orchestrator/app/agent/` (models.py, graph.py, decomposer.py, gemini_decomposer.py, validation.py, langgraph_runner.py, tool_sets.py, persistence.py, progress.py, artifact_graph.py, impact.py, vertex_executor.py, chat_router.py, sse_handler.py)
 - MongoDB tools + cache invalidation: `backend/service-orchestrator/app/tools/definitions.py` (MONGO_TOOLS), `backend/service-orchestrator/app/tools/executor.py` (handlers + auto cache invalidation), `backend/service-orchestrator/app/tools/kotlin_client.py` (invalidate_cache)
 - Graph UI visualization: `shared/ui-common/.../chat/TaskGraphComponents.kt` (TaskGraphSection, VertexCard, EdgeRow)
 - Graph DTOs: `shared/common-dto/.../graph/TaskGraphDtos.kt`, `shared/common-api/.../ITaskGraphService.kt`, `backend/server/.../rpc/TaskGraphRpcImpl.kt`
@@ -114,6 +118,9 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Code review handler: `backend/service-orchestrator/app/review/code_review_handler.py` (orchestration: KB prefetch → static analysis → dispatch review agent → post MR comment → fix task)
 - Review engine: `backend/service-orchestrator/app/review/review_engine.py` (static analysis: forbidden patterns, credentials, file restrictions)
 - MR/PR internal API: `backend/server/.../rpc/internal/InternalMergeRequestRouting.kt` (create-merge-request, post-mr-comment — GitHub PR + GitLab MR)
+- MR/PR continuous indexer: `backend/server/.../service/indexing/git/MergeRequestContinuousIndexer.kt` (polls GitLab/GitHub for open MRs, creates review tasks)
+- MR/PR state: `backend/server/.../service/indexing/git/state/MergeRequestDocument.kt`, `MergeRequestRepository.kt`
+- Gemini decomposer: `backend/service-orchestrator/app/agent/gemini_decomposer.py` (large context >100k tokens → Gemini 1M → sub-vertices + synthesis)
 - Claude SDK runner: `backend/service-claude/claude_sdk_runner.py` (K8s Job entrypoint, result.json with branch field, kubectl binary available)
 - Coding agent RBAC: `k8s/orchestrator-rbac.yaml` (ServiceAccount jervis-coding-agent + ClusterRole jervis-environment-manager)
 - Coding agent job: `backend/service-orchestrator/app/agents/job_runner.py` (dispatch_coding_agent — SA, KUBE_NAMESPACES env var)
