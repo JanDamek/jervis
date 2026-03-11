@@ -301,8 +301,8 @@ async def run_vertex(
     else:
         task_id = str(result)
 
-    # Store correlation: task_id → (graph_id, vertex_id, session_id)
-    _vertex_tasks[task_id] = (graph.id, vertex_id, session_id)
+    # Persist correlation: task_id → (graph_id, vertex_id, session_id)
+    await agent_store.save_vertex_correlation(task_id, graph.id, vertex_id, session_id)
 
     await agent_store.save(graph)
     logger.info(
@@ -320,12 +320,12 @@ async def handle_vertex_result(
 
     Returns (updated graph, session_id) if this was a vertex task, None otherwise.
     """
-    correlation = _vertex_tasks.pop(task_id, None)
+    correlation = await agent_store.pop_vertex_correlation(task_id)
     if not correlation:
         return None
 
     graph_id, vertex_id, session_id = correlation
-    graph = await agent_store.load(graph_id)
+    graph = await agent_store.load_by_graph_id(graph_id)
     if not graph:
         logger.warning("Graph %s not found for vertex result (task %s)", graph_id, task_id)
         return None
@@ -338,10 +338,6 @@ async def handle_vertex_result(
         logger.info("Updated vertex '%s' with background result (task %s)", vertex_id, task_id)
 
     return graph, session_id
-
-
-# Task ID → (graph_id, vertex_id, session_id) for background vertex correlation
-_vertex_tasks: dict[str, tuple[str, str, str]] = {}
 
 
 def get_active_map_id(session_id: str) -> str | None:

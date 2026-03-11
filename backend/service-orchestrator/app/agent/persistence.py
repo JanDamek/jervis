@@ -52,6 +52,7 @@ class AgentStore:
     def __init__(self) -> None:
         self._client: AsyncIOMotorClient | None = None
         self._collection: AsyncIOMotorCollection | None = None
+        self._vertex_tasks_coll: AsyncIOMotorCollection | None = None
 
         # RAM cache
         self._memory_map: AgentGraph | None = None
@@ -70,6 +71,7 @@ class AgentStore:
         self._client = AsyncIOMotorClient(settings.mongodb_url)
         db = self._client.get_database("jervis")
         self._collection = db[_COLLECTION_NAME]
+        self._vertex_tasks_coll = db["vertex_task_correlations"]
 
         await self._collection.create_index(
             [("task_id", 1)], unique=True,
@@ -83,6 +85,11 @@ class AgentStore:
         await self._collection.create_index(
             [("updated_at", 1)],
             expireAfterSeconds=_TTL_DAYS * 86400,
+        )
+        # Vertex task correlations — TTL 7 days (tasks don't last longer)
+        await self._vertex_tasks_coll.create_index(
+            [("created_at", 1)],
+            expireAfterSeconds=7 * 86400,
         )
         logger.info(
             "AgentStore initialized (collection=%s, ttl=%dd)",
@@ -834,6 +841,37 @@ class AgentStore:
              "root_vertex_id": 1, "parent_graph_id": 1},
         ).sort("created_at", -1).limit(50)
         return [doc async for doc in cursor]
+
+    # --- Vertex task correlations (persistent) ---
+
+    async def save_vertex_correlation(
+        self, task_id: str, graph_id: str, vertex_id: str, session_id: str,
+    ) -> None:
+        """Persist vertex-task correlation to MongoDB."""
+        if not self._vertex_tasks_coll:
+            return
+        await self._vertex_tasks_coll.replace_one(
+            {"_id": task_id},
+            {
+                "_id": task_id,
+                "graph_id": graph_id,
+                "vertex_id": vertex_id,
+                "session_id": session_id,
+                "created_at": datetime.now(timezone.utc),
+            },
+            upsert=True,
+        )
+
+    async def pop_vertex_correlation(
+        self, task_id: str,
+    ) -> tuple[str, str, str] | None:
+        """Load and delete vertex-task correlation. Returns (graph_id, vertex_id, session_id) or None."""
+        if not self._vertex_tasks_coll:
+            return None
+        doc = await self._vertex_tasks_coll.find_one_and_delete({"_id": task_id})
+        if not doc:
+            return None
+        return doc["graph_id"], doc["vertex_id"], doc["session_id"]
 
 
 # Singleton
