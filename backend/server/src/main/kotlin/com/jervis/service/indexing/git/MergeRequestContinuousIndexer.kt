@@ -42,7 +42,7 @@ private val logger = KotlinLogging.logger {}
  *
  * Filters applied:
  * - Skips draft MRs/PRs (not ready for review)
- * - Skips Jervis-created branches (jervis/* prefix — handled by AgentTaskWatcher)
+ * - Skips Jervis-created branches (jervis/ prefix — handled by AgentTaskWatcher)
  *
  * Two coroutine loops:
  * 1. pollAllProjects() — discover new MRs from GitLab/GitHub APIs (every 2 minutes)
