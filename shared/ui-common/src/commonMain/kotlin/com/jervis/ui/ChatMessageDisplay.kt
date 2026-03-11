@@ -1134,6 +1134,56 @@ private fun ChatMessageItem(
                                             )
                                         }
                                     }
+                                    // Inline memory map — shows where this request was placed in the graph
+                                    val memoryMapId = message.metadata["memory_map_id"]
+                                    if (memoryMapId != null) {
+                                        var mapExpanded by remember { mutableStateOf(false) }
+                                        val graphEntry = taskGraphs[memoryMapId]
+
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        TextButton(
+                                            onClick = {
+                                                mapExpanded = !mapExpanded
+                                                if (graphEntry == null && memoryMapId !in taskGraphs) {
+                                                    onLoadTaskGraph(memoryMapId)
+                                                }
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(28.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.Default.AccountTree,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                if (mapExpanded) "Skrýt mapu" else "Paměťová mapa",
+                                                style = MaterialTheme.typography.labelSmall,
+                                            )
+                                        }
+                                        AnimatedVisibility(visible = mapExpanded) {
+                                            if (graphEntry != null && graphEntry.vertices.isNotEmpty()) {
+                                                TaskGraphSection(graph = graphEntry)
+                                            } else if (memoryMapId in taskGraphs && taskGraphs[memoryMapId] == null) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    modifier = Modifier.padding(vertical = 4.dp),
+                                                ) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(14.dp),
+                                                        strokeWidth = 1.5.dp,
+                                                    )
+                                                    Text(
+                                                        "Načítání mapy…",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             } else {
                                 // Assistant messages - Markdown rendering with safe fallback
@@ -1222,17 +1272,18 @@ private fun ChatMessageItem(
                             }
                         }
 
-                        // Inline task graph for assistant messages with graph_id
+                        // Inline thinking map for assistant messages (per-task graph, not memory map)
                         if (!isMe) {
-                            val graphId = message.metadata["graph_id"]
-                            if (graphId != null) {
-                                val graphEntry = taskGraphs[graphId]
+                            // thinking_map_task_id set by THINKING_MAP_UPDATE events
+                            val thinkingMapId = message.metadata["thinking_map_task_id"]
+                            if (thinkingMapId != null) {
+                                val graphEntry = taskGraphs[thinkingMapId]
                                 if (graphEntry != null && graphEntry.vertices.isNotEmpty()) {
                                     Spacer(modifier = Modifier.height(8.dp))
                                     TaskGraphSection(graph = graphEntry)
-                                } else if (graphEntry == null && graphId !in taskGraphs) {
+                                } else if (graphEntry == null && thinkingMapId !in taskGraphs) {
                                     TextButton(
-                                        onClick = { onLoadTaskGraph(graphId) },
+                                        onClick = { onLoadTaskGraph(thinkingMapId) },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                                         modifier = Modifier.height(28.dp),
                                     ) {
@@ -1243,11 +1294,11 @@ private fun ChatMessageItem(
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
-                                            "Zobrazit graf",
+                                            "Myšlenková mapa",
                                             style = MaterialTheme.typography.labelSmall,
                                         )
                                     }
-                                } else if (graphId in taskGraphs && taskGraphs[graphId] == null) {
+                                } else if (thinkingMapId in taskGraphs && taskGraphs[thinkingMapId] == null) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),

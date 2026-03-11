@@ -195,9 +195,12 @@ async def handle_chat_sse(
             elif event.type == "tool_result" and event.content:
                 tool = event.metadata.get("tool", "?")
                 _trace_parts.append(f"[result:{tool}] {event.content[:150]}")
-            # Inject graph_id into done event so UI can show inline graph
-            if event.type == "done" and _memory_map_id:
-                event.metadata["graph_id"] = _memory_map_id
+            # Inject memory map + vertex IDs into done event for UI
+            if event.type == "done":
+                if _memory_map_id:
+                    event.metadata["memory_map_id"] = _memory_map_id
+                if _live_vertex_id:
+                    event.metadata["memory_map_vertex_id"] = _live_vertex_id
             yield event
 
     except Exception as e:

@@ -807,6 +807,27 @@ class ChatViewModel(
                 }
                 streamingBuffer.clear()
                 thinkingHistory.clear()
+
+                // Enrich last user message with memory map info (user bubble shows memory map)
+                val memoryMapId = response.metadata["memory_map_id"]
+                val memoryMapVertexId = response.metadata["memory_map_vertex_id"]
+                if (!memoryMapId.isNullOrBlank()) {
+                    val lastUserIdx = messages.indexOfLast { it.from == ChatMessage.Sender.Me }
+                    if (lastUserIdx >= 0) {
+                        val userMsg = messages[lastUserIdx]
+                        messages[lastUserIdx] = userMsg.copy(
+                            metadata = userMsg.metadata + buildMap {
+                                put("memory_map_id", memoryMapId)
+                                if (!memoryMapVertexId.isNullOrBlank()) put("memory_map_vertex_id", memoryMapVertexId)
+                            },
+                        )
+                    }
+                    // Proactively load memory map graph for user bubble
+                    if (memoryMapId !in _taskGraphs.value) {
+                        loadTaskGraph(memoryMapId)
+                    }
+                }
+
                 messages.add(
                     ChatMessage(
                         from = ChatMessage.Sender.Assistant,
@@ -819,11 +840,6 @@ class ChatViewModel(
                 )
                 // Refresh master map after chat completion
                 loadMemoryMap()
-                // Proactively load graph for inline display in bubble
-                val graphId = response.metadata["graph_id"]
-                if (!graphId.isNullOrBlank() && graphId !in _taskGraphs.value) {
-                    loadTaskGraph(graphId)
-                }
             }
 
             ChatMessage.MessageType.ERROR -> {
