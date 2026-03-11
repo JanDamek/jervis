@@ -48,7 +48,8 @@ class Settings(BaseSettings):
 
     # ── Request limits ──────────────────────────────────────────────────
     max_request_timeout_s: int = 300     # 5 min per request (cancel + REQUEST_OUT if exceeded)
-    max_concurrent_per_backend: int = 1  # Serial is faster than parallel when VRAM spills to RAM
+    max_concurrent_llm: int = 1           # LLM/VLM: serial is faster (VRAM spill)
+    max_concurrent_embeddings: int = 5     # Embedding: GPU-2 benchmark sweet spot = 4-5 concurrent
 
     # ── Preemption ──────────────────────────────────────────────────────
     preempt_embeddings: bool = False     # let short embedding requests finish

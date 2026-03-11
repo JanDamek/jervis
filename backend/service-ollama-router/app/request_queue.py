@@ -70,7 +70,8 @@ class RequestQueue:
         self._dispatch_event = asyncio.Event()
         self._dispatcher_task: asyncio.Task | None = None
 
-        self._max_per_backend = settings.max_concurrent_per_backend
+        self._max_concurrent_llm = settings.max_concurrent_llm
+        self._max_concurrent_embeddings = settings.max_concurrent_embeddings
 
         # Round-robin counter for tie-breaking when multiple GPUs have same load
         self._rr_counter: int = 0
@@ -78,8 +79,8 @@ class RequestQueue:
     async def start(self) -> None:
         self._dispatcher_task = asyncio.create_task(self._dispatch_loop())
         logger.info(
-            "RequestQueue started (unlimited queues, max_concurrent_per_backend=%d)",
-            self._max_per_backend,
+            "RequestQueue started (unlimited queues, llm_concurrent=%d, embedding_concurrent=%d)",
+            self._max_concurrent_llm, self._max_concurrent_embeddings,
         )
 
     async def stop(self) -> None:
@@ -249,17 +250,24 @@ class RequestQueue:
         Returns backend identifier "gpu:<name>", or None if no slot.
         GPU only — no CPU backend.
 
-        Embedding models → only GPUs that have embedding in GPU_MODEL_SETS.
-        VLM models → only VLM_GPU (p40-2).
+        Concurrency per type (from benchmark):
+        - Embedding: up to max_concurrent_embeddings (sweet spot 4-5)
+        - LLM/VLM: serial (1 at a time, VRAM spill makes parallel slower)
         """
         is_critical = request.priority <= Priority.CRITICAL
         is_embedding = request.model in EMBEDDING_MODELS
-        is_vlm = request.model == "qwen3-vl-tool:latest"
+
+        max_concurrent = self._max_concurrent_embeddings if is_embedding else self._max_concurrent_llm
 
         # Try GPU backends (prefer one with model already loaded, least busy)
         gpu_candidates = []
         for b in self.gpu_pool.healthy_backends:
-            if b.active_request_count() >= self._max_per_backend:
+            # Count active requests of same type on this backend
+            if is_embedding:
+                active = sum(1 for r in b.active_requests.values() if r.model in EMBEDDING_MODELS)
+            else:
+                active = sum(1 for r in b.active_requests.values() if r.model not in EMBEDDING_MODELS)
+            if active >= max_concurrent:
                 continue
             if b.loading_in_progress:
                 continue
