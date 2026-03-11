@@ -79,6 +79,10 @@ compose.desktop {
             jvmArgs += "-Xdock:name=Jervis"
         }
 
+        buildTypes.release.proguard {
+            isEnabled.set(false)
+        }
+
         nativeDistributions {
             targetFormats(
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg,
