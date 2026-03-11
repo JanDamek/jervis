@@ -9,6 +9,9 @@ WORKDIR /opt/jervis/service-github
 
 COPY backend/service-github/build/libs/service-github-*.jar service-github.jar
 
+RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /opt/jervis
+USER 1000
+
 EXPOSE 8085
 
 ENV PORT=8085

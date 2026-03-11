@@ -17,6 +17,10 @@ spec:
         kb-mode: read
     spec:
       priorityClassName: high-priority
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: knowledgebase
           image: registry.damek-soft.eu/jandamek/jervis-knowledgebase:latest
@@ -64,7 +68,7 @@ spec:
             periodSeconds: 5
           resources:
             requests:
-              memory: "1Gi"
+              memory: "4Gi"
               cpu: "250m"
             limits:
               memory: "12Gi"
@@ -95,6 +99,10 @@ spec:
         app: jervis-knowledgebase-write
         kb-mode: write
     spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: knowledgebase
           image: registry.damek-soft.eu/jandamek/jervis-knowledgebase:latest

@@ -18,6 +18,9 @@ RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 # Copy application code
 COPY app/ ./app/
 
+RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /app
+USER 1000
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health || exit 1

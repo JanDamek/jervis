@@ -33,6 +33,10 @@ spec:
         app: jervis-mcp
     spec:
       priorityClassName: critical-priority
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: mcp
           image: registry.damek-soft.eu/jandamek/jervis-mcp:latest

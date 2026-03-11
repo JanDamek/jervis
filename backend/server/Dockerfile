@@ -9,6 +9,9 @@ RUN apt-get update && \
 WORKDIR /opt/jervis/server
 COPY backend/server/build/libs/server-*.jar jervis-server.jar
 
+RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /opt/jervis
+USER 1000
+
 ENV JAVA_OPTS="-Xmx4g -Xms1g"
 EXPOSE 5500
 VOLUME ["/opt/jervis/data"]

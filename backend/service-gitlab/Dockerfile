@@ -9,6 +9,9 @@ WORKDIR /opt/jervis/service-gitlab
 
 COPY backend/service-gitlab/build/libs/service-gitlab-*.jar service-gitlab.jar
 
+RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /opt/jervis
+USER 1000
+
 EXPOSE 8086
 
 ENV PORT=8086

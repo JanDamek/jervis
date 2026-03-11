@@ -17,6 +17,9 @@ RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 # Application code
 COPY app/ app/
 
+RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /app
+USER 1000
+
 EXPOSE 8090
 
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8090"]

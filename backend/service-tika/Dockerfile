@@ -42,6 +42,9 @@ ENV TIKA_OCR_TIMEOUT_MS=120000
 WORKDIR /opt/jervis/tika
 COPY backend/service-tika/build/libs/service-tika-*.jar jervis-tika.jar
 
+RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /opt/jervis
+USER 1000
+
 ENV JAVA_OPTS="-Xmx2g -Xms512m"
 EXPOSE 8081
 ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/tika/jervis-tika.jar"]

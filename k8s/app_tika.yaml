@@ -14,6 +14,10 @@ spec:
       labels:
         app: jervis-tika
     spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: tika
           image: registry.damek-soft.eu/jandamek/jervis-tika:latest
