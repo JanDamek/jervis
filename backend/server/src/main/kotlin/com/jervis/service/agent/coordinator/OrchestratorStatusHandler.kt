@@ -241,10 +241,8 @@ class OrchestratorStatusHandler(
             )
             taskRepository.save(updatedTask)
 
-            // Push background result to chat if user is online
-            if (task.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND ||
-                task.processingMode == com.jervis.entity.ProcessingMode.IDLE
-            ) {
+            // Push background result to chat if user is online (skip IDLE — internal system tasks)
+            if (task.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND) {
                 if (chatRpcImpl.isUserOnline()) {
                     try {
                         chatRpcImpl.pushBackgroundResult(
@@ -258,6 +256,9 @@ class OrchestratorStatusHandler(
                     }
                 }
                 // Delete after completion
+                taskRepository.delete(updatedTask)
+            } else if (task.processingMode == com.jervis.entity.ProcessingMode.IDLE) {
+                // IDLE tasks (Deadline Scan, idle review) are internal — delete silently
                 taskRepository.delete(updatedTask)
             }
         }

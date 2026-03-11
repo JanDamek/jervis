@@ -340,6 +340,10 @@ async def _execute_single_vertex(
     if not vertex:
         return graph
 
+    # Immediately flush RUNNING status to DB so UI sees "Probíhá" right away
+    agent_store.cache_subgraph(graph)
+    await agent_store.save(graph)
+
     await report_vertex_started(graph, vertex_id)
 
     try:
