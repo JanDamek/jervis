@@ -11,6 +11,7 @@ import com.jervis.entity.meeting.CorrectionQuestion
 import com.jervis.entity.meeting.MeetingDocument
 import com.jervis.entity.meeting.TranscriptSegment
 import com.jervis.repository.MeetingRepository
+import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -34,6 +35,7 @@ class TranscriptCorrectionService(
     private val correctionClient: com.jervis.configuration.CorrectionClient,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val whisperJobRunner: WhisperJobRunner,
+    private val speakerRepository: com.jervis.repository.SpeakerRepository,
 ) {
     suspend fun correct(meeting: MeetingDocument): MeetingDocument {
         require(meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.INDEXED, MeetingStateEnum.CORRECTION_REVIEW)) {
@@ -80,12 +82,16 @@ class TranscriptCorrectionService(
                 )
             }
 
+            // Build speaker hints from speaker mapping + speaker profiles
+            val speakerHints = buildSpeakerHints(meeting)
+
             val result = correctionClient.correctTranscript(
                 CorrectionRequestDto(
                     clientId = meeting.clientId?.toString().orEmpty(),
                     projectId = meeting.projectId?.toString(),
                     meetingId = meetingIdStr,
                     segments = requestSegments,
+                    speakerHints = speakerHints,
                 ),
             )
 
@@ -707,6 +713,27 @@ class TranscriptCorrectionService(
             .filter { it.value.isNotBlank() }
 
         return results.ifEmpty { null }
+    }
+
+    private suspend fun buildSpeakerHints(meeting: MeetingDocument): Map<String, String>? {
+        val mapping = meeting.speakerMapping
+        if (mapping.isEmpty() || meeting.clientId == null) return null
+
+        val speakers = speakerRepository.findByClientIdOrderByNameAsc(meeting.clientId)
+            .toList()
+            .associateBy { it.id.toHexString() }
+
+        val hints = mutableMapOf<String, String>()
+        for ((label, speakerId) in mapping) {
+            val speaker = speakers[speakerId] ?: continue
+            val parts = mutableListOf(speaker.name)
+            if (!speaker.nationality.isNullOrBlank()) parts.add(speaker.nationality)
+            if (speaker.languagesSpoken.isNotEmpty()) parts.add("languages: ${speaker.languagesSpoken.joinToString("/")}")
+            if (!speaker.notes.isNullOrBlank()) parts.add(speaker.notes)
+            hints[label] = parts.joinToString(", ")
+        }
+
+        return hints.ifEmpty { null }
     }
 
     private fun isConnectionError(e: Exception): Boolean {

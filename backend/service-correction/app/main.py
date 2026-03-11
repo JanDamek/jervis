@@ -96,6 +96,7 @@ async def correct_transcript(request: dict):
             segments=segments,
             chunk_size=request.get("chunkSize", 20),
             meeting_id=request.get("meetingId"),
+            speaker_hints=request.get("speakerHints"),
         )
         return result
     except Exception as e:

@@ -150,6 +150,7 @@ class CorrectionAgent:
         segments: list[dict],
         chunk_size: int = CHUNK_SIZE,
         meeting_id: str | None = None,
+        speaker_hints: dict[str, str] | None = None,
     ) -> dict:
         """
         Correct transcript segments using KB-stored corrections + Ollama GPU.
@@ -158,6 +159,10 @@ class CorrectionAgent:
         1. Load correction rules + project context from KB
         2. First pass: identify meeting phases, speakers, topics
         3. Sequential chunk correction with cumulative context
+
+        Args:
+            speaker_hints: optional dict mapping speaker label -> description
+                (e.g. {"SPEAKER_00": "Martin (Slovak, speaks sk/cs)"})
 
         Returns dict with:
           - segments: list of corrected segments (best-effort)
@@ -213,6 +218,7 @@ class CorrectionAgent:
                 running_context=running_context,
                 phase_analysis=phase_analysis,
                 project_context=project_context,
+                speaker_hints=speaker_hints,
             )
             corrected_segments.extend(result["segments"])
             all_questions.extend(result["questions"])
@@ -752,6 +758,7 @@ class CorrectionAgent:
         running_context: str = "",
         phase_analysis: str = "",
         project_context: str = "",
+        speaker_hints: dict[str, str] | None = None,
     ) -> dict:
         """Send a chunk of segments to Ollama for interactive correction."""
         system_prompt = self._build_system_prompt_interactive(
@@ -759,6 +766,7 @@ class CorrectionAgent:
             running_context=running_context,
             phase_analysis=phase_analysis,
             project_context=project_context,
+            speaker_hints=speaker_hints,
         )
         user_prompt = self._build_user_prompt(segments, full_transcript)
         seg_indices = [s.get("i", i) for i, s in enumerate(segments)]
@@ -988,6 +996,7 @@ class CorrectionAgent:
         running_context: str = "",
         phase_analysis: str = "",
         project_context: str = "",
+        speaker_hints: dict[str, str] | None = None,
     ) -> str:
         """Build system prompt with interactive question generation."""
         base = (
@@ -1011,6 +1020,10 @@ class CorrectionAgent:
             "- Do NOT translate between languages\n"
             "- Each corrected segment MUST make sense in context of the full "
             "conversation\n"
+            "- CRITICAL: Each segment has a FIXED time boundary — NEVER move text "
+            "between segments. Each output index `i` must contain ONLY the corrected "
+            "version of that same segment's text. Do NOT merge or split content "
+            "across segments.\n"
             "- Be CONSISTENT with corrections from previous chunks\n\n"
             "INTERACTIVE MODE:\n"
             "- Always provide your best correction for every segment\n"
@@ -1040,6 +1053,17 @@ class CorrectionAgent:
                 "Use context and phonetic reasoning to fix errors.\n"
             )
 
+        if speaker_hints:
+            hints_text = "\n".join(
+                f"- {label}: {desc}" for label, desc in speaker_hints.items()
+            )
+            base += (
+                f"\nSPEAKER INFO (segments with field \"s\" are tagged with speaker label):\n"
+                f"{hints_text}\n"
+                "Use speaker's language/nationality to guide corrections — "
+                "e.g. a Slovak speaker's segments are likely Slovak, not garbled Czech.\n"
+            )
+
         if running_context:
             base += (
                 f"\nPREVIOUS CHUNK CORRECTIONS (be consistent with these):\n"
@@ -1058,7 +1082,9 @@ class CorrectionAgent:
             "1. Understand the conversation meaning from full context\n"
             "2. Apply the user instruction across ALL relevant segments\n"
             "3. Also apply existing correction rules below\n"
-            "4. Keep spoken style, do NOT translate between languages\n\n"
+            "4. Keep spoken style, do NOT translate between languages\n"
+            "5. CRITICAL: NEVER move text between segments — each output `i` must "
+            "contain only the corrected version of that same segment\n\n"
             f"USER INSTRUCTION:\n{instruction}\n\n"
             "OUTPUT — valid JSON only, no markdown:\n"
             '{"corrections":[{"i":0,"t":"text"},...],'
@@ -1078,7 +1104,10 @@ class CorrectionAgent:
         """Build user prompt with segments to correct."""
         entries = []
         for idx, seg in enumerate(segments):
-            entries.append({"i": seg.get("i", idx), "t": seg["text"]})
+            entry = {"i": seg.get("i", idx), "t": seg["text"]}
+            if seg.get("speaker"):
+                entry["s"] = seg["speaker"]
+            entries.append(entry)
 
         prompt = ""
 

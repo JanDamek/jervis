@@ -163,6 +163,7 @@ data class CorrectionRequestDto(
     @kotlinx.serialization.SerialName("meetingId") val meetingId: String? = null,
     val segments: List<CorrectionSegmentDto>,
     @kotlinx.serialization.SerialName("chunkSize") val chunkSize: Int = 20,
+    @kotlinx.serialization.SerialName("speakerHints") val speakerHints: Map<String, String>? = null,
 )
 
 @kotlinx.serialization.Serializable
