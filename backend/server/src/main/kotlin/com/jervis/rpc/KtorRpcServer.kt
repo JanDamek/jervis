@@ -1107,6 +1107,41 @@ class KtorRpcServer(
                                                     taskService.updateState(updatedTask, com.jervis.dto.TaskStateEnum.QUEUED)
                                                     logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → URGENT_ALERT + QUEUED priority=${body.priorityScore}" }
                                                 }
+                                                "CONSOLIDATE" -> {
+                                                    // Merge incoming content into existing target task, mark current task DONE
+                                                    val targetTaskIdStr = body.targetTaskId
+                                                    if (targetTaskIdStr.isNullOrBlank()) {
+                                                        logger.warn { "QUALIFICATION_DONE: CONSOLIDATE without targetTaskId, defaulting to QUEUED" }
+                                                        taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
+                                                    } else {
+                                                        try {
+                                                            val targetTaskId = com.jervis.common.types.TaskId(ObjectId(targetTaskIdStr))
+                                                            val targetTask = taskRepository.getById(targetTaskId)
+                                                            if (targetTask == null) {
+                                                                logger.warn { "QUALIFICATION_DONE: CONSOLIDATE target task not found targetTaskId=$targetTaskIdStr, defaulting to QUEUED" }
+                                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
+                                                            } else {
+                                                                // Append new content to target task
+                                                                val consolidatedContent = buildString {
+                                                                    append(targetTask.content)
+                                                                    append("\n\n---\n## Konsolidováno z: ${task.sourceUrn.value}\n")
+                                                                    append(task.content)
+                                                                    if (!body.contextSummary.isNullOrBlank()) {
+                                                                        append("\n\n### Kontext kvalifikátoru\n")
+                                                                        append(body.contextSummary)
+                                                                    }
+                                                                }
+                                                                taskService.updateThreadActivity(targetTaskId, consolidatedContent)
+                                                                // Mark current task DONE (consolidated into target)
+                                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
+                                                                logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → CONSOLIDATE into targetTaskId=$targetTaskIdStr" }
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            logger.error(e) { "QUALIFICATION_DONE: CONSOLIDATE failed for targetTaskId=$targetTaskIdStr" }
+                                                            taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
+                                                        }
+                                                    }
+                                                }
                                                 else -> {
                                                     // Unknown decision — default to QUEUED
                                                     logger.warn { "QUALIFICATION_DONE: unknown decision=${body.decision}, defaulting to QUEUED" }
@@ -1567,6 +1602,8 @@ data class QualificationDoneCallback(
     val reason: String? = null,
     /** Alert message for URGENT_ALERT decisions */
     @kotlinx.serialization.SerialName("alert_message") val alertMessage: String? = null,
+    /** Target task ID for CONSOLIDATE decisions — merge content into this task */
+    @kotlinx.serialization.SerialName("target_task_id") val targetTaskId: String? = null,
     /** Prepared context from GPU qualification agent (KB search results, related items) */
     @kotlinx.serialization.SerialName("context_summary") val contextSummary: String? = null,
     /** Suggested approach/plan for the orchestrator */

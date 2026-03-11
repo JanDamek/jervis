@@ -22,6 +22,7 @@ import com.jervis.service.background.TaskService
 import com.jervis.service.environment.EnvironmentService
 import com.jervis.service.preferences.PreferenceService
 import com.jervis.service.text.CzechKeyboardNormalizer
+import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -488,6 +489,32 @@ class AgentOrchestratorService(
         // Resolve cloud model policy for qualification agent
         val effectivePolicy = cloudModelPolicyResolver.resolve(task.clientId, task.projectId)
 
+        // Load active tasks for the same client — qualifier uses these for consolidation
+        val activeStates = listOf(
+            com.jervis.dto.TaskStateEnum.INDEXING, com.jervis.dto.TaskStateEnum.QUALIFYING,
+            com.jervis.dto.TaskStateEnum.QUEUED, com.jervis.dto.TaskStateEnum.PROCESSING,
+            com.jervis.dto.TaskStateEnum.USER_TASK, com.jervis.dto.TaskStateEnum.BLOCKED,
+        )
+        val activeTasks = try {
+            taskRepository.findByClientIdAndStateInOrderByLastActivityAtDesc(task.clientId, activeStates)
+                .toList()
+                .filter { it.id != task.id } // Exclude self
+                .take(20)
+                .map { t ->
+                    com.jervis.configuration.ActiveTaskDto(
+                        taskId = t.id.toString(),
+                        type = t.type.name,
+                        taskName = t.taskName?.take(120) ?: t.content.lineSequence().firstOrNull()?.take(120) ?: "",
+                        sourceUrn = t.sourceUrn.value,
+                        topicId = t.topicId,
+                        state = t.state.name,
+                    )
+                }
+        } catch (e: Exception) {
+            logger.debug(e) { "Failed to load active tasks for qualification context" }
+            emptyList()
+        }
+
         val request = com.jervis.configuration.QualifyRequestDto(
             taskId = task.id.toString(),
             clientId = task.clientId.toString(),
@@ -510,6 +537,7 @@ class AgentOrchestratorService(
             maxOpenRouterTier = effectivePolicy.maxOpenRouterTier.name,
             hasAttachments = task.hasAttachments,
             attachmentCount = task.attachmentCount,
+            activeTasks = activeTasks,
         )
 
         return try {

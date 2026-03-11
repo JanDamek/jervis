@@ -241,6 +241,15 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
         states: List<TaskStateEnum>,
     ): TaskDocument?
 
+    /**
+     * Find active tasks for a client (for qualification context).
+     * Returns tasks in active states ordered by most recent activity.
+     */
+    fun findByClientIdAndStateInOrderByLastActivityAtDesc(
+        clientId: com.jervis.common.types.ClientId,
+        states: List<TaskStateEnum>,
+    ): Flow<TaskDocument>
+
     // Work plan hierarchy queries
 
     /**

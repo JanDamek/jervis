@@ -234,6 +234,7 @@ async def qualify(request: dict):
                 priority_score=result.get("priority_score", 5),
                 reason=result.get("reason", ""),
                 alert_message=result.get("alert_message"),
+                target_task_id=result.get("target_task_id"),
                 context_summary=result.get("context_summary", ""),
                 suggested_approach=result.get("suggested_approach", ""),
                 action_type=result.get("action_type", ""),

@@ -66,6 +66,9 @@ class QualifyRequest(BaseModel):
     has_attachments: bool = False
     attachment_count: int = 0
 
+    # Active tasks for consolidation check
+    active_tasks: list[dict[str, str]] = Field(default_factory=list)
+
 
 def _build_system_prompt(request: QualifyRequest) -> str:
     """Build system prompt for qualification agent with orchestrator context preparation."""
@@ -82,6 +85,21 @@ Uživatel v chatu nedávno řešil:
 {topics_text}
 Pokud příchozí data souvisí s aktivním tématem, zvyš prioritu."""
 
+    active_tasks_context = ""
+    if request.active_tasks:
+        tasks_text = "\n".join(
+            f"- [{t.get('task_id', '?')[:8]}] {t.get('type', '?')} ({t.get('state', '?')}): {t.get('task_name', '')}"
+            + (f" [topic: {t['topic_id']}]" if t.get('topic_id') else "")
+            for t in request.active_tasks[:20]
+        )
+        active_tasks_context = f"""
+
+## Aktivní úkoly (stejný klient)
+Systém již zpracovává tyto úkoly:
+{tasks_text}
+
+**DŮLEŽITÉ — konsolidace**: Pokud příchozí obsah SOUVISÍ s některým aktivním úkolem (stejné téma, odpověď na stejnou záležitost, nová informace k probíhající práci), zvol CONSOLIDATE a uveď task_id cílového úkolu. Netvořit duplicity — nová informace se připojí k existujícímu úkolu a kontext se aktualizuje."""
+
     return f"""Jsi kvalifikační agent systému Jervis. Analyzuješ příchozí data po KB indexaci a připravuješ kontext pro orchestrátor — nejen rozhoduješ, ale i shrnuješ co víš a navrhuješ postup.
 
 ## Vstupní data
@@ -96,18 +114,29 @@ Pokud příchozí data souvisí s aktivním tématem, zvyš prioritu."""
 - **Složitost**: {request.estimated_complexity or 'neuvedeno'}
 - **Přiřazeno mně**: {'ano' if request.is_assigned_to_me else 'ne'}
 - **Budoucí termín**: {'ano' if request.has_future_deadline else 'ne'}{f' ({request.suggested_deadline})' if request.suggested_deadline else ''}
-{topic_context}
+{topic_context}{active_tasks_context}
 
 ## Tvůj úkol
 1. **Prohledej KB** (`kb_search`) — co už víme o tomto tématu? Související issues, commity, kontext.
-2. **Analyzuj kontext** — kdo je ovlivněn, jaká urgence, souvislost s aktuální prací.
-3. **Navrhni postup** — 3-5 kroků jak by měl orchestrátor postupovat (pokud QUEUED).
-4. **Rozhodni** — DONE/QUEUED/URGENT_ALERT + priorita.
+2. **Zkontroluj aktivní úkoly** — souvisí příchozí data s již zpracovávaným úkolem? Pokud ano → CONSOLIDATE.
+3. **Analyzuj kontext** — kdo je ovlivněn, jaká urgence, souvislost s aktuální prací.
+4. **Navrhni postup** — 3-5 kroků jak by měl orchestrátor postupovat (pokud QUEUED).
+5. **Rozhodni** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE + priorita.
 
 ### Formát odpovědi
 Odpověz PŘESNĚ v tomto formátu (poslední zpráva):
 
-**Pokud vyžaduje orchestraci:**
+**Pokud příchozí data souvisí s existujícím aktivním úkolem:**
+```
+DECISION: CONSOLIDATE
+TARGET_TASK_ID: <task_id existujícího úkolu>
+REASON: <proč patří k existujícímu úkolu>
+
+CONTEXT:
+- <co nového příchozí data přinášejí>
+```
+
+**Pokud vyžaduje orchestraci (nový úkol):**
 ```
 DECISION: QUEUED
 PRIORITY: <1-10>
@@ -175,7 +204,7 @@ def _parse_decision(text: str) -> dict[str, Any]:
     # Parse multi-line sections: CONTEXT and APPROACH
     # Each section starts with its header and ends at the next section header or end of text
     section_headers = ("CONTEXT:", "APPROACH:")
-    single_line_prefixes = ("DECISION:", "PRIORITY:", "REASON:", "ALERT:", "ACTION_TYPE:", "COMPLEXITY:")
+    single_line_prefixes = ("DECISION:", "PRIORITY:", "REASON:", "ALERT:", "ACTION_TYPE:", "COMPLEXITY:", "TARGET_TASK_ID:")
 
     current_section: str | None = None
     section_lines: dict[str, list[str]] = {"CONTEXT": [], "APPROACH": []}
@@ -200,7 +229,7 @@ def _parse_decision(text: str) -> dict[str, Any]:
 
             if stripped.startswith("DECISION:"):
                 decision = stripped.split(":", 1)[1].strip().upper()
-                if decision in ("QUEUED", "DONE", "URGENT_ALERT"):
+                if decision in ("QUEUED", "DONE", "URGENT_ALERT", "CONSOLIDATE"):
                     result["decision"] = decision
             elif stripped.startswith("PRIORITY:"):
                 try:
@@ -215,6 +244,8 @@ def _parse_decision(text: str) -> dict[str, Any]:
                 result["action_type"] = stripped.split(":", 1)[1].strip()
             elif stripped.startswith("COMPLEXITY:"):
                 result["estimated_complexity"] = stripped.split(":", 1)[1].strip()
+            elif stripped.startswith("TARGET_TASK_ID:"):
+                result["target_task_id"] = stripped.split(":", 1)[1].strip()
         elif current_section and stripped:
             # Accumulate multi-line content under current section
             section_lines[current_section].append(stripped)

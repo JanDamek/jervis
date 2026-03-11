@@ -464,6 +464,18 @@ data class QualifyRequestDto(
     @SerialName("has_attachments") val hasAttachments: Boolean = false,
     /** Number of attachments for this task. */
     @SerialName("attachment_count") val attachmentCount: Int = 0,
+    /** Active tasks for the same client — qualifier checks for consolidation. */
+    @SerialName("active_tasks") val activeTasks: List<ActiveTaskDto> = emptyList(),
+)
+
+@Serializable
+data class ActiveTaskDto(
+    @SerialName("task_id") val taskId: String,
+    val type: String,
+    @SerialName("task_name") val taskName: String,
+    @SerialName("source_urn") val sourceUrn: String,
+    @SerialName("topic_id") val topicId: String? = null,
+    val state: String,
 )
 
 @Serializable

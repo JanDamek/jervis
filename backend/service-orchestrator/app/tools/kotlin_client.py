@@ -164,6 +164,7 @@ class KotlinServerClient:
         priority_score: int = 5,
         reason: str = "",
         alert_message: str | None = None,
+        target_task_id: str | None = None,
         context_summary: str = "",
         suggested_approach: str = "",
         action_type: str = "",
@@ -172,7 +173,7 @@ class KotlinServerClient:
         """Push qualification agent result to Kotlin server.
 
         Called after qualification LLM agent finishes analyzing KB results.
-        Kotlin updates task state based on decision (DONE, QUEUED, URGENT_ALERT).
+        Kotlin updates task state based on decision (DONE, QUEUED, URGENT_ALERT, CONSOLIDATE).
         """
         try:
             client = await self._get_client()
@@ -189,6 +190,8 @@ class KotlinServerClient:
                 }
             if alert_message:
                 payload["alert_message"] = alert_message
+            if target_task_id:
+                payload["target_task_id"] = target_task_id
             resp = await client.post(
                 "/internal/qualification-done",
                 json=payload,
