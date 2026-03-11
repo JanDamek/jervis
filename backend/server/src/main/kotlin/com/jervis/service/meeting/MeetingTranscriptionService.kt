@@ -151,7 +151,7 @@ class MeetingTranscriptionService(
     ): Map<String, String> {
         val knownSpeakers = speakerRepository.findByClientIdOrderByNameAsc(clientId)
             .toList()
-            .filter { it.voiceEmbedding != null }
+            .filter { it.allEmbeddings().isNotEmpty() }
 
         if (knownSpeakers.isEmpty()) return emptyMap()
 
@@ -161,13 +161,18 @@ class MeetingTranscriptionService(
         for ((label, embedding) in embeddings) {
             var bestSpeaker: SpeakerDocument? = null
             var bestSim = 0f
+            var bestLabel: String? = null
 
             for (speaker in knownSpeakers) {
                 if (speaker.id.toHexString() in usedSpeakers) continue
-                val sim = cosineSimilarity(embedding, speaker.voiceEmbedding!!)
-                if (sim > bestSim) {
-                    bestSim = sim
-                    bestSpeaker = speaker
+                // Search across ALL embeddings for this speaker (different conditions)
+                for (entry in speaker.allEmbeddings()) {
+                    val sim = cosineSimilarity(embedding, entry.embedding)
+                    if (sim > bestSim) {
+                        bestSim = sim
+                        bestSpeaker = speaker
+                        bestLabel = entry.label
+                    }
                 }
             }
 
@@ -175,7 +180,7 @@ class MeetingTranscriptionService(
                 val speakerId = bestSpeaker.id.toHexString()
                 mapping[label] = speakerId
                 usedSpeakers.add(speakerId)
-                logger.info { "Auto-matched $label → ${bestSpeaker.name} (similarity=${bestSim})" }
+                logger.info { "Auto-matched $label → ${bestSpeaker.name} (similarity=${bestSim}, embedding=${bestLabel ?: "unknown"})" }
             }
         }
 

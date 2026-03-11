@@ -97,6 +97,7 @@ internal fun MeetingDetailView(
     onCreateSpeaker: (SpeakerCreateDto) -> Unit = {},
     onSetVoiceSample: (speakerId: String, voiceSample: VoiceSampleRefDto) -> Unit = { _, _ -> },
     onSetVoiceEmbedding: (SpeakerEmbeddingDto) -> Unit = {},
+    onUpdateSpeakerMapping: (label: String, speakerId: String?) -> Unit = { _, _ -> },
 ) {
     // Toggle between corrected and raw transcript
     var showCorrected by remember { mutableStateOf(true) }
@@ -389,6 +390,11 @@ internal fun MeetingDetailView(
                                 editableText = correctedSeg?.text ?: rawSeg?.text ?: seg.text,
                                 startSec = seg.startSec,
                                 endSec = nextStart,
+                                speakerLabel = seg.speaker,
+                                speakerName = seg.speakerName,
+                                speakerId = seg.speakerId,
+                                speakerConfidence = seg.speaker?.let { meeting.autoSpeakerMapping?.get(it)?.confidence },
+                                matchedEmbeddingLabel = seg.speaker?.let { meeting.autoSpeakerMapping?.get(it)?.matchedEmbeddingLabel },
                             )
                         },
                         onSegmentPlay = onSegmentPlay,
@@ -443,6 +449,11 @@ internal fun MeetingDetailView(
                                     editableText = correctedSeg?.text ?: rawSeg?.text ?: seg.text,
                                     startSec = seg.startSec,
                                     endSec = nextStart,
+                                    speakerLabel = seg.speaker,
+                                    speakerName = seg.speakerName,
+                                    speakerId = seg.speakerId,
+                                    speakerConfidence = seg.speaker?.let { meeting.autoSpeakerMapping?.get(it)?.confidence },
+                                    matchedEmbeddingLabel = seg.speaker?.let { meeting.autoSpeakerMapping?.get(it)?.matchedEmbeddingLabel },
                                 )
                             },
                             onSegmentPlay = onSegmentPlay,
@@ -494,6 +505,18 @@ internal fun MeetingDetailView(
             onDismiss = { segmentForCorrection = null },
             onRetranscribeSegment = {
                 onRetranscribeSegment(state.segmentIndex)
+                segmentForCorrection = null
+            },
+            speakerLabel = state.speakerLabel,
+            speakerName = state.speakerName,
+            speakerConfidence = state.speakerConfidence,
+            matchedEmbeddingLabel = state.matchedEmbeddingLabel,
+            availableSpeakers = clientSpeakers,
+            onSpeakerChange = { speakerId ->
+                val label = state.speakerLabel
+                if (label != null && speakerId != null) {
+                    onUpdateSpeakerMapping(label, speakerId)
+                }
                 segmentForCorrection = null
             },
         )

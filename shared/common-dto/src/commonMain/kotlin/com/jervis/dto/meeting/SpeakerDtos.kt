@@ -11,8 +11,12 @@ data class SpeakerDto(
     val languagesSpoken: List<String> = emptyList(),
     val notes: String? = null,
     val voiceSampleRef: VoiceSampleRefDto? = null,
-    /** True if this speaker has a stored voice embedding for auto-identification */
+    /** True if this speaker has at least one stored voice embedding */
     val hasVoiceprint: Boolean = false,
+    /** Number of stored voice embeddings */
+    val voiceprintCount: Int = 0,
+    /** Labels of stored embeddings (for UI display) */
+    val voiceprintLabels: List<String> = emptyList(),
     val createdAt: String,
     val updatedAt: String,
 )
@@ -46,6 +50,10 @@ data class SpeakerUpdateDto(
 data class SpeakerEmbeddingDto(
     val speakerId: String,
     val embedding: List<Float>,
+    /** Optional label for this embedding (e.g., meeting title, conditions) */
+    val label: String? = null,
+    /** Meeting ID where this embedding was captured */
+    val meetingId: String? = null,
 )
 
 @Serializable

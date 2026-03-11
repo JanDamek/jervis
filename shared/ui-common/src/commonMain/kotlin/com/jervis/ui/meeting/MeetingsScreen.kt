@@ -185,6 +185,15 @@ fun MeetingsScreen(
             onCreateSpeaker = { request -> viewModel.createSpeaker(request) },
             onSetVoiceSample = { speakerId, voiceSample -> viewModel.setVoiceSample(speakerId, voiceSample) },
             onSetVoiceEmbedding = { request -> viewModel.setVoiceEmbedding(request) },
+            onUpdateSpeakerMapping = { label, speakerId ->
+                val currentMapping = currentDetail.speakerMapping.toMutableMap()
+                if (speakerId != null) {
+                    currentMapping[label] = speakerId
+                } else {
+                    currentMapping.remove(label)
+                }
+                viewModel.assignSpeakers(currentDetail.id, currentMapping)
+            },
         )
         return
     }

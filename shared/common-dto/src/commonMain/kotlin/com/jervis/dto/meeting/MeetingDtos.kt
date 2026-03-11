@@ -89,6 +89,8 @@ data class AutoSpeakerMatchDto(
     val speakerId: String,
     val speakerName: String,
     val confidence: Float,
+    /** Which voice embedding matched (label from VoiceEmbeddingEntry) */
+    val matchedEmbeddingLabel: String? = null,
 )
 
 @Serializable

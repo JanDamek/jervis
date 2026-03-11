@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.meeting.AutoSpeakerMatchDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.dto.meeting.TranscriptSegmentDto
@@ -117,6 +118,7 @@ internal fun TranscriptPanel(
                             TranscriptSegmentRow(
                                 segment = seg,
                                 isPlayingSegment = playingSegmentIndex == index,
+                                autoMatch = seg.speaker?.let { meeting.autoSpeakerMapping?.get(it) },
                                 onEdit = { onSegmentEdit(index, seg) },
                                 onPlayToggle = { onSegmentPlay(index, seg.startSec, nextStartSec) },
                             )
@@ -167,6 +169,7 @@ internal fun TranscriptPanel(
 private fun TranscriptSegmentRow(
     segment: TranscriptSegmentDto,
     isPlayingSegment: Boolean = false,
+    autoMatch: AutoSpeakerMatchDto? = null,
     onEdit: () -> Unit = {},
     onPlayToggle: () -> Unit = {},
 ) {
@@ -189,10 +192,19 @@ private fun TranscriptSegmentRow(
         Row(modifier = Modifier.weight(1f)) {
             val speakerLabel = segment.speakerName ?: segment.speaker
             if (speakerLabel != null) {
+                val confidenceSuffix = if (autoMatch != null && segment.speakerName != null) {
+                    val embLabel = autoMatch.matchedEmbeddingLabel?.let { " [$it]" } ?: ""
+                    " (${(autoMatch.confidence * 100).toInt()}%)$embLabel"
+                } else ""
+                val labelColor = if (autoMatch != null && autoMatch.confidence < 0.70f) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
                 Text(
-                    text = "$speakerLabel: ",
+                    text = "$speakerLabel$confidenceSuffix: ",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = labelColor,
                 )
             }
             Text(

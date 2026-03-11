@@ -8,6 +8,7 @@ import com.jervis.dto.meeting.SpeakerMappingDto
 import com.jervis.dto.meeting.SpeakerUpdateDto
 import com.jervis.dto.meeting.VoiceSampleRefDto
 import com.jervis.entity.SpeakerDocument
+import com.jervis.entity.VoiceEmbeddingEntry
 import com.jervis.entity.VoiceSampleRef
 import com.jervis.repository.MeetingRepository
 import com.jervis.repository.SpeakerRepository
@@ -89,22 +90,35 @@ class SpeakerRpcImpl(
         return saved.toDto()
     }
 
+    /**
+     * ADD a voice embedding to the speaker (multi-embedding — each call adds, never replaces).
+     */
     override suspend fun setVoiceEmbedding(request: SpeakerEmbeddingDto): SpeakerDto {
         val id = ObjectId(request.speakerId)
         val existing = speakerRepository.findById(id) ?: error("Speaker not found: ${request.speakerId}")
         require(request.embedding.size == 256) { "Voice embedding must be 256-dimensional, got ${request.embedding.size}" }
+
+        val entry = VoiceEmbeddingEntry(
+            embedding = request.embedding,
+            label = request.label,
+            meetingId = request.meetingId?.let { ObjectId(it) },
+        )
+
         val updated = existing.copy(
-            voiceEmbedding = request.embedding,
+            voiceEmbeddings = existing.voiceEmbeddings + entry,
+            // Clear legacy single field on first multi-embedding add
+            voiceEmbedding = null,
             updatedAt = Instant.now(),
         )
         val saved = speakerRepository.save(updated)
-        logger.info { "Set voice embedding for speaker ${request.speakerId} (${saved.name})" }
+        logger.info { "Added voice embedding for speaker ${request.speakerId} (${saved.name}), total: ${saved.voiceEmbeddings.size}" }
         return saved.toDto()
     }
 }
 
-private fun SpeakerDocument.toDto(): SpeakerDto =
-    SpeakerDto(
+private fun SpeakerDocument.toDto(): SpeakerDto {
+    val allEmb = allEmbeddings()
+    return SpeakerDto(
         id = id.toHexString(),
         clientId = clientId.toString(),
         name = name,
@@ -118,7 +132,10 @@ private fun SpeakerDocument.toDto(): SpeakerDto =
                 endSec = it.endSec,
             )
         },
-        hasVoiceprint = voiceEmbedding != null,
+        hasVoiceprint = allEmb.isNotEmpty(),
+        voiceprintCount = allEmb.size,
+        voiceprintLabels = allEmb.mapNotNull { it.label },
         createdAt = createdAt.toString(),
         updatedAt = updatedAt.toString(),
     )
+}

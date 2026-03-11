@@ -18,10 +18,29 @@ data class SpeakerDocument(
     val languagesSpoken: List<String> = emptyList(),
     val notes: String? = null,
     val voiceSampleRef: VoiceSampleRef? = null,
-    /** 256-dim pyannote speaker voice embedding for automatic identification */
+    /** Multiple 256-dim pyannote voice embeddings (different conditions: normal, phone, car, sick...) */
+    val voiceEmbeddings: List<VoiceEmbeddingEntry> = emptyList(),
+    /** @deprecated Single embedding — kept for backward compat with existing DB documents */
     val voiceEmbedding: List<Float>? = null,
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
+) {
+    /** All embeddings: migrated single + multi list */
+    fun allEmbeddings(): List<VoiceEmbeddingEntry> {
+        val result = voiceEmbeddings.toMutableList()
+        // Migrate legacy single embedding if present and not already in list
+        if (voiceEmbedding != null && result.none { it.embedding == voiceEmbedding }) {
+            result.add(0, VoiceEmbeddingEntry(embedding = voiceEmbedding, label = "original"))
+        }
+        return result
+    }
+}
+
+data class VoiceEmbeddingEntry(
+    val embedding: List<Float>,
+    val label: String? = null,
+    val meetingId: ObjectId? = null,
+    val createdAt: Instant = Instant.now(),
 )
 
 data class VoiceSampleRef(

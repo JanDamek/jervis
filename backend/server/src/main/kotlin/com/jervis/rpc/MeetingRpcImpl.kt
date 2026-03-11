@@ -965,18 +965,22 @@ private fun buildAutoSpeakerMapping(
     speakerMap: Map<String, com.jervis.entity.SpeakerDocument>,
 ): Map<String, AutoSpeakerMatchDto>? {
     if (embeddings.isNullOrEmpty()) return null
-    val knownWithEmbeddings = speakerMap.values.filter { it.voiceEmbedding != null }
+    val knownWithEmbeddings = speakerMap.values.filter { it.allEmbeddings().isNotEmpty() }
     if (knownWithEmbeddings.isEmpty()) return null
 
     val result = mutableMapOf<String, AutoSpeakerMatchDto>()
     for ((label, embedding) in embeddings) {
         var bestSpeaker: com.jervis.entity.SpeakerDocument? = null
         var bestSim = 0f
+        var bestEmbeddingLabel: String? = null
         for (speaker in knownWithEmbeddings) {
-            val sim = cosineSimilarity(embedding, speaker.voiceEmbedding!!)
-            if (sim > bestSim) {
-                bestSim = sim
-                bestSpeaker = speaker
+            for (entry in speaker.allEmbeddings()) {
+                val sim = cosineSimilarity(embedding, entry.embedding)
+                if (sim > bestSim) {
+                    bestSim = sim
+                    bestSpeaker = speaker
+                    bestEmbeddingLabel = entry.label
+                }
             }
         }
         if (bestSpeaker != null && bestSim > 0.50f) { // lower threshold for display (UI shows confidence)
@@ -984,6 +988,7 @@ private fun buildAutoSpeakerMapping(
                 speakerId = bestSpeaker.id.toHexString(),
                 speakerName = bestSpeaker.name,
                 confidence = bestSim,
+                matchedEmbeddingLabel = bestEmbeddingLabel,
             )
         }
     }

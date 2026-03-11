@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Power
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
@@ -67,6 +68,7 @@ enum class SettingsCategory(
     GUIDELINES("Pravidla a směrnice", Icons.Default.Gavel, "Coding standards, Git pravidla, review checklist, approval pravidla."),
     GPG_CERTIFICATES("GPG Certifikáty", Icons.Default.Lock, "Správa GPG klíčů pro podepisování commitů coding agentů."),
     OPENROUTER("OpenRouter", Icons.Default.Route, "Směrování LLM požadavků přes OpenRouter AI – API klíč, filtry, prioritní seznam modelů."),
+    SPEAKERS("Řečníci", Icons.Default.RecordVoiceOver, "Správa řečníků a hlasových profilů pro automatickou identifikaci."),
 }
 
 @Composable
@@ -137,5 +139,6 @@ private fun SettingsContent(
         SettingsCategory.INDEXING -> IndexingSettings(repository)
         SettingsCategory.GPG_CERTIFICATES -> GpgCertificateSettings(repository)
         SettingsCategory.OPENROUTER -> OpenRouterSettings(repository)
+        SettingsCategory.SPEAKERS -> SpeakerSettings(repository)
     }
 }

@@ -104,11 +104,13 @@ internal fun SpeakerAssignmentPanel(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary,
                         )
-                        // Show auto-match confidence badge
+                        // Show auto-match confidence badge with matched embedding label
                         if (autoMatch != null) {
                             val pct = (autoMatch.confidence * 100).toInt()
+                            val embLabel = autoMatch.matchedEmbeddingLabel
+                            val suffix = if (embLabel != null) " [$embLabel]" else ""
                             Text(
-                                text = "${autoMatch.speakerName} ($pct%)",
+                                text = "${autoMatch.speakerName} ($pct%)$suffix",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (autoMatch.confidence > 0.70f)
                                     MaterialTheme.colorScheme.tertiary
@@ -167,16 +169,18 @@ internal fun SpeakerAssignmentPanel(
             JPrimaryButton(
                 onClick = {
                     onAssignSpeakers(localMapping.toMap())
-                    // Auto-save voice embeddings for speakers that don't have voiceprint yet
+                    // Auto-save voice embeddings — always add (multi-embedding, different conditions)
                     val embeddings = meeting.speakerEmbeddings
                     if (embeddings != null) {
                         for ((lbl, speakerId) in localMapping) {
-                            val speaker = speakers.find { it.id == speakerId }
-                            if (speaker != null && !speaker.hasVoiceprint) {
-                                val emb = embeddings[lbl]
-                                if (emb != null) {
-                                    onSetVoiceEmbedding(SpeakerEmbeddingDto(speakerId = speakerId, embedding = emb))
-                                }
+                            val emb = embeddings[lbl]
+                            if (emb != null) {
+                                onSetVoiceEmbedding(SpeakerEmbeddingDto(
+                                    speakerId = speakerId,
+                                    embedding = emb,
+                                    label = meeting.title ?: lbl,
+                                    meetingId = meeting.id,
+                                ))
                             }
                         }
                     }
