@@ -1,7 +1,8 @@
-"""Two-tier request queue: unlimited CRITICAL + bounded NORMAL.
+"""Two-tier request queue: unlimited CRITICAL + unlimited NORMAL.
 
-Router ALWAYS accepts requests. Never returns 503/reject.
+Router ALWAYS accepts requests. Never returns 429/503/reject.
 Each request is queued and dispatched when a GPU slot becomes available.
+Callers wait as long as needed (minutes) — only 500 on internal error.
 
 CRITICAL requests preempt NORMAL when all GPU slots are busy.
 GPU only — no CPU backend.
@@ -47,12 +48,13 @@ class RequestQueue:
     """Two-tier request queue with GPU-only dispatch.
 
     CRITICAL queue: unlimited — chat, foreground, interactive.
-    NORMAL queue: bounded (back-pressure when full).
+    NORMAL queue: unlimited — background, embedding, indexing (waits as long as needed).
 
     Dispatch rules:
     - CRITICAL preempts NORMAL if needed.
     - Max 1 concurrent request per GPU (serial is faster than parallel when VRAM spills).
     - GPU only — no CPU backend.
+    - Never returns 429 — all requests are queued and wait for a slot.
     """
 
     def __init__(
@@ -64,9 +66,7 @@ class RequestQueue:
         self._router = router
 
         self._critical: asyncio.Queue[QueueEntry] = asyncio.Queue()
-        self._normal: asyncio.Queue[QueueEntry] = asyncio.Queue(
-            maxsize=settings.normal_queue_max,
-        )
+        self._normal: asyncio.Queue[QueueEntry] = asyncio.Queue()  # unlimited — never reject
         self._dispatch_event = asyncio.Event()
         self._dispatcher_task: asyncio.Task | None = None
 
@@ -78,8 +78,8 @@ class RequestQueue:
     async def start(self) -> None:
         self._dispatcher_task = asyncio.create_task(self._dispatch_loop())
         logger.info(
-            "RequestQueue started (NORMAL max=%d, max_concurrent_per_backend=%d)",
-            settings.normal_queue_max, self._max_per_backend,
+            "RequestQueue started (unlimited queues, max_concurrent_per_backend=%d)",
+            self._max_per_backend,
         )
 
     async def stop(self) -> None:
@@ -113,20 +113,7 @@ class RequestQueue:
             # CRITICAL waiting behind NORMAL → preempt
             self._preempt_normal_for_critical()
         else:
-            try:
-                self._normal.put_nowait(entry)
-            except asyncio.QueueFull:
-                logger.warning(
-                    "QUEUE_FULL: id=%s model=%s — NORMAL queue full (%d), back-pressure",
-                    request.request_id, request.model, settings.normal_queue_max,
-                )
-                return JSONResponse(
-                    status_code=429,
-                    content={
-                        "error": "queue_full",
-                        "message": f"NORMAL queue full ({settings.normal_queue_max}). Try again later.",
-                    },
-                )
+            self._normal.put_nowait(entry)  # unlimited queue — never fails
             logger.info(
                 "QUEUE_IN: id=%s priority=NORMAL model=%s (queue_depth=%d)",
                 request.request_id, request.model, self._normal.qsize(),
