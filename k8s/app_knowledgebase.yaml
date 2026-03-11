@@ -114,6 +114,8 @@ spec:
           env:
             - name: KB_MODE
               value: "write"
+            - name: UVICORN_WORKERS
+              value: "2"
           envFrom:
             - configMapRef:
                 name: jervis-knowledgebase-config
