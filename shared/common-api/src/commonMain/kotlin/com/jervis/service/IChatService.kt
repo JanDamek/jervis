@@ -1,5 +1,6 @@
 package com.jervis.service
 
+import com.jervis.dto.AttachmentDto
 import com.jervis.dto.ChatHistoryDto
 import com.jervis.dto.ChatMessageDto
 import com.jervis.dto.ChatResponseDto
@@ -39,6 +40,7 @@ interface IChatService {
         activeProjectId: String? = null,
         activeGroupId: String? = null,
         contextTaskId: String? = null,
+        attachments: List<AttachmentDto> = emptyList(),
     )
 
     /**

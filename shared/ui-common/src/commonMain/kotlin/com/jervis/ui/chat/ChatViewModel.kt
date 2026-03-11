@@ -478,6 +478,7 @@ class ChatViewModel(
                     activeProjectId = projectId,
                     activeGroupId = groupId,
                     contextTaskId = taskContext,
+                    attachments = attachmentDtos,
                 )
                 println("=== Message sent successfully (RPC) ===")
 

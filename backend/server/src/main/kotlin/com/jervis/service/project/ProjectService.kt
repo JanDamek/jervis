@@ -34,6 +34,33 @@ class ProjectService(
         private val logger = KotlinLogging.logger {}
     }
 
+    /**
+     * Retry any KB retag-group operations that were interrupted by server crash.
+     * Called from BackgroundEngine startup.
+     */
+    suspend fun retryPendingRetags() {
+        val pending = projectRepository.findByPendingRetagGroupIdIsNotNull().toList()
+        if (pending.isEmpty()) return
+        logger.info { "Found ${pending.size} projects with pending KB retag-group, retrying..." }
+        for (project in pending) {
+            val newGroupId = project.pendingRetagGroupId?.takeIf { it != "__null__" }
+            bgScope.launch {
+                val success = knowledgeClient.retagGroupId(
+                    projectId = project.id.toString(),
+                    newGroupId = newGroupId,
+                )
+                if (success) {
+                    projectRepository.findById(project.id)?.let {
+                        projectRepository.save(it.copy(pendingRetagGroupId = null))
+                    }
+                    logger.info { "Recovered pending retag for project ${project.name}" }
+                } else {
+                    logger.warn { "Failed to recover pending retag for project ${project.name}, will retry on next restart" }
+                }
+            }
+        }
+    }
+
     suspend fun getAllProjects(): List<ProjectDocument> = projectRepository.findAll().toList()
 
     suspend fun listProjectsForClient(clientId: ClientId): List<ProjectDocument> = projectRepository.findByClientId(clientId).toList()
@@ -66,18 +93,24 @@ class ProjectService(
         } else {
             logger.info { "Updated project: ${savedProject.name}" }
 
-            // Retag KB items when project group changes
+            // Retag KB items when project group changes (with crash recovery)
             if (existing.groupId != project.groupId) {
+                val newGroupIdStr = savedProject.groupId?.toString()
                 logger.info { "Project group changed: ${existing.groupId} → ${project.groupId}, retagging KB items" }
+                // Set pending flag for crash recovery before calling KB
+                projectRepository.save(savedProject.copy(pendingRetagGroupId = newGroupIdStr ?: "__null__"))
                 bgScope.launch {
-                    try {
-                        knowledgeClient.retagGroupId(
-                            projectId = savedProject.id.toString(),
-                            newGroupId = savedProject.groupId?.toString(),
-                        )
-                    } catch (e: Exception) {
-                        logger.warn(e) { "KB retag-group failed for project ${savedProject.name}" }
+                    val success = knowledgeClient.retagGroupId(
+                        projectId = savedProject.id.toString(),
+                        newGroupId = newGroupIdStr,
+                    )
+                    if (success) {
+                        // Clear pending flag on success
+                        projectRepository.findById(savedProject.id)?.let {
+                            projectRepository.save(it.copy(pendingRetagGroupId = null))
+                        }
                     }
+                    // On failure, flag remains — startup recovery will retry
                 }
             }
         }

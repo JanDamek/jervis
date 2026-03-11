@@ -71,6 +71,7 @@ class ChatService(
         activeGroupName: String? = null,
         contextTaskId: String? = null,
         maxOpenRouterTier: String = "NONE",
+        attachments: List<com.jervis.dto.AttachmentDto> = emptyList(),
     ): Flow<ChatStreamEvent> {
         require(text.isNotBlank()) { "Message text cannot be blank" }
 
@@ -89,9 +90,12 @@ class ChatService(
             }
         }
 
-        // 3. Save user message (include contextTaskId in metadata for visual link in UI)
+        // 3. Save user message (include contextTaskId + attachment names in metadata for UI)
         val correlationId = ObjectId().toString()
-        val messageMetadata = if (contextTaskId != null) mapOf("contextTaskId" to contextTaskId) else emptyMap()
+        val messageMetadata = buildMap {
+            if (contextTaskId != null) put("contextTaskId", contextTaskId)
+            if (attachments.isNotEmpty()) put("attachments", attachments.joinToString(", ") { it.filename })
+        }
         val savedMessage = chatMessageService.addMessage(
             conversationId = sessionId,
             role = MessageRole.USER,
@@ -132,6 +136,7 @@ class ChatService(
             activeGroupName = activeGroupName,
             contextTaskId = contextTaskId,
             maxOpenRouterTier = maxOpenRouterTier,
+            attachments = attachments,
         )
     }
 

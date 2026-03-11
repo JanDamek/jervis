@@ -131,6 +131,15 @@ class BackgroundEngine(
             }
         }
 
+        // Retry any pending KB retag-group operations from crash
+        scope.launch {
+            try {
+                projectService.retryPendingRetags()
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to retry pending retag-group operations" }
+            }
+        }
+
         // Initialize workspace for all projects with git resources
         scope.launch {
             try {

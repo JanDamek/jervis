@@ -134,6 +134,7 @@ class ChatRpcImpl(
         activeProjectId: String?,
         activeGroupId: String?,
         contextTaskId: String?,
+        attachments: List<com.jervis.dto.AttachmentDto>,
     ) {
         // Validate ObjectId format — reject placeholder values like "client_123"
         val safeClientId = activeClientId?.takeIf { ObjectId.isValid(it) }
@@ -183,6 +184,7 @@ class ChatRpcImpl(
                     activeGroupName = groupName,
                     contextTaskId = contextTaskId,
                     maxOpenRouterTier = maxOpenRouterTier,
+                    attachments = attachments,
                 )
 
                 // Emit user message AFTER DB save (persistence-first) for reliable reconnect
@@ -194,6 +196,9 @@ class ChatRpcImpl(
                             put("sender", "user")
                             put("timestamp", java.time.Instant.now().toString())
                             if (!contextTaskId.isNullOrBlank()) put("contextTaskId", contextTaskId)
+                            if (attachments.isNotEmpty()) {
+                                put("attachments", attachments.joinToString(", ") { it.filename })
+                            }
                         },
                     ),
                 )

@@ -130,6 +130,7 @@ def build_messages(
     context,
     task_context_msg: dict | None,
     current_message: str,
+    attachments: list[dict] | None = None,
 ) -> list[dict]:
     """Build LLM messages from context + current message.
 
@@ -137,7 +138,7 @@ def build_messages(
     1. System prompt
     2. Summaries + memory from AssembledContext
     3. Task context if responding to user_task
-    4. Current user message
+    4. Current user message (with inline attachment content)
     """
     messages = [{"role": "system", "content": system_prompt}]
 
@@ -147,7 +148,48 @@ def build_messages(
     if task_context_msg:
         messages.append(task_context_msg)
 
-    messages.append({"role": "user", "content": current_message})
+    # Build user message — include attachment text inline
+    user_content = current_message
+    if attachments:
+        attachment_parts = []
+        for att in attachments:
+            filename = att.get("filename", "attachment")
+            mime = att.get("mime_type", "")
+            b64 = att.get("content_base64")
+            if b64 and not mime.startswith("image/"):
+                # Text/document — decode and include inline
+                import base64
+                try:
+                    raw = base64.b64decode(b64)
+                    text = raw.decode("utf-8", errors="replace")
+                    attachment_parts.append(f"\n\n--- Příloha: {filename} ---\n{text[:8000]}")
+                except Exception:
+                    attachment_parts.append(f"\n\n--- Příloha: {filename} (nepodařilo se dekódovat) ---")
+            elif b64 and mime.startswith("image/"):
+                attachment_parts.append(f"\n\n--- Obrázek: {filename} (vizuální obsah bude zpracován) ---")
+            else:
+                attachment_parts.append(f"\n\n--- Příloha: {filename} ({mime}) ---")
+        user_content += "".join(attachment_parts)
+
+    # For image attachments, use multimodal content format
+    image_parts = []
+    if attachments:
+        for att in attachments:
+            mime = att.get("mime_type", "")
+            b64 = att.get("content_base64")
+            if b64 and mime.startswith("image/"):
+                image_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"},
+                })
+
+    if image_parts:
+        # Multimodal message (text + images)
+        content_parts = [{"type": "text", "text": user_content}] + image_parts
+        messages.append({"role": "user", "content": content_parts})
+    else:
+        messages.append({"role": "user", "content": user_content})
+
     return messages
 
 

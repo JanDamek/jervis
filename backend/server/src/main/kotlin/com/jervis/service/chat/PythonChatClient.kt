@@ -87,6 +87,7 @@ class PythonChatClient(
         activeGroupName: String? = null,
         contextTaskId: String? = null,
         maxOpenRouterTier: String = "NONE",
+        attachments: List<com.jervis.dto.AttachmentDto> = emptyList(),
     ): Flow<ChatStreamEvent> = flow {
         val apiUrl = "${orchestratorBaseUrl.trimEnd('/')}/chat"
         val request = PythonChatRequest(
@@ -102,6 +103,7 @@ class PythonChatClient(
             activeGroupName = activeGroupName,
             contextTaskId = contextTaskId,
             maxOpenRouterTier = maxOpenRouterTier,
+            attachments = attachments.map { PythonAttachment(filename = it.filename, mimeType = it.mimeType, sizeBytes = it.sizeBytes, contentBase64 = it.contentBase64) },
         )
 
         logger.info { "PYTHON_CHAT_START | session=$sessionId | message=${message.take(80)}" }
@@ -244,6 +246,17 @@ private data class ChatApproveRequest(
 )
 
 /**
+ * Attachment in Python /chat request (base64-encoded content).
+ */
+@Serializable
+private data class PythonAttachment(
+    val filename: String,
+    @SerialName("mime_type") val mimeType: String,
+    @SerialName("size_bytes") val sizeBytes: Long,
+    @SerialName("content_base64") val contentBase64: String? = null,
+)
+
+/**
  * Request body for Python /chat endpoint.
  */
 @Serializable
@@ -260,4 +273,5 @@ private data class PythonChatRequest(
     @SerialName("active_group_name") val activeGroupName: String? = null,
     @SerialName("context_task_id") val contextTaskId: String? = null,
     @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "NONE",
+    val attachments: List<PythonAttachment> = emptyList(),
 )

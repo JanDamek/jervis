@@ -56,6 +56,8 @@ data class ProjectDocument(
     val nextWorkspaceRetryAt: java.time.Instant? = null,
     /** Last workspace error message for diagnostics. */
     val lastWorkspaceError: String? = null,
+    /** Non-null when a KB retag-group operation is pending (crash recovery). */
+    val pendingRetagGroupId: String? = null,
 )
 
 /**

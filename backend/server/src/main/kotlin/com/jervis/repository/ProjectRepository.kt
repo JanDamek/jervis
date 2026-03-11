@@ -44,4 +44,9 @@ interface ProjectRepository : CoroutineCrudRepository<ProjectDocument, ProjectId
      * Find all projects belonging to a group. Used for KB cross-project visibility.
      */
     fun findByGroupId(groupId: ProjectGroupId): Flow<ProjectDocument>
+
+    /**
+     * Find projects with pending KB retag-group operations (crash recovery).
+     */
+    fun findByPendingRetagGroupIdIsNotNull(): Flow<ProjectDocument>
 }

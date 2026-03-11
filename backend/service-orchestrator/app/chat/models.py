@@ -60,6 +60,10 @@ class ChatRequest(BaseModel):
     # Cloud routing policy (from CloudModelPolicy)
     max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID" / "PREMIUM" (compat: "PAID_LOW" / "PAID_HIGH")
 
+    # Attachments (base64-encoded file content from UI)
+    attachments: list[dict] = Field(default_factory=list)
+    # Each attachment: {"filename": str, "mime_type": str, "size_bytes": int, "content_base64": str | None}
+
 
 class ChatStreamEvent(BaseModel):
     """SSE event pushed back to Kotlin -> UI."""

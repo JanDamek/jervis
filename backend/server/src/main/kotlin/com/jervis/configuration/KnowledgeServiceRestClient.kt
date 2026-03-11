@@ -716,21 +716,38 @@ class KnowledgeServiceRestClient(
     /**
      * Update groupId on all KB items for a project.
      * Called when a project's group membership changes.
+     *
+     * Retries with exponential backoff on transient failures (network, 5xx).
+     * Returns true on success, false on failure (caller handles crash recovery).
      */
-    suspend fun retagGroupId(projectId: String, newGroupId: String?) {
+    suspend fun retagGroupId(projectId: String, newGroupId: String?): Boolean {
         logger.info { "KB retag-group: projectId=$projectId newGroupId=$newGroupId" }
-        try {
-            val response = client.post("$apiBaseUrl/retag-group") {
-                contentType(ContentType.Application.Json)
-                setBody(PythonRetagGroupRequest(projectId = projectId, groupId = newGroupId))
+        var lastException: Exception? = null
+        for (attempt in 0..MAX_RETRIES) {
+            if (attempt > 0) {
+                val delayMs = RETRY_BASE_DELAY_MS * (1L shl (attempt - 1))
+                logger.info { "KB retag-group retry $attempt/$MAX_RETRIES after ${delayMs}ms (projectId=$projectId)" }
+                kotlinx.coroutines.delay(delayMs)
             }
-            if (!response.status.isSuccess()) {
+            try {
+                val response = client.post("$apiBaseUrl/retag-group") {
+                    contentType(ContentType.Application.Json)
+                    setBody(PythonRetagGroupRequest(projectId = projectId, groupId = newGroupId))
+                }
+                if (response.status.isSuccess()) {
+                    logger.info { "KB retag-group succeeded for projectId=$projectId" }
+                    return true
+                }
                 val errorBody = response.bodyAsText()
                 logger.warn { "KB retag-group failed: ${response.status} $errorBody" }
+                if (response.status.value in 400..499) return false // non-retryable
+            } catch (e: Exception) {
+                lastException = e
+                logger.warn(e) { "KB retag-group attempt $attempt failed for project $projectId: ${e.message}" }
             }
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to retag KB group for project $projectId: ${e.message}" }
         }
+        logger.error(lastException) { "KB retag-group failed after $MAX_RETRIES retries for project $projectId" }
+        return false
     }
 
     /**
