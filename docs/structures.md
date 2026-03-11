@@ -24,7 +24,7 @@
 
 ### Overview
 
-**All LLM requests** in the system (Orchestrator, KB, Correction Agent) route through **Ollama Router** (port 11430), which uses a **two-tier request queue** to distribute requests across GPU backends (p40-1 and p40-2) based on priority and model sets.
+**All LLM requests** in the system (Orchestrator, KB, Correction Agent) route through **Ollama Router** (port 11430), which uses a **two-tier request queue** to distribute requests across GPU backends (p40-1: LLM 30b, p40-2: embedding + extraction 8b/14b + VLM + whisper) based on priority, capability, and model sets.
 
 **Router ALWAYS accepts requests.** Never returns 503/reject. Each request is queued and dispatched when a backend slot becomes available.
 
@@ -65,12 +65,14 @@
        ▼                              ▼
 ┌──────────────────────┐  ┌──────────────────────────────┐
 │ p40-1 (P40 24GB)     │  │ p40-2 (P40 24GB)             │
-│ Max 1 slot           │  │ Max 1 slot                   │
-│ CRIT+NORMAL          │  │ CRIT+NORMAL                  │
+│ Max 1 slot           │  │ Max 1 slot (per-type)        │
+│ CRIT+NORMAL          │  │ embedding=5, LLM=1           │
 │                      │  │                              │
-│ Models:              │  │ Models:                      │
+│ Models:              │  │ Models (permanent 22.5GB):   │
 │ qwen3-coder-tool:30b │  │ qwen3-embedding:8b (5.5GB)  │
-│ (18.5GB, sole LLM)  │  │ qwen3-vl-tool:latest (8.8GB)│
+│ (18.5GB, sole LLM)  │  │ qwen3:8b (6.0GB)            │
+│                      │  │ qwen3:14b (11.0GB)          │
+│                      │  │ + qwen3-vl-tool (on-demand)  │
 │                      │  │ + Whisper GPU (on-demand)    │
 └──────────────────────┘  └──────────────────────────────┘
 ```
@@ -80,7 +82,7 @@
 Two-tier queue with backend-aware dispatch (`app/request_queue.py`):
 
 - **CRITICAL queue**: Unlimited — chat, foreground, interactive (orchestrator). Always GPU, never CPU. Preempts NORMAL if all GPU slots busy.
-- **NORMAL queue**: Bounded (max 10) — background, KB ingest, indexing. Returns 429 back-pressure when full.
+- **NORMAL queue**: Unlimited — background, KB ingest, indexing. Requests wait in queue.
 - **Dispatch**: Fast-path (immediate) if slot available, otherwise queued. Background dispatcher assigns queued requests to freed slots. CRITICAL always dispatched first.
 - **Concurrency**: Max 1 concurrent request per backend (serial is faster than parallel when VRAM spills to RAM).
 - **Client disconnect**: Monitored via `cancel_event` — request dequeued or proxy cancelled on disconnect.
@@ -90,7 +92,7 @@ Two-tier queue with backend-aware dispatch (`app/request_queue.py`):
 | Priority | Value | Source | Routing | Preemption |
 |----------|-------|--------|---------|------------|
 | **CRITICAL** | 0 | Orchestrator FOREGROUND (via `X-Ollama-Priority: 0`) | GPU only, auto-reserves GPU | Cannot be preempted, preempts NORMAL |
-| **NORMAL** | 1 | Everything else (no header) | GPU preferred, CPU fallback | Preempted by CRITICAL |
+| **NORMAL** | 1 | Everything else (no header) | GPU, waits in queue | Preempted by CRITICAL |
 
 ### GPU Reservations
 
@@ -137,7 +139,7 @@ When a CRITICAL request is dispatched to a GPU, the router automatically creates
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `max_concurrent_per_backend` | 1 | Max parallel requests per Ollama instance (serial is faster) |
-| `normal_queue_max` | 10 | NORMAL queue limit (429 when full) |
+| `normal_queue_max` | unlimited | NORMAL queue (never returns 429, requests wait) |
 | `orchestrator_idle_timeout_s` | 60 | Auto-release GPU reservation after idle |
 | `orchestrator_reservation_timeout_s` | 600 | Absolute reservation timeout (safety net) |
 | `max_request_timeout_s` | 300 | Cancel zombie requests after this |
@@ -147,31 +149,41 @@ When a CRITICAL request is dispatched to a GPU, the router automatically creates
 
 ### VRAM Management
 
-**p40-1**: Dedicated LLM GPU. Only `qwen3-coder-tool:30b` (18.5GB). All orchestrator, KB extraction, chat, correction tasks.
+**p40-1**: Dedicated LLM GPU. Only `qwen3-coder-tool:30b` (18.5GB). All orchestrator, chat, coding tasks.
 
-**p40-2**: Shared utility GPU. Three workloads share VRAM via on-demand swap:
-- `qwen3-embedding:8b` (5.5GB) — **permanent**, never unloaded
+**p40-2**: Shared utility GPU. Four permanent models + on-demand workloads:
+- `qwen3-embedding:8b` (5.5GB) — **permanent**, RAG embeddings
+- `qwen3:8b` (6.0GB) — **permanent**, lightweight extraction (KB link relevance, qualification)
+- `qwen3:14b` (11.0GB) — **permanent**, complex extraction (KB graph extraction, summaries)
 - `qwen3-vl-tool:latest` (8.8GB) — **on-demand**, loaded when VLM request arrives
 - Whisper GPU (medium ~914MB, large-v3 ~1.5GB) — **on-demand**, lazy-loaded on transcription
 
+Per-type concurrency on p40-2: **embedding concurrent=5, LLM serial=1**. Router NEVER returns 429 — unlimited queue, requests wait.
+
 ```
 p40-1 (always loaded, keep_alive="-1"):
-  qwen3-coder-tool:30b  (18.5GB)  → sole LLM GPU
+  qwen3-coder-tool:30b  (18.5GB)  → sole LLM GPU (orchestrator, chat, coding)
 
 p40-2 VRAM budget (24GB total):
-  qwen3-embedding:8b    (5.5GB)   → permanent
-  qwen3-vl-tool:latest  (8.8GB)   → on-demand (never concurrent with whisper)
+  qwen3-embedding:8b    (5.5GB)   → permanent (RAG embeddings)
+  qwen3:8b              (6.0GB)   → permanent (lightweight extraction, qualification)
+  qwen3:14b             (11.0GB)  → permanent (complex extraction, summaries)
+  ─────────────────────────────────
+  Total permanent:       22.5GB / 24GB
+  qwen3-vl-tool:latest  (8.8GB)   → on-demand swap (never concurrent with whisper)
   whisper medium         (0.9GB)   → on-demand (never concurrent with VLM)
 
 GPU_MODEL_SETS strict filtering:
   p40-1: ["qwen3-coder-tool:30b"]
-  p40-2: ["qwen3-embedding:8b", "qwen3-vl-tool:latest"]
-  → prevents 30b from loading on p40-2 (routing bug fixed 2026-03-02)
+  p40-2: ["qwen3-embedding:8b", "qwen3:8b", "qwen3:14b", "qwen3-vl-tool:latest"]
+  → prevents 30b from loading on p40-2
+  → KB service calls qwen3:8b (simple) and qwen3:14b (complex) directly by model name
+  → Orchestrator qualification uses capability="extraction" → routed to qwen3:8b
 ```
 
 ### p40-2 VRAM Coordination (Router as Single Authority)
 
-Router is the **single authority** for p40-2 GPU scheduling. Whisper and VLM share p40-2 via router-managed mutual exclusion. Embedding runs permanently, never blocked.
+Router is the **single authority** for p40-2 GPU scheduling. Whisper and VLM share p40-2 via router-managed mutual exclusion. Permanent models (embedding:8b, qwen3:8b, qwen3:14b) run permanently, never blocked.
 
 **Whisper-Router coordination** (Kotlin server mediates):
 1. Kotlin `WhisperJobRunner` calls `POST /router/whisper-acquire` (blocks until granted)
@@ -208,13 +220,13 @@ VLM request flow:
 
 ### Caller Concurrency
 
-Callers send requests freely — **router queue manages backend load**. Callers should NOT self-limit with tight semaphores or sequential processing.
+Callers send requests freely — **router queue manages backend load**. Router NEVER returns 429 — unlimited queue, requests wait. Callers should NOT self-limit with tight semaphores or sequential processing.
 
 | Caller | Concurrency | Timeout | Notes |
 |--------|-------------|---------|-------|
 | **Orchestrator** (provider.py) | Semaphore(6) | 300-1200s per tier | Safety limit only; router manages actual concurrency |
-| **KB Graph** (graph_service.py) | `gather` + Semaphore(4) | 900s per LLM call | Parallel chunk extraction, 4 concurrent |
-| **KB RAG** (rag_service.py) | Semaphore(5) | 3600s HTTP | Embedding-specific, OK as-is |
+| **KB Graph** (graph_service.py) | `gather` + Semaphore(4) | 900s per LLM call | Parallel chunk extraction on qwen3:14b (p40-2) |
+| **KB RAG** (rag_service.py) | Semaphore(5) | 3600s HTTP | Embedding concurrent=5 on p40-2 |
 | **Correction** (agent.py) | `gather` + Semaphore(4) | 3600s token | Parallel chunk correction, 4 concurrent |
 
 ### Key Files
@@ -968,31 +980,32 @@ For Python orchestrator task flow see [orchestrator-final-spec.md § 9](orchestr
 
 ## Ollama Router Architecture (Priority-Based GPU Routing)
 
-All services call a single endpoint – the **Ollama Router** (:11430) – which routes to GPU backends (p40-1: LLM 30b, p40-2: embedding + VLM + whisper) based on priority, capability, and `GPU_MODEL_SETS`.
+All services call a single endpoint – the **Ollama Router** (:11430) – which routes to GPU backends (p40-1: LLM 30b, p40-2: embedding + extraction 8b/14b + VLM + whisper) based on priority, capability, and `GPU_MODEL_SETS`.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │  Ollama Router (K8s pod, :11430)   Python FastAPI                              │
 │  • Priority routing (CRITICAL / NORMAL)                                         │
-│  • VRAM priority (bigger model = higher VRAM priority)                          │
-│  • Multi-GPU pool with per-GPU reservations                                     │
-│  • GPU_MODEL_SETS routing (p40-1=[30b], p40-2=[embedding,vl-tool])             │
+│  • Per-type concurrency (embedding=5, LLM=1)                                   │
+│  • Unlimited queue — NEVER returns 429, requests wait                          │
+│  • GPU_MODEL_SETS routing (p40-1=[30b], p40-2=[embed,8b,14b,vl-tool])         │
 │  • Auto-reservation (60s idle timeout, no announce/release API)                │
-│  └──────┬──────────────────────────┬──────────────────────┬────────────────────│
-│         │                          │                      │                    │
-└─────────┼──────────────────────────┼──────────────────────┼────────────────────┘
-          │                          │                      │
-   ┌──────▼──────────────────┐ ┌─────▼────────────────┐ ┌──▼───────────────────────┐
-   │ GPU_BACKENDS[0]         │ │ GPU_BACKENDS[1]       │ │ CPU_BACKEND_URL          │
-   │ P40 24GB VRAM           │ │ P40 24GB VRAM         │ │ Fallback for preempted   │
-   │                         │ │                       │ │                          │
-   │ 30b + embedding:        │ │ 30b + embedding:      │ │ OLLAMA_NUM_PARALLEL=10   │
-   │   qwen3-coder-tool:30b  │ │   qwen3-coder-tool:30b│ │ OLLAMA_NUM_THREADS=18    │
-   │   qwen3-embedding:8b    │ │   qwen3-embedding:8b  │ │ OLLAMA_MAX_LOADED_MODELS=3│
-   │                         │ │                       │ │ embed:8b (fallback only) │
-   │ Concurrent CRITICAL #1  │ │ Concurrent CRITICAL #2│ │                          │
-   │ or NORMAL when free     │ │ or NORMAL when free   │ │ Always available fallback│
-   └──────────────────────────┘ └───────────────────────┘ └──────────────────────────┘
+│  └──────┬──────────────────────────┬───────────────────────────────────────────│
+│         │                          │                                           │
+└─────────┼──────────────────────────┼───────────────────────────────────────────┘
+          │                          │
+   ┌──────▼──────────────────┐ ┌─────▼──────────────────────────────┐
+   │ GPU_BACKENDS[0] (p40-1) │ │ GPU_BACKENDS[1] (p40-2)            │
+   │ P40 24GB VRAM           │ │ P40 24GB VRAM                      │
+   │                         │ │                                    │
+   │ qwen3-coder-tool:30b    │ │ Permanent (22.5GB):               │
+   │ (18.5GB, sole LLM)     │ │   qwen3-embedding:8b  (5.5GB)     │
+   │                         │ │   qwen3:8b            (6.0GB)     │
+   │ Orchestrator, chat,     │ │   qwen3:14b           (11.0GB)    │
+   │ coding                  │ │ On-demand swap:                    │
+   │                         │ │   qwen3-vl-tool       (8.8GB)     │
+   │                         │ │   + Whisper GPU        (3-6GB)     │
+   └──────────────────────────┘ └────────────────────────────────────┘
 ```
 
 ### Priority Levels (2 levels)
@@ -1000,7 +1013,7 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 | Priority | Value | Source | Behavior |
 |----------|-------|--------|----------|
 | CRITICAL | 0 | Orchestrator FOREGROUND, jervis_mcp | Preempts non-critical, always GPU, auto-reserves |
-| NORMAL | 1 | Everything else (correction, KB simple ingest, background tasks) | GPU when free, CPU fallback |
+| NORMAL | 1 | Everything else (correction, KB simple ingest, background tasks) | GPU, waits in unlimited queue |
 
 > Priority is set via `X-Ollama-Priority: 0` header for CRITICAL. No header = NORMAL (router default). Model name no longer determines priority.
 >
@@ -1008,13 +1021,18 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 
 ### Model Co-location on GPU
 
-KB extraction uses :30b (same model as orchestrator). CRITICAL extraction shares the GPU model — no swap needed. NORMAL extraction also uses :30b but routes to CPU when GPU is reserved.
+**p40-1**: Dedicated to orchestrator/chat/coding — only `qwen3-coder-tool:30b` (18.5GB).
+
+**p40-2**: Dedicated to extraction + embedding — three permanent models (22.5GB) + on-demand VLM/whisper. KB extraction uses `qwen3:8b` (simple) and `qwen3:14b` (complex) directly by model name. Orchestrator qualification uses `capability="extraction"` routed to `qwen3:8b`.
 
 | Model | VRAM Est. | Location | Purpose |
 |-------|-----------|----------|---------|
-| qwen3-coder-tool:30b | ~25GB | GPU (VRAM priority) | All LLM tasks (orchestrator, KB extraction, ingest simple+complex) |
-| qwen3-embedding:8b | ~5GB | GPU (alongside 30b) | KB embeddings |
-| **GPU Total** | **~30GB** | Some CPU offload | Acceptable performance, no model swapping |
+| qwen3-coder-tool:30b | 18.5GB | p40-1 (permanent) | Orchestrator, chat, coding |
+| qwen3-embedding:8b | 5.5GB | p40-2 (permanent) | RAG embeddings |
+| qwen3:8b | 6.0GB | p40-2 (permanent) | Lightweight extraction (KB link relevance, qualification) |
+| qwen3:14b | 11.0GB | p40-2 (permanent) | Complex extraction (KB graph extraction, summaries) |
+| qwen3-vl-tool:latest | 8.8GB | p40-2 (on-demand) | VLM image description |
+| Whisper GPU | 3-6GB | p40-2 (on-demand) | Transcription |
 
 ### Auto-Reservation Protocol (no announce/release API)
 
@@ -1034,14 +1052,12 @@ Router manages a pool of GPU backends (`GPU_BACKENDS` JSON env var). Reservation
 
 **Current setup (2× P40, configured via K8s ConfigMap):**
 ```
-p40-1 (GPU_BACKENDS[0]):  :30b reserved for CRITICAL #1
-p40-2 (GPU_BACKENDS[1]):  :30b reserved for CRITICAL #2 or NORMAL
-CPU   (CPU_BACKEND_URL):  fallback for overflow
+p40-1 (GPU_BACKENDS[0]):  :30b — orchestrator, chat, coding (CRITICAL + NORMAL)
+p40-2 (GPU_BACKENDS[1]):  embedding:8b + qwen3:8b + qwen3:14b + vl-tool — extraction, embedding, VLM
 ```
-- Single CRITICAL → auto-reserves one GPU, other GPU serves NORMAL
-- Two concurrent CRITICALs → each GPU serves one CRITICAL session
-- All GPUs reserved → NORMAL to CPU
-- NORMAL → prefer unreserved GPU, then CPU
+- p40-1: sole LLM GPU for orchestrator/chat/coding
+- p40-2: dedicated extraction + embedding GPU (per-type concurrency: embedding=5, LLM=1)
+- CRITICAL requests auto-reserve p40-1, p40-2 handles extraction/embedding independently
 
 Adding/removing a GPU = config change only (`GPU_BACKENDS` env var), no code change.
 
@@ -1082,7 +1098,7 @@ else:
 OLLAMA_HOST=0.0.0.0:11434
 OLLAMA_FLASH_ATTENTION=1
 OLLAMA_KV_CACHE_TYPE=q8_0
-OLLAMA_MAX_LOADED_MODELS=4      # Allow bg set (3 models) coexistence
+OLLAMA_MAX_LOADED_MODELS=5      # Allow all p40-2 models (embed + 8b + 14b + vl-tool)
 OLLAMA_NUM_PARALLEL=2
 OLLAMA_KEEP_ALIVE=5m
 CUDA_VISIBLE_DEVICES=0

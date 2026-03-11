@@ -153,7 +153,7 @@ if (workspace != WorkspaceStatus.READY) {
 
 ### Overview
 
-**Ollama Router** is a transparent proxy service that routes LLM requests across GPU backends (p40-1: LLM 30b, p40-2: embedding + VLM + whisper) based on priority, capability, and `GPU_MODEL_SETS`. No CPU backend — all inference on GPU only.
+**Ollama Router** is a transparent proxy service that routes LLM requests across GPU backends (p40-1: LLM 30b, p40-2: embedding + extraction 8b/14b + VLM + whisper) based on priority, capability, and `GPU_MODEL_SETS`. No CPU backend — all inference on GPU only.
 
 ### Architecture
 
@@ -169,21 +169,25 @@ if (workspace != WorkspaceStatus.READY) {
                 │   (port 11430)        │
                 │                       │
                 │ • Priority routing    │
-                │ • GPU/CPU selection   │
-                │ • Model loading       │
+                │ • Capability routing  │
+                │ • Per-type concurrency│
                 │ • Request queuing     │
                 └───────────┬───────────┘
                             │
-              ┌─────────────┼─────────────┐
-              │             │             │
-              ▼             ▼             ▼
-    ┌─────────────────┐ ┌──────────────┐ ┌─────────────────┐
-    │ GPU_BACKENDS[0] │ │GPU_BACKENDS[1]│ │ CPU_BACKEND_URL │
-    │                 │ │              │ │                 │
-    │  • P40 24GB     │ │ • P40 24GB   │ │  • 200GB RAM    │
-    │  • Fast         │ │ • Fast       │ │  • Unlimited    │
-    │  • Limited VRAM │ │ • LAN link   │ │  • Slow         │
-    └─────────────────┘ └──────────────┘ └─────────────────┘
+              ┌─────────────┴─────────────┐
+              │                           │
+              ▼                           ▼
+    ┌─────────────────────┐  ┌──────────────────────────────┐
+    │ p40-1 (P40 24GB)    │  │ p40-2 (P40 24GB)             │
+    │                     │  │                              │
+    │ qwen3-coder-tool:30b│  │ Permanent (22.5GB):          │
+    │ (18.5GB)            │  │  qwen3-embedding:8b (5.5GB)  │
+    │                     │  │  qwen3:8b (6.0GB)            │
+    │ Orchestrator, chat, │  │  qwen3:14b (11.0GB)          │
+    │ coding              │  │ On-demand:                    │
+    │                     │  │  qwen3-vl-tool (8.8GB)       │
+    │                     │  │  + Whisper GPU (3-6GB)        │
+    └─────────────────────┘  └──────────────────────────────┘
 ```
 
 ### Priority Levels (2 levels)
@@ -191,7 +195,7 @@ if (workspace != WorkspaceStatus.READY) {
 | Priority | Value | Header | Source | Behavior |
 |----------|-------|--------|--------|----------|
 | CRITICAL | 0 | `X-Ollama-Priority: 0` | Orchestrator FOREGROUND, jervis_mcp | Always GPU, auto-reserves, preempts NORMAL |
-| NORMAL | 1 | No header (default) | Correction, KB ingest, background tasks | GPU when free, CPU fallback |
+| NORMAL | 1 | No header (default) | Correction, KB ingest, background tasks | GPU when free, waits in queue |
 
 - Priority set via `X-Ollama-Priority` header. No header = NORMAL.
 - Orchestrator `processing_mode`: FOREGROUND sends `X-Ollama-Priority: 0` on all sub-calls (KB, tools). BACKGROUND sends no header.
@@ -218,7 +222,7 @@ OLLAMA_API_BASE = "http://jervis-ollama-router:11430"
 # CRITICAL: header present → GPU (auto-reserve)
 headers = {"X-Ollama-Priority": "0"}  # FOREGROUND tasks
 
-# NORMAL: no header → GPU if free, else CPU
+# NORMAL: no header → GPU (waits in queue, never 429)
 headers = {}  # BACKGROUND tasks, correction, KB ingest
 ```
 
@@ -233,10 +237,11 @@ All services use Ollama Router (K8s service `jervis-ollama-router:11430`):
 ### Key Features
 
 - **Transparent proxy** - Services call router like standard Ollama
-- **2-level priority** - CRITICAL gets guaranteed GPU, NORMAL falls back to CPU
+- **2-level priority** - CRITICAL gets guaranteed GPU, NORMAL waits in unlimited queue
 - **Auto-reservation** - GPU reserved/released automatically based on CRITICAL activity
-- **Model management** - Auto-loads/unloads model sets (orchestrator ↔ background)
-- **Embedding coexistence** - CRITICAL embeddings load alongside :30b on GPU (both fit in VRAM)
+- **Model management** - Auto-loads/unloads model sets per GPU_MODEL_SETS
+- **Per-type concurrency** - embedding concurrent=5 on p40-2, LLM serial=1 per GPU
+- **Capability routing** - extraction capability routes to qwen3:8b on p40-2
 
 ### Deployment
 
@@ -685,7 +690,7 @@ When user answers "Nevím" (I don't know) to correction questions, the system re
 
 ### Overview
 
-GPU routing uses **capability-based routing** with the Ollama Router as the central routing service. The orchestrator/chat declares a **capability** (thinking, coding, chat, embedding, visual) and the router decides local GPU vs cloud. Fixed `num_ctx` per GPU prevents costly model reloads.
+GPU routing uses **capability-based routing** with the Ollama Router as the central routing service. The orchestrator/chat declares a **capability** (thinking, coding, chat, embedding, visual, extraction) and the router decides local GPU vs cloud. Fixed `num_ctx` per GPU prevents costly model reloads.
 
 ### Architecture
 
@@ -702,14 +707,19 @@ Orchestrator → litellm → target backend
 
 Each GPU has its own set of models (configured via `GPU_MODEL_SETS` env var):
 
+```
+GPU_MODEL_SETS: '{"p40-1":["qwen3-coder-tool:30b"],"p40-2":["qwen3-embedding:8b","qwen3:8b","qwen3:14b","qwen3-vl-tool:latest"]}'
+```
+
 | GPU | Models | num_ctx | Role |
 |-----|--------|---------|------|
-| GPU1 (P40) | `qwen3-coder-tool:30b` | 48,000 | Primary — stable, never swaps |
-| GPU2 (P40) | `qwen3-coder-tool:30b` + `qwen3-embedding:8b` | 32,000 | Secondary + embedding |
+| GPU1 (P40) | `qwen3-coder-tool:30b` (18.5GB) | 48,000 | Orchestrator, chat, coding — sole LLM GPU |
+| GPU2 (P40) | `qwen3-embedding:8b` (5.5GB) + `qwen3:8b` (6.0GB) + `qwen3:14b` (11.0GB) | 64,000 | Extraction + embedding (22.5GB permanent) |
 
 - **Embedding → GPU2 only** — p40-1 doesn't have embedding model
-- **VLM → GPU2 only** — on-demand, temporarily replaces coder model
-- **1 concurrent request per GPU** — serial is faster than parallel when VRAM spills
+- **Extraction → GPU2 only** — `qwen3:8b` (lightweight) and `qwen3:14b` (complex) permanent on p40-2
+- **VLM → GPU2 only** — on-demand swap, temporarily replaces permanent models
+- **Per-type concurrency**: embedding concurrent=5, LLM serial=1 per GPU
 - **No CPU Ollama** — all LLM/embedding on GPU only
 - Default for new clients: `maxOpenRouterTier = FREE`
 
@@ -719,9 +729,14 @@ Each GPU has its own set of models (configured via `GPU_MODEL_SETS` env var):
 LOCAL_MODEL_CAPABILITIES = {
     "qwen3-coder-tool:30b": ["thinking", "coding", "chat"],
     "qwen3-embedding:8b": ["embedding"],
-    "qwen3-vl:latest": ["visual"],
+    "qwen3:8b": ["extraction"],
+    "qwen3:14b": ["extraction"],
+    "qwen3-vl-tool:latest": ["visual"],
 }
 ```
+
+- **extraction** capability: routes to `qwen3:8b` on p40-2 (orchestrator qualification, KB link relevance)
+- KB service calls `qwen3:8b` (simple) and `qwen3:14b` (complex) directly by model name — no capability routing
 
 ### Routing Logic (`/route-decision`)
 
@@ -769,12 +784,11 @@ Benchmarked 2026-03-02 on both P40 GPUs. Key findings:
 | Token generation (48k ctx) | ~29 tok/s | |
 | Model load (p40-1, 251GB RAM) | ~14s | Cached in page cache |
 | Model load (p40-2, 8GB RAM) | ~200-260s | Full disk I/O, model > RAM |
-| VRAM usage (model only) | 19GB / 24GB | |
 
 **Critical rules:**
 - **NEVER change num_ctx between requests** — causes 2-5× slowdown (Ollama restarts runner)
-- **NEVER unload models** — especially on p40-2 where reload takes >200s
-- **Fixed num_ctx per GPU**: p40-1=48k, p40-2=32k (embedding coexists)
+- **NEVER unload permanent models on p40-2** — reload takes >200s (3 permanent models = 22.5GB)
+- **Fixed num_ctx per GPU**: p40-1=48k, p40-2=64k
 - Both GPUs perform identically once warm (±5% variance)
 - Concurrent execution works — no interference between GPUs
 

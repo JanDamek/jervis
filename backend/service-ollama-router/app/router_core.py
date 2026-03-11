@@ -23,6 +23,7 @@ from .models import (
     GPU_MODEL_SETS,
     LOCAL_MODEL_CAPABILITIES,
     LOCAL_MODEL_CONTEXT,
+    MODEL_SETS,
     MODEL_TO_PRIORITY,
     Priority,
     TrackedRequest,
@@ -124,12 +125,23 @@ class OllamaRouter:
     async def _preload_per_gpu_models(self) -> None:
         """Preload per-GPU model sets according to GPU_MODEL_SETS config.
 
-        Each GPU gets its own set of models. p40-1 gets only LLM models,
-        p40-2 gets LLM + embedding. This ensures both GPUs are ready from start.
+        Skips on-demand models (keep_alive != "-1") to avoid VRAM overcommit.
+        VLM is loaded on-demand when requested — swaps with 14b on GPU-2.
         """
+        # Models with keep_alive != "-1" are on-demand — skip at startup
+        on_demand_models = {
+            m
+            for s in MODEL_SETS.values()
+            if s.get("keep_alive") != "-1"
+            for m in s["models"]
+        }
+
         for backend in self.gpu_pool.healthy_backends:
             gpu_models = GPU_MODEL_SETS.get(backend.name, [settings.orchestrator_model])
             for model in gpu_models:
+                if model in on_demand_models:
+                    logger.info("Skipping on-demand model %s on GPU %s (loaded when requested)", model, backend.name)
+                    continue
                 if backend.has_model(model):
                     logger.info("GPU %s already has %s loaded", backend.name, model)
                     continue
@@ -571,9 +583,16 @@ class OllamaRouter:
                     if last_activity < interval * 0.8:
                         continue
 
-                    # Ping only models assigned to this GPU
+                    # Ping only permanent models assigned to this GPU (skip on-demand like VLM)
                     gpu_models = GPU_MODEL_SETS.get(backend.name, [settings.orchestrator_model])
+                    on_demand_models = {
+                        m for s in MODEL_SETS.values()
+                        if s.get("keep_alive") != "-1"
+                        for m in s["models"]
+                    }
                     for model_name in gpu_models:
+                        if model_name in on_demand_models:
+                            continue
                         try:
                             if model_name in EMBEDDING_MODELS:
                                 payload = {"model": model_name, "prompt": "warmup", "keep_alive": -1}

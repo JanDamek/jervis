@@ -31,6 +31,7 @@ class Capability(str, Enum):
     CHAT = "chat"              # General conversation, Q&A
     EMBEDDING = "embedding"    # Text embeddings
     VISUAL = "visual"          # Image understanding (VLM)
+    EXTRACTION = "extraction"  # Lightweight LLM for KB extraction, qualification (GPU-2)
 
 
 # ── Per-GPU model sets ──────────────────────────────────────────────────
@@ -38,8 +39,8 @@ class Capability(str, Enum):
 # with fallback to defaults. p40-1 stays stable (never swaps models).
 
 _DEFAULT_GPU_MODEL_SETS: dict[str, list[str]] = {
-    "p40-1": ["qwen3-coder-tool:30b"],                          # 48k ctx, sole LLM GPU
-    "p40-2": ["qwen3-embedding:8b", "qwen3-vl-tool:latest"],   # embedding (permanent) + VLM (on-demand swap with whisper)
+    "p40-1": ["qwen3-coder-tool:30b"],                                                   # 48k ctx, heavy LLM
+    "p40-2": ["qwen3-embedding:8b", "qwen3:8b", "qwen3:14b", "qwen3-vl-tool:latest"],   # embedding + extraction 8b/14b (permanent) + VLM (on-demand swap)
 }
 
 def _load_gpu_model_sets() -> dict[str, list[str]]:
@@ -56,22 +57,24 @@ def _load_gpu_model_sets() -> dict[str, list[str]]:
 
 GPU_MODEL_SETS: dict[str, list[str]] = _load_gpu_model_sets()
 
-# VLM assigned to p40-2 — temporarily replaces coder model when needed.
+# VLM assigned to p40-2 — on-demand swap (swaps with 14b when needed).
 # p40-1 stays stable (never swaps models).
 VLM_GPU = "p40-2"
 
-# Local model capabilities
+# Local model capabilities — used by /route-decision to find model for capability.
+# _find_local_model_for_capability() returns FIRST match, so order matters.
 LOCAL_MODEL_CAPABILITIES: dict[str, list[str]] = {
     "qwen3-coder-tool:30b": ["thinking", "coding", "chat"],
+    "qwen3:8b": ["extraction"],    # Lightweight: qualification, KB simple extraction (GPU-2, permanent)
+    "qwen3:14b": [],               # KB complex extraction — called directly by model name, not via capability
     "qwen3-embedding:8b": ["embedding"],
     "qwen3-vl-tool:latest": ["visual"],
 }
 
 # Local model context limits (fixed num_ctx per GPU Modelfile)
-# p40-2 has no LLM (30b) anymore — only embedding + VLM. Context limit for VLM only.
 LOCAL_MODEL_CONTEXT: dict[str, int] = {
     "p40-1": 48_000,
-    "p40-2": 64_000,  # VLM context limit (VL + embedding fit up to 64k)
+    "p40-2": 32_000,  # Extraction models (8b/14b). 3 models in VRAM → limited KV cache budget.
 }
 
 
@@ -85,6 +88,16 @@ MODEL_SETS: dict[str, dict] = {
         "vram_gb": 18.5,
         "keep_alive": "-1",   # p40-1: always loaded
     },
+    "extraction_light": {
+        "models": ["qwen3:8b"],
+        "vram_gb": 6.0,
+        "keep_alive": "-1",   # p40-2: permanent (KB simple, qualification)
+    },
+    "extraction_complex": {
+        "models": ["qwen3:14b"],
+        "vram_gb": 11.0,
+        "keep_alive": "-1",   # p40-2: permanent (KB graph extraction, summaries)
+    },
     "embedding": {
         "models": ["qwen3-embedding:8b"],
         "vram_gb": 5.5,
@@ -93,7 +106,7 @@ MODEL_SETS: dict[str, dict] = {
     "vlm": {
         "models": ["qwen3-vl-tool:latest"],
         "vram_gb": 8.8,
-        "keep_alive": "10m",  # p40-2: auto-unload after 10min idle (loaded on-demand)
+        "keep_alive": "10m",  # p40-2: on-demand swap (swaps 14b out, whisper coordination)
     },
 }
 
@@ -106,6 +119,8 @@ for _set_name, _set_def in MODEL_SETS.items():
 # model → default priority lookup (CRITICAL is set via header, not model)
 MODEL_TO_PRIORITY: dict[str, Priority] = {
     "qwen3-coder-tool:30b": Priority.NORMAL,
+    "qwen3:8b": Priority.NORMAL,
+    "qwen3:14b": Priority.NORMAL,
     "qwen3-embedding:8b": Priority.NORMAL,
     "qwen3-vl-tool:latest": Priority.NORMAL,
 }

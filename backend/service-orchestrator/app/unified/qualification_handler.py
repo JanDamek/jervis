@@ -246,13 +246,12 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
         {"role": "user", "content": f"Analyzuj a rozhodni o následujícím obsahu:\n\n{request.content[:4000]}"},
     ]
 
-    # Route to appropriate backend — qualification always GPU only
+    # Route to extraction model (8b on GPU-2) — frees GPU-1 for orchestrator/chat
     estimated_tokens_count = estimate_tokens(system_prompt) + estimate_tokens(request.content[:4000]) + 500
     route = await route_request(
-        capability="thinking",
+        capability="extraction",
         estimated_tokens=estimated_tokens_count,
-        max_tier="NONE",  # hardcoded — qualification always on local GPU
-        prefer_cloud=False,
+        max_tier="NONE",
     )
 
     model_override = route.model
@@ -405,10 +404,9 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
 
             try:
                 route = await route_request(
-                    capability="thinking",
+                    capability="extraction",
                     estimated_tokens=estimate_tokens(prompt) + 200,
                     max_tier="NONE",
-                    prefer_cloud=False,
                 )
 
                 response = await llm_provider.completion(

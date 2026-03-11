@@ -32,20 +32,20 @@ class Settings(BaseSettings):
     KOTLIN_SERVER_URL: str = ""                              # Kotlin server for progress callbacks (e.g. http://jervis-server:5500)
 
     # -- Model configuration ----------------------------------------------------
-    EMBEDDING_MODEL: str = "qwen3-embedding:8b"             # Vector embedding model (CPU instance)
-    LLM_MODEL: str = "qwen3-coder-tool:30b"                  # Default LLM for general KB tasks (30b = same as orchestrator, shares GPU)
-    VISION_MODEL: str = "qwen3-vl-tool:latest"               # VLM for image description
+    EMBEDDING_MODEL: str = "qwen3-embedding:8b"             # Vector embedding model (GPU-2, permanent)
+    LLM_MODEL: str = "qwen3:14b"                             # Graph extraction — complex reasoning, GPU-2 (permanent)
+    VISION_MODEL: str = "qwen3-vl-tool:latest"               # VLM for image description (GPU-2, on-demand swap)
 
-    # Ingest model routing — consolidated: 30b for all tasks.
-    # 7b removed (no model swapping needed, 30b always loaded on GPU).
-    INGEST_MODEL_SIMPLE: str = "qwen3-coder-tool:30b"
-    INGEST_MODEL_COMPLEX: str = "qwen3-coder-tool:30b"
+    # Ingest model routing — dual extraction models on GPU-2.
+    # GPU-1 (30b) freed for orchestrator/chat. GPU-2 runs extraction parallel.
+    INGEST_MODEL_SIMPLE: str = "qwen3:8b"                    # Link relevance, quick classification (GPU-2, ~6GB)
+    INGEST_MODEL_COMPLEX: str = "qwen3:14b"                  # Summary extraction, complex ingest (GPU-2, ~11GB)
 
     # -- Context window management (same pattern as chat/orchestrator) ---------
     # Chat/orchestrator uses: TOTAL_CONTEXT_WINDOW=32768, RESPONSE_RESERVE=4000,
     # TOKEN_ESTIMATE_RATIO=4, _truncate_messages_to_budget().
     # Indexing must do the same to prevent silent truncation / model hangs.
-    INGEST_CONTEXT_CAP: int = 49_152         # Max num_ctx (P40 VRAM limit for 30b model)
+    INGEST_CONTEXT_CAP: int = 32_768         # Max num_ctx (GPU-2: 3 models loaded, limited KV cache budget)
     INGEST_RESPONSE_RESERVE: int = 2_000    # Reserve tokens for JSON response generation
     INGEST_PROMPT_RESERVE: int = 1_500      # Reserve tokens for instruction/system part of prompt
     TOKEN_ESTIMATE_RATIO: float = 2.5       # chars / 2.5 ≈ tokens (Czech text heuristic)
