@@ -2,15 +2,26 @@ package com.jervis.ui.util
 
 import kotlin.time.Clock
 import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 /**
- * Format ISO-8601 timestamp to human-readable Czech format.
- * - Today → "HH:mm"
- * - Yesterday → "Včera HH:mm"
- * - This year → "d. M. HH:mm"
- * - Older → "d. M. yyyy HH:mm"
+ * Czech day names for relative date display (within 7 days).
+ */
+private val CZECH_DAY_NAMES = arrayOf(
+    "pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota", "neděle",
+)
+
+/**
+ * Format timestamp to human-readable Czech relative format.
+ *
+ * Rules:
+ * - Today → "21:20"
+ * - Yesterday → "včera 11:30"
+ * - 2 days ago → "předevčírem 11:30"
+ * - 3–7 days ago → "pondělí 11:30" (day name)
+ * - Older → "8. 3. 2026 11:30" (date)
  */
 fun formatMessageTime(isoTimestamp: String): String {
     val instant = try {
@@ -27,19 +38,28 @@ fun formatMessageTime(isoTimestamp: String): String {
 
     val tz = TimeZone.currentSystemDefault()
     val messageDateTime = instant.toLocalDateTime(tz)
-    val nowDateTime = Clock.System.now().toLocalDateTime(tz)
+    val nowDate = Clock.System.now().toLocalDateTime(tz).date
 
     val messageDate = messageDateTime.date
-    val nowDate = nowDateTime.date
-
-    val h = messageDateTime.hour.toString().padStart(2, '0')
-    val m = messageDateTime.minute.toString().padStart(2, '0')
-    val time = "$h:$m"
+    val time = formatTime(messageDateTime.hour, messageDateTime.minute)
+    val daysDiff = nowDate.toEpochDays() - messageDate.toEpochDays()
 
     return when {
-        messageDate == nowDate -> time
-        messageDate.toEpochDays() == nowDate.toEpochDays() - 1 -> "Včera $time"
-        messageDate.year == nowDate.year -> "${messageDate.dayOfMonth}. ${messageDate.monthNumber}. $time"
+        daysDiff == 0 -> time
+        daysDiff == 1 -> "včera $time"
+        daysDiff == 2 -> "předevčírem $time"
+        daysDiff in 3..7 -> "${dayName(messageDate)} $time"
         else -> "${messageDate.dayOfMonth}. ${messageDate.monthNumber}. ${messageDate.year} $time"
     }
+}
+
+private fun formatTime(hour: Int, minute: Int): String {
+    val h = hour.toString().padStart(2, '0')
+    val m = minute.toString().padStart(2, '0')
+    return "$h:$m"
+}
+
+private fun dayName(date: LocalDate): String {
+    // dayOfWeek: MONDAY=1 .. SUNDAY=7
+    return CZECH_DAY_NAMES[date.dayOfWeek.ordinal]
 }

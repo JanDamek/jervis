@@ -631,10 +631,20 @@ iMessage/WhatsApp-style chat with content-based width:
 - Visible when any background messages exist or user task count > 0
 - **"Chat"** (default ON): toggles visibility of regular chat messages (USER_MESSAGE, PROGRESS, FINAL, ERROR)
 - **"Tasky"** (default OFF): toggles visibility of all BACKGROUND_RESULT messages
-- **"K reakci (N)"** (default OFF, shown when N > 0): toggles visibility of BACKGROUND_RESULT messages needing user reaction. N = global USER_TASK count from `ChatHistoryDto.userTaskCount` (matches dock badge)
+- **"K reakci (N)"** (default OFF, shown when N > 0): appends pending user tasks to chat messages (chat stays visible). N = global USER_TASK count from `ChatHistoryDto.userTaskCount` (matches dock badge). User tasks loaded separately via paginated API (`loadPendingUserTasks`, page size 20, offset pagination via `loadMoreUserTasks`)
+- **Message ordering**: ALL messages ordered **chronologically** by creation time. Priority determines urgency, not display order. Filters provide quick access without breaking timeline.
 - Filtering is pure **client-side** via Compose `remember()` in `screens/MainScreen.kt` — no server reload on toggle
 - Server always loads chat-only (`excludeBackground=true`), live-pushed backgrounds (via SSE) are added to `_chatMessages` and filtered client-side
 - `backgroundMessageCount` and `userTaskCount` come from `ChatHistoryDto` (set in `reloadHistory()`)
+
+**Time display format** (`formatMessageTime` in `util/TimeFormatter.kt`):
+- Czech relative format — no "dnes" prefix for today, just time
+- Today → `21:20`
+- Yesterday → `včera 11:30`
+- 2 days ago → `předevčírem 11:30`
+- 3–7 days ago → day name `pondělí 11:30`
+- Older than 7 days → full date `8. 3. 2026 11:30`
+- Accepts ISO-8601 or epoch millis string
 - Implementation: `ChatViewModel` exposes `showChat`, `showTasks`, `showNeedReaction`, `backgroundMessageCount`, `userTaskCount` StateFlows + toggle methods
 
 **History pagination** (`ChatArea` component):
