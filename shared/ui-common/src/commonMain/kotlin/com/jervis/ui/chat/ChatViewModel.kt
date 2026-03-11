@@ -209,6 +209,7 @@ class ChatViewModel(
     companion object {
         private val BACKOFF_DELAYS_MS = listOf(0L, 5_000L, 30_000L, 300_000L)
         private const val MAX_AUTO_RETRIES = 4
+        private const val USER_TASK_PAGE_SIZE = 20
     }
 
     init {
@@ -381,9 +382,6 @@ class ChatViewModel(
         if (newValue) loadPendingUserTasks()
     }
 
-    companion object {
-        private const val USER_TASK_PAGE_SIZE = 20
-    }
 
     /** Load first page of pending user tasks from API (global, not filtered by client). */
     fun loadPendingUserTasks() {

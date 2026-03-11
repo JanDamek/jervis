@@ -27,10 +27,10 @@ fun MainScreen(
     val pendingUserTasks by viewModel.chat.pendingUserTasks.collectAsState()
 
     // Client-side filtering — instant toggle, no server reload
-    // "K reakci" uses separately loaded user tasks from API (global, all clients)
+    // "K reakci" prepends pending user tasks to chat messages (chat stays visible)
     val filteredMessages = remember(chatMessages, pendingUserTasks, showChat, showTasks, showNeedReaction) {
         when {
-            showNeedReaction -> pendingUserTasks  // All pending user tasks from DB
+            showNeedReaction -> pendingUserTasks + chatMessages  // User tasks first, then full chat
             showTasks -> chatMessages.filter { it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT }
             showChat -> chatMessages.filter { it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT }
             else -> chatMessages
