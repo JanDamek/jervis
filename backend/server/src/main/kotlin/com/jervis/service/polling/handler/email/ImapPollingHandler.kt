@@ -189,8 +189,17 @@ class ImapPollingHandler(
             }
 
             // Load polling state (per folder — unique tool key per folder)
+            // Migration: if per-folder state doesn't exist, check legacy "IMAP" key and migrate
             val folderToolKey = "IMAP:$folderName"
-            val pollingState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider, folderToolKey)
+            var pollingState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider, folderToolKey)
+            if (pollingState == null && folderName == "INBOX") {
+                val legacyState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider, "IMAP")
+                if (legacyState != null && (legacyState.lastFetchedUid ?: 0L) > 0L) {
+                    logger.info { "Migrating legacy IMAP polling state to IMAP:INBOX (lastFetchedUid=${legacyState.lastFetchedUid})" }
+                    pollingStateService.updateWithUid(connectionDocument.id, connectionDocument.provider, legacyState.lastFetchedUid!!, folderToolKey)
+                    pollingState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider, folderToolKey)
+                }
+            }
             val lastFetchedUid = pollingState?.lastFetchedUid ?: 0L
 
             logger.debug { "IMAP sync state for $folderName: lastFetchedUid=$lastFetchedUid" }
