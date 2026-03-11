@@ -613,6 +613,7 @@ private fun ChatMessageItem(
                 }
                 AnimatedVisibility(visible = expanded) {
                     SelectionContainer {
+                        val bgSmall = MaterialTheme.typography.bodySmall
                         SafeMarkdown(
                             content = message.text,
                             colors = markdownColor(
@@ -620,14 +621,21 @@ private fun ChatMessageItem(
                                 codeBackground = MaterialTheme.colorScheme.surface,
                             ),
                             typography = markdownTypography(
-                                text = MaterialTheme.typography.bodySmall,
-                                code = MaterialTheme.typography.bodySmall,
-                                h1 = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                                h2 = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                h3 = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                text = bgSmall,
+                                code = bgSmall,
+                                paragraph = bgSmall,
+                                h1 = bgSmall.copy(fontWeight = FontWeight.Bold),
+                                h2 = bgSmall.copy(fontWeight = FontWeight.SemiBold),
+                                h3 = bgSmall.copy(fontWeight = FontWeight.SemiBold),
+                                h4 = bgSmall.copy(fontWeight = FontWeight.SemiBold),
+                                h5 = bgSmall.copy(fontWeight = FontWeight.Medium),
+                                h6 = bgSmall.copy(fontWeight = FontWeight.Medium),
+                                list = bgSmall,
+                                ordered = bgSmall,
+                                bullet = bgSmall,
                             ),
                             modifier = Modifier.padding(top = 4.dp),
-                            fallbackStyle = MaterialTheme.typography.bodySmall,
+                            fallbackStyle = bgSmall,
                         )
                     }
                 }
@@ -864,10 +872,22 @@ private fun ChatMessageItem(
                             text = MaterialTheme.colorScheme.onErrorContainer,
                             codeBackground = MaterialTheme.colorScheme.errorContainer,
                         ),
-                        typography = markdownTypography(
-                            text = MaterialTheme.typography.bodyMedium,
-                            code = MaterialTheme.typography.bodySmall,
-                        ),
+                        typography = MaterialTheme.typography.bodyMedium.let { base ->
+                            markdownTypography(
+                                text = base,
+                                code = MaterialTheme.typography.bodySmall,
+                                paragraph = base,
+                                h1 = base.copy(fontWeight = FontWeight.Bold),
+                                h2 = base.copy(fontWeight = FontWeight.SemiBold),
+                                h3 = base.copy(fontWeight = FontWeight.SemiBold),
+                                h4 = base.copy(fontWeight = FontWeight.SemiBold),
+                                h5 = base.copy(fontWeight = FontWeight.Medium),
+                                h6 = base.copy(fontWeight = FontWeight.Medium),
+                                list = base,
+                                ordered = base,
+                                bullet = base,
+                            )
+                        },
                         fallbackStyle = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -1117,13 +1137,23 @@ private fun ChatMessageItem(
                                         text = MaterialTheme.colorScheme.onSecondaryContainer,
                                         codeBackground = MaterialTheme.colorScheme.surfaceVariant,
                                     ),
-                                    typography = markdownTypography(
-                                        text = MaterialTheme.typography.bodyMedium,
-                                        code = MaterialTheme.typography.bodySmall,
-                                        h1 = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                        h2 = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                        h3 = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    ),
+                                    typography = run {
+                                        val base = MaterialTheme.typography.bodyMedium
+                                        markdownTypography(
+                                            text = base,
+                                            code = MaterialTheme.typography.bodySmall,
+                                            paragraph = base,
+                                            h1 = base.copy(fontWeight = FontWeight.Bold),
+                                            h2 = base.copy(fontWeight = FontWeight.SemiBold),
+                                            h3 = base.copy(fontWeight = FontWeight.SemiBold),
+                                            h4 = base.copy(fontWeight = FontWeight.SemiBold),
+                                            h5 = base.copy(fontWeight = FontWeight.Medium),
+                                            h6 = base.copy(fontWeight = FontWeight.Medium),
+                                            list = base,
+                                            ordered = base,
+                                            bullet = base,
+                                        )
+                                    },
                                     fallbackStyle = MaterialTheme.typography.bodyMedium,
                                 )
                             }
