@@ -1635,7 +1635,12 @@ Source: `backend/service-orchestrator/app/background/handler.py`
 
 > **SSOT:** `docs/architecture.md` § "Coding Agent → MR/PR → Code Review Pipeline"
 
-Two-phase review triggered by `AgentTaskWatcher` after coding job success:
+**Two triggers for code review:**
+
+1. **Jervis coding agent MRs** — triggered by `AgentTaskWatcher` after coding job success
+2. **External MRs** — triggered by `MergeRequestContinuousIndexer` polling GitLab/GitHub
+
+#### Path A: Jervis-created MRs (AgentTaskWatcher)
 
 **Phase 1 — Orchestrator (preparation):**
 1. Extract diff from workspace (`git diff`) or MR/PR API
@@ -1650,19 +1655,30 @@ Two-phase review triggered by `AgentTaskWatcher` after coding job success:
 4. Full file analysis (not just diff) for context
 5. Structured verdict: APPROVE / REQUEST_CHANGES / REJECT
 
-**KB integration:**
-- **Search**: 3+ KB queries before dispatch (task, files, topics) + agent's own MCP searches
-- **Store**: Review outcome → `kb_store(kind="finding", sourceUrn="code-review:{taskId}")` for future reference
-
 **Verdict routing:**
 - APPROVE → MR comment posted, user merges manually
 - REQUEST_CHANGES (BLOCKERs) → new fix coding task dispatched (max 2 rounds)
 - After max rounds → escalation comment on MR
 
+#### Path B: External MRs (MergeRequestContinuousIndexer)
+
+1. **Discovery (120s):** Poll GitLab/GitHub for open MRs/PRs on all projects with REPOSITORY resources
+   - Filters: skip drafts, skip `jervis/*` branches (avoid review loops)
+   - Saves new MRs as `MergeRequestDocument(state=NEW)` in MongoDB
+2. **Task creation (15s):** Pick up NEW MRs → create SCHEDULED_TASK in QUEUED state with MR metadata
+   - Bypasses KB indexation — MR content IS the review task
+   - sourceUrn: `merge-request::proj:{projectId},provider:{gitlab|github},mr:{mrId}`
+3. **Graph agent:** Picks up task, reasons about review scope, uses tools (kb_search, web_search)
+
+**KB integration:**
+- **Search**: 3+ KB queries before dispatch (task, files, topics) + agent's own MCP searches
+- **Store**: Review outcome → `kb_store(kind="finding", sourceUrn="code-review:{taskId}")` for future reference
+
 Sources:
-- `backend/service-orchestrator/app/review/code_review_handler.py` (orchestration)
+- `backend/service-orchestrator/app/review/code_review_handler.py` (orchestration — Path A)
 - `backend/service-orchestrator/app/review/review_engine.py` (static analysis)
-- `backend/service-orchestrator/app/agent_task_watcher.py` (trigger + MR creation)
+- `backend/service-orchestrator/app/agent_task_watcher.py` (trigger + MR creation — Path A)
+- `backend/server/.../service/indexing/git/MergeRequestContinuousIndexer.kt` (polling + task creation — Path B)
 - `backend/server/.../rpc/internal/InternalMergeRequestRouting.kt` (MR/PR API)
 
 ### Universal Approval Gate (EPIC 4)

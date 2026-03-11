@@ -267,6 +267,13 @@ data class GitLabMergeRequest(
     val web_url: String,
     val draft: Boolean = false,
     val created_at: String,
+    val author: GitLabMergeRequestAuthor? = null,
+)
+
+@Serializable
+data class GitLabMergeRequestAuthor(
+    val username: String,
+    val name: String? = null,
 )
 
 @Serializable

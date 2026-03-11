@@ -308,10 +308,16 @@ This ensures e.g. `JanDamek/jervis` issues are indexed under the correct project
 Separate polling loop (120s interval) for merge request / pull request discovery:
 
 1. **Discovery:** Iterates all projects with REPOSITORY resources → calls GitLab `listOpenMergeRequests` / GitHub `listOpenPullRequests` → deduplicates against `merge_requests` MongoDB collection → saves NEW documents
-2. **Task creation (15s):** Picks up NEW MR documents → creates GIT_PROCESSING task with MR metadata (title, branches, URL, review instructions) → marks REVIEW_DISPATCHED
-3. **Orchestrator:** Detects `merge-request::` sourceUrn → dispatches code review agent → posts comments on MR/PR
+   - **Filters:** Skips draft MRs/PRs (not ready for review), skips `jervis/*` branches (handled by AgentTaskWatcher to avoid review loops)
+   - **Author extraction:** Extracts author name/username from API response (GitLab `author.name`, GitHub `user.login`)
+2. **Task creation (15s):** Picks up NEW MR documents → creates SCHEDULED_TASK in QUEUED state (bypasses KB indexation — MR content IS the task) → marks REVIEW_DISPATCHED
+3. **Orchestrator:** Graph agent picks up task, reasons about code review scope, can delegate to coding agent or use tools directly
 
 **Key files:** `MergeRequestContinuousIndexer.kt`, `MergeRequestDocument.kt`, `MergeRequestRepository.kt`
+
+**Two MR review paths:**
+- **External MRs** (human-created): MergeRequestContinuousIndexer → graph agent → review
+- **Jervis MRs** (coding agent): AgentTaskWatcher → `code_review_handler.py` → review coding agent K8s Job
 
 #### Email Thread Consolidation
 

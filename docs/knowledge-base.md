@@ -765,14 +765,16 @@ GitContinuousIndexer.processCommit()
 
 ### MergeRequestContinuousIndexer
 
-- **Purpose:** Polls GitLab/GitHub for open MRs/PRs and creates code review tasks
+- **Purpose:** Polls GitLab/GitHub for open MRs/PRs and creates code review tasks for external (non-Jervis) MRs
 - **Two-loop architecture:**
   1. **Discovery loop (120s):** Polls all projects with REPOSITORY resources → fetches open MRs/PRs via GitLab/GitHub API → deduplicates against MongoDB → saves NEW documents
-  2. **Task creation loop (15s):** Picks up NEW MR documents → creates GIT_PROCESSING tasks with MR metadata → marks as REVIEW_DISPATCHED
+  2. **Task creation loop (15s):** Picks up NEW MR documents → creates SCHEDULED_TASK in QUEUED state (bypasses KB indexation) → marks as REVIEW_DISPATCHED
+- **Filters:** Skips draft MRs/PRs (not ready), skips `jervis/*` branches (handled by AgentTaskWatcher)
+- **Author extraction:** GitLab `author.name`/`author.username`, GitHub `user.login`
 - **State machine:** NEW → REVIEW_DISPATCHED → DONE (or FAILED)
 - **Provider support:** GitLab (`listOpenMergeRequests`) and GitHub (`listOpenPullRequests`)
 - **sourceUrn format:** `merge-request::proj:{projectId},provider:{gitlab|github},mr:{mrId}`
-- **Task content:** Markdown with MR title, branches, URL, review instructions
+- **Task content:** Markdown with MR title, description, branches, URL, author, review instructions
 - **Key files:** `MergeRequestContinuousIndexer.kt`, `MergeRequestDocument.kt`, `MergeRequestRepository.kt`
 
 ---

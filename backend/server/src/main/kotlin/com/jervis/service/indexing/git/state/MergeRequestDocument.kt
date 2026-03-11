@@ -34,6 +34,7 @@ data class MergeRequestDocument(
     val provider: String,
     val mergeRequestId: String,
     val title: String,
+    val description: String? = null,
     val author: String? = null,
     val sourceBranch: String,
     val targetBranch: String,

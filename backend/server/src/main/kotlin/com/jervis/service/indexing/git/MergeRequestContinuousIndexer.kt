@@ -4,6 +4,7 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.ProjectId
 import com.jervis.common.types.SourceUrn
+import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ProviderEnum
@@ -36,8 +37,16 @@ private val logger = KotlinLogging.logger {}
  * Continuous indexer for merge requests / pull requests.
  *
  * Polls GitLab/GitHub for open MRs/PRs on all projects with REPOSITORY resources.
- * New MRs are saved to MongoDB and a GIT_PROCESSING task is created for code review.
- * The orchestrator picks up these tasks and dispatches code review agents.
+ * New MRs are saved to MongoDB and a SCHEDULED_TASK is created in QUEUED state
+ * that goes directly to the orchestrator for code review dispatch.
+ *
+ * Filters applied:
+ * - Skips draft MRs/PRs (not ready for review)
+ * - Skips Jervis-created branches (jervis/* prefix — handled by AgentTaskWatcher)
+ *
+ * Two coroutine loops:
+ * 1. pollAllProjects() — discover new MRs from GitLab/GitHub APIs (every 2 minutes)
+ * 2. processNewMergeRequests() — create review tasks for NEW MRs (every 15 seconds)
  */
 @Service
 @Order(12)
@@ -51,6 +60,14 @@ class MergeRequestContinuousIndexer(
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
+
+    companion object {
+        /** Branches created by Jervis coding agent — skip to avoid review loops */
+        private val JERVIS_BRANCH_PREFIXES = listOf("jervis/", "jervis-")
+
+        /** Max MRs to create review tasks for in a single cycle */
+        private const val MAX_TASKS_PER_CYCLE = 10
+    }
 
     @PostConstruct
     fun start() {
@@ -79,7 +96,7 @@ class MergeRequestContinuousIndexer(
         }
     }
 
-    // ── Polling: discover new MRs from providers ──────────────────────
+    // -- Polling: discover new MRs from providers ---------------------
 
     private suspend fun pollAllProjects() {
         val projects = projectRepository.findAll().toList()
@@ -115,6 +132,18 @@ class MergeRequestContinuousIndexer(
         logger.debug { "GitLab: ${mrs.size} open MRs for ${resource.resourceIdentifier}" }
 
         for (mr in mrs) {
+            // Skip draft MRs — not ready for review
+            if (mr.draft) {
+                logger.debug { "Skipping draft GitLab MR !${mr.iid}: ${mr.title}" }
+                continue
+            }
+
+            // Skip Jervis-created branches — AgentTaskWatcher handles those
+            if (isJervisBranch(mr.source_branch)) {
+                logger.debug { "Skipping Jervis branch MR !${mr.iid}: ${mr.source_branch}" }
+                continue
+            }
+
             val mrId = mr.iid.toString()
             val existing = mergeRequestRepository.findByProjectIdAndMergeRequestIdAndProvider(
                 project.id.value, mrId, "gitlab",
@@ -128,7 +157,8 @@ class MergeRequestContinuousIndexer(
                 provider = "gitlab",
                 mergeRequestId = mrId,
                 title = mr.title,
-                author = null, // GitLab MR response doesn't include author as string
+                description = mr.description?.take(4000),
+                author = mr.author?.name ?: mr.author?.username,
                 sourceBranch = mr.source_branch,
                 targetBranch = mr.target_branch,
                 url = mr.web_url,
@@ -155,6 +185,18 @@ class MergeRequestContinuousIndexer(
         logger.debug { "GitHub: ${prs.size} open PRs for $owner/$repo" }
 
         for (pr in prs) {
+            // Skip draft PRs — not ready for review
+            if (pr.draft) {
+                logger.debug { "Skipping draft GitHub PR #${pr.number}: ${pr.title}" }
+                continue
+            }
+
+            // Skip Jervis-created branches — AgentTaskWatcher handles those
+            if (isJervisBranch(pr.head.ref)) {
+                logger.debug { "Skipping Jervis branch PR #${pr.number}: ${pr.head.ref}" }
+                continue
+            }
+
             val prId = pr.number.toString()
             val existing = mergeRequestRepository.findByProjectIdAndMergeRequestIdAndProvider(
                 project.id.value, prId, "github",
@@ -168,7 +210,8 @@ class MergeRequestContinuousIndexer(
                 provider = "github",
                 mergeRequestId = prId,
                 title = pr.title,
-                author = null,
+                description = pr.body?.take(4000),
+                author = pr.user?.login,
                 sourceBranch = pr.head.ref,
                 targetBranch = pr.base.ref,
                 url = pr.html_url,
@@ -178,7 +221,7 @@ class MergeRequestContinuousIndexer(
         }
     }
 
-    // ── Task creation: dispatch code review for NEW MRs ──────────────
+    // -- Task creation: dispatch code review for NEW MRs ──────────────
 
     private suspend fun processNewMergeRequests() {
         val newMrs = mergeRequestRepository.findByStateOrderByCreatedAtAsc(MergeRequestState.NEW).toList()
@@ -186,7 +229,7 @@ class MergeRequestContinuousIndexer(
 
         logger.info { "Creating review tasks for ${newMrs.size} new merge requests" }
 
-        for (mr in newMrs.take(10)) { // Process max 10 at a time
+        for (mr in newMrs.take(MAX_TASKS_PER_CYCLE)) {
             try {
                 createReviewTask(mr)
             } catch (e: Exception) {
@@ -196,23 +239,42 @@ class MergeRequestContinuousIndexer(
         }
     }
 
+    /**
+     * Create a code review task for a discovered MR/PR.
+     *
+     * The task is created as SCHEDULED_TASK in QUEUED state, bypassing KB indexation.
+     * The MR content IS the review task — no extraction needed.
+     * The task enters the orchestrator directly, which dispatches a code review agent.
+     */
     private suspend fun createReviewTask(mr: MergeRequestDocument) {
+        val mrPrefix = if (mr.provider == "gitlab") "!" else "#"
+
         val content = buildString {
             appendLine("# Code Review: ${mr.title}")
             appendLine()
             appendLine("**Provider:** ${mr.provider}")
-            appendLine("**MR/PR:** ${if (mr.provider == "gitlab") "!" else "#"}${mr.mergeRequestId}")
+            appendLine("**MR/PR:** $mrPrefix${mr.mergeRequestId}")
             appendLine("**Source branch:** ${mr.sourceBranch}")
             appendLine("**Target branch:** ${mr.targetBranch}")
             appendLine("**URL:** ${mr.url}")
             mr.author?.let { appendLine("**Author:** $it") }
+            appendLine("**Connection:** ${mr.connectionId}")
             appendLine()
-            appendLine("Review this merge request: check code quality, potential bugs, security issues, and adherence to project conventions.")
-            appendLine("Post review comments directly on the MR/PR.")
+
+            // Include MR description if available
+            if (!mr.description.isNullOrBlank()) {
+                appendLine("## MR Description")
+                appendLine(mr.description)
+                appendLine()
+            }
+
+            appendLine("## Review Instructions")
+            appendLine("Review this merge request: check code quality, potential bugs, security issues,")
+            appendLine("and adherence to project conventions. Post review comments directly on the MR/PR.")
         }
 
         val task = taskService.createTask(
-            taskType = TaskTypeEnum.GIT_PROCESSING,
+            taskType = TaskTypeEnum.SCHEDULED_TASK,
             content = content,
             clientId = ClientId(mr.clientId),
             projectId = ProjectId(mr.projectId),
@@ -223,6 +285,7 @@ class MergeRequestContinuousIndexer(
                 mrId = mr.mergeRequestId,
             ),
             taskName = "Code review: ${mr.title}",
+            state = TaskStateEnum.QUEUED, // Bypass KB indexation — go straight to orchestrator
         )
 
         mergeRequestRepository.save(
@@ -234,4 +297,7 @@ class MergeRequestContinuousIndexer(
 
         logger.info { "Created code review task ${task.id} for ${mr.provider} MR ${mr.mergeRequestId}" }
     }
+
+    private fun isJervisBranch(branchName: String): Boolean =
+        JERVIS_BRANCH_PREFIXES.any { branchName.startsWith(it, ignoreCase = true) }
 }

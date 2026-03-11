@@ -272,6 +272,12 @@ data class GitHubPullRequest(
     val base: GitHubRef,
     val draft: Boolean = false,
     val merged: Boolean = false,
+    val user: GitHubPullRequestUser? = null,
+)
+
+@Serializable
+data class GitHubPullRequestUser(
+    val login: String,
 )
 
 @Serializable
