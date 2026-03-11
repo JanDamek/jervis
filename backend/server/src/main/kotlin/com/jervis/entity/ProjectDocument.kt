@@ -63,8 +63,8 @@ data class ProjectDocument(
 /**
  * Build and verification configuration for a project.
  *
- * Used by Brain Agent when delegating CODING_VERIFY tasks to OpenHands.
- * If null, Brain Agent will attempt auto-detection based on files in workspace.
+ * Used by Coding Agent when delegating CODING_VERIFY tasks.
+ * If null, Coding Agent will attempt auto-detection based on files in workspace.
  */
 data class ProjectBuildConfig(
     /** Commands to run for building (e.g., ["./gradlew build"]) */

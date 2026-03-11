@@ -26,7 +26,7 @@ class LearningEngineService {
      * Generate search queries based on project technology stack.
      *
      * @param techStack List of technologies detected in the project
-     * @param recentIssues Recent issues/topics from brain (for targeted learning)
+     * @param recentIssues Recent issues/topics from bug tracker (for targeted learning)
      * @return List of search queries to execute
      */
     fun generateSearchQueries(

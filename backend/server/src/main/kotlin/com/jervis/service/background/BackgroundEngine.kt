@@ -1050,14 +1050,13 @@ class BackgroundEngine(
      */
 
     /**
-     * Idle review loop — when no active tasks are running and brain is configured,
+     * Idle review loop — when no active tasks are running,
      * creates a synthetic IDLE_REVIEW task so the orchestrator can proactively review
-     * project statuses, check deadlines, and organize work in the brain Jira/Confluence.
+     * project statuses, check deadlines, and organize findings in KB.
      *
      * Runs every [BackgroundProperties.idleReviewInterval] (default 30 min).
      * Skips if:
      * - idleReviewEnabled is false
-     * - Brain is not configured (no Jira/Confluence connection)
      * - There are active tasks (QUALIFYING, QUEUED, PROCESSING)
      * - An existing IDLE_REVIEW task is already pending/running
      */
@@ -1268,8 +1267,8 @@ class BackgroundEngine(
             |1. **Find dependency manifests**: Search for package.json, build.gradle.kts,
             |   requirements.txt, pom.xml, Gemfile, go.mod files.
             |2. **Check versions**: Look for outdated or known-vulnerable dependency versions.
-            |3. **Report findings**: For each vulnerability found, create a brain issue
-            |   with severity, affected package, and recommended action.
+            |3. **Report findings**: For each vulnerability found, use store_knowledge to save
+            |   a finding with severity, affected package, and recommended action.
             |
             |Focus on critical and high-severity issues. Be specific about versions.
         """.trimMargin()
@@ -1282,7 +1281,7 @@ class BackgroundEngine(
             |2. **Dead code**: Look for unused imports, unreachable code, empty catch blocks.
             |3. **Complexity hotspots**: Identify overly complex functions or classes.
             |
-            |For significant findings, create brain issues. Summarize at the end.
+            |For significant findings, use store_knowledge to save them. Summarize at the end.
         """.trimMargin()
 
         IdleTaskType.DOCUMENTATION_FRESHNESS -> """
@@ -1294,7 +1293,7 @@ class BackgroundEngine(
             |3. **Flag stale docs**: Identify documentation that hasn't been updated
             |   but references code that has changed significantly.
             |
-            |For each stale document found, create a brain issue with specific
+            |For each stale document found, use store_knowledge to save a finding with specific
             |sections that need updating. Summarize findings at the end.
         """.trimMargin()
 
@@ -1309,24 +1308,20 @@ class BackgroundEngine(
             |   patterns or tools.
             |
             |Create a summary with actionable recommendations. If any recommendation
-            |is critical, create a brain issue for tracking.
+            |is critical, use store_knowledge to save it for tracking.
         """.trimMargin()
 
         IdleTaskType.DAILY_REPORT -> """
             |You are generating today's daily activity report for Jervis.
             |
-            |Gather information:
-            |1. **Completed tasks**: Use brain_search_issues to find issues resolved today
-            |   (JQL: "status changed to Done DURING (startOfDay(), now())").
-            |2. **Pending approvals**: Use brain_search_issues to find issues in Open/Review state.
-            |3. **Upcoming deadlines**: Use kb_search to find deadline mentions in the next 7 days.
-            |4. **Errors**: Use brain_search_issues to find issues with label "error" created today.
-            |5. **Stuck tasks**: Find In Progress issues older than 3 days without updates.
+            |Gather information using kb_search:
+            |1. **Completed tasks**: Search KB for tasks/issues resolved today.
+            |2. **Pending approvals**: Search KB for items in Open/Review state.
+            |3. **Upcoming deadlines**: Search KB for deadline mentions in the next 7 days.
+            |4. **Errors**: Search KB for error reports created today.
+            |5. **Stuck tasks**: Search KB for in-progress items older than 3 days without updates.
             |
-            |Then create a Confluence page under "Daily Reports" section:
-            |- Title: "Daily Report - {today's date}"
-            |- Include sections: Completed, Pending Approvals, Deadlines, Errors, Stuck Tasks
-            |- Use brain_create_page with the assembled HTML content
+            |Use store_knowledge to save the daily report summary with kind=finding.
             |
             |Keep the report concise and actionable.
         """.trimMargin()
@@ -1695,8 +1690,8 @@ class BackgroundEngine(
         private val DEADLINE_SCAN_PROMPT = """
             |You are performing a periodic deadline scan across all projects.
             |
-            |Using brain tools and kb_search:
-            |1. **JIRA deadlines**: Use brain_search_issues to find issues with due dates
+            |Using kb_search:
+            |1. **Deadlines from KB**: Use kb_search to find issues/tasks with due dates
             |   in the next 7 days. Report urgency for each.
             |2. **KB deadlines**: Use kb_search to find documents mentioning deadlines,
             |   due dates, or milestones in the next 7 days.

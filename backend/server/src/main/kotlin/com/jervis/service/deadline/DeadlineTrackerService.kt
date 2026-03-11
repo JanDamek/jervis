@@ -22,7 +22,7 @@ import java.time.temporal.ChronoUnit
  *
  * Integration points:
  * - Called by BackgroundEngine's scheduler loop
- * - Reads deadlines from KB (qualifier-extracted) and Brain JIRA
+ * - Reads deadlines from KB (qualifier-extracted) and bug tracker
  * - Creates notification events and auto-prioritizes tasks
  */
 @Service
