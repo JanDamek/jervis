@@ -176,9 +176,7 @@ class KotlinServerClient:
         """
         try:
             client = await self._get_client()
-            resp = await client.post(
-                "/internal/qualification-done",
-                json={
+            payload = {
                     "task_id": task_id,
                     "client_id": client_id,
                     "decision": decision,
@@ -188,7 +186,12 @@ class KotlinServerClient:
                     "suggested_approach": suggested_approach,
                     "action_type": action_type,
                     "estimated_complexity": estimated_complexity,
-                },
+                }
+            if alert_message:
+                payload["alert_message"] = alert_message
+            resp = await client.post(
+                "/internal/qualification-done",
+                json=payload,
             )
             return resp.status_code == 200
         except Exception as e:

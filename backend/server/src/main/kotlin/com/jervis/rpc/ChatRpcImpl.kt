@@ -513,8 +513,10 @@ class ChatRpcImpl(
      */
     suspend fun pushUrgentAlert(
         sourceUrn: String,
+        taskId: String? = null,
         summary: String,
         suggestedAction: String? = null,
+        taskContent: String? = null,
     ) {
         val session = chatService.getOrCreateActiveSession()
         val content = buildString {
@@ -524,12 +526,19 @@ class ChatRpcImpl(
             }
         }
 
+        val metadata = buildMap {
+            put("sourceUrn", sourceUrn)
+            if (taskId != null) put("taskId", taskId)
+            if (taskContent != null) put("taskContent", taskContent.take(4000))
+            if (suggestedAction != null) put("suggestedAction", suggestedAction)
+        }
+
         // Persist to DB
         chatService.saveSystemMessage(
             sessionId = session.id,
             role = MessageRole.ALERT,
             content = content,
-            metadata = mapOf("sourceUrn" to sourceUrn),
+            metadata = metadata,
         )
 
         // Emit to live stream
@@ -537,15 +546,13 @@ class ChatRpcImpl(
             ChatResponseDto(
                 message = content,
                 type = ChatResponseType.URGENT_ALERT,
-                metadata = buildMap {
-                    put("sender", "alert")
-                    put("sourceUrn", sourceUrn)
-                    put("timestamp", java.time.Instant.now().toString())
-                    if (suggestedAction != null) put("suggestedAction", suggestedAction)
-                },
+                metadata = metadata + mapOf(
+                    "sender" to "alert",
+                    "timestamp" to java.time.Instant.now().toString(),
+                ),
             ),
         )
-        logger.info { "CHAT_PUSH_ALERT | sourceUrn=$sourceUrn | summary=${summary.take(80)}" }
+        logger.info { "CHAT_PUSH_ALERT | sourceUrn=$sourceUrn | taskId=$taskId | summary=${summary.take(80)}" }
     }
 
     private fun mapStreamEventToResponse(event: ChatStreamEvent): Pair<ChatResponseType, Map<String, String>> {

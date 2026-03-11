@@ -899,13 +899,69 @@ private fun ChatMessageItem(
                 }
 
                 // Suggested action
-                message.metadata["suggested_action"]?.let { action ->
+                message.metadata["suggestedAction"]?.let { action ->
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "Doporučení: $action",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
                     )
+                }
+
+                // Task content (email body, issue details, etc.)
+                message.metadata["taskContent"]?.let { content ->
+                    var showContent by remember { mutableStateOf(false) }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.error.copy(alpha = 0.2f))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(
+                            onClick = { showContent = !showContent },
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                            modifier = Modifier.height(32.dp),
+                        ) {
+                            Icon(
+                                if (showContent) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                if (showContent) "Skrýt obsah" else "Zobrazit obsah",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                    AnimatedVisibility(visible = showContent) {
+                        SelectionContainer {
+                            SafeMarkdown(
+                                content = content,
+                                colors = markdownColor(
+                                    text = MaterialTheme.colorScheme.onErrorContainer,
+                                    codeBackground = MaterialTheme.colorScheme.errorContainer,
+                                ),
+                                typography = MaterialTheme.typography.bodySmall.let { base ->
+                                    markdownTypography(
+                                        text = base,
+                                        code = MaterialTheme.typography.labelSmall,
+                                        paragraph = base,
+                                        h1 = base.copy(fontWeight = FontWeight.Bold),
+                                        h2 = base.copy(fontWeight = FontWeight.SemiBold),
+                                        h3 = base.copy(fontWeight = FontWeight.SemiBold),
+                                        h4 = base.copy(fontWeight = FontWeight.SemiBold),
+                                        h5 = base.copy(fontWeight = FontWeight.Medium),
+                                        h6 = base.copy(fontWeight = FontWeight.Medium),
+                                        list = base,
+                                        ordered = base,
+                                        bullet = base,
+                                    )
+                                },
+                                fallbackStyle = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
                 }
 
                 // User response (shown inline after reply, same as BACKGROUND_RESULT)

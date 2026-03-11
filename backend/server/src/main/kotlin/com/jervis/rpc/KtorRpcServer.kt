@@ -1084,6 +1084,29 @@ class KtorRpcServer(
                                                     taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
                                                     logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → DONE reason=${body.reason}" }
                                                 }
+                                                "URGENT_ALERT" -> {
+                                                    // Push urgent alert with task content to chat, then QUEUED for orchestration
+                                                    try {
+                                                        chatRpcImpl.pushUrgentAlert(
+                                                            sourceUrn = task.sourceUrn.value,
+                                                            taskId = body.taskId,
+                                                            summary = body.alertMessage ?: body.reason ?: task.content.lineSequence().firstOrNull()?.take(200) ?: "Urgent",
+                                                            suggestedAction = body.suggestedApproach?.lineSequence()?.firstOrNull(),
+                                                            taskContent = task.content,
+                                                        )
+                                                    } catch (e: Exception) {
+                                                        logger.warn(e) { "QUALIFICATION_DONE: failed to push urgent alert for taskId=${body.taskId}" }
+                                                    }
+                                                    val updatedTask = task.copy(
+                                                        priorityScore = body.priorityScore ?: task.priorityScore,
+                                                        priorityReason = body.reason ?: task.priorityReason,
+                                                        actionType = body.actionType ?: task.actionType,
+                                                        estimatedComplexity = body.estimatedComplexity ?: task.estimatedComplexity,
+                                                    )
+                                                    taskRepository.save(updatedTask)
+                                                    taskService.updateState(updatedTask, com.jervis.dto.TaskStateEnum.QUEUED)
+                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → URGENT_ALERT + QUEUED priority=${body.priorityScore}" }
+                                                }
                                                 else -> {
                                                     // Unknown decision — default to QUEUED
                                                     logger.warn { "QUALIFICATION_DONE: unknown decision=${body.decision}, defaulting to QUEUED" }
@@ -1542,6 +1565,8 @@ data class QualificationDoneCallback(
     @kotlinx.serialization.SerialName("priority_score") val priorityScore: Int? = null,
     /** Human-readable reason for the decision */
     val reason: String? = null,
+    /** Alert message for URGENT_ALERT decisions */
+    @kotlinx.serialization.SerialName("alert_message") val alertMessage: String? = null,
     /** Prepared context from GPU qualification agent (KB search results, related items) */
     @kotlinx.serialization.SerialName("context_summary") val contextSummary: String? = null,
     /** Suggested approach/plan for the orchestrator */

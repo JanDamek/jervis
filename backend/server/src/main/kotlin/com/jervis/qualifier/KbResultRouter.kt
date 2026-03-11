@@ -103,8 +103,10 @@ class KbResultRouter(
                 try {
                     chatRpcImpl.pushUrgentAlert(
                         sourceUrn = task.sourceUrn.value,
+                        taskId = task.id.toString(),
                         summary = result.summary.take(200),
                         suggestedAction = result.suggestedActions.firstOrNull(),
+                        taskContent = task.content,
                     )
                 } catch (e: Exception) {
                     logger.warn(e) { "Failed to push urgent alert to chat for task ${task.id}" }
@@ -197,7 +199,10 @@ class KbResultRouter(
             result.suggestedActions.any { it in listOf("reply_email", "answer_question") } -> {
                 taskService.createTask(
                     taskType = TaskTypeEnum.USER_TASK,
-                    content = "Odpovědět na: ${result.summary}",
+                    content = buildString {
+                        append("## Doporučení\nOdpovědět na: ${result.summary}\n\n")
+                        append("## Původní obsah\n${task.content}")
+                    },
                     clientId = ClientId(task.clientId.value),
                     projectId = task.projectId?.let { ProjectId(it.value) },
                     correlationId = "action:${task.correlationId}",
