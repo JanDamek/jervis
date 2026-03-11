@@ -72,14 +72,20 @@ fun TaskGraphSection(
     graph: TaskGraphDto,
     modifier: Modifier = Modifier,
     alwaysExpanded: Boolean = false,
+    filterClientId: String? = null,
     onOpenSubGraph: ((subGraphId: String) -> Unit)? = null,
     onOpenLiveLog: ((taskId: String) -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(alwaysExpanded) }
 
     // Pre-compute sorted vertices and which hierarchy nodes have children
-    val sortedVertices = remember(graph.vertices, graph.rootVertexId) {
-        buildTreeOrder(graph.vertices.values.toList(), graph.rootVertexId)
+    val sortedVertices = remember(graph.vertices, graph.rootVertexId, filterClientId) {
+        val allVertices = buildTreeOrder(graph.vertices.values.toList(), graph.rootVertexId)
+        if (filterClientId.isNullOrBlank()) {
+            allVertices
+        } else {
+            filterByClient(allVertices, graph.vertices, filterClientId)
+        }
     }
     val hierarchyWithChildren = remember(sortedVertices) {
         computeNonEmptyHierarchy(sortedVertices)
@@ -843,6 +849,39 @@ private fun isUnderCollapsed(
         parentId = vertexMap[parentId]?.parentId
     }
     return false
+}
+
+/**
+ * Filter vertices to only show the sub-tree(s) belonging to the specified client.
+ * Finds CLIENT hierarchy vertex where inputRequest == clientId, then keeps only
+ * that vertex and all its descendants.
+ */
+private fun filterByClient(
+    sortedVertices: List<GraphVertexDto>,
+    allVerticesMap: Map<String, GraphVertexDto>,
+    clientId: String,
+): List<GraphVertexDto> {
+    // Find the CLIENT vertex for this clientId (CLIENT vertex has inputRequest == clientId)
+    val clientVertexIds = allVerticesMap.values
+        .filter { it.vertexType == "client" && it.inputRequest == clientId }
+        .map { it.id }
+        .toSet()
+
+    if (clientVertexIds.isEmpty()) return sortedVertices // no matching client → show all (fallback)
+
+    // Collect all ancestor IDs that should be kept (the client vertex + all descendants)
+    val keepIds = mutableSetOf<String>()
+    keepIds.addAll(clientVertexIds)
+
+    // Walk sorted vertices — if parent is in keepIds, include this vertex
+    for (v in sortedVertices) {
+        if (v.id in keepIds) continue
+        if (v.parentId in keepIds) {
+            keepIds.add(v.id)
+        }
+    }
+
+    return sortedVertices.filter { it.id in keepIds }
 }
 
 /**

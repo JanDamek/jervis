@@ -49,6 +49,7 @@ data class GraphVertexDto(
     @SerialName("started_at") val startedAt: String? = null,
     @SerialName("completed_at") val completedAt: String? = null,
     val error: String? = null,
+    @SerialName("client_id") val clientId: String = "",
 )
 
 @Serializable
