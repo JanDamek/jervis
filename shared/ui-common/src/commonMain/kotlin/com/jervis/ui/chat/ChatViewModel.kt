@@ -6,6 +6,7 @@ import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.repository.JervisRepository
+import com.jervis.service.IJobLogsService
 import com.jervis.ui.model.PendingMessageInfo
 import com.jervis.ui.model.classifySendError
 import com.jervis.ui.storage.PendingMessageState
@@ -107,7 +108,7 @@ class ChatViewModel(
     val liveLogTaskId: StateFlow<String?> = _liveLogTaskId.asStateFlow()
 
     /** Job logs service for live SSE streaming in ThinkingMapPanel. */
-    val jobLogsService get() = repository.jobLogs
+    val jobLogsService: IJobLogsService? get() = try { repository.jobLogs } catch (_: Exception) { null }
 
     /** Whether the map side panel is visible (user toggle). */
     private val _thinkingMapPanelVisible = MutableStateFlow(false)

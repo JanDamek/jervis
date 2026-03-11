@@ -64,6 +64,12 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.CompressionBoundaryDto
@@ -615,6 +621,9 @@ private fun ChatMessageItem(
                             typography = markdownTypography(
                                 text = MaterialTheme.typography.bodySmall,
                                 code = MaterialTheme.typography.bodySmall,
+                                h1 = MaterialTheme.typography.titleSmall,
+                                h2 = MaterialTheme.typography.bodyMedium,
+                                h3 = MaterialTheme.typography.bodyMedium,
                             ),
                             modifier = Modifier.padding(top = 4.dp),
                             fallbackStyle = MaterialTheme.typography.bodySmall,
@@ -754,7 +763,17 @@ private fun ChatMessageItem(
                                 )
                             },
                             textStyle = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f).heightIn(min = 44.dp, max = 88.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 44.dp, max = 88.dp)
+                                .onPreviewKeyEvent { event ->
+                                    if (event.key == Key.Enter && event.type == KeyEventType.KeyDown && !event.isShiftPressed) {
+                                        if (replyText.isNotBlank() && taskId != null) {
+                                            onSendReply(taskId, replyText)
+                                            replyText = ""
+                                            showReplyInput = false
+                                        }
+                                        true
+                                    } else false
+                                },
                             maxLines = 3,
                             singleLine = false,
                         )
@@ -910,7 +929,17 @@ private fun ChatMessageItem(
                                 )
                             },
                             textStyle = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f).heightIn(min = 44.dp, max = 88.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 44.dp, max = 88.dp)
+                                .onPreviewKeyEvent { event ->
+                                    if (event.key == Key.Enter && event.type == KeyEventType.KeyDown && !event.isShiftPressed) {
+                                        if (alertReplyText.isNotBlank()) {
+                                            onSendReply(alertSourceUrn ?: "alert", alertReplyText)
+                                            alertReplyText = ""
+                                            showAlertReply = false
+                                        }
+                                        true
+                                    } else false
+                                },
                             maxLines = 3,
                             singleLine = false,
                         )
@@ -1080,9 +1109,9 @@ private fun ChatMessageItem(
                                     typography = markdownTypography(
                                         text = MaterialTheme.typography.bodyMedium,
                                         code = MaterialTheme.typography.bodySmall,
-                                        h1 = MaterialTheme.typography.headlineMedium,
-                                        h2 = MaterialTheme.typography.headlineSmall,
-                                        h3 = MaterialTheme.typography.titleLarge,
+                                        h1 = MaterialTheme.typography.titleMedium,
+                                        h2 = MaterialTheme.typography.titleSmall,
+                                        h3 = MaterialTheme.typography.bodyLarge,
                                     ),
                                     fallbackStyle = MaterialTheme.typography.bodyMedium,
                                 )

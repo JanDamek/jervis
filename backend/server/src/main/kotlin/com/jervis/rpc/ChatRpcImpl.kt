@@ -10,6 +10,7 @@ import com.jervis.common.types.ClientId
 import com.jervis.entity.OpenRouterTier
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.TaskStateEnum
+import com.jervis.dto.TaskTypeEnum
 import com.jervis.repository.ClientRepository
 import com.jervis.repository.ProjectRepository
 import com.jervis.repository.TaskRepository
@@ -333,7 +334,7 @@ class ChatRpcImpl(
             )
         }
 
-        val userTaskCount = taskRepository.countByState(TaskStateEnum.USER_TASK).toInt()
+        val userTaskCount = taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toInt()
 
         return ChatHistoryDto(
             messages = messages,
