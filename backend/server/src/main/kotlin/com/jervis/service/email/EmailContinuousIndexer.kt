@@ -119,11 +119,28 @@ class EmailContinuousIndexer(
         logger.debug { "Processing email: ${doc.subject}" }
 
         try {
-            // SENT emails: index attachments to KB for context, but never create tasks
+            // SENT emails: thread-aware — find existing task, update content, auto-resolve
             if (doc.direction == EmailDirection.SENT) {
+                val threadContext = emailThreadService.analyzeThread(doc)
+                if (threadContext?.existingTask != null) {
+                    // Update task with our reply content + thread summary, then auto-resolve
+                    val sentContent = buildEmailContent(doc)
+                    val updatedContent = buildString {
+                        append(sentContent)
+                        append("\n\n")
+                        append(threadContext.threadSummary)
+                    }
+                    taskService.updateThreadActivity(threadContext.existingTask.id, updatedContent)
+                    taskService.resolveAsHandledExternally(threadContext.existingTask.id)
+                    logger.info {
+                        "SENT email paired with task ${threadContext.existingTask.id} → auto-resolved: ${doc.subject}"
+                    }
+                }
                 indexEmailAttachments(doc)
                 markAsIndexed(doc)
-                logger.info { "SENT email indexed (KB only, no task): ${doc.subject}" }
+                if (threadContext?.existingTask == null) {
+                    logger.info { "SENT email indexed (KB only, no matching task): ${doc.subject}" }
+                }
                 return
             }
 

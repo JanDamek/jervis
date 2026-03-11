@@ -611,9 +611,14 @@ class TaskService(
      * @return true if task was resolved, false if task was in a different state
      */
     suspend fun resolveAsHandledExternally(taskId: TaskId): Boolean {
+        // Resolve any active task — user replied externally, task is no longer needed
+        val activeStates = listOf(
+            TaskStateEnum.INDEXING, TaskStateEnum.QUALIFYING, TaskStateEnum.QUEUED,
+            TaskStateEnum.PROCESSING, TaskStateEnum.USER_TASK, TaskStateEnum.BLOCKED,
+        ).map { it.name }
         val query = Query(
             Criteria.where("_id").`is`(taskId.value)
-                .and("state").`is`(TaskStateEnum.USER_TASK.name),
+                .and("state").`in`(activeStates),
         )
         val update = Update()
             .set("state", TaskStateEnum.DONE.name)
