@@ -193,6 +193,7 @@ class UserTaskService(
             Criteria.where("state").`is`(stateFilter.name)
         } else {
             Criteria.where("type").`is`(com.jervis.dto.TaskTypeEnum.USER_TASK.name)
+                .and("state").`is`(com.jervis.dto.TaskStateEnum.USER_TASK.name)
         }
 
         if (!query.isNullOrBlank()) {
@@ -234,6 +235,7 @@ class UserTaskService(
         limit: Int,
     ): PagedTasks {
         val criteria = Criteria.where("type").`is`(com.jervis.dto.TaskTypeEnum.USER_TASK.name)
+            .and("state").`is`(com.jervis.dto.TaskStateEnum.USER_TASK.name)
 
         if (!query.isNullOrBlank()) {
             // Try $text search first (requires text index on taskName + content)

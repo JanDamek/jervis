@@ -116,11 +116,11 @@ class LLMExtractionQueue:
         logger.info("Initialized SQLite extraction queue at %s", self.db_path)
 
     def _nfs_safe_connect(self, db_path=None) -> sqlite3.Connection:
-        """Connect to SQLite with unix-none VFS — NFS has broken fcntl() locks.
-        Single-writer pod, so file locking is unnecessary."""
-        path = db_path or self.db_path
-        uri = f"file:{path}?vfs=unix-none"
-        return sqlite3.connect(uri, uri=True, timeout=30.0)
+        """Connect to SQLite on NFS — single-writer pod, exclusive locking."""
+        path = str(db_path or self.db_path)
+        conn = sqlite3.connect(path, timeout=30.0)
+        conn.execute("PRAGMA locking_mode=EXCLUSIVE")
+        return conn
 
     def _init_db(self) -> None:
         """Initialize SQLite database schema (NFS-safe, no fcntl locking)."""

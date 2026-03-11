@@ -205,9 +205,9 @@ class UserTaskRpcImpl(
         val task = taskRepository.getById(TaskId.fromString(taskId))
             ?: throw IllegalArgumentException("Task not found: $taskId")
 
-        // Append response to task content, re-queue for processing
+        // Queue for orchestrator — extracts behavioral rules from user response, stores in KB
         val updated = task.copy(
-            state = TaskStateEnum.INDEXING,
+            state = TaskStateEnum.QUEUED,
             content = "${task.content}\n\n[User response]: $response",
             pendingUserQuestion = null,
         )

@@ -16,8 +16,13 @@ fun formatMessageTime(isoTimestamp: String): String {
     val instant = try {
         Instant.parse(isoTimestamp)
     } catch (_: Exception) {
-        // Try parsing as epoch seconds or other formats
-        return isoTimestamp
+        // Try epoch millis (e.g. "1773234689203")
+        try {
+            val epochMs = isoTimestamp.trim().toLong()
+            Instant.fromEpochMilliseconds(epochMs)
+        } catch (_: Exception) {
+            return isoTimestamp
+        }
     }
 
     val tz = TimeZone.currentSystemDefault()

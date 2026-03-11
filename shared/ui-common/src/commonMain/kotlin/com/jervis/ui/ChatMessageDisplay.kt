@@ -70,6 +70,7 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.CompressionBoundaryDto
@@ -621,9 +622,9 @@ private fun ChatMessageItem(
                             typography = markdownTypography(
                                 text = MaterialTheme.typography.bodySmall,
                                 code = MaterialTheme.typography.bodySmall,
-                                h1 = MaterialTheme.typography.titleSmall,
-                                h2 = MaterialTheme.typography.bodyMedium,
-                                h3 = MaterialTheme.typography.bodyMedium,
+                                h1 = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                h2 = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                h3 = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                             ),
                             modifier = Modifier.padding(top = 4.dp),
                             fallbackStyle = MaterialTheme.typography.bodySmall,
@@ -1109,9 +1110,9 @@ private fun ChatMessageItem(
                                     typography = markdownTypography(
                                         text = MaterialTheme.typography.bodyMedium,
                                         code = MaterialTheme.typography.bodySmall,
-                                        h1 = MaterialTheme.typography.titleMedium,
-                                        h2 = MaterialTheme.typography.titleSmall,
-                                        h3 = MaterialTheme.typography.bodyLarge,
+                                        h1 = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        h2 = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        h3 = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                     ),
                                     fallbackStyle = MaterialTheme.typography.bodyMedium,
                                 )
