@@ -232,7 +232,7 @@ class EmailContinuousIndexer(
         }
     }
 
-    private fun buildEmailContent(doc: EmailMessageIndexDocument): String {
+    private suspend fun buildEmailContent(doc: EmailMessageIndexDocument): String {
         val rawEmailBody = doc.textBody ?: doc.htmlBody ?: ""
         val emailBody = tikaTextExtractionService.extractPlainText(
             content = rawEmailBody,
