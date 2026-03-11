@@ -44,8 +44,47 @@ logger = logging.getLogger(__name__)
 
 # Pending approval futures: session_id → asyncio.Future
 _pending_approvals: dict[str, asyncio.Future] = {}
-# Session-level auto-approved actions (from "approve always"): session_id → set of action names
-_session_auto_approvals: dict[str, set[str]] = {}
+# Global auto-approved actions (persistent — loaded from MongoDB on startup)
+_global_auto_approvals: set[str] = set()
+_approvals_loaded: bool = False
+
+
+async def _ensure_approvals_loaded():
+    """Load persistent approval rules from MongoDB (once)."""
+    global _approvals_loaded
+    if _approvals_loaded:
+        return
+    _approvals_loaded = True
+    try:
+        from app.agent.persistence import agent_store
+        coll = await agent_store._ensure_collection()
+        db = coll.database
+        rules_coll = db["approval_rules"]
+        async for doc in rules_coll.find({"enabled": True}):
+            _global_auto_approvals.add(doc["action"])
+        if _global_auto_approvals:
+            logger.info("Loaded %d persistent approval rules: %s",
+                        len(_global_auto_approvals), _global_auto_approvals)
+    except Exception as e:
+        logger.warning("Failed to load approval rules from DB: %s", e)
+
+
+async def _persist_approval_rule(action: str):
+    """Save an auto-approval rule to MongoDB."""
+    try:
+        from app.agent.persistence import agent_store
+        coll = await agent_store._ensure_collection()
+        db = coll.database
+        rules_coll = db["approval_rules"]
+        await rules_coll.update_one(
+            {"action": action},
+            {"$set": {"action": action, "enabled": True, "updated_at": __import__("datetime").datetime.utcnow()}},
+            upsert=True,
+        )
+        _global_auto_approvals.add(action)
+        logger.info("Persisted approval rule: %s", action)
+    except Exception as e:
+        logger.warning("Failed to persist approval rule %s: %s", action, e)
 
 
 def resolve_pending_approval(session_id: str, approved: bool, always: bool = False, action: str | None = None):
@@ -53,8 +92,10 @@ def resolve_pending_approval(session_id: str, approved: bool, always: bool = Fal
     future = _pending_approvals.get(session_id)
     if future and not future.done():
         if always and action:
-            auto = _session_auto_approvals.setdefault(session_id, set())
-            auto.add(action)
+            _global_auto_approvals.add(action)
+            # Persist in background (fire-and-forget)
+            import asyncio
+            asyncio.ensure_future(_persist_approval_rule(action))
         future.set_result({"approved": approved, "always": always})
     else:
         logger.warning("No pending approval for session %s", session_id)
@@ -359,10 +400,10 @@ async def run_agentic_loop(
                         session_id=request.session_id,
                     )
                 except ApprovalRequiredInterrupt as approval_exc:
-                    # Check session-level auto-approvals first
-                    auto_approved_actions = _session_auto_approvals.get(request.session_id, set())
-                    if approval_exc.action in auto_approved_actions:
-                        logger.info("Chat: auto-approved %s (session rule)", approval_exc.action)
+                    # Check persistent auto-approvals (global, survives restarts)
+                    await _ensure_approvals_loaded()
+                    if approval_exc.action in _global_auto_approvals:
+                        logger.info("Chat: auto-approved %s (persistent rule)", approval_exc.action)
                         result = await execute_chat_tool(
                             tool_name, arguments,
                             effective_client_id, effective_project_id,
