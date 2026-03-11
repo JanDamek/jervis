@@ -173,7 +173,13 @@ internal fun ChatArea(
                 contentPadding = PaddingValues(24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                items(reversedMessages.size) { index ->
+                items(
+                    count = reversedMessages.size,
+                    key = { index ->
+                        val msg = reversedMessages[index]
+                        msg.id ?: msg.sequence?.toString() ?: "msg_$index"
+                    },
+                ) { index ->
                     val message = reversedMessages[index]
                     val originalIndex = messages.size - 1 - index
 
