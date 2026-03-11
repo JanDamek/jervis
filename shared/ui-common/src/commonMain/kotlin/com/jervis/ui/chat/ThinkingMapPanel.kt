@@ -52,7 +52,6 @@ fun ThinkingMapPanel(
     isCompact: Boolean = false,
     onClose: () -> Unit = {},
     detailGraph: TaskGraphDto? = null,
-    filterClientId: String? = null,
     liveLogTaskId: String? = null,
     jobLogsService: IJobLogsService? = null,
     onOpenSubGraph: ((String) -> Unit)? = null,
@@ -153,7 +152,7 @@ fun ThinkingMapPanel(
                                 graph = graphToShow,
                                 modifier = Modifier.fillMaxWidth(),
                                 alwaysExpanded = true,
-                                filterClientId = if (!showDetail) filterClientId else null,
+                                showOnlyActiveClients = !showDetail && graphToShow.graphType == "memory_map",
                                 onOpenSubGraph = onOpenSubGraph,
                                 onOpenLiveLog = onOpenLiveLog,
                             )

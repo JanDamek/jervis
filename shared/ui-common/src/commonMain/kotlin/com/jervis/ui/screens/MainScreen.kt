@@ -128,7 +128,6 @@ fun MainScreen(
                 isCompact = isCompact,
                 onClose = viewModel.chat::closeThinkingMapPanel,
                 detailGraph = detailThinkingMap,
-                filterClientId = selectedClientId,
                 liveLogTaskId = liveLogTaskId,
                 jobLogsService = viewModel.chat.jobLogsService,
                 onOpenSubGraph = viewModel.chat::openSubGraph,

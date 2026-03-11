@@ -72,19 +72,19 @@ fun TaskGraphSection(
     graph: TaskGraphDto,
     modifier: Modifier = Modifier,
     alwaysExpanded: Boolean = false,
-    filterClientId: String? = null,
+    showOnlyActiveClients: Boolean = false,
     onOpenSubGraph: ((subGraphId: String) -> Unit)? = null,
     onOpenLiveLog: ((taskId: String) -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(alwaysExpanded) }
 
     // Pre-compute sorted vertices and which hierarchy nodes have children
-    val sortedVertices = remember(graph.vertices, graph.rootVertexId, filterClientId) {
+    val sortedVertices = remember(graph.vertices, graph.rootVertexId, showOnlyActiveClients) {
         val allVertices = buildTreeOrder(graph.vertices.values.toList(), graph.rootVertexId)
-        if (filterClientId.isNullOrBlank()) {
-            allVertices
+        if (showOnlyActiveClients) {
+            filterActiveClients(allVertices, graph.vertices)
         } else {
-            filterByClient(allVertices, graph.vertices, filterClientId)
+            allVertices
         }
     }
     val hierarchyWithChildren = remember(sortedVertices) {
@@ -852,28 +852,45 @@ private fun isUnderCollapsed(
 }
 
 /**
- * Filter vertices to only show the sub-tree(s) belonging to the specified client.
- * Finds CLIENT hierarchy vertex where inputRequest == clientId, then keeps only
- * that vertex and all its descendants.
+ * Filter to show only CLIENT sub-trees that have at least one active (non-completed) vertex.
+ * Active = running, blocked, pending, ready, failed — anything that represents ongoing work.
+ * Clients with ONLY completed vertices are hidden (past work, no longer relevant).
+ *
+ * This naturally handles multi-client requests: if a chat request triggers work for nUFO + BMS,
+ * both appear because they have running/pending vertices. Clients with only old completed work
+ * are hidden, keeping the map focused on what's currently relevant.
  */
-private fun filterByClient(
+private fun filterActiveClients(
     sortedVertices: List<GraphVertexDto>,
     allVerticesMap: Map<String, GraphVertexDto>,
-    clientId: String,
 ): List<GraphVertexDto> {
-    // Find the CLIENT vertex for this clientId (CLIENT vertex has inputRequest == clientId)
-    val clientVertexIds = allVerticesMap.values
-        .filter { it.vertexType == "client" && it.inputRequest == clientId }
-        .map { it.id }
-        .toSet()
+    val hierarchyTypes = setOf("client", "group", "project")
+    val completedStatuses = setOf("completed", "done")
 
-    if (clientVertexIds.isEmpty()) return sortedVertices // no matching client → show all (fallback)
+    // Find CLIENT vertices that have at least one non-completed, non-hierarchy descendant
+    val activeClientIds = mutableSetOf<String>()
 
-    // Collect all ancestor IDs that should be kept (the client vertex + all descendants)
+    for (v in sortedVertices) {
+        if (v.vertexType in hierarchyTypes) continue
+        if (v.status.lowercase() in completedStatuses) continue
+        // This vertex is active — find its CLIENT ancestor
+        var parentId = v.parentId
+        while (parentId != null) {
+            val parent = allVerticesMap[parentId]
+            if (parent?.vertexType == "client") {
+                activeClientIds.add(parent.id)
+                break
+            }
+            parentId = parent?.parentId
+        }
+    }
+
+    if (activeClientIds.isEmpty()) return sortedVertices // nothing active → show all (fallback)
+
+    // Keep only vertices under active clients
     val keepIds = mutableSetOf<String>()
-    keepIds.addAll(clientVertexIds)
+    keepIds.addAll(activeClientIds)
 
-    // Walk sorted vertices — if parent is in keepIds, include this vertex
     for (v in sortedVertices) {
         if (v.id in keepIds) continue
         if (v.parentId in keepIds) {
