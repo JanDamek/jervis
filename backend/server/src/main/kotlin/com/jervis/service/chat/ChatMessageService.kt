@@ -91,8 +91,10 @@ class ChatMessageService(
         require(limit > 0) { "Limit must be positive" }
 
         val messages = if (excludeBackground) {
+            // Chat mode: exclude BACKGROUND but keep BACKGROUND messages with hasGraph=true
+            // (important results with thinking maps must remain visible)
             chatMessageRepository
-                .findByConversationIdAndRoleNotOrderByIdDesc(conversationId, MessageRole.BACKGROUND)
+                .findChatWithGraphResults(conversationId)
                 .take(limit)
                 .toList()
         } else {
@@ -132,8 +134,9 @@ class ChatMessageService(
         require(limit > 0) { "Limit must be positive" }
 
         val messages = if (excludeBackground) {
+            // Chat mode: exclude BACKGROUND but keep BACKGROUND messages with hasGraph=true
             chatMessageRepository
-                .findByConversationIdAndRoleNotAndIdLessThanOrderByIdDesc(conversationId, MessageRole.BACKGROUND, beforeId)
+                .findChatWithGraphResultsBefore(conversationId, beforeId)
                 .toList()
                 .take(limit)
         } else {
@@ -188,7 +191,8 @@ class ChatMessageService(
      */
     suspend fun getMessageCount(conversationId: ObjectId, excludeBackground: Boolean = false): Long =
         if (excludeBackground) {
-            chatMessageRepository.countByConversationIdAndRoleNot(conversationId, MessageRole.BACKGROUND)
+            // Chat mode: exclude BACKGROUND but keep BACKGROUND messages with hasGraph=true
+            chatMessageRepository.countChatWithGraphResults(conversationId)
         } else {
             chatMessageRepository.countByConversationId(conversationId)
         }

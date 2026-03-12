@@ -103,6 +103,10 @@ class ChatViewModel(
     private val _detailThinkingMap = MutableStateFlow<TaskGraphDto?>(null)
     val detailThinkingMap: StateFlow<TaskGraphDto?> = _detailThinkingMap.asStateFlow()
 
+    /** Loading state for sub-graph fetch. */
+    private val _subGraphLoading = MutableStateFlow(false)
+    val subGraphLoading: StateFlow<Boolean> = _subGraphLoading.asStateFlow()
+
     /** Task ID for live log streaming (coding agent SSE). */
     private val _liveLogTaskId = MutableStateFlow<String?>(null)
     val liveLogTaskId: StateFlow<String?> = _liveLogTaskId.asStateFlow()
@@ -138,14 +142,31 @@ class ChatViewModel(
     /** Navigate into a sub-graph (thinking map) from a TASK_REF vertex. */
     fun openSubGraph(subGraphId: String) {
         scope.launch {
+            _subGraphLoading.value = true
             try {
-                val graph = repository.taskGraphs.getGraph(subGraphId)
+                // Try the provided ID first (may be graph ID "tg-..." or task ID)
+                var graph = repository.taskGraphs.getGraph(subGraphId)
+
+                // If not found and ID looks like a graph ID, try extracting task ID from it
+                if ((graph == null || graph.vertices.isEmpty()) && subGraphId.startsWith("tg-")) {
+                    val parts = subGraphId.removePrefix("tg-").split("-")
+                    // tg-<taskId>-<random> → extract taskId (24 hex chars)
+                    val extractedTaskId = parts.firstOrNull()?.takeIf { it.length == 24 }
+                    if (extractedTaskId != null) {
+                        graph = repository.taskGraphs.getGraph(extractedTaskId)
+                    }
+                }
+
                 if (graph != null && graph.vertices.isNotEmpty()) {
                     _detailThinkingMap.value = graph
+                } else {
+                    onError("Myšlenková mapa nenalezena (ID: ${subGraphId.take(20)}...)")
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                println("ChatViewModel: failed to load sub-graph $subGraphId: ${e.message}")
+                onError("Chyba při načítání myšlenkové mapy: ${e.message}")
+            } finally {
+                _subGraphLoading.value = false
             }
         }
     }

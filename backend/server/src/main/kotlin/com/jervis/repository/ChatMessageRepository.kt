@@ -116,6 +116,36 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
      */
     suspend fun countByConversationIdAndRoleNot(conversationId: ObjectId, role: MessageRole): Long
 
+    // ── Chat mode: exclude BACKGROUND but keep BACKGROUND with hasGraph=true ──
+    // Important background results (with thinking maps) must remain visible in chat mode.
+
+    /**
+     * Load chat messages: exclude BACKGROUND, but keep BACKGROUND with hasGraph=true (newest first).
+     */
+    @Query(
+        value = "{ 'conversationId': ?0, '\$or': [ { 'role': { '\$ne': 'BACKGROUND' } }, { 'role': 'BACKGROUND', 'metadata.hasGraph': 'true' } ] }",
+        sort = "{ '_id': -1 }",
+    )
+    suspend fun findChatWithGraphResults(conversationId: ObjectId): Flow<ChatMessageDocument>
+
+    /**
+     * Load chat messages before cursor: exclude BACKGROUND, but keep BACKGROUND with hasGraph=true.
+     */
+    @Query(
+        value = "{ 'conversationId': ?0, '_id': { '\$lt': ?1 }, '\$or': [ { 'role': { '\$ne': 'BACKGROUND' } }, { 'role': 'BACKGROUND', 'metadata.hasGraph': 'true' } ] }",
+        sort = "{ '_id': -1 }",
+    )
+    suspend fun findChatWithGraphResultsBefore(conversationId: ObjectId, id: ObjectId): Flow<ChatMessageDocument>
+
+    /**
+     * Count chat messages: exclude BACKGROUND, but keep BACKGROUND with hasGraph=true.
+     */
+    @Query(
+        value = "{ 'conversationId': ?0, '\$or': [ { 'role': { '\$ne': 'BACKGROUND' } }, { 'role': 'BACKGROUND', 'metadata.hasGraph': 'true' } ] }",
+        count = true,
+    )
+    suspend fun countChatWithGraphResults(conversationId: ObjectId): Long
+
     /**
      * Count messages by role.
      * Used for background message count badge.
