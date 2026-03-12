@@ -40,10 +40,10 @@ logger = logging.getLogger(__name__)
 
 # Max vertices per single decomposition call
 MAX_VERTICES_PER_DECOMPOSE = 10
-# Max total vertices in a graph (higher to support deep recursive decomposition)
-MAX_TOTAL_VERTICES = 200
-# Max decomposition depth (deep enough for large projects: root → modules → sub-modules → components → tasks)
-MAX_DECOMPOSE_DEPTH = 8
+# Max total vertices in a graph — prevents runaway growth when vertices fail/timeout
+MAX_TOTAL_VERTICES = 50
+# Max decomposition depth (root → modules → sub-modules → tasks)
+MAX_DECOMPOSE_DEPTH = 5
 
 
 # ---------------------------------------------------------------------------
