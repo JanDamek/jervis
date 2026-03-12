@@ -1557,6 +1557,24 @@ Toggled via K8s badge in `PersistentTopBar`. On compact layouts opens full-scree
 - `EnvironmentTreeComponents.kt` — EnvironmentTreeNode, ComponentTreeNode, EnvironmentStateBadge
 - `EnvironmentViewModel.kt` — state management, polling, selection tracking, deploy/stop/logs
 
+### 5.12) Watch Apps
+
+**watchOS App** (`apps/watchApp/`) — SwiftUI (not Compose, native watchOS):
+- Two-button home screen: **Ad-hoc Recording** (mic icon) and **Chat Voice Command** (chat icon)
+- Recording screen shows waveform + elapsed time + stop button
+- Audio chunks sent to iPhone via WatchConnectivity; iPhone-side `WatchSessionManager` feeds `RecordingUploadService`
+
+**Wear OS App** (`apps/wearApp/`) — Compose for Wear OS:
+- Recording screen: start/stop controls, elapsed time indicator
+- Chat screen: voice command recording with send action
+- Uses DataLayer API for phone communication
+
+Both apps use the `WATCH` window size class (< 200 dp). UI is minimal — large touch targets, no complex navigation.
+
+### 5.13) iOS Lock Screen Icon
+
+`PlatformRecordingService` (iOS) sets `MPNowPlayingInfoCenter` artwork using a `JervisIcon` imageset (regular image, not AppIcon appiconset). The icon is stored as a standard imageset in the iOS asset catalog so it can be loaded at runtime via `UIImage(named: "JervisIcon")`.
+
 ---
 
 ## 7) Dialog Patterns
@@ -1837,8 +1855,9 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 +-- audio/
 |   +-- AudioPlayer.kt                <- expect class AudioPlayer
 |   +-- AudioRecorder.kt              <- expect class AudioRecorder
-|   +-- PlatformRecordingService.kt   <- Recording service bridge
+|   +-- PlatformRecordingService.kt   <- Recording service bridge (iOS: JervisIcon for lock screen)
 |   +-- RecordingServiceBridge.kt
+|   +-- TtsClient.kt                  <- Piper TTS HTTP client (POST /tts, /tts/stream)
 +-- notification/
 |   +-- NotificationViewModel.kt      <- User tasks: approve/deny/reply, badge count
 |   +-- ApprovalNotificationDialog.kt <- Orchestrator approval dialog

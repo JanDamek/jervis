@@ -6,7 +6,7 @@
 ## Project Overview
 
 - **Kotlin Multiplatform** (KMP) AI Assistant with **Compose Multiplatform** UI
-- Platforms: Desktop (JVM), Android, iOS
+- Platforms: Desktop (JVM), Android, iOS, watchOS (SwiftUI), Wear OS (Compose)
 - Backend: Spring Boot with ArangoDB + MongoDB
 - **UI language: Czech**, code/comments/logs: **English**
 - Compose 1.9.3, Kotlin 2.3.0, Material 3
@@ -87,6 +87,10 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Segment speaker detail: `SegmentCorrectionDialog.kt` (speaker info + confidence + dropdown), `TranscriptPanel.kt` (confidence badge + embedding label)
 - Speaker auto-ID: `MeetingTranscriptionService.kt` (cosine similarity matching across all embeddings), `MeetingDocument.speakerEmbeddings`, `SpeakerDocument.voiceEmbeddings` (multi-embedding with VoiceEmbeddingEntry)
 - Whisper REST client: `backend/server/.../service/meeting/WhisperRestClient.kt`
+- TTS service: `backend/service-tts/` (Piper TTS FastAPI, CPU-only), deploy: `k8s/build_tts.sh`
+- TTS client: `shared/ui-common/.../audio/TtsClient.kt` (POST /tts, /tts/stream)
+- watchOS app: `apps/watchApp/` (SwiftUI, WatchConnectivity → iPhone WatchSessionManager → RecordingUploadService)
+- Wear OS app: `apps/wearApp/` (Compose for Wear OS, DataLayer API → phone → RecordingUploadService)
 - Environment Manager: `shared/ui-common/.../screens/environment/` (EnvironmentManagerScreen, OverviewTab, ComponentsTab, ComponentEditPanel, PropertyMappingsTab, K8sResourcesTab, LogsEventsTab)
 - Environment sidebar: `shared/ui-common/.../environment/` (EnvironmentPanel, EnvironmentViewModel, EnvironmentTreeComponents)
 - Environment mapper: `backend/server/.../mapper/EnvironmentMapper.kt` (toDto, toDocument, toAgentContext, toAgentContextJson)
