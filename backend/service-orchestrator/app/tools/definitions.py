@@ -443,7 +443,14 @@ TOOL_CREATE_SCHEDULED_TASK: dict = {
                 },
                 "urgency": {
                     "type": "string",
-                    "description": "Task urgency when it fires: 'urgent' sends URGENT_ALERT to user, 'normal' creates background task.",
+                    "description": (
+                        "Task urgency when it fires: 'urgent' sends URGENT_ALERT to user, 'normal' creates background task. "
+                        "CRITICAL: Before using 'urgent', you MUST verify: "
+                        "(1) the deadline/due date is real and correctly calculated from today, "
+                        "(2) no follow-up email/payment confirmation exists (search KB for the thread), "
+                        "(3) the item is genuinely unresolved and time-critical. "
+                        "Old e-shop notifications (>30 days) are almost certainly already handled — use 'normal' or skip entirely."
+                    ),
                     "enum": ["urgent", "normal"],
                     "default": "normal",
                 },

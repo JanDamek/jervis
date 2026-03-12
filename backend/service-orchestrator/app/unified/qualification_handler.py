@@ -123,6 +123,23 @@ Systém již zpracovává tyto úkoly:
 4. **Navrhni postup** — 3-5 kroků jak by měl orchestrátor postupovat (pokud QUEUED).
 5. **Rozhodni** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE + priorita.
 
+## KRITICKÉ: Verifikace deadlinů a faktur
+
+Než označíš COKOLI jako urgentní nebo overdue:
+
+1. **Ověř datum**: Spočítej skutečný počet dní od deadline do DNES. Email z ledna
+   o faktuře NEZNAMENÁ že deadline je dnes — je to staré upozornění.
+2. **Hledej řešení**: Prohledej KB pro follow-up emaily, potvrzení platby,
+   doručenky, odpovědi ve stejném vlákně. Pokud existuje řešení → DONE.
+3. **Stáří emailu**: Automatizované notifikace (e-shopy, fakturační systémy,
+   upomínky) starší než 30 dní jsou téměř jistě vyřízené → DONE.
+4. **Komerční spam**: Hromadné emaily od e-shopů (Alza, Mall, Amazon...)
+   s upozorněními na objednávky/faktury jsou obvykle automatické — netvořit
+   urgentní úkoly, jen DONE.
+5. **URGENT_ALERT pouze pokud**: (a) deadline je skutečně v příštích 48h,
+   (b) neexistuje žádné potvrzení o vyřízení, (c) jde o reálný závazek
+   (ne automatizovaný e-shop email).
+
 ### Formát odpovědi
 Odpověz PŘESNĚ v tomto formátu (poslední zpráva):
 
