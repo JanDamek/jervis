@@ -289,12 +289,39 @@ async def _run_coding_agent_background(
     job_name = dispatch_info["job_name"]
 
     # 7. Notify Kotlin — task state → CODING
-    await kotlin_client.notify_agent_dispatched(
-        task_id=request.task_id,
-        job_name=job_name,
-        workspace_path=str(workspace_path),
-        agent_type=agent_type,
-    )
+    try:
+        await kotlin_client.notify_agent_dispatched(
+            task_id=request.task_id,
+            job_name=job_name,
+            workspace_path=str(workspace_path),
+            agent_type=agent_type,
+        )
+    except Exception as e:
+        # Critical: if notification fails, task stays PROCESSING and blocks execution loop.
+        # Fall back to direct MongoDB update to ensure CODING state.
+        logger.warning("Failed to notify Kotlin about agent dispatch (task %s): %s — setting CODING via DB", request.task_id, e)
+        try:
+            from app.config import settings as _s
+            from motor.motor_asyncio import AsyncIOMotorClient
+            from urllib.parse import urlparse
+            from bson import ObjectId as BsonObjectId
+            _parsed = urlparse(_s.mongodb_url)
+            _db_name = _parsed.path.lstrip("/").split("?")[0] or "jervis"
+            _client = AsyncIOMotorClient(_s.mongodb_url)
+            _db = _client[_db_name]
+            await _db.tasks.update_one(
+                {"_id": BsonObjectId(request.task_id)},
+                {"$set": {
+                    "state": "CODING",
+                    "agentJobName": job_name,
+                    "agentJobAgentType": agent_type,
+                    "agentJobWorkspacePath": str(workspace_path),
+                }},
+            )
+            _client.close()
+            logger.info("Set task %s to CODING via direct DB update", request.task_id)
+        except Exception as db_err:
+            logger.error("Failed to set CODING state via DB for task %s: %s", request.task_id, db_err)
 
     # 6. Link to master map (not completed yet — watcher will update)
     try:

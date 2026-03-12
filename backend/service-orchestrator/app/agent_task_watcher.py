@@ -125,6 +125,12 @@ class AgentTaskWatcher:
                     "Agent job completed: task=%s job=%s success=%s",
                     task_id, job_name, result.get("success", False),
                 )
+            elif job_status == "unknown" and result.get("success"):
+                # Job deleted by TTL but result.json confirms success — trust it
+                logger.info(
+                    "Agent job completed (K8s job gone, result.json=success): task=%s job=%s",
+                    task_id, job_name,
+                )
             else:
                 # Enrich with job status if result.json had no detailed summary
                 if result.get("summary", "").startswith("Job "):
