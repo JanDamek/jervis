@@ -12,21 +12,16 @@ enum class ProviderEnum {
     GITHUB,
     GITLAB,
     ATLASSIAN,       // Jira + Confluence + Bitbucket
-    AZURE_DEVOPS,
-    GOOGLE_CLOUD,    // Google Cloud (Source Repos, Issue Tracker)
 
     // Email providers
-    GOOGLE_WORKSPACE,  // Gmail, Google Workspace
-    MICROSOFT_365,     // Outlook, Office 365
+    GOOGLE_WORKSPACE,  // Gmail via OAuth 2.0
+    MICROSOFT_365,     // Outlook, Office 365 (IMAP App Password)
     GENERIC_EMAIL,     // Generic IMAP/POP3/SMTP server (Zimbra, Exchange on-prem, etc.)
 
-    // Chat platforms (EPIC 11)
+    // Chat platforms
     SLACK,
-    MICROSOFT_TEAMS,
+    MICROSOFT_TEAMS,   // OAuth2 / Browser Session (K8s pod) / Local token
     DISCORD,
-
-    // Calendar (EPIC 12)
-    GOOGLE_CALENDAR,
 }
 
 /**
