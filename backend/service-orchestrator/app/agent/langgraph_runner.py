@@ -911,6 +911,25 @@ async def _agentic_vertex(
 
             # Handle the extend_thinking_map meta-tool
             if tool_name == "extend_thinking_map":
+                # Loop detection for extend_thinking_map — prevent repeated calls with same args
+                loop_reason, loop_count = detect_tool_loop(
+                    tool_call_history, tool_name, arguments,
+                )
+                if loop_reason:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": tool_name,
+                        "content": (
+                            f"ERROR: {loop_reason} "
+                            "The vertices were already created. Continue with your current analysis — "
+                            "do NOT call extend_thinking_map again with the same vertices."
+                        ),
+                    })
+                    if loop_count >= 3 and tools:
+                        tools = [t for t in tools if t.get("function", {}).get("name") != tool_name]
+                        logger.warning("Removed extend_thinking_map from tools after %d repeats", loop_count)
+                    continue
                 tool_result = _handle_extend_thinking_map(arguments, vertex, graph)
                 messages.append({
                     "role": "tool",
