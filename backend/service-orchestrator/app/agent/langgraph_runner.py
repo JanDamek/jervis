@@ -783,6 +783,8 @@ async def _agentic_vertex(
     task_data = state.get("task", {})
     client_id = task_data.get("client_id", "")
     project_id = task_data.get("project_id")
+    task_id = task_data.get("id", "")
+    group_id = task_data.get("group_id")
 
     # --- Agentic loop ---
     tool_call_history: list[tuple[str, str]] = []
@@ -867,7 +869,8 @@ async def _agentic_vertex(
                         project_id=project_id,
                         processing_mode=state.get("processing_mode", "BACKGROUND"),
                         skip_approval=True,
-                        task_id=graph.task_id,
+                        group_id=group_id,
+                        task_id=task_id,
                     ),
                     timeout=_VERTEX_TOOL_TIMEOUT_S,
                 )
