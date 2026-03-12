@@ -463,6 +463,9 @@ For indexer details see [knowledge-base.md § Continuous Indexers](knowledge-bas
 | `SCHEDULED_TASK` | `scheduled` | Cron-scheduled tasks |
 | `LINK_PROCESSING` | `link` | URLs extracted from other documents |
 | `MEETING_PROCESSING` | `meeting` | Transcribed meeting recordings |
+| `CHAT_PROCESSING` | `teams` | Microsoft Teams messages (via O365 Gateway) |
+| `SLACK_PROCESSING` | `slack` | Slack channel messages (via Web API) |
+| `DISCORD_PROCESSING` | `discord` | Discord guild/channel messages (via REST API) |
 | `IDLE_REVIEW` | `idle_review` | System-generated proactive review task |
 
 The `sourceKey` is sent to KB via multipart form field `sourceType` and stored in graph metadata.
@@ -1803,7 +1806,12 @@ Sources:
 | SourceAttribution | 14-S2 | `backend/service-orchestrator/app/chat/source_attribution.py` |
 | ApprovalQueueDocument | 4-S3 | `backend/server/.../entity/ApprovalQueueDocument.kt` |
 | ApprovalStatisticsDocument | 4-S5 | `backend/server/.../entity/ApprovalStatisticsDocument.kt` |
-| ChatContinuousIndexer | 11-S4 | `backend/server/.../integration/chat/ChatContinuousIndexer.kt` |
+| TeamsContinuousIndexer | 11-S4 | `backend/server/.../service/teams/TeamsContinuousIndexer.kt` |
+| SlackContinuousIndexer | 11-S4 | `backend/server/.../service/slack/SlackContinuousIndexer.kt` |
+| DiscordContinuousIndexer | 11-S4 | `backend/server/.../service/discord/DiscordContinuousIndexer.kt` |
+| O365PollingHandler | 11-S3 | `backend/server/.../service/polling/handler/teams/O365PollingHandler.kt` |
+| SlackPollingHandler | 11-S2 | `backend/server/.../service/polling/handler/slack/SlackPollingHandler.kt` |
+| DiscordPollingHandler | 11-S2 | `backend/server/.../service/polling/handler/discord/DiscordPollingHandler.kt` |
 | ChatReplyService | 11-S5 | `backend/server/.../integration/chat/ChatReplyService.kt` |
 | CalendarService | 12-S1–S5 | `backend/server/.../service/calendar/CalendarService.kt` |
 | CalendarIntegration | 12-S2/S5 | `backend/service-orchestrator/app/calendar/calendar_integration.py` |
