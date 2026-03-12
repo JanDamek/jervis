@@ -228,7 +228,7 @@ class ChatViewModel(
                             showNeedReaction = _showNeedReaction.value,
                         )
                         applyHistory(history)
-                        println("ChatViewModel: history loaded — ${history.messages.size} msgs, hasMore=${history.hasMore}, filter=${_filterMode.value}")
+                        println("ChatViewModel: history loaded — ${history.messages.size} msgs, hasMore=${history.hasMore}, chat=${_showChat.value}, tasks=${_showTasks.value}, reaction=${_showNeedReaction.value}")
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
                         println("ChatViewModel: history load failed: ${e.message}")
