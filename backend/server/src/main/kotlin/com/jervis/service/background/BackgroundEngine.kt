@@ -1012,19 +1012,24 @@ class BackgroundEngine(
 
         val state = status["status"] ?: "unknown"
 
-        // Python says "running" but task has exceeded threshold — stale checkpoint
-        // (pod restarted, checkpoint says "running" but no active asyncio task)
-        if (state == "running" && orchestrationAge >= STUCK_THRESHOLD_MINUTES) {
-            logger.warn {
-                "ORCHESTRATOR_STALE_RUNNING: taskId=$taskIdStr — Python says 'running' but " +
-                    "task age is ${orchestrationAge}min → resetting to QUEUED"
+        // Python says "running" — task is actively executing on the orchestrator.
+        // Graph analyses with many vertices can legitimately run for hours.
+        // Only reset if it exceeds the (generous) STUCK_THRESHOLD (3h).
+        if (state == "running") {
+            if (orchestrationAge >= STUCK_THRESHOLD_MINUTES) {
+                logger.warn {
+                    "ORCHESTRATOR_STALE_RUNNING: taskId=$taskIdStr — Python says 'running' but " +
+                        "task age is ${orchestrationAge}min (>${STUCK_THRESHOLD_MINUTES}min) → resetting to QUEUED"
+                }
+                val resetTask = task.copy(
+                    state = TaskStateEnum.QUEUED,
+                    orchestratorThreadId = null,
+                    orchestrationStartedAt = null,
+                )
+                taskRepository.save(resetTask)
+            } else {
+                logger.debug { "ORCHESTRATOR_ACTIVE: taskId=$taskIdStr running for ${orchestrationAge}min — OK" }
             }
-            val resetTask = task.copy(
-                state = TaskStateEnum.QUEUED,
-                orchestratorThreadId = null,
-                orchestrationStartedAt = null,
-            )
-            taskRepository.save(resetTask)
             return
         }
 
@@ -1677,8 +1682,9 @@ class BackgroundEngine(
     companion object {
         private val currentTaskJob = AtomicReference<Job?>(null)
 
-        /** Task in PROCESSING for this long without completion = stuck (timestamp-based). */
-        private const val STUCK_THRESHOLD_MINUTES = 15L
+        /** Task in PROCESSING for this long without completion = stuck (timestamp-based).
+         *  Graph analyses with 50-150 vertices can take 1-3 hours — 15min was too short. */
+        private const val STUCK_THRESHOLD_MINUTES = 180L
 
         /** Scheduled tasks overdue by more than this are escalated as urgent USER_TASKs. */
         val OVERDUE_ESCALATION_THRESHOLD: Duration = Duration.ofHours(24)
