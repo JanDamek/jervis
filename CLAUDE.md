@@ -141,6 +141,15 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Context switch: `backend/service-orchestrator/app/memory/context_switch.py` (detect_context_switch, LLM classification)
 - Memory consolidation: `backend/service-orchestrator/app/memory/consolidation.py` (topic-aware summary consolidation)
 - LQM: `backend/service-orchestrator/app/memory/lqm.py` (LocalQuickMemory — hot cache, write buffer, warm cache)
+- O365 Gateway: `backend/service-o365-gateway/` (Kotlin/Ktor — relay auth to Graph API via browser pool tokens)
+- O365 Gateway entry: `backend/service-o365-gateway/src/main/kotlin/com/jervis/o365gateway/O365GatewayApplication.kt`
+- O365 Gateway Graph API: `backend/service-o365-gateway/src/main/kotlin/com/jervis/o365gateway/service/GraphApiService.kt` (Teams chats, channels, messages)
+- O365 Gateway token: `backend/service-o365-gateway/src/main/kotlin/com/jervis/o365gateway/service/TokenService.kt` (cache + browser pool fetch)
+- O365 Browser Pool: `backend/service-o365-browser-pool/` (Python/FastAPI/Playwright — manages browser sessions per client)
+- O365 Browser Pool entry: `backend/service-o365-browser-pool/app/main.py`
+- O365 Browser Manager: `backend/service-o365-browser-pool/app/browser_manager.py` (Playwright contexts, persistent profiles)
+- O365 Token Extractor: `backend/service-o365-browser-pool/app/token_extractor.py` (network interception, Bearer token capture)
+- O365 MCP tools: `backend/service-mcp/app/main.py` (o365_teams_list_chats, o365_teams_read_chat, o365_teams_send_message, o365_teams_list_teams, o365_teams_list_channels, o365_teams_read_channel, o365_teams_send_channel_message, o365_session_status)
 
 ## Build Notes
 

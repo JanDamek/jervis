@@ -2169,6 +2169,263 @@ async def init_workspace(project_id: str) -> str:
         return f"Error: {data.get('error', 'unknown')}"
 
 
+# ── O365 Teams Tools ────────────────────────────────────────────────────
+
+
+@mcp.tool
+async def o365_teams_list_chats(
+    client_id: str,
+    top: int = 20,
+) -> str:
+    """List recent Teams chats for a client.
+
+    Returns chat list with topic, type, and last message preview.
+    Requires an active O365 session for the client.
+
+    Args:
+        client_id: Client ID (JERVIS client)
+        top: Number of chats to return (max 50, default 20)
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{settings.o365_gateway_url}/api/o365/chats/{client_id}",
+            params={"top": min(top, 50)},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        chats = resp.json()
+        if not chats:
+            return "No chats found."
+        lines = []
+        for c in chats:
+            topic = c.get("topic") or "(no topic)"
+            chat_type = c.get("chatType", "?")
+            chat_id = c.get("id", "?")
+            preview = ""
+            mp = c.get("lastMessagePreview")
+            if mp and mp.get("body"):
+                preview_text = mp["body"].get("content", "")[:100]
+                from_user = ""
+                if mp.get("from") and mp["from"].get("user"):
+                    from_user = mp["from"]["user"].get("displayName", "")
+                preview = f" | {from_user}: {preview_text}"
+            lines.append(f"[{chat_type}] {topic} (id={chat_id}){preview}")
+        return "\n".join(lines)
+
+
+@mcp.tool
+async def o365_teams_read_chat(
+    client_id: str,
+    chat_id: str,
+    top: int = 20,
+) -> str:
+    """Read messages from a specific Teams chat.
+
+    Args:
+        client_id: Client ID
+        chat_id: Chat ID (from o365_teams_list_chats)
+        top: Number of messages to return (default 20)
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{settings.o365_gateway_url}/api/o365/chats/{client_id}/{chat_id}/messages",
+            params={"top": top},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        messages = resp.json()
+        if not messages:
+            return "No messages found."
+        lines = []
+        for m in messages:
+            sender = "?"
+            if m.get("from"):
+                if m["from"].get("user"):
+                    sender = m["from"]["user"].get("displayName", "?")
+                elif m["from"].get("application"):
+                    sender = m["from"]["application"].get("displayName", "bot")
+            body = ""
+            if m.get("body"):
+                body = m["body"].get("content", "")[:500]
+            ts = m.get("createdDateTime", "")
+            lines.append(f"[{ts}] {sender}: {body}")
+        return "\n---\n".join(lines)
+
+
+@mcp.tool
+async def o365_teams_send_message(
+    client_id: str,
+    chat_id: str,
+    content: str,
+    content_type: str = "text",
+) -> str:
+    """Send a message to a Teams chat.
+
+    Args:
+        client_id: Client ID
+        chat_id: Chat ID (from o365_teams_list_chats)
+        content: Message content
+        content_type: "text" or "html" (default "text")
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.o365_gateway_url}/api/o365/chats/{client_id}/{chat_id}/messages",
+            json={"contentType": content_type, "content": content},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return f"Message sent (id={data.get('id', '?')})"
+
+
+@mcp.tool
+async def o365_teams_list_teams(
+    client_id: str,
+) -> str:
+    """List teams the user is a member of.
+
+    Args:
+        client_id: Client ID
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{settings.o365_gateway_url}/api/o365/teams/{client_id}",
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        teams = resp.json()
+        if not teams:
+            return "No teams found."
+        return "\n".join(
+            f"{t.get('displayName', '?')} (id={t.get('id', '?')})"
+            for t in teams
+        )
+
+
+@mcp.tool
+async def o365_teams_list_channels(
+    client_id: str,
+    team_id: str,
+) -> str:
+    """List channels in a team.
+
+    Args:
+        client_id: Client ID
+        team_id: Team ID (from o365_teams_list_teams)
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{settings.o365_gateway_url}/api/o365/teams/{client_id}/{team_id}/channels",
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        channels = resp.json()
+        if not channels:
+            return "No channels found."
+        return "\n".join(
+            f"{ch.get('displayName', '?')} (id={ch.get('id', '?')}, type={ch.get('membershipType', '?')})"
+            for ch in channels
+        )
+
+
+@mcp.tool
+async def o365_teams_read_channel(
+    client_id: str,
+    team_id: str,
+    channel_id: str,
+    top: int = 20,
+) -> str:
+    """Read messages from a Teams channel.
+
+    Args:
+        client_id: Client ID
+        team_id: Team ID
+        channel_id: Channel ID (from o365_teams_list_channels)
+        top: Number of messages to return (default 20)
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{settings.o365_gateway_url}/api/o365/teams/{client_id}/{team_id}/channels/{channel_id}/messages",
+            params={"top": top},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        messages = resp.json()
+        if not messages:
+            return "No messages found."
+        lines = []
+        for m in messages:
+            sender = "?"
+            if m.get("from"):
+                if m["from"].get("user"):
+                    sender = m["from"]["user"].get("displayName", "?")
+                elif m["from"].get("application"):
+                    sender = m["from"]["application"].get("displayName", "bot")
+            body = ""
+            if m.get("body"):
+                body = m["body"].get("content", "")[:500]
+            ts = m.get("createdDateTime", "")
+            lines.append(f"[{ts}] {sender}: {body}")
+        return "\n---\n".join(lines)
+
+
+@mcp.tool
+async def o365_teams_send_channel_message(
+    client_id: str,
+    team_id: str,
+    channel_id: str,
+    content: str,
+) -> str:
+    """Send a message to a Teams channel.
+
+    Args:
+        client_id: Client ID
+        team_id: Team ID
+        channel_id: Channel ID
+        content: Message content
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.o365_gateway_url}/api/o365/teams/{client_id}/{team_id}/channels/{channel_id}/messages",
+            json={"contentType": "text", "content": content},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return f"Channel message sent (id={data.get('id', '?')})"
+
+
+@mcp.tool
+async def o365_session_status(
+    client_id: str,
+) -> str:
+    """Check O365 session status for a client.
+
+    Returns session state, token age, last refresh time, and noVNC URL if login is needed.
+
+    Args:
+        client_id: Client ID
+    """
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            f"{settings.o365_gateway_url}/api/o365/session/{client_id}",
+        )
+        if resp.status_code == 404:
+            return f"No O365 session for client '{client_id}'. Use browser pool to initialize one."
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        state = data.get("state", "?")
+        lines = [f"Session state: {state}"]
+        if data.get("lastActivity"):
+            lines.append(f"Last activity: {data['lastActivity']}")
+        if data.get("lastTokenExtract"):
+            lines.append(f"Last token extract: {data['lastTokenExtract']}")
+        if data.get("novncUrl"):
+            lines.append(f"noVNC URL (for manual login): {data['novncUrl']}")
+        return "\n".join(lines)
+
+
 # ── Health endpoint (custom route) ───────────────────────────────────────
 
 @mcp.custom_route("/health", methods=["GET"])

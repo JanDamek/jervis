@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # Kotlin server internal API
     kotlin_server_url: str = "http://jervis-server:5500"
 
+    # O365 Gateway service
+    o365_gateway_url: str = "http://jervis-o365-gateway:8080"
+
     # Default tenant context (can be overridden per-tool call)
     default_client_id: str = ""
     default_project_id: str = ""

@@ -51,6 +51,7 @@ include(
     ":backend:service-junie",
     ":backend:service-claude",
     ":backend:service-knowledgebase",
+    ":backend:service-o365-gateway",
 )
 
 if (System.getenv("DOCKER_BUILD") != "true") {

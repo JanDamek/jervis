@@ -2283,3 +2283,50 @@ When the multi-agent delegation system is enabled (`use_delegation_graph=true`):
 2. Guidelines constraints (forbidden patterns, forbidden files, test requirements) are extracted and propagated to each `DelegationMessage.constraints`
 3. **BaseAgent._agentic_loop** enriches the specialist agent's system prompt with formatted guidelines
 4. All injection is non-blocking — guideline resolution failures are logged at debug level and do not block execution
+
+---
+
+## O365 Gateway
+
+### Overview
+
+Multi-tenant Microsoft 365 integration via browser-session relay. Two services:
+
+1. **`jervis-o365-gateway`** (Kotlin/Ktor) — Stateless API. Receives tool calls from MCP/orchestrator, fetches Bearer tokens from browser pool, calls Microsoft Graph API.
+2. **`jervis-o365-browser-pool`** (Python/FastAPI/Playwright) — Stateful service. Manages one Playwright Chromium context per client. Intercepts network requests to extract Bearer tokens from live O365 web sessions.
+
+### Architecture Flow
+
+```
+MCP Tool Call → O365 Gateway → Token Service (cache → browser pool) → Graph API
+                                     ↓
+                              Browser Pool (Playwright)
+                              ├── Client A context (persistent profile)
+                              ├── Client B context
+                              └── Client C context
+```
+
+### Key Design Decisions
+
+- **Raw HTTP over Graph SDK**: Uses Ktor HTTP client for Graph API calls instead of the heavy Graph SDK. Simpler, fewer dependencies.
+- **Browser-based token relay**: For tenants that don't allow OAuth app registration in Azure AD. Playwright intercepts `Authorization: Bearer` headers from `graph.microsoft.com` requests.
+- **Per-client rate limiting**: 4 req/s safety margin under Graph API's 5 req/s Teams limit.
+- **Persistent browser profiles**: Cookies and local storage persisted to PVC, surviving pod restarts.
+
+### MCP Tools (Phase 1 — Teams)
+
+| Tool | Graph API Endpoint |
+|------|--------------------|
+| `o365_teams_list_chats` | `GET /me/chats` |
+| `o365_teams_read_chat` | `GET /me/chats/{id}/messages` |
+| `o365_teams_send_message` | `POST /me/chats/{id}/messages` |
+| `o365_teams_list_teams` | `GET /me/joinedTeams` |
+| `o365_teams_list_channels` | `GET /teams/{id}/channels` |
+| `o365_teams_read_channel` | `GET /teams/{id}/channels/{id}/messages` |
+| `o365_teams_send_channel_message` | `POST /teams/{id}/channels/{id}/messages` |
+| `o365_session_status` | Browser pool session query |
+
+### Deployment
+
+- Gateway: `Deployment` (stateless, 256-512Mi)
+- Browser Pool: `StatefulSet` with PVC (stateful, 1-4Gi, ~500MB per browser context)
