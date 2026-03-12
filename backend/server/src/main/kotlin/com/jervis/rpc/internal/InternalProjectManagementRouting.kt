@@ -182,23 +182,32 @@ fun Routing.installInternalProjectManagementApi(
                 updated = updated.copy(description = req.description)
             }
             if (req.gitRemoteUrl != null) {
-                // Find or create a REPOSITORY resource with this URL
+                val resolvedConnectionId = resolveConnectionForGitUrl(
+                    req.gitRemoteUrl, req.connectionId, updated.clientId, clientService, connectionService,
+                )
+                val resourceIdentifier = extractResourceIdentifier(req.gitRemoteUrl)
+                val displayName = req.gitRemoteUrl.substringAfterLast("/").removeSuffix(".git")
+
                 val existingResources = updated.resources.toMutableList()
-                val hasRepo = existingResources.any {
+                val repoIdx = existingResources.indexOfFirst {
                     it.capability == com.jervis.dto.connection.ConnectionCapability.REPOSITORY
                 }
-                if (!hasRepo) {
-                    existingResources.add(
-                        com.jervis.entity.ProjectResource(
-                            id = ObjectId().toString(),
-                            connectionId = ObjectId(),
-                            capability = com.jervis.dto.connection.ConnectionCapability.REPOSITORY,
-                            resourceIdentifier = req.gitRemoteUrl,
-                            displayName = req.gitRemoteUrl.substringAfterLast("/").removeSuffix(".git"),
-                        ),
-                    )
-                    updated = updated.copy(resources = existingResources)
+                val newResource = com.jervis.entity.ProjectResource(
+                    id = if (repoIdx >= 0) existingResources[repoIdx].id else ObjectId().toString(),
+                    connectionId = resolvedConnectionId,
+                    capability = com.jervis.dto.connection.ConnectionCapability.REPOSITORY,
+                    resourceIdentifier = resourceIdentifier,
+                    displayName = displayName,
+                )
+                if (repoIdx >= 0) {
+                    existingResources[repoIdx] = newResource
+                } else {
+                    existingResources.add(newResource)
                 }
+                updated = updated.copy(
+                    resources = existingResources,
+                    workspaceStatus = null, // Reset to allow re-clone
+                )
             }
 
             val dto = projectService.saveProject(updated)
@@ -341,6 +350,102 @@ fun Routing.installInternalProjectManagementApi(
     }
 }
 
+/**
+ * Resolve the correct ConnectionDocument ObjectId for a git remote URL.
+ *
+ * Priority:
+ * 1. Explicit connectionId parameter (caller knows which connection to use)
+ * 2. Auto-detect from client's connections by matching git host to provider
+ * 3. Fallback: random ObjectId (workspace clone will fail with clear error)
+ */
+private suspend fun resolveConnectionForGitUrl(
+    gitUrl: String,
+    explicitConnectionId: String?,
+    clientId: ClientId,
+    clientService: ClientService,
+    connectionService: ConnectionService,
+): ObjectId {
+    // Priority 1: explicit connection ID
+    if (!explicitConnectionId.isNullOrBlank()) {
+        logger.info { "RESOLVE_CONNECTION | using explicit connectionId=$explicitConnectionId for $gitUrl" }
+        return ObjectId(explicitConnectionId)
+    }
+
+    // Priority 2: auto-detect from client's connections
+    try {
+        val client = clientService.getClientById(clientId)
+        val providerForHost = detectProviderFromUrl(gitUrl)
+        if (providerForHost != null) {
+            for (connOid in client.connectionIds) {
+                val conn = connectionService.findById(com.jervis.common.types.ConnectionId(connOid)) ?: continue
+                if (conn.provider == providerForHost &&
+                    conn.availableCapabilities.any { it == com.jervis.dto.connection.ConnectionCapability.REPOSITORY }
+                ) {
+                    logger.info { "RESOLVE_CONNECTION | auto-detected connection '${conn.name}' (${conn.id}) for $gitUrl" }
+                    return conn.id.value
+                }
+            }
+        }
+        logger.warn { "RESOLVE_CONNECTION | no matching connection found for $gitUrl (provider=$providerForHost, client=$clientId)" }
+    } catch (e: Exception) {
+        logger.warn(e) { "RESOLVE_CONNECTION | error resolving connection for $gitUrl" }
+    }
+
+    // Fallback: placeholder — workspace init will fail with a clear error
+    return ObjectId()
+}
+
+/**
+ * Detect git provider from URL hostname.
+ */
+private fun detectProviderFromUrl(gitUrl: String): com.jervis.dto.connection.ProviderEnum? {
+    val lower = gitUrl.lowercase()
+    return when {
+        "github.com" in lower -> com.jervis.dto.connection.ProviderEnum.GITHUB
+        "gitlab" in lower -> com.jervis.dto.connection.ProviderEnum.GITLAB
+        "bitbucket" in lower -> com.jervis.dto.connection.ProviderEnum.ATLASSIAN
+        else -> null
+    }
+}
+
+/**
+ * Extract org/repo identifier from a full git URL.
+ *
+ * Examples:
+ * - "https://github.com/owner/repo.git" → "owner/repo"
+ * - "https://gitlab.com/group/subgroup/project.git" → "group/subgroup/project"
+ * - "git@github.com:owner/repo.git" → "owner/repo"
+ * - "owner/repo" (already identifier) → "owner/repo"
+ */
+private fun extractResourceIdentifier(gitUrl: String): String {
+    val url = gitUrl.trim().removeSuffix(".git")
+
+    // SSH format: git@host:owner/repo
+    if (url.startsWith("git@")) {
+        val colonIdx = url.indexOf(':')
+        if (colonIdx > 0) return url.substring(colonIdx + 1)
+    }
+
+    // HTTPS format: https://host/owner/repo
+    val knownHosts = listOf("github.com", "gitlab.com", "bitbucket.org", "dev.azure.com")
+    for (host in knownHosts) {
+        val idx = url.indexOf(host)
+        if (idx >= 0) {
+            val path = url.substring(idx + host.length).trimStart('/')
+            return if (path.isNotEmpty()) path else url
+        }
+    }
+
+    // Generic HTTPS: strip protocol and host
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+        val pathStart = url.indexOf('/', url.indexOf("://") + 3)
+        if (pathStart > 0) return url.substring(pathStart + 1)
+    }
+
+    // Already an identifier (no protocol, no host)
+    return url
+}
+
 @Serializable
 data class GetRecommendationsRequest(
     val requirements: String,
@@ -363,6 +468,7 @@ data class CreateProjectRequest(
 data class UpdateProjectRequest(
     val description: String? = null,
     val gitRemoteUrl: String? = null,
+    val connectionId: String? = null,
 )
 
 @Serializable

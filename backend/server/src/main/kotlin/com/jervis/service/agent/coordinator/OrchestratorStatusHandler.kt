@@ -255,11 +255,9 @@ class OrchestratorStatusHandler(
                         logger.warn(e) { "Failed to push background result to chat for task ${task.id}" }
                     }
                 }
-                // Delete after completion
-                taskRepository.delete(updatedTask)
+                // BACKGROUND tasks stay as DONE — no deletion, results must be traceable
             } else if (task.processingMode == com.jervis.entity.ProcessingMode.IDLE) {
-                // IDLE tasks (Deadline Scan, idle review) are internal — delete silently
-                taskRepository.delete(updatedTask)
+                // IDLE tasks stay as DONE — no deletion
             }
         }
 
@@ -315,12 +313,7 @@ class OrchestratorStatusHandler(
         )
         taskRepository.save(updatedTask)
 
-        // For background tasks, delete (same as successful background completion)
-        if (task.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND ||
-            task.processingMode == com.jervis.entity.ProcessingMode.IDLE
-        ) {
-            taskRepository.delete(updatedTask)
-        }
+        // BACKGROUND/IDLE tasks stay as DONE — no deletion, results must be traceable
 
         // Save to task history
         saveTaskHistory(task, "cancelled")

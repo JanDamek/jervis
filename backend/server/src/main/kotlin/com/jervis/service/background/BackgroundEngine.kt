@@ -615,19 +615,15 @@ class BackgroundEngine(
                         }
 
                         com.jervis.entity.ProcessingMode.BACKGROUND -> {
-                            // BACKGROUND tasks are deleted after completion (unless USER_TASK)
-                            if (task.state != com.jervis.dto.TaskStateEnum.USER_TASK) {
-                                taskRepository.delete(task)
-                                logger.info { "BACKGROUND_TASK_DELETED | taskId=${task.id} | task completed and cleaned up" }
-                            } else {
-                                logger.info { "BACKGROUND_TASK_USER_TASK | taskId=${task.id} | keeping until user responds" }
-                            }
+                            // BACKGROUND tasks stay as DONE — no deletion, results must be traceable
+                            taskService.updateState(task, TaskStateEnum.DONE)
+                            logger.info { "BACKGROUND_TASK_DONE | taskId=${task.id} | state=DONE" }
                         }
 
                         com.jervis.entity.ProcessingMode.IDLE -> {
-                            // IDLE tasks are always deleted after completion
-                            taskRepository.delete(task)
-                            logger.info { "IDLE_TASK_DELETED | taskId=${task.id} | idle task completed and cleaned up" }
+                            // IDLE tasks stay as DONE — no deletion
+                            taskService.updateState(task, TaskStateEnum.DONE)
+                            logger.info { "IDLE_TASK_DONE | taskId=${task.id} | state=DONE" }
                         }
                     }
 
