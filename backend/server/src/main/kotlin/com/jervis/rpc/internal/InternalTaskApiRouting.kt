@@ -107,8 +107,10 @@ fun Routing.installInternalTaskApi(
                     HttpStatusCode.NotFound,
                 )
 
+            // USER_TASK responses go directly to QUEUED — skip KB indexing.
+            // The graph agent will detect [User response] and resume BLOCKED vertices.
             val updated = task.copy(
-                state = TaskStateEnum.INDEXING,
+                state = TaskStateEnum.QUEUED,
                 content = "${task.content}\n\n[User response]: ${body.response}",
                 pendingUserQuestion = null,
             )

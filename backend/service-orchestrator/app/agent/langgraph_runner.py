@@ -46,7 +46,9 @@ from app.agent.graph import (
     block_vertex,
     complete_vertex,
     fail_vertex,
+    find_blocked_vertices,
     get_ready_vertices,
+    resume_vertex,
     start_vertex,
     get_final_result,
     get_stats,
@@ -630,6 +632,19 @@ async def _fetch_resource_context(client_id: str, project_id: str | None) -> str
     return "\n".join(parts)
 
 
+def _extract_user_response(query: str) -> str:
+    """Extract [User response] text from task query/content.
+
+    When a USER_TASK is answered, the Kotlin server appends
+    '[User response]: <answer>' to the content. Extract that answer.
+    """
+    marker = "[User response]:"
+    idx = query.rfind(marker)
+    if idx < 0:
+        return ""
+    return query[idx + len(marker):].strip()
+
+
 async def run_graph_agent(
     request: OrchestrateRequest,
     thread_id: str = "default",
@@ -646,7 +661,7 @@ async def run_graph_agent(
     existing_graph = await agent_store.load(request.task_id)
     pre_built_graph = None
     if existing_graph and existing_graph.status in (
-        GraphStatus.READY, GraphStatus.BUILDING, GraphStatus.EXECUTING,
+        GraphStatus.READY, GraphStatus.BUILDING, GraphStatus.EXECUTING, GraphStatus.BLOCKED,
     ):
         # Resume from existing graph — handles both pre-built maps and pod restart recovery
         completed = sum(1 for v in existing_graph.vertices.values() if v.status == VertexStatus.COMPLETED)
@@ -667,6 +682,19 @@ async def run_graph_agent(
                 v.status = VertexStatus.READY
                 v.agent_messages = []  # Clear stale LLM conversation
                 v.agent_iteration = 0
+
+        # Resume BLOCKED vertices if task contains [User response]
+        # (USER_TASK → user answered → re-queued → graph agent re-invoked)
+        blocked = find_blocked_vertices(existing_graph)
+        if blocked:
+            user_answer = _extract_user_response(request.query)
+            if user_answer:
+                for bv in blocked:
+                    logger.info(
+                        "GRAPH_AGENT_RESUME: resuming BLOCKED vertex '%s' with user answer",
+                        bv.title,
+                    )
+                    resume_vertex(existing_graph, bv.id, user_answer)
 
         # Mark root vertex as COMPLETED if not already (decomposition already done)
         root = existing_graph.vertices.get(existing_graph.root_vertex_id)
