@@ -1012,7 +1012,7 @@ async def submit_task(
         "state": "QUEUED",
         "processingMode": processing_mode,
         "correlationId": correlation_id,
-        "sourceUrn": "chat:coding-agent",
+        "sourceUrn": "mcp:submit-task",
         "qualificationRetries": 0,
         "dispatchRetryCount": 0,
     }
