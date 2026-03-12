@@ -221,9 +221,12 @@ class ChatViewModel(
                 services.chatService.subscribeToChatEvents().onStart {
                     onConnectionReady()
                     try {
-                        val history = services.chatService.getChatHistory(limit = 50)
+                        val history = services.chatService.getChatHistory(
+                            limit = 50,
+                            includeUserTasks = _showNeedReaction.value,
+                        )
                         applyHistory(history)
-                        println("ChatViewModel: history loaded — ${history.messages.size} msgs, hasMore=${history.hasMore}")
+                        println("ChatViewModel: history loaded — ${history.messages.size} msgs, hasMore=${history.hasMore}, needReaction=${_showNeedReaction.value}")
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
                         println("ChatViewModel: history load failed: ${e.message}")

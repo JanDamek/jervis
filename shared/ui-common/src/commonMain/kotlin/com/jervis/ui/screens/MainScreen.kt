@@ -24,12 +24,13 @@ fun MainScreen(
     val backgroundMessageCount by viewModel.chat.backgroundMessageCount.collectAsState()
     val userTaskCount by viewModel.chat.userTaskCount.collectAsState()
 
-    // K reakci: server returns unified timeline (DB-sorted), no client-side merge needed
+    // K reakci: only background results that actually need user reaction (FAILED or has needsReaction flag)
     // Chat/Tasky: client-side filter on message type (same DB source, just visibility toggle)
     val filteredMessages = remember(chatMessages, showChat, showTasks, showNeedReaction) {
         when {
             showNeedReaction -> chatMessages.filter {
-                it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT
+                it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT &&
+                    (it.metadata["needsReaction"] == "true" || it.metadata["success"] == "false")
             }
             showTasks -> chatMessages.filter { it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT }
             showChat -> chatMessages.filter { it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT }
