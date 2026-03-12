@@ -17,6 +17,76 @@ from app.agent.models import VertexType
 logger = logging.getLogger(__name__)
 
 
+TOOL_EXTEND_THINKING_MAP: dict = {
+    "type": "function",
+    "function": {
+        "name": "extend_thinking_map",
+        "description": (
+            "Dynamically add new vertices to the current thinking map. "
+            "Use when you discover new aspects that need investigation, analysis, or work. "
+            "New vertices execute AFTER the current vertex completes — they receive "
+            "this vertex's output as context. This allows the thinking map to grow "
+            "organically as analysis progresses.\n\n"
+            "Typical use: an investigator discovers 3 sub-topics → creates 3 new "
+            "investigator vertices + a synthesis vertex to combine results.\n\n"
+            "IMPORTANT: dispatch_coding_agent is async — it returns immediately. "
+            "If you need multiple coding analyses, create separate vertices for each "
+            "via extend_thinking_map instead of calling dispatch_coding_agent repeatedly."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "vertices": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "description": "Short descriptive title for this sub-task",
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": (
+                                    "Full, self-contained description of what this vertex must accomplish. "
+                                    "Include all relevant context — downstream vertices only see summaries."
+                                ),
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": ["investigator", "executor", "task", "validator", "synthesis"],
+                                "description": "Vertex type — determines tool set and responsibility",
+                            },
+                        },
+                        "required": ["title", "description", "type"],
+                    },
+                    "description": "New vertices to add (max 8 per call)",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Why these new vertices are needed",
+                },
+                "connect_to_synthesis": {
+                    "type": "boolean",
+                    "description": (
+                        "Wire new vertices to feed into the EXISTING synthesis vertex (if any). "
+                        "Use when extending an investigation that should still converge to the original synthesis."
+                    ),
+                },
+                "create_final_synthesis": {
+                    "type": "boolean",
+                    "description": (
+                        "Create a new synthesis vertex that depends on ALL new vertices. "
+                        "Use when the new vertices form a self-contained sub-analysis."
+                    ),
+                },
+            },
+            "required": ["vertices", "reason"],
+        },
+    },
+}
+
+
 def get_default_tools(vertex_type: VertexType) -> list[dict]:
     """Get the default tool set for a vertex type.
 
@@ -99,6 +169,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_LIST_MEETINGS,
             TOOL_GET_MEETING_TRANSCRIPT,
             TOOL_LIST_UNCLASSIFIED_MEETINGS,
+            TOOL_EXTEND_THINKING_MAP,
             _request_tools,
         ]
 
@@ -120,6 +191,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_LIST_UNCLASSIFIED_MEETINGS,
             TOOL_LIST_MEETINGS,
             TOOL_GET_MEETING_TRANSCRIPT,
+            TOOL_EXTEND_THINKING_MAP,
             _request_tools,
         ]
 
@@ -150,8 +222,9 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
         ]
 
     # SYNTHESIS: combines results (minimal tools — works from context)
+    # extend_thinking_map lets synthesis spawn follow-up vertices (e.g. document writing phases)
     if vertex_type == VertexType.SYNTHESIS:
-        return _base + [TOOL_STORE_KNOWLEDGE, TOOL_MEMORY_STORE]
+        return _base + [TOOL_STORE_KNOWLEDGE, TOOL_MEMORY_STORE, TOOL_EXTEND_THINKING_MAP]
 
     # GATE: decision point (can ask user for approval/clarification)
     if vertex_type == VertexType.GATE:

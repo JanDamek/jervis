@@ -41,7 +41,8 @@ logger = logging.getLogger(__name__)
 # Max vertices per single decomposition call
 MAX_VERTICES_PER_DECOMPOSE = 10
 # Max total vertices in a graph — prevents runaway growth when vertices fail/timeout
-MAX_TOTAL_VERTICES = 50
+# Raised from 50 to 150 to support dynamic thinking map growth via extend_thinking_map
+MAX_TOTAL_VERTICES = 150
 # Max decomposition depth (root → modules → sub-modules → tasks)
 MAX_DECOMPOSE_DEPTH = 5
 

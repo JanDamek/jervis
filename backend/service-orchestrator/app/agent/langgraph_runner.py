@@ -359,7 +359,7 @@ async def _execute_single_vertex(
         else:
             # All other types → agentic tool loop (NO timeout — GPU can be busy for hours)
             context = _build_context(vertex)
-            result, summary = await _dispatch_vertex_handler(vertex, context, state)
+            result, summary = await _dispatch_vertex_handler(vertex, context, state, graph=graph)
 
             # Complete vertex — fills outgoing edge payloads
             complete_vertex(
@@ -691,11 +691,16 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Your output summary will be passed to downstream vertices via edges. "
         "Keep your output concise — downstream vertices only see a brief summary, "
         "not your full context. Store important findings via store_knowledge for persistence.\n\n"
+        "DYNAMIC MAP GROWTH: When you discover sub-topics or aspects that need separate investigation, "
+        "use `extend_thinking_map` to create new vertices. This grows the thinking map organically. "
+        "Each new vertex will execute after you complete and receive your findings as context.\n\n"
         "CRITICAL: You NEVER investigate code, files, or git history directly. "
         "You have basic git metadata tools (branch list, recent commits) for orientation ONLY. "
         "For ANY code analysis, file reading, git history investigation, or code changes "
         "you MUST use `dispatch_coding_agent`. The orchestrator is the brain — it decides "
-        "what needs to happen. The coding agent is the hand — it executes code-level work."
+        "what needs to happen. The coding agent is the hand — it executes code-level work.\n\n"
+        "IMPORTANT: dispatch_coding_agent is ASYNC — it returns immediately while the job runs. "
+        "If you need multiple code analyses, create separate vertices via extend_thinking_map instead."
     ),
     VertexType.EXECUTOR: (
         "You are the Executor. Complete the assigned task using the provided context and tools. "
@@ -704,10 +709,14 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "to fetch any detailed information you need. "
         "Use `ask_user` ONLY when absolutely critical information is missing. "
         "Use `store_knowledge` to persist important findings and decisions for future reference.\n\n"
+        "DYNAMIC MAP GROWTH: Use `extend_thinking_map` to create new vertices when your task "
+        "reveals additional work that should be handled separately. New vertices execute after you.\n\n"
         "CRITICAL: You NEVER investigate code or files directly. "
         "For ANY code analysis, file reading, code changes, or git operations "
         "you MUST use `dispatch_coding_agent`. You are the brain — you decide and coordinate. "
-        "The coding agent is the hand — it reads code, writes code, runs tests, manages git."
+        "The coding agent is the hand — it reads code, writes code, runs tests, manages git.\n\n"
+        "IMPORTANT: dispatch_coding_agent is ASYNC — it returns immediately while the job runs. "
+        "If you need multiple code analyses, create separate vertices via extend_thinking_map instead."
     ),
     VertexType.TASK: (
         "You are the Executor. Complete the assigned task using the provided context and tools. "
@@ -716,10 +725,14 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "to fetch any detailed information you need. "
         "Use `ask_user` ONLY when absolutely critical information is missing. "
         "Use `store_knowledge` to persist important findings and decisions for future reference.\n\n"
+        "DYNAMIC MAP GROWTH: Use `extend_thinking_map` to create new vertices when your task "
+        "reveals additional work that should be handled separately. New vertices execute after you.\n\n"
         "CRITICAL: You NEVER investigate code or files directly. "
         "For ANY code analysis, file reading, code changes, or git operations "
         "you MUST use `dispatch_coding_agent`. You are the brain — you decide and coordinate. "
-        "The coding agent is the hand — it reads code, writes code, runs tests, manages git."
+        "The coding agent is the hand — it reads code, writes code, runs tests, manages git.\n\n"
+        "IMPORTANT: dispatch_coding_agent is ASYNC — it returns immediately while the job runs. "
+        "If you need multiple code analyses, create separate vertices via extend_thinking_map instead."
     ),
     VertexType.VALIDATOR: (
         "You are the Validator. Verify the upstream results for correctness and completeness. "
@@ -736,7 +749,10 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
     VertexType.SYNTHESIS: (
         "You are the Synthesizer. Combine upstream results into a coherent, unified response. "
         "Preserve key details, resolve contradictions, and note any failures. "
-        "Use the user's language."
+        "Use the user's language.\n\n"
+        "If the combined result is too large or complex for a single pass, use `extend_thinking_map` "
+        "to create follow-up vertices that each write a section of the final document. "
+        "Then create a final synthesis vertex to combine those sections."
     ),
     VertexType.GATE: (
         "You are the Gate. Evaluate upstream results and decide whether to proceed. "
@@ -752,7 +768,8 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
 }
 
 # Max agentic loop iterations per vertex (tool call rounds)
-_MAX_VERTEX_TOOL_ITERATIONS = 12
+# Raised from 12 to 20 to support complex analytical tasks
+_MAX_VERTEX_TOOL_ITERATIONS = 20
 # Timeout for a single tool execution within vertex loop
 _VERTEX_TOOL_TIMEOUT_S = 90  # KB graph traversals can take 30s+
 # NO overall vertex timeout — vertices can take hours when GPU is busy
@@ -768,6 +785,8 @@ async def _agentic_vertex(
     vertex: GraphVertex,
     context: str,
     state: dict,
+    *,
+    graph: AgentGraph | None = None,
 ) -> tuple[str, str]:
     """Execute a vertex with an agentic tool loop.
 
@@ -776,6 +795,7 @@ async def _agentic_vertex(
     3. If LLM returns tool calls → execute them → append results → repeat
     4. If LLM returns text (no tool calls) → that's the final result
     5. Handle `request_tools` meta-tool by adding requested categories
+    6. Handle `extend_thinking_map` by adding new vertices to the graph
 
     Returns (result, summary).
     """
@@ -881,6 +901,17 @@ async def _agentic_vertex(
             # Handle the request_tools meta-tool
             if tool_name == "request_tools":
                 tool_result = _handle_request_tools(arguments, tools, vertex)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "name": tool_name,
+                    "content": tool_result,
+                })
+                continue
+
+            # Handle the extend_thinking_map meta-tool
+            if tool_name == "extend_thinking_map":
+                tool_result = _handle_extend_thinking_map(arguments, vertex, graph)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
@@ -1023,6 +1054,121 @@ def _handle_request_tools(
     return "No new tools added (all requested tools were already available)."
 
 
+def _handle_extend_thinking_map(
+    arguments: dict,
+    vertex: GraphVertex,
+    graph: AgentGraph | None,
+) -> str:
+    """Handle the `extend_thinking_map` meta-tool call.
+
+    Dynamically adds new vertices to the thinking map during execution.
+    New vertices depend on the CURRENT vertex — they will be picked up
+    by select_next after the current vertex completes.
+
+    Returns a confirmation message for the LLM.
+    """
+    from app.agent.graph import add_vertex, add_edge
+    from app.agent.models import EdgeType, VertexStatus, VertexType
+    from app.agent.decomposer import MAX_TOTAL_VERTICES
+
+    if graph is None:
+        return "ERROR: extend_thinking_map is not available in this context (no graph reference)."
+
+    vertices_data = arguments.get("vertices", [])
+    reason = arguments.get("reason", "")
+    connect_to_synthesis = arguments.get("connect_to_synthesis", False)
+    create_final_synthesis = arguments.get("create_final_synthesis", False)
+
+    if not vertices_data:
+        return "ERROR: No vertices provided."
+
+    # Enforce limits
+    if len(vertices_data) > 8:
+        vertices_data = vertices_data[:8]
+
+    if len(graph.vertices) + len(vertices_data) > MAX_TOTAL_VERTICES:
+        remaining = MAX_TOTAL_VERTICES - len(graph.vertices)
+        if remaining <= 0:
+            return f"ERROR: Graph already has {len(graph.vertices)} vertices (max {MAX_TOTAL_VERTICES}). Cannot add more."
+        vertices_data = vertices_data[:remaining]
+
+    # Create new vertices — all depend on current vertex
+    created: list[str] = []
+    type_map = {
+        "investigator": VertexType.INVESTIGATOR,
+        "executor": VertexType.EXECUTOR,
+        "task": VertexType.TASK,
+        "validator": VertexType.VALIDATOR,
+        "synthesis": VertexType.SYNTHESIS,
+    }
+
+    for vd in vertices_data:
+        vtype_str = vd.get("type", "task")
+        vtype = type_map.get(vtype_str, VertexType.TASK)
+
+        new_v = add_vertex(
+            graph=graph,
+            title=vd.get("title", "Untitled"),
+            description=vd.get("description", ""),
+            vertex_type=vtype,
+            parent_id=vertex.parent_id or vertex.id,
+            input_request=vd.get("description", ""),
+            client_id=vertex.client_id,
+            project_id=vertex.project_id,
+        )
+
+        # New vertex depends on current vertex (executes after it completes)
+        add_edge(graph, vertex.id, new_v.id, EdgeType.DEPENDENCY)
+        # Status stays PENDING — will become READY when current vertex completes
+        # and complete_vertex fills the edge payload
+        created.append(new_v.id)
+
+    # Optionally connect to existing synthesis vertex
+    if connect_to_synthesis:
+        synthesis_vertices = [
+            v for v in graph.vertices.values()
+            if v.vertex_type == VertexType.SYNTHESIS
+            and v.status in (VertexStatus.PENDING, VertexStatus.READY)
+            and v.id not in created
+        ]
+        if synthesis_vertices:
+            target_synthesis = synthesis_vertices[-1]  # Latest synthesis
+            for cid in created:
+                add_edge(graph, cid, target_synthesis.id, EdgeType.DEPENDENCY)
+            logger.info(
+                "Connected %d new vertices to existing synthesis %s",
+                len(created), target_synthesis.id,
+            )
+
+    # Optionally create a new synthesis vertex
+    if create_final_synthesis and len(created) > 1:
+        synth_v = add_vertex(
+            graph=graph,
+            title="Synthesize extended results",
+            description="Combine results from all extended investigation vertices into a coherent summary.",
+            vertex_type=VertexType.SYNTHESIS,
+            parent_id=vertex.parent_id or vertex.id,
+            input_request="Synthesize all upstream results",
+            client_id=vertex.client_id,
+            project_id=vertex.project_id,
+        )
+        for cid in created:
+            add_edge(graph, cid, synth_v.id, EdgeType.DEPENDENCY)
+        created.append(synth_v.id)
+
+    logger.info(
+        "Vertex %s extended thinking map: +%d vertices, reason=%s",
+        vertex.id, len(created), reason,
+    )
+
+    titles = [vd.get("title", "?") for vd in vertices_data]
+    return (
+        f"Added {len(vertices_data)} new vertices to the thinking map: {', '.join(titles)}. "
+        f"They will execute after this vertex completes. "
+        f"Continue with your current analysis — the new vertices will handle the sub-topics."
+    )
+
+
 def _append_assistant_message(
     messages: list[dict],
     message,
@@ -1052,9 +1198,10 @@ async def _dispatch_vertex_handler(
     vertex: GraphVertex,
     context: str,
     state: dict,
+    graph: AgentGraph | None = None,
 ) -> tuple[str, str]:
     """Unified dispatch — all vertex types go through the agentic loop."""
-    return await _agentic_vertex(vertex, context, state)
+    return await _agentic_vertex(vertex, context, state, graph=graph)
 
 
 async def _handle_decompose_vertex(
@@ -1083,7 +1230,7 @@ async def _handle_decompose_vertex(
         )
         vertex.vertex_type = VertexType.EXECUTOR
         context = _build_context(vertex)
-        result, summary = await _agentic_vertex(vertex, context, state)
+        result, summary = await _agentic_vertex(vertex, context, state, graph=graph)
         complete_vertex(graph, vertex_id, result=result, result_summary=summary, local_context=result)
         return graph
 
@@ -1094,7 +1241,7 @@ async def _handle_decompose_vertex(
         )
         vertex.vertex_type = VertexType.EXECUTOR
         context = _build_context(vertex)
-        result, summary = await _agentic_vertex(vertex, context, state)
+        result, summary = await _agentic_vertex(vertex, context, state, graph=graph)
         complete_vertex(graph, vertex_id, result=result, result_summary=summary, local_context=result)
         return graph
 
