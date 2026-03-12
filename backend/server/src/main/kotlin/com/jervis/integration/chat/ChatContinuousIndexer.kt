@@ -17,18 +17,19 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * EPIC 11-S4: Chat Continuous Indexer.
+ * EPIC 11-S4: Chat Continuous Indexer (DEPRECATED).
  *
- * Analogous to BugTrackerContinuousIndexer and WikiContinuousIndexer.
- * Polls external chat platforms (Slack, Teams, Discord) for new messages
- * and indexes them into the knowledge base.
+ * Superseded by per-platform indexers:
+ * - [com.jervis.service.teams.TeamsContinuousIndexer]
+ * - [com.jervis.service.slack.SlackContinuousIndexer]
+ * - [com.jervis.service.discord.DiscordContinuousIndexer]
  *
- * Specifics vs email indexer:
- * - Threading: maintains conversation thread structure
- * - Reactions: indexes as sentiment metadata
- * - Mentions: @mentions boost relevance scoring
- * - Priority patterns: urgent emoji, @channel, @here → higher priority
+ * The per-platform indexers follow the same NEW→INDEXED state machine
+ * as EmailContinuousIndexer and read from MongoDB index documents
+ * populated by their respective PollingHandlers. This generic indexer
+ * is kept for reference but is no longer active.
  */
+@Deprecated("Replaced by per-platform continuous indexers (Teams/Slack/Discord)")
 @Service
 class ChatContinuousIndexer(
     private val connectionService: ConnectionService,
@@ -39,7 +40,7 @@ class ChatContinuousIndexer(
     /** Polling interval for chat messages. */
     private val pollingIntervalMs = 30_000L // 30 seconds
 
-    @PostConstruct
+    // @PostConstruct — disabled, replaced by per-platform indexers
     fun start() {
         scope.launch {
             logger.info { "ChatContinuousIndexer started" }
