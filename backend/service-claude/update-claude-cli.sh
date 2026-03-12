@@ -19,7 +19,7 @@
 #   PATH              – prepended with NAS bin dir (if update succeeded)
 #   NPM_CONFIG_PREFIX – set to NAS cache dir
 
-set -euo pipefail
+# NOTE: no set -e — this script is sourced, must not kill caller
 
 CLAUDE_CLI_CACHE="${CLAUDE_CLI_CACHE:-/opt/jervis/data/claude-cli}"
 LOCK_FILE="${CLAUDE_CLI_CACHE}/.update.lock"
@@ -34,7 +34,7 @@ if [ ! -d "$(dirname "$CLAUDE_CLI_CACHE")" ]; then
     return 0 2>/dev/null || exit 0
 fi
 
-mkdir -p "$CLAUDE_CLI_CACHE"
+mkdir -p "$CLAUDE_CLI_CACHE" && chmod 777 "$CLAUDE_CLI_CACHE" 2>/dev/null || true
 
 # --- Should we check for updates? ---
 needs_update() {
@@ -85,7 +85,7 @@ if needs_update; then
         else
             log "WARN: Could not acquire update lock (timeout), using existing version"
         fi
-    ) 200>"$LOCK_FILE"
+    ) 200>"$LOCK_FILE" 2>/dev/null || log "WARN: Lock file creation failed, using existing version"
 fi
 
 # --- Export PATH so the NAS version takes precedence ---
