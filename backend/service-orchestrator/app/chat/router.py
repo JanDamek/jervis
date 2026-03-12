@@ -130,6 +130,21 @@ async def orchestrate(request: dict):
                 )
                 return  # Don't report "done" — AgentTaskWatcher monitors the K8s Job
 
+            # Graph BLOCKED — vertices waiting for user input (ASK_USER)
+            if result.get("blocked"):
+                logger.info(
+                    "ORCHESTRATE_BLOCKED | task_id=%s | thread=%s — graph has BLOCKED vertices",
+                    orchestrate_request.task_id, thread_id,
+                )
+                await kotlin_client.report_status_change(
+                    task_id=orchestrate_request.task_id,
+                    thread_id=thread_id,
+                    status="interrupted",
+                    interrupt_action="clarify",
+                    interrupt_description=result.get("summary", "Graph paused — vertices waiting for user input"),
+                )
+                return  # Don't report "done" — graph is paused
+
             # Check if result indicates an LangGraph interrupt (ask_user)
             # When Graph Agent's interrupt() fires, ainvoke() returns partial state
             # with empty summary and the interrupt data is in the LangGraph checkpoint.

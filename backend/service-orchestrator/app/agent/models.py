@@ -90,6 +90,7 @@ class GraphStatus(str, Enum):
     COMPLETED = "completed"     # All vertices done
     FAILED = "failed"           # Unrecoverable failure
     CANCELLED = "cancelled"     # Cancelled by user
+    BLOCKED = "blocked"         # Waiting for user input (ASK_USER vertices)
 
 
 # ---------------------------------------------------------------------------

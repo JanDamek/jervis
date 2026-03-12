@@ -163,7 +163,6 @@ data class ProviderDescriptor(
                     ),
                 ),
             ),
-            ),
             ProviderDescriptor(
                 provider = ProviderEnum.MICROSOFT_TEAMS,
                 displayName = "Microsoft Teams (O365 Gateway)",

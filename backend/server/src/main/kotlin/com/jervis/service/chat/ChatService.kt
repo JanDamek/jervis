@@ -180,6 +180,37 @@ class ChatService(
     }
 
     /**
+     * Load BACKGROUND-only message history (for "Tasky" filter).
+     * DB-side filtering — only MessageRole.BACKGROUND messages returned.
+     */
+    suspend fun getBackgroundHistory(
+        userId: String = "jan",
+        limit: Int = 20,
+        beforeMessageId: String? = null,
+    ): ChatHistoryResult {
+        val session = chatSessionRepository.findFirstByUserIdAndArchivedOrderByLastMessageAtDesc(userId, false)
+            ?: return ChatHistoryResult(messages = emptyList(), hasMore = false)
+
+        val messages = if (beforeMessageId != null) {
+            chatMessageService.getMessagesByRoleBefore(session.id, com.jervis.entity.MessageRole.BACKGROUND, ObjectId(beforeMessageId), limit)
+        } else {
+            chatMessageService.getMessagesByRole(session.id, com.jervis.entity.MessageRole.BACKGROUND, limit)
+        }
+
+        val totalCount = chatMessageService.countByRole(session.id, com.jervis.entity.MessageRole.BACKGROUND)
+        val hasMore = messages.size == limit && messages.size.toLong() < totalCount
+
+        return ChatHistoryResult(
+            sessionId = session.id.toString(),
+            messages = messages,
+            hasMore = hasMore,
+            oldestMessageId = messages.firstOrNull()?.id?.toString(),
+            totalCount = totalCount,
+            backgroundMessageCount = totalCount.toInt(),
+        )
+    }
+
+    /**
      * Update session scope when Python emits scope_change.
      * Called by ChatRpcImpl when it sees a SCOPE_CHANGE event.
      */

@@ -64,44 +64,12 @@ class ChatRpcImpl(
     override fun subscribeToChatEvents(): Flow<ChatResponseDto> = flow {
         logger.info { "CHAT_SUBSCRIBE: Client connected to chat events" }
 
-        // Load recent history first
+        // No history emission — client loads history via getChatHistory(filterMode=...) independently.
+        // Only emit scope restore + sync marker, then stream live events.
         try {
-            val history = chatService.getHistory(limit = 15, excludeBackground = true)
-
-            // Batch check which tasks have graphs — single MongoDB $in query
-            val allTaskIds = history.messages.mapNotNull { msg ->
-                msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
-            }.toSet()
-            val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
-
-            for (msg in history.messages) {
-                val responseType = when (msg.role) {
-                    MessageRole.USER -> ChatResponseType.USER_MESSAGE
-                    MessageRole.BACKGROUND -> ChatResponseType.BACKGROUND_RESULT
-                    MessageRole.ALERT -> ChatResponseType.URGENT_ALERT
-                    else -> ChatResponseType.FINAL
-                }
-                val msgTaskId = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
-                emit(
-                    ChatResponseDto(
-                        message = msg.content,
-                        type = responseType,
-                        metadata = buildMap {
-                            put("sender", msg.role.name.lowercase())
-                            put("timestamp", msg.timestamp.toString())
-                            put("fromHistory", "true")
-                            put("sequence", msg.sequence.toString())
-                            putAll(msg.metadata)  // Preserve DB metadata (taskId, taskTitle, success, contextTaskId)
-                            if (msgTaskId != null) {
-                                put("hasGraph", (msgTaskId in taskIdsWithGraph).toString())
-                            }
-                        },
-                    ),
-                )
-            }
-
             // Emit persisted scope so UI restores client/project/group selection on startup
-            val clientId = history.activeClientId?.takeIf { ObjectId.isValid(it) }
+            val session = chatService.getOrCreateActiveSession()
+            val clientId = session.lastClientId?.takeIf { ObjectId.isValid(it) }
             if (!clientId.isNullOrBlank()) {
                 emit(
                     ChatResponseDto(
@@ -109,8 +77,8 @@ class ChatRpcImpl(
                         type = ChatResponseType.SCOPE_CHANGE,
                         metadata = buildMap {
                             put("clientId", clientId)
-                            put("projectId", history.activeProjectId ?: "")
-                            put("groupId", history.activeGroupId ?: "")
+                            put("projectId", session.lastProjectId ?: "")
+                            put("groupId", session.lastGroupId ?: "")
                         },
                     ),
                 )
@@ -118,17 +86,10 @@ class ChatRpcImpl(
         } catch (e: CancellationException) {
             logger.debug(e) { "Chat subscription cancelled by client (reconnect)" }
         } catch (e: Exception) {
-            logger.error(e) { "Failed to load chat history for subscription" }
-            emit(
-                ChatResponseDto(
-                    message = "Nepodařilo se načíst historii chatu: ${e.message}",
-                    type = ChatResponseType.ERROR,
-                    metadata = mapOf("historyLoadFailed" to "true"),
-                ),
-            )
+            logger.error(e) { "Failed to load session for scope restore: ${e.message}" }
         }
 
-        // Emit sync marker
+        // Emit sync marker — client knows subscription is ready
         emit(
             ChatResponseDto(
                 message = "HISTORY_LOADED",
@@ -137,7 +98,7 @@ class ChatRpcImpl(
             ),
         )
 
-        // Stream live events
+        // Stream live events only
         chatEventStream.collect { event ->
             emit(event)
         }
@@ -324,85 +285,95 @@ class ChatRpcImpl(
         }
     }
 
-    override suspend fun getChatHistory(limit: Int, beforeMessageId: String?, excludeBackground: Boolean, includeUserTasks: Boolean): ChatHistoryDto {
+    override suspend fun getChatHistory(limit: Int, beforeMessageId: String?, filterMode: String): ChatHistoryDto {
         val userTaskCount = taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toInt()
 
-        // Unified timeline: DB merges chat_messages + tasks via $unionWith, sorted by timestamp
-        if (includeUserTasks) {
-            val session = chatService.getOrCreateActiveSession()
-            val (messages, hasMore) = unifiedTimelineService.loadUnifiedTimeline(
-                conversationId = session.id,
-                limit = limit,
-                beforeTimestamp = beforeMessageId, // Reuse cursor param as timestamp cursor
-            )
-
-            // Batch check graphs
-            val allTaskIds = messages.mapNotNull { it.metadata["taskId"] ?: it.metadata["contextTaskId"] }.toSet()
-            val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
-            val enriched = messages.map { msg ->
-                val tid = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
-                if (tid != null) msg.copy(metadata = msg.metadata + ("hasGraph" to (tid in taskIdsWithGraph).toString()))
-                else msg
+        return when (filterMode) {
+            // K reakci: unified timeline — failed background + USER_TASK with pendingQuestion
+            "NEED_REACTION" -> {
+                val session = chatService.getOrCreateActiveSession()
+                val (messages, hasMore) = unifiedTimelineService.loadUnifiedTimeline(
+                    conversationId = session.id,
+                    limit = limit,
+                    beforeTimestamp = beforeMessageId,
+                )
+                val allTaskIds = messages.mapNotNull { it.metadata["taskId"] ?: it.metadata["contextTaskId"] }.toSet()
+                val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
+                val enriched = messages.map { msg ->
+                    val tid = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
+                    if (tid != null) msg.copy(metadata = msg.metadata + ("hasGraph" to (tid in taskIdsWithGraph).toString()))
+                    else msg
+                }
+                ChatHistoryDto(
+                    messages = enriched,
+                    hasMore = hasMore,
+                    oldestMessageId = messages.firstOrNull()?.timestamp,
+                    userTaskCount = userTaskCount,
+                    backgroundMessageCount = 0,
+                )
             }
 
-            return ChatHistoryDto(
-                messages = enriched,
-                hasMore = hasMore,
-                oldestMessageId = messages.firstOrNull()?.timestamp, // Timestamp cursor for pagination
-                activeClientId = null,
-                activeProjectId = null,
-                activeGroupId = null,
-                userTaskCount = userTaskCount,
-                backgroundMessageCount = 0,
-            )
+            // Tasky: only BACKGROUND role messages from DB
+            "TASKS" -> {
+                val result = chatService.getBackgroundHistory(limit = limit, beforeMessageId = beforeMessageId)
+                val allTaskIds = result.messages.mapNotNull { it.metadata["taskId"] ?: it.metadata["contextTaskId"] }.toSet()
+                val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
+                val messages = result.messages.map { msg ->
+                    val msgTaskId = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
+                    ChatMessageDto(
+                        role = ChatRole.BACKGROUND,
+                        content = msg.content,
+                        timestamp = msg.timestamp.toString(),
+                        correlationId = msg.correlationId,
+                        metadata = if (msgTaskId != null) msg.metadata + ("hasGraph" to (msgTaskId in taskIdsWithGraph).toString()) else msg.metadata,
+                        sequence = msg.sequence,
+                        messageId = msg.id.toString(),
+                    )
+                }
+                ChatHistoryDto(
+                    messages = messages,
+                    hasMore = result.hasMore,
+                    oldestMessageId = result.oldestMessageId,
+                    userTaskCount = userTaskCount,
+                    backgroundMessageCount = result.backgroundMessageCount,
+                )
+            }
+
+            // Chat (default): user/assistant messages, no background
+            else -> {
+                val result = chatService.getHistory(limit = limit, beforeMessageId = beforeMessageId, excludeBackground = true)
+                val allTaskIds = result.messages.mapNotNull { it.metadata["taskId"] ?: it.metadata["contextTaskId"] }.toSet()
+                val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
+                val messages = result.messages.map { msg ->
+                    val msgTaskId = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
+                    ChatMessageDto(
+                        role = when (msg.role) {
+                            MessageRole.USER -> ChatRole.USER
+                            MessageRole.ASSISTANT -> ChatRole.ASSISTANT
+                            MessageRole.SYSTEM -> ChatRole.SYSTEM
+                            MessageRole.BACKGROUND -> ChatRole.BACKGROUND
+                            MessageRole.ALERT -> ChatRole.ALERT
+                        },
+                        content = msg.content,
+                        timestamp = msg.timestamp.toString(),
+                        correlationId = msg.correlationId,
+                        metadata = if (msgTaskId != null) msg.metadata + ("hasGraph" to (msgTaskId in taskIdsWithGraph).toString()) else msg.metadata,
+                        sequence = msg.sequence,
+                        messageId = msg.id.toString(),
+                    )
+                }
+                ChatHistoryDto(
+                    messages = messages,
+                    hasMore = result.hasMore,
+                    oldestMessageId = result.oldestMessageId,
+                    activeClientId = result.activeClientId,
+                    activeProjectId = result.activeProjectId,
+                    activeGroupId = result.activeGroupId,
+                    userTaskCount = userTaskCount,
+                    backgroundMessageCount = result.backgroundMessageCount,
+                )
+            }
         }
-
-        // Standard chat history (no user tasks mixed in)
-        val result = chatService.getHistory(
-            limit = limit,
-            beforeMessageId = beforeMessageId,
-            excludeBackground = excludeBackground,
-        )
-
-        // Batch check which tasks have graphs
-        val allTaskIds = result.messages.mapNotNull { msg ->
-            msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
-        }.toSet()
-        val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
-
-        val messages = result.messages.map { msg ->
-            val msgTaskId = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
-            ChatMessageDto(
-                role = when (msg.role) {
-                    MessageRole.USER -> ChatRole.USER
-                    MessageRole.ASSISTANT -> ChatRole.ASSISTANT
-                    MessageRole.SYSTEM -> ChatRole.SYSTEM
-                    MessageRole.BACKGROUND -> ChatRole.BACKGROUND
-                    MessageRole.ALERT -> ChatRole.ALERT
-                },
-                content = msg.content,
-                timestamp = msg.timestamp.toString(),
-                correlationId = msg.correlationId,
-                metadata = if (msgTaskId != null) {
-                    msg.metadata + ("hasGraph" to (msgTaskId in taskIdsWithGraph).toString())
-                } else {
-                    msg.metadata
-                },
-                sequence = msg.sequence,
-                messageId = msg.id.toString(),
-            )
-        }
-
-        return ChatHistoryDto(
-            messages = messages,
-            hasMore = result.hasMore,
-            oldestMessageId = result.oldestMessageId,
-            activeClientId = result.activeClientId,
-            activeProjectId = result.activeProjectId,
-            activeGroupId = result.activeGroupId,
-            userTaskCount = userTaskCount,
-            backgroundMessageCount = result.backgroundMessageCount,
-        )
     }
 
     override suspend fun updateScope(clientId: String?, projectId: String?, groupId: String?) {

@@ -32,6 +32,7 @@ from typing import TypedDict
 from pymongo import MongoClient
 from langgraph.checkpoint.mongodb import MongoDBSaver
 from langgraph.graph import END, StateGraph
+from langgraph.errors import GraphInterrupt
 from langgraph.types import interrupt
 
 from app.config import settings
@@ -42,6 +43,7 @@ from app.graph.nodes._helpers import (
 )
 from app.agent.decomposer import decompose_root, decompose_vertex
 from app.agent.graph import (
+    block_vertex,
     complete_vertex,
     fail_vertex,
     get_ready_vertices,
@@ -287,7 +289,11 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
     # Merge results back: copy each executed vertex + updated edges/vertices
     for i, res in enumerate(results):
         vid = ready_ids[i]
-        if isinstance(res, Exception):
+        if isinstance(res, GraphInterrupt):
+            # ASK_USER interrupt — mark vertex BLOCKED (not FAILED)
+            logger.info("Parallel vertex %s blocked (ASK_USER)", vid)
+            block_vertex(graph, vid, "Waiting for user input")
+        elif isinstance(res, Exception):
             logger.error("Parallel vertex %s failed: %s", vid, res)
             fail_vertex(graph, vid, str(res))
         elif isinstance(res, AgentGraph):
@@ -349,17 +355,11 @@ async def _execute_single_vertex(
     try:
         # PLANNER/DECOMPOSE → recursive decomposition (creates sub-graph)
         if vertex.vertex_type in (VertexType.PLANNER, VertexType.DECOMPOSE):
-            graph = await asyncio.wait_for(
-                _handle_decompose_vertex(graph, vertex, state),
-                timeout=_VERTEX_OVERALL_TIMEOUT_S,
-            )
+            graph = await _handle_decompose_vertex(graph, vertex, state)
         else:
-            # All other types → agentic tool loop (with overall timeout)
+            # All other types → agentic tool loop (NO timeout — GPU can be busy for hours)
             context = _build_context(vertex)
-            result, summary = await asyncio.wait_for(
-                _dispatch_vertex_handler(vertex, context, state),
-                timeout=_VERTEX_OVERALL_TIMEOUT_S,
-            )
+            result, summary = await _dispatch_vertex_handler(vertex, context, state)
 
             # Complete vertex — fills outgoing edge payloads
             complete_vertex(
@@ -369,9 +369,12 @@ async def _execute_single_vertex(
                 local_context=result,
             )
 
-    except asyncio.TimeoutError:
-        logger.error("Vertex %s timed out after %ds", vertex_id, _VERTEX_OVERALL_TIMEOUT_S)
-        fail_vertex(graph, vertex_id, f"Vertex timed out after {_VERTEX_OVERALL_TIMEOUT_S}s")
+    except GraphInterrupt:
+        # ASK_USER interrupt — mark vertex BLOCKED (not FAILED)
+        logger.info("Vertex %s blocked (ASK_USER) — pausing for user input", vertex_id)
+        block_vertex(graph, vertex_id, "Waiting for user input")
+        agent_store.cache_subgraph(graph)
+        await agent_store.save(graph)
     except Exception as e:
         logger.error("Vertex %s failed: %s", vertex_id, e, exc_info=True)
         fail_vertex(graph, vertex_id, str(e))
@@ -414,8 +417,14 @@ async def node_synthesize(state: GraphAgentState) -> dict:
         return {"final_result": state.get("graph_error", "No graph available")}
 
     graph = AgentGraph(**graph_data)
+    has_blocked = any(v.status == VertexStatus.BLOCKED for v in graph.vertices.values())
     has_failures = any(v.status == VertexStatus.FAILED for v in graph.vertices.values())
-    graph.status = GraphStatus.FAILED if has_failures else GraphStatus.COMPLETED
+    if has_blocked:
+        graph.status = GraphStatus.BLOCKED
+    elif has_failures:
+        graph.status = GraphStatus.FAILED
+    else:
+        graph.status = GraphStatus.COMPLETED
     graph.completed_at = str(int(time.time()))
 
     raw_result = get_final_result(graph)
@@ -679,18 +688,24 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
     VertexType.INVESTIGATOR: (
         "You are the Investigator. Research the topic thoroughly using the provided tools. "
         "Compile findings, identify gaps, and cite sources. "
-        "Your output will be passed as context to downstream vertices."
+        "Your output summary will be passed to downstream vertices via edges. "
+        "Keep your output concise — downstream vertices only see a brief summary, "
+        "not your full context. Store important findings via store_knowledge for persistence."
     ),
     VertexType.EXECUTOR: (
         "You are the Executor. Complete the assigned task using the provided context and tools. "
         "Be thorough, precise, and produce actionable output. "
-        "Use `ask_user` when you need clarification. "
+        "You receive only brief summaries from upstream vertices — use tools (kb_search, etc.) "
+        "to fetch any detailed information you need. "
+        "Use `ask_user` ONLY when absolutely critical information is missing. "
         "Use `store_knowledge` to persist important findings and decisions for future reference."
     ),
     VertexType.TASK: (
         "You are the Executor. Complete the assigned task using the provided context and tools. "
         "Be thorough, precise, and produce actionable output. "
-        "Use `ask_user` when you need clarification. "
+        "You receive only brief summaries from upstream vertices — use tools (kb_search, etc.) "
+        "to fetch any detailed information you need. "
+        "Use `ask_user` ONLY when absolutely critical information is missing. "
         "Use `store_knowledge` to persist important findings and decisions for future reference."
     ),
     VertexType.VALIDATOR: (
@@ -725,8 +740,8 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
 _MAX_VERTEX_TOOL_ITERATIONS = 12
 # Timeout for a single tool execution within vertex loop
 _VERTEX_TOOL_TIMEOUT_S = 90  # KB graph traversals can take 30s+
-# Overall timeout for an entire vertex execution (all iterations combined)
-_VERTEX_OVERALL_TIMEOUT_S = 600
+# NO overall vertex timeout — vertices can take hours when GPU is busy
+# or waiting for cloud escalation. Never time out a vertex.
 
 
 # ---------------------------------------------------------------------------
@@ -759,19 +774,34 @@ async def _agentic_vertex(
         if agent_result is not None:
             return agent_result
 
-    # --- Build system prompt ---
+    # --- Build system prompt with task scope ---
     system_prompt = _SYSTEM_PROMPTS.get(
         vertex.vertex_type,
         _SYSTEM_PROMPTS[VertexType.EXECUTOR],
     )
 
+    # Inject task scope — agent must know client/project context
+    task_data = state.get("task", {})
+    client_name = task_data.get("client_name", "")
+    project_name = task_data.get("project_name", "")
+    if client_name or project_name:
+        system_prompt += (
+            f"\n\n## Task Scope\n"
+            f"Client: {client_name} (id={task_data.get('client_id', '')})\n"
+            f"Project: {project_name} (id={task_data.get('project_id', '')})\n"
+            f"You are working within this specific client and project. "
+            f"Do NOT ask about client or project selection — it's already determined. "
+            f"All tool calls (kb_search, store_knowledge, etc.) are automatically scoped to this client/project."
+        )
+
     # --- Load default tools ---
     tools = get_default_tools(vertex.vertex_type)
 
     # --- Build initial messages ---
+    # Context from edges = summaries only (keep vertex context minimal)
     user_content = (
         f"## {vertex.title}\n\n{vertex.description}\n\n"
-        f"## Context\n{context}"
+        f"## Context from upstream vertices\n{context}"
     )
 
     messages: list[dict] = [
@@ -779,8 +809,7 @@ async def _agentic_vertex(
         {"role": "user", "content": user_content},
     ]
 
-    # --- Extract IDs for tool execution ---
-    task_data = state.get("task", {})
+    # --- Extract IDs for tool execution (task_data already loaded above) ---
     client_id = task_data.get("client_id", "")
     project_id = task_data.get("project_id")
     task_id = task_data.get("id", "")
@@ -1087,16 +1116,22 @@ async def _handle_decompose_vertex(
 
 
 def _build_context(vertex: GraphVertex) -> str:
-    """Build context string from vertex's incoming edge payloads."""
+    """Build context string from vertex's incoming edge payloads.
+
+    IMPORTANT: Only summaries are passed between vertices via edges.
+    Full context stays local — vertex must use tools (kb_search, etc.)
+    to fetch detailed data if needed. This keeps token usage minimal
+    and prevents context explosion in deep graphs.
+    """
     if not vertex.incoming_context:
         return vertex.input_request
 
     parts = [f"## Task\n{vertex.input_request}"]
     for payload in vertex.incoming_context:
+        # Edge carries ONLY summary — never full context
         parts.append(
-            f"\n## From: {payload.source_vertex_title}\n"
-            f"Summary: {payload.summary}\n"
-            f"Context:\n{payload.context}"
+            f"\n### From: {payload.source_vertex_title}\n"
+            f"{payload.summary}"
         )
     return "\n".join(parts)
 

@@ -200,6 +200,41 @@ class ChatMessageService(
         chatMessageRepository.countByConversationIdAndRole(conversationId, role)
 
     /**
+     * Load messages filtered to a specific role only (newest first, chronological order).
+     * Used for "Tasky" filter — BACKGROUND-only messages from DB.
+     */
+    suspend fun getMessagesByRole(
+        conversationId: ObjectId,
+        role: MessageRole,
+        limit: Int = 10,
+    ): List<ChatMessageDocument> {
+        require(limit > 0) { "Limit must be positive" }
+        val messages = chatMessageRepository
+            .findByConversationIdAndRoleOrderByIdDesc(conversationId, role)
+            .take(limit)
+            .toList()
+        return messages.reversed()
+    }
+
+    /**
+     * Load messages by role before a cursor (newest first, chronological order).
+     * Used for "Tasky" filter pagination.
+     */
+    suspend fun getMessagesByRoleBefore(
+        conversationId: ObjectId,
+        role: MessageRole,
+        beforeId: ObjectId,
+        limit: Int = 10,
+    ): List<ChatMessageDocument> {
+        require(limit > 0) { "Limit must be positive" }
+        val messages = chatMessageRepository
+            .findByConversationIdAndRoleAndIdLessThanOrderByIdDesc(conversationId, role, beforeId)
+            .toList()
+            .take(limit)
+        return messages.reversed()
+    }
+
+    /**
      * Find a message by client-generated ID (for deduplication).
      */
     suspend fun findByClientMessageId(clientMessageId: String): ChatMessageDocument? =

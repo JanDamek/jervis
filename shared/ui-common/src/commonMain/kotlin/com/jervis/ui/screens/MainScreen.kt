@@ -4,7 +4,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.MainViewModel
 import com.jervis.ui.environment.EnvironmentPanel
 import com.jervis.ui.MainScreenView as MainScreenViewInternal
@@ -24,16 +23,8 @@ fun MainScreen(
     val backgroundMessageCount by viewModel.chat.backgroundMessageCount.collectAsState()
     val userTaskCount by viewModel.chat.userTaskCount.collectAsState()
 
-    // K reakci: server returns only actionable items (unified timeline, DB-filtered)
-    // Chat/Tasky: client-side filter on message type (same DB source, just visibility toggle)
-    val filteredMessages = remember(chatMessages, showChat, showTasks, showNeedReaction) {
-        when {
-            showNeedReaction -> chatMessages // Server already filtered via UnifiedTimelineService
-            showTasks -> chatMessages.filter { it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT }
-            showChat -> chatMessages.filter { it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT }
-            else -> chatMessages
-        }
-    }
+    // No client-side filtering — server returns exactly what UI should display (DB-filtered).
+    // Filter mode (CHAT/TASKS/NEED_REACTION) is passed to getChatHistory() on server.
     val inputText by viewModel.chat.inputText.collectAsState()
     val isChatLoading by viewModel.chat.isLoading.collectAsState()
     val isInitialLoading by viewModel.connection.isInitialLoading.collectAsState()
@@ -80,7 +71,7 @@ fun MainScreen(
     MainScreenViewInternal(
         selectedClientId = selectedClientId,
         selectedProjectId = selectedProjectId,
-        chatMessages = filteredMessages,
+        chatMessages = chatMessages,
         inputText = inputText,
         isLoading = isChatLoading || isInitialLoading,
         isOffline = isOffline,

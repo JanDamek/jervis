@@ -10,8 +10,8 @@ COPY app/ app/
 # Create browser profiles directory
 RUN mkdir -p /browser-profiles
 
-RUN useradd -m -u 1000 -s /bin/bash jervis && \
-    chown -R jervis:jervis /app /browser-profiles
+# Playwright image already has UID 1000 (pwuser), reuse it
+RUN chown -R 1000:1000 /app /browser-profiles
 
 USER 1000
 

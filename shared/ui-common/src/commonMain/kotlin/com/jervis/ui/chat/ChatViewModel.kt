@@ -165,15 +165,16 @@ class ChatViewModel(
         _liveLogTaskId.value = null
     }
 
-    /** Show chat messages (user/assistant). Default ON. */
-    private val _showChat = MutableStateFlow(true)
+    /** Active filter mode — determines server-side DB query. */
+    private val _filterMode = MutableStateFlow("NEED_REACTION") // Default: K reakci
+
+    /** Derived booleans for UI filter chips. */
+    private val _showChat = MutableStateFlow(false)
     val showChat: StateFlow<Boolean> = _showChat.asStateFlow()
 
-    /** Show all background task results in chat. */
     private val _showTasks = MutableStateFlow(false)
     val showTasks: StateFlow<Boolean> = _showTasks.asStateFlow()
 
-    /** Show only background tasks needing user reaction. Default ON. */
     private val _showNeedReaction = MutableStateFlow(true)
     val showNeedReaction: StateFlow<Boolean> = _showNeedReaction.asStateFlow()
 
@@ -223,10 +224,10 @@ class ChatViewModel(
                     try {
                         val history = services.chatService.getChatHistory(
                             limit = 50,
-                            includeUserTasks = _showNeedReaction.value,
+                            filterMode = _filterMode.value,
                         )
                         applyHistory(history)
-                        println("ChatViewModel: history loaded — ${history.messages.size} msgs, hasMore=${history.hasMore}, needReaction=${_showNeedReaction.value}")
+                        println("ChatViewModel: history loaded — ${history.messages.size} msgs, hasMore=${history.hasMore}, filter=${_filterMode.value}")
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
                         println("ChatViewModel: history load failed: ${e.message}")
@@ -359,54 +360,47 @@ class ChatViewModel(
 
     /** Toggle chat messages visibility. */
     fun toggleChat() {
-        _showChat.value = !_showChat.value
+        _filterMode.value = "CHAT"
+        _showChat.value = true
+        _showTasks.value = false
+        _showNeedReaction.value = false
+        reloadForCurrentFilter()
     }
 
-    /** Toggle "Tasky" filter — all background task results. */
+    /** Switch to "Tasky" filter — server returns only BACKGROUND messages from DB. */
     fun toggleTasks() {
-        _showTasks.value = !_showTasks.value
+        _filterMode.value = "TASKS"
+        _showChat.value = false
+        _showTasks.value = true
+        _showNeedReaction.value = false
+        reloadForCurrentFilter()
     }
 
-    /** Toggle "K reakci" filter — reloads unified timeline from server (DB-sorted). */
+    /** Switch to "K reakci" filter — server returns unified timeline (failed + USER_TASK). */
     fun toggleNeedReaction() {
-        val newValue = !_showNeedReaction.value
-        _showNeedReaction.value = newValue
-        if (newValue) {
-            loadUnifiedTimeline()
-        } else {
-            // Switching back to chat — reload normal history
-            reloadHistory()
-        }
+        _filterMode.value = "NEED_REACTION"
+        _showChat.value = false
+        _showTasks.value = false
+        _showNeedReaction.value = true
+        reloadForCurrentFilter()
     }
 
-    /** Load unified timeline (chat + user tasks) from server — DB does merge+sort. */
-    private fun loadUnifiedTimeline() {
+    /** Reload messages from server based on current filterMode. All filtering in DB. */
+    private fun reloadForCurrentFilter() {
         scope.launch {
             _isLoadingMore.value = true
             try {
                 val history = repository.chat.getChatHistory(
-                    limit = 30,
-                    includeUserTasks = true,
+                    limit = 50,
+                    filterMode = _filterMode.value,
                 )
                 applyHistory(history)
+                println("ChatViewModel: reload filter=${_filterMode.value} — ${history.messages.size} msgs")
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                println("ChatViewModel: loadUnifiedTimeline failed: ${e.message}")
+                println("ChatViewModel: reloadForCurrentFilter failed: ${e.message}")
             } finally {
                 _isLoadingMore.value = false
-            }
-        }
-    }
-
-    /** Reload normal chat history (no user tasks). */
-    private fun reloadHistory() {
-        scope.launch {
-            try {
-                val history = repository.chat.getChatHistory(limit = 20)
-                applyHistory(history)
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                println("ChatViewModel: reloadHistory failed: ${e.message}")
             }
         }
     }
@@ -620,7 +614,7 @@ class ChatViewModel(
                 val history = repository.chat.getChatHistory(
                     limit = 20,
                     beforeMessageId = beforeId,
-                    includeUserTasks = _showNeedReaction.value,
+                    filterMode = _filterMode.value,
                 )
                 val olderMessages = history.messages.map { msg ->
                     val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
@@ -688,7 +682,7 @@ class ChatViewModel(
             ChatResponseType.CHAT_CHANGED -> {
                 println("=== Chat session changed, reloading history... ===")
                 try {
-                    val history = repository.chat.getChatHistory(limit = 50)
+                    val history = repository.chat.getChatHistory(limit = 50, filterMode = _filterMode.value)
                     applyHistory(history)
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e

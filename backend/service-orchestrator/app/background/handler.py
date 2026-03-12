@@ -126,7 +126,8 @@ async def _run_graph_agent_background(
     graph_status = graph_data.get("status", "") if isinstance(graph_data, dict) else ""
 
     # Link sub-graph to master map (with final status)
-    success = not agent_failed and graph_status not in ("failed", "cancelled")
+    is_blocked = graph_status == "blocked"
+    success = not agent_failed and graph_status not in ("failed", "cancelled", "blocked")
     summary = state.get("final_result", "")
     try:
         await agent_store.link_thinking_map(
@@ -148,6 +149,7 @@ async def _run_graph_agent_background(
 
     return {
         "success": success,
+        "blocked": is_blocked,
         "summary": state.get("final_result", ""),
         "artifacts": state.get("artifacts", []),
         "step_results": [],

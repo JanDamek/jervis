@@ -123,6 +123,25 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
     suspend fun countByConversationIdAndRole(conversationId: ObjectId, role: MessageRole): Long
 
     /**
+     * Load messages by specific role (newest first).
+     * Used for "Tasky" filter — BACKGROUND-only messages.
+     */
+    suspend fun findByConversationIdAndRoleOrderByIdDesc(
+        conversationId: ObjectId,
+        role: MessageRole,
+    ): Flow<ChatMessageDocument>
+
+    /**
+     * Load messages by specific role before a cursor (newest first).
+     * Used for "Tasky" filter pagination.
+     */
+    suspend fun findByConversationIdAndRoleAndIdLessThanOrderByIdDesc(
+        conversationId: ObjectId,
+        role: MessageRole,
+        id: ObjectId,
+    ): Flow<ChatMessageDocument>
+
+    /**
      * Check if a message with the given client-generated ID already exists.
      * Used for deduplication — prevents duplicate processing on retry.
      */

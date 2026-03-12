@@ -46,9 +46,10 @@ interface IChatService {
     /**
      * Load chat history for UI display (pagination).
      * @param limit Max messages to return
-     * @param beforeMessageId Load messages before this message ID (cursor, ObjectId string)
+     * @param beforeMessageId Load messages before this message ID (cursor)
+     * @param filterMode "CHAT" (user/assistant only), "TASKS" (background results only), "NEED_REACTION" (unified timeline: failed + USER_TASK)
      */
-    suspend fun getChatHistory(limit: Int = 20, beforeMessageId: String? = null, excludeBackground: Boolean = true, includeUserTasks: Boolean = false): ChatHistoryDto
+    suspend fun getChatHistory(limit: Int = 20, beforeMessageId: String? = null, filterMode: String = "CHAT"): ChatHistoryDto
 
     /**
      * Update active scope (client/project/group) in the chat session.

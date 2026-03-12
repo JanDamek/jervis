@@ -7,6 +7,9 @@ import io.ktor.client.call.body
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import mu.KotlinLogging
 
@@ -51,10 +54,8 @@ class BrowserPoolClient(
     suspend fun initSession(clientId: String, loginUrl: String = "https://teams.microsoft.com"): Boolean {
         return try {
             val response = httpClient.post("$baseUrl/session/$clientId/init") {
-                io.ktor.client.request.setBody(
-                    mapOf("login_url" to loginUrl)
-                )
-                io.ktor.http.contentType(io.ktor.http.ContentType.Application.Json)
+                setBody(mapOf("login_url" to loginUrl))
+                contentType(ContentType.Application.Json)
             }
             response.status.isSuccess()
         } catch (e: Exception) {
