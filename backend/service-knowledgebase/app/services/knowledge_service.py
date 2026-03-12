@@ -772,6 +772,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         callback_url: str,
         task_id: str,
         client_id: str,
+        embedding_priority: int | None = None,
     ):
         """Process full ingest in background and POST result to callback when done.
 
@@ -789,7 +790,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         completion_url = callback_url  # /internal/kb-done
 
         t0 = _time.monotonic()
-        logger.info("ASYNC_INGEST_START task=%s source=%s", task_id, request.sourceUrn)
+        logger.info("ASYNC_INGEST_START task=%s source=%s priority=%s", task_id, request.sourceUrn, embedding_priority)
 
         try:
             # Consume the streaming generator — progress callbacks fire via _post_progress_callback
@@ -799,6 +800,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
                 callback_url=progress_url,
                 task_id=task_id,
                 client_id=client_id,
+                embedding_priority=embedding_priority,
             ):
                 if event.get("type") == "result":
                     result_data = event.get("data")
@@ -836,6 +838,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         callback_url: str = "",
         task_id: str = "",
         client_id: str = "",
+        embedding_priority: int | None = None,
     ):
         """
         Streaming version of ingest_full that yields NDJSON progress events.
@@ -955,7 +958,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             yield await _emit("rag_start", "Ukládám chunks do vektorové DB...")
             yield await _emit("llm_start", f"LLM analýza obsahu ({settings.INGEST_MODEL_COMPLEX})...")
 
-            rag_task = asyncio.create_task(self.ingest(ingest_req, content_hash=content_hash))
+            rag_task = asyncio.create_task(self.ingest(ingest_req, embedding_priority=embedding_priority, content_hash=content_hash))
             summary_task = asyncio.create_task(self._generate_summary(combined_content, request.sourceType or "unknown", request.subject))
 
             # Report each parallel task as it completes (real-time)

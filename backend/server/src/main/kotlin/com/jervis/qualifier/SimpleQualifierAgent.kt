@@ -82,10 +82,19 @@ class SimpleQualifierAgent(
             attachments = attachments,
         )
 
+        // Derive KB processing priority from task source:
+        // MCP-submitted and chat-created tasks get CRITICAL priority (1) to preempt regular indexing queue
+        val kbPriority = when {
+            task.sourceUrn.value.startsWith("agent://mcp") -> 1
+            task.sourceUrn.value.startsWith("chat://") -> 1
+            else -> 4  // regular indexing (email, webhook, etc.)
+        }
+
         val accepted = knowledgeClient.submitFullIngestAsync(
             request,
             taskId = task.id?.toString() ?: "",
             clientId = task.clientId.toString(),
+            priority = kbPriority,
         )
 
         if (!accepted) {
