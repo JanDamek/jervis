@@ -768,12 +768,24 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
 }
 
 # Max agentic loop iterations per vertex (tool call rounds)
-# Raised from 12 to 20 to support complex analytical tasks
 _MAX_VERTEX_TOOL_ITERATIONS = 15
+# Max extend_thinking_map calls per single vertex (prevent runaway growth)
+_MAX_EXTEND_MAP_PER_VERTEX = 1
 # Timeout for a single tool execution within vertex loop
 _VERTEX_TOOL_TIMEOUT_S = 90  # KB graph traversals can take 30s+
 # NO overall vertex timeout — vertices can take hours when GPU is busy
 # or waiting for cloud escalation. Never time out a vertex.
+
+# Dummy tool for force-finish mode — forces blocking LLM call (provider uses
+# streaming when tools=None, which can hang on large contexts).
+_NOOP_FINISH_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "_finish",
+        "description": "Signal that you are done. Call this ONLY if you cannot produce a text answer.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+}
 
 
 # ---------------------------------------------------------------------------
@@ -852,6 +864,7 @@ async def _agentic_vertex(
 
     # --- Agentic loop ---
     tool_call_history: list[tuple[str, str]] = []
+    extend_thinking_map_calls = 0  # Track how many times this vertex spawned children
     iteration = 0
     result = ""
 
@@ -867,8 +880,8 @@ async def _agentic_vertex(
                 vertex.status = VertexStatus.CANCELLED
                 return ("Cancelled by user.", "Cancelled")
 
-        # --- Force finish: at 75% iterations, strip all tools to get a text answer ---
-        force_finish_at = int(_MAX_VERTEX_TOOL_ITERATIONS * 0.75)
+        # --- Force finish: at 50% iterations, strip all tools to get a text answer ---
+        force_finish_at = int(_MAX_VERTEX_TOOL_ITERATIONS * 0.50)
         if iteration == force_finish_at and tools:
             logger.info(
                 "Vertex %s: forcing finish at iteration %d/%d — removing all tools",
@@ -883,12 +896,20 @@ async def _agentic_vertex(
                 ),
             })
 
+        # Pass tools=None when we never had tools; but when force-finish sets tools=[],
+        # pass a dummy tool to force blocking mode (streaming can hang on large contexts).
+        # Provider uses blocking mode when tools is truthy, streaming when tools is None.
+        effective_tools = tools if tools else None
+        if tools is not None and not tools:
+            # Force-finish: tools=[] — use a no-op tool to force blocking mode
+            effective_tools = [_NOOP_FINISH_TOOL]
+
         response = await llm_with_cloud_fallback(
             state=state,
             messages=messages,
             task_type="graph_vertex",
             max_tokens=settings.default_output_tokens,
-            tools=tools or None,
+            tools=effective_tools,
         )
 
         message = response.choices[0].message
@@ -906,23 +927,31 @@ async def _agentic_vertex(
         # Filter out tool calls for tools not in current list
         # (Ollama models may generate calls for removed tools from conversation history)
         # Note: tools=[] (explicitly empty) means ALL tools removed — filter everything
+        # Filter phantom tool calls: model may generate calls for removed tools
+        # from conversation history. Also handle force-finish (_finish noop tool).
         if tools is not None:
             available_names = {t.get("function", {}).get("name") for t in tools}
             # Always allow meta-tools (unless tools is explicitly empty = force-finish mode)
             if tools:
                 available_names.update({"request_tools", "extend_thinking_map"})
+            else:
+                # Force-finish mode: only allow _finish noop
+                available_names = {"_finish"}
+
             filtered = [tc for tc in tool_calls if tc.function.name in available_names]
             if len(filtered) < len(tool_calls):
                 removed = [tc.function.name for tc in tool_calls if tc.function.name not in available_names]
                 logger.warning("Filtered out %d phantom tool calls: %s", len(removed), removed)
             tool_calls = filtered
-            if not tool_calls:
-                # All tool calls filtered — use whatever text we have
+
+            # If only _finish or no tool calls remain → done
+            finish_only = all(tc.function.name == "_finish" for tc in tool_calls) if tool_calls else True
+            if not tool_calls or finish_only:
+                # Use whatever text we have
                 candidate = remaining_text or message.content or ""
                 if candidate:
                     result = candidate
                 elif not result:
-                    # Accumulate from message history as last resort
                     result = _extract_accumulated_result(messages)
                 break
 
@@ -950,6 +979,24 @@ async def _agentic_vertex(
 
             # Handle the extend_thinking_map meta-tool
             if tool_name == "extend_thinking_map":
+                # Hard limit: max N extend_thinking_map calls per vertex
+                if extend_thinking_map_calls >= _MAX_EXTEND_MAP_PER_VERTEX:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": tool_name,
+                        "content": (
+                            f"ERROR: Maximum extend_thinking_map calls ({_MAX_EXTEND_MAP_PER_VERTEX}) "
+                            "reached for this vertex. Focus on YOUR task and produce a result. "
+                            "Do NOT try to extend the thinking map again."
+                        ),
+                    })
+                    # Remove the tool to prevent further attempts
+                    if tools:
+                        tools = [t for t in tools if t.get("function", {}).get("name") != tool_name]
+                        logger.warning("Removed extend_thinking_map after %d calls (hard limit)", extend_thinking_map_calls)
+                    continue
+
                 # Loop detection for extend_thinking_map — prevent repeated calls with same args
                 loop_reason, loop_count = detect_tool_loop(
                     tool_call_history, tool_name, arguments,
@@ -965,10 +1012,11 @@ async def _agentic_vertex(
                             "do NOT call extend_thinking_map again with the same vertices."
                         ),
                     })
-                    if loop_count >= 3 and tools:
+                    if loop_count >= 2 and tools:
                         tools = [t for t in tools if t.get("function", {}).get("name") != tool_name]
                         logger.warning("Removed extend_thinking_map from tools after %d repeats", loop_count)
                     continue
+                extend_thinking_map_calls += 1
                 tool_result = _handle_extend_thinking_map(arguments, vertex, graph)
                 messages.append({
                     "role": "tool",
