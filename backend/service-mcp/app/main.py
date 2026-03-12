@@ -994,31 +994,22 @@ async def submit_task(
         task_name: Display name for the task (auto-generated if empty)
         processing_mode: FOREGROUND (interactive) or BACKGROUND (autonomous)
     """
-    from bson import ObjectId as BsonObjectId
-
-    db = await get_db()
-    task_id = BsonObjectId()
-    correlation_id = str(BsonObjectId())
-    now = datetime.now(tz=None)
-
-    task_doc = {
-        "_id": task_id,
-        "type": "USER_INPUT_PROCESSING",
-        "taskName": task_name or query[:60],
-        "content": query,
-        "projectId": BsonObjectId(project_id) if project_id else None,
-        "clientId": BsonObjectId(client_id),
-        "createdAt": now,
-        "state": "QUEUED",
-        "processingMode": processing_mode,
-        "correlationId": correlation_id,
-        "sourceUrn": "mcp:submit-task",
-        "qualificationRetries": 0,
-        "dispatchRetryCount": 0,
+    payload: dict = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "query": query,
+        "createdBy": "mcp-submit",
     }
-
-    await db["tasks"].insert_one(task_doc)
-    return f"Task created: id={task_id}, state=QUEUED, mode={processing_mode}"
+    if task_name:
+        payload["title"] = task_name
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/tasks/create",
+            json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return f"Task created: id={data.get('taskId', '?')}, state={data.get('state', '?')}, name={data.get('name', '?')}"
 
 
 # ── Scheduled Task Tools ─────────────────────────────────────────────────
