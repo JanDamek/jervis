@@ -308,6 +308,14 @@ def complete_vertex(
     if not vertex:
         return None
 
+    # Guard: skip if already completed (prevents duplicate work in parallel execution)
+    if vertex.status == VertexStatus.COMPLETED:
+        logger.warning(
+            "VERTEX_ALREADY_COMPLETED | graph=%s | vertex=%s | title='%s' — skipping",
+            graph.id, vertex_id, vertex.title,
+        )
+        return vertex
+
     vertex.status = VertexStatus.COMPLETED
     vertex.result = result
     vertex.result_summary = result_summary
