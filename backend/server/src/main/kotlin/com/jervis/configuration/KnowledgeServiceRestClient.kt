@@ -239,6 +239,7 @@ class KnowledgeServiceRestClient(
         taskId: String,
         clientId: String,
         priority: Int? = null,
+        maxTier: String = "NONE",
     ): Boolean {
         val callbackUrl = if (callbackBaseUrl.isNotBlank()) {
             "${callbackBaseUrl.trimEnd('/')}/internal/kb-done"
@@ -262,6 +263,7 @@ class KnowledgeServiceRestClient(
                 append("callbackUrl", callbackUrl)
                 append("taskId", taskId)
                 priority?.let { append("priority", it.toString()) }
+                append("maxTier", maxTier)
 
                 request.attachments.forEach { attachment ->
                     append(
@@ -816,6 +818,7 @@ private data class PythonIngestRequest(
     val content: String,
     val metadata: Map<String, String> = emptyMap(),
     val observedAt: String,
+    val maxTier: String = "NONE",
 )
 
 @Serializable

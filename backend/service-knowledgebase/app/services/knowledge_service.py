@@ -259,6 +259,7 @@ class KnowledgeService:
             chunk_ids=chunk_ids,
             created_at=datetime.utcnow().isoformat(),
             priority=priority,
+            max_tier=getattr(request, "maxTier", "NONE"),
         )
         await self.extraction_queue.enqueue(task)
         logger.info(
@@ -527,10 +528,11 @@ class KnowledgeService:
             edges_created=total_edges
         )
 
-    async def _check_link_relevance(self, text: str, root_url: str, page_url: str) -> bool:
+    async def _check_link_relevance(self, text: str, root_url: str, page_url: str,
+                                     max_tier: str = "NONE") -> bool:
         """Let LLM decide if a sub-page is relevant for indexing.
-        Uses CPU ingest instance with simple (7B) model for fast classification."""
-        llm = self.ingest_llm_simple
+        Routes through llm_router for OpenRouter support on FREE+ tiers."""
+        from app.services import llm_router
 
         # Simple model uses 8k context; keep truncation conservative for speed
         max_chars = 3000
@@ -559,9 +561,14 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
 
         try:
             logger.info("Calling LLM for relevance check page=%s", page_url)
-            response = await llm.ainvoke(prompt)
+            response_text = await llm_router.llm_generate(
+                prompt=prompt,
+                max_tier=max_tier,
+                model=settings.INGEST_MODEL_SIMPLE,
+                num_ctx=8192,
+            )
             import json
-            result = json.loads(response.content)
+            result = json.loads(response_text)
             return result.get("relevant", True)
         except Exception:
             # On error, default to indexing
@@ -649,7 +656,8 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
                 "sourceType": request.sourceType,
                 "attachmentCount": len(attachments),
             },
-            observedAt=request.observedAt
+            observedAt=request.observedAt,
+            maxTier=getattr(request, "maxTier", "NONE"),
         )
 
         # Ingest to RAG — idempotent: skip if content unchanged, purge+re-ingest if changed
@@ -947,6 +955,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
                 "attachmentCount": len(attachments),
             },
             observedAt=request.observedAt,
+            maxTier=getattr(request, "maxTier", "NONE"),
         )
 
         if skip_rag:

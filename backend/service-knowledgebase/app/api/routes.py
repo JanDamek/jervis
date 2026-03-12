@@ -451,6 +451,7 @@ async def ingest_full_async(
     callbackUrl: str = Form(...),
     taskId: str = Form(...),
     priority: str = Form(None),
+    maxTier: str = Form("NONE"),
     attachments: List[UploadFile] = File(default=[])
 ):
     """
@@ -476,7 +477,8 @@ async def ingest_full_async(
             sourceType=source_type_enum,
             subject=subject,
             content=content,
-            metadata=meta
+            metadata=meta,
+            maxTier=maxTier,
         )
 
         # Read all attachments into memory before returning (they're UploadFile streams)

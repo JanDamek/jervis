@@ -5,6 +5,7 @@ import com.jervis.entity.TaskDocument
 import com.jervis.knowledgebase.model.Attachment
 import com.jervis.knowledgebase.model.FullIngestRequest
 import com.jervis.repository.ProjectRepository
+import com.jervis.service.CloudModelPolicyResolver
 import com.jervis.service.background.TaskService
 import com.jervis.service.text.TikaTextExtractionService
 import mu.KotlinLogging
@@ -31,6 +32,7 @@ class SimpleQualifierAgent(
     private val taskService: TaskService,
     private val tikaTextExtractionService: TikaTextExtractionService,
     private val projectRepository: ProjectRepository,
+    private val cloudModelPolicyResolver: CloudModelPolicyResolver,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -90,11 +92,16 @@ class SimpleQualifierAgent(
             else -> 4  // regular indexing (email, webhook, etc.)
         }
 
+        // Resolve OpenRouter tier for KB write LLM routing
+        val policy = cloudModelPolicyResolver.resolve(task.clientId, task.projectId)
+        val maxTier = policy.maxOpenRouterTier.name
+
         val accepted = knowledgeClient.submitFullIngestAsync(
             request,
             taskId = task.id?.toString() ?: "",
             clientId = task.clientId.toString(),
             priority = kbPriority,
+            maxTier = maxTier,
         )
 
         if (!accepted) {
