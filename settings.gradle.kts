@@ -57,5 +57,6 @@ if (System.getenv("DOCKER_BUILD") != "true") {
     include(
         ":apps:desktop",
         ":apps:mobile",
+        ":apps:wearApp",
     )
 }

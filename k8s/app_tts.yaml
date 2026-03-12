@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-tts
+  namespace: jervis
+spec:
+  revisionHistoryLimit: 2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-tts
+  template:
+    metadata:
+      labels:
+        app: jervis-tts
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: tts
+          image: registry.damek-soft.eu/jandamek/jervis-tts:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8787
+          env:
+            - name: TTS_PORT
+              value: "8787"
+            - name: TTS_MODEL
+              value: "en_US-lessac-medium"
+            - name: TTS_DATA_DIR
+              value: "/opt/jervis/data/tts"
+          volumeMounts:
+            - name: jervis-data
+              mountPath: /opt/jervis/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8787
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8787
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 10
+      volumes:
+        - name: jervis-data
+          persistentVolumeClaim:
+            claimName: jervis-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-tts
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-tts
+  ports:
+    - name: http
+      port: 8787
+      targetPort: 8787

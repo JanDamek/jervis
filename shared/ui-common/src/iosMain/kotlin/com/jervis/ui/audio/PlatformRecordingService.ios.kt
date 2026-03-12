@@ -18,7 +18,7 @@ actual class PlatformRecordingService actual constructor() {
 
     private val artwork: MPMediaItemArtwork? by lazy {
         // Load the app icon from the asset catalog for lock screen display
-        val image = UIImage.imageNamed("AppIcon") ?: UIImage.imageNamed("ic_launcher")
+        val image = UIImage.imageNamed("JervisIcon")
         image?.let { img ->
             MPMediaItemArtwork(boundsSize = CGSizeMake(600.0, 600.0)) { _ -> img }
         }

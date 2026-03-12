@@ -1,0 +1,101 @@
+import Foundation
+import WatchConnectivity
+
+enum WatchCommand: String {
+    case startRecording = "start_recording"
+    case stopRecording = "stop_recording"
+}
+
+class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
+    @Published var isPhoneReachable = false
+    @Published var lastChatResponse: String? = nil
+
+    private var session: WCSession?
+
+    override init() {
+        super.init()
+        if WCSession.isSupported() {
+            session = WCSession.default
+            session?.delegate = self
+            session?.activate()
+        }
+    }
+
+    func sendCommand(_ command: WatchCommand) {
+        guard let session = session, session.isReachable else {
+            print("[Watch] Phone not reachable for command: \(command.rawValue)")
+            return
+        }
+        session.sendMessage(
+            ["type": "command", "command": command.rawValue],
+            replyHandler: nil,
+            errorHandler: { error in
+                print("[Watch] Failed to send command: \(error)")
+            }
+        )
+    }
+
+    func sendAudioChunk(_ data: Data, chunkIndex: Int, isLast: Bool = false) {
+        guard let session = session else { return }
+
+        let metadata: [String: Any] = [
+            "type": "audio_chunk",
+            "chunkIndex": chunkIndex,
+            "isLast": isLast,
+            "size": data.count,
+        ]
+
+        // Use transferFile for reliable delivery (works even if phone is not immediately reachable)
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("chunk_\(chunkIndex).wav")
+        try? data.write(to: tempURL)
+        session.transferFile(tempURL, metadata: metadata)
+    }
+
+    func sendVoiceCommand(_ audioData: Data) {
+        guard let session = session, session.isReachable else {
+            print("[Watch] Phone not reachable for voice command")
+            return
+        }
+
+        // For chat, we need immediate response — use sendMessageData
+        session.sendMessageData(
+            audioData,
+            replyHandler: { replyData in
+                if let response = String(data: replyData, encoding: .utf8) {
+                    DispatchQueue.main.async {
+                        self.lastChatResponse = response
+                    }
+                }
+            },
+            errorHandler: { error in
+                print("[Watch] Voice command failed: \(error)")
+                DispatchQueue.main.async {
+                    self.lastChatResponse = "Chyba: \(error.localizedDescription)"
+                }
+            }
+        )
+    }
+
+    // MARK: - WCSessionDelegate
+
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        DispatchQueue.main.async {
+            self.isPhoneReachable = session.isReachable
+        }
+    }
+
+    func sessionReachabilityDidChange(_ session: WCSession) {
+        DispatchQueue.main.async {
+            self.isPhoneReachable = session.isReachable
+        }
+    }
+
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        if let type = message["type"] as? String, type == "chat_response",
+           let text = message["text"] as? String {
+            DispatchQueue.main.async {
+                self.lastChatResponse = text
+            }
+        }
+    }
+}
