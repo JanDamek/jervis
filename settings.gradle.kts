@@ -42,7 +42,6 @@ if (System.getenv("DOCKER_BUILD") != "true") {
 include(
     ":backend:common-services",
     ":backend:server",
-    ":backend:service-tika",
     ":backend:service-aider",
     ":backend:service-coding-engine",
     ":backend:service-atlassian",

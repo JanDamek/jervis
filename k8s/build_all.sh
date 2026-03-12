@@ -15,9 +15,6 @@ validate_common_resources "jervis"
 echo ""
 
 # Build persistent services (Deployments)
-"${K8S_DIR}/build_tika.sh"
-echo ""
-
 "${K8S_DIR}/build_atlassian.sh"
 echo ""
 

@@ -4,7 +4,7 @@
 # Mounted as /opt/jervis/config/application.yml in the server container.
 #
 # Differences from local (backend/server/src/main/resources/application.yml):
-# - K8s service names instead of localhost (e.g., ws://jervis-tika:8081/)
+# - K8s service names instead of localhost
 # - Higher timeouts (30min request/socket vs 11min local)
 # - qualifier.max-retries/backoff config (not in local)
 # - No data-dir overrides
@@ -141,8 +141,6 @@ data:
     endpoints:
       searxng:
         baseUrl: http://nas.lan.mazlusek.com:30053/       # SearXNG web search (NodePort)
-      tika:
-        baseUrl: ws://jervis-tika:8081/              # Document extraction
       knowledgebase:
         baseUrl: http://jervis-knowledgebase:8080/        # Python KB (RAG+Graph) - read operations
       knowledgebase-write:
