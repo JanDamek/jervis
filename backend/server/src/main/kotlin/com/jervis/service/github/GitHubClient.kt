@@ -65,6 +65,57 @@ class GitHubClient(
         return json.decodeFromString(response.bodyAsText())
     }
 
+    // --- Issue write operations ---
+
+    suspend fun createIssue(
+        connection: ConnectionDocument,
+        owner: String,
+        repo: String,
+        title: String,
+        body: String? = null,
+        labels: List<String> = emptyList(),
+    ): GitHubIssue {
+        val token = requireToken(connection)
+        val requestBody = buildJsonObject {
+            put("title", title)
+            body?.let { put("body", it) }
+            if (labels.isNotEmpty()) {
+                putJsonArray("labels") { labels.forEach { add(it) } }
+            }
+        }.toString()
+        val response = httpClient.post("https://api.github.com/repos/$owner/$repo/issues") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        if (!response.status.isSuccess()) {
+            error("GitHub issue create failed: ${response.status} — ${response.bodyAsText()}")
+        }
+        return json.decodeFromString(GitHubIssue.serializer(), response.bodyAsText())
+    }
+
+    suspend fun addIssueComment(
+        connection: ConnectionDocument,
+        owner: String,
+        repo: String,
+        issueNumber: Int,
+        body: String,
+    ): GitHubComment {
+        val token = requireToken(connection)
+        val requestBody = buildJsonObject { put("body", body) }.toString()
+        val response = httpClient.post("https://api.github.com/repos/$owner/$repo/issues/$issueNumber/comments") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        if (!response.status.isSuccess()) {
+            error("GitHub issue comment failed: ${response.status} — ${response.bodyAsText()}")
+        }
+        return json.decodeFromString(GitHubComment.serializer(), response.bodyAsText())
+    }
+
     // --- PR read operations ---
 
     suspend fun listOpenPullRequests(

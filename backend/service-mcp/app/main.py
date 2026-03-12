@@ -2169,6 +2169,127 @@ async def init_workspace(project_id: str) -> str:
         return f"Error: {data.get('error', 'unknown')}"
 
 
+# ── Issue / Bug Tracker tools ────────────────────────────────────────────
+
+
+@mcp.tool
+async def create_issue(
+    client_id: str,
+    project_id: str,
+    title: str,
+    description: str = "",
+    labels: str = "",
+) -> str:
+    """Create a new issue on the project's bug tracker (GitHub Issues or GitLab Issues).
+
+    Uses the project's BUGTRACKER connection to create an issue via the provider API.
+
+    Args:
+        client_id: Client ID that owns the project
+        project_id: Project ID (must have a BUGTRACKER or REPOSITORY connection)
+        title: Issue title
+        description: Issue body/description (markdown supported)
+        labels: Comma-separated labels (e.g. "bug,priority:high")
+    """
+    body: dict = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "title": title,
+    }
+    if description:
+        body["description"] = description
+    if labels:
+        body["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/issues/create",
+            json=body,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        if data.get("ok"):
+            return (
+                f"Issue created: {data.get('key', '?')}\n"
+                f"  URL: {data.get('url', '?')}"
+            )
+        return f"Error: {data.get('error', 'unknown')}"
+
+
+@mcp.tool
+async def add_issue_comment(
+    client_id: str,
+    project_id: str,
+    issue_key: str,
+    comment: str,
+) -> str:
+    """Add a comment to an existing issue on the project's bug tracker.
+
+    Args:
+        client_id: Client ID that owns the project
+        project_id: Project ID
+        issue_key: Issue number/key (e.g. "#1", "1", "#42")
+        comment: Comment body (markdown supported)
+    """
+    # Normalize issue key to include #
+    key = issue_key if issue_key.startswith("#") else f"#{issue_key}"
+    body: dict = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "issueKey": key,
+        "comment": comment,
+    }
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/issues/comment",
+            json=body,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        if data.get("ok"):
+            url_info = f"\n  URL: {data['url']}" if data.get("url") else ""
+            return f"Comment added to issue {key}{url_info}"
+        return f"Error: {data.get('error', 'unknown')}"
+
+
+@mcp.tool
+async def list_issues(
+    client_id: str,
+    project_id: str,
+) -> str:
+    """List issues from the project's bug tracker (GitHub Issues or GitLab Issues).
+
+    Args:
+        client_id: Client ID that owns the project
+        project_id: Project ID
+    """
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.get(
+            f"{settings.kotlin_server_url}/internal/issues/list",
+            params={"clientId": client_id, "projectId": project_id},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        if not data.get("ok"):
+            return f"Error: {data.get('error', 'unknown')}"
+
+        issues = data.get("issues", [])
+        if not issues:
+            return "No issues found."
+
+        lines = [f"Found {len(issues)} issue(s):"]
+        for issue in issues:
+            lines.append(
+                f"  {issue['key']} [{issue['state']}] {issue['title']}\n"
+                f"    URL: {issue['url']}"
+            )
+        return "\n".join(lines)
+
+
 # ── Health endpoint (custom route) ───────────────────────────────────────
 
 @mcp.custom_route("/health", methods=["GET"])

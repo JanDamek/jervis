@@ -28,6 +28,7 @@ import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalProjectManagementApi
 import com.jervis.rpc.internal.installInternalMeetingApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
+import com.jervis.rpc.internal.installInternalBugTrackerApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -132,6 +133,7 @@ class KtorRpcServer(
                             installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)
                             installInternalCacheApi(guidelinesService)
                             installInternalMeetingApi(meetingRpcImpl)
+                            installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
