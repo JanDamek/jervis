@@ -888,7 +888,7 @@ async def _agentic_vertex(
             messages=messages,
             task_type="graph_vertex",
             max_tokens=settings.default_output_tokens,
-            tools=tools if tools else None,
+            tools=tools or None,
         )
 
         message = response.choices[0].message
@@ -905,17 +905,25 @@ async def _agentic_vertex(
 
         # Filter out tool calls for tools not in current list
         # (Ollama models may generate calls for removed tools from conversation history)
-        if tools:
+        # Note: tools=[] (explicitly empty) means ALL tools removed — filter everything
+        if tools is not None:
             available_names = {t.get("function", {}).get("name") for t in tools}
-            # Always allow meta-tools
-            available_names.update({"request_tools", "extend_thinking_map"})
+            # Always allow meta-tools (unless tools is explicitly empty = force-finish mode)
+            if tools:
+                available_names.update({"request_tools", "extend_thinking_map"})
             filtered = [tc for tc in tool_calls if tc.function.name in available_names]
             if len(filtered) < len(tool_calls):
                 removed = [tc.function.name for tc in tool_calls if tc.function.name not in available_names]
                 logger.warning("Filtered out %d phantom tool calls: %s", len(removed), removed)
             tool_calls = filtered
             if not tool_calls:
-                result = remaining_text or message.content or ""
+                # All tool calls filtered — use whatever text we have
+                candidate = remaining_text or message.content or ""
+                if candidate:
+                    result = candidate
+                elif not result:
+                    # Accumulate from message history as last resort
+                    result = _extract_accumulated_result(messages)
                 break
 
         # Append assistant message with tool calls to history
@@ -1106,6 +1114,27 @@ def _handle_request_tools(
     if added:
         return f"Added {len(added)} tools: {', '.join(added)}. You can now use them."
     return "No new tools added (all requested tools were already available)."
+
+
+def _extract_accumulated_result(messages: list[dict]) -> str:
+    """Extract useful text from message history when vertex has no explicit result.
+
+    Collects tool results and any assistant text to build a summary.
+    Used as fallback when force-finish strips tools and model produces no text.
+    """
+    parts = []
+    for msg in messages:
+        if msg.get("role") == "tool":
+            content = msg.get("content", "")
+            if content and not content.startswith("ERROR:") and len(content) > 20:
+                parts.append(content[:500])
+        elif msg.get("role") == "assistant":
+            content = msg.get("content", "")
+            if content and len(content) > 10:
+                parts.append(content[:500])
+    if parts:
+        return "\n---\n".join(parts[-5:])  # Last 5 meaningful pieces
+    return "(vertex completed without producing explicit result)"
 
 
 def _handle_extend_thinking_map(
