@@ -26,7 +26,7 @@ from app.llm.provider import (
     TIER_TIMEOUT_SECONDS,
 )
 from app.config import estimate_tokens
-from app.agent.graph import add_vertex, add_edge
+from app.agent.graph import add_vertex, add_edge, complete_vertex
 from app.agent.models import (
     AgentGraph,
     EdgeType,
@@ -197,10 +197,12 @@ async def decompose_large_context(
         for cv in created_vertices:
             add_edge(graph, cv.id, synthesis_v.id, EdgeType.DEPENDENCY)
 
-        # Mark parent as completed (decomposition done)
-        parent.status = VertexStatus.COMPLETED
-        parent.result = f"Decomposed via Gemini into {len(created_vertices)} sub-tasks + synthesis"
-        parent.result_summary = parent.result
+        # Mark parent as completed via complete_vertex() — fills outgoing edge payloads
+        complete_vertex(
+            graph, parent_id,
+            result=f"Decomposed via Gemini into {len(created_vertices)} sub-tasks + synthesis",
+            result_summary=f"Decomposed via Gemini into {len(created_vertices)} sub-tasks + synthesis",
+        )
 
         logger.info(
             "Gemini decomposition created %d sub-vertices + synthesis for parent %s",
