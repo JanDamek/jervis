@@ -329,12 +329,29 @@ def complete_vertex(
         summary=result_summary,
         context=vertex.local_context,
     )
-    for edge in get_outgoing_edges(graph, vertex_id):
+    outgoing = get_outgoing_edges(graph, vertex_id)
+    for edge in outgoing:
         edge.payload = payload
 
     # Update readiness of downstream vertices
-    for edge in get_outgoing_edges(graph, vertex_id):
+    newly_ready = []
+    for edge in outgoing:
+        target = graph.vertices.get(edge.target_id)
+        prev_status = target.status if target else None
         _update_vertex_readiness(graph, edge.target_id)
+        if target and prev_status != target.status and target.status == VertexStatus.READY:
+            newly_ready.append(target.title)
+
+    # Log completion with context
+    completed_count = sum(1 for v in graph.vertices.values() if v.status == VertexStatus.COMPLETED)
+    total = len(graph.vertices)
+    logger.info(
+        "VERTEX_COMPLETED | graph=%s | vertex=%s | title='%s' | type=%s | "
+        "summary_len=%d | outgoing=%d | newly_ready=[%s] | progress=%d/%d",
+        graph.id, vertex_id, vertex.title, vertex.vertex_type.value,
+        len(result_summary), len(outgoing),
+        ", ".join(newly_ready), completed_count, total,
+    )
 
     # Check if entire graph is complete
     _check_graph_completion(graph)
@@ -355,6 +372,11 @@ def fail_vertex(
     vertex.status = VertexStatus.FAILED
     vertex.error = error
     vertex.completed_at = datetime.now(timezone.utc).isoformat()
+
+    logger.warning(
+        "VERTEX_FAILED | graph=%s | vertex=%s | title='%s' | error=%s",
+        graph.id, vertex_id, vertex.title, error[:200],
+    )
 
     # Fill outgoing edge payloads with error context (unblock downstream)
     error_payload = EdgePayload(
@@ -585,6 +607,15 @@ def _check_graph_completion(graph: AgentGraph) -> None:
         )
         graph.status = GraphStatus.FAILED if has_failures else GraphStatus.COMPLETED
         graph.completed_at = datetime.now(timezone.utc).isoformat()
+        completed = sum(1 for v in graph.vertices.values() if v.status == VertexStatus.COMPLETED)
+        failed = sum(1 for v in graph.vertices.values() if v.status == VertexStatus.FAILED)
+        skipped = sum(1 for v in graph.vertices.values() if v.status == VertexStatus.SKIPPED)
+        logger.info(
+            "GRAPH_COMPLETE | graph=%s | status=%s | vertices=%d | "
+            "completed=%d | failed=%d | skipped=%d | total_tokens=%d | total_llm_calls=%d",
+            graph.id, graph.status.value, len(graph.vertices),
+            completed, failed, skipped, graph.total_token_count, graph.total_llm_calls,
+        )
 
 
 # ---------------------------------------------------------------------------

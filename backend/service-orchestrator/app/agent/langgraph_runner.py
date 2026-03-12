@@ -229,6 +229,14 @@ async def node_select_next(state: GraphAgentState) -> dict:
     ready = get_ready_vertices(graph)
 
     if not ready:
+        # Log status summary for debugging stalled graphs
+        statuses = {}
+        for v in graph.vertices.values():
+            statuses[v.status.value] = statuses.get(v.status.value, 0) + 1
+        logger.info(
+            "SELECT_NEXT | graph=%s | no_ready | statuses=%s | graph_status=%s",
+            graph.id, statuses, graph.status.value,
+        )
         return {
             "task_graph": graph.model_dump(),
             "current_vertex_id": None,
@@ -237,6 +245,11 @@ async def node_select_next(state: GraphAgentState) -> dict:
 
     # Return all ready vertices for parallel execution
     ready_ids = [v.id for v in ready]
+    ready_titles = [v.title for v in ready]
+    logger.info(
+        "SELECT_NEXT | graph=%s | ready=%d | titles=[%s]",
+        graph.id, len(ready_ids), ", ".join(ready_titles[:5]),
+    )
     return {
         "task_graph": graph.model_dump(),
         "current_vertex_id": ready_ids[0],
@@ -471,9 +484,14 @@ async def node_synthesize(state: GraphAgentState) -> dict:
     agent_store.remove_cached_subgraph(graph.task_id)
     await report_graph_status(graph, "Graph execution completed")
 
+    vs = stats.get("vertex_statuses", {})
     logger.info(
-        "Graph agent done: vertices=%d tokens=%d",
-        stats["total_vertices"], stats["total_tokens"],
+        "SYNTHESIZE_DONE | graph=%s | status=%s | vertices=%d | "
+        "completed=%d | failed=%d | skipped=%d | tokens=%d | llm_calls=%d | result_len=%d",
+        graph.id, graph.status.value, stats["total_vertices"],
+        vs.get("completed", 0), vs.get("failed", 0), vs.get("skipped", 0),
+        stats["total_tokens"], stats["total_llm_calls"],
+        len(result) if result else 0,
     )
 
     return {"final_result": result, "task_graph": graph.model_dump()}
