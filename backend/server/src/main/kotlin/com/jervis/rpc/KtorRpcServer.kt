@@ -99,6 +99,7 @@ class KtorRpcServer(
     private val gitHubClient: com.jervis.service.github.GitHubClient,
     private val gitLabClient: com.jervis.service.gitlab.GitLabClient,
     private val reviewLanguageResolver: com.jervis.service.ReviewLanguageResolver,
+    private val bugTrackerService: com.jervis.integration.bugtracker.BugTrackerService,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -133,7 +134,7 @@ class KtorRpcServer(
                             installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)
                             installInternalCacheApi(guidelinesService)
                             installInternalMeetingApi(meetingRpcImpl)
-                            installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient)
+                            installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)

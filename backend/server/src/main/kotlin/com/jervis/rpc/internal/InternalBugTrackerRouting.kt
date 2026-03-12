@@ -5,6 +5,8 @@ import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ProviderEnum
+import com.jervis.integration.bugtracker.BugTrackerService
+import com.jervis.integration.bugtracker.CreateBugTrackerIssueRequest
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.github.GitHubClient
 import com.jervis.service.gitlab.GitLabClient
@@ -28,16 +30,25 @@ private val json = Json { ignoreUnknownKeys = true }
 /**
  * Internal REST endpoints for bug tracker (issue) operations.
  *
- * Used by MCP server and orchestrator to create/search/comment on issues
- * via GitHub Issues or GitLab Issues, using project's BUGTRACKER connection.
+ * Supports three providers:
+ * - **GitHub** Issues (via GitHubClient)
+ * - **GitLab** Issues (via GitLabClient)
+ * - **Atlassian/Jira** (via BugTrackerService — existing RPC integration)
+ *
+ * The provider is determined by the project's BUGTRACKER resource connection.
+ * Falls back to REPOSITORY resource if no BUGTRACKER is configured.
+ *
+ * Typical setup: GitLab for code + Jira for issues + Confluence for wiki —
+ * each capability points to a different connection.
  */
 fun Routing.installInternalBugTrackerApi(
     projectService: ProjectService,
     connectionService: ConnectionService,
     gitHubClient: GitHubClient,
     gitLabClient: GitLabClient,
+    bugTrackerService: BugTrackerService,
 ) {
-    // Create an issue on the project's bug tracker (GitHub/GitLab)
+    // Create an issue on the project's bug tracker
     post("/internal/issues/create") {
         try {
             val body = call.receive<CreateIssueRequest>()
@@ -89,6 +100,26 @@ fun Routing.installInternalBugTrackerApi(
                         HttpStatusCode.Created,
                     )
                 }
+                ProviderEnum.ATLASSIAN -> {
+                    // Jira — resourceIdentifier is the project key (e.g. "PROJ")
+                    val issue = bugTrackerService.createIssue(
+                        clientId = ClientId(ObjectId(body.clientId)),
+                        request = CreateBugTrackerIssueRequest(
+                            projectKey = resourceId,
+                            summary = body.title,
+                            description = body.description,
+                            issueType = body.issueType ?: "Task",
+                            priority = body.priority,
+                            labels = body.labels,
+                        ),
+                    )
+                    logger.info { "ISSUE_CREATED | jira | ${issue.key} | ${body.title}" }
+                    call.respondText(
+                        json.encodeToString(IssueResponse(ok = true, key = issue.key)),
+                        ContentType.Application.Json,
+                        HttpStatusCode.Created,
+                    )
+                }
                 else -> {
                     call.respondText(
                         """{"ok":false,"error":"Unsupported provider: ${connection.provider}"}""",
@@ -124,15 +155,15 @@ fun Routing.installInternalBugTrackerApi(
             }
 
             val (connection, resourceId) = resolved
-            val issueNumber = body.issueKey.removePrefix("#").toIntOrNull()
-                ?: return@post call.respondText(
-                    """{"ok":false,"error":"Invalid issue key: ${body.issueKey}"}""",
-                    ContentType.Application.Json,
-                    HttpStatusCode.BadRequest,
-                )
 
             when (connection.provider) {
                 ProviderEnum.GITHUB -> {
+                    val issueNumber = body.issueKey.removePrefix("#").toIntOrNull()
+                        ?: return@post call.respondText(
+                            """{"ok":false,"error":"Invalid issue number: ${body.issueKey}"}""",
+                            ContentType.Application.Json,
+                            HttpStatusCode.BadRequest,
+                        )
                     val parts = resourceId.split("/", limit = 2)
                     if (parts.size != 2) error("Invalid GitHub resource identifier: $resourceId")
                     val comment = gitHubClient.addIssueComment(
@@ -149,13 +180,32 @@ fun Routing.installInternalBugTrackerApi(
                     )
                 }
                 ProviderEnum.GITLAB -> {
+                    val issueIid = body.issueKey.removePrefix("#").toIntOrNull()
+                        ?: return@post call.respondText(
+                            """{"ok":false,"error":"Invalid issue IID: ${body.issueKey}"}""",
+                            ContentType.Application.Json,
+                            HttpStatusCode.BadRequest,
+                        )
                     val note = gitLabClient.addIssueNote(
                         connection = connection,
                         projectId = resourceId,
-                        issueIid = issueNumber,
+                        issueIid = issueIid,
                         noteBody = body.comment,
                     )
-                    logger.info { "ISSUE_COMMENT_ADDED | gitlab | $resourceId#$issueNumber" }
+                    logger.info { "ISSUE_COMMENT_ADDED | gitlab | $resourceId#$issueIid" }
+                    call.respondText(
+                        json.encodeToString(CommentResponse(ok = true)),
+                        ContentType.Application.Json,
+                    )
+                }
+                ProviderEnum.ATLASSIAN -> {
+                    // Jira — issueKey is like "PROJ-123"
+                    val result = bugTrackerService.addComment(
+                        clientId = ClientId(ObjectId(body.clientId)),
+                        issueKey = body.issueKey,
+                        comment = body.comment,
+                    )
+                    logger.info { "ISSUE_COMMENT_ADDED | jira | ${body.issueKey}" }
                     call.respondText(
                         json.encodeToString(CommentResponse(ok = true)),
                         ContentType.Application.Json,
@@ -252,6 +302,29 @@ fun Routing.installInternalBugTrackerApi(
                         ContentType.Application.Json,
                     )
                 }
+                ProviderEnum.ATLASSIAN -> {
+                    // Jira — search for all issues in the project
+                    val issues = bugTrackerService.searchIssues(
+                        clientId = ClientId(ObjectId(clientId)),
+                        query = "ORDER BY updated DESC",
+                        project = resourceId,
+                        maxResults = 50,
+                    )
+                    val result = issues.map { issue ->
+                        IssueListItem(
+                            key = issue.key,
+                            title = issue.summary,
+                            state = issue.status,
+                            url = "",
+                            created = issue.created,
+                            updated = issue.updated,
+                        )
+                    }
+                    call.respondText(
+                        json.encodeToString(IssueListResponse(ok = true, issues = result)),
+                        ContentType.Application.Json,
+                    )
+                }
                 else -> {
                     call.respondText(
                         """{"ok":false,"error":"Unsupported provider: ${connection.provider}"}""",
@@ -302,6 +375,8 @@ private data class CreateIssueRequest(
     val title: String,
     val description: String? = null,
     val labels: List<String> = emptyList(),
+    val issueType: String? = null,
+    val priority: String? = null,
 )
 
 @Serializable
