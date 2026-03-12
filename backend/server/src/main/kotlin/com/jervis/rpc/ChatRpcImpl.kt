@@ -477,21 +477,23 @@ class ChatRpcImpl(
     suspend fun pushUrgentAlert(
         sourceUrn: String,
         taskId: String? = null,
+        taskName: String? = null,
         summary: String,
         suggestedAction: String? = null,
         taskContent: String? = null,
     ) {
         val session = chatService.getOrCreateActiveSession()
         val content = buildString {
-            append("[Urgent Alert] $summary")
-            if (suggestedAction != null) {
-                append("\nSuggested action: $suggestedAction")
+            if (!taskName.isNullOrBlank()) {
+                append("**$taskName**\n\n")
             }
+            append(summary)
         }
 
         val metadata = buildMap {
             put("sourceUrn", sourceUrn)
             if (taskId != null) put("taskId", taskId)
+            if (taskName != null) put("taskName", taskName)
             if (taskContent != null) put("taskContent", taskContent.take(4000))
             if (suggestedAction != null) put("suggestedAction", suggestedAction)
         }

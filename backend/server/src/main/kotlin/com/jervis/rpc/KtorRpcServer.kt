@@ -871,7 +871,8 @@ class KtorRpcServer(
                                                         chatRpcImpl.pushUrgentAlert(
                                                             sourceUrn = task.sourceUrn.value,
                                                             taskId = task.id.toString(),
-                                                            summary = r.summary.take(200),
+                                                            taskName = task.taskName,
+                                                            summary = r.summary.take(500),
                                                             suggestedAction = r.suggestedActions.firstOrNull(),
                                                             taskContent = task.content,
                                                         )
