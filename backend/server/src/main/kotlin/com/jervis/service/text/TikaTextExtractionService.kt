@@ -1,28 +1,22 @@
 package com.jervis.service.text
 
-import com.jervis.common.client.ITikaClient
-import com.jervis.common.dto.TikaProcessRequest
-import com.jervis.common.rpc.withRpcRetry
 import mu.KotlinLogging
+import org.jsoup.Jsoup
+import org.jsoup.safety.Safelist
 import org.springframework.stereotype.Service
 
 /**
- * Service for cleaning HTML/XML content and extracting plain text using Tika.
+ * Service for cleaning HTML/XML content and extracting plain text.
  *
  * Purpose:
  * - Remove HTML/XML formatting from content before sending to LLM
  * - Extract clean, readable text from Confluence XML, email HTML, etc.
  * - Reduce token waste on syntax and formatting
  *
- * Usage:
- * - Call before creating PendingTask to ensure content is clean
- * - Automatically detects if content contains HTML/XML and processes it
+ * Uses Jsoup for HTML parsing (no external service dependency).
  */
 @Service
-class TikaTextExtractionService(
-    private val tikaClient: ITikaClient,
-    private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
-) {
+class TikaTextExtractionService {
     private val logger = KotlinLogging.logger {}
 
     suspend fun extractPlainText(
@@ -33,78 +27,42 @@ class TikaTextExtractionService(
             return content
         }
 
-        val resolvedFileName = resolveFileName(content, fileName)
-        logger.debug {
-            "Processing content through Tika (${content.length} chars), fileName=$fileName resolvedFileName=$resolvedFileName"
+        val sample = content.take(4096).lowercase()
+        val isHtmlOrXml = looksLikeHtml(sample) || looksLikeXml(sample)
+
+        if (!isHtmlOrXml) {
+            return content
         }
 
         return try {
-            val request =
-                TikaProcessRequest(
-                    source =
-                        TikaProcessRequest.Source.FileBytes(
-                            fileName = resolvedFileName,
-                            dataBase64 =
-                                java.util.Base64
-                                    .getEncoder()
-                                    .encodeToString(content.toByteArray()),
-                        ),
-                    includeMetadata = false,
-                )
+            val doc = Jsoup.parse(content)
+            // Remove script, style, noscript elements
+            doc.select("script, style, noscript").remove()
 
-            val result = tikaClient.process(request)
-
-            if (result.success) {
-                val plainText = result.plainText.trim()
-                val originalLength = content.length
-                val reduction =
-                    if (originalLength > 0) {
-                        ((1.0 - plainText.length.toDouble() / originalLength) * 100).toInt()
-                    } else {
-                        0
-                    }
-                logger.info {
-                    "Tika extraction successful: $originalLength chars → ${plainText.length} chars " +
-                        "($reduction% reduction)"
-                }
-
-                if (plainText.isBlank() && content.isNotBlank()) {
-                    logger.warn { "Tika returned empty text for non-empty content, returning original content" }
-                    content
+            val plainText = doc.text().trim()
+            val originalLength = content.length
+            val reduction =
+                if (originalLength > 0) {
+                    ((1.0 - plainText.length.toDouble() / originalLength) * 100).toInt()
                 } else {
-                    plainText
+                    0
                 }
-            } else {
-                logger.warn { "Tika extraction failed: ${result.errorMessage}, returning original content" }
+            logger.info {
+                "HTML extraction successful: $originalLength chars → ${plainText.length} chars " +
+                    "($reduction% reduction)"
+            }
+
+            if (plainText.isBlank() && content.isNotBlank()) {
+                logger.warn { "HTML parsing returned empty text for non-empty content, returning original" }
                 content
+            } else {
+                plainText
             }
         } catch (e: Exception) {
-            logger.error(e) { "Tika service error, returning original content" }
+            logger.error(e) { "HTML parsing error, returning original content" }
             content
         }
     }
-
-    private fun resolveFileName(
-        content: String,
-        fileName: String,
-    ): String {
-        val trimmed = fileName.trim()
-        if (trimmed.isNotEmpty() && !isGenericContentName(trimmed)) {
-            return trimmed
-        }
-        val sample = content.take(4096).lowercase()
-        return when {
-            looksLikeHtml(sample) -> "content.html"
-            looksLikeXml(sample) -> "content.xml"
-            else -> "content.txt"
-        }
-    }
-
-    private fun isGenericContentName(fileName: String): Boolean =
-        fileName.equals("content.html", ignoreCase = true) ||
-            fileName.equals("content.xml", ignoreCase = true) ||
-            fileName.equals("content.txt", ignoreCase = true) ||
-            fileName.equals("content.bin", ignoreCase = true)
 
     private fun looksLikeHtml(sample: String): Boolean =
         sample.contains("<!doctype") ||

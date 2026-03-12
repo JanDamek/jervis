@@ -188,7 +188,6 @@ data:
   ARANGO_DB: "jervis"
   ARANGO_USER: "root"
   # -- Microservice endpoints -------------------------------------------------
-  TIKA_URL: "http://nas.lan.mazlusek.com:8081"                      # Apache Tika
   KOTLIN_SERVER_URL: "http://jervis-server:5500"               # Kotlin server for progress callbacks
 
 ---

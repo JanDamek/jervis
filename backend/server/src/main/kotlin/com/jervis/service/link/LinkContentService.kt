@@ -1,24 +1,20 @@
 package com.jervis.service.link
 
-import com.jervis.common.client.ITikaClient
-import com.jervis.common.dto.TikaProcessRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
+import org.jsoup.Jsoup
 import org.springframework.stereotype.Service
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
-import java.util.Base64
 
 private val logger = KotlinLogging.logger {}
 
 @Service
-class LinkContentService(
-    private val tikaClient: ITikaClient,
-) {
+class LinkContentService {
     private val httpClient: HttpClient =
         HttpClient
             .newBuilder()
@@ -61,7 +57,6 @@ class LinkContentService(
                 val contentType = response.headers().firstValue("content-type").orElse(null)
                 val responseBody = response.body()
 
-                // Skip empty responses
                 if (responseBody.isEmpty()) {
                     return@withContext LinkPlainText(
                         url,
@@ -72,38 +67,20 @@ class LinkContentService(
                     )
                 }
 
-                val fileName = extractFileNameFromUri(uri, contentType)
-                val processingResult =
-                    tikaClient.process(
-                        TikaProcessRequest(
-                            source =
-                                TikaProcessRequest.Source.FileBytes(
-                                    fileName = fileName,
-                                    dataBase64 = Base64.getEncoder().encodeToString(responseBody),
-                                ),
-                            includeMetadata = true,
-                        ),
-                    )
+                // Parse HTML via Jsoup to extract plain text
+                val htmlContent = String(responseBody, Charsets.UTF_8)
+                val doc = Jsoup.parse(htmlContent)
+                doc.select("script, style, noscript").remove()
+                val plainText = doc.text().trim()
 
-                if (!processingResult.success) {
-                    return@withContext LinkPlainText(
-                        url,
-                        "",
-                        contentType,
-                        success = false,
-                        errorMessage = processingResult.errorMessage,
-                    )
-                }
-
-                val plainText = processingResult.plainText.trim()
                 if (plainText.isEmpty() && responseBody.isNotEmpty()) {
-                    logger.warn { "Tika returned empty content for URL $url. Using original response body as text to prevent data loss." }
+                    logger.warn { "HTML parsing returned empty content for URL $url. Using raw UTF-8 as fallback." }
                     return@withContext LinkPlainText(
                         url,
-                        String(responseBody, Charsets.UTF_8),
+                        htmlContent,
                         contentType,
                         success = true,
-                        errorMessage = "Tika returned empty content, fell back to raw UTF-8",
+                        errorMessage = "HTML parsing returned empty, fell back to raw UTF-8",
                     )
                 }
 
@@ -113,19 +90,4 @@ class LinkContentService(
                 LinkPlainText(url, "", null, success = false, errorMessage = e.message)
             }
         }
-
-    private fun extractFileNameFromUri(
-        uri: URI,
-        contentType: String?,
-    ): String {
-        val path = uri.path ?: ""
-        val lastSegment = path.substringAfterLast('/', "")
-        if (lastSegment.isNotBlank()) return lastSegment
-
-        return when {
-            contentType?.contains("html", ignoreCase = true) == true -> "index.html"
-            contentType?.contains("pdf", ignoreCase = true) == true -> "document.pdf"
-            else -> "content.bin"
-        }
-    }
 }

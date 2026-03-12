@@ -28,7 +28,6 @@ class Settings(BaseSettings):
     ARANGO_PASSWORD: str = ""
 
     # -- Microservice endpoints -------------------------------------------------
-    TIKA_URL: str = "http://192.168.100.117:8081"           # Apache Tika (document extraction)
     KOTLIN_SERVER_URL: str = ""                              # Kotlin server for progress callbacks (e.g. http://jervis-server:5500)
 
     # -- Model configuration ----------------------------------------------------
@@ -53,8 +52,9 @@ class Settings(BaseSettings):
     LLM_CALL_TIMEOUT: float = 900.0         # Max seconds for a single LLM call (router queue may hold request)
 
     # -- Image processing -------------------------------------------------------
-    # OCR-first strategy: try Tika OCR, fall back to VLM if OCR output is poor.
-    OCR_TEXT_THRESHOLD: int = 100      # Min chars for OCR to be considered sufficient
+    # VLM-first strategy: DocumentExtractor uses VLM for images and scanned PDFs.
+    # Threshold for hybrid PDF: pages with less text than this → VLM extraction.
+    OCR_TEXT_THRESHOLD: int = 100      # Min chars for pymupdf page to skip VLM
     OCR_PRINTABLE_RATIO: float = 0.85  # Min ratio of printable chars (0.0–1.0)
 
     # -- Deployment mode --------------------------------------------------------

@@ -17,9 +17,8 @@ from app.api.models import (
 from app.services.rag_service import RagService
 from app.services.graph_service import GraphService
 from app.services.hybrid_retriever import HybridRetriever
-from app.services.clients.tika_client import TikaClient
 from app.services.clients.joern_client import JoernClient, JoernResultDto
-from app.services.image_service import ImageService
+from app.services.document_extractor import DocumentExtractor
 from app.services.llm_extraction_queue import LLMExtractionQueue, ExtractionTask
 from app.core.config import settings
 from app.db.arango import get_arango_db
@@ -40,9 +39,8 @@ class KnowledgeService:
         self.rag_service = RagService()
         self.graph_service = GraphService()
         self.hybrid_retriever = HybridRetriever(self.rag_service, self.graph_service)
-        self.tika_client = TikaClient()
         self.joern_client = JoernClient()
-        self.image_service = ImageService()
+        self.document_extractor = DocumentExtractor()
         self.extraction_queue = extraction_queue  # Async LLM extraction queue
         self._arango_db = get_arango_db()
         self._ensure_crawl_schema()
@@ -77,6 +75,25 @@ class KnowledgeService:
         if not self._arango_db.has_collection("CrawledUrls"):
             col = self._arango_db.create_collection("CrawledUrls")
             col.add_hash_index(fields=["clientId", "normalizedUrl"], unique=True)
+
+    @staticmethod
+    def _guess_mime(filename: str) -> str:
+        """Guess MIME type from filename extension."""
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        _MIME_MAP = {
+            "pdf": "application/pdf",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "xls": "application/vnd.ms-excel",
+            "html": "text/html", "htm": "text/html",
+            "txt": "text/plain", "csv": "text/csv", "md": "text/markdown",
+            "json": "application/json", "xml": "application/xml",
+            "yaml": "application/x-yaml", "yml": "application/x-yaml",
+            "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+            "webp": "image/webp", "bmp": "image/bmp", "gif": "image/gif",
+            "tiff": "image/tiff",
+        }
+        return _MIME_MAP.get(ext, "application/octet-stream")
 
     def _normalize_url(self, url: str) -> str:
         """Normalize URL for dedup: strip fragment, trailing slash, lowercase host."""
@@ -268,83 +285,27 @@ class KnowledgeService:
         )
 
     async def ingest_file(self, file_bytes: bytes, filename: str, request: IngestRequest) -> IngestResult:
-        is_image = filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
+        mime_type = self._guess_mime(filename)
+        result = await self.document_extractor.extract(file_bytes, filename, mime_type)
+        logger.info("DocumentExtractor: file=%s method=%s chars=%d", filename, result.method, len(result.text))
 
-        if is_image:
-            logger.info("Processing image file=%s size=%d – calling Tika OCR", filename, len(file_bytes))
-            ocr_text = await self.tika_client.process_file(file_bytes, filename)
-
-            ocr_threshold = settings.OCR_TEXT_THRESHOLD
-            if ocr_text and len(ocr_text.strip()) > ocr_threshold:
-                text = ocr_text
-                request.kind = "document"
-                logger.info("OCR sufficient for %s (%d chars), skipping VLM", filename, len(ocr_text.strip()))
-            else:
-                logger.info("OCR insufficient for %s (%d chars), calling VLM model=%s",
-                            filename, len((ocr_text or "").strip()), settings.VISION_MODEL)
-                try:
-                    text = await self.image_service.describe_image(file_bytes)
-                    request.kind = "image"
-                    logger.info("VLM description ready for %s (%d chars)", filename, len(text))
-                except Exception as e:
-                    logger.warning("VLM failed for %s: %s – falling back to OCR", filename, e)
-                    text = ocr_text
-                    request.kind = "image_ocr"
-        else:
-            logger.info("Processing document file=%s size=%d – calling Tika", filename, len(file_bytes))
-            text = await self.tika_client.process_file(file_bytes, filename)
-            logger.info("Tika extracted %d chars from %s", len(text or ""), filename)
-
-        request.content = text
+        request.content = result.text
+        if result.method == "vlm":
+            request.kind = "image"
         return await self.ingest(request)
 
     async def extract_text_only(self, file_bytes: bytes, filename: str, mime_type: str) -> dict:
         """Extract text from a file without RAG indexing.
 
-        Uses VLM-first for images, Tika for documents. Returns extracted text
-        and the method used. No graph nodes or RAG chunks are created.
+        Uses DocumentExtractor (VLM-first for images, pymupdf for PDFs,
+        python-docx/openpyxl for Office). No graph nodes or RAG chunks are created.
 
         Used by Qualifier relevance assessment pipeline.
         """
-        is_image = mime_type.startswith("image/") or filename.lower().endswith(
-            ('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif')
-        )
-        is_text = mime_type.startswith("text/") or filename.lower().endswith(('.txt', '.csv'))
-
         try:
-            if is_text:
-                # Plain text — just decode directly
-                text = file_bytes.decode("utf-8", errors="replace")
-                method = "direct"
-            elif is_image:
-                # VLM-first for images (better than OCR for understanding)
-                try:
-                    text = await self.image_service.describe_image(file_bytes)
-                    method = "vlm"
-                except Exception as e:
-                    logger.warning("VLM failed for %s: %s — falling back to Tika OCR", filename, e)
-                    text = await self.tika_client.process_file(file_bytes, filename)
-                    method = "tika_ocr"
-            else:
-                # Documents (PDF, DOCX, XLSX) — Tika for text extraction
-                text = await self.tika_client.process_file(file_bytes, filename)
-                method = "tika"
-
-                # For PDFs: if Tika returns very little text, might be scanned — try VLM
-                if mime_type == "application/pdf" and len((text or "").strip()) < settings.OCR_TEXT_THRESHOLD:
-                    logger.info("PDF has little text (%d chars), trying VLM for %s",
-                                len((text or "").strip()), filename)
-                    try:
-                        vlm_text = await self.image_service.describe_image(file_bytes)
-                        if len(vlm_text.strip()) > len((text or "").strip()):
-                            text = vlm_text
-                            method = "vlm"
-                    except Exception as e:
-                        logger.warning("VLM failed for scanned PDF %s: %s", filename, e)
-
-            logger.info("extract_text_only: file=%s method=%s chars=%d", filename, method, len(text or ""))
-            return {"extracted_text": text or "", "method": method}
-
+            result = await self.document_extractor.extract(file_bytes, filename, mime_type)
+            logger.info("extract_text_only: file=%s method=%s chars=%d", filename, result.method, len(result.text))
+            return {"extracted_text": result.text or "", "method": result.method}
         except Exception as e:
             logger.error("extract_text_only failed for %s: %s", filename, e)
             return {"extracted_text": "", "method": "error", "error": str(e)}
@@ -484,9 +445,12 @@ class KnowledgeService:
                 continue
 
             try:
-                text = await self.tika_client.process_file(doc.page_content.encode('utf-8'), "page.html")
+                html_result = await self.document_extractor.extract(
+                    doc.page_content.encode('utf-8'), "page.html", "text/html",
+                )
+                text = html_result.text
             except Exception as e:
-                logger.warning("Tika extraction failed for %s: %s", source_url, e)
+                logger.warning("HTML extraction failed for %s: %s", source_url, e)
                 continue
 
             if not text or len(text.strip()) < 50:
@@ -597,39 +561,21 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         if request.content:
             all_content_parts.append(f"=== MAIN CONTENT ===\n{request.content}")
 
-        # Process attachments
+        # Process attachments via DocumentExtractor
+        max_tier = getattr(request, "maxTier", "NONE")
         for file_bytes, filename in attachments:
             try:
-                is_image = filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
-
-                if is_image:
-                    logger.info("Attachment %s is image – calling Tika OCR", filename)
-                    ocr_text = await self.tika_client.process_file(file_bytes, filename)
-
-                    ocr_threshold = settings.OCR_TEXT_THRESHOLD
-                    if ocr_text and len(ocr_text.strip()) > ocr_threshold:
-                        text = ocr_text
-                        content_type = "image_ocr"
-                    else:
-                        logger.info("OCR insufficient for %s, calling VLM model=%s", filename, settings.VISION_MODEL)
-                        try:
-                            text = await self.image_service.describe_image(file_bytes)
-                            content_type = "image"
-                        except Exception as e:
-                            logger.warning("VLM failed for attachment %s: %s", filename, e)
-                            text = ocr_text
-                            content_type = "image_ocr"
-                else:
-                    logger.info("Attachment %s – calling Tika", filename)
-                    text = await self.tika_client.process_file(file_bytes, filename)
-                    content_type = "document"
+                mime_type = self._guess_mime(filename)
+                result = await self.document_extractor.extract(file_bytes, filename, mime_type, max_tier)
+                text = result.text
+                content_type = result.method
 
                 all_content_parts.append(f"=== ATTACHMENT: {filename} ===\n{text}")
                 attachment_results.append(AttachmentResult(
                     filename=filename,
                     status="success",
                     contentType=content_type,
-                    extractedText=text[:500] if text else None  # Truncate for result
+                    extractedText=text[:500] if text else None,
                 ))
             except Exception as e:
                 logger.warning("Attachment processing failed file=%s: %s", filename, e)
@@ -637,7 +583,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
                     filename=filename,
                     status="failed",
                     contentType="unknown",
-                    error=str(e)
+                    error=str(e),
                 ))
 
         # Combine all content
@@ -883,22 +829,12 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         if request.content:
             all_content_parts.append(f"=== MAIN CONTENT ===\n{request.content}")
 
+        max_tier = getattr(request, "maxTier", "NONE")
         for file_bytes, filename in attachments:
             try:
-                is_image = filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
-                if is_image:
-                    ocr_text = await self.tika_client.process_file(file_bytes, filename)
-                    if ocr_text and len(ocr_text.strip()) > settings.OCR_TEXT_THRESHOLD:
-                        text, content_type = ocr_text, "image_ocr"
-                    else:
-                        try:
-                            text = await self.image_service.describe_image(file_bytes)
-                            content_type = "image"
-                        except Exception:
-                            text, content_type = ocr_text, "image_ocr"
-                else:
-                    text = await self.tika_client.process_file(file_bytes, filename)
-                    content_type = "document"
+                mime_type = self._guess_mime(filename)
+                result = await self.document_extractor.extract(file_bytes, filename, mime_type, max_tier)
+                text, content_type = result.text, result.method
 
                 all_content_parts.append(f"=== ATTACHMENT: {filename} ===\n{text}")
                 attachment_results.append(AttachmentResult(
@@ -1592,20 +1528,11 @@ Odpověz POUZE validním JSON."""
 
         Updates the kb_document node with extraction results.
         """
-        # Extract text via Tika
-        is_image = filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
-
-        if is_image:
-            text = await self.tika_client.process_file(file_bytes, filename)
-            if not text or len(text.strip()) < settings.OCR_TEXT_THRESHOLD:
-                try:
-                    text = await self.image_service.describe_image(file_bytes)
-                except Exception:
-                    pass
-            kind = "image"
-        else:
-            text = await self.tika_client.process_file(file_bytes, filename)
-            kind = "document"
+        # Extract text via DocumentExtractor
+        mime_type = self._guess_mime(filename)
+        result = await self.document_extractor.extract(file_bytes, filename, mime_type)
+        text = result.text
+        kind = "image" if result.method == "vlm" else "document"
 
         if not text:
             raise ValueError(f"No text could be extracted from {filename}")

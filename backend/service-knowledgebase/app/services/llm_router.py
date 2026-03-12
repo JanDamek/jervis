@@ -9,6 +9,7 @@ FREE+ tier → first call gets GPU (if free), subsequent get OpenRouter (GPU bus
 
 from __future__ import annotations
 
+import base64
 import logging
 from dataclasses import dataclass
 
@@ -186,3 +187,110 @@ async def _call_openrouter(
             settings.INGEST_MODEL_COMPLEX,
             8192, None, temperature, format_json,
         )
+
+
+async def llm_generate_vision(
+    image_bytes: bytes,
+    prompt: str,
+    max_tier: str = "NONE",
+    priority: int | None = None,
+) -> str:
+    """Route-aware VLM call for image understanding.
+
+    1. Ask router for route decision with capability="visual"
+    2. Call appropriate backend (Ollama VLM or OpenRouter vision model)
+    3. Return raw response text
+
+    FAIL-FAST: retries 3x with exponential backoff (5s, 10s, 20s).
+    No fallback to OCR — VLM is the only extraction path for images.
+    """
+    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    # Estimate tokens (image ~1k tokens + prompt)
+    estimated_tokens = len(prompt) // 3 + 2000
+
+    route = await get_route(
+        max_tier=max_tier,
+        estimated_tokens=estimated_tokens,
+        capability="visual",
+    )
+
+    last_error = None
+    for attempt in range(3):
+        try:
+            if route.target == "openrouter" and route.api_key:
+                return await _call_openrouter_vision(image_b64, prompt, route)
+            else:
+                return await _call_ollama_vision(image_b64, prompt, priority)
+        except Exception as e:
+            last_error = e
+            backoff = 5 * (2 ** attempt)  # 5s, 10s, 20s
+            logger.warning(
+                "VLM call failed (attempt %d/3): %s — retrying in %ds",
+                attempt + 1, e, backoff,
+            )
+            import asyncio
+            await asyncio.sleep(backoff)
+
+    raise RuntimeError(f"VLM failed after 3 attempts: {last_error}")
+
+
+async def _call_ollama_vision(
+    image_b64: str,
+    prompt: str,
+    priority: int | None,
+) -> str:
+    """Call local Ollama VLM via router (/api/generate with images)."""
+    url = f"{_router_base_url()}/api/generate"
+    headers = {}
+    if priority is not None:
+        headers["X-Ollama-Priority"] = str(priority)
+
+    payload = {
+        "model": settings.VISION_MODEL,
+        "prompt": prompt,
+        "images": [image_b64],
+        "stream": False,
+    }
+
+    resp = await _llm_http.post(url, json=payload, headers=headers)
+    resp.raise_for_status()
+    return resp.json()["response"]
+
+
+async def _call_openrouter_vision(
+    image_b64: str,
+    prompt: str,
+    route: RouteDecision,
+) -> str:
+    """Call OpenRouter VLM (OpenAI-compatible vision API)."""
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {route.api_key}",
+        "HTTP-Referer": "https://jervis.app",
+        "Content-Type": "application/json",
+    }
+
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+        ],
+    }]
+    payload = {
+        "model": route.model,
+        "messages": messages,
+        "temperature": 0,
+        "stream": False,
+    }
+
+    resp = await _llm_http.post(url, json=payload, headers=headers)
+    resp.raise_for_status()
+    data = resp.json()
+    content = data["choices"][0]["message"]["content"]
+    logger.info("OpenRouter VLM call: model=%s, tokens=%d/%d",
+                 route.model,
+                 data.get("usage", {}).get("prompt_tokens", 0),
+                 data.get("usage", {}).get("completion_tokens", 0))
+    return content

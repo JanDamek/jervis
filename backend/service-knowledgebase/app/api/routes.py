@@ -692,7 +692,7 @@ async def extract_text_only(
 ):
     """Extract text from a file without RAG indexing.
 
-    Uses VLM-first for images, Tika for documents. Returns extracted text
+    Uses DocumentExtractor (VLM for images, pymupdf for PDFs, python-docx for DOCX). Returns extracted text
     and the method used. No graph nodes or RAG chunks are created.
 
     Used by Kotlin AttachmentExtractionService for Qualifier relevance assessment.

@@ -2,7 +2,6 @@ package com.jervis.configuration
 
 import com.jervis.common.client.IAtlassianClient
 import com.jervis.common.client.IBugTrackerClient
-import com.jervis.common.client.ITikaClient
 import com.jervis.common.client.IWikiClient
 import com.jervis.common.dto.atlassian.*
 import com.jervis.common.dto.bugtracker.*
@@ -49,7 +48,6 @@ class RpcClientsConfig(
     private var kbCallbackBaseUrl: String = ""
     private val logger = LoggerFactory.getLogger(RpcClientsConfig::class.java)
 
-    private var _tikaClient: ITikaClient? = null
     private var _knowledgeService: KnowledgeServiceRestClient? = null
     private var _pythonOrchestratorClient: PythonOrchestratorClient? = null
     private var _correctionClient: CorrectionClient? = null
@@ -90,13 +88,6 @@ class RpcClientsConfig(
                 spec: TraversalSpec,
             ): List<GraphNode> = getKnowledgeService().traverse(clientId, startKey, spec)
             override suspend fun purge(sourceUrn: String): Boolean = getKnowledgeService().purge(sourceUrn)
-        }
-
-    @Bean
-    fun tikaClient(): ITikaClient =
-        object : ITikaClient {
-            override suspend fun process(request: com.jervis.common.dto.TikaProcessRequest) =
-                withAutoReconnect({ _tikaClient = null }) { getTika().process(request) }
         }
 
     @Bean
@@ -201,17 +192,9 @@ class RpcClientsConfig(
     @Bean
     fun rpcReconnectHandler(): RpcReconnectHandler =
         object : RpcReconnectHandler {
-            override suspend fun reconnectTika() {
-                _tikaClient = createRpcClient(endpoints.tika.baseUrl)
-            }
             override suspend fun reconnectKnowledgebase() {
                 _knowledgeService = KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl, kbCallbackBaseUrl)
             }
-        }
-
-    private fun getTika(): ITikaClient =
-        _tikaClient ?: synchronized(this) {
-            _tikaClient ?: createRpcClient<ITikaClient>(endpoints.tika.baseUrl).also { _tikaClient = it }
         }
 
     private fun getKnowledgeService(): KnowledgeServiceRestClient =
