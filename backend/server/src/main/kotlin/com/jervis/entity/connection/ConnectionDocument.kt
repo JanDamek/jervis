@@ -80,6 +80,9 @@ data class ConnectionDocument(
     val bitbucketRepoSlug: String? = null,
     val gitRemoteUrl: String? = null,
 
+    // O365 Gateway (browser session relay — clientId for browser pool)
+    val o365ClientId: String? = null,
+
     // Legacy fields (deprecated, kept for backwards compatibility)
     @Deprecated("Use protocol instead")
     val connectionType: ConnectionTypeEnum? = null,

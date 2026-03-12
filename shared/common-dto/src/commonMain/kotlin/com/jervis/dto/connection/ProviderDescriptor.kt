@@ -163,6 +163,34 @@ data class ProviderDescriptor(
                     ),
                 ),
             ),
+        ),
+            ProviderDescriptor(
+                provider = ProviderEnum.MICROSOFT_TEAMS,
+                displayName = "Microsoft Teams (O365 Gateway)",
+                capabilities = setOf(
+                    ConnectionCapability.CHAT_READ,
+                    ConnectionCapability.CHAT_SEND,
+                    ConnectionCapability.CALENDAR_READ,
+                    ConnectionCapability.CALENDAR_WRITE,
+                ),
+                protocols = setOf(ProtocolEnum.HTTP),
+                supportsCloud = true,
+                supportsSelfHosted = false,
+                defaultPollingIntervalSeconds = 120,
+                authOptions = listOf(
+                    AuthOption(
+                        authType = AuthTypeEnum.NONE,
+                        displayName = "Browser Session (O365 Gateway)",
+                        fields = listOf(
+                            FormField(
+                                FormFieldType.O365_CLIENT_ID,
+                                "Client ID (browser pool session)",
+                                placeholder = "jan.damek",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
         )
 
         val defaultsByProvider: Map<ProviderEnum, ProviderDescriptor> =
@@ -199,4 +227,5 @@ enum class FormFieldType {
     FOLDER_NAME,
     CLOUD_TOGGLE,
     PROTOCOL,
+    O365_CLIENT_ID,
 }

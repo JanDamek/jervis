@@ -99,6 +99,7 @@ internal fun ConnectionCreateDialog(
                 port = fieldValues[FormFieldType.PORT]?.toIntOrNull(),
                 useSsl = fieldValues[FormFieldType.USE_SSL]?.let { it == "true" },
                 folderName = fieldValues[FormFieldType.FOLDER_NAME]?.takeIf { it.isNotBlank() },
+                o365ClientId = fieldValues[FormFieldType.O365_CLIENT_ID]?.takeIf { it.isNotBlank() },
             )
             onCreate(request)
         },
@@ -180,6 +181,7 @@ internal fun ConnectionEditDialog(
             connection.port?.let { put(FormFieldType.PORT, it.toString()) }
             connection.useSsl?.let { put(FormFieldType.USE_SSL, it.toString()) }
             connection.folderName?.let { put(FormFieldType.FOLDER_NAME, it) }
+            connection.o365ClientId?.let { put(FormFieldType.O365_CLIENT_ID, it) }
             put(FormFieldType.PROTOCOL, connection.protocol.name)
             put(FormFieldType.CLOUD_TOGGLE, connection.isCloud.toString())
         }
@@ -246,6 +248,7 @@ internal fun ConnectionEditDialog(
                 port = fieldValues[FormFieldType.PORT]?.toIntOrNull(),
                 useSsl = fieldValues[FormFieldType.USE_SSL]?.let { it == "true" },
                 folderName = fieldValues[FormFieldType.FOLDER_NAME]?.takeIf { it.isNotBlank() },
+                o365ClientId = fieldValues[FormFieldType.O365_CLIENT_ID]?.takeIf { it.isNotBlank() },
             )
             onSave(connection.id, request)
         },

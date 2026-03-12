@@ -13,6 +13,7 @@ enum class TaskTypeEnum(val sourceKey: String) {
     WIKI_PROCESSING("confluence"),
     GIT_PROCESSING("git"),
     MEETING_PROCESSING("meeting"),
+    CHAT_PROCESSING("teams"),
     USER_INPUT_PROCESSING("chat"),
     USER_TASK("user_task"),
     SCHEDULED_TASK("scheduled"),
