@@ -58,7 +58,11 @@ fun Routing.installInternalTaskApi(
             }
             val isScheduled = scheduledInstant != null
             val taskType = if (isScheduled) TaskTypeEnum.SCHEDULED_TASK else TaskTypeEnum.USER_INPUT_PROCESSING
-            val taskState = if (isScheduled) TaskStateEnum.NEW else TaskStateEnum.INDEXING
+            val taskState = when {
+                isScheduled -> TaskStateEnum.NEW
+                body.skipIndexing == true -> TaskStateEnum.QUEUED
+                else -> TaskStateEnum.INDEXING
+            }
 
             val task = taskService.createTask(
                 taskType = taskType,
@@ -581,6 +585,7 @@ data class InternalCreateTaskRequest(
     val scheduledAt: String? = null,
     val createdBy: String? = null,
     val metadata: Map<String, String>? = null,
+    val skipIndexing: Boolean? = null,
 )
 
 @Serializable

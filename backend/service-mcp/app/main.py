@@ -999,6 +999,7 @@ async def submit_task(
         "projectId": project_id,
         "query": query,
         "createdBy": "mcp-submit",
+        "skipIndexing": True,
     }
     if task_name:
         payload["title"] = task_name
