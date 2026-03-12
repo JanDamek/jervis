@@ -150,7 +150,7 @@ class UnifiedTimelineService(
             timestamp = doc.getString("timestamp") ?: "",
             correlationId = doc.getString("correlationId") ?: "",
             metadata = metadata,
-            sequence = doc.getLong("sequence") ?: 0L,
+            sequence = (doc.get("sequence") as? Number)?.toLong() ?: 0L,
             messageId = doc.getString("messageId") ?: "",
         )
     }
