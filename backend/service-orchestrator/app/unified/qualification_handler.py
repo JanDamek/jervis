@@ -45,8 +45,8 @@ class QualifyRequest(BaseModel):
     entities: list[str] = Field(default_factory=list)
     suggested_actions: list[str] = Field(default_factory=list)
     urgency: str = ""
-    action_type: str = ""
-    estimated_complexity: str = ""
+    action_type: str | None = ""
+    estimated_complexity: str | None = ""
     is_assigned_to_me: bool = False
     has_future_deadline: bool = False
     suggested_deadline: str | None = None
