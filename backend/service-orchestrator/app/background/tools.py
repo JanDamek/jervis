@@ -39,6 +39,8 @@ from app.tools.definitions import (
     # Memory
     TOOL_MEMORY_STORE,
     TOOL_MEMORY_RECALL,
+    # O365 (Teams, Mail, Calendar, OneDrive)
+    O365_ALL_TOOLS,
 )
 
 from app.chat.tools import (
@@ -81,4 +83,4 @@ ALL_BACKGROUND_TOOLS: list[dict] = [
     TOOL_LIST_MEETINGS,
     TOOL_CLASSIFY_MEETING,
     TOOL_LIST_UNCLASSIFIED_MEETINGS,
-]
+] + O365_ALL_TOOLS

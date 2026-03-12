@@ -45,6 +45,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
         TOOL_TASK_QUEUE_SET_PRIORITY,
         ENVIRONMENT_TOOLS,
         PROJECT_MANAGEMENT_TOOLS,
+        O365_ALL_TOOLS,
     )
     from app.chat.tools import (
         TOOL_DISPATCH_CODING_AGENT,
@@ -95,9 +96,9 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             _request_tools,
         ]
 
-    # EXECUTOR: performs concrete work (coding, tracker, KB write, interactive dialog)
+    # EXECUTOR: performs concrete work (coding, tracker, KB write, interactive dialog, O365)
     if vertex_type in (VertexType.EXECUTOR, VertexType.TASK):
-        return _base + [
+        return _base + O365_ALL_TOOLS + [
             TOOL_ASK_USER,
             TOOL_WEB_SEARCH,
             TOOL_LIST_PROJECT_FILES,
@@ -203,6 +204,11 @@ def get_tools_by_category(category: str) -> list[dict]:
         ENVIRONMENT_TOOLS,
         PROJECT_MANAGEMENT_TOOLS,
         MONGO_TOOLS,
+        O365_ALL_TOOLS,
+        O365_TEAMS_TOOLS,
+        O365_MAIL_TOOLS,
+        O365_CALENDAR_TOOLS,
+        O365_FILES_TOOLS,
     )
     from app.chat.tools import (
         TOOL_DISPATCH_CODING_AGENT,
@@ -235,6 +241,11 @@ def get_tools_by_category(category: str) -> list[dict]:
         "setup": ENVIRONMENT_TOOLS + PROJECT_MANAGEMENT_TOOLS + [
                  TOOL_ASK_USER, TOOL_DISPATCH_CODING_AGENT,
                  TOOL_GET_REPOSITORY_INFO, TOOL_GET_REPOSITORY_STRUCTURE],
+        "o365": O365_ALL_TOOLS,
+        "o365_teams": O365_TEAMS_TOOLS,
+        "o365_mail": O365_MAIL_TOOLS,
+        "o365_calendar": O365_CALENDAR_TOOLS,
+        "o365_files": O365_FILES_TOOLS,
     }
 
     if category == "all":
@@ -257,7 +268,8 @@ def _build_request_tools_definition() -> dict:
                 "Request additional tools if the current set is insufficient. "
                 "Available categories: kb, web, git, code, memory, scheduling, "
                 "interactive, guidelines, meetings, queue, environment, "
-                "project_management, settings, setup, all. "
+                "project_management, settings, setup, o365, o365_teams, "
+                "o365_mail, o365_calendar, o365_files, all. "
                 "Use 'interactive' to get ask_user for dialog with the user. "
                 "Use 'guidelines' to read/update project rules. "
                 "Use 'meetings' to classify/list meeting recordings. "
@@ -270,7 +282,7 @@ def _build_request_tools_definition() -> dict:
                     "categories": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Tool categories to add: kb, web, git, code, memory, scheduling, interactive, guidelines, meetings, queue, environment, project_management, settings, setup, all",
+                        "description": "Tool categories to add: kb, web, git, code, memory, scheduling, interactive, guidelines, meetings, queue, environment, project_management, settings, setup, o365, o365_teams, o365_mail, o365_calendar, o365_files, all",
                     },
                     "reason": {
                         "type": "string",

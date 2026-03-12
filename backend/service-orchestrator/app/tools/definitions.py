@@ -1576,17 +1576,17 @@ SECURITY_AGENT_TOOLS: list[dict] = [
     TOOL_READ_FILE, TOOL_GREP_FILES,
 ]
 
-# CommunicationAgent — KB search
-COMMUNICATION_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_WEB_SEARCH]
+# CommunicationAgent — KB + Teams (chats, channels, messages)
+COMMUNICATION_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_WEB_SEARCH] + O365_TEAMS_TOOLS
 
-# EmailAgent — no tools defined yet (uses Kotlin API via executor)
-EMAIL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH]
+# EmailAgent — KB + Outlook mail
+EMAIL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH] + O365_MAIL_TOOLS
 
-# CalendarAgent — no tools defined yet (uses Kotlin API via executor)
-CALENDAR_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH]
+# CalendarAgent — KB + Calendar
+CALENDAR_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH] + O365_CALENDAR_TOOLS
 
-# AdministrativeAgent — web search + KB
-ADMINISTRATIVE_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH]
+# AdministrativeAgent — web search + KB + O365 (full access for admin tasks)
+ADMINISTRATIVE_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH] + O365_ALL_TOOLS
 
 # LegalAgent — KB search + web search
 LEGAL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_WEB_SEARCH]
@@ -1594,14 +1594,549 @@ LEGAL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_WEB_SEARCH]
 # FinancialAgent — KB search
 FINANCIAL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH]
 
-# PersonalAgent — web + KB
-PERSONAL_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH]
+# PersonalAgent — web + KB + O365 (personal assistant needs full O365)
+PERSONAL_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH] + O365_ALL_TOOLS
 
 # LearningAgent — web + KB + code search
 LEARNING_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH, TOOL_CODE_SEARCH]
 
 # All agent tools (full tool access)
 ALL_AGENT_TOOLS: list[dict] = ALL_RESPOND_TOOLS_FULL
+
+
+# ============================================================
+# O365 tools (Teams, Outlook, Calendar, OneDrive via O365 Gateway)
+# ============================================================
+
+# -- Teams --
+
+TOOL_O365_TEAMS_LIST_CHATS: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_teams_list_chats",
+        "description": (
+            "List recent Microsoft Teams chats for a client. "
+            "Returns chat list with topic, type, and last message preview. "
+            "Requires an active O365 browser session for the client."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID (JERVIS client).",
+                },
+                "top": {
+                    "type": "integer",
+                    "description": "Number of chats to return (max 50, default 20).",
+                    "default": 20,
+                },
+            },
+            "required": ["client_id"],
+        },
+    },
+}
+
+TOOL_O365_TEAMS_READ_CHAT: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_teams_read_chat",
+        "description": (
+            "Read messages from a specific Microsoft Teams chat. "
+            "Returns messages with sender, timestamp, and content."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "chat_id": {
+                    "type": "string",
+                    "description": "Chat ID (from o365_teams_list_chats).",
+                },
+                "top": {
+                    "type": "integer",
+                    "description": "Number of messages to return (default 20).",
+                    "default": 20,
+                },
+            },
+            "required": ["client_id", "chat_id"],
+        },
+    },
+}
+
+TOOL_O365_TEAMS_SEND_MESSAGE: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_teams_send_message",
+        "description": (
+            "Send a message to a Microsoft Teams chat. "
+            "Supports plain text and HTML content."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "chat_id": {
+                    "type": "string",
+                    "description": "Chat ID (from o365_teams_list_chats).",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Message content.",
+                },
+                "content_type": {
+                    "type": "string",
+                    "enum": ["text", "html"],
+                    "description": "Content type (default 'text').",
+                    "default": "text",
+                },
+            },
+            "required": ["client_id", "chat_id", "content"],
+        },
+    },
+}
+
+TOOL_O365_TEAMS_LIST_TEAMS: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_teams_list_teams",
+        "description": "List Microsoft Teams the user is a member of.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+            },
+            "required": ["client_id"],
+        },
+    },
+}
+
+TOOL_O365_TEAMS_LIST_CHANNELS: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_teams_list_channels",
+        "description": "List channels in a Microsoft Teams team.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "team_id": {
+                    "type": "string",
+                    "description": "Team ID (from o365_teams_list_teams).",
+                },
+            },
+            "required": ["client_id", "team_id"],
+        },
+    },
+}
+
+TOOL_O365_TEAMS_READ_CHANNEL: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_teams_read_channel",
+        "description": "Read messages from a Microsoft Teams channel.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "team_id": {
+                    "type": "string",
+                    "description": "Team ID.",
+                },
+                "channel_id": {
+                    "type": "string",
+                    "description": "Channel ID (from o365_teams_list_channels).",
+                },
+                "top": {
+                    "type": "integer",
+                    "description": "Number of messages to return (default 20).",
+                    "default": 20,
+                },
+            },
+            "required": ["client_id", "team_id", "channel_id"],
+        },
+    },
+}
+
+TOOL_O365_TEAMS_SEND_CHANNEL_MESSAGE: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_teams_send_channel_message",
+        "description": "Send a message to a Microsoft Teams channel.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "team_id": {
+                    "type": "string",
+                    "description": "Team ID.",
+                },
+                "channel_id": {
+                    "type": "string",
+                    "description": "Channel ID.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Message content.",
+                },
+            },
+            "required": ["client_id", "team_id", "channel_id", "content"],
+        },
+    },
+}
+
+TOOL_O365_SESSION_STATUS: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_session_status",
+        "description": (
+            "Check O365 session status for a client. "
+            "Returns session state, token age, last refresh time, "
+            "and noVNC URL if manual login is needed."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+            },
+            "required": ["client_id"],
+        },
+    },
+}
+
+# -- Outlook Mail --
+
+TOOL_O365_MAIL_LIST: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_mail_list",
+        "description": (
+            "List recent emails from Outlook for a client. "
+            "Returns subject, sender, date, and body preview."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "top": {
+                    "type": "integer",
+                    "description": "Number of emails to return (default 20).",
+                    "default": 20,
+                },
+                "folder": {
+                    "type": "string",
+                    "description": "Mail folder: inbox, sentitems, drafts, etc. (default 'inbox').",
+                    "default": "inbox",
+                },
+            },
+            "required": ["client_id"],
+        },
+    },
+}
+
+TOOL_O365_MAIL_READ: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_mail_read",
+        "description": "Read a specific email message with full body content.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "message_id": {
+                    "type": "string",
+                    "description": "Message ID (from o365_mail_list).",
+                },
+            },
+            "required": ["client_id", "message_id"],
+        },
+    },
+}
+
+TOOL_O365_MAIL_SEND: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_mail_send",
+        "description": "Send an email via Outlook.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "to": {
+                    "type": "string",
+                    "description": "Comma-separated recipient email addresses.",
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "Email subject.",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Email body content.",
+                },
+                "cc": {
+                    "type": "string",
+                    "description": "Optional comma-separated CC addresses.",
+                    "default": "",
+                },
+                "content_type": {
+                    "type": "string",
+                    "enum": ["text", "html"],
+                    "description": "Content type (default 'text').",
+                    "default": "text",
+                },
+            },
+            "required": ["client_id", "to", "subject", "body"],
+        },
+    },
+}
+
+# -- Calendar --
+
+TOOL_O365_CALENDAR_EVENTS: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_calendar_events",
+        "description": (
+            "List calendar events for a client. "
+            "If start/end date-time are provided, uses calendarView for that range. "
+            "Otherwise returns upcoming events."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "top": {
+                    "type": "integer",
+                    "description": "Number of events to return (default 20).",
+                    "default": 20,
+                },
+                "start_date_time": {
+                    "type": "string",
+                    "description": "ISO 8601 start (e.g. '2026-03-12T00:00:00Z'). Empty for upcoming.",
+                    "default": "",
+                },
+                "end_date_time": {
+                    "type": "string",
+                    "description": "ISO 8601 end (e.g. '2026-03-19T23:59:59Z'). Empty for upcoming.",
+                    "default": "",
+                },
+            },
+            "required": ["client_id"],
+        },
+    },
+}
+
+TOOL_O365_CALENDAR_CREATE: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_calendar_create",
+        "description": "Create a calendar event in Outlook.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "Event subject/title.",
+                },
+                "start_date_time": {
+                    "type": "string",
+                    "description": "Start time in ISO 8601 (e.g. '2026-03-15T10:00:00').",
+                },
+                "start_time_zone": {
+                    "type": "string",
+                    "description": "IANA timezone (e.g. 'Europe/Prague').",
+                },
+                "end_date_time": {
+                    "type": "string",
+                    "description": "End time in ISO 8601.",
+                },
+                "end_time_zone": {
+                    "type": "string",
+                    "description": "IANA timezone.",
+                },
+                "location": {
+                    "type": "string",
+                    "description": "Optional location name.",
+                    "default": "",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Optional event description.",
+                    "default": "",
+                },
+                "attendees": {
+                    "type": "string",
+                    "description": "Optional comma-separated attendee emails.",
+                    "default": "",
+                },
+                "is_online_meeting": {
+                    "type": "boolean",
+                    "description": "Create as Teams meeting (default false).",
+                    "default": False,
+                },
+            },
+            "required": [
+                "client_id", "subject",
+                "start_date_time", "start_time_zone",
+                "end_date_time", "end_time_zone",
+            ],
+        },
+    },
+}
+
+# -- OneDrive / SharePoint --
+
+TOOL_O365_FILES_LIST: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_files_list",
+        "description": "List files and folders in OneDrive.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Folder path relative to root (e.g. 'Documents/Reports'), or 'root'.",
+                    "default": "root",
+                },
+                "top": {
+                    "type": "integer",
+                    "description": "Max items to return (default 50).",
+                    "default": 50,
+                },
+            },
+            "required": ["client_id"],
+        },
+    },
+}
+
+TOOL_O365_FILES_DOWNLOAD: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_files_download",
+        "description": (
+            "Get download info for a OneDrive file. "
+            "Returns metadata including download URL."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "item_id": {
+                    "type": "string",
+                    "description": "Drive item ID (from o365_files_list).",
+                },
+            },
+            "required": ["client_id", "item_id"],
+        },
+    },
+}
+
+TOOL_O365_FILES_SEARCH: dict = {
+    "type": "function",
+    "function": {
+        "name": "o365_files_search",
+        "description": "Search for files in OneDrive by name or content.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Search query (searches file names and content).",
+                },
+                "top": {
+                    "type": "integer",
+                    "description": "Max results (default 25).",
+                    "default": 25,
+                },
+            },
+            "required": ["client_id", "query"],
+        },
+    },
+}
+
+# -- Tool groups --
+
+O365_TEAMS_TOOLS: list[dict] = [
+    TOOL_O365_TEAMS_LIST_CHATS,
+    TOOL_O365_TEAMS_READ_CHAT,
+    TOOL_O365_TEAMS_SEND_MESSAGE,
+    TOOL_O365_TEAMS_LIST_TEAMS,
+    TOOL_O365_TEAMS_LIST_CHANNELS,
+    TOOL_O365_TEAMS_READ_CHANNEL,
+    TOOL_O365_TEAMS_SEND_CHANNEL_MESSAGE,
+    TOOL_O365_SESSION_STATUS,
+]
+
+O365_MAIL_TOOLS: list[dict] = [
+    TOOL_O365_MAIL_LIST,
+    TOOL_O365_MAIL_READ,
+    TOOL_O365_MAIL_SEND,
+]
+
+O365_CALENDAR_TOOLS: list[dict] = [
+    TOOL_O365_CALENDAR_EVENTS,
+    TOOL_O365_CALENDAR_CREATE,
+]
+
+O365_FILES_TOOLS: list[dict] = [
+    TOOL_O365_FILES_LIST,
+    TOOL_O365_FILES_DOWNLOAD,
+    TOOL_O365_FILES_SEARCH,
+]
+
+O365_ALL_TOOLS: list[dict] = (
+    O365_TEAMS_TOOLS + O365_MAIL_TOOLS + O365_CALENDAR_TOOLS + O365_FILES_TOOLS
+)
 
 
 # ============================================================

@@ -560,6 +560,109 @@ async def execute_tool(
                 agent_preference=arguments.get("agent_preference", "auto"),
                 parent_task_id=task_id,
             )
+        # --- O365 tools (Teams, Mail, Calendar, OneDrive) ---
+        elif tool_name == "o365_teams_list_chats":
+            result = await _execute_o365_teams_list_chats(
+                client_id=arguments.get("client_id") or client_id,
+                top=arguments.get("top", 20),
+            )
+        elif tool_name == "o365_teams_read_chat":
+            result = await _execute_o365_teams_read_chat(
+                client_id=arguments.get("client_id") or client_id,
+                chat_id=arguments.get("chat_id", ""),
+                top=arguments.get("top", 20),
+            )
+        elif tool_name == "o365_teams_send_message":
+            result = await _execute_o365_teams_send_message(
+                client_id=arguments.get("client_id") or client_id,
+                chat_id=arguments.get("chat_id", ""),
+                content=arguments.get("content", ""),
+                content_type=arguments.get("content_type", "text"),
+            )
+        elif tool_name == "o365_teams_list_teams":
+            result = await _execute_o365_teams_list_teams(
+                client_id=arguments.get("client_id") or client_id,
+            )
+        elif tool_name == "o365_teams_list_channels":
+            result = await _execute_o365_teams_list_channels(
+                client_id=arguments.get("client_id") or client_id,
+                team_id=arguments.get("team_id", ""),
+            )
+        elif tool_name == "o365_teams_read_channel":
+            result = await _execute_o365_teams_read_channel(
+                client_id=arguments.get("client_id") or client_id,
+                team_id=arguments.get("team_id", ""),
+                channel_id=arguments.get("channel_id", ""),
+                top=arguments.get("top", 20),
+            )
+        elif tool_name == "o365_teams_send_channel_message":
+            result = await _execute_o365_teams_send_channel_message(
+                client_id=arguments.get("client_id") or client_id,
+                team_id=arguments.get("team_id", ""),
+                channel_id=arguments.get("channel_id", ""),
+                content=arguments.get("content", ""),
+            )
+        elif tool_name == "o365_session_status":
+            result = await _execute_o365_session_status(
+                client_id=arguments.get("client_id") or client_id,
+            )
+        elif tool_name == "o365_mail_list":
+            result = await _execute_o365_mail_list(
+                client_id=arguments.get("client_id") or client_id,
+                top=arguments.get("top", 20),
+                folder=arguments.get("folder", "inbox"),
+            )
+        elif tool_name == "o365_mail_read":
+            result = await _execute_o365_mail_read(
+                client_id=arguments.get("client_id") or client_id,
+                message_id=arguments.get("message_id", ""),
+            )
+        elif tool_name == "o365_mail_send":
+            result = await _execute_o365_mail_send(
+                client_id=arguments.get("client_id") or client_id,
+                to=arguments.get("to", ""),
+                subject=arguments.get("subject", ""),
+                body=arguments.get("body", ""),
+                cc=arguments.get("cc", ""),
+                content_type=arguments.get("content_type", "text"),
+            )
+        elif tool_name == "o365_calendar_events":
+            result = await _execute_o365_calendar_events(
+                client_id=arguments.get("client_id") or client_id,
+                top=arguments.get("top", 20),
+                start_date_time=arguments.get("start_date_time", ""),
+                end_date_time=arguments.get("end_date_time", ""),
+            )
+        elif tool_name == "o365_calendar_create":
+            result = await _execute_o365_calendar_create(
+                client_id=arguments.get("client_id") or client_id,
+                subject=arguments.get("subject", ""),
+                start_date_time=arguments.get("start_date_time", ""),
+                start_time_zone=arguments.get("start_time_zone", ""),
+                end_date_time=arguments.get("end_date_time", ""),
+                end_time_zone=arguments.get("end_time_zone", ""),
+                location=arguments.get("location", ""),
+                body=arguments.get("body", ""),
+                attendees=arguments.get("attendees", ""),
+                is_online_meeting=arguments.get("is_online_meeting", False),
+            )
+        elif tool_name == "o365_files_list":
+            result = await _execute_o365_files_list(
+                client_id=arguments.get("client_id") or client_id,
+                path=arguments.get("path", "root"),
+                top=arguments.get("top", 50),
+            )
+        elif tool_name == "o365_files_download":
+            result = await _execute_o365_files_download(
+                client_id=arguments.get("client_id") or client_id,
+                item_id=arguments.get("item_id", ""),
+            )
+        elif tool_name == "o365_files_search":
+            result = await _execute_o365_files_search(
+                client_id=arguments.get("client_id") or client_id,
+                query=arguments.get("query", ""),
+                top=arguments.get("top", 25),
+            )
         else:
             result = f"Error: Unknown tool '{tool_name}'."
 
@@ -2432,6 +2535,7 @@ async def _execute_command(
 # ============================================================
 
 _KOTLIN_INTERNAL_URL = settings.kotlin_server_url
+_O365_GATEWAY_URL = settings.o365_gateway_url
 
 
 async def _execute_environment_list(client_id: str) -> str:
@@ -3259,3 +3363,501 @@ async def _execute_mongo_update_document(
         parts.append(f"upserted_id={result.upserted_id}")
 
     return f"Update result: {', '.join(parts)}"
+
+
+# ============================================================
+# O365 tools (via O365 Gateway)
+# ============================================================
+
+
+async def _execute_o365_teams_list_chats(client_id: str, top: int = 20) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_O365_GATEWAY_URL}/api/o365/chats/{client_id}",
+                params={"top": min(top, 50)},
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            chats = resp.json()
+            if not chats:
+                return "No chats found."
+            lines = []
+            for c in chats:
+                topic = c.get("topic") or "(no topic)"
+                chat_type = c.get("chatType", "?")
+                chat_id = c.get("id", "?")
+                preview = ""
+                mp = c.get("lastMessagePreview")
+                if mp and mp.get("body"):
+                    preview_text = mp["body"].get("content", "")[:100]
+                    from_user = ""
+                    if mp.get("from") and mp["from"].get("user"):
+                        from_user = mp["from"]["user"].get("displayName", "")
+                    preview = f" | {from_user}: {preview_text}"
+                lines.append(f"[{chat_type}] {topic} (id={chat_id}){preview}")
+            return "\n".join(lines)
+    except Exception as e:
+        return f"Error listing Teams chats: {str(e)[:300]}"
+
+
+async def _execute_o365_teams_read_chat(client_id: str, chat_id: str, top: int = 20) -> str:
+    if not chat_id:
+        return "Error: chat_id is required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_O365_GATEWAY_URL}/api/o365/chats/{client_id}/{chat_id}/messages",
+                params={"top": top},
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            messages = resp.json()
+            if not messages:
+                return "No messages found."
+            lines = []
+            for m in messages:
+                sender = _extract_sender(m)
+                body = (m.get("body") or {}).get("content", "")[:500]
+                ts = m.get("createdDateTime", "")
+                lines.append(f"[{ts}] {sender}: {body}")
+            return "\n---\n".join(lines)
+    except Exception as e:
+        return f"Error reading Teams chat: {str(e)[:300]}"
+
+
+async def _execute_o365_teams_send_message(
+    client_id: str, chat_id: str, content: str, content_type: str = "text",
+) -> str:
+    if not chat_id or not content:
+        return "Error: chat_id and content are required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{_O365_GATEWAY_URL}/api/o365/chats/{client_id}/{chat_id}/messages",
+                json={"contentType": content_type, "content": content},
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            data = resp.json()
+            return f"Message sent (id={data.get('id', '?')})"
+    except Exception as e:
+        return f"Error sending Teams message: {str(e)[:300]}"
+
+
+async def _execute_o365_teams_list_teams(client_id: str) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(f"{_O365_GATEWAY_URL}/api/o365/teams/{client_id}")
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            teams = resp.json()
+            if not teams:
+                return "No teams found."
+            return "\n".join(
+                f"{t.get('displayName', '?')} (id={t.get('id', '?')})" for t in teams
+            )
+    except Exception as e:
+        return f"Error listing Teams: {str(e)[:300]}"
+
+
+async def _execute_o365_teams_list_channels(client_id: str, team_id: str) -> str:
+    if not team_id:
+        return "Error: team_id is required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_O365_GATEWAY_URL}/api/o365/teams/{client_id}/{team_id}/channels",
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            channels = resp.json()
+            if not channels:
+                return "No channels found."
+            return "\n".join(
+                f"{ch.get('displayName', '?')} (id={ch.get('id', '?')}, type={ch.get('membershipType', '?')})"
+                for ch in channels
+            )
+    except Exception as e:
+        return f"Error listing channels: {str(e)[:300]}"
+
+
+async def _execute_o365_teams_read_channel(
+    client_id: str, team_id: str, channel_id: str, top: int = 20,
+) -> str:
+    if not team_id or not channel_id:
+        return "Error: team_id and channel_id are required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_O365_GATEWAY_URL}/api/o365/teams/{client_id}/{team_id}/channels/{channel_id}/messages",
+                params={"top": top},
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            messages = resp.json()
+            if not messages:
+                return "No messages found."
+            lines = []
+            for m in messages:
+                sender = _extract_sender(m)
+                body = (m.get("body") or {}).get("content", "")[:500]
+                ts = m.get("createdDateTime", "")
+                lines.append(f"[{ts}] {sender}: {body}")
+            return "\n---\n".join(lines)
+    except Exception as e:
+        return f"Error reading channel: {str(e)[:300]}"
+
+
+async def _execute_o365_teams_send_channel_message(
+    client_id: str, team_id: str, channel_id: str, content: str,
+) -> str:
+    if not team_id or not channel_id or not content:
+        return "Error: team_id, channel_id, and content are required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{_O365_GATEWAY_URL}/api/o365/teams/{client_id}/{team_id}/channels/{channel_id}/messages",
+                json={"contentType": "text", "content": content},
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            data = resp.json()
+            return f"Channel message sent (id={data.get('id', '?')})"
+    except Exception as e:
+        return f"Error sending channel message: {str(e)[:300]}"
+
+
+async def _execute_o365_session_status(client_id: str) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(f"{_O365_GATEWAY_URL}/api/o365/session/{client_id}")
+            if resp.status_code == 404:
+                return f"No O365 session for client '{client_id}'. Session needs to be initialized."
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            data = resp.json()
+            parts = [f"Session state: {data.get('state', '?')}"]
+            if data.get("lastActivity"):
+                parts.append(f"Last activity: {data['lastActivity']}")
+            if data.get("lastTokenExtract"):
+                parts.append(f"Last token extract: {data['lastTokenExtract']}")
+            if data.get("novncUrl"):
+                parts.append(f"noVNC URL (for manual login): {data['novncUrl']}")
+            return "\n".join(parts)
+    except Exception as e:
+        return f"Error checking session status: {str(e)[:300]}"
+
+
+# -- Mail --
+
+async def _execute_o365_mail_list(
+    client_id: str, top: int = 20, folder: str = "inbox",
+) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_O365_GATEWAY_URL}/api/o365/mail/{client_id}",
+                params={"top": top, "folder": folder},
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            messages = resp.json()
+            if not messages:
+                return f"No emails found in '{folder}'."
+            lines = []
+            for m in messages:
+                subj = m.get("subject", "(no subject)")
+                sender = ""
+                if m.get("from") and m["from"].get("emailAddress"):
+                    ea = m["from"]["emailAddress"]
+                    sender = ea.get("name") or ea.get("address", "?")
+                ts = m.get("receivedDateTime", "")
+                read = "" if m.get("isRead") else " [UNREAD]"
+                attach = " [ATTACH]" if m.get("hasAttachments") else ""
+                msg_id = m.get("id", "?")
+                preview = (m.get("bodyPreview") or "")[:120]
+                lines.append(
+                    f"[{ts}] {sender}: {subj}{read}{attach}\n  id={msg_id}\n  {preview}"
+                )
+            return "\n---\n".join(lines)
+    except Exception as e:
+        return f"Error listing mail: {str(e)[:300]}"
+
+
+async def _execute_o365_mail_read(client_id: str, message_id: str) -> str:
+    if not message_id:
+        return "Error: message_id is required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_O365_GATEWAY_URL}/api/o365/mail/{client_id}/{message_id}",
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            m = resp.json()
+            sender = ""
+            if m.get("from") and m["from"].get("emailAddress"):
+                ea = m["from"]["emailAddress"]
+                sender = f"{ea.get('name', '')} <{ea.get('address', '')}>"
+            to_list = [
+                r["emailAddress"].get("address", "")
+                for r in (m.get("toRecipients") or [])
+                if r.get("emailAddress")
+            ]
+            cc_list = [
+                r["emailAddress"].get("address", "")
+                for r in (m.get("ccRecipients") or [])
+                if r.get("emailAddress")
+            ]
+            body_content = (m.get("body") or {}).get("content", "")[:3000]
+            parts = [
+                f"Subject: {m.get('subject', '(none)')}",
+                f"From: {sender}",
+                f"To: {', '.join(to_list)}",
+            ]
+            if cc_list:
+                parts.append(f"CC: {', '.join(cc_list)}")
+            parts.append(f"Date: {m.get('receivedDateTime', '?')}")
+            if m.get("hasAttachments"):
+                parts.append("Has attachments: yes")
+            parts.append(f"\n{body_content}")
+            return "\n".join(parts)
+    except Exception as e:
+        return f"Error reading mail: {str(e)[:300]}"
+
+
+async def _execute_o365_mail_send(
+    client_id: str, to: str, subject: str, body: str,
+    cc: str = "", content_type: str = "text",
+) -> str:
+    if not to or not subject:
+        return "Error: to and subject are required."
+    to_recipients = [
+        {"emailAddress": {"address": addr.strip()}}
+        for addr in to.split(",") if addr.strip()
+    ]
+    cc_recipients = [
+        {"emailAddress": {"address": addr.strip()}}
+        for addr in cc.split(",") if addr.strip()
+    ] if cc else []
+    payload = {
+        "message": {
+            "subject": subject,
+            "body": {"contentType": content_type, "content": body},
+            "toRecipients": to_recipients,
+            "ccRecipients": cc_recipients,
+        },
+        "saveToSentItems": True,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{_O365_GATEWAY_URL}/api/o365/mail/{client_id}/send",
+                json=payload,
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            return "Email sent successfully."
+    except Exception as e:
+        return f"Error sending mail: {str(e)[:300]}"
+
+
+# -- Calendar --
+
+async def _execute_o365_calendar_events(
+    client_id: str, top: int = 20,
+    start_date_time: str = "", end_date_time: str = "",
+) -> str:
+    params: dict = {"top": top}
+    if start_date_time:
+        params["startDateTime"] = start_date_time
+    if end_date_time:
+        params["endDateTime"] = end_date_time
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_O365_GATEWAY_URL}/api/o365/calendar/{client_id}",
+                params=params,
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            events = resp.json()
+            if not events:
+                return "No events found."
+            lines = []
+            for ev in events:
+                subj = ev.get("subject", "(no subject)")
+                start = (ev.get("start") or {}).get("dateTime", "?")
+                end = (ev.get("end") or {}).get("dateTime", "?")
+                loc = ""
+                if ev.get("location") and ev["location"].get("displayName"):
+                    loc = f" @ {ev['location']['displayName']}"
+                online = " [ONLINE]" if ev.get("isOnlineMeeting") else ""
+                all_day = " [ALL DAY]" if ev.get("isAllDay") else ""
+                ev_id = ev.get("id", "?")
+                attendees = []
+                for a in ev.get("attendees") or []:
+                    if a.get("emailAddress"):
+                        attendees.append(
+                            a["emailAddress"].get("name")
+                            or a["emailAddress"].get("address", "")
+                        )
+                att_str = f"\n  Attendees: {', '.join(attendees)}" if attendees else ""
+                lines.append(
+                    f"{subj}{all_day}{online}{loc}\n  {start} → {end}\n  id={ev_id}{att_str}"
+                )
+            return "\n---\n".join(lines)
+    except Exception as e:
+        return f"Error listing calendar events: {str(e)[:300]}"
+
+
+async def _execute_o365_calendar_create(
+    client_id: str, subject: str,
+    start_date_time: str, start_time_zone: str,
+    end_date_time: str, end_time_zone: str,
+    location: str = "", body: str = "",
+    attendees: str = "", is_online_meeting: bool = False,
+) -> str:
+    if not subject or not start_date_time or not end_date_time:
+        return "Error: subject, start_date_time, and end_date_time are required."
+    payload: dict = {
+        "subject": subject,
+        "start": {"dateTime": start_date_time, "timeZone": start_time_zone or "UTC"},
+        "end": {"dateTime": end_date_time, "timeZone": end_time_zone or "UTC"},
+        "isOnlineMeeting": is_online_meeting,
+    }
+    if location:
+        payload["location"] = {"displayName": location}
+    if body:
+        payload["body"] = {"contentType": "text", "content": body}
+    if attendees:
+        payload["attendees"] = [
+            {"emailAddress": {"address": addr.strip()}, "type": "required"}
+            for addr in attendees.split(",") if addr.strip()
+        ]
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{_O365_GATEWAY_URL}/api/o365/calendar/{client_id}",
+                json=payload,
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            ev = resp.json()
+            result = f"Event created: {ev.get('subject', subject)} (id={ev.get('id', '?')})"
+            if ev.get("onlineMeetingUrl"):
+                result += f"\nTeams meeting URL: {ev['onlineMeetingUrl']}"
+            if ev.get("webLink"):
+                result += f"\nWeb link: {ev['webLink']}"
+            return result
+    except Exception as e:
+        return f"Error creating calendar event: {str(e)[:300]}"
+
+
+# -- OneDrive --
+
+async def _execute_o365_files_list(
+    client_id: str, path: str = "root", top: int = 50,
+) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_O365_GATEWAY_URL}/api/o365/drive/{client_id}",
+                params={"path": path, "top": top},
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            items = resp.json()
+            if not items:
+                return f"No items found at '{path}'."
+            lines = []
+            for item in items:
+                name = item.get("name", "?")
+                is_folder = item.get("folder") is not None
+                icon = "[DIR]" if is_folder else "[FILE]"
+                size = ""
+                if not is_folder and item.get("size"):
+                    size_kb = item["size"] / 1024
+                    size = f" ({size_kb:.1f} KB)" if size_kb < 1024 else f" ({size_kb / 1024:.1f} MB)"
+                modified = item.get("lastModifiedDateTime", "")
+                item_id = item.get("id", "?")
+                lines.append(f"{icon} {name}{size} (modified={modified}, id={item_id})")
+            return "\n".join(lines)
+    except Exception as e:
+        return f"Error listing drive files: {str(e)[:300]}"
+
+
+async def _execute_o365_files_download(client_id: str, item_id: str) -> str:
+    if not item_id:
+        return "Error: item_id is required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_O365_GATEWAY_URL}/api/o365/drive/{client_id}/item/{item_id}",
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            item = resp.json()
+            parts = [
+                f"Name: {item.get('name', '?')}",
+                f"Size: {item.get('size', '?')} bytes",
+            ]
+            if item.get("file"):
+                parts.append(f"MIME type: {item['file'].get('mimeType', '?')}")
+            if item.get("webUrl"):
+                parts.append(f"Web URL: {item['webUrl']}")
+            if item.get("@microsoft.graph.downloadUrl"):
+                parts.append(f"Download URL: {item['@microsoft.graph.downloadUrl']}")
+            return "\n".join(parts)
+    except Exception as e:
+        return f"Error getting drive item: {str(e)[:300]}"
+
+
+async def _execute_o365_files_search(
+    client_id: str, query: str, top: int = 25,
+) -> str:
+    if not query:
+        return "Error: query is required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_O365_GATEWAY_URL}/api/o365/drive/{client_id}/search",
+                params={"q": query, "top": top},
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            items = resp.json()
+            if not items:
+                return f"No files found for query '{query}'."
+            lines = []
+            for item in items:
+                name = item.get("name", "?")
+                is_folder = item.get("folder") is not None
+                icon = "[DIR]" if is_folder else "[FILE]"
+                size = ""
+                if not is_folder and item.get("size"):
+                    size_kb = item["size"] / 1024
+                    size = f" ({size_kb:.1f} KB)" if size_kb < 1024 else f" ({size_kb / 1024:.1f} MB)"
+                path = ""
+                if item.get("parentReference") and item["parentReference"].get("path"):
+                    path = f" in {item['parentReference']['path']}"
+                item_id = item.get("id", "?")
+                lines.append(f"{icon} {name}{size}{path} (id={item_id})")
+            return "\n".join(lines)
+    except Exception as e:
+        return f"Error searching drive: {str(e)[:300]}"
+
+
+# -- Helper --
+
+def _extract_sender(message: dict) -> str:
+    """Extract sender display name from a Graph API message."""
+    from_data = message.get("from")
+    if not from_data:
+        return "?"
+    if from_data.get("user"):
+        return from_data["user"].get("displayName", "?")
+    if from_data.get("application"):
+        return from_data["application"].get("displayName", "bot")
+    return "?"
