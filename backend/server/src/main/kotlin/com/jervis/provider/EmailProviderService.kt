@@ -9,10 +9,10 @@ import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionTestResultDto
-import com.jervis.dto.connection.FormField
-import com.jervis.dto.connection.FormFieldType
 import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
+import com.jervis.dto.connection.FormField
+import com.jervis.dto.connection.FormFieldType
 import com.jervis.dto.connection.ProviderEnum
 import jakarta.annotation.PostConstruct
 import jakarta.mail.Authenticator
@@ -32,46 +32,6 @@ class EmailProviderService(
     private val logger = KotlinLogging.logger {}
 
     private val emailDescriptors = mapOf(
-        ProviderEnum.GOOGLE_WORKSPACE to ProviderDescriptor(
-            provider = ProviderEnum.GOOGLE_WORKSPACE,
-            displayName = "Google Workspace (Gmail)",
-            capabilities = setOf(ConnectionCapability.EMAIL_READ),
-            protocols = setOf(ProtocolEnum.IMAP),
-            authOptions = listOf(
-                AuthOption(AuthTypeEnum.OAUTH2, "OAuth 2.0", fields = emptyList()),
-                AuthOption(
-                    AuthTypeEnum.BASIC, "App Password",
-                    fields = listOf(
-                        FormField(FormFieldType.HOST, "IMAP Host", placeholder = "imap.gmail.com", defaultValue = "imap.gmail.com"),
-                        FormField(FormFieldType.PORT, "Port", defaultValue = "993"),
-                        FormField(FormFieldType.USE_SSL, "SSL", defaultValue = "true"),
-                        FormField(FormFieldType.USERNAME, "Email"),
-                        FormField(FormFieldType.PASSWORD, "App Password", isSecret = true),
-                        FormField(FormFieldType.FOLDER_NAME, "Složka", required = false, defaultValue = "INBOX"),
-                    ),
-                ),
-            ),
-        ),
-        ProviderEnum.MICROSOFT_365 to ProviderDescriptor(
-            provider = ProviderEnum.MICROSOFT_365,
-            displayName = "Microsoft 365 (Outlook)",
-            capabilities = setOf(ConnectionCapability.EMAIL_READ),
-            protocols = setOf(ProtocolEnum.IMAP),
-            authOptions = listOf(
-                AuthOption(AuthTypeEnum.OAUTH2, "OAuth 2.0", fields = emptyList()),
-                AuthOption(
-                    AuthTypeEnum.BASIC, "App Password",
-                    fields = listOf(
-                        FormField(FormFieldType.HOST, "IMAP Host", placeholder = "outlook.office365.com", defaultValue = "outlook.office365.com"),
-                        FormField(FormFieldType.PORT, "Port", defaultValue = "993"),
-                        FormField(FormFieldType.USE_SSL, "SSL", defaultValue = "true"),
-                        FormField(FormFieldType.USERNAME, "Email"),
-                        FormField(FormFieldType.PASSWORD, "App Password", isSecret = true),
-                        FormField(FormFieldType.FOLDER_NAME, "Složka", required = false, defaultValue = "INBOX"),
-                    ),
-                ),
-            ),
-        ),
         ProviderEnum.GENERIC_EMAIL to ProviderDescriptor(
             provider = ProviderEnum.GENERIC_EMAIL,
             displayName = "Generic Email (IMAP/POP3/SMTP)",
