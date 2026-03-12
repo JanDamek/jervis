@@ -12,6 +12,8 @@ import org.springframework.data.mongodb.core.mapping.Document
  * - BUGTRACKER: 10 min
  * - WIKI: 60 min
  * - EMAIL_READ: 1 min
+ * - CHAT_READ: 2 min
+ * - CALENDAR_READ: 10 min
  */
 @Document(collection = "polling_interval_settings")
 data class PollingIntervalSettingsDocument(
@@ -27,6 +29,8 @@ data class PollingIntervalSettingsDocument(
             "BUGTRACKER" to 10,
             "WIKI" to 60,
             "EMAIL_READ" to 1,
+            "CHAT_READ" to 2,
+            "CALENDAR_READ" to 10,
         )
     }
 }

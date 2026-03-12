@@ -103,6 +103,41 @@ value class SourceUrn(
                 "confluence-attachment::conn:${connectionId.toHexString()},pageId:${encodeValue(pageId)},file:${encodeValue(filename)}",
             )
 
+        fun teams(
+            connectionId: ConnectionId,
+            messageId: String,
+            channelId: String? = null,
+            chatId: String? = null,
+        ): SourceUrn =
+            SourceUrn(
+                "teams::conn:$connectionId,msgId:${encodeValue(messageId)}${
+                    channelId?.let { ",channelId:${encodeValue(it)}" } ?: ""
+                }${
+                    chatId?.let { ",chatId:${encodeValue(it)}" } ?: ""
+                }",
+            )
+
+        fun slack(
+            connectionId: ConnectionId,
+            messageId: String,
+            channelId: String,
+        ): SourceUrn =
+            SourceUrn(
+                "slack::conn:$connectionId,msgId:${encodeValue(messageId)},channelId:${encodeValue(channelId)}",
+            )
+
+        fun discord(
+            connectionId: ConnectionId,
+            messageId: String,
+            channelId: String,
+            guildId: String? = null,
+        ): SourceUrn =
+            SourceUrn(
+                "discord::conn:$connectionId,msgId:${encodeValue(messageId)},channelId:${encodeValue(channelId)}${
+                    guildId?.let { ",guildId:${encodeValue(it)}" } ?: ""
+                }",
+            )
+
         fun mergeRequest(
             projectId: ProjectId,
             provider: String,

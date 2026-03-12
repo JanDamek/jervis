@@ -1,0 +1,85 @@
+# =============================================================================
+# Jervis O365 Browser Pool – K8s StatefulSet
+#
+# Stateful service. Manages Playwright browser instances for extracting
+# O365 Bearer tokens from live web sessions. One context per client.
+# =============================================================================
+
+# ===== StatefulSet =====
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jervis-o365-browser-pool
+  namespace: jervis
+spec:
+  serviceName: jervis-o365-browser-pool
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: jervis-o365-browser-pool
+  template:
+    metadata:
+      labels:
+        app: jervis-o365-browser-pool
+    spec:
+      containers:
+        - name: browser-pool
+          image: registry.damek-soft.eu/jandamek/jervis-o365-browser-pool:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8090
+              name: api
+          volumeMounts:
+            - name: browser-profiles
+              mountPath: /browser-profiles
+          env:
+            - name: O365_POOL_HEADLESS
+              value: "true"
+            - name: O365_POOL_MAX_CONTEXTS
+              value: "10"
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8090
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8090
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: browser-profiles
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+---
+# ===== Service =====
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-o365-browser-pool
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-o365-browser-pool
+  ports:
+    - name: api
+      port: 8090
+      targetPort: 8090

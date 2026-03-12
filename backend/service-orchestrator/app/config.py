@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     )
     mcp_api_token: str = os.getenv("MCP_API_TOKEN", "")
 
+    # O365 Gateway (relay auth to Graph API via browser pool tokens)
+    o365_gateway_url: str = os.getenv(
+        "O365_GATEWAY_URL", "http://jervis-o365-gateway:8080"
+    )
+
     # SearXNG web search (runs on port 30053)
     searxng_url: str = os.getenv(
         "SEARXNG_URL", "http://192.168.100.117:30053"

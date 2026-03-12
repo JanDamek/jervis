@@ -1,0 +1,52 @@
+"""Pydantic models for O365 Browser Pool."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+
+from pydantic import BaseModel
+
+
+class SessionState(str, Enum):
+    ACTIVE = "ACTIVE"
+    EXPIRED = "EXPIRED"
+    PENDING_LOGIN = "PENDING_LOGIN"
+    ERROR = "ERROR"
+
+
+class TokenInfo(BaseModel):
+    token: str
+    extracted_at: datetime
+    estimated_expiry: datetime
+    source_url: str
+
+
+class TokenResponse(BaseModel):
+    token: str
+    expires_at: str
+    age_seconds: int
+
+
+class SessionStatus(BaseModel):
+    client_id: str
+    state: SessionState
+    last_activity: str | None = None
+    last_token_extract: str | None = None
+    novnc_url: str | None = None
+
+
+class SessionInitRequest(BaseModel):
+    login_url: str = "https://teams.microsoft.com"
+    user_agent: str = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    )
+
+
+class SessionInitResponse(BaseModel):
+    client_id: str
+    state: SessionState
+    novnc_url: str | None = None
+    message: str

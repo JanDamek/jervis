@@ -203,12 +203,27 @@ type: "confluence_page"
 props: { title: String, spaceKey: String, version: Int, createdAt: Instant, updatedAt: Instant, authorName: String }
 ```
 
-#### COMMUNICATION - Email, Slack, Teams
+#### COMMUNICATION - Email, Teams, Slack, Discord
 ```kotlin
 // Email
 nodeKey: "email::{messageId}"
 type: "email"
 props: { subject: String, from: String, to: List<String>, sentAt: Instant, receivedAt: Instant, hasAttachments: Boolean }
+
+// Teams Message
+nodeKey: "teams::{connectionId}::{messageId}"
+type: "teams_message"
+props: { from: String, channelName: String?, teamName: String?, chatName: String?, createdAt: Instant }
+
+// Slack Message
+nodeKey: "slack::{connectionId}::{messageId}"
+type: "slack_message"
+props: { from: String, channelName: String, channelId: String, createdAt: Instant, threadTs: String? }
+
+// Discord Message
+nodeKey: "discord::{connectionId}::{messageId}"
+type: "discord_message"
+props: { from: String, channelName: String, guildName: String, guildId: String, channelId: String, createdAt: Instant }
 ```
 
 ### Edge Types (Examples)
@@ -762,6 +777,39 @@ GitContinuousIndexer.processCommit()
   2. **KB Indexing:** Polls for TRANSCRIBED meetings → builds markdown content (title, date, duration, type, full transcript with timestamps) → creates MEETING_PROCESSING task → INDEXED
 - **State machine:** RECORDING → UPLOADED → TRANSCRIBING → TRANSCRIBED → INDEXED (or FAILED at any step)
 - **sourceUrn format:** `meeting::id:{meetingId},title:{title}`
+
+### TeamsContinuousIndexer
+
+- **Purpose:** Indexes Microsoft Teams messages (chats and channel messages) from O365 Gateway
+- **Process:**
+  1. `O365PollingHandler` fetches messages via O365 Gateway REST → saves as NEW in `teams_message_index`
+  2. Reads NEW documents from MongoDB (no external API calls)
+  3. Creates `CHAT_PROCESSING` task with structured content (context, from, date, body, metadata)
+  4. Sets `topicId`: `teams-channel:{teamId}/{channelId}` or `teams-chat:{chatId}`
+  5. Marks as INDEXED
+- **sourceUrn format:** `teams::conn:{id},msgId:{id},channelId:{id}` or `teams::conn:{id},msgId:{id},chatId:{id}`
+
+### SlackContinuousIndexer
+
+- **Purpose:** Indexes Slack channel messages fetched via Slack Web API
+- **Process:**
+  1. `SlackPollingHandler` fetches via `conversations.list` + `conversations.history` → saves as NEW in `slack_message_index`
+  2. Reads NEW documents from MongoDB
+  3. Creates `SLACK_PROCESSING` task with channel context, author, and message body
+  4. Sets `topicId`: `slack-channel:{channelId}`
+  5. Marks as INDEXED
+- **sourceUrn format:** `slack::conn:{id},msgId:{ts},channelId:{id}`
+
+### DiscordContinuousIndexer
+
+- **Purpose:** Indexes Discord guild channel messages fetched via Discord REST API
+- **Process:**
+  1. `DiscordPollingHandler` fetches via `/guilds`, `/channels`, `/messages` → saves as NEW in `discord_message_index`
+  2. Reads NEW documents from MongoDB
+  3. Creates `DISCORD_PROCESSING` task with guild/channel context, author, and message body
+  4. Sets `topicId`: `discord-channel:{guildId}/{channelId}`
+  5. Marks as INDEXED
+- **sourceUrn format:** `discord::conn:{id},msgId:{id},channelId:{id},guildId:{id}`
 
 ### MergeRequestContinuousIndexer
 

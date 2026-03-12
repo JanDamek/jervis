@@ -2303,6 +2303,119 @@ When the multi-agent delegation system is enabled (`use_delegation_graph=true`):
 
 ---
 
+## O365 Gateway
+
+### Overview
+
+Multi-tenant Microsoft 365 integration via browser-session relay. Two services:
+
+1. **`jervis-o365-gateway`** (Kotlin/Ktor) — Stateless API. Receives tool calls from MCP/orchestrator, fetches Bearer tokens from browser pool, calls Microsoft Graph API.
+2. **`jervis-o365-browser-pool`** (Python/FastAPI/Playwright) — Stateful service. Manages one Playwright Chromium context per client. Intercepts network requests to extract Bearer tokens from live O365 web sessions.
+
+### Architecture Flow
+
+```
+MCP Tool Call → O365 Gateway → Token Service (cache → browser pool) → Graph API
+                                     ↓
+                              Browser Pool (Playwright)
+                              ├── Client A context (persistent profile)
+                              ├── Client B context
+                              └── Client C context
+```
+
+### Key Design Decisions
+
+- **Raw HTTP over Graph SDK**: Uses Ktor HTTP client for Graph API calls instead of the heavy Graph SDK. Simpler, fewer dependencies.
+- **Browser-based token relay**: For tenants that don't allow OAuth app registration in Azure AD. Playwright intercepts `Authorization: Bearer` headers from `graph.microsoft.com` requests.
+- **Per-client rate limiting**: 4 req/s safety margin under Graph API's 5 req/s Teams limit.
+- **Persistent browser profiles**: Cookies and local storage persisted to PVC, surviving pod restarts.
+
+### MCP Tools
+
+| Tool | Graph API Endpoint | Phase |
+|------|--------------------|-------|
+| `o365_teams_list_chats` | `GET /me/chats` | 1 |
+| `o365_teams_read_chat` | `GET /me/chats/{id}/messages` | 1 |
+| `o365_teams_send_message` | `POST /me/chats/{id}/messages` | 1 |
+| `o365_teams_list_teams` | `GET /me/joinedTeams` | 1 |
+| `o365_teams_list_channels` | `GET /teams/{id}/channels` | 1 |
+| `o365_teams_read_channel` | `GET /teams/{id}/channels/{id}/messages` | 1 |
+| `o365_teams_send_channel_message` | `POST /teams/{id}/channels/{id}/messages` | 1 |
+| `o365_session_status` | Browser pool session query | 1 |
+| `o365_mail_list` | `GET /me/mailFolders/{folder}/messages` | 2 |
+| `o365_mail_read` | `GET /me/messages/{id}` | 2 |
+| `o365_mail_send` | `POST /me/sendMail` | 2 |
+| `o365_calendar_events` | `GET /me/events` or `/me/calendarView` | 3 |
+| `o365_calendar_create` | `POST /me/events` | 3 |
+| `o365_files_list` | `GET /me/drive/root/children` | 4 |
+| `o365_files_download` | `GET /me/drive/items/{id}` | 4 |
+| `o365_files_search` | `GET /me/drive/root/search(q='...')` | 4 |
+
+### Deployment
+
+- Gateway: `Deployment` (stateless, 256-512Mi)
+- Browser Pool: `StatefulSet` with PVC (stateful, 1-4Gi, ~500MB per browser context)
+
+## Chat Platform Integrations (Teams, Slack, Discord)
+
+Three chat platforms share the same polling→indexing→task pipeline architecture:
+
+```
+CentralPoller
+  → PollingHandler (per platform)
+    → Fetches messages from external API
+    → Saves to MongoDB as NEW state
+  → ContinuousIndexer (per platform)
+    → Reads NEW documents from MongoDB
+    → Creates tasks (CHAT_PROCESSING / SLACK_PROCESSING / DISCORD_PROCESSING)
+    → Marks as INDEXED
+```
+
+### Platform-Specific Handlers
+
+| Platform | PollingHandler | API | Auth | Resource Key |
+|----------|---------------|-----|------|-------------|
+| Microsoft Teams | `O365PollingHandler` | O365 Gateway REST | Browser session (`o365ClientId`) | `teamId/channelId` |
+| Slack | `SlackPollingHandler` | Slack Web API (`conversations.list`, `conversations.history`) | Bot Token (`xoxb-...`) via BEARER | `channelId` |
+| Discord | `DiscordPollingHandler` | Discord REST API v10 (`/guilds`, `/channels`, `/messages`) | Bot Token via BEARER (`Bot` prefix) | `guildId/channelId` |
+
+### Continuous Indexers
+
+| Platform | Indexer | Task Type | Topic ID Format |
+|----------|---------|-----------|-----------------|
+| Teams | `TeamsContinuousIndexer` | `CHAT_PROCESSING` | `teams-channel:{teamId}/{channelId}` or `teams-chat:{chatId}` |
+| Slack | `SlackContinuousIndexer` | `SLACK_PROCESSING` | `slack-channel:{channelId}` |
+| Discord | `DiscordContinuousIndexer` | `DISCORD_PROCESSING` | `discord-channel:{guildId}/{channelId}` |
+
+### Resource Routing (same hierarchy as email/git)
+
+- **Client has "all"** → everything indexes to client level
+- **Project claims specific channels** → those channels index to project, rest to client
+- **Chats (Teams 1:1/group)** → always client level (not channel-specific)
+
+### SourceUrn Factories
+
+- `SourceUrn.teams(connectionId, messageId, channelId?, chatId?)`
+- `SourceUrn.slack(connectionId, messageId, channelId)`
+- `SourceUrn.discord(connectionId, messageId, channelId, guildId?)`
+
+### Key Files
+
+| File | Description |
+|------|-------------|
+| `backend/server/.../service/polling/handler/teams/O365PollingHandler.kt` | Teams polling via O365 Gateway |
+| `backend/server/.../service/polling/handler/slack/SlackPollingHandler.kt` | Slack polling via Web API |
+| `backend/server/.../service/polling/handler/discord/DiscordPollingHandler.kt` | Discord polling via REST API |
+| `backend/server/.../service/teams/TeamsContinuousIndexer.kt` | Teams NEW→INDEXED pipeline |
+| `backend/server/.../service/slack/SlackContinuousIndexer.kt` | Slack NEW→INDEXED pipeline |
+| `backend/server/.../service/discord/DiscordContinuousIndexer.kt` | Discord NEW→INDEXED pipeline |
+| `backend/server/.../entity/teams/TeamsMessageIndexDocument.kt` | Teams message tracking in MongoDB |
+| `backend/server/.../entity/slack/SlackMessageIndexDocument.kt` | Slack message tracking in MongoDB |
+| `backend/server/.../entity/discord/DiscordMessageIndexDocument.kt` | Discord message tracking in MongoDB |
+| `backend/server/.../integration/chat/ChatReplyService.kt` | Outbound message sending (stubs, EPIC 11-S5) |
+
+---
+
 ## Watch Apps (watchOS + Wear OS)
 
 ### Overview

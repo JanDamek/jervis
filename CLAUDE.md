@@ -145,6 +145,25 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Context switch: `backend/service-orchestrator/app/memory/context_switch.py` (detect_context_switch, LLM classification)
 - Memory consolidation: `backend/service-orchestrator/app/memory/consolidation.py` (topic-aware summary consolidation)
 - LQM: `backend/service-orchestrator/app/memory/lqm.py` (LocalQuickMemory — hot cache, write buffer, warm cache)
+- O365 Gateway: `backend/service-o365-gateway/` (Kotlin/Ktor — relay auth to Graph API via browser pool tokens)
+- O365 Gateway entry: `backend/service-o365-gateway/src/main/kotlin/com/jervis/o365gateway/O365GatewayApplication.kt`
+- O365 Gateway Graph API: `backend/service-o365-gateway/src/main/kotlin/com/jervis/o365gateway/service/GraphApiService.kt` (Teams chats, channels, messages)
+- O365 Gateway token: `backend/service-o365-gateway/src/main/kotlin/com/jervis/o365gateway/service/TokenService.kt` (cache + browser pool fetch)
+- O365 Browser Pool: `backend/service-o365-browser-pool/` (Python/FastAPI/Playwright — manages browser sessions per client)
+- O365 Browser Pool entry: `backend/service-o365-browser-pool/app/main.py`
+- O365 Browser Manager: `backend/service-o365-browser-pool/app/browser_manager.py` (Playwright contexts, persistent profiles)
+- O365 Token Extractor: `backend/service-o365-browser-pool/app/token_extractor.py` (network interception, Bearer token capture)
+- O365 MCP tools: `backend/service-mcp/app/main.py` (o365_teams_list_chats, o365_teams_read_chat, o365_teams_send_message, o365_teams_list_teams, o365_teams_list_channels, o365_teams_read_channel, o365_teams_send_channel_message, o365_session_status, o365_mail_list, o365_mail_read, o365_mail_send, o365_calendar_events, o365_calendar_create, o365_files_list, o365_files_download, o365_files_search)
+- O365 orchestrator tools: `backend/service-orchestrator/app/tools/definitions.py` (O365_TEAMS_TOOLS, O365_MAIL_TOOLS, O365_CALENDAR_TOOLS, O365_FILES_TOOLS, O365_ALL_TOOLS)
+- O365 orchestrator executor: `backend/service-orchestrator/app/tools/executor.py` (O365 tool handlers via O365 Gateway REST API)
+- Chat polling (Teams): `backend/server/.../service/polling/handler/teams/O365PollingHandler.kt` (O365 Gateway → MongoDB)
+- Chat polling (Slack): `backend/server/.../service/polling/handler/slack/SlackPollingHandler.kt` (Slack Web API → MongoDB)
+- Chat polling (Discord): `backend/server/.../service/polling/handler/discord/DiscordPollingHandler.kt` (Discord REST API → MongoDB)
+- Chat indexing (Teams): `backend/server/.../service/teams/TeamsContinuousIndexer.kt` (NEW → CHAT_PROCESSING task → INDEXED)
+- Chat indexing (Slack): `backend/server/.../service/slack/SlackContinuousIndexer.kt` (NEW → SLACK_PROCESSING task → INDEXED)
+- Chat indexing (Discord): `backend/server/.../service/discord/DiscordContinuousIndexer.kt` (NEW → DISCORD_PROCESSING task → INDEXED)
+- Chat entities: `backend/server/.../entity/teams/`, `entity/slack/`, `entity/discord/` (message index documents)
+- Chat reply service: `backend/server/.../integration/chat/ChatReplyService.kt` (outbound messages, EPIC 11-S5)
 
 ## Build Notes
 

@@ -1,0 +1,74 @@
+# =============================================================================
+# Jervis O365 Gateway – K8s Deployment
+#
+# Stateless API service. Accepts tool calls from MCP/orchestrator,
+# fetches tokens from browser pool, calls Microsoft Graph API.
+# =============================================================================
+
+# ===== Deployment =====
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-o365-gateway
+  namespace: jervis
+spec:
+  revisionHistoryLimit: 2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-o365-gateway
+  template:
+    metadata:
+      labels:
+        app: jervis-o365-gateway
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: gateway
+          image: registry.damek-soft.eu/jandamek/jervis-o365-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: BROWSER_POOL_URL
+              value: "http://jervis-o365-browser-pool:8090"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+# ===== Service =====
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-o365-gateway
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-o365-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

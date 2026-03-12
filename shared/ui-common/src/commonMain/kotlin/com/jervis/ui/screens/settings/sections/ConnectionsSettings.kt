@@ -352,4 +352,7 @@ private fun CapabilityChip(capability: ConnectionCapability) {
 }
 
 internal val ConnectionResponseDto.displayUrl: String
-    get() = baseUrl ?: host?.let { "$it${port?.let { port -> ":$port" } ?: ""}" } ?: "Bez adresy"
+    get() = baseUrl
+        ?: host?.let { "$it${port?.let { port -> ":$port" } ?: ""}" }
+        ?: o365ClientId?.let { "O365: $it" }
+        ?: "Bez adresy"

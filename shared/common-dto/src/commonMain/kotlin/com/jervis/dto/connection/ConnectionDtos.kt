@@ -127,6 +127,9 @@ data class ConnectionResponseDto(
     val confluenceRootPageId: String? = null,
     val bitbucketRepoSlug: String? = null,
     val gitRemoteUrl: String? = null,
+
+    // O365 Gateway (browser session relay)
+    val o365ClientId: String? = null,
 )
 
 /**
@@ -175,6 +178,9 @@ data class ConnectionCreateRequestDto(
     val confluenceRootPageId: String? = null,
     val bitbucketRepoSlug: String? = null,
     val gitRemoteUrl: String? = null,
+
+    // O365 Gateway (browser session relay)
+    val o365ClientId: String? = null,
 )
 
 /**
@@ -224,6 +230,9 @@ data class ConnectionUpdateRequestDto(
     val confluenceRootPageId: String? = null,
     val bitbucketRepoSlug: String? = null,
     val gitRemoteUrl: String? = null,
+
+    // O365 Gateway (browser session relay)
+    val o365ClientId: String? = null,
 )
 
 /**

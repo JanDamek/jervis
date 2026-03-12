@@ -22,7 +22,7 @@ import org.springframework.stereotype.Service
 import java.util.UUID
 
 /**
- * OAuth2 Service for handling GitHub, GitLab, and Bitbucket OAuth2 flows.
+ * OAuth2 Service for handling GitHub, GitLab, Bitbucket, and Slack OAuth2 flows.
  *
  * Uses global OAuth2 credentials from application.yml (jervis.oauth2.*).
  * Client ID and Secret are configured once for the entire Jervis application.
@@ -34,6 +34,8 @@ import java.util.UUID
  * 4. Provider redirects to /oauth2/callback with code
  * 5. handleCallback() exchanges code for token
  * 6. Token is stored in connection
+ *
+ * Slack OAuth2: issues xoxp- user tokens (acts as the authorizing user).
  */
 @Service
 class OAuth2Service(
@@ -91,6 +93,7 @@ class OAuth2Service(
             com.jervis.dto.connection.ProviderEnum.GITHUB -> return OAuth2Provider.GITHUB
             com.jervis.dto.connection.ProviderEnum.GITLAB -> return OAuth2Provider.GITLAB
             com.jervis.dto.connection.ProviderEnum.ATLASSIAN -> return OAuth2Provider.ATLASSIAN
+            com.jervis.dto.connection.ProviderEnum.SLACK -> return OAuth2Provider.SLACK
             else -> {
                 // provider is not one of the OAuth2 ones, continue with other checks
             }
@@ -130,6 +133,7 @@ class OAuth2Service(
             OAuth2Provider.GITLAB -> oauth2Properties.gitlab
             OAuth2Provider.BITBUCKET -> oauth2Properties.bitbucket
             OAuth2Provider.ATLASSIAN -> oauth2Properties.atlassian
+            OAuth2Provider.SLACK -> oauth2Properties.slack
         }
 
     /**
@@ -166,11 +170,14 @@ class OAuth2Service(
                     redirectUri = oauth2Properties.redirectUri,
                 )
 
-            // Update connection with access token, refresh token, and expiry
-            val accessToken = tokenResponse["access_token"]
+            // Update connection with access token, refresh token, and expiry.
+            // Slack V2 OAuth returns user token under authed_user.access_token
+            val accessToken = tokenResponse["authed_user_access_token"]
+                ?: tokenResponse["access_token"]
                 ?: throw IllegalStateException("No access_token in OAuth2 response")
-            val refreshToken = tokenResponse["refresh_token"]
-            val expiresIn = tokenResponse["expires_in"]?.toLongOrNull()
+            val refreshToken = tokenResponse["authed_user_refresh_token"]
+                ?: tokenResponse["refresh_token"]
+            val expiresIn = (tokenResponse["authed_user_expires_in"] ?: tokenResponse["expires_in"])?.toLongOrNull()
             val tokenExpiresAtEpochMs = expiresIn?.let { System.currentTimeMillis() + it * 1000 }
 
             // For Atlassian, resolve cloud ID from accessible-resources endpoint
@@ -210,16 +217,21 @@ class OAuth2Service(
                 OAuth2Provider.GITLAB -> "https://gitlab.com/oauth/authorize"
                 OAuth2Provider.BITBUCKET -> "https://bitbucket.org/site/oauth2/authorize"
                 OAuth2Provider.ATLASSIAN -> "https://auth.atlassian.com/authorize"
+                OAuth2Provider.SLACK -> "https://slack.com/oauth/v2/authorize"
             }
 
         // Fetch scopes from the provider service
         val scope = fetchScopesFromService(provider)
 
-        // Atlassian requires additional parameters
-        return if (provider == OAuth2Provider.ATLASSIAN) {
-            "$baseUrl?audience=api.atlassian.com&client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code&prompt=consent"
-        } else {
-            "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code"
+        // Provider-specific URL building
+        return when (provider) {
+            OAuth2Provider.ATLASSIAN ->
+                "$baseUrl?audience=api.atlassian.com&client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code&prompt=consent"
+            OAuth2Provider.SLACK ->
+                // Slack V2 OAuth uses user_scope (not scope) for user tokens (xoxp-)
+                "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&user_scope=${scope.encodeURLParameter()}"
+            else ->
+                "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code"
         }
     }
 
@@ -243,6 +255,11 @@ class OAuth2Service(
                         // Bitbucket doesn't have a dedicated service yet, use default scopes
                         return "account team repository webhook pullrequest:write issue:write wiki snippet project"
                     }
+
+                    OAuth2Provider.SLACK -> {
+                        // Slack user token scopes for reading/sending as the user
+                        return "channels:history channels:read groups:history groups:read im:history im:read mpim:history mpim:read chat:write users:read"
+                    }
                 }
 
             val response = httpClient.get(serviceUrl)
@@ -260,6 +277,7 @@ class OAuth2Service(
                 OAuth2Provider.GITLAB -> "api read_user read_api read_repository write_repository"
                 OAuth2Provider.ATLASSIAN -> "read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-content.summary read:confluence-content.permission read:confluence-props read:confluence-space.summary read:confluence-groups read:confluence-user write:confluence-content write:confluence-space write:confluence-pages search:confluence readonly:content.attachment:confluence read:space:confluence read:page:confluence read:content:confluence read:attachment:confluence read:content.metadata:confluence offline_access"
                 OAuth2Provider.BITBUCKET -> "account team repository webhook pullrequest:write issue:write wiki snippet project"
+                OAuth2Provider.SLACK -> "channels:history channels:read groups:history groups:read im:history im:read mpim:history mpim:read chat:write users:read"
             }
         }
     }
@@ -356,6 +374,7 @@ class OAuth2Service(
             OAuth2Provider.GITLAB -> "https://gitlab.com/oauth/token"
             OAuth2Provider.BITBUCKET -> "https://bitbucket.org/site/oauth2/access_token"
             OAuth2Provider.ATLASSIAN -> "https://auth.atlassian.com/oauth/token"
+            OAuth2Provider.SLACK -> "https://slack.com/api/oauth.v2.access"
         }
 
     private suspend fun exchangeCodeForToken(
@@ -414,6 +433,19 @@ class OAuth2Service(
         // expires_in is a number, not a string
         val expiresMatch = Regex(""""expires_in"\s*:\s*(\d+)""").find(json)
         if (expiresMatch != null) result["expires_in"] = expiresMatch.groupValues[1]
+
+        // Slack V2 OAuth: user token is nested under "authed_user": {"access_token": "xoxp-...", ...}
+        val authedUserMatch = Regex(""""authed_user"\s*:\s*\{([^}]+)\}""").find(json)
+        if (authedUserMatch != null) {
+            val authedUserJson = authedUserMatch.groupValues[1]
+            for (key in listOf("access_token", "refresh_token", "token_type", "scope")) {
+                val match = Regex(""""$key"\s*:\s*"([^"]+)"""").find(authedUserJson)
+                if (match != null) result["authed_user_$key"] = match.groupValues[1]
+            }
+            val userExpiresMatch = Regex(""""expires_in"\s*:\s*(\d+)""").find(authedUserJson)
+            if (userExpiresMatch != null) result["authed_user_expires_in"] = userExpiresMatch.groupValues[1]
+        }
+
         return result
     }
 
