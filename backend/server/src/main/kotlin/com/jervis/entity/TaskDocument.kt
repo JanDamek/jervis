@@ -208,6 +208,13 @@ data class TaskDocument(
     val hasAttachments: Boolean = false,
     /** Number of attachment extract records created for this task. */
     val attachmentCount: Int = 0,
+    // KB result fields — saved from /internal/kb-done callback for orchestrator classification
+    /** Short summary from KB extraction (for orchestrator first-step classification). */
+    val kbSummary: String? = null,
+    /** Entity keys discovered by KB graph extraction. */
+    val kbEntities: List<String> = emptyList(),
+    /** Whether KB determined the content is actionable (hint for orchestrator). */
+    val kbActionable: Boolean = false,
     /** Topic ID for conversation consolidation — groups related items across all sources.
      * Format: "email-thread:<threadId>", "mr:<projectId>:<mrId>", "slack:<channelId>:<threadTs>", etc. */
     val topicId: String? = null,
@@ -270,6 +277,9 @@ data class TaskDocument(
             mergeRequestUrl: String?,
             hasAttachments: Boolean?,
             attachmentCount: Int?,
+            kbSummary: String?,
+            kbEntities: List<String>?,
+            kbActionable: Boolean?,
             topicId: String?,
             lastActivityAt: Instant?,
         ): TaskDocument = TaskDocument(
@@ -319,6 +329,9 @@ data class TaskDocument(
             mergeRequestUrl = mergeRequestUrl,
             hasAttachments = hasAttachments ?: false,
             attachmentCount = attachmentCount ?: 0,
+            kbSummary = kbSummary,
+            kbEntities = kbEntities ?: emptyList(),
+            kbActionable = kbActionable ?: false,
             topicId = topicId,
             lastActivityAt = lastActivityAt,
         )
