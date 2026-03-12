@@ -421,21 +421,15 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                     scope.launch {
                                         loadingCatalog = true
                                         try {
-                                            repository.openRouterSettings.updateSettings(
-                                                OpenRouterSettingsUpdateDto(
-                                                    apiKey = apiKey,
-                                                    apiBaseUrl = apiBaseUrl,
-                                                    filters = OpenRouterFiltersDto(
-                                                        modelNameFilter = modelNameFilter,
-                                                        minContextLength = minContextLength.toIntOrNull() ?: 0,
-                                                        maxInputPricePerMillion = maxInputPrice.toDoubleOrNull() ?: 0.0,
-                                                        maxOutputPricePerMillion = maxOutputPrice.toDoubleOrNull() ?: 0.0,
-                                                        requireToolSupport = requireToolSupport,
-                                                        requireStreaming = requireStreaming,
-                                                    ),
-                                                ),
+                                            val currentFilters = OpenRouterFiltersDto(
+                                                modelNameFilter = modelNameFilter,
+                                                minContextLength = minContextLength.toIntOrNull() ?: 0,
+                                                maxInputPricePerMillion = maxInputPrice.toDoubleOrNull() ?: 0.0,
+                                                maxOutputPricePerMillion = maxOutputPrice.toDoubleOrNull() ?: 0.0,
+                                                requireToolSupport = requireToolSupport,
+                                                requireStreaming = requireStreaming,
                                             )
-                                            catalogModels = repository.openRouterSettings.fetchCatalogModels()
+                                            catalogModels = repository.openRouterSettings.fetchCatalogModels(currentFilters)
                                             addModelTargetQueue = currentQueueName
                                             showAddModelDialog = true
                                         } catch (e: Exception) {

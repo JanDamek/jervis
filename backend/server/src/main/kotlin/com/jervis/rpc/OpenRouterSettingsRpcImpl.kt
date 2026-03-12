@@ -78,7 +78,7 @@ class OpenRouterSettingsRpcImpl(
         return updated.toDto()
     }
 
-    override suspend fun fetchCatalogModels(): List<OpenRouterCatalogModelDto> {
+    override suspend fun fetchCatalogModels(filters: OpenRouterFiltersDto): List<OpenRouterCatalogModelDto> {
         val doc = repository.findById(OpenRouterSettingsDocument.SINGLETON_ID)
             ?: OpenRouterSettingsDocument()
 
@@ -94,9 +94,9 @@ class OpenRouterSettingsRpcImpl(
                 header("HTTP-Referer", "https://jervis.app")
             }.body()
 
-            val filters = doc.filters
+            val entityFilters = filters.toEntity()
             response.data
-                .filter { model -> applyFilters(model, filters) }
+                .filter { model -> applyFilters(model, entityFilters) }
                 .map { model ->
                     OpenRouterCatalogModelDto(
                         id = model.id,
@@ -104,7 +104,7 @@ class OpenRouterSettingsRpcImpl(
                         contextLength = model.contextLength ?: 0,
                         inputPricePerMillion = parsePrice(model.pricing?.prompt),
                         outputPricePerMillion = parsePrice(model.pricing?.completion),
-                        supportsTools = true,
+                        supportsTools = model.supportsFunctionCalling(),
                         supportsStreaming = true,
                         provider = model.id.substringBefore("/", ""),
                     )
@@ -197,6 +197,8 @@ class OpenRouterSettingsRpcImpl(
         val outputPrice = parsePrice(model.pricing?.completion)
         if (filters.maxInputPricePerMillion > 0 && inputPrice > filters.maxInputPricePerMillion) return false
         if (filters.maxOutputPricePerMillion > 0 && outputPrice > filters.maxOutputPricePerMillion) return false
+
+        if (filters.requireToolSupport && !model.supportsFunctionCalling()) return false
 
         if (filters.modelNameFilter.isNotBlank()) {
             val pattern = filters.modelNameFilter.lowercase()
@@ -325,7 +327,11 @@ private data class OpenRouterModelData(
     val name: String = "",
     @SerialName("context_length") val contextLength: Int? = null,
     val pricing: OpenRouterPricing? = null,
-)
+    @SerialName("supported_parameters") val supportedParameters: List<String> = emptyList(),
+) {
+    fun supportsFunctionCalling(): Boolean =
+        supportedParameters.any { it == "tools" || it == "tool_choice" }
+}
 
 @Serializable
 private data class OpenRouterPricing(
