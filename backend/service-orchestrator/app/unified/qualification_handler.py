@@ -192,7 +192,7 @@ def _parse_decision(text: str) -> dict[str, Any]:
     """
     result: dict[str, Any] = {
         "decision": "QUEUED",  # default fail-safe
-        "priority_score": 5,
+        "priority_score": 50,  # default = middle of 0-100 scale
         "reason": "",
         "alert_message": None,
         "context_summary": "",
@@ -233,7 +233,10 @@ def _parse_decision(text: str) -> dict[str, Any]:
                     result["decision"] = decision
             elif stripped.startswith("PRIORITY:"):
                 try:
-                    result["priority_score"] = int(stripped.split(":", 1)[1].strip())
+                    raw = int(stripped.split(":", 1)[1].strip())
+                    # LLM outputs 1-10, but TaskDocument uses 0-100 scale.
+                    # Scale ×10 so priority 5 → 50 (=default), 10 → 100 (max).
+                    result["priority_score"] = min(raw * 10, 100)
                 except ValueError:
                     pass
             elif stripped.startswith("REASON:"):
