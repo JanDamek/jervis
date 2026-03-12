@@ -20,6 +20,7 @@ from app.config import estimate_tokens
 from app.agent.models import (
     EdgePayload,
     EdgeType,
+    GLOBAL_CLIENT_ID,
     GraphEdge,
     GraphStatus,
     GraphType,
@@ -102,6 +103,11 @@ def add_vertex(
             effective_client_id = parent.client_id
         if not effective_project_id and parent.project_id:
             effective_project_id = parent.project_id
+
+    if not effective_client_id:
+        raise ValueError(
+            f"client_id is required for vertex '{title}' — use GLOBAL_CLIENT_ID for system vertices"
+        )
 
     vertex = GraphVertex(
         id=f"v-{uuid.uuid4().hex[:12]}",
@@ -646,13 +652,14 @@ def create_memory_map(client_id: str = "") -> AgentGraph:
         description="Globální paměťový kontext — všechny interakce a odkazy na úlohy",
         vertex_type=VertexType.ROOT,
         status=VertexStatus.COMPLETED,  # Root is always done
+        client_id=GLOBAL_CLIENT_ID,
         depth=0,
     )
 
     return AgentGraph(
         id=graph_id,
         task_id="master",
-        client_id=client_id,
+        client_id=GLOBAL_CLIENT_ID,
         graph_type=GraphType.MEMORY_MAP,
         root_vertex_id=root_id,
         vertices={root_id: root},
@@ -700,6 +707,7 @@ def ensure_hierarchy(
             vertex_type=VertexType.CLIENT,
             status=VertexStatus.COMPLETED,
             input_request=client_id,
+            client_id=client_id,
             parent_id=graph.root_vertex_id,
             depth=1,
         )
@@ -723,6 +731,7 @@ def ensure_hierarchy(
                 vertex_type=VertexType.GROUP,
                 status=VertexStatus.COMPLETED,
                 input_request=group_id,
+                client_id=client_id,
                 parent_id=client_vertex.id,
                 depth=2,
             )
@@ -756,6 +765,8 @@ def ensure_hierarchy(
             vertex_type=VertexType.PROJECT,
             status=VertexStatus.COMPLETED,
             input_request=project_id,
+            client_id=client_id,
+            project_id=project_id,
             parent_id=container_vertex.id,
             depth=container_depth + 1,
         )
@@ -785,6 +796,9 @@ def add_request_vertex(
     - RUNNING: background tasks dispatched, ongoing work
     - FAILED: tool calls returned errors
     """
+    if not client_id:
+        raise ValueError("client_id is required for REQUEST vertex")
+
     parent_id = ensure_hierarchy(graph, client_id, client_name, group_id, group_name, project_id, project_name)
     depth = 1
     if parent_id and parent_id in graph.vertices:
@@ -837,6 +851,9 @@ def add_task_ref_vertex(
     2. client/project hierarchy (ensure_hierarchy)
     3. root level (depth=1)
     """
+    if not client_id:
+        raise ValueError("client_id is required for TASK_REF vertex")
+
     now = datetime.now(timezone.utc).isoformat()
     if failed:
         status = VertexStatus.FAILED
@@ -934,6 +951,9 @@ def add_incoming_vertex(
     Created by the qualifier after processing an indexed item.
     Status = READY (waiting for user to decide action).
     """
+    if not client_id:
+        raise ValueError("client_id is required for INCOMING vertex")
+
     parent_id = ensure_hierarchy(graph, client_id, client_name, group_id, group_name, project_id, project_name)
     depth = 1
     if parent_id and parent_id in graph.vertices:
@@ -971,6 +991,9 @@ def create_ask_user_vertex(
     The graph pauses at this vertex. When the user answers (via chat),
     resume_vertex() fills the result and unblocks downstream processing.
     """
+    if not client_id:
+        raise ValueError("client_id is required for ASK_USER vertex")
+
     depth = 1
     effective_client_id = client_id
     effective_project_id = project_id
@@ -1043,7 +1066,12 @@ def find_blocked_vertices(graph: AgentGraph) -> list[GraphVertex]:
     ]
 
 
-def memory_map_summary(graph: AgentGraph, max_tokens: int = 2000, client_id: str = "") -> str:
+def memory_map_summary(
+    graph: AgentGraph,
+    max_tokens: int = 2000,
+    client_id: str = "",
+    project_id: str = "",
+) -> str:
     """Generate a compact summary of the master map for LLM context injection.
 
     Priority order:
@@ -1054,24 +1082,40 @@ def memory_map_summary(graph: AgentGraph, max_tokens: int = 2000, client_id: str
 
     Skips scheduled/idle tasks — only user-initiated work matters for context.
 
-    CLIENT ISOLATION: When client_id is provided, only vertices belonging to that
-    client are included. This prevents cross-client data leaks (e.g., Commerzbank
-    data appearing in MMB context). Hierarchy vertices (CLIENT/GROUP/PROJECT) are
-    always excluded from the summary.
+    CLIENT ISOLATION (STRICT):
+    - client_id MUST be provided, otherwise returns empty string (no data leak)
+    - Only vertices with matching client_id are included
+    - GLOBAL_CLIENT_ID vertices are excluded (system-level only)
+    - Hierarchy vertices (CLIENT/GROUP/PROJECT) always excluded from summary
+
+    PROJECT ISOLATION:
+    - When project_id is set: only vertices from that project pass
+    - When project_id is empty ("all"): any project of the client passes
     """
+    if not client_id:
+        logger.warning("memory_map_summary called without client_id — returning empty")
+        return ""
+
     parts: list[str] = []
     token_count = 0
 
     def _belongs_to_client(v: GraphVertex) -> bool:
-        """Check if vertex belongs to the given client (or no filter)."""
-        if not client_id:
-            return True
-        # Hierarchy vertices (CLIENT/GROUP/PROJECT) are organizational, skip them
+        """Check if vertex belongs to the given client and project (strict)."""
+        # Hierarchy vertices are organizational, never in summary
         if v.vertex_type in (VertexType.CLIENT, VertexType.GROUP, VertexType.PROJECT):
             return False
-        # Vertices with explicit client_id must match
+        # Global vertices are system-level, skip
+        if v.client_id == GLOBAL_CLIENT_ID:
+            return False
+        # Client must match
         if v.client_id:
-            return v.client_id == client_id
+            if v.client_id != client_id:
+                return False
+            # Project filter: if specific project requested, filter others
+            if project_id and v.project_id and v.project_id != project_id:
+                # TODO: group-based exception — allow if same group
+                return False
+            return True
         # Legacy vertices without client_id — check parent hierarchy
         return _is_under_client_hierarchy(graph, v, client_id)
 

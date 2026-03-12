@@ -59,7 +59,14 @@ async def handle_chat_sse(
             from app.agent.persistence import agent_store
             from app.agent.graph import memory_map_summary
             memory_map = await agent_store.get_or_create_memory_map()
-            map_ctx = memory_map_summary(memory_map, max_tokens=2000, client_id=request.active_client_id or "")
+            active_cid = request.active_client_id or ""
+            if not active_cid:
+                logger.warning("SSE: no active_client_id — memory map summary will be empty")
+            map_ctx = memory_map_summary(
+                memory_map, max_tokens=2000,
+                client_id=active_cid,
+                project_id=request.active_project_id or "",
+            )
         except Exception as e:
             logger.warning("SSE: failed to load memory map: %s", e)
 
@@ -150,7 +157,7 @@ async def handle_chat_sse(
         yield ChatStreamEvent(type="thinking", content="Připravuji odpověď...")
 
         # ── 4b'. Create RUNNING vertex in memory map immediately ───
-        if memory_map:
+        if memory_map and request.active_client_id:
             try:
                 from app.agent.graph import add_request_vertex
                 from app.agent.models import VertexStatus
@@ -159,7 +166,7 @@ async def handle_chat_sse(
                     message=request.message[:200],
                     response="",
                     response_summary="Zpracovávám…",
-                    client_id=request.active_client_id or "",
+                    client_id=request.active_client_id,
                     client_name=request.active_client_name or "",
                     group_id=request.active_group_id,
                     group_name=request.active_group_name or "",
@@ -255,14 +262,14 @@ async def handle_chat_sse(
                     v.status = _vertex_status
                     if _vertex_status != VertexStatus.RUNNING:
                         v.completed_at = datetime.now(timezone.utc).isoformat()
-                else:
+                elif request.active_client_id:
                     from app.agent.graph import add_request_vertex
                     add_request_vertex(
                         master,
                         message=request.message[:200],
                         response=_full_record[:2000] if _full_record else "(no response)",
                         response_summary=_full_response[:120] if _full_response else request.message[:80],
-                        client_id=request.active_client_id or "",
+                        client_id=request.active_client_id,
                         client_name=request.active_client_name or "",
                         group_id=request.active_group_id,
                         group_name=request.active_group_name or "",
@@ -270,6 +277,8 @@ async def handle_chat_sse(
                         project_name=request.active_project_name or "",
                         status=_vertex_status,
                     )
+                else:
+                    logger.warning("SSE: skipping fallback vertex — no active_client_id")
                 agent_store.mark_dirty(master.task_id)
                 from app.tools.kotlin_client import kotlin_client
                 try:

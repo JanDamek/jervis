@@ -441,25 +441,28 @@ class AgentStore:
     async def find_ask_user_vertices(self, client_id: str = "") -> list[tuple[str, GraphVertex]]:
         """Find all BLOCKED ASK_USER vertices across master + cached sub-graphs.
 
-        CLIENT ISOLATION: When client_id is provided, only returns vertices
-        belonging to that client. Prevents cross-client question leaks.
+        CLIENT ISOLATION (STRICT): client_id is required. Without it, returns
+        empty list — never leak cross-client questions.
 
         Returns list of (graph_task_id, vertex) tuples.
         """
+        if not client_id:
+            return []
+
         results: list[tuple[str, GraphVertex]] = []
 
         # Check memory map
         if self._memory_map:
             for v in self._memory_map.vertices.values():
                 if v.status == VertexStatus.BLOCKED:
-                    if not client_id or v.client_id == client_id or self._vertex_in_client(v, client_id):
+                    if v.client_id == client_id or self._vertex_in_client(v, client_id):
                         results.append((self._memory_map.task_id, v))
 
         # Check cached sub-graphs
         for task_id, graph in self._subgraphs.items():
             for v in graph.vertices.values():
                 if v.status == VertexStatus.BLOCKED:
-                    if not client_id or v.client_id == client_id:
+                    if v.client_id == client_id:
                         results.append((task_id, v))
 
         return results

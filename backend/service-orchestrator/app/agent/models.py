@@ -16,6 +16,11 @@ from __future__ import annotations
 from enum import Enum
 from pydantic import BaseModel, Field
 
+# Client isolation constant — used for system/global vertices (memory map root).
+# Every vertex MUST have a non-empty client_id. Use this for vertices that are
+# not scoped to any specific client.
+GLOBAL_CLIENT_ID = "__global__"
+
 
 # ---------------------------------------------------------------------------
 # Enums
