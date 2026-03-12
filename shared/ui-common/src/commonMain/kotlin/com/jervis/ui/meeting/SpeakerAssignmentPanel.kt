@@ -84,8 +84,8 @@ internal fun SpeakerAssignmentDialog(
         text = {
             Column(
                 modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .heightIn(max = 500.dp),
+                    .heightIn(max = 600.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 // "New Speaker" button — always visible at top
