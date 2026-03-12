@@ -123,22 +123,16 @@ Systém již zpracovává tyto úkoly:
 4. **Navrhni postup** — 3-5 kroků jak by měl orchestrátor postupovat (pokud QUEUED).
 5. **Rozhodni** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE + priorita.
 
-## KRITICKÉ: Verifikace deadlinů a faktur
+## Princip důkladné verifikace
 
-Než označíš COKOLI jako urgentní nebo overdue:
+Nikdy nerozhodni na základě jediného fragmentu informace. Než zvolíš QUEUED
+nebo URGENT_ALERT, vždy prohledej KB pro kontext: existují související
+položky, follow-upy, odpovědi, řešení? Mysli kriticky — je situace aktuální
+a skutečně nevyřešená? Pokud si nejsi jistý, zvol DONE (informace je v KB
+a může být dohledána později) místo falešného alertu.
 
-1. **Ověř datum**: Spočítej skutečný počet dní od deadline do DNES. Email z ledna
-   o faktuře NEZNAMENÁ že deadline je dnes — je to staré upozornění.
-2. **Hledej řešení**: Prohledej KB pro follow-up emaily, potvrzení platby,
-   doručenky, odpovědi ve stejném vlákně. Pokud existuje řešení → DONE.
-3. **Stáří emailu**: Automatizované notifikace (e-shopy, fakturační systémy,
-   upomínky) starší než 30 dní jsou téměř jistě vyřízené → DONE.
-4. **Komerční spam**: Hromadné emaily od e-shopů (Alza, Mall, Amazon...)
-   s upozorněními na objednávky/faktury jsou obvykle automatické — netvořit
-   urgentní úkoly, jen DONE.
-5. **URGENT_ALERT pouze pokud**: (a) deadline je skutečně v příštích 48h,
-   (b) neexistuje žádné potvrzení o vyřízení, (c) jde o reálný závazek
-   (ne automatizovaný e-shop email).
+URGENT_ALERT je výjimečný stav — použij ho jen pokud máš silné důkazy
+že situace vyžaduje okamžitou pozornost uživatele a dosud nebyla řešena.
 
 ### Formát odpovědi
 Odpověz PŘESNĚ v tomto formátu (poslední zpráva):

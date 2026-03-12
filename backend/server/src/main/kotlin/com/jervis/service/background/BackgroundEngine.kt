@@ -1324,24 +1324,14 @@ class BackgroundEngine(
             |4. **Errors**: Search KB for error reports created today.
             |5. **Stuck tasks**: Search KB for in-progress items older than 3 days without updates.
             |
-            |## CRITICAL: Deadline & Invoice Verification Rules
+            |## Verification principle
             |
-            |Before flagging ANY item as overdue or creating urgent tasks:
-            |
-            |1. **Verify the date is correct**: Compare the deadline date against today's date.
-            |   An email from January about an invoice does NOT mean the deadline is today.
-            |   Calculate the actual number of days overdue from the ORIGINAL deadline date.
-            |
-            |2. **Check for resolution**: Search KB for follow-up emails, payment confirmations,
-            |   delivery receipts, or any response in the same thread. If the item has been
-            |   resolved (paid, delivered, acknowledged), do NOT flag it as overdue.
-            |
-            |3. **Check email age**: Automated notification emails (e-shops, invoices, reminders)
-            |   older than 30 days are almost certainly already handled. Do NOT create urgent
-            |   tasks for old e-shop notifications.
-            |
-            |4. **Never use urgency=urgent** unless you have verified ALL of the above and the
-            |   item is genuinely time-critical and unresolved.
+            |Before creating any task or alert, always verify the FULL context:
+            |search for related items, follow-ups, resolutions, and contradicting
+            |information. Think critically about what you find — a single KB hit
+            |is not enough to act on. Cross-reference dates, check whether the
+            |situation has already been resolved, and only escalate when you are
+            |confident the issue is real, current, and unhandled.
             |
             |Use store_knowledge to save the daily report summary with kind=finding.
             |
