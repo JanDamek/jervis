@@ -1379,7 +1379,7 @@ Dashboard showing the full indexing pipeline with 4 accordion sections. One sect
 ```
 
 **Accordion sections (3):**
-1. **KB zpracování** (QUALIFYING) — items currently processed by SimpleQualifierAgent, with **elapsed time** (from `qualificationStartedAt`, not queue time), **live progress timeline** (current step on top, completed below), **step durations** (how long each step took), structured metadata. Merge: stored DB steps (base) + live steps newer than 1s after last stored (dedup by step name via `distinctBy`). Routing decision always visible (explicit routing step before "done", terminal events delayed 5s before removal from live map).
+1. **KB zpracování** (INDEXING, actively processing) — items currently being processed by KB service, with **elapsed time** (from `qualificationStartedAt`, not queue time), **live progress timeline** (current step on top, completed below), **step durations** (how long each step took), structured metadata. Merge: stored DB steps (base) + live steps newer than 1s after last stored (dedup by step name via `distinctBy`). Routing decision always visible (explicit routing step before "done", terminal events delayed 5s before removal from live map).
 2. **KB fronta** (INDEXING) — waiting + retrying items, with pagination + reorder controls. Items show type label (Email/Issue/Wiki/Git) instead of "Čeká"
 3. **Hotovo** (DONE) — completed tasks with **expandable indexing history**. Click to expand stored `qualificationSteps`. Shows indexing duration and full step log with metadata + per-step durations. Auto-refreshed every 10s (page 0 always updated so new items appear immediately).
 
@@ -1427,7 +1427,7 @@ Three-level expandable tree inside each connection card:
 - Calls `reorderKbQueueItem(taskId, newPosition)` or `prioritizeKbQueueItem(taskId)` or `processKbItemNow(taskId)` RPC
 
 **Pipeline state labels (Czech):**
-- WAITING → "Ceka", QUALIFYING → "Indexuje", RETRYING → "Opakuje"
+- WAITING → "Ceka", RETRYING → "Opakuje"
 - Step labels (live): ingest → "Indexuje", summary → "Analyzuje", routing → "Rozhoduje", user_task → "Úkol", scheduled → "Naplánováno"
 
 **Data:**

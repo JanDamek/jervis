@@ -376,7 +376,7 @@ When `ClientDocument.archived = true`, the entire pipeline is blocked for that c
 | Stage | Mechanism |
 |-------|-----------|
 | **CentralPoller** | `findByArchivedFalseAndConnectionIdsContaining()` — archived clients excluded from polling, no new tasks created |
-| **Pipeline tasks** | `TaskService.markArchivedClientTasksAsDone()` — bulk DB update marks INDEXING/QUALIFYING/QUEUED as DONE (runs on startup + every 5 min) |
+| **Pipeline tasks** | `TaskService.markArchivedClientTasksAsDone()` — bulk DB update marks INDEXING/QUEUED as DONE (runs on startup + every 5 min) |
 | **Scheduler** | `clientRepository.getById()` check before dispatch — archived client's scheduled tasks stay in NEW, resume when unarchived |
 | **Idle review** | Client archived check before creating IDLE_REVIEW task |
 | **Running tasks** | PROCESSING tasks finish normally — no new tasks follow |
@@ -399,25 +399,20 @@ When `ClientDocument.archived = true`, the entire pipeline is blocked for that c
 └─────────────────────────────────────────────────┘
         ↓
 ┌──────────────────────────────────────────────────┐
-│ KB Indexing — SimpleQualifierAgent               │
-│ • Calls KB microservice for indexing/linking     │
+│ KB Indexing — TaskQualificationService           │
+│ • Dispatches to KB microservice for indexing     │
 │ • Atomic claim via indexingClaimedAt             │
 │ • Task stays in INDEXING during KB processing    │
 └──────────────────────────────────────────────────┘
-        ↓ (KB callback)
+        ↓ (KB callback /internal/kb-done)
     ┌───┴────────┐
     ↓            ↓
-┌────────┐ ┌──────────────────────────────────────────┐
-│  DONE  │ │ QUALIFYING (GPU context preparation)      │
-│        │ │ • Python /qualify — KB search, context     │
-│        │ │ • qualifierPreparedContext → orchestrator  │
-└────────┘ └──────────────────────────────────────────┘
-                 ↓
-           ┌─────┴─────┐
-           ↓           ↓
-     ┌────────┐  ┌──────────────────────────────────────┐
-     │  DONE  │  │ QUEUED (with prepared context)        │
-     └────────┘  └──────────────────────────────────────┘
+┌────────┐ ┌──────────────────────────────────────┐
+│  DONE  │ │ QUEUED (actionable content)           │
+│        │ │ • kbSummary/kbEntities/kbActionable   │
+│        │ │   saved on TaskDocument               │
+│        │ │ • Orchestrator classifies on pickup   │
+└────────┘ └──────────────────────────────────────┘
                     ↓
         ┌──────────────────────────────────────────────┐
         │ BackgroundEngine - Execution Loop (Orchestr.) │
@@ -483,16 +478,15 @@ EmailPollingHandler.storeAttachmentBinary() → kb-documents/{clientId}/
   → Python KB service (Tika/VLM → RAG + Graph)
 ```
 
-**Path B — Qualifier Relevance Assessment (new):**
+**Path B — Attachment Relevance Assessment:**
 ```
 EmailContinuousIndexer → AttachmentExtractionService.createExtractsForAttachments()
   → MongoDB: attachment_extracts (PENDING)
   → async: AttachmentExtractionService.processPendingExtracts()
     → Python KB /documents/extract-text (VLM-first for images, Tika for docs)
   → MongoDB: attachment_extracts (SUCCESS, extractedText populated)
-  → Qualifier: _score_attachment_relevance()
-    → LLM scores relevance 0.0–1.0
-    → score >= 0.7 → register with KB (tag: qualifier-approved)
+  → LLM scores relevance 0.0–1.0
+    → score >= 0.7 → register with KB
 ```
 
 **Extraction strategy:**
@@ -523,7 +517,7 @@ EmailContinuousIndexer → AttachmentExtractionService.createExtractsForAttachme
   * Source context (emailId, subject, sender for Graph edge Email→Link)
   * Context around link (text before/after link)
 
-**2. Qualifier (SimpleQualifierAgent) processes EMAIL task (DATA_PROCESSING):**
+**2. KB service processes EMAIL task (DATA_PROCESSING):**
 - Indexes email content into RAG/Graph
 - Creates Email vertex
 - Creates Person vertices (from, to, cc)
@@ -531,7 +525,7 @@ EmailContinuousIndexer → AttachmentExtractionService.createExtractsForAttachme
 - Notes in metadata: "3 links will be processed separately"
 - Routing: DONE (email indexed, links waiting in queue)
 
-**3. Qualifier (SimpleQualifierAgent) processes LINK task (LINK_PROCESSING) - SEPARATELY:**
+**3. KB service processes LINK task (LINK_PROCESSING) - SEPARATELY:**
 - Reads link info (URL, source email/jira/confluence, context)
 - Qualifies safety (LinkSafetyQualifier):
   * Already indexed? → DONE (skip)
@@ -552,7 +546,7 @@ EmailContinuousIndexer → AttachmentExtractionService.createExtractsForAttachme
 - Confluence page content (ConfluenceContinuousIndexer)
 - Git commit message (GitContinuousIndexer)
 
-#### 2. Qualifier (SimpleQualifierAgent) - Tools
+#### 2. KB Indexing Tools
 
 ```kotlin
 // RagTools.storeChunk - ATOMIC chunk storage (PREFERRED)
@@ -695,17 +689,17 @@ The Python Orchestrator loads task context from TaskMemory at the start of execu
 
 #### Intelligent Task Routing (Async Fire-and-Forget)
 
-The qualifier dispatches tasks to KB via `POST /ingest/full/async` (fire-and-forget, HTTP 202).
+`TaskQualificationService` dispatches tasks to KB via `POST /ingest/full/async` (fire-and-forget, HTTP 202).
 KB processes in background and calls `/internal/kb-done` with routing hints when finished.
-`KbResultRouter` (server-side callback handler) receives `FullIngestResult` and makes routing decisions.
+The `/internal/kb-done` callback handler saves KB results to the TaskDocument and routes the task.
 
 **Async flow:**
-1. `SimpleQualifierAgent.dispatch()` — extracts text, loads attachments, submits to KB
+1. `TaskQualificationService.dispatch()` — extracts text, loads attachments, submits to KB
 2. KB returns HTTP 202 immediately — server indexing worker moves to next task
 3. KB processes: attachments → RAG → LLM summary (parallel) → graph extraction (queued)
 4. Progress events pushed via `POST /internal/kb-progress` (real-time UI updates)
 5. On completion: KB POSTs `FullIngestResult` to `POST /internal/kb-done`
-6. `KbResultRouter.routeTask()` — routing decision based on KB analysis result
+6. `/internal/kb-done` handler saves kbSummary/kbEntities/kbActionable to TaskDocument, applies filters, routes to DONE or QUEUED
 
 **Progress steps (pushed from KB via callback):**
 1. `start` — processing begins
@@ -748,15 +742,7 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
   │         original task → DONE (indexed, terminal)
   │
   └─ Step 5: ALL remaining actionable content
-       → QUALIFYING → Python /qualify (GPU agent prepares context)
-          ├─ KB search for related issues, history, patterns
-          ├─ Context preparation (approach, complexity, action type)
-          ├─ qualifierPreparedContext stored on TaskDocument
-          └─ Decision:
-              ├─ QUEUED (with priority_score + prepared context)
-              ├─ DONE (not worth orchestrating)
-              └─ URGENT_ALERT (push to chat)
-       Fallback (GPU unavailable) → QUEUED (without context)
+       → QUEUED (orchestrator will classify task type on pickup)
 ```
 
 **Note:** No age-based filter — the LLM (`_generate_summary()`) decides actionability even for old content (forgotten tasks, open issues, etc.)
@@ -767,7 +753,7 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 
 **DONE (info_only or simple action handled — TERMINAL):**
 - Document indexed and structured (Graph + RAG)
-- No action items OR simple action handled by qualifier itself
+- No action items OR simple action handled locally
 - Simple informational content
 - Routine updates (status change, minor commit)
 - Never reset on restart — terminal state
@@ -800,17 +786,16 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 
 - **Interval:** 30 seconds
 - **Process:** Reads INDEXING tasks from MongoDB, ordered by `queuePosition ASC NULLS LAST, createdAt ASC`
-- **Agents:** SimpleQualifierAgent dispatches to KB microservice (fire-and-forget)
+- **Dispatch:** `TaskQualificationService` dispatches to KB microservice (fire-and-forget)
 - **Concurrency:** 1 (dispatch is fast — Tika extraction + HTTP POST, not blocking on KB)
-- **Dispatch flow:** `claimForIndexing()` (atomic claim via `indexingClaimedAt`, state stays INDEXING) → `SimpleQualifierAgent.dispatch()` (text extraction, attachment loading, HTTP POST to `/ingest/full/async`) → returns immediately. Task stays in INDEXING until KB calls back.
+- **Dispatch flow:** `claimForIndexing()` (atomic claim via `indexingClaimedAt`, state stays INDEXING) → `TaskQualificationService.dispatch()` (text extraction, attachment loading, HTTP POST to `/ingest/full/async`) → returns immediately. Task stays in INDEXING until KB calls back.
 - **Retry:** If KB is unreachable or rejects the request → `returnToQueue()` unsets `indexingClaimedAt` with backoff. KB handles its own internal retry (Ollama busy, timeouts). When KB permanently fails, it calls `/internal/kb-done` with `status="error"` → server marks task as ERROR. Recovery: stuck INDEXING tasks with `indexingClaimedAt > 10min` → unset `indexingClaimedAt` (re-dispatch).
 - **Priority:** Items with explicit `queuePosition` are processed first (set via UI reorder controls)
-- **Completion callback:** KB POSTs to `/internal/kb-done` with `FullIngestResult` → `KbResultRouter.routeTask()` handles routing:
+- **Completion callback:** KB POSTs to `/internal/kb-done` with `FullIngestResult` → handler saves kbSummary/kbEntities/kbActionable to TaskDocument, applies filters, routes:
   - Not actionable / filtered → **DONE** (terminal)
   - Simple action (reply_email, schedule_meeting) → **DONE** (with USER_TASK)
-  - ALL actionable content → **QUALIFYING** (dispatch to Python `/qualify` for GPU context preparation)
-- **Qualification dispatch:** After KB callback routes to QUALIFYING, Kotlin transitions task INDEXING→QUALIFYING and dispatches to Python `/qualify` (fire-and-forget). GPU agent searches KB, prepares context, and calls back `/internal/qualification-done` with `qualifierPreparedContext`. If GPU unavailable → fallback to QUEUED without context.
-- **Live progress:** KB pushes progress events via `POST /internal/kb-progress` → Kotlin handler saves to DB + emits to WebSocket (real-time). Pre-KB steps (agent_start, text_extracted, kb_accepted) emitted by `SimpleQualifierAgent.dispatch()`.
+  - ALL actionable content → **QUEUED** (orchestrator classifies task type on pickup)
+- **Live progress:** KB pushes progress events via `POST /internal/kb-progress` → Kotlin handler saves to DB + emits to WebSocket (real-time). Pre-KB steps (agent_start, text_extracted, kb_accepted) emitted by `TaskQualificationService.dispatch()`.
 - **Persistent history:** Each progress step saved to `TaskDocument.qualificationSteps` via MongoDB `$push`. `qualificationStartedAt` set atomically in `claimForIndexing()`.
 - **UI:** `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` → `IndexingQueueScreen` shows live step/message per item in "KB zpracování" section.
 - **Indexing Queue UI data source:** "KB zpracování" and "KB fronta" sections display data from the **KB write service SQLite extraction queue** (not MongoDB server tasks). `IndexingQueueRpcImpl` calls `KnowledgeServiceRestClient.getExtractionQueue()` → `GET /api/v1/queue` on KB write service.
@@ -833,13 +818,13 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - **Preemption:** FOREGROUND preempts both BACKGROUND and IDLE; BACKGROUND preempts IDLE; IDLE never preempts
 - **Agent:** Python Orchestrator (LangGraph) with GPU model (OLLAMA_PRIMARY)
 - **Atomic claim:** Uses MongoDB `findAndModify` (QUEUED → PROCESSING) to prevent duplicate execution
-- **Stale recovery:** On pod startup, BACKGROUND and IDLE tasks stuck in PROCESSING/QUALIFYING for >10min are reset (FOREGROUND completed tasks are not stuck). DONE tasks are terminal — never reset.
+- **Stale recovery:** On pod startup, BACKGROUND and IDLE tasks stuck in PROCESSING for >10min are reset (FOREGROUND completed tasks are not stuck). DONE tasks are terminal — never reset.
 
 ### KB Queue Count Fix (2026-02-23)
 
 **Problem:** UI always showed "KB fronta 199" because:
 1. Kotlin fetches max 200 items from Python KB queue (`limit=200`)
-2. 1 item is `in_progress` and filtered out as matching QUALIFYING
+2. 1 item is `in_progress` and filtered out
 3. 200 - 1 = 199
 
 **Solution:** `IndexingQueueRpcImpl.collectPipelineTasks()` now uses `kbStats.pending` (real `COUNT(*)` from SQLite) for `kbWaitingTotalCount` when no search/client filter is active. With filters, falls back to `filteredKbWaiting.size` (correct for filtered subsets).
@@ -874,15 +859,12 @@ re-processed with the full conversation context once the current orchestration f
 ```
 NEW (from API) → INDEXING (processing)
     ↓
-INDEXING → claimForIndexing() (atomic, stays INDEXING) → KB callback:
+INDEXING → claimForIndexing() (atomic, stays INDEXING) → KB callback (/internal/kb-done):
     ├─ not actionable → DONE
     ├─ simple action → DONE (+ USER_TASK)
-    └─ actionable → QUALIFYING (GPU context preparation)
-         ├─ GPU agent: KB search, context, approach → qualifierPreparedContext
-         ├─ → QUEUED (with prepared context) or DONE
-         └─ GPU unavailable → QUEUED (fallback, no context)
+    └─ actionable → QUEUED (kbSummary/kbEntities/kbActionable saved on TaskDocument)
     ↓
-QUEUED → PROCESSING (atomic findAndModify) → DONE
+QUEUED → PROCESSING (atomic findAndModify, orchestrator classifies task) → DONE
                     │                     │                    │
                     │                     │                    └── coding agent dispatched →
                     │                     │                        CODING → (watcher resumes) →
@@ -905,7 +887,7 @@ Max ONE idle task at a time. Automatically preempted when any FG/BG work arrives
 
 - **Deployment strategy:** `Recreate` — old pod is stopped before new pod starts (no overlap)
 - **Atomic task claiming:** MongoDB `findAndModify` ensures only one instance processes each task
-- **Stale task recovery:** On startup, BackgroundEngine resets BACKGROUND tasks stuck in transient states (PROCESSING, QUALIFYING) for >10 minutes back to their retryable state. QUALIFYING → INDEXING (GPU agent crashed, re-index + re-qualify). INDEXING with `indexingClaimedAt > 10min` → unset `indexingClaimedAt` (KB callback never arrived). FOREGROUND completed tasks are preserved (not stuck).
+- **Stale task recovery:** On startup, BackgroundEngine resets BACKGROUND tasks stuck in PROCESSING for >10 minutes back to QUEUED. INDEXING with `indexingClaimedAt > 10min` → unset `indexingClaimedAt` (KB callback never arrived). FOREGROUND completed tasks are preserved (not stuck).
 - **Single GPU constraint:** Recreate strategy + atomic claims guarantee no duplicate GPU execution
 
 ### Workspace Retry with Exponential Backoff
@@ -932,31 +914,6 @@ whose backoff has elapsed:
 - **Client resolution:** Uses JERVIS Internal project's client ID
 - **Deadline scan:** Also uses `ProcessingMode.IDLE` (periodic via scheduler loop, every 5 min)
 - **GPU idle callback:** `onGpuIdle()` immediately creates idle task when GPU has been idle ≥5 min
-
-### GPU Qualification Agent (Python /qualify)
-
-When `KbResultRouter` determines content is actionable, the task transitions to QUALIFYING and is dispatched to Python `/qualify` for GPU-based context preparation:
-
-- **Fire-and-forget:** Kotlin POSTs to `/qualify`, Python runs async, POSTs result back to `/internal/qualification-done`
-- **GPU only:** Hardcoded `max_tier="NONE"` — always local GPU, never OpenRouter
-- **Tools:** CORE tier only (kb_search, web_search, store_knowledge, memory_store/recall, get_kb_stats, get_indexed_items)
-- **Max iterations:** 5 (quick analysis, not deep orchestration)
-- **System prompt:** Czech, instructs agent to:
-  1. Search KB for related issues, history, patterns
-  2. Analyze context (problem type, affected areas, urgency)
-  3. Propose approach (3-5 steps for orchestrator)
-  4. Make routing decision (DONE/QUEUED + priority)
-- **Output:** `qualifierPreparedContext` stored as JSON on `TaskDocument`:
-  - `context` — KB findings and related information
-  - `approach` — suggested steps for orchestrator
-  - `actionType` — e.g. CODE_FIX, REVIEW, DEPLOY
-  - `complexity` — LOW/MEDIUM/HIGH
-- **Orchestrator integration:** When orchestrator picks up a QUEUED task with `qualifierPreparedContext`, it injects the context into its system prompt ("Kontext od kvalifikačního agenta").
-- **Decisions:** QUEUED (with priority 0-100 + prepared context), DONE (not actionable), URGENT_ALERT (push to chat)
-- **Fail-safe:** If Python `/qualify` or GPU is unavailable, task falls back to direct QUEUED (without context)
-- **Chat topics:** Kotlin provides recent chat messages as context — agent can detect if incoming data relates to active conversation
-- **Key fields:** `TaskDocument.indexingClaimedAt` (atomic claim for KB dispatch), `TaskDocument.qualifierPreparedContext` (JSON context for orchestrator)
-- **Source:** `backend/service-orchestrator/app/unified/qualification_handler.py`
 
 ### Orchestrator Dispatch Backoff
 
@@ -1592,9 +1549,9 @@ Code artifacts link to existing KnowledgeNodes (Joern CPG) via `kb_node_key` —
 
 ## Autonomous Pipeline Components (EPIC 2-5, 7-10, 14)
 
-### Enhanced Qualifier Output (EPIC 2-S1)
+### Enhanced KB Output (EPIC 2-S1)
 
-The qualifier now produces structured fields for pipeline routing:
+The KB ingest now produces structured fields for pipeline routing:
 
 ```
 FullIngestResult (KB service output)
@@ -1609,7 +1566,7 @@ DTOs: `shared/common-dto/.../pipeline/PipelineDtos.kt`
 
 ### Auto-Task Creation (EPIC 2-S2)
 
-`AutoTaskCreationService` creates tasks from qualifier findings:
+`AutoTaskCreationService` creates tasks from KB findings:
 - `CODE_FIX + SIMPLE` → BACKGROUND task (auto-dispatch)
 - `CODE_FIX + COMPLEX` → USER_TASK (needs plan approval)
 - `RESPOND_EMAIL` → USER_TASK (draft for approval)

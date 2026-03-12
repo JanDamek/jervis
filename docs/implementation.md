@@ -21,8 +21,9 @@
 
 > **Historical (2026-02-07):** This section documented the Koog-based qualifier pipeline
 > verification (strategy graph, node/edge DSL, `QualifierPipelineState`, vision stages).
-> The Koog framework has been completely removed. Qualification is now handled by
-> `SimpleQualifierAgent` which calls the KB microservice directly. Complex task execution
+> The Koog framework has been completely removed. KB dispatch is now handled by
+> `TaskQualificationService` which calls the KB microservice directly. After KB callback,
+> tasks route directly to QUEUED or DONE (no QUALIFYING state). Complex task execution
 > goes through the Python Orchestrator (LangGraph). See [koog-audit.md](koog-audit.md).
 
 ---
@@ -953,8 +954,8 @@ scope.launch {
 ### IndexingQueue Dashboard Optimization
 
 **Problem:** `IndexingQueueRpcImpl.getDashboard()` executed 12+ MongoDB queries per
-refresh (10s interval). The QUALIFYING tasks query was duplicated — once for the
-`activeServerTasks` map and again separately for the qualifying list.
+refresh (10s interval). The INDEXING tasks query was duplicated — once for the
+`activeServerTasks` map and again separately for the processing list.
 
 **Fix:** Reuse the `activeServerTasksList` — filter to derive both the associateBy map and
 the qualifying tasks list from a single query. Auto-refresh interval increased from 10s to

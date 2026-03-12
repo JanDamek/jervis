@@ -37,9 +37,9 @@
 The Jervis system is built on several key architectural patterns:
 
 - **Unified Agent (LangGraph)**: ONE agent for all interactions — chat (foreground) and background tasks. Paměťová mapa (Memory Map) + Myšlenková mapa (Thinking Map). See [graph-agent-architecture.md](graph-agent-architecture.md)
-- **SimpleQualifierAgent**: CPU-based indexing agent calling KB microservice directly, with optional LLM qualification for complex items. Creates INCOMING vertices in Paměťová mapa.
+- **TaskQualificationService**: Dispatches tasks to KB microservice for indexing. After KB callback, saves kbSummary/kbEntities/kbActionable to TaskDocument and routes directly to QUEUED or DONE.
 - **Kotlin RPC (kRPC)**: Type-safe, cross-platform messaging framework for client-server communication
-- **3-Stage Polling Pipeline**: Polling → Indexing → Pending Tasks → Qualifier Agent
+- **3-Stage Polling Pipeline**: Polling → Indexing → KB Processing → QUEUED/DONE
 - **Knowledge Graph (ArangoDB)**: Centralized structured relationships between all entities
 - **Vision Processing**: Two-stage vision analysis for document understanding
 
@@ -345,7 +345,7 @@ USER_TASK list ("K reakci") sorts by priority instead of creation time:
 Sort: priorityScore DESC → lastActivityAt DESC → createdAt ASC
 ```
 
-- `priorityScore` (0-100) set on all USER_TASK creation paths: `AutoTaskCreationService`, `KbResultRouter`, `UserTaskService.failAndEscalateToUserTask()` (default 60 for escalated)
+- `priorityScore` (0-100) set on all USER_TASK creation paths: `AutoTaskCreationService`, `/internal/kb-done` handler, `UserTaskService.failAndEscalateToUserTask()` (default 60 for escalated)
 - `lastActivityAt` bumped when new thread messages arrive
 - DB index: `{'type': 1, 'state': 1, 'priorityScore': -1, 'lastActivityAt': -1}`
 
@@ -1773,51 +1773,20 @@ build_*.sh:
 
 ---
 
-## LLM Qualification Agent
+## KB-Done Callback & Task Routing
 
 ### Overview
 
-After KB ingestion, complex actionable content goes through an LLM qualification step
-before reaching the orchestrator. This replaces the removed Brain/Jira/Confluence integration.
+After KB ingestion completes, the `/internal/kb-done` callback handler saves KB analysis results
+(kbSummary, kbEntities, kbActionable) directly to the TaskDocument and makes routing decisions.
+The orchestrator then classifies the task type as its first step when picking up QUEUED tasks.
 
-**Purpose:**
-- **Smart routing**: LLM agent searches KB for context, assesses urgency, decides routing
-- **Noise reduction**: Filters out content that doesn't need full orchestration
-- **Urgent alerts**: Pushes time-sensitive items directly to user's chat
+**Pipeline:** NEW → INDEXING → (KB callback) → QUEUED or DONE
 
-### Flow
-
-```
-KB /internal/kb-done → KbResultRouter.routeTask()
-  └─ needsQualification=true (Step 5: complex_actionable)
-      → QUALIFYING state
-      → Kotlin POST /qualify (fire-and-forget)
-      → Python qualification_handler.py:
-          1. kb_search — existing context
-          2. Urgency/relevance analysis
-          3. Decision: QUEUED | DONE | URGENT_ALERT
-      → Python POST /internal/qualification-done (callback)
-      → Kotlin updates task state based on decision
-```
-
-### Configuration
-
-- **Tools:** CORE tier (kb_search, web_search, store_knowledge, memory_store/recall, get_kb_stats, get_indexed_items)
-- **Max iterations:** 5
-- **Fail-safe:** If `/qualify` unavailable → direct QUEUED (no data loss)
-- **Chat context:** Kotlin provides recent chat messages — agent detects if incoming data relates to active conversation
-
-### Key Files
-
-| File | Purpose |
-|------|---------|
-| `backend/service-orchestrator/app/unified/qualification_handler.py` | LLM qualification agent |
-| `backend/server/.../qualifier/KbResultRouter.kt` | Routing decisions (needsQualification flag) |
-| `backend/server/.../rpc/KtorRpcServer.kt` | `/internal/qualification-done` callback + `/internal/active-chat-topics` |
-| `backend/server/.../configuration/PythonOrchestratorClient.kt` | `qualify()` HTTP client method |
-| `backend/server/.../service/agent/coordinator/AgentOrchestratorService.kt` | `dispatchQualification()` |
-| `shared/common-dto/.../dto/SystemConfigDto.kt` | System config DTO |
-| `shared/common-api/.../service/ISystemConfigService.kt` | RPC interface |
+**Routing decisions (in `/internal/kb-done` handler):**
+- Not actionable / filtered → **DONE** (terminal)
+- Simple action (reply_email, schedule_meeting) → **DONE** (with USER_TASK)
+- Actionable content → **QUEUED** (orchestrator classifies on pickup)
 
 ---
 
@@ -2201,7 +2170,7 @@ suspend fun pushUrgentAlert(sourceUrn, summary, suggestedAction)
 ```
 
 **OrchestratorStatusHandler** pushes BACKGROUND_RESULT on task done/error (when user is online), including `taskId` in metadata.
-**KbResultRouter** pushes URGENT_ALERT for urgent KB results.
+The `/internal/kb-done` handler pushes URGENT_ALERT for urgent KB results.
 
 ### Interactive Background Results
 

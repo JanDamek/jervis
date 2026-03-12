@@ -302,7 +302,7 @@ The Knowledge Base is implemented as a Python service (`service-knowledgebase`) 
 
 ### Full Ingest Endpoint (`POST /ingest/full/async`)
 
-Called by `SimpleQualifierAgent` for each task. Fire-and-forget: returns HTTP 202 immediately, KB processes in background.
+Called by `TaskQualificationService` for each task. Fire-and-forget: returns HTTP 202 immediately, KB processes in background.
 
 **Async flow:**
 1. Server dispatches task via `POST /ingest/full/async` with `callbackUrl` + `taskId` (fire-and-forget)
@@ -314,7 +314,7 @@ Called by `SimpleQualifierAgent` for each task. Fire-and-forget: returns HTTP 20
    d. Graph extraction enqueued to background worker
 4. Progress events pushed to `/internal/kb-progress` (real-time WebSocket updates)
 5. On completion: KB POSTs `FullIngestResult` to `/internal/kb-done` callback
-6. `KbResultRouter` handles routing decision (DONE / QUEUED / scheduled)
+6. `/internal/kb-done` handler saves kbSummary/kbEntities/kbActionable to TaskDocument, applies filters, routes to DONE or QUEUED
 7. On error: KB POSTs error to `/internal/kb-done` → task marked ERROR
 
 **Legacy endpoint (`POST /ingest/full`):** Still available for backward compatibility (synchronous processing). Note: The Kotlin `ingestFullWithProgress` NDJSON streaming client method has been removed — only the async callback pattern (`POST /ingest/full/async`) is used in production.
@@ -350,7 +350,7 @@ The indexing pipeline uses the same context budgeting principle as `chat/context
 - **`num_ctx` set explicitly** on all Ollama calls (`ChatOllama` + httpx `_llm_call`). Without this, Ollama uses the model's default (often 2048 tokens), silently truncating the prompt.
 - **Token-aware content truncation** in `_generate_summary()`: `max_chars = (WINDOW − PROMPT − RESPONSE) × RATIO`
 - **Extraction chunk budget**: large documents (backup logs, long emails) are capped at `MAX_EXTRACTION_CHUNKS`. Representative chunks selected: beginning (headers/context) + end (conclusions) + sampled middle. RAG still indexes ALL content.
-- **Per-call timeout**: `LLM_CALL_TIMEOUT` prevents indefinite hangs that block the async callback to Kotlin (which caused infinite QUALIFYING→retry loops).
+- **Per-call timeout**: `LLM_CALL_TIMEOUT` prevents indefinite hangs that block the async callback to Kotlin.
 
 **Key files:**
 - `app/core/config.py` — `INGEST_CONTEXT_WINDOW`, `MAX_EXTRACTION_CHUNKS`, `LLM_CALL_TIMEOUT`
@@ -440,7 +440,7 @@ through the graph node linkage on next search.
 
 **groupId propagation pipeline:**
 ```
-Ingest:   SimpleQualifierAgent → resolves project.groupId → FullIngestRequest.groupId
+Ingest:   TaskQualificationService → resolves project.groupId → FullIngestRequest.groupId
                                 → KnowledgeServiceRestClient → KB Python /ingest
 Chat:     ChatRpcImpl → resolves project.groupId → PythonChatClient.activeGroupId
                       → Python ChatRequest.active_group_id → executor.execute_tool(group_id=...)
@@ -1358,7 +1358,7 @@ The KB is complemented by an internal Jira+Confluence instance ("Brain") configu
 
 ### How It Connects to KB
 
-1. **Qualifier writes to both:** When `SimpleQualifierAgent` processes a task and KB returns `hasActionableContent=true`, the qualifier writes:
+1. **KB callback writes to both:** When KB returns `hasActionableContent=true`, the handler writes:
    - To **KB** (RAG + graph) — for semantic search and knowledge retrieval
    - To **Brain Jira** — for task tracking, planning, and orchestrator review
 
@@ -1376,5 +1376,5 @@ The KB is complemented by an internal Jira+Confluence instance ("Brain") configu
 |------|---------|
 | `backend/server/.../service/brain/BrainWriteService.kt` | High-level brain write API |
 | `backend/server/.../service/brain/BrainWriteServiceImpl.kt` | Implementation (resolves SystemConfig, delegates to BugTrackerService/WikiService) |
-| `backend/server/.../qualifier/SimpleQualifierAgent.kt` | Cross-project write in `writeToBrain()` |
+| `backend/server/.../service/background/TaskQualificationService.kt` | KB dispatch and cross-project write |
 | `backend/service-orchestrator/app/tools/brain_client.py` | Python HTTP client for brain endpoints |
