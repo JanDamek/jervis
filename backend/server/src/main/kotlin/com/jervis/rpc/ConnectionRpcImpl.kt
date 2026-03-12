@@ -21,6 +21,7 @@ import com.jervis.service.connection.ConnectionService
 import com.jervis.service.oauth2.OAuth2Service
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -239,6 +240,16 @@ class ConnectionRpcImpl(
             return listO365Resources(connection, capability)
         }
 
+        // SLACK: list channels via Slack Web API (no ProviderRegistry)
+        if (connection.provider == ProviderEnum.SLACK) {
+            return listSlackResources(connection, capability)
+        }
+
+        // DISCORD: list guilds/channels via Discord API (no ProviderRegistry)
+        if (connection.provider == ProviderEnum.DISCORD) {
+            return listDiscordResources(connection, capability)
+        }
+
         // Attempt proactive token refresh for OAuth2 connections before making API call
         val refreshedConnection = refreshTokenIfNeeded(connection)
 
@@ -392,6 +403,111 @@ class ConnectionRpcImpl(
         }
     }
 
+    /**
+     * List available Slack channels via Slack Web API.
+     * Returns channels as resources with id = channelId.
+     */
+    private suspend fun listSlackResources(
+        connection: ConnectionDocument,
+        capability: ConnectionCapability,
+    ): List<ConnectionResourceDto> {
+        val token = connection.bearerToken
+        if (token.isNullOrBlank()) {
+            logger.warn { "Slack connection ${connection.id} has no bot token" }
+            return emptyList()
+        }
+
+        if (capability != ConnectionCapability.CHAT_READ && capability != ConnectionCapability.CHAT_SEND) {
+            return emptyList()
+        }
+
+        return try {
+            val response = httpClient.get("https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200&exclude_archived=true") {
+                header("Authorization", "Bearer $token")
+            }
+            if (!response.status.isSuccess()) {
+                logger.warn { "Failed to fetch Slack channels: ${response.status}" }
+                return emptyList()
+            }
+            val body = response.body<SlackChannelsListDto>()
+            if (!body.ok) {
+                logger.warn { "Slack API error: ${body.error}" }
+                return emptyList()
+            }
+            body.channels.mapNotNull { ch ->
+                val id = ch.id ?: return@mapNotNull null
+                ConnectionResourceDto(
+                    id = id,
+                    name = "#${ch.name ?: id}",
+                    capability = capability,
+                )
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to list Slack resources for connection ${connection.id}" }
+            emptyList()
+        }
+    }
+
+    /**
+     * List available Discord guild channels via Discord REST API.
+     * Returns channels as resources with id = "guildId/channelId".
+     */
+    private suspend fun listDiscordResources(
+        connection: ConnectionDocument,
+        capability: ConnectionCapability,
+    ): List<ConnectionResourceDto> {
+        val token = connection.bearerToken
+        if (token.isNullOrBlank()) {
+            logger.warn { "Discord connection ${connection.id} has no bot token" }
+            return emptyList()
+        }
+
+        if (capability != ConnectionCapability.CHAT_READ && capability != ConnectionCapability.CHAT_SEND) {
+            return emptyList()
+        }
+
+        return try {
+            val guilds = httpClient.get("https://discord.com/api/v10/users/@me/guilds") {
+                header("Authorization", "Bot $token")
+            }
+            if (!guilds.status.isSuccess()) {
+                logger.warn { "Failed to fetch Discord guilds: ${guilds.status}" }
+                return emptyList()
+            }
+            val guildList = guilds.body<List<DiscordGuildDto>>()
+            val resources = mutableListOf<ConnectionResourceDto>()
+
+            for (guild in guildList) {
+                val guildId = guild.id ?: continue
+                val guildName = guild.name ?: "Server"
+
+                val channels = httpClient.get("https://discord.com/api/v10/guilds/$guildId/channels") {
+                    header("Authorization", "Bot $token")
+                }
+                if (!channels.status.isSuccess()) continue
+                val channelList = channels.body<List<DiscordChannelDto>>()
+
+                // Only text channels (type 0)
+                for (channel in channelList.filter { it.type == 0 }) {
+                    val channelId = channel.id ?: continue
+                    val channelName = channel.name ?: "channel"
+                    resources.add(
+                        ConnectionResourceDto(
+                            id = "$guildId/$channelId",
+                            name = "$guildName / #$channelName",
+                            capability = capability,
+                        ),
+                    )
+                }
+            }
+
+            resources
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to list Discord resources for connection ${connection.id}" }
+            emptyList()
+        }
+    }
+
     @kotlinx.serialization.Serializable
     private data class O365TeamDto(
         val id: String? = null,
@@ -403,6 +519,32 @@ class ConnectionRpcImpl(
         val id: String? = null,
         val displayName: String? = null,
         val description: String? = null,
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class SlackChannelsListDto(
+        val ok: Boolean = false,
+        val channels: List<SlackChannelDto> = emptyList(),
+        val error: String? = null,
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class SlackChannelDto(
+        val id: String? = null,
+        val name: String? = null,
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class DiscordGuildDto(
+        val id: String? = null,
+        val name: String? = null,
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class DiscordChannelDto(
+        val id: String? = null,
+        val name: String? = null,
+        val type: Int = 0,
     )
 }
 

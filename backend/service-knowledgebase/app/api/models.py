@@ -20,6 +20,9 @@ class SourceType(str, Enum):
     CHAT = "chat"
     USER_TASK = "user_task"
     SCHEDULED = "scheduled"
+    TEAMS = "teams"
+    SLACK = "slack"
+    DISCORD = "discord"
     IDLE_REVIEW = "idle_review"
 
 

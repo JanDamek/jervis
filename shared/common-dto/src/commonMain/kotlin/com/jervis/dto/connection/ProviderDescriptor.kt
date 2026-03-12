@@ -163,7 +163,7 @@ data class ProviderDescriptor(
                     ),
                 ),
             ),
-        ),
+            ),
             ProviderDescriptor(
                 provider = ProviderEnum.MICROSOFT_TEAMS,
                 displayName = "Microsoft Teams (O365 Gateway)",
@@ -187,6 +187,48 @@ data class ProviderDescriptor(
                                 "Client ID (browser pool session)",
                                 placeholder = "jan.damek",
                             ),
+                        ),
+                    ),
+                ),
+            ),
+            ProviderDescriptor(
+                provider = ProviderEnum.SLACK,
+                displayName = "Slack",
+                capabilities = setOf(
+                    ConnectionCapability.CHAT_READ,
+                    ConnectionCapability.CHAT_SEND,
+                ),
+                protocols = setOf(ProtocolEnum.HTTP),
+                supportsCloud = true,
+                supportsSelfHosted = false,
+                defaultPollingIntervalSeconds = 120,
+                authOptions = listOf(
+                    AuthOption(
+                        authType = AuthTypeEnum.BEARER,
+                        displayName = "Bot Token (xoxb-...)",
+                        fields = listOf(
+                            FormField(FormFieldType.BEARER_TOKEN, "Bot Token", isSecret = true, placeholder = "xoxb-..."),
+                        ),
+                    ),
+                ),
+            ),
+            ProviderDescriptor(
+                provider = ProviderEnum.DISCORD,
+                displayName = "Discord",
+                capabilities = setOf(
+                    ConnectionCapability.CHAT_READ,
+                    ConnectionCapability.CHAT_SEND,
+                ),
+                protocols = setOf(ProtocolEnum.HTTP),
+                supportsCloud = true,
+                supportsSelfHosted = false,
+                defaultPollingIntervalSeconds = 120,
+                authOptions = listOf(
+                    AuthOption(
+                        authType = AuthTypeEnum.BEARER,
+                        displayName = "Bot Token",
+                        fields = listOf(
+                            FormField(FormFieldType.BEARER_TOKEN, "Bot Token", isSecret = true),
                         ),
                     ),
                 ),

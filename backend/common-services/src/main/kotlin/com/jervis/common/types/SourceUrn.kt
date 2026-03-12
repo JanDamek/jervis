@@ -117,6 +117,27 @@ value class SourceUrn(
                 }",
             )
 
+        fun slack(
+            connectionId: ConnectionId,
+            messageId: String,
+            channelId: String,
+        ): SourceUrn =
+            SourceUrn(
+                "slack::conn:$connectionId,msgId:${encodeValue(messageId)},channelId:${encodeValue(channelId)}",
+            )
+
+        fun discord(
+            connectionId: ConnectionId,
+            messageId: String,
+            channelId: String,
+            guildId: String? = null,
+        ): SourceUrn =
+            SourceUrn(
+                "discord::conn:$connectionId,msgId:${encodeValue(messageId)},channelId:${encodeValue(channelId)}${
+                    guildId?.let { ",guildId:${encodeValue(it)}" } ?: ""
+                }",
+            )
+
         fun mergeRequest(
             projectId: ProjectId,
             provider: String,
