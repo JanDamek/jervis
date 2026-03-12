@@ -2313,18 +2313,26 @@ MCP Tool Call → O365 Gateway → Token Service (cache → browser pool) → Gr
 - **Per-client rate limiting**: 4 req/s safety margin under Graph API's 5 req/s Teams limit.
 - **Persistent browser profiles**: Cookies and local storage persisted to PVC, surviving pod restarts.
 
-### MCP Tools (Phase 1 — Teams)
+### MCP Tools
 
-| Tool | Graph API Endpoint |
-|------|--------------------|
-| `o365_teams_list_chats` | `GET /me/chats` |
-| `o365_teams_read_chat` | `GET /me/chats/{id}/messages` |
-| `o365_teams_send_message` | `POST /me/chats/{id}/messages` |
-| `o365_teams_list_teams` | `GET /me/joinedTeams` |
-| `o365_teams_list_channels` | `GET /teams/{id}/channels` |
-| `o365_teams_read_channel` | `GET /teams/{id}/channels/{id}/messages` |
-| `o365_teams_send_channel_message` | `POST /teams/{id}/channels/{id}/messages` |
-| `o365_session_status` | Browser pool session query |
+| Tool | Graph API Endpoint | Phase |
+|------|--------------------|-------|
+| `o365_teams_list_chats` | `GET /me/chats` | 1 |
+| `o365_teams_read_chat` | `GET /me/chats/{id}/messages` | 1 |
+| `o365_teams_send_message` | `POST /me/chats/{id}/messages` | 1 |
+| `o365_teams_list_teams` | `GET /me/joinedTeams` | 1 |
+| `o365_teams_list_channels` | `GET /teams/{id}/channels` | 1 |
+| `o365_teams_read_channel` | `GET /teams/{id}/channels/{id}/messages` | 1 |
+| `o365_teams_send_channel_message` | `POST /teams/{id}/channels/{id}/messages` | 1 |
+| `o365_session_status` | Browser pool session query | 1 |
+| `o365_mail_list` | `GET /me/mailFolders/{folder}/messages` | 2 |
+| `o365_mail_read` | `GET /me/messages/{id}` | 2 |
+| `o365_mail_send` | `POST /me/sendMail` | 2 |
+| `o365_calendar_events` | `GET /me/events` or `/me/calendarView` | 3 |
+| `o365_calendar_create` | `POST /me/events` | 3 |
+| `o365_files_list` | `GET /me/drive/root/children` | 4 |
+| `o365_files_download` | `GET /me/drive/items/{id}` | 4 |
+| `o365_files_search` | `GET /me/drive/root/search(q='...')` | 4 |
 
 ### Deployment
 

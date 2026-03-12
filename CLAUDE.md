@@ -149,7 +149,7 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - O365 Browser Pool entry: `backend/service-o365-browser-pool/app/main.py`
 - O365 Browser Manager: `backend/service-o365-browser-pool/app/browser_manager.py` (Playwright contexts, persistent profiles)
 - O365 Token Extractor: `backend/service-o365-browser-pool/app/token_extractor.py` (network interception, Bearer token capture)
-- O365 MCP tools: `backend/service-mcp/app/main.py` (o365_teams_list_chats, o365_teams_read_chat, o365_teams_send_message, o365_teams_list_teams, o365_teams_list_channels, o365_teams_read_channel, o365_teams_send_channel_message, o365_session_status)
+- O365 MCP tools: `backend/service-mcp/app/main.py` (o365_teams_list_chats, o365_teams_read_chat, o365_teams_send_message, o365_teams_list_teams, o365_teams_list_channels, o365_teams_read_channel, o365_teams_send_channel_message, o365_session_status, o365_mail_list, o365_mail_read, o365_mail_send, o365_calendar_events, o365_calendar_create, o365_files_list, o365_files_download, o365_files_search)
 
 ## Build Notes
 

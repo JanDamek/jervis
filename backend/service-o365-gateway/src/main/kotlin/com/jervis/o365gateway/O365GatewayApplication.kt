@@ -1,7 +1,13 @@
 package com.jervis.o365gateway
 
 import com.jervis.o365gateway.config.O365GatewayConfig
+import com.jervis.o365gateway.model.CreateEventRequest
+import com.jervis.o365gateway.model.GraphMailBody
 import com.jervis.o365gateway.model.GraphMessageBody
+import com.jervis.o365gateway.model.GraphRecipient
+import com.jervis.o365gateway.model.GraphEmailAddressDetail
+import com.jervis.o365gateway.model.SendMailMessage
+import com.jervis.o365gateway.model.SendMailRequest
 import com.jervis.o365gateway.service.BrowserPoolClient
 import com.jervis.o365gateway.service.GraphApiService
 import com.jervis.o365gateway.service.GraphRateLimiter
@@ -176,6 +182,104 @@ fun main() {
                             body.content ?: "",
                         )
                         call.respond(msg)
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                // -- Mail (Outlook) --
+                get("/mail/{clientId}") {
+                    val clientId = call.parameters["clientId"]!!
+                    val top = call.request.queryParameters["top"]?.toIntOrNull() ?: 20
+                    val folder = call.request.queryParameters["folder"] ?: "inbox"
+                    val filter = call.request.queryParameters["filter"]
+                    try {
+                        val messages = graphApi.listMail(clientId, top, folder, filter)
+                        call.respond(messages)
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                get("/mail/{clientId}/{messageId}") {
+                    val clientId = call.parameters["clientId"]!!
+                    val messageId = call.parameters["messageId"]!!
+                    try {
+                        val message = graphApi.readMail(clientId, messageId)
+                        call.respond(message)
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                post("/mail/{clientId}/send") {
+                    val clientId = call.parameters["clientId"]!!
+                    val body = call.receive<SendMailRequest>()
+                    try {
+                        graphApi.sendMail(clientId, body)
+                        call.respond(McpToolResponse(result = "Mail sent successfully"))
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                // -- Calendar --
+                get("/calendar/{clientId}") {
+                    val clientId = call.parameters["clientId"]!!
+                    val top = call.request.queryParameters["top"]?.toIntOrNull() ?: 20
+                    val startDateTime = call.request.queryParameters["startDateTime"]
+                    val endDateTime = call.request.queryParameters["endDateTime"]
+                    try {
+                        val events = graphApi.listEvents(clientId, top, startDateTime, endDateTime)
+                        call.respond(events)
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                post("/calendar/{clientId}") {
+                    val clientId = call.parameters["clientId"]!!
+                    val body = call.receive<CreateEventRequest>()
+                    try {
+                        val event = graphApi.createEvent(clientId, body)
+                        call.respond(event)
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                // -- OneDrive --
+                get("/drive/{clientId}") {
+                    val clientId = call.parameters["clientId"]!!
+                    val path = call.request.queryParameters["path"] ?: "root"
+                    val top = call.request.queryParameters["top"]?.toIntOrNull() ?: 50
+                    try {
+                        val items = graphApi.listDriveItems(clientId, path, top)
+                        call.respond(items)
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                get("/drive/{clientId}/item/{itemId}") {
+                    val clientId = call.parameters["clientId"]!!
+                    val itemId = call.parameters["itemId"]!!
+                    try {
+                        val item = graphApi.getDriveItem(clientId, itemId)
+                        call.respond(item)
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                get("/drive/{clientId}/search") {
+                    val clientId = call.parameters["clientId"]!!
+                    val query = call.request.queryParameters["q"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest, McpToolResponse(error = "Missing 'q' parameter"))
+                    val top = call.request.queryParameters["top"]?.toIntOrNull() ?: 25
+                    try {
+                        val results = graphApi.searchDrive(clientId, query, top)
+                        call.respond(results)
                     } catch (e: Exception) {
                         call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
                     }

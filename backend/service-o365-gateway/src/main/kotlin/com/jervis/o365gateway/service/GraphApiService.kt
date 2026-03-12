@@ -1,11 +1,17 @@
 package com.jervis.o365gateway.service
 
+import com.jervis.o365gateway.model.CreateEventRequest
 import com.jervis.o365gateway.model.GraphChannel
 import com.jervis.o365gateway.model.GraphChat
+import com.jervis.o365gateway.model.GraphDriveItem
+import com.jervis.o365gateway.model.GraphEvent
 import com.jervis.o365gateway.model.GraphListResponse
+import com.jervis.o365gateway.model.GraphMailMessage
 import com.jervis.o365gateway.model.GraphMessage
 import com.jervis.o365gateway.model.GraphMessageBody
+import com.jervis.o365gateway.model.GraphSearchResult
 import com.jervis.o365gateway.model.GraphTeam
+import com.jervis.o365gateway.model.SendMailRequest
 import com.jervis.o365gateway.model.SendMessageRequest
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -146,6 +152,157 @@ class GraphApiService(
             handleGraphError(clientId, response.status.value)
         }
         return response.body<GraphMessage>()
+    }
+
+    // -- Mail (Outlook) -------------------------------------------------------
+
+    suspend fun listMail(
+        clientId: String,
+        top: Int = 20,
+        folder: String = "inbox",
+        filter: String? = null,
+    ): List<GraphMailMessage> {
+        rateLimiter.acquire(clientId)
+        val token = requireToken(clientId)
+        val filterParam = if (filter != null) "&\$filter=$filter" else ""
+        val response = httpClient.get(
+            "$graphBaseUrl/me/mailFolders/$folder/messages?\$top=$top&\$orderby=receivedDateTime desc$filterParam"
+        ) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<GraphListResponse<GraphMailMessage>>().value
+    }
+
+    suspend fun readMail(clientId: String, messageId: String): GraphMailMessage {
+        rateLimiter.acquire(clientId)
+        val token = requireToken(clientId)
+        val response = httpClient.get("$graphBaseUrl/me/messages/$messageId") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<GraphMailMessage>()
+    }
+
+    suspend fun sendMail(clientId: String, request: SendMailRequest) {
+        rateLimiter.acquire(clientId)
+        val token = requireToken(clientId)
+        val response = httpClient.post("$graphBaseUrl/me/sendMail") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+    }
+
+    // -- Calendar -------------------------------------------------------------
+
+    suspend fun listEvents(
+        clientId: String,
+        top: Int = 20,
+        startDateTime: String? = null,
+        endDateTime: String? = null,
+    ): List<GraphEvent> {
+        rateLimiter.acquire(clientId)
+        val token = requireToken(clientId)
+        val url = if (startDateTime != null && endDateTime != null) {
+            "$graphBaseUrl/me/calendarView?startDateTime=$startDateTime&endDateTime=$endDateTime&\$top=$top&\$orderby=start/dateTime"
+        } else {
+            "$graphBaseUrl/me/events?\$top=$top&\$orderby=start/dateTime"
+        }
+        val response = httpClient.get(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header("Prefer", "outlook.timezone=\"UTC\"")
+        }
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<GraphListResponse<GraphEvent>>().value
+    }
+
+    suspend fun createEvent(clientId: String, request: CreateEventRequest): GraphEvent {
+        rateLimiter.acquire(clientId)
+        val token = requireToken(clientId)
+        val response = httpClient.post("$graphBaseUrl/me/events") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<GraphEvent>()
+    }
+
+    // -- OneDrive / SharePoint ------------------------------------------------
+
+    suspend fun listDriveItems(
+        clientId: String,
+        path: String = "root",
+        top: Int = 50,
+    ): List<GraphDriveItem> {
+        rateLimiter.acquire(clientId)
+        val token = requireToken(clientId)
+        val url = if (path == "root") {
+            "$graphBaseUrl/me/drive/root/children?\$top=$top"
+        } else {
+            "$graphBaseUrl/me/drive/root:/$path:/children?\$top=$top"
+        }
+        val response = httpClient.get(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<GraphListResponse<GraphDriveItem>>().value
+    }
+
+    suspend fun getDriveItem(clientId: String, itemId: String): GraphDriveItem {
+        rateLimiter.acquire(clientId)
+        val token = requireToken(clientId)
+        val response = httpClient.get("$graphBaseUrl/me/drive/items/$itemId") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<GraphDriveItem>()
+    }
+
+    suspend fun downloadDriveItem(clientId: String, itemId: String): ByteArray {
+        rateLimiter.acquire(clientId)
+        val token = requireToken(clientId)
+        val response = httpClient.get("$graphBaseUrl/me/drive/items/$itemId/content") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<ByteArray>()
+    }
+
+    suspend fun searchDrive(
+        clientId: String,
+        query: String,
+        top: Int = 25,
+    ): List<GraphDriveItem> {
+        rateLimiter.acquire(clientId)
+        val token = requireToken(clientId)
+        val response = httpClient.get(
+            "$graphBaseUrl/me/drive/root/search(q='$query')?\$top=$top"
+        ) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<GraphListResponse<GraphDriveItem>>().value
     }
 
     // -- helpers --------------------------------------------------------------
