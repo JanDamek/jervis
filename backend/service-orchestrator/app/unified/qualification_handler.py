@@ -67,7 +67,7 @@ class QualifyRequest(BaseModel):
     attachment_count: int = 0
 
     # Active tasks for consolidation check
-    active_tasks: list[dict[str, str]] = Field(default_factory=list)
+    active_tasks: list[dict[str, str | None]] = Field(default_factory=list)
 
 
 def _build_system_prompt(request: QualifyRequest) -> str:
