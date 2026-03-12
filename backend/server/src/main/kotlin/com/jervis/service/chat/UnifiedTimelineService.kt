@@ -13,13 +13,13 @@ import org.springframework.stereotype.Service
 private val logger = KotlinLogging.logger {}
 
 /**
- * Unified timeline: merges chat_messages (needsReaction) + tasks (USER_TASK) into a single
- * chronologically sorted stream using MongoDB $unionWith aggregation.
+ * Unified timeline: builds MongoDB aggregation pipeline based on filter flags.
+ * Merges chat_messages + tasks (USER_TASK) when K reakci is active.
  *
- * "K reakci" filter: only items that actually need user attention:
- * - USER_TASK tasks with pendingUserQuestion (orchestrator asking user)
- * - FAILED background results from chat (success=false)
- * - Background results explicitly marked needsReaction=true
+ * Filter flags are independent toggles (can combine):
+ * - includeChat: user/assistant/system messages (non-BACKGROUND)
+ * - includeTasks: ALL background task results
+ * - includeNeedReaction: actionable items only (failed background + USER_TASK with question)
  *
  * DB does all filtering, projection, merge, and sort — no application-level sort/filter.
  */
@@ -28,39 +28,55 @@ class UnifiedTimelineService(
     private val mongoTemplate: ReactiveMongoTemplate,
 ) {
     /**
-     * Load "K reakci" timeline: actionable items only, sorted by createdAt DESC.
-     * Uses MongoDB aggregation pipeline with $unionWith for single-roundtrip merge.
-     *
-     * @param conversationId Active chat session ID
-     * @param limit Max items to return
-     * @param beforeTimestamp Cursor for pagination (ISO-8601 timestamp string)
-     * @return Pair of (messages sorted chronologically, hasMore flag)
+     * Load timeline with flexible filter combination, sorted by timestamp DESC.
+     * Uses MongoDB aggregation pipeline with optional $unionWith for single-roundtrip merge.
      */
-    suspend fun loadUnifiedTimeline(
+    suspend fun loadTimeline(
         conversationId: ObjectId,
         limit: Int,
         beforeTimestamp: String? = null,
+        includeChat: Boolean = true,
+        includeTasks: Boolean = false,
+        includeNeedReaction: Boolean = true,
     ): Pair<List<ChatMessageDto>, Boolean> {
-        // Build aggregation pipeline:
-        // 1. Match chat_messages for this conversation that need reaction
-        //    (BACKGROUND role with metadata.needsReaction=true OR metadata.success=false)
-        // 2. Project to common shape {_sort_ts, _source, ...}
-        // 3. $unionWith tasks collection (USER_TASK with pendingUserQuestion), projected to same shape
-        // 4. Optional $match for pagination cursor
-        // 5. $sort by _sort_ts DESC (newest first = by createdAt)
-        // 6. $limit + 1 (to detect hasMore)
+        // Build dynamic $or conditions for chat_messages based on active filters
+        val orConditions = mutableListOf<Document>()
 
-        // Chat messages that need reaction: BACKGROUND role + (needsReaction=true OR success=false)
-        val chatMatch = Document(
-            "\$match", Document("conversationId", conversationId)
-                .append("role", "BACKGROUND")
-                .append(
-                    "\$or", listOf(
+        if (includeChat) {
+            // Non-background messages (USER, ASSISTANT, SYSTEM, ALERT)
+            orConditions.add(Document("role", Document("\$ne", "BACKGROUND")))
+        }
+
+        if (includeTasks) {
+            // ALL background messages
+            orConditions.add(Document("role", "BACKGROUND"))
+        } else if (includeNeedReaction) {
+            // Only actionable background results (failed or explicitly marked)
+            orConditions.add(
+                Document("\$and", listOf(
+                    Document("role", "BACKGROUND"),
+                    Document("\$or", listOf(
                         Document("metadata.needsReaction", "true"),
                         Document("metadata.success", "false"),
-                    ),
-                ),
-        )
+                    )),
+                )),
+            )
+        }
+
+        // If no conditions, return empty (shouldn't happen in practice)
+        if (orConditions.isEmpty()) {
+            return emptyList<ChatMessageDto>() to false
+        }
+
+        val chatMatch = if (orConditions.size == 1) {
+            // Single condition — merge into conversationId match
+            val condition = Document("conversationId", conversationId)
+            orConditions[0].forEach { (k, v) -> condition.append(k, v) }
+            Document("\$match", condition)
+        } else {
+            Document("\$match", Document("conversationId", conversationId).append("\$or", orConditions))
+        }
+
         val chatProject = Document(
             "\$project", Document()
                 .append("_sort_ts", "\$timestamp")
@@ -74,62 +90,61 @@ class UnifiedTimelineService(
                 .append("messageId", Document("\$toString", "\$_id")),
         )
 
-        // Tasks pipeline: USER_TASK with pendingUserQuestion (actual questions from orchestrator)
-        val tasksPipeline = listOf(
-            Document(
-                "\$match", Document("type", "USER_TASK")
-                    .append("state", "USER_TASK")
-                    .append(
-                        "pendingUserQuestion", Document("\$exists", true)
-                            .append("\$ne", null),
-                    ),
-            ),
-            Document(
-                "\$project", Document()
-                    .append("_sort_ts", "\$createdAt")
-                    .append("_source", Document("\$literal", "task"))
-                    .append("role", Document("\$literal", "BACKGROUND"))
-                    .append(
-                        "content", Document(
-                            "\$concat", listOf(
-                                Document("\$ifNull", listOf("\$pendingUserQuestion", "")),
-                            ),
+        val pipeline = mutableListOf(chatMatch, chatProject)
+
+        // $unionWith tasks only when K reakci is active
+        if (includeNeedReaction) {
+            val tasksPipeline = listOf(
+                Document(
+                    "\$match", Document("type", "USER_TASK")
+                        .append("state", "USER_TASK")
+                        .append(
+                            "pendingUserQuestion", Document("\$exists", true)
+                                .append("\$ne", null),
                         ),
-                    )
-                    .append("timestamp", Document("\$toString", "\$createdAt"))
-                    .append("correlationId", Document("\$literal", ""))
-                    .append(
-                        "metadata", Document(
-                            "\$arrayToObject", listOf(
-                                listOf(
-                                    Document("k", "taskId").append("v", Document("\$toString", "\$_id")),
-                                    Document("k", "needsReaction").append("v", "true"),
-                                    Document("k", "clientId").append("v", Document("\$toString", "\$clientId")),
-                                    Document("k", "title").append("v", "\$taskName"),
-                                    Document("k", "state").append("v", "\$state"),
+                ),
+                Document(
+                    "\$project", Document()
+                        .append("_sort_ts", "\$createdAt")
+                        .append("_source", Document("\$literal", "task"))
+                        .append("role", Document("\$literal", "BACKGROUND"))
+                        .append(
+                            "content", Document(
+                                "\$concat", listOf(
+                                    Document("\$ifNull", listOf("\$pendingUserQuestion", "")),
                                 ),
                             ),
-                        ),
-                    )
-                    .append("sequence", Document("\$literal", 0L))
-                    .append("messageId", Document("\$toString", "\$_id")),
-            ),
-        )
-        val unionWith = Document("\$unionWith", Document("coll", "tasks").append("pipeline", tasksPipeline))
+                        )
+                        .append("timestamp", Document("\$toString", "\$createdAt"))
+                        .append("correlationId", Document("\$literal", ""))
+                        .append(
+                            "metadata", Document(
+                                "\$arrayToObject", listOf(
+                                    listOf(
+                                        Document("k", "taskId").append("v", Document("\$toString", "\$_id")),
+                                        Document("k", "needsReaction").append("v", "true"),
+                                        Document("k", "clientId").append("v", Document("\$toString", "\$clientId")),
+                                        Document("k", "title").append("v", "\$taskName"),
+                                        Document("k", "state").append("v", "\$state"),
+                                    ),
+                                ),
+                            ),
+                        )
+                        .append("sequence", Document("\$literal", 0L))
+                        .append("messageId", Document("\$toString", "\$_id")),
+                ),
+            )
+            pipeline.add(Document("\$unionWith", Document("coll", "tasks").append("pipeline", tasksPipeline)))
+        }
 
         // Pagination cursor
-        val paginationMatch = if (beforeTimestamp != null) {
+        if (beforeTimestamp != null) {
             val ts = java.time.Instant.parse(beforeTimestamp)
-            Document("\$match", Document("_sort_ts", Document("\$lt", ts)))
-        } else null
+            pipeline.add(Document("\$match", Document("_sort_ts", Document("\$lt", ts))))
+        }
 
-        val sort = Document("\$sort", Document("_sort_ts", -1)) // DESC — newest first (createdAt)
-        val limitStage = Document("\$limit", limit + 1) // +1 to detect hasMore
-
-        val pipeline = mutableListOf(chatMatch, chatProject, unionWith)
-        if (paginationMatch != null) pipeline.add(paginationMatch)
-        pipeline.add(sort)
-        pipeline.add(limitStage)
+        pipeline.add(Document("\$sort", Document("_sort_ts", -1))) // DESC — newest first
+        pipeline.add(Document("\$limit", limit + 1)) // +1 to detect hasMore
 
         return try {
             val docs = mongoTemplate
@@ -147,7 +162,7 @@ class UnifiedTimelineService(
             val messages = items.reversed().map { doc -> docToDto(doc) }
             messages to hasMore
         } catch (e: Exception) {
-            logger.error(e) { "Failed to load unified timeline" }
+            logger.error(e) { "Failed to load timeline (chat=$includeChat, tasks=$includeTasks, reaction=$includeNeedReaction)" }
             emptyList<ChatMessageDto>() to false
         }
     }

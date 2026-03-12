@@ -24,6 +24,8 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
     Returns OpenAI-compatible tool dicts.
     """
     # Late imports — tools depend on heavy modules
+    # Git metadata tools (branch list, recent commits) = OK for orientation.
+    # Deep code investigation / git history analysis → dispatch_coding_agent.
     from app.tools.definitions import (
         TOOL_KB_SEARCH,
         TOOL_WEB_SEARCH,
@@ -78,7 +80,9 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             _request_tools,
         ]
 
-    # INVESTIGATOR: researches context (KB, web, code, meetings)
+    # INVESTIGATOR: researches context (KB, web, code metadata, meetings)
+    # Git metadata (branches, commits) = orientation only.
+    # For any code analysis or deep git investigation → dispatch_coding_agent.
     if vertex_type == VertexType.INVESTIGATOR:
         return _base + [
             TOOL_WEB_SEARCH,
@@ -90,6 +94,8 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_GIT_BRANCH_LIST,
             TOOL_GET_KB_STATS,
             TOOL_GET_INDEXED_ITEMS,
+            TOOL_DISPATCH_CODING_AGENT,
+            TOOL_STORE_KNOWLEDGE,
             TOOL_LIST_MEETINGS,
             TOOL_GET_MEETING_TRANSCRIPT,
             TOOL_LIST_UNCLASSIFIED_MEETINGS,
@@ -117,7 +123,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             _request_tools,
         ]
 
-    # VALIDATOR: verifies results (read access + can dispatch coding agent for tests)
+    # VALIDATOR: verifies results (metadata + coding agent for tests/code checks)
     if vertex_type == VertexType.VALIDATOR:
         return _base + [
             TOOL_LIST_PROJECT_FILES,
@@ -129,7 +135,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             _request_tools,
         ]
 
-    # REVIEWER: reviews quality (needs read access + KB)
+    # REVIEWER: reviews quality (metadata + coding agent for code review + KB)
     if vertex_type == VertexType.REVIEWER:
         return _base + [
             TOOL_LIST_PROJECT_FILES,
@@ -138,6 +144,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_GIT_BRANCH_LIST,
             TOOL_GET_RECENT_COMMITS,
             TOOL_GET_TECHNOLOGY_STACK,
+            TOOL_DISPATCH_CODING_AGENT,
             TOOL_GET_GUIDELINES,
             _request_tools,
         ]
@@ -224,7 +231,8 @@ def get_tools_by_category(category: str) -> list[dict]:
         "kb": [TOOL_KB_SEARCH, TOOL_KB_DELETE, TOOL_GET_KB_STATS,
                TOOL_GET_INDEXED_ITEMS, TOOL_STORE_KNOWLEDGE],
         "web": [TOOL_WEB_SEARCH],
-        "git": [TOOL_GIT_BRANCH_LIST, TOOL_GET_RECENT_COMMITS],
+        # git = metadata (branches, commits) + dispatch_coding_agent for deep analysis
+        "git": [TOOL_GIT_BRANCH_LIST, TOOL_GET_RECENT_COMMITS, TOOL_DISPATCH_CODING_AGENT],
         "code": [TOOL_LIST_PROJECT_FILES, TOOL_GET_REPOSITORY_INFO,
                  TOOL_GET_REPOSITORY_STRUCTURE, TOOL_GET_TECHNOLOGY_STACK,
                  TOOL_DISPATCH_CODING_AGENT],
@@ -270,6 +278,10 @@ def _build_request_tools_definition() -> dict:
                 "interactive, guidelines, meetings, queue, environment, "
                 "project_management, settings, setup, o365, o365_teams, "
                 "o365_mail, o365_calendar, o365_files, all. "
+                "IMPORTANT: 'git' gives basic metadata (branches, recent commits) + dispatch_coding_agent. "
+                "For ANY deep code analysis, git history investigation, file reading, or code changes "
+                "you MUST use dispatch_coding_agent — the orchestrator never investigates code directly. "
+                "Use 'code' for repository metadata + dispatch_coding_agent. "
                 "Use 'interactive' to get ask_user for dialog with the user. "
                 "Use 'guidelines' to read/update project rules. "
                 "Use 'meetings' to classify/list meeting recordings. "
@@ -282,7 +294,7 @@ def _build_request_tools_definition() -> dict:
                     "categories": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Tool categories to add: kb, web, git, code, memory, scheduling, interactive, guidelines, meetings, queue, environment, project_management, settings, setup, o365, o365_teams, o365_mail, o365_calendar, o365_files, all",
+                        "description": "Tool categories to add: kb, web, code, memory, scheduling, interactive, guidelines, meetings, queue, environment, project_management, settings, setup, o365, o365_teams, o365_mail, o365_calendar, o365_files, all. NO 'git' category — use dispatch_coding_agent for git.",
                     },
                     "reason": {
                         "type": "string",

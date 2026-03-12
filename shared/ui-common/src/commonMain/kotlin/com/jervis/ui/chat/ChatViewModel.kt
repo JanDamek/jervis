@@ -165,16 +165,15 @@ class ChatViewModel(
         _liveLogTaskId.value = null
     }
 
-    /** Active filter mode — determines server-side DB query. */
-    private val _filterMode = MutableStateFlow("NEED_REACTION") // Default: K reakci
-
-    /** Derived booleans for UI filter chips. */
-    private val _showChat = MutableStateFlow(false)
+    /** Show chat messages (user/assistant). Default ON. */
+    private val _showChat = MutableStateFlow(true)
     val showChat: StateFlow<Boolean> = _showChat.asStateFlow()
 
+    /** Show all background task results. */
     private val _showTasks = MutableStateFlow(false)
     val showTasks: StateFlow<Boolean> = _showTasks.asStateFlow()
 
+    /** Show actionable items (failed background + USER_TASK). Default ON. */
     private val _showNeedReaction = MutableStateFlow(true)
     val showNeedReaction: StateFlow<Boolean> = _showNeedReaction.asStateFlow()
 
@@ -224,7 +223,9 @@ class ChatViewModel(
                     try {
                         val history = services.chatService.getChatHistory(
                             limit = 50,
-                            filterMode = _filterMode.value,
+                            showChat = _showChat.value,
+                            showTasks = _showTasks.value,
+                            showNeedReaction = _showNeedReaction.value,
                         )
                         applyHistory(history)
                         println("ChatViewModel: history loaded — ${history.messages.size} msgs, hasMore=${history.hasMore}, filter=${_filterMode.value}")
@@ -359,43 +360,37 @@ class ChatViewModel(
     }
 
     /** Toggle chat messages visibility. */
+    /** Toggle "Chat" filter — independent, triggers server reload. */
     fun toggleChat() {
-        _filterMode.value = "CHAT"
-        _showChat.value = true
-        _showTasks.value = false
-        _showNeedReaction.value = false
+        _showChat.value = !_showChat.value
         reloadForCurrentFilter()
     }
 
-    /** Switch to "Tasky" filter — server returns only BACKGROUND messages from DB. */
+    /** Toggle "Tasky" filter — independent, triggers server reload. */
     fun toggleTasks() {
-        _filterMode.value = "TASKS"
-        _showChat.value = false
-        _showTasks.value = true
-        _showNeedReaction.value = false
+        _showTasks.value = !_showTasks.value
         reloadForCurrentFilter()
     }
 
-    /** Switch to "K reakci" filter — server returns unified timeline (failed + USER_TASK). */
+    /** Toggle "K reakci" filter — independent, triggers server reload. */
     fun toggleNeedReaction() {
-        _filterMode.value = "NEED_REACTION"
-        _showChat.value = false
-        _showTasks.value = false
-        _showNeedReaction.value = true
+        _showNeedReaction.value = !_showNeedReaction.value
         reloadForCurrentFilter()
     }
 
-    /** Reload messages from server based on current filterMode. All filtering in DB. */
+    /** Reload messages from server based on current filter combination. All filtering in DB. */
     private fun reloadForCurrentFilter() {
         scope.launch {
             _isLoadingMore.value = true
             try {
                 val history = repository.chat.getChatHistory(
                     limit = 50,
-                    filterMode = _filterMode.value,
+                    showChat = _showChat.value,
+                    showTasks = _showTasks.value,
+                    showNeedReaction = _showNeedReaction.value,
                 )
                 applyHistory(history)
-                println("ChatViewModel: reload filter=${_filterMode.value} — ${history.messages.size} msgs")
+                println("ChatViewModel: reload chat=${_showChat.value} tasks=${_showTasks.value} reaction=${_showNeedReaction.value} — ${history.messages.size} msgs")
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 println("ChatViewModel: reloadForCurrentFilter failed: ${e.message}")
@@ -614,7 +609,9 @@ class ChatViewModel(
                 val history = repository.chat.getChatHistory(
                     limit = 20,
                     beforeMessageId = beforeId,
-                    filterMode = _filterMode.value,
+                    showChat = _showChat.value,
+                    showTasks = _showTasks.value,
+                    showNeedReaction = _showNeedReaction.value,
                 )
                 val olderMessages = history.messages.map { msg ->
                     val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
@@ -682,7 +679,12 @@ class ChatViewModel(
             ChatResponseType.CHAT_CHANGED -> {
                 println("=== Chat session changed, reloading history... ===")
                 try {
-                    val history = repository.chat.getChatHistory(limit = 50, filterMode = _filterMode.value)
+                    val history = repository.chat.getChatHistory(
+                        limit = 50,
+                        showChat = _showChat.value,
+                        showTasks = _showTasks.value,
+                        showNeedReaction = _showNeedReaction.value,
+                    )
                     applyHistory(history)
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e

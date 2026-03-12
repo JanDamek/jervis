@@ -285,95 +285,87 @@ class ChatRpcImpl(
         }
     }
 
-    override suspend fun getChatHistory(limit: Int, beforeMessageId: String?, filterMode: String): ChatHistoryDto {
+    override suspend fun getChatHistory(limit: Int, beforeMessageId: String?, showChat: Boolean, showTasks: Boolean, showNeedReaction: Boolean): ChatHistoryDto {
         val userTaskCount = taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toInt()
+        val session = chatService.getOrCreateActiveSession()
 
-        return when (filterMode) {
-            // K reakci: unified timeline — failed background + USER_TASK with pendingQuestion
-            "NEED_REACTION" -> {
-                val session = chatService.getOrCreateActiveSession()
-                val (messages, hasMore) = unifiedTimelineService.loadUnifiedTimeline(
-                    conversationId = session.id,
-                    limit = limit,
-                    beforeTimestamp = beforeMessageId,
-                )
-                val allTaskIds = messages.mapNotNull { it.metadata["taskId"] ?: it.metadata["contextTaskId"] }.toSet()
-                val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
-                val enriched = messages.map { msg ->
-                    val tid = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
-                    if (tid != null) msg.copy(metadata = msg.metadata + ("hasGraph" to (tid in taskIdsWithGraph).toString()))
-                    else msg
-                }
-                ChatHistoryDto(
-                    messages = enriched,
-                    hasMore = hasMore,
-                    oldestMessageId = messages.firstOrNull()?.timestamp,
-                    userTaskCount = userTaskCount,
-                    backgroundMessageCount = 0,
-                )
-            }
-
-            // Tasky: only BACKGROUND role messages from DB
-            "TASKS" -> {
-                val result = chatService.getBackgroundHistory(limit = limit, beforeMessageId = beforeMessageId)
-                val allTaskIds = result.messages.mapNotNull { it.metadata["taskId"] ?: it.metadata["contextTaskId"] }.toSet()
-                val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
-                val messages = result.messages.map { msg ->
-                    val msgTaskId = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
-                    ChatMessageDto(
-                        role = ChatRole.BACKGROUND,
-                        content = msg.content,
-                        timestamp = msg.timestamp.toString(),
-                        correlationId = msg.correlationId,
-                        metadata = if (msgTaskId != null) msg.metadata + ("hasGraph" to (msgTaskId in taskIdsWithGraph).toString()) else msg.metadata,
-                        sequence = msg.sequence,
-                        messageId = msg.id.toString(),
-                    )
-                }
-                ChatHistoryDto(
-                    messages = messages,
-                    hasMore = result.hasMore,
-                    oldestMessageId = result.oldestMessageId,
-                    userTaskCount = userTaskCount,
-                    backgroundMessageCount = result.backgroundMessageCount,
-                )
-            }
-
-            // Chat (default): user/assistant messages, no background
-            else -> {
-                val result = chatService.getHistory(limit = limit, beforeMessageId = beforeMessageId, excludeBackground = true)
-                val allTaskIds = result.messages.mapNotNull { it.metadata["taskId"] ?: it.metadata["contextTaskId"] }.toSet()
-                val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
-                val messages = result.messages.map { msg ->
-                    val msgTaskId = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
-                    ChatMessageDto(
-                        role = when (msg.role) {
-                            MessageRole.USER -> ChatRole.USER
-                            MessageRole.ASSISTANT -> ChatRole.ASSISTANT
-                            MessageRole.SYSTEM -> ChatRole.SYSTEM
-                            MessageRole.BACKGROUND -> ChatRole.BACKGROUND
-                            MessageRole.ALERT -> ChatRole.ALERT
-                        },
-                        content = msg.content,
-                        timestamp = msg.timestamp.toString(),
-                        correlationId = msg.correlationId,
-                        metadata = if (msgTaskId != null) msg.metadata + ("hasGraph" to (msgTaskId in taskIdsWithGraph).toString()) else msg.metadata,
-                        sequence = msg.sequence,
-                        messageId = msg.id.toString(),
-                    )
-                }
-                ChatHistoryDto(
-                    messages = messages,
-                    hasMore = result.hasMore,
-                    oldestMessageId = result.oldestMessageId,
-                    activeClientId = result.activeClientId,
-                    activeProjectId = result.activeProjectId,
-                    activeGroupId = result.activeGroupId,
-                    userTaskCount = userTaskCount,
-                    backgroundMessageCount = result.backgroundMessageCount,
-                )
-            }
+        // Optimized paths for single-filter cases (no aggregation needed)
+        if (showChat && !showTasks && !showNeedReaction) {
+            // Chat only — Spring Data derived query (most efficient)
+            return loadChatHistory(session, limit, beforeMessageId, excludeBackground = true, userTaskCount = userTaskCount)
         }
+        if (!showChat && showTasks && !showNeedReaction) {
+            // Tasks only — Spring Data BACKGROUND-only query
+            return loadBackgroundHistory(session, limit, beforeMessageId, userTaskCount)
+        }
+        if (showChat && showTasks && !showNeedReaction) {
+            // Chat + Tasks — all messages, no filter
+            return loadChatHistory(session, limit, beforeMessageId, excludeBackground = false, userTaskCount = userTaskCount)
+        }
+
+        // Any combination involving K reakci → aggregation pipeline (handles $unionWith for USER_TASK)
+        val (messages, hasMore) = unifiedTimelineService.loadTimeline(
+            conversationId = session.id,
+            limit = limit,
+            beforeTimestamp = beforeMessageId,
+            includeChat = showChat,
+            includeTasks = showTasks,
+            includeNeedReaction = showNeedReaction,
+        )
+        val allTaskIds = messages.mapNotNull { it.metadata["taskId"] ?: it.metadata["contextTaskId"] }.toSet()
+        val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
+        val enriched = messages.map { msg ->
+            val tid = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
+            if (tid != null) msg.copy(metadata = msg.metadata + ("hasGraph" to (tid in taskIdsWithGraph).toString()))
+            else msg
+        }
+        return ChatHistoryDto(
+            messages = enriched,
+            hasMore = hasMore,
+            oldestMessageId = messages.firstOrNull()?.timestamp,
+            userTaskCount = userTaskCount,
+            backgroundMessageCount = 0,
+        )
+    }
+
+    /** Load chat history via Spring Data (no aggregation). */
+    private suspend fun loadChatHistory(
+        session: com.jervis.entity.ChatSessionDocument,
+        limit: Int,
+        beforeMessageId: String?,
+        excludeBackground: Boolean,
+        userTaskCount: Int,
+    ): ChatHistoryDto {
+        val result = chatService.getHistory(limit = limit, beforeMessageId = beforeMessageId, excludeBackground = excludeBackground)
+        val messages = result.messages.map { msg -> msg.toChatMessageDto(taskGraphExistsService) }
+        return ChatHistoryDto(
+            messages = messages,
+            hasMore = result.hasMore,
+            oldestMessageId = result.oldestMessageId,
+            activeClientId = result.activeClientId,
+            activeProjectId = result.activeProjectId,
+            activeGroupId = result.activeGroupId,
+            userTaskCount = userTaskCount,
+            backgroundMessageCount = result.backgroundMessageCount,
+        )
+    }
+
+    /** Load BACKGROUND-only history via Spring Data. */
+    private suspend fun loadBackgroundHistory(
+        session: com.jervis.entity.ChatSessionDocument,
+        limit: Int,
+        beforeMessageId: String?,
+        userTaskCount: Int,
+    ): ChatHistoryDto {
+        val result = chatService.getBackgroundHistory(limit = limit, beforeMessageId = beforeMessageId)
+        val messages = result.messages.map { msg -> msg.toChatMessageDto(taskGraphExistsService) }
+        return ChatHistoryDto(
+            messages = messages,
+            hasMore = result.hasMore,
+            oldestMessageId = result.oldestMessageId,
+            userTaskCount = userTaskCount,
+            backgroundMessageCount = result.backgroundMessageCount,
+        )
     }
 
     override suspend fun updateScope(clientId: String?, projectId: String?, groupId: String?) {
@@ -548,4 +540,29 @@ class ChatRpcImpl(
 
         return type to metadata
     }
+}
+
+/** Convert ChatMessageDocument to ChatMessageDto with graph enrichment. */
+private suspend fun com.jervis.entity.ChatMessageDocument.toChatMessageDto(
+    taskGraphExistsService: com.jervis.service.graph.TaskGraphExistsService,
+): ChatMessageDto {
+    val msgTaskId = metadata["taskId"] ?: metadata["contextTaskId"]
+    val hasGraph = if (msgTaskId != null) {
+        taskGraphExistsService.findExistingGraphTaskIds(listOf(msgTaskId)).isNotEmpty()
+    } else false
+    return ChatMessageDto(
+        role = when (role) {
+            MessageRole.USER -> ChatRole.USER
+            MessageRole.ASSISTANT -> ChatRole.ASSISTANT
+            MessageRole.SYSTEM -> ChatRole.SYSTEM
+            MessageRole.BACKGROUND -> ChatRole.BACKGROUND
+            MessageRole.ALERT -> ChatRole.ALERT
+        },
+        content = content,
+        timestamp = timestamp.toString(),
+        correlationId = correlationId,
+        metadata = if (msgTaskId != null) metadata + ("hasGraph" to hasGraph.toString()) else metadata,
+        sequence = sequence,
+        messageId = id.toString(),
+    )
 }
