@@ -333,12 +333,16 @@ def detect_tool_loop(
     tool_call_history: list[tuple[str, str]],
     tool_name: str,
     arguments: dict,
-) -> str | None:
+) -> tuple[str | None, int]:
     """Track tool calls and detect repeated invocations with identical args.
 
     Appends the call to *tool_call_history* (mutates in-place) and returns a
-    stop-reason string when the same (name, args) pair appears ≥ 2 times, or
-    ``None`` if no loop is detected.
+    tuple of (stop-reason string, repeat_count).  The reason is non-None when
+    the same (name, args) pair appears ≥ 2 times.
+
+    When repeat_count >= 3 the caller should REMOVE the tool from available
+    tools to prevent the LLM from calling it again (the error message alone
+    is not enough — smaller models ignore it).
     """
     call_key = (tool_name, json.dumps(arguments, sort_keys=True))
     tool_call_history.append(call_key)
@@ -349,8 +353,8 @@ def detect_tool_loop(
             f"STOP: Voláš {tool_name} opakovaně se stejnými argumenty. "
             f"Tento nástroj ti nedá jiný výsledek. "
             f"Odpověz uživateli na základě informací které už máš."
-        )
-    return None
+        ), repeat_count
+    return None, repeat_count
 
 
 # --- W-14: Context overflow guard ---

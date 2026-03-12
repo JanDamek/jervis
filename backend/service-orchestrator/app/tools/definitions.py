@@ -1576,26 +1576,7 @@ SECURITY_AGENT_TOOLS: list[dict] = [
     TOOL_READ_FILE, TOOL_GREP_FILES,
 ]
 
-# CommunicationAgent — KB + Teams (chats, channels, messages)
-COMMUNICATION_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_WEB_SEARCH] + O365_TEAMS_TOOLS
-
-# EmailAgent — KB + Outlook mail
-EMAIL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH] + O365_MAIL_TOOLS
-
-# CalendarAgent — KB + Calendar
-CALENDAR_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH] + O365_CALENDAR_TOOLS
-
-# AdministrativeAgent — web search + KB + O365 (full access for admin tasks)
-ADMINISTRATIVE_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH] + O365_ALL_TOOLS
-
-# LegalAgent — KB search + web search
-LEGAL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_WEB_SEARCH]
-
-# FinancialAgent — KB search
-FINANCIAL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH]
-
-# PersonalAgent — web + KB + O365 (personal assistant needs full O365)
-PERSONAL_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH] + O365_ALL_TOOLS
+# NOTE: O365-dependent agent tool sets are defined after O365 tool groups (below O365_ALL_TOOLS)
 
 # LearningAgent — web + KB + code search
 LEARNING_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH, TOOL_CODE_SEARCH]
@@ -2137,6 +2118,27 @@ O365_FILES_TOOLS: list[dict] = [
 O365_ALL_TOOLS: list[dict] = (
     O365_TEAMS_TOOLS + O365_MAIL_TOOLS + O365_CALENDAR_TOOLS + O365_FILES_TOOLS
 )
+
+# CommunicationAgent — KB + Teams (chats, channels, messages)
+COMMUNICATION_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_WEB_SEARCH] + O365_TEAMS_TOOLS
+
+# EmailAgent — KB + Outlook mail
+EMAIL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH] + O365_MAIL_TOOLS
+
+# CalendarAgent — KB + Calendar
+CALENDAR_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH] + O365_CALENDAR_TOOLS
+
+# AdministrativeAgent — web search + KB + O365 (full access for admin tasks)
+ADMINISTRATIVE_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH] + O365_ALL_TOOLS
+
+# LegalAgent — KB search + web search
+LEGAL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_WEB_SEARCH]
+
+# FinancialAgent — KB search
+FINANCIAL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH]
+
+# PersonalAgent — web + KB + O365 (personal assistant needs full O365)
+PERSONAL_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH] + O365_ALL_TOOLS
 
 
 # ============================================================

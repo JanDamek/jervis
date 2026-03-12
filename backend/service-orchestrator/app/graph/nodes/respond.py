@@ -288,7 +288,7 @@ async def respond(state: dict) -> dict:
                 arguments = {}
 
             # Tool loop detection BEFORE execution — skip duplicate calls
-            loop_reason = detect_tool_loop(tool_call_history, tool_name, arguments)
+            loop_reason, _loop_count = detect_tool_loop(tool_call_history, tool_name, arguments)
             if loop_reason:
                 logger.warning("Respond: tool loop for %s — skipping execution", tool_name)
                 messages.append({

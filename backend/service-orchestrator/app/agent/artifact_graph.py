@@ -631,7 +631,7 @@ class ArtifactGraphStore:
                     artifact_key: artifact.raw_key,
                     artifact_label: artifact.label,
                     artifact_kind: artifact.kind,
-                    vertices: grouped[*].link.{{vertex_id: link.vertex_id, touch_kind: link.touch_kind}}
+                    vertices: (FOR g IN grouped RETURN {{vertex_id: g.link.vertex_id, touch_kind: g.link.touch_kind}})
                 }}
             """
             cursor = self.db.aql.execute(aql, bind_vars={

@@ -846,7 +846,7 @@ async def _agentic_vertex(
                 continue
 
             # Loop detection
-            loop_reason = detect_tool_loop(
+            loop_reason, loop_count = detect_tool_loop(
                 tool_call_history, tool_name, arguments,
             )
             if loop_reason:
@@ -856,6 +856,10 @@ async def _agentic_vertex(
                     "name": tool_name,
                     "content": f"ERROR: {loop_reason}",
                 })
+                # After 3rd repeat, remove the tool entirely so LLM cannot call it again
+                if loop_count >= 3 and tools:
+                    tools = [t for t in tools if t.get("function", {}).get("name") != tool_name]
+                    logger.warning("Removed tool %s from available tools after %d repeats", tool_name, loop_count)
                 continue
 
             # Execute the tool
