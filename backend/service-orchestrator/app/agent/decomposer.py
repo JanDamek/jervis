@@ -392,6 +392,8 @@ def _build_subgraph(
             agent_name=vd.get("agent"),
             parent_id=parent.id,
             input_request=vd.get("description", ""),
+            client_id=parent.client_id,
+            project_id=parent.project_id,
         )
         created.append(v)
 
@@ -446,6 +448,8 @@ def _single_vertex_fallback(graph: AgentGraph, root: GraphVertex) -> AgentGraph:
         vertex_type=VertexType.TASK,
         parent_id=root.id,
         input_request=root.description,
+        client_id=root.client_id,
+        project_id=root.project_id,
     )
     add_edge(graph, root.id, v.id, EdgeType.DECOMPOSITION)
     v.status = VertexStatus.READY

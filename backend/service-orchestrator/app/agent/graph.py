@@ -62,6 +62,8 @@ def create_task_graph(
         status=VertexStatus.READY,  # Root has no incoming edges
         input_request=root_description,
         depth=0,
+        client_id=client_id,
+        project_id=project_id or "",
     )
 
     return AgentGraph(
@@ -103,6 +105,12 @@ def add_vertex(
             effective_client_id = parent.client_id
         if not effective_project_id and parent.project_id:
             effective_project_id = parent.project_id
+
+    # Fallback to graph-level client_id (covers old graphs with empty vertex client_id)
+    if not effective_client_id and graph.client_id and graph.client_id != GLOBAL_CLIENT_ID:
+        effective_client_id = graph.client_id
+    if not effective_project_id and graph.project_id:
+        effective_project_id = graph.project_id
 
     if not effective_client_id:
         raise ValueError(

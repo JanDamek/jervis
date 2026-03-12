@@ -177,6 +177,8 @@ async def decompose_large_context(
                 vertex_type=VertexType.TASK,
                 parent_id=parent_id,
                 input_request=full_description,
+                client_id=parent.client_id if parent else "",
+                project_id=parent.project_id if parent else "",
             )
             add_edge(graph, parent_id, v.id, EdgeType.DECOMPOSITION)
             v.status = VertexStatus.READY
@@ -191,6 +193,8 @@ async def decompose_large_context(
             vertex_type=VertexType.SYNTHESIS,
             parent_id=parent_id,
             input_request=synthesis_instruction,
+            client_id=parent.client_id if parent else "",
+            project_id=parent.project_id if parent else "",
         )
 
         # Synthesis depends on all sub-vertices

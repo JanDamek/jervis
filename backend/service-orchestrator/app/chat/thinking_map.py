@@ -53,6 +53,10 @@ async def create_map(
     root_id = "root"
     now = datetime.now(timezone.utc).isoformat()
 
+    effective_client_id = client_id or ""
+    if not effective_client_id:
+        logger.warning("create_map: no client_id for thinking map '%s'", title)
+
     root_vertex = GraphVertex(
         id=root_id,
         title=title,
@@ -60,13 +64,14 @@ async def create_map(
         vertex_type=VertexType.ROOT,
         status=VertexStatus.READY,
         depth=0,
-        client_id=client_id or "",
+        client_id=effective_client_id,
+        project_id=project_id or "",
     )
 
     graph = AgentGraph(
         id=graph_id,
         task_id=graph_id,  # Use graph_id as task_id until dispatch
-        client_id=client_id or "",
+        client_id=effective_client_id,
         project_id=project_id,
         root_vertex_id=root_id,
         vertices={root_id: root_vertex},
