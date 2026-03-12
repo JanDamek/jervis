@@ -1086,7 +1086,6 @@ private fun buildHistoryMetadata(step: QualificationStepDto): String {
 @Composable
 private fun pipelineStateLabel(state: String): String = when (state) {
     "WAITING" -> "Čeká"
-    "QUALIFYING" -> "Kvalifikuje"
     "EXTRACTING" -> "LLM extrakce"
     "RETRYING" -> "Opakuje"
     "INDEXED" -> "Hotovo"
@@ -1096,7 +1095,6 @@ private fun pipelineStateLabel(state: String): String = when (state) {
 @Composable
 private fun pipelineStateColor(state: String): androidx.compose.ui.graphics.Color = when (state) {
     "WAITING" -> MaterialTheme.colorScheme.onSurfaceVariant
-    "QUALIFYING" -> MaterialTheme.colorScheme.tertiary
     "EXTRACTING" -> MaterialTheme.colorScheme.secondary
     "RETRYING" -> MaterialTheme.colorScheme.error
     else -> MaterialTheme.colorScheme.onSurfaceVariant

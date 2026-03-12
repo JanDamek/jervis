@@ -46,7 +46,7 @@ class EmailThreadService(
 
         // Find existing active task for this thread
         val activeStates = listOf(
-            TaskStateEnum.INDEXING, TaskStateEnum.QUALIFYING, TaskStateEnum.QUEUED,
+            TaskStateEnum.INDEXING, TaskStateEnum.QUEUED,
             TaskStateEnum.PROCESSING, TaskStateEnum.USER_TASK, TaskStateEnum.BLOCKED,
         )
         val topicId = "email-thread:$threadId"

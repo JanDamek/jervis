@@ -401,7 +401,6 @@ private fun taskStateBadge(state: TaskStateEnum): Pair<String, androidx.compose.
     val color = when (state) {
         TaskStateEnum.DONE -> MaterialTheme.colorScheme.primary
         TaskStateEnum.ERROR -> MaterialTheme.colorScheme.error
-        TaskStateEnum.QUALIFYING -> MaterialTheme.colorScheme.tertiary
         TaskStateEnum.QUEUED, TaskStateEnum.PROCESSING, TaskStateEnum.CODING,
         -> MaterialTheme.colorScheme.secondary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -409,7 +408,6 @@ private fun taskStateBadge(state: TaskStateEnum): Pair<String, androidx.compose.
     val label = when (state) {
         TaskStateEnum.NEW -> "Nový"
         TaskStateEnum.INDEXING -> "Indexace"
-        TaskStateEnum.QUALIFYING -> "Kvalifikuje se"
         TaskStateEnum.QUEUED -> "Ve frontě"
         TaskStateEnum.PROCESSING -> "Zpracovává se"
         TaskStateEnum.CODING -> "Kóduje"

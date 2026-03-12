@@ -3,14 +3,13 @@ package com.jervis.dto
 /**
  * Lifecycle state of a Task.
  *
- * Pipeline: NEW → INDEXING → [QUALIFYING] → QUEUED → PROCESSING → DONE
+ * Pipeline: NEW → INDEXING → QUEUED → PROCESSING → DONE
  *
  * States describe what the TASK is doing, not who processes it.
  */
 enum class TaskStateEnum {
     NEW,           // Scheduled task waiting for scheduledAt
     INDEXING,      // KB processing: text extraction, embedding, graph nodes (atomic claim via claimedAt)
-    QUALIFYING,    // GPU simple agent preparing context + initial plan (future — not yet implemented)
     QUEUED,        // Ready for orchestrator pickup (in execution queue)
     PROCESSING,    // Orchestrator actively working (agentic loop running)
     CODING,        // K8s coding agent Job dispatched, waiting for completion

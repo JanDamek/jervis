@@ -69,7 +69,7 @@ class RpcClientsConfig(
         _correctionClient
             ?: CorrectionClient(endpoints.correction.baseUrl).also { _correctionClient = it }
 
-    /** Concrete REST client — used by SimpleQualifierAgent for streaming progress. */
+    /** Concrete REST client — used by TaskQualificationService for KB dispatch. */
     @Bean
     fun knowledgeServiceClient(): KnowledgeServiceRestClient = getKnowledgeService()
 

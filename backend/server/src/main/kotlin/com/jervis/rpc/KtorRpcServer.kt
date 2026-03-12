@@ -72,7 +72,6 @@ class KtorRpcServer(
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
     private val taskRepository: com.jervis.repository.TaskRepository,
     private val taskService: com.jervis.service.background.TaskService,
-    private val kbResultRouter: com.jervis.qualifier.KbResultRouter,
     private val systemConfigRpcImpl: SystemConfigRpcImpl,
     private val userTaskService: com.jervis.service.task.UserTaskService,
     private val backgroundEngine: com.jervis.service.background.BackgroundEngine,
@@ -85,8 +84,6 @@ class KtorRpcServer(
     private val jobLogsRpcImpl: JobLogsRpcImpl,
     private val guidelinesService: com.jervis.service.guidelines.GuidelinesService,
     private val filteringRulesService: com.jervis.service.filtering.FilteringRulesService,
-    // Dependencies for qualification agent dispatch
-    private val agentOrchestratorService: com.jervis.service.agent.coordinator.AgentOrchestratorService,
     private val chatService: com.jervis.service.chat.ChatService,
     private val chatMessageService: com.jervis.service.chat.ChatMessageService,
     // Dependencies for internal routing modules (injected, used by install*Api extensions)
@@ -831,92 +828,64 @@ class KtorRpcServer(
                                                 return@launch
                                             }
 
-                                            val kbResult = com.jervis.knowledgebase.model.FullIngestResult(
-                                                success = true,
-                                                chunksCount = r.chunksCount,
-                                                nodesCreated = r.nodesCreated,
-                                                edgesCreated = r.edgesCreated,
-                                                attachmentsProcessed = r.attachmentsProcessed,
-                                                attachmentsFailed = r.attachmentsFailed,
-                                                summary = r.summary,
-                                                entities = r.entities,
-                                                hasActionableContent = r.hasActionableContent,
-                                                suggestedActions = r.suggestedActions,
-                                                hasFutureDeadline = r.hasFutureDeadline,
-                                                suggestedDeadline = r.suggestedDeadline,
-                                                isAssignedToMe = r.isAssignedToMe,
-                                                urgency = r.urgency,
-                                                // EPIC 2: Enhanced qualifier output
-                                                actionType = r.actionType,
-                                                estimatedComplexity = r.estimatedComplexity,
-                                                suggestedAgent = r.suggestedAgent,
-                                                affectedFiles = r.affectedFiles,
-                                                relatedKbNodes = r.relatedKbNodes,
+                                            // Save KB result fields to task document
+                                            taskService.saveKbResult(
+                                                taskId,
+                                                kbSummary = r.summary.take(2000),
+                                                kbEntities = r.entities,
+                                                kbActionable = r.hasActionableContent,
                                             )
 
-                                            // Emit progress for routing step via callback
-                                            val onProgress: suspend (String, Map<String, String>) -> Unit = { message, metadata ->
-                                                taskService.appendQualificationStep(
-                                                    taskId,
-                                                    com.jervis.entity.QualificationStepRecord(
-                                                        timestamp = java.time.Instant.now(),
-                                                        step = metadata["step"] ?: "unknown",
-                                                        message = message,
-                                                        metadata = metadata,
-                                                    ),
+                                            // Evaluate filtering rules
+                                            val filterAction = try {
+                                                val sourceType = com.jervis.qualifier.KbDoneRouter.extractSourceType(task.sourceUrn)
+                                                filteringRulesService.evaluate(
+                                                    sourceType = sourceType,
+                                                    subject = r.summary.take(200),
+                                                    body = task.content.take(2000),
+                                                    labels = r.entities,
                                                 )
-                                                notificationRpcImpl.emitQualificationProgress(
-                                                    taskId = body.taskId,
-                                                    clientId = body.clientId,
-                                                    message = message,
-                                                    step = metadata["step"] ?: "unknown",
-                                                    metadata = metadata,
-                                                )
+                                            } catch (e: Exception) {
+                                                logger.warn(e) { "KB_DONE_CALLBACK: filter eval failed taskId=${body.taskId} (non-fatal)" }
+                                                null
                                             }
 
-                                            val routingDecision = kbResultRouter.routeTask(task, kbResult, onProgress)
+                                            // IGNORE filter → DONE
+                                            if (filterAction == com.jervis.dto.filtering.FilterAction.IGNORE) {
+                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
+                                                logger.info { "KB_DONE_CALLBACK: filtered IGNORE taskId=${body.taskId}" }
+                                                return@launch
+                                            }
 
-                                            when (routingDecision.state) {
-                                                com.jervis.dto.TaskStateEnum.QUALIFYING -> {
-                                                    // Actionable → dispatch to GPU qualification agent
-                                                    val chatTopics = try {
-                                                        val session = chatService.getOrCreateActiveSession()
-                                                        val messages = chatMessageService.getLastMessages(session.id, 10)
-                                                        messages
-                                                            .filter { it.role == com.jervis.entity.MessageRole.USER || it.role == com.jervis.entity.MessageRole.ASSISTANT }
-                                                            .map { com.jervis.configuration.ChatTopicDto(role = it.role.name.lowercase(), content = it.content.take(200)) }
-                                                    } catch (e: Exception) {
-                                                        logger.debug(e) { "Failed to get chat topics for qualification" }
-                                                        emptyList()
-                                                    }
+                                            // Not actionable → DONE (info only, indexed in KB)
+                                            if (!r.hasActionableContent) {
+                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
+                                                logger.info { "KB_DONE_CALLBACK: not actionable taskId=${body.taskId}" }
+                                                return@launch
+                                            }
 
-                                                    // Transition INDEXING → QUALIFYING
-                                                    taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUALIFYING)
-
-                                                    val dispatched = agentOrchestratorService.dispatchQualification(task, kbResult, chatTopics)
-                                                    if (dispatched) {
-                                                        logger.info {
-                                                            "KB_DONE_CALLBACK: qualification dispatched taskId=${body.taskId} reason=${routingDecision.reason}"
-                                                        }
-                                                        onProgress(
-                                                            "GPU kvalifikační agent analyzuje úkol...",
-                                                            mapOf("step" to "qualifying", "agent" to "qualification_agent"),
+                                            // Push urgent alert if applicable
+                                            if (filterAction == com.jervis.dto.filtering.FilterAction.URGENT || r.urgency == "urgent") {
+                                                if (chatRpcImpl.isUserOnline()) {
+                                                    try {
+                                                        chatRpcImpl.pushUrgentAlert(
+                                                            sourceUrn = task.sourceUrn.value,
+                                                            taskId = task.id.toString(),
+                                                            summary = r.summary.take(200),
+                                                            suggestedAction = r.suggestedActions.firstOrNull(),
+                                                            taskContent = task.content,
                                                         )
-                                                    } else {
-                                                        // GPU unavailable → fall back to QUEUED (skip qualification)
-                                                        logger.warn { "KB_DONE_CALLBACK: qualification unavailable, falling back to QUEUED taskId=${body.taskId}" }
-                                                        taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
+                                                    } catch (e: Exception) {
+                                                        logger.warn(e) { "KB_DONE_CALLBACK: failed to push urgent alert taskId=${body.taskId}" }
                                                     }
-                                                }
-                                                else -> {
-                                                    // DONE or other terminal state
-                                                    taskService.updateState(task, routingDecision.state)
                                                 }
                                             }
 
+                                            // Actionable → QUEUED (orchestrator classifies as first step)
+                                            taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
                                             logger.info {
-                                                "KB_DONE_CALLBACK: routed taskId=${body.taskId} state=${routingDecision.state} " +
-                                                    "reason=${routingDecision.reason} scheduled=${routingDecision.scheduledCopyCreated}"
+                                                "KB_DONE_CALLBACK: taskId=${body.taskId} → QUEUED " +
+                                                    "actionable=${r.hasActionableContent} urgency=${r.urgency}"
                                             }
                                         } catch (e: Exception) {
                                             logger.error(e) { "KB_DONE_CALLBACK: failed to process result taskId=${body.taskId}" }
@@ -1009,161 +978,6 @@ class KtorRpcServer(
                                 } catch (e: Exception) {
                                     logger.warn(e) { "Failed to get active chat topics" }
                                     call.respondText("""{"topics":[],"clientId":"","projectId":""}""", io.ktor.http.ContentType.Application.Json)
-                                }
-                            }
-
-                            // Qualification agent callback: Python sends qualification result here
-                            post("/internal/qualification-done") {
-                                try {
-                                    val body = call.receive<QualificationDoneCallback>()
-                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} decision=${body.decision}" }
-
-                                    launch {
-                                        try {
-                                            val taskId = com.jervis.common.types.TaskId(ObjectId(body.taskId))
-                                            val task = taskRepository.getById(taskId)
-
-                                            if (task == null) {
-                                                logger.error { "QUALIFICATION_DONE: task not found taskId=${body.taskId}" }
-                                                return@launch
-                                            }
-
-                                            if (task.state != com.jervis.dto.TaskStateEnum.QUALIFYING) {
-                                                logger.warn { "QUALIFICATION_DONE: task not in QUALIFYING state taskId=${body.taskId} state=${task.state}" }
-                                                return@launch
-                                            }
-
-                                            // Emit qualification progress
-                                            taskService.appendQualificationStep(
-                                                taskId,
-                                                com.jervis.entity.QualificationStepRecord(
-                                                    timestamp = java.time.Instant.now(),
-                                                    step = "qualification_done",
-                                                    message = body.reason ?: "Kvalifikace dokončena",
-                                                    metadata = mapOf(
-                                                        "agent" to "qualification_agent",
-                                                        "decision" to body.decision,
-                                                        "priority" to (body.priorityScore?.toString() ?: ""),
-                                                    ),
-                                                ),
-                                            )
-                                            notificationRpcImpl.emitQualificationProgress(
-                                                taskId = body.taskId,
-                                                clientId = body.clientId,
-                                                message = body.reason ?: "Kvalifikace dokončena",
-                                                step = "qualification_done",
-                                                metadata = mapOf("agent" to "qualification_agent", "decision" to body.decision),
-                                            )
-
-                                            // Save prepared context from GPU qualification agent
-                                            val preparedContext = body.contextSummary ?: body.suggestedApproach
-                                            if (preparedContext != null || body.contextSummary != null) {
-                                                val contextJson = buildString {
-                                                    append("{")
-                                                    body.contextSummary?.let { append("\"context\":\"${it.replace("\"", "\\\"").replace("\n", "\\n")}\",") }
-                                                    body.suggestedApproach?.let { append("\"approach\":\"${it.replace("\"", "\\\"").replace("\n", "\\n")}\",") }
-                                                    body.actionType?.let { append("\"actionType\":\"$it\",") }
-                                                    body.estimatedComplexity?.let { append("\"complexity\":\"$it\",") }
-                                                    append("\"priority\":${body.priorityScore ?: 5}")
-                                                    append("}")
-                                                }
-                                                taskService.saveQualifierContext(taskId, contextJson)
-                                            }
-
-                                            when (body.decision) {
-                                                "QUEUED" -> {
-                                                    // Qualification says: proceed to orchestration (with prepared context)
-                                                    val updatedTask = task.copy(
-                                                        priorityScore = body.priorityScore ?: task.priorityScore,
-                                                        priorityReason = body.reason ?: task.priorityReason,
-                                                        actionType = body.actionType ?: task.actionType,
-                                                        estimatedComplexity = body.estimatedComplexity ?: task.estimatedComplexity,
-                                                    )
-                                                    taskRepository.save(updatedTask)
-                                                    taskService.updateState(updatedTask, com.jervis.dto.TaskStateEnum.QUEUED)
-                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → QUEUED priority=${body.priorityScore} actionType=${body.actionType}" }
-                                                }
-                                                "DONE" -> {
-                                                    taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
-                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → DONE reason=${body.reason}" }
-                                                }
-                                                "URGENT_ALERT" -> {
-                                                    // Push urgent alert with task content to chat, then QUEUED for orchestration
-                                                    try {
-                                                        chatRpcImpl.pushUrgentAlert(
-                                                            sourceUrn = task.sourceUrn.value,
-                                                            taskId = body.taskId,
-                                                            summary = body.alertMessage ?: body.reason ?: task.content.lineSequence().firstOrNull()?.take(200) ?: "Urgent",
-                                                            suggestedAction = body.suggestedApproach?.lineSequence()?.firstOrNull(),
-                                                            taskContent = task.content,
-                                                        )
-                                                    } catch (e: Exception) {
-                                                        logger.warn(e) { "QUALIFICATION_DONE: failed to push urgent alert for taskId=${body.taskId}" }
-                                                    }
-                                                    val updatedTask = task.copy(
-                                                        priorityScore = body.priorityScore ?: task.priorityScore,
-                                                        priorityReason = body.reason ?: task.priorityReason,
-                                                        actionType = body.actionType ?: task.actionType,
-                                                        estimatedComplexity = body.estimatedComplexity ?: task.estimatedComplexity,
-                                                    )
-                                                    taskRepository.save(updatedTask)
-                                                    taskService.updateState(updatedTask, com.jervis.dto.TaskStateEnum.QUEUED)
-                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → URGENT_ALERT + QUEUED priority=${body.priorityScore}" }
-                                                }
-                                                "CONSOLIDATE" -> {
-                                                    // Merge incoming content into existing target task, mark current task DONE
-                                                    val targetTaskIdStr = body.targetTaskId
-                                                    if (targetTaskIdStr.isNullOrBlank()) {
-                                                        logger.warn { "QUALIFICATION_DONE: CONSOLIDATE without targetTaskId, defaulting to QUEUED" }
-                                                        taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
-                                                    } else {
-                                                        try {
-                                                            val targetTaskId = com.jervis.common.types.TaskId(ObjectId(targetTaskIdStr))
-                                                            val targetTask = taskRepository.getById(targetTaskId)
-                                                            if (targetTask == null) {
-                                                                logger.warn { "QUALIFICATION_DONE: CONSOLIDATE target task not found targetTaskId=$targetTaskIdStr, defaulting to QUEUED" }
-                                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
-                                                            } else {
-                                                                // Append new content to target task
-                                                                val consolidatedContent = buildString {
-                                                                    append(targetTask.content)
-                                                                    append("\n\n---\n## Konsolidováno z: ${task.sourceUrn.value}\n")
-                                                                    append(task.content)
-                                                                    if (!body.contextSummary.isNullOrBlank()) {
-                                                                        append("\n\n### Kontext kvalifikátoru\n")
-                                                                        append(body.contextSummary)
-                                                                    }
-                                                                }
-                                                                taskService.updateThreadActivity(targetTaskId, consolidatedContent)
-                                                                // Mark current task DONE (consolidated into target)
-                                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
-                                                                logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → CONSOLIDATE into targetTaskId=$targetTaskIdStr" }
-                                                            }
-                                                        } catch (e: Exception) {
-                                                            logger.error(e) { "QUALIFICATION_DONE: CONSOLIDATE failed for targetTaskId=$targetTaskIdStr" }
-                                                            taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
-                                                        }
-                                                    }
-                                                }
-                                                else -> {
-                                                    // Unknown decision — default to QUEUED
-                                                    logger.warn { "QUALIFICATION_DONE: unknown decision=${body.decision}, defaulting to QUEUED" }
-                                                    taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            logger.error(e) { "QUALIFICATION_DONE: failed to process result taskId=${body.taskId}" }
-                                        }
-                                    }
-
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to process qualification done callback" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
                                 }
                             }
 
@@ -1593,29 +1407,6 @@ data class ClassifyMeetingRequest(
     val title: String? = null,
 )
 
-@kotlinx.serialization.Serializable
-data class QualificationDoneCallback(
-    @kotlinx.serialization.SerialName("task_id") val taskId: String,
-    @kotlinx.serialization.SerialName("client_id") val clientId: String,
-    /** "QUEUED" or "DONE" */
-    val decision: String,
-    /** Priority score 0-100 (higher = more urgent) */
-    @kotlinx.serialization.SerialName("priority_score") val priorityScore: Int? = null,
-    /** Human-readable reason for the decision */
-    val reason: String? = null,
-    /** Alert message for URGENT_ALERT decisions */
-    @kotlinx.serialization.SerialName("alert_message") val alertMessage: String? = null,
-    /** Target task ID for CONSOLIDATE decisions — merge content into this task */
-    @kotlinx.serialization.SerialName("target_task_id") val targetTaskId: String? = null,
-    /** Prepared context from GPU qualification agent (KB search results, related items) */
-    @kotlinx.serialization.SerialName("context_summary") val contextSummary: String? = null,
-    /** Suggested approach/plan for the orchestrator */
-    @kotlinx.serialization.SerialName("suggested_approach") val suggestedApproach: String? = null,
-    /** Refined action type from qualification (e.g., CODE_FIX, RESPOND_EMAIL) */
-    @kotlinx.serialization.SerialName("action_type") val actionType: String? = null,
-    /** Refined complexity estimate from qualification */
-    @kotlinx.serialization.SerialName("estimated_complexity") val estimatedComplexity: String? = null,
-)
 
 /**
  * Recursively convert Any? to kotlinx.serialization JsonElement.

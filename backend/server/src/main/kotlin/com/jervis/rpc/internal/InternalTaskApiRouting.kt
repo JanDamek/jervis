@@ -417,7 +417,6 @@ fun Routing.installInternalTaskApi(
                     ProcessingMode.BACKGROUND,
                     listOf(
                         TaskStateEnum.INDEXING,
-                        TaskStateEnum.QUALIFYING,
                         TaskStateEnum.QUEUED,
                         TaskStateEnum.PROCESSING,
                         TaskStateEnum.BLOCKED,
@@ -428,7 +427,6 @@ fun Routing.installInternalTaskApi(
                     ProcessingMode.BACKGROUND,
                     listOf(
                         TaskStateEnum.INDEXING,
-                        TaskStateEnum.QUALIFYING,
                         TaskStateEnum.QUEUED,
                         TaskStateEnum.PROCESSING,
                         TaskStateEnum.BLOCKED,

@@ -221,16 +221,9 @@ class IndexingQueueRpcImpl(
                 return false
             }
 
-            // Check if another task is already being qualified (only one at a time)
-            val qualifyingCount = taskRepository.countByState(TaskStateEnum.QUALIFYING)
-            if (qualifyingCount > 0) {
-                logger.warn { "Cannot process task $taskId: another task is already being qualified" }
-                return false
-            }
-
-            // Change state to QUALIFYING to start KB processing immediately
-            taskService.updateState(task, TaskStateEnum.QUALIFYING)
-            logger.info { "Task $taskId marked for immediate KB processing" }
+            // Re-trigger indexing by releasing the claim so the indexing loop picks it up
+            taskService.returnToIndexingQueue(task)
+            logger.info { "Task $taskId returned to indexing queue for immediate processing" }
             true
         } catch (e: Exception) {
             logger.error(e) { "Failed to process KB item now: $taskId" }
@@ -254,7 +247,7 @@ class IndexingQueueRpcImpl(
         )
         val activeServerTasksList = mongoTemplate.find(
             Query(
-                Criteria.where("state").`in`(listOf(TaskStateEnum.INDEXING, TaskStateEnum.QUALIFYING, TaskStateEnum.DONE).map { it.name })
+                Criteria.where("state").`in`(listOf(TaskStateEnum.INDEXING, TaskStateEnum.DONE).map { it.name })
                     .and("type").`in`(indexingTaskTypes.map { it.name }),
             ).with(Sort.by(Sort.Direction.DESC, "createdAt")).limit(500),
             TaskDocument::class.java, "tasks",
@@ -436,7 +429,6 @@ class IndexingQueueRpcImpl(
         // NOT task.sourceUrn (e.g. "email::conn:xxx,msgId:yyy").
         val indexingActiveStates = listOf(
             TaskStateEnum.INDEXING,
-            TaskStateEnum.QUALIFYING,
             TaskStateEnum.DONE,
         )
         val activeServerTasksList = mongoTemplate.find(
@@ -452,50 +444,10 @@ class IndexingQueueRpcImpl(
         val kbInProgress = kbQueueResponse.items.filter { it.status == "in_progress" }
         val kbPending = kbQueueResponse.items.filter { it.status == "pending" }
 
-        // Server QUALIFYING tasks — reuse from the activeServerTasks query (eliminates duplicate DB scan)
-        val qualifyingTasks = activeServerTasksList
-            .filter { it.state == TaskStateEnum.QUALIFYING }
-            .sortedBy { it.qualificationStartedAt }
-
-        // KB extraction IN_PROGRESS items exclude those that match a QUALIFYING server task
-        // (they represent different stages — qualification = RAG+summary, extraction = graph)
-        val qualifyingCorrelationIds = qualifyingTasks.map { it.correlationId }.toSet()
-        val kbInProgressFiltered = kbInProgress.filter { it.sourceUrn !in qualifyingCorrelationIds }
-
-        // Enrich KB items → PipelineItemDto
-        val serverQualifyingItems = qualifyingTasks.map { task ->
-            val clientName = clientMap[task.clientId]?.name ?: task.clientId.value.toHexString()
-            val connName = extractConnectionName(task.sourceUrn.value, connectionMap)
-            PipelineItemDto(
-                id = task.id.value.toHexString(),
-                type = taskTypeToItemType(task.type),
-                title = extractTaskTitle(task),
-                connectionName = connName,
-                clientName = clientName,
-                sourceUrn = task.sourceUrn.value,
-                createdAt = task.createdAt.formatIso(),
-                pipelineState = "QUALIFYING",
-                retryCount = task.qualificationRetries,
-                errorMessage = task.errorMessage,
-                taskId = task.id.value.toHexString(),
-                queuePosition = null,
-                processingMode = task.processingMode.name,
-                qualificationStartedAt = task.qualificationStartedAt?.formatIso(),
-                qualificationSteps = task.qualificationSteps.map { step ->
-                    QualificationStepDto(
-                        timestamp = step.timestamp.formatIso(),
-                        step = step.step,
-                        message = step.message,
-                        metadata = step.metadata,
-                    )
-                },
-            )
-        }
-
-        val kbExtractionItems = kbInProgressFiltered.mapIndexed { index, item ->
+        val kbExtractionItems = kbInProgress.mapIndexed { index, item ->
             enrichKbItem(item, index, activeServerTasks, clientMap, connectionMap)
         }
-        val kbProcessingAll = serverQualifyingItems + kbExtractionItems
+        val kbProcessingAll = kbExtractionItems
         val kbWaitingAll = kbPending.mapIndexed { index, item ->
             enrichKbItem(item, index, activeServerTasks, clientMap, connectionMap)
         }

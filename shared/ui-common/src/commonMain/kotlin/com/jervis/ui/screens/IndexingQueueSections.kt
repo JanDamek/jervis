@@ -704,7 +704,6 @@ private fun capabilityIcon(capability: String): ImageVector = when (capability) 
 @Composable
 private fun pipelineStateLabel(state: String): String = when (state) {
     "WAITING" -> "Čeká"
-    "QUALIFYING" -> "Indexuje"
     "RETRYING" -> "Opakuje"
     "QUEUED" -> "Ve frontě"
     "PROCESSING" -> "Zpracovává"
@@ -716,7 +715,6 @@ private fun pipelineStateLabel(state: String): String = when (state) {
 @Composable
 private fun pipelineStateColor(state: String): Color = when (state) {
     "WAITING" -> MaterialTheme.colorScheme.onSurfaceVariant
-    "QUALIFYING" -> MaterialTheme.colorScheme.tertiary
     "RETRYING" -> MaterialTheme.colorScheme.error
     "QUEUED" -> MaterialTheme.colorScheme.primary
     "PROCESSING" -> MaterialTheme.colorScheme.primary

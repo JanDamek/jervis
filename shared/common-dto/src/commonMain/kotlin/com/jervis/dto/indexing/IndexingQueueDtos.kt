@@ -130,7 +130,7 @@ data class PipelineItemDto(
     val sourceUrn: String?,
     /** ISO 8601 – when the item entered this stage. */
     val createdAt: String?,
-    /** Pipeline state: WAITING, QUALIFYING, RETRYING, QUEUED, PROCESSING, CODING, DONE */
+    /** Pipeline state: WAITING, RETRYING, QUEUED, PROCESSING, CODING, DONE */
     val pipelineState: String,
     /** Number of retry attempts (for items in backoff). */
     val retryCount: Int = 0,

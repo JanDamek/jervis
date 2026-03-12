@@ -52,7 +52,7 @@ class KnowledgeService:
         self._llm_http = httpx.AsyncClient(timeout=settings.LLM_CALL_TIMEOUT)
         # LLM for ingest tasks — explicit num_ctx prevents Ollama using small
         # default (often 2048), and timeout prevents indefinite hangs that block
-        # the async callback to Kotlin (causing infinite QUALIFYING→retry loop).
+        # the async callback to Kotlin (causing infinite INDEXING→retry loop).
         # Same pattern as orchestrator: TOTAL_CONTEXT_WINDOW=32768, RESPONSE_RESERVE, TOKEN_RATIO.
         self.ingest_llm_simple = ChatOllama(
             base_url=settings.OLLAMA_INGEST_BASE_URL,

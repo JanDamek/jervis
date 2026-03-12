@@ -53,7 +53,6 @@ private fun userTaskStateBadge(state: String): Pair<String, Color> = when (state
     "PROCESSING" -> "Zpracovává se" to Color(0xFFF57C00)
     "CODING" -> "Kódování" to Color(0xFFF57C00)
     "INDEXING" -> "Indexace" to Color(0xFF7B1FA2)
-    "QUALIFYING" -> "Kvalifikace" to Color(0xFF7B1FA2)
     "BLOCKED" -> "Blokován" to Color(0xFF757575)
     "NEW" -> "Nový" to Color(0xFF7B1FA2)
     else -> state to Color(0xFF757575)

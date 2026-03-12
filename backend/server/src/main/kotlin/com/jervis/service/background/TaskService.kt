@@ -50,7 +50,7 @@ class TaskService(
 
     /**
      * Bulk-mark all pipeline tasks for archived clients as DONE.
-     * Targets: INDEXING, QUALIFYING, QUEUED.
+     * Targets: INDEXING, QUEUED.
      * Scheduled tasks (NEW) are left untouched — they resume when client is unarchived.
      * Called on startup and periodically (every 5 min) from BackgroundEngine.
      */
@@ -60,7 +60,6 @@ class TaskService(
 
         val pipelineStates = listOf(
             TaskStateEnum.INDEXING.name,
-            TaskStateEnum.QUALIFYING.name,
             TaskStateEnum.QUEUED.name,
         )
         val query = Query(
@@ -400,6 +399,23 @@ class TaskService(
     }
 
     /**
+     * Save KB result fields to task document after KB processing completes.
+     */
+    suspend fun saveKbResult(
+        taskId: TaskId,
+        kbSummary: String,
+        kbEntities: List<String>,
+        kbActionable: Boolean,
+    ) {
+        val query = Query(Criteria.where("_id").`is`(taskId.value))
+        val update = Update()
+            .set("kbSummary", kbSummary)
+            .set("kbEntities", kbEntities)
+            .set("kbActionable", kbActionable)
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+    }
+
+    /**
      * Mark the task as ERROR with an error message, without requiring the expected state.
      * This is used for fatal errors where we need to ensure a task is marked as failed.
      */
@@ -427,7 +443,7 @@ class TaskService(
     }
 
     /**
-     * Return the task from QUALIFYING to INDEXING for retry.
+     * Return the task to INDEXING queue for retry after KB dispatch failure.
      * Uses DB-based exponential backoff: 1s, 2s, 4s, 8s, ... up to 5min, then stays at 5min forever.
      * Operational errors (timeout, connection refused) never mark as ERROR - they keep retrying.
      * The task is stored in DB with a future nextQualificationRetryAt timestamp.
@@ -550,15 +566,6 @@ class TaskService(
     }
 
     /**
-     * Save qualifier prepared context on a task (from GPU qualification agent callback).
-     */
-    suspend fun saveQualifierContext(taskId: TaskId, context: String) {
-        val query = Query(Criteria.where("_id").`is`(taskId.value))
-        val update = Update().set("qualifierPreparedContext", context)
-        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
-    }
-
-    /**
      * Append a qualification progress step to the task's history.
      * Uses MongoDB $push for atomic append without race conditions.
      */
@@ -613,7 +620,7 @@ class TaskService(
     suspend fun resolveAsHandledExternally(taskId: TaskId): Boolean {
         // Resolve any active task — user replied externally, task is no longer needed
         val activeStates = listOf(
-            TaskStateEnum.INDEXING, TaskStateEnum.QUALIFYING, TaskStateEnum.QUEUED,
+            TaskStateEnum.INDEXING, TaskStateEnum.QUEUED,
             TaskStateEnum.PROCESSING, TaskStateEnum.USER_TASK, TaskStateEnum.BLOCKED,
         ).map { it.name }
         val query = Query(
@@ -680,7 +687,6 @@ class TaskService(
     /**
      * Reset stale tasks stuck in transient states after pod crash/restart.
      * PROCESSING older than threshold → QUEUED (BACKGROUND tasks only)
-     * QUALIFYING older than threshold → INDEXING
      * Returns the number of tasks reset.
      *
      * NOTE: FOREGROUND tasks in PROCESSING are completed chat tasks (now DONE).
@@ -689,20 +695,16 @@ class TaskService(
     suspend fun resetStaleTasks(): Int {
         var resetCount = 0
 
-        // Reset QUALIFYING → INDEXING (GPU qualification agent crashed, re-index + re-qualify)
-        val qualifyingQuery = Query(
-            Criteria.where("state").`is`(TaskStateEnum.QUALIFYING.name),
-        )
-        val qualifyingUpdate = Update()
+        // Migrate any legacy QUALIFYING tasks → INDEXING (state removed in pipeline unification)
+        val legacyQuery = Query(Criteria.where("state").`is`("QUALIFYING"))
+        val legacyUpdate = Update()
             .set("state", TaskStateEnum.INDEXING.name)
             .unset("indexingClaimedAt")
-        val qualifyingResult = mongoTemplate.updateMulti(qualifyingQuery, qualifyingUpdate, TaskDocument::class.java)
+        val legacyResult = mongoTemplate.updateMulti(legacyQuery, legacyUpdate, TaskDocument::class.java)
             .awaitSingle()
-        val qualifyingCount = qualifyingResult.modifiedCount.toInt()
-        resetCount += qualifyingCount
-
-        if (qualifyingCount > 0) {
-            logger.warn { "STALE_RECOVERY: Reset $qualifyingCount QUALIFYING tasks → INDEXING" }
+        if (legacyResult.modifiedCount > 0) {
+            logger.warn { "STALE_RECOVERY: Migrated ${legacyResult.modifiedCount} legacy QUALIFYING tasks → INDEXING" }
+            resetCount += legacyResult.modifiedCount.toInt()
         }
 
         // Release stale indexing claims (KB dispatch in progress when pod crashed)

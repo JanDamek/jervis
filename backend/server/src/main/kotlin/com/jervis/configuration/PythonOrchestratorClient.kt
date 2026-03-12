@@ -243,42 +243,6 @@ class PythonOrchestratorClient(baseUrl: String) {
     // Qualification endpoint: LLM agent for smarter routing decisions
     // -----------------------------------------------------------------------
 
-    /**
-     * Dispatch task to qualification agent — POST /qualify.
-     *
-     * Fire-and-forget: returns immediately. Python runs LLM qualification agent
-     * with CORE tools (kb_search, etc.) and pushes result to Kotlin via
-     * POST /internal/qualification-done.
-     *
-     * @return true if dispatched successfully, false if unavailable
-     */
-    suspend fun qualify(request: QualifyRequestDto): Boolean {
-        logger.info { "PYTHON_QUALIFY_START: taskId=${request.taskId}" }
-        return try {
-            val response = client.post("$apiBaseUrl/qualify") {
-                contentType(ContentType.Application.Json)
-                setBody(request)
-            }
-            if (response.status.value == 429) {
-                logger.info { "PYTHON_QUALIFY_BUSY: returned 429, skipping" }
-                return false
-            }
-            if (response.status.value !in 200..299) {
-                val body = runCatching { response.bodyAsText() }.getOrDefault("")
-                logger.error { "PYTHON_QUALIFY_ERROR: taskId=${request.taskId} status=${response.status.value} body=$body" }
-                circuitBreaker.recordFailure()
-                return false
-            }
-            circuitBreaker.recordSuccess()
-            logger.info { "PYTHON_QUALIFY_DISPATCHED: taskId=${request.taskId}" }
-            true
-        } catch (e: Exception) {
-            circuitBreaker.recordFailure()
-            logger.error(e) { "PYTHON_QUALIFY_FAILED: taskId=${request.taskId}" }
-            false
-        }
-    }
-
     // -----------------------------------------------------------------------
     // Background orchestration endpoint
     // -----------------------------------------------------------------------
@@ -430,63 +394,4 @@ data class ChatSummaryBlockDto(
     @SerialName("checkpoint_reason") val checkpointReason: String? = null,
 )
 
-// --- Qualification Agent DTOs ---
-
-@Serializable
-data class QualifyRequestDto(
-    @SerialName("task_id") val taskId: String,
-    @SerialName("client_id") val clientId: String,
-    @SerialName("project_id") val projectId: String? = null,
-    @SerialName("group_id") val groupId: String? = null,
-    @SerialName("client_name") val clientName: String? = null,
-    @SerialName("project_name") val projectName: String? = null,
-    /** Original task content (source text). */
-    val content: String,
-    /** KB extraction summary. */
-    val summary: String,
-    /** KB-detected entities. */
-    val entities: List<String> = emptyList(),
-    /** KB-suggested actions (e.g., "decompose_issue", "analyze_code"). */
-    @SerialName("suggested_actions") val suggestedActions: List<String> = emptyList(),
-    /** KB urgency assessment. */
-    val urgency: String = "normal",
-    /** KB-inferred action type (e.g., "CODE_FIX"). */
-    @SerialName("action_type") val actionType: String? = null,
-    /** KB-inferred complexity (e.g., "MEDIUM"). */
-    @SerialName("estimated_complexity") val estimatedComplexity: String? = null,
-    /** KB-suggested agent. */
-    @SerialName("suggested_agent") val suggestedAgent: String? = null,
-    /** KB-detected related files. */
-    @SerialName("affected_files") val affectedFiles: List<String> = emptyList(),
-    /** KB-detected related graph nodes. */
-    @SerialName("related_kb_nodes") val relatedKbNodes: List<String> = emptyList(),
-    /** Recent chat topics for context relevance check. */
-    @SerialName("chat_topics") val chatTopics: List<ChatTopicDto> = emptyList(),
-    /** Source URN (email, jira, etc.). */
-    @SerialName("source_urn") val sourceUrn: String = "",
-    /** Cloud model tier available for qualification. */
-    @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "NONE",
-    /** Whether this task has email/source attachments with extract records. */
-    @SerialName("has_attachments") val hasAttachments: Boolean = false,
-    /** Number of attachments for this task. */
-    @SerialName("attachment_count") val attachmentCount: Int = 0,
-    /** Active tasks for the same client — qualifier checks for consolidation. */
-    @SerialName("active_tasks") val activeTasks: List<ActiveTaskDto> = emptyList(),
-)
-
-@Serializable
-data class ActiveTaskDto(
-    @SerialName("task_id") val taskId: String,
-    val type: String,
-    @SerialName("task_name") val taskName: String,
-    @SerialName("source_urn") val sourceUrn: String,
-    @SerialName("topic_id") val topicId: String? = null,
-    val state: String,
-)
-
-@Serializable
-data class ChatTopicDto(
-    val role: String,
-    val content: String,
-)
 

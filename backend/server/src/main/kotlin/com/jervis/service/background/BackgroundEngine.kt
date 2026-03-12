@@ -1062,7 +1062,7 @@ class BackgroundEngine(
      * Runs every [BackgroundProperties.idleReviewInterval] (default 30 min).
      * Skips if:
      * - idleReviewEnabled is false
-     * - There are active tasks (QUALIFYING, QUEUED, PROCESSING)
+     * - There are active tasks (QUEUED, PROCESSING)
      * - An existing IDLE_REVIEW task is already pending/running
      */
     /**
@@ -1098,7 +1098,6 @@ class BackgroundEngine(
                 ) + taskRepository.countByProcessingModeAndState(
                     com.jervis.entity.ProcessingMode.BACKGROUND, TaskStateEnum.QUEUED,
                 ) + taskRepository.countByState(TaskStateEnum.PROCESSING) +
-                    taskRepository.countByState(TaskStateEnum.QUALIFYING) +
                     taskRepository.countByState(TaskStateEnum.INDEXING)
 
                 if (hasFgBgWork > 0) {
@@ -1132,7 +1131,6 @@ class BackgroundEngine(
             states = listOf(
                 TaskStateEnum.NEW,
                 TaskStateEnum.INDEXING,
-                TaskStateEnum.QUALIFYING,
                 TaskStateEnum.QUEUED,
                 TaskStateEnum.PROCESSING,
             ),
@@ -1645,7 +1643,6 @@ class BackgroundEngine(
             states = listOf(
                 TaskStateEnum.NEW,
                 TaskStateEnum.INDEXING,
-                TaskStateEnum.QUALIFYING,
                 TaskStateEnum.QUEUED,
                 TaskStateEnum.PROCESSING,
             ),

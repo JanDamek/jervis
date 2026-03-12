@@ -399,7 +399,6 @@ private fun getTaskTypeLabel(taskType: String): String = when (taskType) {
 private fun getTaskStateLabel(state: String): String = when (state) {
     "NEW" -> "Nový"
     "INDEXING" -> "Indexace"
-    "QUALIFYING" -> "Kvalifikace"
     "QUEUED" -> "Ve frontě"
     "PROCESSING" -> "Zpracovává se"
     "CODING" -> "Kódování"

@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service
 /**
  * EPIC 2-S2: Automatic task creation from qualifier findings.
  *
- * Called by KbResultRouter after successful qualification.
+ * Called after successful KB indexing to create derived tasks.
  * Creates the appropriate task type based on actionType and complexity:
  *
  * - CODE_FIX + TRIVIAL/SIMPLE → BACKGROUND task (auto-dispatch, no approval)
