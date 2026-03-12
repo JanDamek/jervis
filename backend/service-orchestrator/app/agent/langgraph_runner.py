@@ -641,16 +641,34 @@ async def run_graph_agent(
     compiled = _get_compiled_graph()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
 
-    # Check for pre-existing thinking map (created by dispatch_map in chat)
+    # Check for pre-existing thinking map (created by dispatch_map in chat,
+    # OR previously EXECUTING graph that was interrupted by pod restart)
     existing_graph = await agent_store.load(request.task_id)
     pre_built_graph = None
-    if existing_graph and existing_graph.status in (GraphStatus.READY, GraphStatus.BUILDING):
+    if existing_graph and existing_graph.status in (
+        GraphStatus.READY, GraphStatus.BUILDING, GraphStatus.EXECUTING,
+    ):
+        # Resume from existing graph — handles both pre-built maps and pod restart recovery
+        completed = sum(1 for v in existing_graph.vertices.values() if v.status == VertexStatus.COMPLETED)
+        running = sum(1 for v in existing_graph.vertices.values() if v.status == VertexStatus.RUNNING)
         logger.info(
-            "GRAPH_AGENT: found pre-existing thinking map for task %s (%d vertices)",
-            request.task_id, len(existing_graph.vertices),
+            "GRAPH_AGENT_RESUME | task=%s | status=%s | vertices=%d | completed=%d | running=%d",
+            request.task_id, existing_graph.status.value,
+            len(existing_graph.vertices), completed, running,
         )
-        # Mark root vertex as COMPLETED (decomposition already done by chat)
-        # Use complete_vertex() to fill outgoing edge payloads and propagate readiness
+
+        # Reset stale RUNNING vertices back to READY (pod restart killed their execution)
+        for v in existing_graph.vertices.values():
+            if v.status == VertexStatus.RUNNING:
+                logger.info(
+                    "GRAPH_AGENT_RESUME: resetting stale RUNNING vertex '%s' → READY",
+                    v.title,
+                )
+                v.status = VertexStatus.READY
+                v.agent_messages = []  # Clear stale LLM conversation
+                v.agent_iteration = 0
+
+        # Mark root vertex as COMPLETED if not already (decomposition already done)
         root = existing_graph.vertices.get(existing_graph.root_vertex_id)
         if root and root.status != VertexStatus.COMPLETED:
             complete_vertex(
