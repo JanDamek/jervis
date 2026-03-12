@@ -28,7 +28,9 @@ fun MainScreen(
     // Chat/Tasky: client-side filter on message type (same DB source, just visibility toggle)
     val filteredMessages = remember(chatMessages, showChat, showTasks, showNeedReaction) {
         when {
-            showNeedReaction -> chatMessages // Server already returned unified timeline
+            showNeedReaction -> chatMessages.filter {
+                it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT
+            }
             showTasks -> chatMessages.filter { it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT }
             showChat -> chatMessages.filter { it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT }
             else -> chatMessages

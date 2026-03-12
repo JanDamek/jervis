@@ -20,7 +20,7 @@ from pydantic import BaseModel
 # ── Configuration ────────────────────────────────────────────────────────
 TTS_PORT = int(os.getenv("TTS_PORT", "8787"))
 TTS_WORKERS = int(os.getenv("TTS_WORKERS", "1"))
-TTS_MODEL = os.getenv("TTS_MODEL", "en_US-lessac-medium")  # deep male voice
+TTS_MODEL = os.getenv("TTS_MODEL", "cs_CZ-jirka-medium")  # Czech male voice (primary)
 TTS_DATA_DIR = Path(os.getenv("TTS_DATA_DIR", "/opt/jervis/data/tts"))
 TTS_SPEAKER_ID = int(os.getenv("TTS_SPEAKER_ID", "0"))
 TTS_SAMPLE_RATE = 22050
