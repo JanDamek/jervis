@@ -2,6 +2,7 @@ package com.jervis.repository
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
+import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.entity.meeting.MeetingDocument
 import kotlinx.coroutines.flow.Flow
@@ -62,6 +63,24 @@ interface MeetingRepository : CoroutineCrudRepository<MeetingDocument, ObjectId>
         clientId: ClientId,
         projectId: ProjectId,
         startedAt: java.time.Instant,
+    ): Flow<MeetingDocument>
+
+    // Deduplication: find active meeting with same client + type (for idempotent startRecording)
+    @Query("{ 'clientId': ?0, 'meetingType': ?1, 'state': { '\$in': ['RECORDING', 'UPLOADING'] }, 'deleted': false }")
+    suspend fun findActiveByClientIdAndMeetingType(
+        clientId: ClientId,
+        meetingType: MeetingTypeEnum,
+    ): MeetingDocument?
+
+    // Merge suggestion: find meetings with same (clientId, projectId, meetingType), overlapping time ±10min
+    @Query("{ 'clientId': ?0, 'projectId': ?1, 'meetingType': ?2, '_id': { '\$ne': ?3 }, 'deleted': false, 'startedAt': { '\$gte': ?4, '\$lte': ?5 } }")
+    fun findOverlapping(
+        clientId: ClientId,
+        projectId: ProjectId?,
+        meetingType: MeetingTypeEnum,
+        excludeId: ObjectId,
+        from: java.time.Instant,
+        to: java.time.Instant,
     ): Flow<MeetingDocument>
 
     @Query("{ 'clientId': ?0, 'deleted': false, 'startedAt': { \$gte: ?1, \$lt: ?2 } }", sort = "{ 'startedAt': -1 }")

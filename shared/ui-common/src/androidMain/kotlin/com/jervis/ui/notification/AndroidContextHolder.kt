@@ -4,7 +4,9 @@ import android.app.NotificationManager
 import android.content.Context
 import com.jervis.ui.audio.RecordingForegroundService
 import com.jervis.ui.storage.AudioChunkQueue
+import com.jervis.ui.storage.OfflineMeetingStorage
 import com.jervis.ui.storage.PendingMessageStorage
+import com.jervis.ui.storage.RecordingSessionStorage
 import com.jervis.ui.storage.RecordingStateStorage
 
 /**
@@ -21,7 +23,9 @@ object AndroidContextHolder {
         applicationContext = context.applicationContext
         AudioChunkQueue.init(applicationContext)
         PendingMessageStorage.init(applicationContext)
-        RecordingStateStorage.init(applicationContext)
+        OfflineMeetingStorage.init(applicationContext) // Legacy — needed for migration
+        RecordingStateStorage.init(applicationContext) // Legacy — needed for migration
+        RecordingSessionStorage.init(applicationContext)
 
         // Clean up stale recording notification from previous crash.
         // After crash the foreground service may have been restarted (START_STICKY legacy)

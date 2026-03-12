@@ -107,92 +107,93 @@ internal fun SpeakerAssignmentDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Scrollable content — LazyColumn for proper virtualized scrolling
+                // Sticky "New Speaker" button — always visible, outside scroll
+                JSecondaryButton(
+                    onClick = { showCreateForm = !showCreateForm },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (showCreateForm) "Skrýt formulář" else "Nový řečník")
+                }
+
+                // Inline create form — outside scroll, collapses when hidden
+                AnimatedVisibility(visible = showCreateForm) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        JTextField(
+                            value = newName,
+                            onValueChange = { newName = it },
+                            label = "Jméno",
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        JTextField(
+                            value = newNationality,
+                            onValueChange = { newNationality = it },
+                            label = "Národnost",
+                            placeholder = "např. Čech, Slovák, Němec",
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        JTextField(
+                            value = newLanguages,
+                            onValueChange = { newLanguages = it },
+                            label = "Jazyky",
+                            placeholder = "cs, sk, en",
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        JTextField(
+                            value = newNotes,
+                            onValueChange = { newNotes = it },
+                            label = "Poznámky pro LLM",
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            JPrimaryButton(
+                                onClick = {
+                                    if (newName.isNotBlank() && meeting.clientId != null) {
+                                        onCreateSpeaker(
+                                            SpeakerCreateDto(
+                                                clientId = meeting.clientId!!,
+                                                name = newName.trim(),
+                                                nationality = newNationality.trim().ifBlank { null },
+                                                languagesSpoken = newLanguages.split(",")
+                                                    .map { it.trim() }.filter { it.isNotBlank() },
+                                                notes = newNotes.trim().ifBlank { null },
+                                            ),
+                                        )
+                                        newName = ""
+                                        newNationality = ""
+                                        newLanguages = ""
+                                        newNotes = ""
+                                        showCreateForm = false
+                                    }
+                                },
+                                enabled = newName.isNotBlank(),
+                            ) {
+                                Text("Vytvořit")
+                            }
+                            JTextButton(onClick = { showCreateForm = false }) {
+                                Text("Zrušit")
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Scrollable speaker mapping rows only
                 LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    // "New Speaker" button
-                    item {
-                        JSecondaryButton(
-                            onClick = { showCreateForm = !showCreateForm },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (showCreateForm) "Skrýt formulář" else "Nový řečník")
-                        }
-                    }
-
-                    // Inline create form
-                    if (showCreateForm) {
-                        item {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                JTextField(
-                                    value = newName,
-                                    onValueChange = { newName = it },
-                                    label = "Jméno",
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                JTextField(
-                                    value = newNationality,
-                                    onValueChange = { newNationality = it },
-                                    label = "Národnost",
-                                    placeholder = "např. Čech, Slovák, Němec",
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                JTextField(
-                                    value = newLanguages,
-                                    onValueChange = { newLanguages = it },
-                                    label = "Jazyky",
-                                    placeholder = "cs, sk, en",
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                JTextField(
-                                    value = newNotes,
-                                    onValueChange = { newNotes = it },
-                                    label = "Poznámky pro LLM",
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    JPrimaryButton(
-                                        onClick = {
-                                            if (newName.isNotBlank() && meeting.clientId != null) {
-                                                onCreateSpeaker(
-                                                    SpeakerCreateDto(
-                                                        clientId = meeting.clientId!!,
-                                                        name = newName.trim(),
-                                                        nationality = newNationality.trim().ifBlank { null },
-                                                        languagesSpoken = newLanguages.split(",")
-                                                            .map { it.trim() }.filter { it.isNotBlank() },
-                                                        notes = newNotes.trim().ifBlank { null },
-                                                    ),
-                                                )
-                                                newName = ""
-                                                newNationality = ""
-                                                newLanguages = ""
-                                                newNotes = ""
-                                                showCreateForm = false
-                                            }
-                                        },
-                                        enabled = newName.isNotBlank(),
-                                    ) {
-                                        Text("Vytvořit")
-                                    }
-                                    JTextButton(onClick = { showCreateForm = false }) {
-                                        Text("Zrušit")
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    item { HorizontalDivider() }
-
                     if (uniqueLabels.isEmpty()) {
                         item {
                             Text(

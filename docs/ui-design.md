@@ -591,7 +591,7 @@ private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val 
 
 **Ad-hoc recording:** The mic button (🎙) in PersistentTopBar starts an instant recording with `clientId=null, meetingType=AD_HOC`. During recording, a stop button (⏹) replaces the mic button. Unclassified meetings appear in a "Neklasifikované nahrávky" section in MeetingsScreen with a "Klasifikovat" button that opens `ClassifyMeetingDialog`.
 
-**Offline mode:** When disconnected, the connection indicator shows an "Offline" chip (CloudOff icon + "Offline" text on `errorContainer` background, clickable for manual reconnect). No blocking overlay — the app is always usable. Chat input is disabled when offline. Meeting recording works offline (chunks saved to disk, auto-synced when connection restored). Cached clients/projects are shown from `OfflineDataCache`.
+**Offline mode:** When disconnected, the connection indicator shows an "Offline" chip (CloudOff icon + "Offline" text on `errorContainer` background, clickable for manual reconnect). No blocking overlay — the app is always usable. Chat input is disabled when offline. Recording is always local-first (chunks saved to disk, uploaded async by `RecordingUploadService`; works seamlessly offline). Cached clients/projects are shown from `OfflineDataCache`.
 
 **Chat message types** (`ChatMessage.MessageType`):
 - `USER_MESSAGE` — user bubble (primaryContainer, right-aligned)
@@ -1092,7 +1092,7 @@ Compact (<600dp):
 
 **State icons:** RECORDING, UPLOADING, UPLOADED/TRANSCRIBING/CORRECTING, TRANSCRIBED/CORRECTED/INDEXED, FAILED
 
-**Offline recording:** When server is unavailable, `MeetingViewModel.startRecording()` falls back to offline mode — generates a local UUID (prefix `offline_`), saves audio chunks to disk via `AudioChunkQueue`. On stop, metadata is saved via `OfflineMeetingStorage`. `OfflineMeetingSyncService` (created in `App.kt`) watches connection state and uploads offline meetings when connected. Offline meetings appear in a special "Offline nahrávky" section at the top of the list with sync state (PENDING/SYNCING/FAILED) and retry button.
+**Local-first recording:** All recordings use the unified local-first architecture — audio chunks are always saved to disk first via `AudioChunkQueue`, then uploaded asynchronously by `RecordingUploadService`. Recording state is persisted in `RecordingSessionStorage` (replaces legacy `RecordingState` and `OfflineMeeting` models). On stop, the recording is finalized only after all chunks have been uploaded. This works seamlessly both online and offline — when offline, chunks accumulate and upload when connection is restored.
 
 **Speaker management:**
 - `SpeakerDocument` (MongoDB collection `speakers`) -- per-client speaker profiles with name, nationality, languages, notes, voice sample reference, multi-embedding support
@@ -1846,7 +1846,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   +-- PlatformNotificationManager.kt
 +-- storage/
 |   +-- PendingMessageStorage.kt
-|   +-- RecordingStateStorage.kt
+|   +-- RecordingSessionStorage.kt
 +-- util/
 |   +-- IconButtons.kt                <- RefreshIconButton, DeleteIconButton, EditIconButton
 |   +-- ConfirmDialog.kt              <- ConfirmDialog (Czech defaults, keyboard support)

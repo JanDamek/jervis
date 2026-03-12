@@ -949,16 +949,28 @@ The Compose UI supports offline operation — the app renders immediately withou
 **Key components:**
 - `OfflineException` (`shared/domain/.../di/OfflineException.kt`): thrown when RPC called while offline
 - `OfflineDataCache` (expect/actual, 3 platforms): persists clients + projects for offline display
-- `OfflineMeetingStorage` (expect/actual, 3 platforms): persists offline meeting metadata
-- `OfflineMeetingSyncService` (`shared/ui-common/.../meeting/OfflineMeetingSyncService.kt`): auto-syncs offline meetings when connection restored
+- `RecordingSessionStorage` (expect/actual, 3 platforms): persists recording session state (replaces legacy `RecordingState` and `OfflineMeeting` models)
+- `RecordingUploadService` (`shared/ui-common/.../meeting/RecordingUploadService.kt`): unified local-first recording upload (replaces `OfflineMeetingSyncService`)
+
+**Recording architecture (local-first):**
+- All recordings are local-first: audio chunks are always saved to disk first
+- `RecordingUploadService` uploads chunks asynchronously in background while recording continues
+- On stop, recording is finalized only after all chunks have been uploaded
+- Works seamlessly both online and offline — when offline, chunks accumulate on disk and upload when connection is restored
+
+**Server-side meeting dedup:**
+- `MeetingDocument` has a `deviceSessionId` field (unique per recording session)
+- Compound index on `(clientId, meetingType, state, deleted)` prevents duplicate meetings
+- `MeetingRepository.findActiveByClientIdAndMeetingType()` and `findOverlapping()` queries support dedup logic
+- `MeetingCreateDto` includes `deviceSessionId` for server-side correlation
+- `MeetingDto` includes `mergeSuggestion` field (populated after classify/update for potential merge candidates)
 
 **Behavior:**
 - `JervisApp.kt` creates repository eagerly (lambda-based, not blocking on connect)
 - Desktop `ConnectionManager.repository` is non-nullable val
 - No blocking overlay on disconnect — replaced by "Offline" chip in `PersistentTopBar`
 - `ConnectionViewModel.isOffline: StateFlow<Boolean>` derives from connection state
-- Chat input disabled when offline; meeting recording works offline (chunks saved to disk)
-- `OfflineMeetingSyncService` watches connection state and uploads offline meetings on reconnect
+- Chat input disabled when offline; meeting recording works offline (chunks saved to disk, uploaded when connected)
 
 ### Ad-hoc Recording (Quick Record from Top Bar)
 
@@ -966,7 +978,9 @@ One-tap recording from `PersistentTopBar` — no dialog, no client/project selec
 
 **Key changes:**
 - `MeetingDocument.clientId` is nullable (`ClientId?`) — null means unclassified
-- `MeetingDto.clientId` and `MeetingCreateDto.clientId` are nullable (`String?`)
+- `MeetingDto.clientId` and `MeetingCreateDto.clientId` are nullable (`String?`); `MeetingCreateDto` also carries `deviceSessionId`
+- `MeetingDto.mergeSuggestion` — populated after classify/update when server detects potential merge candidates
+- `MeetingDocument.deviceSessionId` — unique per recording session, used for server-side dedup
 - `MeetingTypeEnum.AD_HOC` — new enum value for quick recordings
 - `PersistentTopBar` has a mic button (🎙) that calls `MeetingViewModel.startQuickRecording()` — records with `clientId=null, meetingType=AD_HOC`
 - Stop button (⏹) replaces mic button during recording

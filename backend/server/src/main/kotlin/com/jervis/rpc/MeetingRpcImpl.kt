@@ -56,6 +56,15 @@ class MeetingRpcImpl(
         val clientId = request.clientId?.let { ClientId.fromString(it) }
         val projectId = request.projectId?.let { ProjectId.fromString(it) }
 
+        // Deduplication: return existing active meeting with same (client, type)
+        if (clientId != null && request.meetingType != null) {
+            val existing = meetingRepository.findActiveByClientIdAndMeetingType(clientId, request.meetingType!!)
+            if (existing != null) {
+                logger.info { "Dedup: returning existing active meeting ${existing.id} for client=$clientId type=${request.meetingType}" }
+                return existing.toDto()
+            }
+        }
+
         val meetingId = ObjectId.get()
         val audioFilePath = directoryStructureService.meetingAudioFile(meetingId, clientId, projectId)
 
@@ -74,6 +83,7 @@ class MeetingRpcImpl(
             state = MeetingStateEnum.RECORDING,
             audioFilePath = audioFilePath.toString(),
             startedAt = Instant.now(),
+            deviceSessionId = request.deviceSessionId,
         )
 
         val saved = meetingRepository.save(document)
@@ -556,7 +566,8 @@ class MeetingRpcImpl(
             logger.info { "Meeting ${request.meetingId} classified and reset to TRANSCRIBED for KB indexing" }
         }
         logger.info { "Classified meeting ${request.meetingId} to client=${request.clientId} project=${request.projectId} group=${request.groupId}" }
-        return saved.toDto()
+        val suggestion = findMergeSuggestion(saved)
+        return saved.toDto(mergeSuggestion = suggestion)
     }
 
     override suspend fun updateMeeting(request: MeetingClassifyDto): MeetingDto {
@@ -629,7 +640,38 @@ class MeetingRpcImpl(
             "Updated meeting ${request.meetingId}: title=${request.title}, " +
                 "client=${request.clientId}, project=${request.projectId}, group=${request.groupId}, reassign=$reassign"
         }
-        return saved.toDto()
+        val suggestion = findMergeSuggestion(saved)
+        return saved.toDto(mergeSuggestion = suggestion)
+    }
+
+    /**
+     * Find a merge candidate — another meeting with same (clientId, projectId, meetingType)
+     * whose startedAt is within ±10 minutes of [meeting].startedAt.
+     */
+    private suspend fun findMergeSuggestion(meeting: MeetingDocument): com.jervis.dto.meeting.MergeSuggestionDto? {
+        val clientId = meeting.clientId ?: return null
+        val meetingType = meeting.meetingType ?: return null
+        val startedAt = meeting.startedAt
+        val windowMinutes = 10L
+        val from = startedAt.minusSeconds(windowMinutes * 60)
+        val to = startedAt.plusSeconds(windowMinutes * 60)
+
+        val candidates = meetingRepository.findOverlapping(
+            clientId = clientId,
+            projectId = meeting.projectId,
+            meetingType = meetingType,
+            excludeId = meeting.id,
+            from = from,
+            to = to,
+        ).toList()
+
+        val candidate = candidates.firstOrNull() ?: return null
+        return com.jervis.dto.meeting.MergeSuggestionDto(
+            targetMeetingId = candidate.id.toHexString(),
+            targetTitle = candidate.title,
+            targetStartedAt = candidate.startedAt.toString(),
+            targetDurationSeconds = candidate.durationSeconds,
+        )
     }
 
     override suspend fun listUnclassifiedMeetings(): List<MeetingDto> {
@@ -896,6 +938,7 @@ private fun fixWavHeader(file: java.nio.file.Path, fileSize: Long) {
 
 private fun MeetingDocument.toDto(
     speakerMap: Map<String, com.jervis.entity.SpeakerDocument> = emptyMap(),
+    mergeSuggestion: com.jervis.dto.meeting.MergeSuggestionDto? = null,
 ): MeetingDto =
     MeetingDto(
         id = id.toHexString(),
@@ -959,6 +1002,7 @@ private fun MeetingDocument.toDto(
         errorMessage = errorMessage,
         deleted = deleted,
         deletedAt = deletedAt?.toString(),
+        mergeSuggestion = mergeSuggestion,
     )
 
 /**
