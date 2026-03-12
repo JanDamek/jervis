@@ -160,39 +160,83 @@ async def llm_with_cloud_fallback(
     temperature: float = 0.1,
     tools: list | None = None,
 ) -> object:
-    """Call LLM: local first, cloud fallback with policy checks.
+    """Call LLM using router's /route-decision for smart GPU/cloud routing.
 
-    Local tier: always LOCAL_STANDARD (48k ctx, GPU1).
-    Cloud fallback: only when explicitly enabled in project rules.
+    Background: GPU first if free + context ≤48k, else OpenRouter FREE queue.
+    NONE tier: always local GPU.
+    Cloud fallback on any local failure (timeout, empty response, error).
     """
+    from app.llm.router_client import route_request, report_model_error, report_model_success
+
     rules = ProjectRules(**state["rules"])
     task = CodingTask(**state["task"])
     allow_cloud_prompt = state.get("allow_cloud_prompt", False)
+    processing_mode = state.get("processing_mode", "BACKGROUND")
 
     auto = auto_providers(rules)
     if allow_cloud_prompt:
         auto = auto | _get_available_providers()
 
-    # Safety: context exceeds local model max?
-    if context_tokens > LOCAL_CONTEXT_LIMIT:
-        limit_k = LOCAL_CONTEXT_LIMIT // 1000
-        if auto:
-            cloud_tier = _suggest_cloud_tier(context_tokens, auto, task_type)
-            if cloud_tier:
-                return await _escalate_to_cloud(
-                    task, auto, context_tokens, task_type,
-                    messages, max_tokens, temperature, tools,
-                    reason=f"Context příliš velký ({context_tokens//1000}k tokenů, max je {limit_k}k)",
+    max_tier = rules.max_openrouter_tier if rules.max_openrouter_tier else "NONE"
+
+    # Ask router for routing decision (GPU vs OpenRouter)
+    route = await route_request(
+        capability="chat",
+        max_tier=max_tier,
+        estimated_tokens=context_tokens,
+        processing_mode=processing_mode,
+    )
+    logger.info(
+        "llm_with_cloud_fallback: route=%s/%s (tokens=%d, mode=%s, max_tier=%s)",
+        route.target, route.model, context_tokens, processing_mode, max_tier,
+    )
+
+    # Route decision: OpenRouter → use cloud directly (GPU busy or context >48k)
+    if route.target == "openrouter" and route.model:
+        try:
+            response = await llm_provider.completion(
+                messages=messages,
+                tier=ModelTier.CLOUD_OPENROUTER,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                tools=tools,
+                model_override=route.model,
+                api_key_override=route.api_key,
+            )
+            message = response.choices[0].message
+            content = message.content
+            tool_calls = getattr(message, "tool_calls", None)
+            if (not content or not content.strip()) and not tool_calls:
+                await report_model_error(route.model, "Empty response")
+                raise ValueError(f"Empty response from cloud model {route.model}")
+            await report_model_success(route.model)
+            return response
+        except Exception as e:
+            await report_model_error(route.model, str(e)[:500])
+            logger.warning("Cloud model %s failed: %s — trying next model", route.model, e)
+            # Try next cloud model (skip the failed one)
+            fallback = await route_request(
+                capability="chat",
+                max_tier=max_tier,
+                estimated_tokens=context_tokens,
+                processing_mode=processing_mode,
+                skip_models=[route.model],
+            )
+            if fallback.target == "openrouter" and fallback.model:
+                return await llm_provider.completion(
+                    messages=messages,
+                    tier=ModelTier.CLOUD_OPENROUTER,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    tools=tools,
+                    model_override=fallback.model,
+                    api_key_override=fallback.api_key,
                 )
-        raise RuntimeError(
-            f"Context příliš velký ({context_tokens//1000}k tokenů, max je {limit_k}k). "
-            "Cloud modely nejsou povoleny v projektu."
-        )
+            # No more cloud models — fall through to local GPU
+            logger.warning("No cloud fallback available, trying local GPU")
 
-    # Priority headers for Ollama Router (FOREGROUND → CRITICAL)
+    # Route decision: local GPU (GPU is free + context ≤48k, or NONE tier)
     headers = priority_headers(state)
-
-    # Always LOCAL_STANDARD (48k ctx, GPU1) — fixed num_ctx, no dynamic tier selection
     local_tier = ModelTier.LOCAL_STANDARD
 
     # W-14: Context overflow guard — ensure messages fit selected tier
@@ -205,23 +249,18 @@ async def llm_with_cloud_fallback(
         )
         messages = _truncate_messages_to_budget(messages, tier_ctx_limit - max_tokens)
 
-    logger.debug("llm_with_cloud_fallback: trying local tier=%s, tools=%s, headers=%s", local_tier.value, bool(tools), headers)
     try:
         response = await llm_provider.completion(
             messages=messages, tier=local_tier,
             max_tokens=max_tokens, temperature=temperature, tools=tools,
             extra_headers=headers,
+            model_override=route.model if route.target == "local" else None,
+            api_base_override=route.api_base if route.target == "local" else None,
         )
         message = response.choices[0].message
         content = message.content
         tool_calls = getattr(message, "tool_calls", None)
 
-        logger.debug(
-            "llm_with_cloud_fallback: local response - has_content=%s, content_len=%d, has_tool_calls=%s",
-            bool(content and content.strip()), len(content or ""), bool(tool_calls)
-        )
-
-        # Valid response = has content OR has tool_calls
         if (not content or not content.strip()) and not tool_calls:
             raise ValueError("Empty response from local model")
         return response
