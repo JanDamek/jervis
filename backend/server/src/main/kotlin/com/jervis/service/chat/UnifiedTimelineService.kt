@@ -13,8 +13,13 @@ import org.springframework.stereotype.Service
 private val logger = KotlinLogging.logger {}
 
 /**
- * Unified timeline: merges chat_messages + tasks (USER_TASK) into a single
+ * Unified timeline: merges chat_messages (needsReaction) + tasks (USER_TASK) into a single
  * chronologically sorted stream using MongoDB $unionWith aggregation.
+ *
+ * "K reakci" filter: only items that actually need user attention:
+ * - USER_TASK tasks with pendingUserQuestion (orchestrator asking user)
+ * - FAILED background results from chat (success=false)
+ * - Background results explicitly marked needsReaction=true
  *
  * DB does all filtering, projection, merge, and sort — no application-level sort/filter.
  */
@@ -23,7 +28,7 @@ class UnifiedTimelineService(
     private val mongoTemplate: ReactiveMongoTemplate,
 ) {
     /**
-     * Load unified timeline: chat messages + pending user tasks, sorted by timestamp DESC.
+     * Load "K reakci" timeline: actionable items only, sorted by createdAt DESC.
      * Uses MongoDB aggregation pipeline with $unionWith for single-roundtrip merge.
      *
      * @param conversationId Active chat session ID
@@ -37,14 +42,25 @@ class UnifiedTimelineService(
         beforeTimestamp: String? = null,
     ): Pair<List<ChatMessageDto>, Boolean> {
         // Build aggregation pipeline:
-        // 1. Match chat_messages for this conversation
+        // 1. Match chat_messages for this conversation that need reaction
+        //    (BACKGROUND role with metadata.needsReaction=true OR metadata.success=false)
         // 2. Project to common shape {_sort_ts, _source, ...}
-        // 3. $unionWith tasks collection (USER_TASK state), projected to same shape
+        // 3. $unionWith tasks collection (USER_TASK with pendingUserQuestion), projected to same shape
         // 4. Optional $match for pagination cursor
-        // 5. $sort by _sort_ts DESC (newest first)
+        // 5. $sort by _sort_ts DESC (newest first = by createdAt)
         // 6. $limit + 1 (to detect hasMore)
 
-        val chatMatch = Document("\$match", Document("conversationId", conversationId))
+        // Chat messages that need reaction: BACKGROUND role + (needsReaction=true OR success=false)
+        val chatMatch = Document(
+            "\$match", Document("conversationId", conversationId)
+                .append("role", "BACKGROUND")
+                .append(
+                    "\$or", listOf(
+                        Document("metadata.needsReaction", "true"),
+                        Document("metadata.success", "false"),
+                    ),
+                ),
+        )
         val chatProject = Document(
             "\$project", Document()
                 .append("_sort_ts", "\$timestamp")
@@ -58,9 +74,16 @@ class UnifiedTimelineService(
                 .append("messageId", Document("\$toString", "\$_id")),
         )
 
-        // Tasks pipeline: filter USER_TASK type+state, project to common shape
+        // Tasks pipeline: USER_TASK with pendingUserQuestion (actual questions from orchestrator)
         val tasksPipeline = listOf(
-            Document("\$match", Document("type", "USER_TASK").append("state", "USER_TASK")),
+            Document(
+                "\$match", Document("type", "USER_TASK")
+                    .append("state", "USER_TASK")
+                    .append(
+                        "pendingUserQuestion", Document("\$exists", true)
+                            .append("\$ne", null),
+                    ),
+            ),
             Document(
                 "\$project", Document()
                     .append("_sort_ts", "\$createdAt")
@@ -100,7 +123,7 @@ class UnifiedTimelineService(
             Document("\$match", Document("_sort_ts", Document("\$lt", ts)))
         } else null
 
-        val sort = Document("\$sort", Document("_sort_ts", -1)) // DESC — newest first
+        val sort = Document("\$sort", Document("_sort_ts", -1)) // DESC — newest first (createdAt)
         val limitStage = Document("\$limit", limit + 1) // +1 to detect hasMore
 
         val pipeline = mutableListOf(chatMatch, chatProject, unionWith)
