@@ -769,7 +769,7 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
 
 # Max agentic loop iterations per vertex (tool call rounds)
 # Raised from 12 to 20 to support complex analytical tasks
-_MAX_VERTEX_TOOL_ITERATIONS = 20
+_MAX_VERTEX_TOOL_ITERATIONS = 15
 # Timeout for a single tool execution within vertex loop
 _VERTEX_TOOL_TIMEOUT_S = 90  # KB graph traversals can take 30s+
 # NO overall vertex timeout — vertices can take hours when GPU is busy
@@ -866,6 +866,22 @@ async def _agentic_vertex(
                 logger.info("Vertex %s: graph cancelled, aborting agentic loop", vertex.id)
                 vertex.status = VertexStatus.CANCELLED
                 return ("Cancelled by user.", "Cancelled")
+
+        # --- Force finish: at 75% iterations, strip all tools to get a text answer ---
+        force_finish_at = int(_MAX_VERTEX_TOOL_ITERATIONS * 0.75)
+        if iteration == force_finish_at and tools:
+            logger.info(
+                "Vertex %s: forcing finish at iteration %d/%d — removing all tools",
+                vertex.id, iteration, _MAX_VERTEX_TOOL_ITERATIONS,
+            )
+            tools = []
+            messages.append({
+                "role": "user",
+                "content": (
+                    "You are running out of iterations. Produce your FINAL ANSWER now. "
+                    "Summarize everything you have found so far. Do NOT call any more tools."
+                ),
+            })
 
         response = await llm_with_cloud_fallback(
             state=state,
