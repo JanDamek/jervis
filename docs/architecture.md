@@ -27,6 +27,8 @@
 18. [Chat Router](#chat-router)
 19. [Hierarchical Task System](#hierarchical-task-system)
 20. [Unified Chat Stream](#unified-chat-stream)
+21. [Watch Apps (watchOS + Wear OS)](#watch-apps-watchos--wear-os)
+22. [TTS Service (Piper)](#tts-service-piper)
 
 ---
 
@@ -1766,6 +1768,7 @@ build_*.sh:
 | `build_correction.sh` | jervis-correction | Docker + K8s |
 | `build_mcp.sh` | jervis-mcp | Docker + K8s |
 | `build_service.sh` | Generic (provider services) | Gradle + Docker + K8s |
+| `build_tts.sh` | jervis-tts | Docker + K8s |
 | `build_image.sh` | Generic (Job-only images) | Docker only (no K8s Deployment) |
 
 ---
@@ -2297,3 +2300,63 @@ When the multi-agent delegation system is enabled (`use_delegation_graph=true`):
 2. Guidelines constraints (forbidden patterns, forbidden files, test requirements) are extracted and propagated to each `DelegationMessage.constraints`
 3. **BaseAgent._agentic_loop** enriches the specialist agent's system prompt with formatted guidelines
 4. All injection is non-blocking — guideline resolution failures are logged at debug level and do not block execution
+
+---
+
+## Watch Apps (watchOS + Wear OS)
+
+### Overview
+
+Companion watch apps for ad-hoc audio recording and voice chat commands. Both platforms send audio data to the paired phone, which handles upload via `RecordingUploadService`.
+
+### watchOS App (`apps/watchApp/`)
+
+SwiftUI watchOS app with two main actions:
+
+- **Ad-hoc Recording** — starts recording on the watch, streams audio chunks to iPhone via WatchConnectivity
+- **Chat Voice Command** — records a voice command and sends it to the phone for chat submission
+
+**Phone-side integration:** `WatchSessionManager` (iOS) receives `WCSessionDelegate` data transfers and feeds audio chunks into `RecordingUploadService` for server upload.
+
+### Wear OS App (`apps/wearApp/`)
+
+Compose for Wear OS app (registered in `settings.gradle.kts` as `:apps:wearApp`):
+
+- **Recording Screen** — ad-hoc recording with start/stop controls
+- **Chat Screen** — voice command recording for chat
+
+Uses **DataLayer API** (`Wearable.getDataClient()`) for phone communication. The phone-side `DataLayerListenerService` receives audio data and delegates to `RecordingUploadService`.
+
+### Communication Flow
+
+```
+Watch (audio capture)
+  → WatchConnectivity (iOS) / DataLayer API (Android)
+    → Phone receives audio chunks
+      → RecordingUploadService → server upload
+```
+
+---
+
+## TTS Service (Piper)
+
+### Overview
+
+Text-to-speech service using **Piper TTS** (fast, CPU-only neural TTS). Deployed as a FastAPI microservice.
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/tts` | POST | Returns complete WAV audio for input text |
+| `/tts/stream` | POST | Returns chunked WAV audio (streaming) |
+
+### Deployment
+
+- **Service:** `backend/service-tts/` (FastAPI + Piper)
+- **CPU-only** — no GPU required
+- **K8s Deployment** — standard pod, built via `k8s/build_tts.sh`
+
+### Client Integration
+
+`TtsClient` (`shared/ui-common/.../audio/TtsClient.kt`) provides cross-platform TTS playback by calling the service endpoints and piping audio to the platform audio player.

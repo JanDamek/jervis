@@ -92,7 +92,7 @@ fun rememberWindowSizeClass(): WindowSizeClass
 
 | Width         | Class        | Devices                        |
 |---------------|--------------|--------------------------------|
-| < 200 dp      | **Watch**    | Smartwatch (future)            |
+| < 200 dp      | **Watch**    | watchOS (SwiftUI), Wear OS (Compose) |
 | < 600 dp      | **Compact**  | iPhone, Android phone          |
 | < 840 dp      | **Medium**   | Small tablet                   |
 | >= 600 dp     | **Expanded** | iPad, Android tablet, Desktop  |
