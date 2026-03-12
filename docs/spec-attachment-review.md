@@ -20,9 +20,9 @@
 - `DirectoryStructureService.storeKbDocument()` – ukládá s UUID prefixem
 - Python KB service: `/api/v1/documents/upload` + `/api/v1/documents/register`
 
-### Tika
-- `TikaTextExtractionService.extractPlainText()` – existuje, volá ITikaClient
-- Používá se pro čištění HTML/XML z emailových těl
+### DocumentExtractor
+- VLM-first text extraction (pymupdf pro dokumenty, qwen3-vl pro obrázky/scany)
+- Python KB service: `/documents/extract-text`
 
 ### Qualifier
 - `qualification_handler.py` – LLM agent s CORE tools
@@ -69,7 +69,7 @@
 ### Spec chce defer KB upload na Qualifier – dnes se uploaduje ihned
 **Řešení:** Změnit flow v `EmailContinuousIndexer`:
 1. Při indexaci: vytvořit `AttachmentExtractDocument` (PENDING)
-2. Spustit Tika extrakci async
+2. Spustit text extrakci async
 3. **Ne**volat `registerPreStoredAttachment()` ihned
 4. Qualifier rozhodne co jde do KB
 
@@ -97,7 +97,7 @@
 - `backend/service-knowledgebase/app/api/routes.py` – `POST /documents/extract-text`
 - `backend/service-knowledgebase/app/services/knowledge_service.py` – `extract_text_only()`
 - `backend/server/.../configuration/KnowledgeServiceRestClient.kt` – `extractText()` + `TextExtractionResult`
-- Strategie: VLM-first pro obrázky, Tika pro dokumenty, VLM fallback pro scanned PDF
+- Strategie: VLM-first pro obrázky, pymupdf/python-docx pro dokumenty, VLM hybrid pro scanned PDF
 
 ### Fáze 5: EmailContinuousIndexer integrace ✅
 - Vytváří AttachmentExtractDocument záznamy při indexaci emailu

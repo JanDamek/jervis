@@ -292,7 +292,7 @@ The Knowledge Base is implemented as a Python service (`service-knowledgebase`) 
 
 ### Features
 1.  **Web Crawling**: `POST /crawl` endpoint to index documentation from URLs.
-2.  **File Ingestion**: `POST /ingest/file` supports PDF, DOCX, etc. using Tika.
+2.  **File Ingestion**: `POST /ingest/file` supports PDF, DOCX, etc. using DocumentExtractor (pymupdf, python-docx, VLM).
 3.  **Code Analysis**: `POST /analyze/code` integrates with Joern service (ad-hoc queries).
 4.  **Image Understanding**: Automatically detects images and uses `qwen-3-vl` to generate descriptions.
 5.  **Scoped Search**: Filters results by Client, Project, and Group.
@@ -451,7 +451,7 @@ MCP:      kb_search / kb_store / kb_traverse / kb_graph_search — optional grou
 ```
 
 ### Integration
-*   **Tika Service**: Used for text extraction (OCR).
+*   **DocumentExtractor**: VLM-first text extraction (pymupdf + qwen3-vl for images/scans).
 *   **Joern Service**: Used for deep code analysis (ad-hoc queries + CPG export).
 *   **Tree-sitter**: Lightweight AST parser for structural code extraction (classes, methods, imports). Bundled in KB service via `tree-sitter-languages` package.
 
@@ -612,7 +612,7 @@ graphRefLocks["client-abc|user:john"] = Mutex()
   1. Reads NEW emails from MongoDB
   2. Checks direction: SENT → KB only, RECEIVED → continues
   3. `EmailThreadService.analyzeThread()` → checks thread context
-  4. Cleans email body via Tika (HTML → plain text)
+  4. Cleans email body (HTML → plain text)
   5. Creates/updates task based on thread state
   6. **Indexes email attachments as KB documents** (binary stored during polling)
 
@@ -1060,7 +1060,7 @@ Uploaded documents are:
 
 1. **Archived** on the shared filesystem (`/opt/jervis/data/clients/{clientId}/kb-documents/`)
 2. **Tracked** as `kb_document` nodes in ArangoDB (metadata, state, storage path)
-3. **Extracted** via Tika (text extraction from binary formats) or VLM (for images)
+3. **Extracted** via DocumentExtractor (pymupdf for docs, VLM for images)
 4. **Indexed** into RAG (Weaviate) for semantic search
 5. **Graph-linked** via LLM entity extraction (same as other KB content)
 
@@ -1076,7 +1076,7 @@ classification, extracted content, and the original file is always available for
 └─────────────┘               └──────────────────┘              └─────────────────┘
                                      │                                │
                               Store file on FS              Create ArangoDB node
-                              (DirectoryStructureService)   Extract text (Tika)
+                              (DirectoryStructureService)   Extract text (DocumentExtractor)
                                      │                      Ingest into RAG
                                      ▼                            │
                               /opt/jervis/data/                   ▼
@@ -1099,7 +1099,7 @@ UPLOADED → EXTRACTED → INDEXED
 ```
 
 - **UPLOADED**: File stored on FS, graph node created, awaiting text extraction
-- **EXTRACTED**: Text extracted via Tika/VLM, ready for RAG ingest
+- **EXTRACTED**: Text extracted via DocumentExtractor (pymupdf/VLM), ready for RAG ingest
 - **INDEXED**: Content ingested into RAG + graph. Fully searchable.
 - **FAILED**: Extraction or indexing failed (error stored in node)
 

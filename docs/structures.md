@@ -475,7 +475,7 @@ Python KB service uses matching `SourceType(str, Enum)` in `app/api/models.py`.
 EmailPollingHandler.storeAttachmentBinary() → kb-documents/{clientId}/
   → EmailContinuousIndexer.indexEmailAttachments()
   → AttachmentKbIndexingService.registerPreStoredAttachment()
-  → Python KB service (Tika/VLM → RAG + Graph)
+  → Python KB service (DocumentExtractor/VLM → RAG + Graph)
 ```
 
 **Path B — Attachment Relevance Assessment:**
@@ -483,7 +483,7 @@ EmailPollingHandler.storeAttachmentBinary() → kb-documents/{clientId}/
 EmailContinuousIndexer → AttachmentExtractionService.createExtractsForAttachments()
   → MongoDB: attachment_extracts (PENDING)
   → async: AttachmentExtractionService.processPendingExtracts()
-    → Python KB /documents/extract-text (VLM-first for images, Tika for docs)
+    → Python KB /documents/extract-text (VLM-first for images, pymupdf/python-docx for docs)
   → MongoDB: attachment_extracts (SUCCESS, extractedText populated)
   → LLM scores relevance 0.0–1.0
     → score >= 0.7 → register with KB
@@ -491,13 +491,13 @@ EmailContinuousIndexer → AttachmentExtractionService.createExtractsForAttachme
 
 **Extraction strategy:**
 - **Images (PNG/JPG):** VLM-first (`qwen3-vl-tool:latest` on p40-2)
-- **Scanned PDFs:** Tika first, VLM fallback if < 100 chars extracted
-- **Structured docs (DOCX/XLSX):** Tika text extraction
+- **Scanned PDFs:** pymupdf text + VLM for pages with images/scans (hybrid)
+- **Structured docs:** DOCX (python-docx), XLSX (openpyxl)
 - **Plain text:** Direct decode (no extraction needed)
 
 **MongoDB: `attachment_extracts`** — tracks extraction and relevance:
 - `taskId`, `filename`, `mimeType`, `filePath`
-- `extractedText`, `tikaStatus` (PENDING/SUCCESS/FAILED), `extractionMethod`
+- `extractedText`, `extractionStatus` (PENDING/SUCCESS/FAILED), `extractionMethod`
 - `relevanceScore` (0.0–1.0), `relevanceReason`
 - `kbUploaded`, `kbDocId`
 
@@ -787,7 +787,7 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - **Interval:** 30 seconds
 - **Process:** Reads INDEXING tasks from MongoDB, ordered by `queuePosition ASC NULLS LAST, createdAt ASC`
 - **Dispatch:** `TaskQualificationService` dispatches to KB microservice (fire-and-forget)
-- **Concurrency:** 1 (dispatch is fast — Tika extraction + HTTP POST, not blocking on KB)
+- **Concurrency:** 1 (dispatch is fast — text extraction + HTTP POST, not blocking on KB)
 - **Dispatch flow:** `claimForIndexing()` (atomic claim via `indexingClaimedAt`, state stays INDEXING) → `TaskQualificationService.dispatch()` (text extraction, attachment loading, HTTP POST to `/ingest/full/async`) → returns immediately. Task stays in INDEXING until KB calls back.
 - **Retry:** If KB is unreachable or rejects the request → `returnToQueue()` unsets `indexingClaimedAt` with backoff. KB handles its own internal retry (Ollama busy, timeouts). When KB permanently fails, it calls `/internal/kb-done` with `status="error"` → server marks task as ERROR. Recovery: stuck INDEXING tasks with `indexingClaimedAt > 10min` → unset `indexingClaimedAt` (re-dispatch).
 - **Priority:** Items with explicit `queuePosition` are processed first (set via UI reorder controls)

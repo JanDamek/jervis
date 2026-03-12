@@ -125,7 +125,7 @@ Polling → Indexing → Qualification → Orchestrator Dispatch → Execution
 
 1. **Polling**: Download external data (JIRA, emails, Git) → MongoDB indexing collections
 2. **Indexing**: Process → KB (graph + RAG) → create pending tasks
-3. **Qualification**: SimpleQualifierAgent decides: actionable? complex? → route to orchestrator
+3. **Qualification**: KB callback (`/internal/kb-done`) evaluates filtering rules → QUEUED or DONE
 4. **Orchestrator**: Python LangGraph agent executes task
 
 ### Directory Structure

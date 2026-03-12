@@ -466,9 +466,9 @@ Weaviate and python-arango clients are thread-safe for read operations. Write op
 
 ### Problem Statement
 
-**Problem**: Apache Tika is blind - extracts text, but doesn't see **meaning** of screenshots, graphs, diagrams, and scanned PDFs.
+**Problem**: Traditional text extraction is blind - extracts text, but doesn't see **meaning** of screenshots, graphs, diagrams, and scanned PDFs.
 
-**Solution**: Integration of **Qwen2.5-VL** (vision model) into Qualifier Agent as **LLM node**, not as Tool.
+**Solution**: VLM-first extraction pipeline using **Qwen3-VL** (vision model) via DocumentExtractor, with pymupdf/python-docx for structured docs.
 
 ### Vision Architecture
 
@@ -848,7 +848,7 @@ const val PLATFORM_DESKTOP = "Desktop"
 
 - **backend/server**: Spring Boot WebFlux (orchestrator, RAG, scheduling, integrations)
 - **backend/common-services**: Shared library (RPC interfaces, rate limiting, HTTP helpers, DTOs)
-- **backend/service-***: Ktor microservices (github, gitlab, atlassian, joern, tika, whisper, aider, coding-engine, junie, claude)
+- **backend/service-***: Ktor microservices (github, gitlab, atlassian, joern, whisper, aider, coding-engine, junie, claude)
 - **shared/common-dto**: Data transfer objects
 - **shared/common-api**: `@HttpExchange` contracts
 - **shared/domain**: Pure domain types
