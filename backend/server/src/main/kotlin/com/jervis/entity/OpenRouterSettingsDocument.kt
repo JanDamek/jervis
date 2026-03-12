@@ -61,4 +61,5 @@ data class QueueModelEntry(
     val maxContextTokens: Int = 32_000,
     val enabled: Boolean = true,
     val label: String = "",
+    val capabilities: List<String> = emptyList(),
 )

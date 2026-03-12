@@ -107,6 +107,7 @@ class OpenRouterSettingsRpcImpl(
                         supportsTools = model.supportsFunctionCalling(),
                         supportsStreaming = true,
                         provider = model.id.substringBefore("/", ""),
+                        capabilities = detectCapabilities(model.supportedParameters),
                     )
                 }
                 .sortedBy { it.inputPricePerMillion }
@@ -208,6 +209,15 @@ class OpenRouterSettingsRpcImpl(
         return true
     }
 
+    private fun detectCapabilities(supportedParameters: List<String>): List<String> {
+        val caps = mutableListOf<String>()
+        if ("vision" in supportedParameters) caps += "visual"
+        if ("tools" in supportedParameters || "tool_choice" in supportedParameters) {
+            caps += listOf("thinking", "coding", "chat", "extraction")
+        }
+        return caps
+    }
+
     private fun parsePrice(price: String?): Double {
         if (price.isNullOrBlank()) return 0.0
         return try {
@@ -295,6 +305,7 @@ class OpenRouterSettingsRpcImpl(
             maxContextTokens = this.maxContextTokens,
             enabled = this.enabled,
             label = this.label,
+            capabilities = this.capabilities,
         )
 
     private fun ModelQueueDto.toEntity(): ModelQueue =
@@ -311,6 +322,7 @@ class OpenRouterSettingsRpcImpl(
             maxContextTokens = this.maxContextTokens,
             enabled = this.enabled,
             label = this.label,
+            capabilities = this.capabilities,
         )
 }
 

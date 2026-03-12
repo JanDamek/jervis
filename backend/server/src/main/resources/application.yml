@@ -32,12 +32,12 @@ spring:
   main:
     web-application-type: none     # Non-web application (RSocket + custom transport)
   mongodb:
-    host: 192.168.100.117
-    port: 27017
-    database: jervis
-    username: root
+    host: ${MONGODB_HOST:192.168.100.117}
+    port: ${MONGODB_PORT:27017}
+    database: ${MONGODB_DATABASE:jervis}
+    username: ${MONGODB_USERNAME:root}
     password: ${MONGODB_PASSWORD}
-    authentication-database: admin
+    authentication-database: ${MONGODB_AUTH_DB:admin}
   data:
     mongodb:
       auto-index-creation: false   # Indexes managed manually / by migration

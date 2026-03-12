@@ -216,6 +216,10 @@ data class QueueModelEntryDto(
 
     /** Human-readable label for UI */
     val label: String = "",
+
+    /** Capabilities this model supports (e.g. "visual", "thinking", "coding", "chat", "extraction").
+     * Empty list = compatible with all capabilities (backward compat). */
+    val capabilities: List<String> = emptyList(),
 )
 
 /**
@@ -231,6 +235,9 @@ data class OpenRouterCatalogModelDto(
     val supportsTools: Boolean = false,
     val supportsStreaming: Boolean = true,
     val provider: String = "",
+    /** Auto-detected capabilities from OpenRouter API supported_parameters.
+     * "vision" in params → "visual"; "tools" in params → thinking, coding, chat, extraction. */
+    val capabilities: List<String> = emptyList(),
 )
 
 /**

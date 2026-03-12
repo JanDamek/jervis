@@ -65,25 +65,6 @@ async def get_api_key() -> str | None:
     return None
 
 
-# ── Default queues (used when Kotlin settings are not available) ────────
-
-_DEFAULT_QUEUES: dict[str, list[dict]] = {
-    "FREE": [
-        {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
-        {"modelId": "qwen/qwen3-30b-a3b:free", "isLocal": False, "maxContextTokens": 32_000},
-    ],
-    "PAID": [
-        {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
-        {"modelId": "anthropic/claude-haiku-4", "isLocal": False, "maxContextTokens": 200_000},
-        {"modelId": "openai/gpt-4o-mini", "isLocal": False, "maxContextTokens": 128_000},
-    ],
-    "PREMIUM": [
-        {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
-        {"modelId": "anthropic/claude-sonnet-4", "isLocal": False, "maxContextTokens": 200_000},
-        {"modelId": "openai/o3-mini", "isLocal": False, "maxContextTokens": 200_000},
-    ],
-}
-
 # Tier ordering for comparison
 TIER_LEVELS = {"NONE": 0, "FREE": 1, "PAID": 2, "PREMIUM": 3}
 
@@ -97,7 +78,7 @@ def normalize_tier(tier: str) -> str:
 
 
 async def get_queue(queue_name: str) -> list[dict]:
-    """Get model queue by name from settings, falling back to defaults."""
+    """Get model queue by name from settings. Returns empty list if unavailable (= local only)."""
     queue_name = normalize_tier(queue_name)  # backward compat: PAID_LOW→PAID, PAID_HIGH→PREMIUM
     or_settings = await _fetch_openrouter_settings()
     if or_settings:
@@ -106,29 +87,31 @@ async def get_queue(queue_name: str) -> list[dict]:
                 models = [m for m in q.get("models", []) if m.get("enabled", True)]
                 if models:
                     return models
-    return _DEFAULT_QUEUES.get(queue_name, _DEFAULT_QUEUES["FREE"])
+    return []
 
 
 async def find_cloud_model_for_context(
     estimated_tokens: int, tier_level: int, skip_models: list[str] | None = None,
+    capability: str | None = None,
 ) -> str | None:
     """Find first cloud model that fits the context, iterating queues by tier.
 
     Tries FREE -> PAID -> PREMIUM in order, respecting tier_level limit.
+    capability: if set, only models with matching capability (or empty capabilities = all).
     skip_models: model IDs to skip (already tried and failed in this request).
     Returns modelId or None.
     """
-    cloud_model = await _first_cloud_model("FREE", estimated_tokens, skip_models)
+    cloud_model = await _first_cloud_model("FREE", estimated_tokens, skip_models, capability)
     if cloud_model:
         return cloud_model
 
     if tier_level >= TIER_LEVELS["PAID"]:
-        cloud_model = await _first_cloud_model("PAID", estimated_tokens, skip_models)
+        cloud_model = await _first_cloud_model("PAID", estimated_tokens, skip_models, capability)
         if cloud_model:
             return cloud_model
 
     if tier_level >= TIER_LEVELS["PREMIUM"]:
-        cloud_model = await _first_cloud_model("PREMIUM", estimated_tokens, skip_models)
+        cloud_model = await _first_cloud_model("PREMIUM", estimated_tokens, skip_models, capability)
         if cloud_model:
             return cloud_model
 
@@ -137,10 +120,13 @@ async def find_cloud_model_for_context(
 
 async def _first_cloud_model(
     queue_name: str, estimated_tokens: int, skip_models: list[str] | None = None,
+    capability: str | None = None,
 ) -> str | None:
     """Get first available cloud model from a queue that can handle the context.
 
     Skips models marked as error (3+ consecutive failures) and skip_models list.
+    capability: if set, model must have matching capability in its capabilities list.
+    Models with empty capabilities list are compatible with all capabilities (backward compat).
     """
     skip_set = set(skip_models) if skip_models else set()
     queue_models = await get_queue(queue_name)
@@ -152,6 +138,13 @@ async def _first_cloud_model(
         if model_id in skip_set:
             logger.debug("Skipping model %s (explicitly excluded)", model_id)
             continue
+        # Capability filter: if capability requested and model has capabilities defined,
+        # the model must include the requested capability
+        if capability:
+            model_caps = entry.get("capabilities", [])
+            if model_caps and capability not in model_caps:
+                logger.debug("Skipping model %s (no capability '%s', has %s)", model_id, capability, model_caps)
+                continue
         # Skip models with too many consecutive errors or temporarily paused
         error_info = _model_errors.get(model_id)
         if error_info:
