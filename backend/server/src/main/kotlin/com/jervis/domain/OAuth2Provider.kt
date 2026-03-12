@@ -8,5 +8,6 @@ enum class OAuth2Provider {
     GITHUB,
     GITLAB,
     BITBUCKET,
-    ATLASSIAN
+    ATLASSIAN,
+    SLACK,
 }

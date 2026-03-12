@@ -204,6 +204,11 @@ data class ProviderDescriptor(
                 defaultPollingIntervalSeconds = 120,
                 authOptions = listOf(
                     AuthOption(
+                        authType = AuthTypeEnum.OAUTH2,
+                        displayName = "OAuth 2.0 (přihlásit se jako vy)",
+                        fields = emptyList(),
+                    ),
+                    AuthOption(
                         authType = AuthTypeEnum.BEARER,
                         displayName = "Bot Token (xoxb-...)",
                         fields = listOf(

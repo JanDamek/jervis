@@ -31,7 +31,7 @@ private val logger = KotlinLogging.logger {}
  * Polling handler for Slack via Slack Web API.
  *
  * Architecture:
- * - Uses Bot Token (xoxb-...) stored as bearerToken on the connection
+ * - Uses Bot Token (xoxb-...) or User Token (xoxp-... via OAuth2) stored as bearerToken
  * - Calls Slack Web API: conversations.list, conversations.history
  * - Messages are stored as SlackMessageIndexDocument (NEW state)
  * - SlackContinuousIndexer picks them up for KB indexing
@@ -66,7 +66,7 @@ class SlackPollingHandler(
     ): PollingResult {
         val token = connectionDocument.bearerToken
         if (token.isNullOrBlank()) {
-            logger.warn { "Slack connection '${connectionDocument.name}' has no bot token configured" }
+            logger.warn { "Slack connection '${connectionDocument.name}' has no token configured (bot or user)" }
             return PollingResult(errors = 1)
         }
 

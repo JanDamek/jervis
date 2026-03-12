@@ -14,7 +14,8 @@ data class OAuth2Properties(
     var github: OAuth2ProviderConfig = OAuth2ProviderConfig(),
     var gitlab: OAuth2ProviderConfig = OAuth2ProviderConfig(),
     var bitbucket: OAuth2ProviderConfig = OAuth2ProviderConfig(),
-    var atlassian: OAuth2ProviderConfig = OAuth2ProviderConfig()
+    var atlassian: OAuth2ProviderConfig = OAuth2ProviderConfig(),
+    var slack: OAuth2ProviderConfig = OAuth2ProviderConfig(),
 )
 
 data class OAuth2ProviderConfig(
