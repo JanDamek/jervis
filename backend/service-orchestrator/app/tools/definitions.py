@@ -1370,7 +1370,7 @@ TOOL_CREATE_CONNECTION: dict = {
                 },
                 "provider": {
                     "type": "string",
-                    "description": "Service provider: GITHUB, GITLAB, ATLASSIAN, AZURE_DEVOPS, GENERIC_EMAIL.",
+                    "description": "Service provider: GITHUB, GITLAB, ATLASSIAN, GOOGLE_WORKSPACE, GENERIC_EMAIL, SLACK, MICROSOFT_TEAMS, DISCORD.",
                 },
                 "auth_type": {
                     "type": "string",

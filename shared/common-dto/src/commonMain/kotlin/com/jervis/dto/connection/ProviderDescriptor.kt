@@ -106,45 +106,25 @@ data class ProviderDescriptor(
             ),
             ProviderDescriptor(
                 provider = ProviderEnum.GOOGLE_WORKSPACE,
-                displayName = "Google Workspace (Gmail)",
-                capabilities = setOf(ConnectionCapability.EMAIL_READ),
-                protocols = setOf(ProtocolEnum.IMAP),
-                authOptions = listOf(
-                    AuthOption(
-                        authType = AuthTypeEnum.OAUTH2,
-                        displayName = "OAuth 2.0",
-                        fields = emptyList(),
-                    ),
+                displayName = "Google",
+                capabilities = setOf(
+                    ConnectionCapability.EMAIL_READ,
+                    ConnectionCapability.EMAIL_SEND,
+                    ConnectionCapability.CALENDAR_READ,
+                    ConnectionCapability.CALENDAR_WRITE,
                 ),
-            ),
-            ProviderDescriptor(
-                provider = ProviderEnum.MICROSOFT_365,
-                displayName = "Microsoft 365 (Outlook)",
-                capabilities = setOf(ConnectionCapability.EMAIL_READ),
-                protocols = setOf(ProtocolEnum.IMAP),
+                protocols = setOf(ProtocolEnum.HTTP),
                 authOptions = listOf(
                     AuthOption(
                         authType = AuthTypeEnum.OAUTH2,
-                        displayName = "OAuth 2.0",
+                        displayName = "OAuth 2.0 (Google)",
                         fields = emptyList(),
-                    ),
-                    AuthOption(
-                        authType = AuthTypeEnum.BASIC,
-                        displayName = "App Password",
-                        fields = listOf(
-                            FormField(FormFieldType.HOST, "IMAP Host", placeholder = "outlook.office365.com", defaultValue = "outlook.office365.com"),
-                            FormField(FormFieldType.PORT, "Port", defaultValue = "993"),
-                            FormField(FormFieldType.USE_SSL, "SSL", defaultValue = "true"),
-                            FormField(FormFieldType.USERNAME, "Email"),
-                            FormField(FormFieldType.PASSWORD, "App Password", isSecret = true),
-                            FormField(FormFieldType.FOLDER_NAME, "Složka", required = false, defaultValue = "INBOX"),
-                        ),
                     ),
                 ),
             ),
             ProviderDescriptor(
                 provider = ProviderEnum.GENERIC_EMAIL,
-                displayName = "Generic Email (IMAP/POP3/SMTP)",
+                displayName = "Email (IMAP/POP3/SMTP)",
                 capabilities = setOf(ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND),
                 protocols = setOf(ProtocolEnum.IMAP, ProtocolEnum.POP3, ProtocolEnum.SMTP),
                 authOptions = listOf(
@@ -165,10 +145,12 @@ data class ProviderDescriptor(
             ),
             ProviderDescriptor(
                 provider = ProviderEnum.MICROSOFT_TEAMS,
-                displayName = "Microsoft Teams (O365 Gateway)",
+                displayName = "Microsoft 365",
                 capabilities = setOf(
                     ConnectionCapability.CHAT_READ,
                     ConnectionCapability.CHAT_SEND,
+                    ConnectionCapability.EMAIL_READ,
+                    ConnectionCapability.EMAIL_SEND,
                     ConnectionCapability.CALENDAR_READ,
                     ConnectionCapability.CALENDAR_WRITE,
                 ),
@@ -178,14 +160,20 @@ data class ProviderDescriptor(
                 defaultPollingIntervalSeconds = 120,
                 authOptions = listOf(
                     AuthOption(
+                        authType = AuthTypeEnum.OAUTH2,
+                        displayName = "OAuth 2.0 (Microsoft)",
+                        fields = emptyList(),
+                    ),
+                    AuthOption(
                         authType = AuthTypeEnum.NONE,
-                        displayName = "Browser Session (O365 Gateway)",
+                        displayName = "Browser Session (K8s pod)",
+                        fields = emptyList(),
+                    ),
+                    AuthOption(
+                        authType = AuthTypeEnum.BEARER,
+                        displayName = "Lokální token (skript)",
                         fields = listOf(
-                            FormField(
-                                FormFieldType.O365_CLIENT_ID,
-                                "Client ID (browser pool session)",
-                                placeholder = "jan.damek",
-                            ),
+                            FormField(FormFieldType.BEARER_TOKEN, "Bearer Token", isSecret = true),
                         ),
                     ),
                 ),

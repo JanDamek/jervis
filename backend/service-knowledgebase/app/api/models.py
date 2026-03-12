@@ -46,6 +46,7 @@ class IngestRequest(BaseModel):
     content: str
     metadata: Dict[str, Any] = {}
     observedAt: datetime = Field(default_factory=datetime.now)
+    maxTier: str = "NONE"  # OpenRouter tier: NONE/FREE/PAID/PREMIUM — from CloudModelPolicy
 
     @model_validator(mode='after')
     def validate_tenant_hierarchy(self):
@@ -202,6 +203,7 @@ class FullIngestRequest(BaseModel):
     content: str  # Main text content
     metadata: Dict[str, Any] = {}
     observedAt: datetime = Field(default_factory=datetime.now)
+    maxTier: str = "NONE"  # OpenRouter tier: NONE/FREE/PAID/PREMIUM — from CloudModelPolicy
     # Attachments are sent separately via multipart form
 
     @model_validator(mode='after')

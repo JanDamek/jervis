@@ -36,42 +36,33 @@ class GraphService:
         if not self.db.has_collection("KnowledgeEdges"):
             self.db.create_collection("KnowledgeEdges", edge=True)
 
-    async def _llm_call(self, prompt: str, priority: int | None = None, max_retries: int = 2) -> str:
-        """Direct httpx call to Ollama Router with X-Ollama-Priority header.
-
-        Same pattern as rag_service._embed_with_priority() — direct httpx gives
-        full control over the X-Ollama-Priority header, which ChatOllama doesn't expose.
+    async def _llm_call(self, prompt: str, priority: int | None = None, max_retries: int = 2,
+                        max_tier: str = "NONE") -> str:
+        """Route-aware LLM call: local GPU or OpenRouter based on client tier.
 
         Dynamic num_ctx: sized to actual prompt + response reserve, rounded to 4k,
-        capped at INGEST_CONTEXT_CAP (P40 VRAM limit). Avoids wasting VRAM on
-        small chunks (typical chunk ~800 tokens needs ~4k, not 32k).
+        capped at INGEST_CONTEXT_CAP (P40 VRAM limit).
 
         Retries on connection errors (router restart, network blip).
         """
-        url = f"{settings.OLLAMA_INGEST_BASE_URL}/api/generate"
-        effective_priority = priority if priority is not None else None  # default: no header (NORMAL)
-        headers = {"X-Ollama-Priority": str(effective_priority)} if effective_priority is not None else {}
+        from app.services.llm_router import llm_generate
 
         # Dynamic num_ctx: tiktoken count + response reserve, rounded up to 4k
         input_tokens = len(self._tokenizer.encode(prompt))
         num_ctx = input_tokens + settings.INGEST_RESPONSE_RESERVE
         num_ctx = min(((num_ctx + 4095) // 4096) * 4096, settings.INGEST_CONTEXT_CAP)
 
-        payload = {
-            "model": settings.LLM_MODEL,
-            "prompt": prompt,
-            "format": "json",
-            "stream": False,
-            "options": {
-                "temperature": 0,
-                "num_ctx": num_ctx,
-            },
-        }
         for attempt in range(1 + max_retries):
             try:
-                resp = await self.http_client.post(url, json=payload, headers=headers, timeout=settings.LLM_CALL_TIMEOUT)
-                resp.raise_for_status()
-                return resp.json()["response"]
+                return await llm_generate(
+                    prompt=prompt,
+                    max_tier=max_tier,
+                    model=settings.LLM_MODEL,
+                    num_ctx=num_ctx,
+                    priority=priority,
+                    temperature=0,
+                    format_json=True,
+                )
             except (httpx.ConnectError, httpx.RemoteProtocolError, OSError) as e:
                 if attempt < max_retries:
                     wait = 2 ** (attempt + 1)
@@ -89,6 +80,7 @@ class GraphService:
         chunk_ids: list[str] = None,
         embedding_priority: int | None = None,
         on_progress: callable = None,
+        max_tier: str = "NONE",
     ) -> tuple[int, int, list[str]]:
         """
         Ingest content into graph store with bidirectional linking.
@@ -233,7 +225,7 @@ Text: {text}
         )
 
         try:
-            content = await self._llm_call(prompt, priority=embedding_priority)
+            content = await self._llm_call(prompt, priority=embedding_priority, max_tier=max_tier)
             logger.info(
                 "GRAPH_WRITE: LLM_RESPONSE sourceUrn=%s response_len=%d",
                 request.sourceUrn, len(content)

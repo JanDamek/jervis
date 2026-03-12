@@ -192,6 +192,28 @@ spec:
                 secretKeyRef:
                   name: jervis-oauth2-secrets
                   key: ATLASSIAN_CLIENT_SECRET
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: GOOGLE_CLIENT_ID
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: GOOGLE_CLIENT_SECRET
+            - name: MICROSOFT_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-oauth2-secrets
+                  key: MICROSOFT_CLIENT_ID
+                  optional: true
+            - name: MICROSOFT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-oauth2-secrets
+                  key: MICROSOFT_CLIENT_SECRET
+                  optional: true
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: /etc/firebase/firebase-sa.json
             # APNs push notifications (iOS)

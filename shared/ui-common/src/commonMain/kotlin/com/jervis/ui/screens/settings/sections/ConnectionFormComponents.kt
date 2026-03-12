@@ -32,11 +32,13 @@ internal fun ProviderDropdown(
     descriptors: Map<ProviderEnum, ProviderDescriptor>,
     onSelect: (ProviderEnum) -> Unit,
 ) {
+    // Only show providers that have a descriptor (= implemented)
+    val availableProviders = ProviderEnum.entries.filter { it in descriptors }
     @OptIn(ExperimentalMaterial3Api::class)
     JDropdownRaw(
         value = descriptors[selected]?.displayName ?: selected.name,
-        label = "Provider",
-        items = ProviderEnum.entries.toList(),
+        label = "Typ připojení",
+        items = availableProviders,
         itemLabel = { descriptors[it]?.displayName ?: it.name },
         onSelect = onSelect,
     )

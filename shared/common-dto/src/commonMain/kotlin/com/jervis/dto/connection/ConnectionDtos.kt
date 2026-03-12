@@ -14,9 +14,8 @@ enum class ProviderEnum {
     ATLASSIAN,       // Jira + Confluence + Bitbucket
 
     // Email providers
-    GOOGLE_WORKSPACE,  // Gmail via OAuth 2.0
-    MICROSOFT_365,     // Outlook, Office 365 (IMAP App Password)
-    GENERIC_EMAIL,     // Generic IMAP/POP3/SMTP server (Zimbra, Exchange on-prem, etc.)
+    GOOGLE_WORKSPACE,  // Gmail / Google Workspace (OAuth2)
+    GENERIC_EMAIL,     // IMAP/POP3/SMTP (Outlook, Zimbra, Exchange, atd.)
 
     // Chat platforms
     SLACK,

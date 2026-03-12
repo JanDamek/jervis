@@ -2060,7 +2060,7 @@ async def create_connection(
 
     Args:
         name: Connection name (must be unique)
-        provider: Service provider: GITHUB, GITLAB, ATLASSIAN, AZURE_DEVOPS, GENERIC_EMAIL, etc.
+        provider: Service provider: GITHUB, GITLAB, ATLASSIAN, GOOGLE_WORKSPACE, GENERIC_EMAIL, SLACK, MICROSOFT_TEAMS, DISCORD.
         auth_type: Authentication type: NONE, BASIC, BEARER, OAUTH2
         base_url: API base URL (leave empty for cloud providers)
         bearer_token: Bearer/personal access token (for BEARER auth)

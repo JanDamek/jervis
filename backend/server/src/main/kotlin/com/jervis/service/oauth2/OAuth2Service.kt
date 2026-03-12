@@ -22,7 +22,7 @@ import org.springframework.stereotype.Service
 import java.util.UUID
 
 /**
- * OAuth2 Service for handling GitHub, GitLab, Bitbucket, and Slack OAuth2 flows.
+ * OAuth2 Service for handling GitHub, GitLab, Bitbucket, Slack, Gmail, and Microsoft OAuth2 flows.
  *
  * Uses global OAuth2 credentials from application.yml (jervis.oauth2.*).
  * Client ID and Secret are configured once for the entire Jervis application.
@@ -94,6 +94,8 @@ class OAuth2Service(
             com.jervis.dto.connection.ProviderEnum.GITLAB -> return OAuth2Provider.GITLAB
             com.jervis.dto.connection.ProviderEnum.ATLASSIAN -> return OAuth2Provider.ATLASSIAN
             com.jervis.dto.connection.ProviderEnum.SLACK -> return OAuth2Provider.SLACK
+            com.jervis.dto.connection.ProviderEnum.GOOGLE_WORKSPACE -> return OAuth2Provider.GMAIL
+            com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS -> return OAuth2Provider.MICROSOFT
             else -> {
                 // provider is not one of the OAuth2 ones, continue with other checks
             }
@@ -134,6 +136,8 @@ class OAuth2Service(
             OAuth2Provider.BITBUCKET -> oauth2Properties.bitbucket
             OAuth2Provider.ATLASSIAN -> oauth2Properties.atlassian
             OAuth2Provider.SLACK -> oauth2Properties.slack
+            OAuth2Provider.GMAIL -> oauth2Properties.gmail
+            OAuth2Provider.MICROSOFT -> oauth2Properties.microsoft
         }
 
     /**
@@ -218,6 +222,8 @@ class OAuth2Service(
                 OAuth2Provider.BITBUCKET -> "https://bitbucket.org/site/oauth2/authorize"
                 OAuth2Provider.ATLASSIAN -> "https://auth.atlassian.com/authorize"
                 OAuth2Provider.SLACK -> "https://slack.com/oauth/v2/authorize"
+                OAuth2Provider.GMAIL -> "https://accounts.google.com/o/oauth2/v2/auth"
+                OAuth2Provider.MICROSOFT -> "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
             }
 
         // Fetch scopes from the provider service
@@ -230,6 +236,12 @@ class OAuth2Service(
             OAuth2Provider.SLACK ->
                 // Slack V2 OAuth uses user_scope (not scope) for user tokens (xoxp-)
                 "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&user_scope=${scope.encodeURLParameter()}"
+            OAuth2Provider.GMAIL ->
+                // Google requires access_type=offline for refresh_token
+                "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code&access_type=offline&prompt=consent"
+            OAuth2Provider.MICROSOFT ->
+                // Microsoft uses common tenant for multi-tenant apps
+                "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code"
             else ->
                 "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code"
         }
@@ -260,6 +272,16 @@ class OAuth2Service(
                         // Slack user token scopes for reading/sending as the user
                         return "channels:history channels:read groups:history groups:read im:history im:read mpim:history mpim:read chat:write users:read"
                     }
+
+                    OAuth2Provider.GMAIL -> {
+                        // Google: Gmail + Calendar + user info
+                        return "https://mail.google.com/ https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send openid email profile"
+                    }
+
+                    OAuth2Provider.MICROSOFT -> {
+                        // Microsoft Graph: Teams, calendar, mail, files, contacts
+                        return "offline_access User.Read Chat.Read Chat.ReadWrite ChannelMessage.Send Calendars.Read Calendars.ReadWrite Mail.Read Mail.Send Files.ReadWrite.All Contacts.Read People.Read Sites.Read.All"
+                    }
                 }
 
             val response = httpClient.get(serviceUrl)
@@ -278,6 +300,8 @@ class OAuth2Service(
                 OAuth2Provider.ATLASSIAN -> "read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-content.summary read:confluence-content.permission read:confluence-props read:confluence-space.summary read:confluence-groups read:confluence-user write:confluence-content write:confluence-space write:confluence-pages search:confluence readonly:content.attachment:confluence read:space:confluence read:page:confluence read:content:confluence read:attachment:confluence read:content.metadata:confluence offline_access"
                 OAuth2Provider.BITBUCKET -> "account team repository webhook pullrequest:write issue:write wiki snippet project"
                 OAuth2Provider.SLACK -> "channels:history channels:read groups:history groups:read im:history im:read mpim:history mpim:read chat:write users:read"
+                OAuth2Provider.GMAIL -> "https://mail.google.com/ https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send openid email profile"
+                OAuth2Provider.MICROSOFT -> "offline_access User.Read Chat.Read Chat.ReadWrite ChannelMessage.Send Calendars.Read Calendars.ReadWrite Mail.Read Mail.Send Files.ReadWrite.All Contacts.Read People.Read Sites.Read.All"
             }
         }
     }
@@ -375,6 +399,8 @@ class OAuth2Service(
             OAuth2Provider.BITBUCKET -> "https://bitbucket.org/site/oauth2/access_token"
             OAuth2Provider.ATLASSIAN -> "https://auth.atlassian.com/oauth/token"
             OAuth2Provider.SLACK -> "https://slack.com/api/oauth.v2.access"
+            OAuth2Provider.GMAIL -> "https://oauth2.googleapis.com/token"
+            OAuth2Provider.MICROSOFT -> "https://login.microsoftonline.com/common/oauth2/v2.0/token"
         }
 
     private suspend fun exchangeCodeForToken(

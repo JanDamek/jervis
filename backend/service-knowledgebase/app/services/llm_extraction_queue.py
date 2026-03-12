@@ -51,6 +51,7 @@ class ExtractionTask:
         worker_id: Optional[str] = None,
         error: Optional[str] = None,
         priority: int = 4,
+        max_tier: str = "NONE",
     ):
         self.task_id = task_id
         self.source_urn = source_urn
@@ -62,6 +63,7 @@ class ExtractionTask:
         self.created_at = created_at
         self.status = status
         self.attempts = attempts
+        self.max_tier = max_tier
         self.last_attempt_at = last_attempt_at
         self.worker_id = worker_id
         self.error = error
@@ -163,6 +165,13 @@ class LLMExtractionQueue:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
+            # Migration: add max_tier column for OpenRouter routing
+            try:
+                conn.execute("ALTER TABLE tasks ADD COLUMN max_tier TEXT NOT NULL DEFAULT 'NONE'")
+                logger.info("Added max_tier column to tasks table")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
             # Migration: add progress columns for extraction tracking
             for col, default in [("progress_current", "0"), ("progress_total", "0")]:
                 try:
@@ -205,8 +214,8 @@ class LLMExtractionQueue:
             conn.execute("""
                 INSERT INTO tasks (
                     task_id, source_urn, content, client_id, project_id, kind,
-                    chunk_ids, created_at, status, attempts, priority
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    chunk_ids, created_at, status, attempts, priority, max_tier
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 task.task_id,
                 task.source_urn,
@@ -219,6 +228,7 @@ class LLMExtractionQueue:
                 TaskStatus.PENDING,
                 0,
                 task.priority,
+                task.max_tier,
             ))
             conn.commit()
 
@@ -282,6 +292,7 @@ class LLMExtractionQueue:
                 last_attempt_at=now,
                 worker_id=worker_id,
                 priority=row["priority"] if "priority" in row.keys() else 4,
+                max_tier=row["max_tier"] if "max_tier" in row.keys() else "NONE",
             )
 
             # Log stats

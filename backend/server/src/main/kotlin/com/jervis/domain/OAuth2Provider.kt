@@ -10,4 +10,6 @@ enum class OAuth2Provider {
     BITBUCKET,
     ATLASSIAN,
     SLACK,
+    GMAIL,
+    MICROSOFT,
 }

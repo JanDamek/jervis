@@ -184,6 +184,7 @@ class LLMExtractionWorker:
         # Call graph service to do LLM extraction
         # This will take minutes, but we're async so it doesn't block
         nodes, edges, entity_keys = await self.graph_service.ingest(
+            max_tier=task.max_tier,
             request=request,
             chunk_ids=task.chunk_ids,
             embedding_priority=task.priority,

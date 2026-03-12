@@ -49,4 +49,10 @@ interface IConnectionService {
     ): List<ConnectionResourceDto>
 
     suspend fun getProviderDescriptors(): List<ProviderDescriptor>
+
+    /**
+     * Initialize browser pool session for Teams Browser Session auth.
+     * Returns noVNC URL for completing login, or status message.
+     */
+    suspend fun initBrowserSession(connectionId: String): String
 }

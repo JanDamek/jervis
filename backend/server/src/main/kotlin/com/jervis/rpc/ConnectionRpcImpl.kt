@@ -22,6 +22,8 @@ import com.jervis.service.oauth2.OAuth2Service
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -38,6 +40,8 @@ class ConnectionRpcImpl(
     private val httpClient: io.ktor.client.HttpClient,
     @org.springframework.beans.factory.annotation.Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
     private val o365GatewayUrl: String = "http://jervis-o365-gateway:8080",
+    @org.springframework.beans.factory.annotation.Value("\${jervis.o365-browser-pool.url:http://jervis-o365-browser-pool:8090}")
+    private val o365BrowserPoolUrl: String = "http://jervis-o365-browser-pool:8090",
 ) : IConnectionService {
     private val logger = KotlinLogging.logger {}
 
@@ -61,6 +65,7 @@ class ConnectionRpcImpl(
         val authType = request.authType
 
         val descriptor = providerRegistry.getDescriptorOrNull(provider)
+            ?: ProviderDescriptor.defaultsByProvider[provider]
         val capabilities = descriptor?.capabilities ?: emptySet()
 
         val baseUrl = request.baseUrl?.takeIf { it.isNotBlank() }
@@ -97,11 +102,19 @@ class ConnectionRpcImpl(
             confluenceRootPageId = request.confluenceRootPageId,
             bitbucketRepoSlug = request.bitbucketRepoSlug,
             gitRemoteUrl = request.gitRemoteUrl,
-            o365ClientId = request.o365ClientId,
+            // Auto-derive o365ClientId from connection name for Teams browser session
+            o365ClientId = request.o365ClientId
+                ?: if (provider == ProviderEnum.MICROSOFT_TEAMS) request.name.lowercase().replace(" ", "-") else null,
         )
 
         val created = connectionService.save(connectionDocument)
         logger.info { "Created connection: ${created.name} (${created.id}) - provider=$provider, protocol=$protocol, authType=$authType" }
+
+        // Auto-init browser pool session for Teams Browser Session auth
+        if (provider == ProviderEnum.MICROSOFT_TEAMS && authType == com.jervis.dto.connection.AuthTypeEnum.NONE) {
+            initBrowserPoolSession(created)
+        }
+
         val updatedList = connectionService.findAll().map { it.toDto() }.toList()
         _connectionsFlow.emit(updatedList)
         return created.toDto()
@@ -118,16 +131,19 @@ class ConnectionRpcImpl(
 
         val newProvider = request.provider ?: existing.provider
 
+        val newDescriptor = providerRegistry.getDescriptorOrNull(newProvider)
+            ?: ProviderDescriptor.defaultsByProvider[newProvider]
         val capabilities = if (request.provider != null) {
-            providerRegistry.getDescriptorOrNull(newProvider)?.capabilities ?: existing.availableCapabilities
+            newDescriptor?.capabilities ?: existing.availableCapabilities
         } else {
-            existing.availableCapabilities
+            // Always refresh capabilities from descriptor (may have been updated)
+            newDescriptor?.capabilities ?: existing.availableCapabilities
         }
 
         val newIsCloud = request.isCloud ?: existing.isCloud
         val newBaseUrl = if (newIsCloud && request.baseUrl == null) {
             // Cloud mode: use default cloud URL from descriptor if no explicit baseUrl
-            providerRegistry.getDescriptorOrNull(newProvider)?.defaultCloudBaseUrl ?: existing.baseUrl
+            newDescriptor?.defaultCloudBaseUrl ?: existing.baseUrl
         } else {
             request.baseUrl ?: existing.baseUrl
         }
@@ -225,6 +241,34 @@ class ConnectionRpcImpl(
         connectionService.findById(ConnectionId.fromString(connectionId))
             ?: throw IllegalArgumentException("Connection not found: $connectionId")
         return oauth2Service.getAuthorizationUrl(ConnectionId.fromString(connectionId)).authorizationUrl
+    }
+
+    override suspend fun initBrowserSession(connectionId: String): String {
+        val connection = connectionService.findById(ConnectionId.fromString(connectionId))
+            ?: throw IllegalArgumentException("Connection not found: $connectionId")
+        return initBrowserPoolSession(connection)
+    }
+
+    /**
+     * Initialize browser pool session for Teams Browser Session auth.
+     * Calls POST /session/{clientId}/init on the browser pool service.
+     * Returns status message (noVNC must be used to complete login).
+     */
+    private suspend fun initBrowserPoolSession(connection: ConnectionDocument): String {
+        val clientId = connection.o365ClientId
+            ?: throw IllegalArgumentException("Connection ${connection.id} has no o365ClientId")
+
+        return try {
+            val response = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init")
+            val responseText = response.bodyAsText()
+            logger.info { "Browser pool session init for $clientId: $responseText" }
+
+            connectionService.save(connection.copy(state = ConnectionStateEnum.NEW))
+            "Browser session inicializována pro '$clientId'. Dokončete přihlášení přes noVNC."
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to init browser pool session for ${connection.id}" }
+            "Chyba inicializace browser session: ${e.message}"
+        }
     }
 
     override suspend fun listAvailableResources(
@@ -347,13 +391,19 @@ class ConnectionRpcImpl(
     }
 
     /**
-     * List available O365 resources (teams/channels) via O365 Gateway for MICROSOFT_TEAMS connections.
-     * Returns channels as resources with id = "teamId/channelId" so they match the polling routing key.
+     * List available O365 resources via O365 Gateway (browser pool) or Graph API (OAuth2).
+     * Supports CHAT_READ (teams/channels/chats), EMAIL_READ (mail folders), CALENDAR_READ (calendars).
      */
     private suspend fun listO365Resources(
         connection: ConnectionDocument,
         capability: ConnectionCapability,
     ): List<ConnectionResourceDto> {
+        // For OAuth2 connections, use Graph API directly with access token
+        if (connection.authType == com.jervis.dto.connection.AuthTypeEnum.OAUTH2) {
+            return listO365ResourcesViaGraphApi(connection, capability)
+        }
+
+        // For browser pool connections, use O365 Gateway
         val clientId = connection.o365ClientId
         if (clientId.isNullOrBlank()) {
             logger.warn { "O365 connection ${connection.id} has no o365ClientId" }
@@ -364,6 +414,13 @@ class ConnectionRpcImpl(
             return emptyList()
         }
 
+        return listO365ChatsViaGateway(clientId, capability)
+    }
+
+    private suspend fun listO365ChatsViaGateway(
+        clientId: String,
+        capability: ConnectionCapability,
+    ): List<ConnectionResourceDto> {
         return try {
             val teams = httpClient.get("$o365GatewayUrl/api/o365/teams/$clientId")
             if (!teams.status.isSuccess()) {
@@ -398,8 +455,163 @@ class ConnectionRpcImpl(
 
             resources
         } catch (e: Exception) {
-            logger.error(e) { "Failed to list O365 resources for connection ${connection.id}" }
+            logger.error(e) { "Failed to list O365 resources via Gateway" }
             emptyList()
+        }
+    }
+
+    /**
+     * List O365 resources directly via Microsoft Graph API using OAuth2 access token.
+     * Returns resources for the requested capability:
+     * - CHAT_READ/CHAT_SEND: joined teams + channels + recent chats
+     * - EMAIL_READ: mail folders
+     * - CALENDAR_READ: calendars
+     * - EMAIL_SEND/CALENDAR_WRITE: empty (no resource selection needed)
+     */
+    private suspend fun listO365ResourcesViaGraphApi(
+        connection: ConnectionDocument,
+        capability: ConnectionCapability,
+    ): List<ConnectionResourceDto> {
+        val refreshed = refreshTokenIfNeeded(connection)
+        val accessToken = refreshed.bearerToken
+        if (accessToken.isNullOrBlank()) {
+            logger.warn { "OAuth2 connection ${connection.id} has no access token" }
+            return emptyList()
+        }
+
+        return try {
+            when (capability) {
+                ConnectionCapability.CHAT_READ, ConnectionCapability.CHAT_SEND ->
+                    listGraphTeamsAndChats(accessToken, capability)
+                ConnectionCapability.EMAIL_READ ->
+                    listGraphMailFolders(accessToken)
+                ConnectionCapability.EMAIL_SEND ->
+                    emptyList() // Send doesn't need resource selection
+                ConnectionCapability.CALENDAR_READ, ConnectionCapability.CALENDAR_WRITE ->
+                    listGraphCalendars(accessToken)
+                else -> emptyList()
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to list O365 resources via Graph API for ${connection.id}: ${e.message}" }
+            // Return error indicator so UI can show "not available on this account"
+            listOf(
+                ConnectionResourceDto(
+                    id = "__error__",
+                    name = "Nedostupné na tomto účtu",
+                    description = "Chyba: ${e.message?.take(100)}",
+                    capability = capability,
+                ),
+            )
+        }
+    }
+
+    private suspend fun listGraphTeamsAndChats(
+        accessToken: String,
+        capability: ConnectionCapability,
+    ): List<ConnectionResourceDto> {
+        val graphBaseUrl = "https://graph.microsoft.com/v1.0"
+        val resources = mutableListOf<ConnectionResourceDto>()
+
+        // List joined teams + channels
+        try {
+            val teamsResponse = httpClient.get("$graphBaseUrl/me/joinedTeams") {
+                header("Authorization", "Bearer $accessToken")
+            }
+            if (teamsResponse.status.isSuccess()) {
+                val teamsJson = teamsResponse.body<GraphListResponse<O365TeamDto>>()
+                for (team in teamsJson.value) {
+                    val teamId = team.id ?: continue
+                    val teamName = team.displayName ?: "Team"
+
+                    val channelsResponse = httpClient.get("$graphBaseUrl/teams/$teamId/channels") {
+                        header("Authorization", "Bearer $accessToken")
+                    }
+                    if (channelsResponse.status.isSuccess()) {
+                        val channelsJson = channelsResponse.body<GraphListResponse<O365ChannelDto>>()
+                        for (channel in channelsJson.value) {
+                            val channelId = channel.id ?: continue
+                            resources.add(
+                                ConnectionResourceDto(
+                                    id = "$teamId/$channelId",
+                                    name = "$teamName / ${channel.displayName ?: "Channel"}",
+                                    description = channel.description,
+                                    capability = capability,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn { "Failed to list Teams: ${e.message}" }
+        }
+
+        // List recent chats
+        try {
+            val chatsResponse = httpClient.get("$graphBaseUrl/me/chats?\$top=50&\$expand=members") {
+                header("Authorization", "Bearer $accessToken")
+            }
+            if (chatsResponse.status.isSuccess()) {
+                val chatsJson = chatsResponse.body<GraphListResponse<GraphChatDto>>()
+                for (chat in chatsJson.value) {
+                    val chatId = chat.id ?: continue
+                    val chatName = chat.topic
+                        ?: chat.members?.filter { it.displayName != null }?.joinToString(", ") { it.displayName!! }
+                        ?: "Chat"
+                    resources.add(
+                        ConnectionResourceDto(
+                            id = "chat:$chatId",
+                            name = chatName,
+                            description = chat.chatType,
+                            capability = capability,
+                        ),
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn { "Failed to list Chats: ${e.message}" }
+        }
+
+        return resources
+    }
+
+    private suspend fun listGraphMailFolders(accessToken: String): List<ConnectionResourceDto> {
+        val graphBaseUrl = "https://graph.microsoft.com/v1.0"
+        val response = httpClient.get("$graphBaseUrl/me/mailFolders?\$top=50") {
+            header("Authorization", "Bearer $accessToken")
+        }
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException("Mail folders API returned ${response.status}")
+        }
+
+        val foldersJson = response.body<GraphListResponse<GraphMailFolderDto>>()
+        return foldersJson.value.map { folder ->
+            ConnectionResourceDto(
+                id = folder.id ?: "",
+                name = "${folder.displayName ?: "Folder"} (${folder.totalItemCount ?: 0})",
+                description = "${folder.unreadItemCount ?: 0} nepřečtených",
+                capability = ConnectionCapability.EMAIL_READ,
+            )
+        }
+    }
+
+    private suspend fun listGraphCalendars(accessToken: String): List<ConnectionResourceDto> {
+        val graphBaseUrl = "https://graph.microsoft.com/v1.0"
+        val response = httpClient.get("$graphBaseUrl/me/calendars") {
+            header("Authorization", "Bearer $accessToken")
+        }
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException("Calendars API returned ${response.status}")
+        }
+
+        val calendarsJson = response.body<GraphListResponse<GraphCalendarDto>>()
+        return calendarsJson.value.map { calendar ->
+            ConnectionResourceDto(
+                id = calendar.id ?: "",
+                name = calendar.name ?: "Calendar",
+                description = if (calendar.isDefaultCalendar == true) "Výchozí kalendář" else null,
+                capability = ConnectionCapability.CALENDAR_READ,
+            )
         }
     }
 
@@ -519,6 +731,41 @@ class ConnectionRpcImpl(
         val id: String? = null,
         val displayName: String? = null,
         val description: String? = null,
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class GraphListResponse<T>(
+        val value: List<T> = emptyList(),
+        @kotlinx.serialization.SerialName("@odata.nextLink")
+        val nextLink: String? = null,
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class GraphChatDto(
+        val id: String? = null,
+        val topic: String? = null,
+        val chatType: String? = null,
+        val members: List<GraphChatMemberDto>? = null,
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class GraphChatMemberDto(
+        val displayName: String? = null,
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class GraphMailFolderDto(
+        val id: String? = null,
+        val displayName: String? = null,
+        val totalItemCount: Int? = null,
+        val unreadItemCount: Int? = null,
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class GraphCalendarDto(
+        val id: String? = null,
+        val name: String? = null,
+        val isDefaultCalendar: Boolean? = null,
     )
 
     @kotlinx.serialization.Serializable

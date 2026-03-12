@@ -215,6 +215,7 @@ class KnowledgeService:
                     request=request,
                     chunk_ids=chunk_ids,
                     embedding_priority=embedding_priority or 0,
+                    max_tier=getattr(request, "maxTier", "NONE"),
                 )
 
                 # 3. Bidirectional chunk↔entity linking
@@ -681,6 +682,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             content=combined_content,
             source_type=request.sourceType or "unknown",
             subject=request.subject,
+            max_tier=getattr(request, "maxTier", "NONE"),
         )
 
         # Check assignment against client/project identity
@@ -950,7 +952,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         if skip_rag:
             # Only run summary
             yield await _emit("llm_start", f"LLM analýza obsahu ({settings.INGEST_MODEL_COMPLEX})...")
-            summary_data = await self._generate_summary(combined_content, request.sourceType or "unknown", request.subject, embedding_priority=embedding_priority)
+            summary_data = await self._generate_summary(combined_content, request.sourceType or "unknown", request.subject, embedding_priority=embedding_priority, max_tier=getattr(request, "maxTier", "NONE"))
         else:
             if existing_chunks > 0:
                 yield await _emit("purge", "Obsah změněn, mažu staré chunks...")
@@ -960,8 +962,9 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             yield await _emit("rag_start", "Ukládám chunks do vektorové DB...")
             yield await _emit("llm_start", f"LLM analýza obsahu ({settings.INGEST_MODEL_COMPLEX})...")
 
+            max_tier = getattr(request, "maxTier", "NONE")
             rag_task = asyncio.create_task(self.ingest(ingest_req, embedding_priority=embedding_priority, content_hash=content_hash))
-            summary_task = asyncio.create_task(self._generate_summary(combined_content, request.sourceType or "unknown", request.subject, embedding_priority=embedding_priority))
+            summary_task = asyncio.create_task(self._generate_summary(combined_content, request.sourceType or "unknown", request.subject, embedding_priority=embedding_priority, max_tier=max_tier))
 
             # Report each parallel task as it completes (real-time)
             ingest_result = None
@@ -1035,6 +1038,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         source_type: str,
         subject: str = None,
         embedding_priority: int | None = None,
+        max_tier: str = "NONE",
     ) -> dict:
         """
         Generate summary, detect actionable content, deadlines,
@@ -1116,27 +1120,18 @@ suggestedActions příklady: "reply_email", "review_code", "fix_issue", "answer_
 Odpověz POUZE validním JSON."""
 
         try:
-            logger.info("Calling LLM for summary generation model=%s source_type=%s priority=%s",
-                        settings.INGEST_MODEL_COMPLEX, source_type, embedding_priority)
-            if embedding_priority is not None:
-                # Direct httpx with X-Ollama-Priority header (ChatOllama can't set per-request headers)
-                headers = {"X-Ollama-Priority": str(embedding_priority)}
-                payload = {
-                    "model": settings.INGEST_MODEL_COMPLEX,
-                    "prompt": prompt,
-                    "format": "json",
-                    "stream": False,
-                    "options": {"temperature": 0, "num_ctx": 8192},
-                }
-                resp = await self._llm_http.post(
-                    f"{settings.OLLAMA_INGEST_BASE_URL}/api/generate",
-                    json=payload, headers=headers,
-                )
-                resp.raise_for_status()
-                raw_content = resp.json()["response"]
-            else:
-                response = await llm.ainvoke(prompt)
-                raw_content = response.content
+            from app.services.llm_router import llm_generate
+            logger.info("Calling LLM for summary generation source_type=%s priority=%s max_tier=%s",
+                        source_type, embedding_priority, max_tier)
+            raw_content = await llm_generate(
+                prompt=prompt,
+                max_tier=max_tier,
+                model=settings.INGEST_MODEL_COMPLEX,
+                num_ctx=8192,
+                priority=embedding_priority,
+                temperature=0,
+                format_json=True,
+            )
             result = json.loads(raw_content)
             logger.info("Summary generated entities=%d actionable=%s deadline=%s urgency=%s",
                         len(result.get("entities", [])),

@@ -2375,7 +2375,7 @@ CentralPoller
 
 | Platform | PollingHandler | API | Auth | Resource Key |
 |----------|---------------|-----|------|-------------|
-| Microsoft Teams | `O365PollingHandler` | O365 Gateway REST | Browser session (`o365ClientId`) | `teamId/channelId` |
+| Microsoft Teams | `O365PollingHandler` | O365 Gateway REST / Graph API (OAuth2) | OAuth2 / Browser session / Lokální token | `teamId/channelId` |
 | Slack | `SlackPollingHandler` | Slack Web API (`conversations.list`, `conversations.history`) | Bot Token (`xoxb-...`) via BEARER | `channelId` |
 | Discord | `DiscordPollingHandler` | Discord REST API v10 (`/guilds`, `/channels`, `/messages`) | Bot Token via BEARER (`Bot` prefix) | `guildId/channelId` |
 

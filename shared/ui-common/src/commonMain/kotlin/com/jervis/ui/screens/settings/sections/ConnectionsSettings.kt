@@ -175,12 +175,20 @@ fun ConnectionsSettings(repository: JervisRepository) {
                 scope.launch {
                     try {
                         val created = repository.connections.createConnection(request)
-                        if (request.authType == AuthTypeEnum.OAUTH2) {
-                            val authUrl = repository.connections.initiateOAuth2(created.id)
-                            openUrlInBrowser(authUrl)
-                            snackbarHostState.showSnackbar("OAuth2 autorizace byla spuštěna. Dokončete ji v prohlížeči.")
-                        } else {
-                            snackbarHostState.showSnackbar("Připojení vytvořeno")
+                        when {
+                            request.authType == AuthTypeEnum.OAUTH2 -> {
+                                val authUrl = repository.connections.initiateOAuth2(created.id)
+                                openUrlInBrowser(authUrl)
+                                snackbarHostState.showSnackbar("OAuth2 autorizace byla spuštěna. Dokončete ji v prohlížeči.")
+                            }
+                            request.provider == com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS &&
+                                request.authType == AuthTypeEnum.NONE -> {
+                                // Browser Session: server auto-inits browser pool, show result
+                                snackbarHostState.showSnackbar("Browser session inicializována. Dokončete přihlášení přes noVNC.")
+                            }
+                            else -> {
+                                snackbarHostState.showSnackbar("Připojení vytvořeno")
+                            }
                         }
                         loadConnections()
                         showCreateDialog = false
@@ -255,7 +263,11 @@ private fun ConnectionItemCard(
             Spacer(Modifier.width(8.dp))
             SuggestionChip(
                 onClick = {},
-                label = { Text(connection.provider.name, style = MaterialTheme.typography.labelSmall) },
+                label = {
+                    val providerLabel = ProviderDescriptor.defaultsByProvider[connection.provider]?.displayName
+                        ?: connection.provider.name
+                    Text(providerLabel, style = MaterialTheme.typography.labelSmall)
+                },
             )
             Spacer(Modifier.width(8.dp))
             JStatusBadge(status = connection.state.name)
@@ -335,15 +347,15 @@ private fun ConnectionItemCard(
 @Composable
 private fun CapabilityChip(capability: ConnectionCapability) {
     val (label, color) = when (capability) {
-        ConnectionCapability.BUGTRACKER -> "BugTracker" to MaterialTheme.colorScheme.error
+        ConnectionCapability.REPOSITORY -> "Repozitář" to MaterialTheme.colorScheme.primary
+        ConnectionCapability.BUGTRACKER -> "Úkoly" to MaterialTheme.colorScheme.error
         ConnectionCapability.WIKI -> "Wiki" to MaterialTheme.colorScheme.tertiary
-        ConnectionCapability.REPOSITORY -> "Repo" to MaterialTheme.colorScheme.primary
-        ConnectionCapability.EMAIL_READ -> "Email Read" to MaterialTheme.colorScheme.secondary
-        ConnectionCapability.EMAIL_SEND -> "Email Send" to MaterialTheme.colorScheme.secondary
-        ConnectionCapability.CHAT_READ -> "Chat Read" to MaterialTheme.colorScheme.secondary
-        ConnectionCapability.CHAT_SEND -> "Chat Send" to MaterialTheme.colorScheme.secondary
-        ConnectionCapability.CALENDAR_READ -> "Calendar Read" to MaterialTheme.colorScheme.tertiary
-        ConnectionCapability.CALENDAR_WRITE -> "Calendar Write" to MaterialTheme.colorScheme.tertiary
+        ConnectionCapability.EMAIL_READ -> "Čtení emailů" to MaterialTheme.colorScheme.secondary
+        ConnectionCapability.EMAIL_SEND -> "Odesílání emailů" to MaterialTheme.colorScheme.secondary
+        ConnectionCapability.CHAT_READ -> "Čtení chatu" to MaterialTheme.colorScheme.secondary
+        ConnectionCapability.CHAT_SEND -> "Odesílání chatu" to MaterialTheme.colorScheme.secondary
+        ConnectionCapability.CALENDAR_READ -> "Kalendář" to MaterialTheme.colorScheme.tertiary
+        ConnectionCapability.CALENDAR_WRITE -> "Zápis do kalendáře" to MaterialTheme.colorScheme.tertiary
     }
     SuggestionChip(
         onClick = {},
@@ -352,7 +364,15 @@ private fun CapabilityChip(capability: ConnectionCapability) {
 }
 
 internal val ConnectionResponseDto.displayUrl: String
-    get() = baseUrl
+    get() = baseUrl?.takeIf { it.isNotBlank() }
         ?: host?.let { "$it${port?.let { port -> ":$port" } ?: ""}" }
-        ?: o365ClientId?.let { "O365: $it" }
-        ?: "Bez adresy"
+        ?: if (provider == com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS) {
+            when (authType) {
+                AuthTypeEnum.OAUTH2 -> "Microsoft Graph API (OAuth2)"
+                AuthTypeEnum.NONE -> "Browser Session (K8s pod)"
+                AuthTypeEnum.BEARER -> "Lokální token"
+                else -> "Microsoft Teams"
+            }
+        } else {
+            "Bez adresy"
+        }
