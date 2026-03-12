@@ -450,6 +450,7 @@ async def ingest_full_async(
     metadata: str = Form("{}"),
     callbackUrl: str = Form(...),
     taskId: str = Form(...),
+    priority: str = Form(None),
     attachments: List[UploadFile] = File(default=[])
 ):
     """
@@ -484,12 +485,16 @@ async def ingest_full_async(
             file_bytes = await attachment.read()
             attachment_list.append((file_bytes, attachment.filename))
 
+        # Parse priority from form field (1=CRITICAL, 4=NORMAL default)
+        priority_int = int(priority) if priority and priority.isdigit() else None
+
         # Spawn background task — processing continues after HTTP response
         asyncio.create_task(service.process_full_async(
             request, attachment_list,
             callback_url=callbackUrl,
             task_id=taskId,
             client_id=clientId,
+            embedding_priority=priority_int,
         ))
 
         from starlette.responses import JSONResponse

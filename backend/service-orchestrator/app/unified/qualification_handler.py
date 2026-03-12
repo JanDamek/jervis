@@ -45,8 +45,8 @@ class QualifyRequest(BaseModel):
     entities: list[str] = Field(default_factory=list)
     suggested_actions: list[str] = Field(default_factory=list)
     urgency: str = ""
-    action_type: str = ""
-    estimated_complexity: str = ""
+    action_type: str | None = ""
+    estimated_complexity: str | None = ""
     is_assigned_to_me: bool = False
     has_future_deadline: bool = False
     suggested_deadline: str | None = None
@@ -67,7 +67,7 @@ class QualifyRequest(BaseModel):
     attachment_count: int = 0
 
     # Active tasks for consolidation check
-    active_tasks: list[dict[str, str]] = Field(default_factory=list)
+    active_tasks: list[dict[str, str | None]] = Field(default_factory=list)
 
 
 def _build_system_prompt(request: QualifyRequest) -> str:

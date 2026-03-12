@@ -37,16 +37,17 @@ fun App(
     onOpenDebugWindow: (() -> Unit)? = null,
 ) {
     val viewModel = remember(repository) { MainViewModel(repository, connectionManager, defaultClientId, defaultProjectId) }
-    val meetingViewModel = remember(repository) {
-        com.jervis.ui.meeting.MeetingViewModel(
+    val uploadService = remember(repository) {
+        com.jervis.ui.meeting.RecordingUploadService(
             connectionManager = connectionManager,
             repository = repository,
         )
     }
-    val offlineSyncService = remember(repository) {
-        com.jervis.ui.meeting.OfflineMeetingSyncService(
+    val meetingViewModel = remember(repository, uploadService) {
+        com.jervis.ui.meeting.MeetingViewModel(
             connectionManager = connectionManager,
             repository = repository,
+            uploadService = uploadService,
         )
     }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -216,7 +217,7 @@ fun App(
                     selectedClientId = selectedClientId,
                     selectedProjectId = selectedProjectId,
                     onBack = { appNavigator.goBack() },
-                    offlineSyncService = offlineSyncService,
+                    uploadService = uploadService,
                 )
             }
 

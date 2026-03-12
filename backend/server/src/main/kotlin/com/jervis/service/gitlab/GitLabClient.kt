@@ -76,6 +76,51 @@ class GitLabClient(
         return json.decodeFromString(body)
     }
 
+    // ── Issue write operations ──────────────────────────────────
+
+    suspend fun createIssue(
+        connection: ConnectionDocument,
+        projectId: String,
+        title: String,
+        description: String? = null,
+        labels: List<String> = emptyList(),
+    ): GitLabIssue {
+        val token = requireToken(connection)
+        val baseUrl = getBaseUrl(connection)
+        val payload = buildJsonObject {
+            put("title", title)
+            description?.let { put("description", it) }
+            if (labels.isNotEmpty()) {
+                put("labels", labels.joinToString(","))
+            }
+        }
+        val response = httpClient.post("$baseUrl/projects/${projectId.encodeURLParameter()}/issues") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val body = response.checkProviderResponse("GitLab", "createIssue")
+        return json.decodeFromString(GitLabIssue.serializer(), body)
+    }
+
+    suspend fun addIssueNote(
+        connection: ConnectionDocument,
+        projectId: String,
+        issueIid: Int,
+        noteBody: String,
+    ): GitLabNote {
+        val token = requireToken(connection)
+        val baseUrl = getBaseUrl(connection)
+        val payload = buildJsonObject { put("body", noteBody) }
+        val response = httpClient.post("$baseUrl/projects/${projectId.encodeURLParameter()}/issues/$issueIid/notes") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val body = response.checkProviderResponse("GitLab", "addIssueNote(#$issueIid)")
+        return json.decodeFromString(GitLabNote.serializer(), body)
+    }
+
     // ── Merge Request operations ──────────────────────────────────
 
     suspend fun listOpenMergeRequests(

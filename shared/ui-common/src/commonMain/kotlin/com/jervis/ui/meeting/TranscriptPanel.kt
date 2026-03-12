@@ -188,24 +188,33 @@ private fun TranscriptSegmentRow(
         )
         Spacer(modifier = Modifier.width(8.dp))
 
-        // Text column (fills remaining space)
-        Row(modifier = Modifier.weight(1f)) {
+        // Text column (fills remaining space): speaker on top, text below
+        Column(modifier = Modifier.weight(1f)) {
             val speakerLabel = segment.speakerName ?: segment.speaker
             if (speakerLabel != null) {
-                val confidenceSuffix = if (autoMatch != null && segment.speakerName != null) {
-                    val embLabel = autoMatch.matchedEmbeddingLabel?.let { " [$it]" } ?: ""
-                    " (${(autoMatch.confidence * 100).toInt()}%)$embLabel"
-                } else ""
                 val labelColor = if (autoMatch != null && autoMatch.confidence < 0.70f) {
                     MaterialTheme.colorScheme.error
                 } else {
                     MaterialTheme.colorScheme.primary
                 }
-                Text(
-                    text = "$speakerLabel$confidenceSuffix: ",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = labelColor,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = speakerLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = labelColor,
+                    )
+                    if (autoMatch != null && segment.speakerName != null) {
+                        val pct = (autoMatch.confidence * 100).toInt()
+                        val embLabel = autoMatch.matchedEmbeddingLabel
+                            ?.let { " [$it]" } ?: ""
+                        val origLabel = segment.speaker?.let { " $it" } ?: ""
+                        Text(
+                            text = "  $origLabel ($pct%)$embLabel",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
             Text(
                 text = segment.text,

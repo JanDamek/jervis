@@ -12,16 +12,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import kotlinx.datetime.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -49,7 +42,7 @@ import com.jervis.ui.design.JAddButton
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JTopBar
-import com.jervis.ui.storage.RecordingState
+import com.jervis.ui.storage.RecordingSession
 import com.jervis.ui.util.ConfirmDialog
 
 
@@ -64,7 +57,7 @@ fun MeetingsScreen(
     selectedClientId: String?,
     selectedProjectId: String?,
     onBack: () -> Unit,
-    offlineSyncService: OfflineMeetingSyncService? = null,
+    uploadService: RecordingUploadService? = null,
 ) {
     val vmProjects by viewModel.projects.collectAsState()
     val vmProjectGroups by viewModel.projectGroups.collectAsState()
@@ -85,7 +78,7 @@ fun MeetingsScreen(
 
     val deletedMeetings by viewModel.deletedMeetings.collectAsState()
     val unclassifiedMeetings by viewModel.unclassifiedMeetings.collectAsState()
-    val offlinePending = offlineSyncService?.pendingMeetings?.collectAsState()?.value ?: emptyList()
+    val pendingSessions = uploadService?.sessions?.collectAsState()?.value ?: emptyList()
 
     val currentWeekMeetings by viewModel.currentWeekMeetings.collectAsState()
     val olderGroups by viewModel.olderGroups.collectAsState()
@@ -98,13 +91,7 @@ fun MeetingsScreen(
     var editTarget by remember { mutableStateOf<MeetingDto?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
     var showPermanentDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
-    var interruptedRecordings by remember { mutableStateOf<List<RecordingState>>(emptyList()) }
     val audioRecorder = remember { AudioRecorder() }
-
-    // Check for interrupted recordings on startup
-    LaunchedEffect(Unit) {
-        interruptedRecordings = viewModel.checkForInterruptedRecordings()
-    }
 
     // Load unclassified meetings once on startup
     LaunchedEffect(Unit) {
@@ -342,7 +329,7 @@ fun MeetingsScreen(
                         JCenteredLoading()
                     }
                     currentWeekMeetings.isEmpty() && olderGroups.isEmpty() && !isRecording
-                        && unclassifiedMeetings.isEmpty() && offlinePending.isEmpty() -> {
+                        && unclassifiedMeetings.isEmpty() && pendingSessions.isEmpty() -> {
                         JEmptyState(message = "Zatím žádné nahrávky", icon = "")
                     }
                     else -> {
@@ -377,24 +364,24 @@ fun MeetingsScreen(
                                 }
                             }
 
-                            // Offline meetings section
-                            if (offlinePending.isNotEmpty()) {
-                                item(key = "offline_header") {
+                            // Pending upload sessions section
+                            if (pendingSessions.isNotEmpty()) {
+                                item(key = "upload_header") {
                                     Text(
-                                        text = "Offline nahrávky — čekají na odeslání",
+                                        text = "Odesílání nahrávek",
                                         style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(bottom = 4.dp),
                                     )
                                 }
-                                items(offlinePending, key = { "offline_${it.localId}" }) { offline ->
-                                    OfflineMeetingListItem(
-                                        meeting = offline,
-                                        onRetry = { offlineSyncService?.retryMeeting(offline.localId) },
-                                        onDelete = { offlineSyncService?.deleteMeeting(offline.localId) },
+                                items(pendingSessions, key = { "upload_${it.localId}" }) { session ->
+                                    PendingSessionListItem(
+                                        session = session,
+                                        onRetry = { uploadService?.retrySession(session.localId) },
+                                        onCancel = { uploadService?.cancelSession(session.localId, session.serverMeetingId) },
                                     )
                                 }
-                                item(key = "offline_divider") {
+                                item(key = "upload_divider") {
                                     androidx.compose.material3.HorizontalDivider(
                                         modifier = Modifier.padding(vertical = 8.dp),
                                     )
@@ -506,34 +493,6 @@ fun MeetingsScreen(
             viewModel.permanentlyDeleteMeeting(meetingId)
         },
         onDismiss = { showPermanentDeleteConfirmDialog = null },
-    )
-
-    // Interrupted recording resume dialog — shows one at a time, processes the list
-    val currentInterrupted = interruptedRecordings.firstOrNull()
-    ConfirmDialog(
-        visible = currentInterrupted != null,
-        title = if (interruptedRecordings.size > 1)
-            "Nalezena přerušená nahrávka (${interruptedRecordings.size})"
-        else
-            "Nalezena přerušená nahrávka",
-        message = buildString {
-            append("Byla nalezena nedokončená nahrávka")
-            currentInterrupted?.title?.let { append(" \"$it\"") }
-            append(". Částečná data jsou uložena na serveru. Chcete nahrávku dokončit?")
-        },
-        confirmText = "Dokončit",
-        onConfirm = {
-            val state = currentInterrupted ?: return@ConfirmDialog
-            interruptedRecordings = interruptedRecordings.drop(1)
-            viewModel.resumeInterruptedUpload(state)
-        },
-        onDismiss = {
-            val state = currentInterrupted ?: return@ConfirmDialog
-            interruptedRecordings = interruptedRecordings.drop(1)
-            viewModel.discardInterruptedRecording(state)
-        },
-        isDestructive = false,
-        dismissText = "Zahodit",
     )
 
 }
@@ -789,105 +748,63 @@ private fun EditMeetingDialog(
 }
 
 /**
- * List item for an offline meeting waiting to be synced.
+ * List item for a pending recording session (uploading chunks to server).
  */
 @Composable
-private fun OfflineMeetingListItem(
-    meeting: com.jervis.ui.storage.OfflineMeeting,
+private fun PendingSessionListItem(
+    session: RecordingSession,
     onRetry: () -> Unit,
-    onDelete: () -> Unit,
+    onCancel: () -> Unit,
 ) {
-    val stateText = when (meeting.syncState) {
-        com.jervis.ui.storage.OfflineSyncState.PENDING -> "Čeká na odeslání"
-        com.jervis.ui.storage.OfflineSyncState.SYNCING -> "Odesílání..."
-        com.jervis.ui.storage.OfflineSyncState.SYNCED -> "Odesláno"
-        com.jervis.ui.storage.OfflineSyncState.FAILED -> "Selhalo"
+    val statusText = when {
+        session.error != null -> "Selhalo: ${session.error}"
+        session.stoppedAtMs == null -> "Nahrává..."
+        session.serverMeetingId == null -> "Čeká na připojení"
+        session.uploadedChunkCount < session.chunkCount -> "Odesílání ${session.uploadedChunkCount}/${session.chunkCount}"
+        else -> "Dokončování..."
     }
-    val stateColor = when (meeting.syncState) {
-        com.jervis.ui.storage.OfflineSyncState.FAILED -> MaterialTheme.colorScheme.error
-        com.jervis.ui.storage.OfflineSyncState.SYNCING -> MaterialTheme.colorScheme.primary
+    val statusColor = when {
+        session.error != null -> MaterialTheme.colorScheme.error
+        session.stoppedAtMs == null -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    val duration = meeting.durationSeconds
-    val durationText = if (duration > 0) {
-        "${duration / 60}:${(duration % 60).toString().padStart(2, '0')}"
-    } else "—"
-
-    // Format start date/time from epoch millis
-    val startDateTime = remember(meeting.startedAtMs) {
-        try {
-            val instant = Instant.fromEpochMilliseconds(meeting.startedAtMs)
-            val local = instant.toLocalDateTime(TimeZone.currentSystemDefault())
-            "${local.date} ${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
-        } catch (_: Exception) { "—" }
-    }
-
-    // Meeting type label
-    val typeLabel = remember(meeting.meetingType) {
-        meeting.meetingType?.let {
-            try {
-                meetingTypeLabel(com.jervis.dto.meeting.MeetingTypeEnum.valueOf(it))
-            } catch (_: Exception) { null }
-        }
     }
 
     androidx.compose.material3.OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
+        border = CardDefaults.outlinedCardBorder(),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = meeting.title ?: "Offline nahrávka",
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Text(
-                    text = buildString {
-                        append(startDateTime)
-                        if (typeLabel != null) append("  $typeLabel")
-                        append("  $durationText")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = "$stateText · ${meeting.chunkCount} chunků",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = stateColor,
-                )
-                if (meeting.syncError != null) {
-                    Text(
-                        text = meeting.syncError,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        maxLines = 2,
-                    )
-                }
-            }
-            if (meeting.syncState == com.jervis.ui.storage.OfflineSyncState.FAILED) {
-                androidx.compose.material3.TextButton(onClick = onRetry) {
-                    Text("Zkusit znovu")
-                }
-            }
-            if (meeting.syncState == com.jervis.ui.storage.OfflineSyncState.SYNCING) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-            }
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier.size(44.dp),
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Smazat",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = session.title ?: "Bez názvu",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = statusColor,
+                    )
+                    if (session.chunkCount > 0 && session.stoppedAtMs != null) {
+                        val progress = if (session.chunkCount > 0)
+                            session.uploadedChunkCount.toFloat() / session.chunkCount
+                        else 0f
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (session.error != null) {
+                        androidx.compose.material3.TextButton(onClick = onRetry) { Text("Zkusit znovu") }
+                    }
+                    androidx.compose.material3.TextButton(onClick = onCancel) { Text("Zrušit") }
+                }
             }
         }
     }

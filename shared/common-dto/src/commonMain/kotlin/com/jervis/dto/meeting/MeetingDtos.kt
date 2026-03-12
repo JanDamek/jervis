@@ -64,6 +64,8 @@ data class MeetingDto(
     val autoSpeakerMapping: Map<String, AutoSpeakerMatchDto>? = null,
     val deleted: Boolean = false,
     val deletedAt: String? = null,
+    /** Merge suggestion after classify/edit — other meeting with same key + overlapping time. */
+    val mergeSuggestion: MergeSuggestionDto? = null,
 )
 
 @Serializable
@@ -111,6 +113,8 @@ data class MeetingCreateDto(
     val audioInputType: AudioInputType = AudioInputType.MIXED,
     val title: String? = null,
     val meetingType: MeetingTypeEnum? = null,
+    /** Device session ID for multi-device deduplication (future). */
+    val deviceSessionId: String? = null,
 )
 
 @Serializable
@@ -172,6 +176,14 @@ data class MeetingSummaryDto(
     val durationSeconds: Long? = null,
     val startedAt: String,
     val errorMessage: String? = null,
+)
+
+@Serializable
+data class MergeSuggestionDto(
+    val targetMeetingId: String,
+    val targetTitle: String?,
+    val targetStartedAt: String,
+    val targetDurationSeconds: Long?,
 )
 
 @Serializable

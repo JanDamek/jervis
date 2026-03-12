@@ -16,7 +16,7 @@ cd "$WORKSPACE_PATH"
 
 # --- Auto-update Claude Code CLI from NAS cache ---
 if [ -f /opt/jervis/update-claude-cli.sh ]; then
-    source /opt/jervis/update-claude-cli.sh
+    source /opt/jervis/update-claude-cli.sh || echo "[jervis-claude] WARN: CLI update failed, continuing with existing version"
 fi
 
 # Verify auth (either CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY)

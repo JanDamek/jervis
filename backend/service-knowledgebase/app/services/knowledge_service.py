@@ -50,6 +50,8 @@ class KnowledgeService:
         # Persistent HTTP client for progress callbacks to Kotlin server
         import httpx
         self._callback_http = httpx.AsyncClient(timeout=5.0) if settings.KOTLIN_SERVER_URL else None
+        # Direct httpx for LLM calls with priority headers (ChatOllama can't set per-request headers)
+        self._llm_http = httpx.AsyncClient(timeout=settings.LLM_CALL_TIMEOUT)
         # LLM for ingest tasks — explicit num_ctx prevents Ollama using small
         # default (often 2048), and timeout prevents indefinite hangs that block
         # the async callback to Kotlin (causing infinite QUALIFYING→retry loop).
@@ -772,6 +774,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         callback_url: str,
         task_id: str,
         client_id: str,
+        embedding_priority: int | None = None,
     ):
         """Process full ingest in background and POST result to callback when done.
 
@@ -789,7 +792,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         completion_url = callback_url  # /internal/kb-done
 
         t0 = _time.monotonic()
-        logger.info("ASYNC_INGEST_START task=%s source=%s", task_id, request.sourceUrn)
+        logger.info("ASYNC_INGEST_START task=%s source=%s priority=%s", task_id, request.sourceUrn, embedding_priority)
 
         try:
             # Consume the streaming generator — progress callbacks fire via _post_progress_callback
@@ -799,6 +802,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
                 callback_url=progress_url,
                 task_id=task_id,
                 client_id=client_id,
+                embedding_priority=embedding_priority,
             ):
                 if event.get("type") == "result":
                     result_data = event.get("data")
@@ -836,6 +840,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         callback_url: str = "",
         task_id: str = "",
         client_id: str = "",
+        embedding_priority: int | None = None,
     ):
         """
         Streaming version of ingest_full that yields NDJSON progress events.
@@ -945,7 +950,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         if skip_rag:
             # Only run summary
             yield await _emit("llm_start", f"LLM analýza obsahu ({settings.INGEST_MODEL_COMPLEX})...")
-            summary_data = await self._generate_summary(combined_content, request.sourceType or "unknown", request.subject)
+            summary_data = await self._generate_summary(combined_content, request.sourceType or "unknown", request.subject, embedding_priority=embedding_priority)
         else:
             if existing_chunks > 0:
                 yield await _emit("purge", "Obsah změněn, mažu staré chunks...")
@@ -955,8 +960,8 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             yield await _emit("rag_start", "Ukládám chunks do vektorové DB...")
             yield await _emit("llm_start", f"LLM analýza obsahu ({settings.INGEST_MODEL_COMPLEX})...")
 
-            rag_task = asyncio.create_task(self.ingest(ingest_req, content_hash=content_hash))
-            summary_task = asyncio.create_task(self._generate_summary(combined_content, request.sourceType or "unknown", request.subject))
+            rag_task = asyncio.create_task(self.ingest(ingest_req, embedding_priority=embedding_priority, content_hash=content_hash))
+            summary_task = asyncio.create_task(self._generate_summary(combined_content, request.sourceType or "unknown", request.subject, embedding_priority=embedding_priority))
 
             # Report each parallel task as it completes (real-time)
             ingest_result = None
@@ -1028,7 +1033,8 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         self,
         content: str,
         source_type: str,
-        subject: str = None
+        subject: str = None,
+        embedding_priority: int | None = None,
     ) -> dict:
         """
         Generate summary, detect actionable content, deadlines,
@@ -1110,10 +1116,28 @@ suggestedActions příklady: "reply_email", "review_code", "fix_issue", "answer_
 Odpověz POUZE validním JSON."""
 
         try:
-            logger.info("Calling LLM for summary generation model=%s source_type=%s",
-                        settings.INGEST_MODEL_COMPLEX, source_type)
-            response = await llm.ainvoke(prompt)
-            result = json.loads(response.content)
+            logger.info("Calling LLM for summary generation model=%s source_type=%s priority=%s",
+                        settings.INGEST_MODEL_COMPLEX, source_type, embedding_priority)
+            if embedding_priority is not None:
+                # Direct httpx with X-Ollama-Priority header (ChatOllama can't set per-request headers)
+                headers = {"X-Ollama-Priority": str(embedding_priority)}
+                payload = {
+                    "model": settings.INGEST_MODEL_COMPLEX,
+                    "prompt": prompt,
+                    "format": "json",
+                    "stream": False,
+                    "options": {"temperature": 0, "num_ctx": 8192},
+                }
+                resp = await self._llm_http.post(
+                    f"{settings.OLLAMA_INGEST_BASE_URL}/api/generate",
+                    json=payload, headers=headers,
+                )
+                resp.raise_for_status()
+                raw_content = resp.json()["response"]
+            else:
+                response = await llm.ainvoke(prompt)
+                raw_content = response.content
+            result = json.loads(raw_content)
             logger.info("Summary generated entities=%d actionable=%s deadline=%s urgency=%s",
                         len(result.get("entities", [])),
                         result.get("hasActionableContent", False),

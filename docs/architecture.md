@@ -27,6 +27,8 @@
 18. [Chat Router](#chat-router)
 19. [Hierarchical Task System](#hierarchical-task-system)
 20. [Unified Chat Stream](#unified-chat-stream)
+21. [Watch Apps (watchOS + Wear OS)](#watch-apps-watchos--wear-os)
+22. [TTS Service (Piper)](#tts-service-piper)
 
 ---
 
@@ -949,16 +951,28 @@ The Compose UI supports offline operation — the app renders immediately withou
 **Key components:**
 - `OfflineException` (`shared/domain/.../di/OfflineException.kt`): thrown when RPC called while offline
 - `OfflineDataCache` (expect/actual, 3 platforms): persists clients + projects for offline display
-- `OfflineMeetingStorage` (expect/actual, 3 platforms): persists offline meeting metadata
-- `OfflineMeetingSyncService` (`shared/ui-common/.../meeting/OfflineMeetingSyncService.kt`): auto-syncs offline meetings when connection restored
+- `RecordingSessionStorage` (expect/actual, 3 platforms): persists recording session state (replaces legacy `RecordingState` and `OfflineMeeting` models)
+- `RecordingUploadService` (`shared/ui-common/.../meeting/RecordingUploadService.kt`): unified local-first recording upload (replaces `OfflineMeetingSyncService`)
+
+**Recording architecture (local-first):**
+- All recordings are local-first: audio chunks are always saved to disk first
+- `RecordingUploadService` uploads chunks asynchronously in background while recording continues
+- On stop, recording is finalized only after all chunks have been uploaded
+- Works seamlessly both online and offline — when offline, chunks accumulate on disk and upload when connection is restored
+
+**Server-side meeting dedup:**
+- `MeetingDocument` has a `deviceSessionId` field (unique per recording session)
+- Compound index on `(clientId, meetingType, state, deleted)` prevents duplicate meetings
+- `MeetingRepository.findActiveByClientIdAndMeetingType()` and `findOverlapping()` queries support dedup logic
+- `MeetingCreateDto` includes `deviceSessionId` for server-side correlation
+- `MeetingDto` includes `mergeSuggestion` field (populated after classify/update for potential merge candidates)
 
 **Behavior:**
 - `JervisApp.kt` creates repository eagerly (lambda-based, not blocking on connect)
 - Desktop `ConnectionManager.repository` is non-nullable val
 - No blocking overlay on disconnect — replaced by "Offline" chip in `PersistentTopBar`
 - `ConnectionViewModel.isOffline: StateFlow<Boolean>` derives from connection state
-- Chat input disabled when offline; meeting recording works offline (chunks saved to disk)
-- `OfflineMeetingSyncService` watches connection state and uploads offline meetings on reconnect
+- Chat input disabled when offline; meeting recording works offline (chunks saved to disk, uploaded when connected)
 
 ### Ad-hoc Recording (Quick Record from Top Bar)
 
@@ -966,7 +980,9 @@ One-tap recording from `PersistentTopBar` — no dialog, no client/project selec
 
 **Key changes:**
 - `MeetingDocument.clientId` is nullable (`ClientId?`) — null means unclassified
-- `MeetingDto.clientId` and `MeetingCreateDto.clientId` are nullable (`String?`)
+- `MeetingDto.clientId` and `MeetingCreateDto.clientId` are nullable (`String?`); `MeetingCreateDto` also carries `deviceSessionId`
+- `MeetingDto.mergeSuggestion` — populated after classify/update when server detects potential merge candidates
+- `MeetingDocument.deviceSessionId` — unique per recording session, used for server-side dedup
 - `MeetingTypeEnum.AD_HOC` — new enum value for quick recordings
 - `PersistentTopBar` has a mic button (🎙) that calls `MeetingViewModel.startQuickRecording()` — records with `clientId=null, meetingType=AD_HOC`
 - Stop button (⏹) replaces mic button during recording
@@ -1752,6 +1768,7 @@ build_*.sh:
 | `build_correction.sh` | jervis-correction | Docker + K8s |
 | `build_mcp.sh` | jervis-mcp | Docker + K8s |
 | `build_service.sh` | Generic (provider services) | Gradle + Docker + K8s |
+| `build_tts.sh` | jervis-tts | Docker + K8s |
 | `build_image.sh` | Generic (Job-only images) | Docker only (no K8s Deployment) |
 
 ---
@@ -2396,3 +2413,63 @@ CentralPoller
 | `backend/server/.../entity/slack/SlackMessageIndexDocument.kt` | Slack message tracking in MongoDB |
 | `backend/server/.../entity/discord/DiscordMessageIndexDocument.kt` | Discord message tracking in MongoDB |
 | `backend/server/.../integration/chat/ChatReplyService.kt` | Outbound message sending (stubs, EPIC 11-S5) |
+
+---
+
+## Watch Apps (watchOS + Wear OS)
+
+### Overview
+
+Companion watch apps for ad-hoc audio recording and voice chat commands. Both platforms send audio data to the paired phone, which handles upload via `RecordingUploadService`.
+
+### watchOS App (`apps/watchApp/`)
+
+SwiftUI watchOS app with two main actions:
+
+- **Ad-hoc Recording** — starts recording on the watch, streams audio chunks to iPhone via WatchConnectivity
+- **Chat Voice Command** — records a voice command and sends it to the phone for chat submission
+
+**Phone-side integration:** `WatchSessionManager` (iOS) receives `WCSessionDelegate` data transfers and feeds audio chunks into `RecordingUploadService` for server upload.
+
+### Wear OS App (`apps/wearApp/`)
+
+Compose for Wear OS app (registered in `settings.gradle.kts` as `:apps:wearApp`):
+
+- **Recording Screen** — ad-hoc recording with start/stop controls
+- **Chat Screen** — voice command recording for chat
+
+Uses **DataLayer API** (`Wearable.getDataClient()`) for phone communication. The phone-side `DataLayerListenerService` receives audio data and delegates to `RecordingUploadService`.
+
+### Communication Flow
+
+```
+Watch (audio capture)
+  → WatchConnectivity (iOS) / DataLayer API (Android)
+    → Phone receives audio chunks
+      → RecordingUploadService → server upload
+```
+
+---
+
+## TTS Service (Piper)
+
+### Overview
+
+Text-to-speech service using **Piper TTS** (fast, CPU-only neural TTS). Deployed as a FastAPI microservice.
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/tts` | POST | Returns complete WAV audio for input text |
+| `/tts/stream` | POST | Returns chunked WAV audio (streaming) |
+
+### Deployment
+
+- **Service:** `backend/service-tts/` (FastAPI + Piper)
+- **CPU-only** — no GPU required
+- **K8s Deployment** — standard pod, built via `k8s/build_tts.sh`
+
+### Client Integration
+
+`TtsClient` (`shared/ui-common/.../audio/TtsClient.kt`) provides cross-platform TTS playback by calling the service endpoints and piping audio to the platform audio player.

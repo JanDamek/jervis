@@ -238,6 +238,7 @@ class KnowledgeServiceRestClient(
         request: FullIngestRequest,
         taskId: String,
         clientId: String,
+        priority: Int? = null,
     ): Boolean {
         val callbackUrl = if (callbackBaseUrl.isNotBlank()) {
             "${callbackBaseUrl.trimEnd('/')}/internal/kb-done"
@@ -260,6 +261,7 @@ class KnowledgeServiceRestClient(
                 append("metadata", Json.encodeToString(request.metadata))
                 append("callbackUrl", callbackUrl)
                 append("taskId", taskId)
+                priority?.let { append("priority", it.toString()) }
 
                 request.attachments.forEach { attachment ->
                     append(

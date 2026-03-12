@@ -623,9 +623,14 @@ async def run_graph_agent(
             request.task_id, len(existing_graph.vertices),
         )
         # Mark root vertex as COMPLETED (decomposition already done by chat)
+        # Use complete_vertex() to fill outgoing edge payloads and propagate readiness
         root = existing_graph.vertices.get(existing_graph.root_vertex_id)
         if root and root.status != VertexStatus.COMPLETED:
-            root.status = VertexStatus.COMPLETED
+            complete_vertex(
+                existing_graph, root.id,
+                result="Pre-built thinking map (decomposed by chat)",
+                result_summary="Pre-built thinking map",
+            )
         existing_graph.status = GraphStatus.EXECUTING
         agent_store.cache_subgraph(existing_graph)
         pre_built_graph = existing_graph.model_dump()
@@ -778,6 +783,8 @@ async def _agentic_vertex(
     task_data = state.get("task", {})
     client_id = task_data.get("client_id", "")
     project_id = task_data.get("project_id")
+    task_id = task_data.get("id", "")
+    group_id = task_data.get("group_id")
 
     # --- Agentic loop ---
     tool_call_history: list[tuple[str, str]] = []
@@ -862,7 +869,8 @@ async def _agentic_vertex(
                         project_id=project_id,
                         processing_mode=state.get("processing_mode", "BACKGROUND"),
                         skip_approval=True,
-                        task_id=graph.task_id,
+                        group_id=group_id,
+                        task_id=task_id,
                     ),
                     timeout=_VERTEX_TOOL_TIMEOUT_S,
                 )

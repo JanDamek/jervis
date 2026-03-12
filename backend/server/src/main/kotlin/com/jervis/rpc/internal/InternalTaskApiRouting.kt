@@ -581,6 +581,7 @@ data class InternalCreateTaskRequest(
     val scheduledAt: String? = null,
     val createdBy: String? = null,
     val metadata: Map<String, String>? = null,
+    val priority: Int? = null,
 )
 
 @Serializable

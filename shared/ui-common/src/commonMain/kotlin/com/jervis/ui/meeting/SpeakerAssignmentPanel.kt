@@ -6,20 +6,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,14 +28,17 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.SpeakerCreateDto
 import com.jervis.dto.meeting.SpeakerDto
 import com.jervis.dto.meeting.SpeakerEmbeddingDto
 import com.jervis.dto.meeting.VoiceSampleRefDto
 import com.jervis.ui.design.JDropdown
+import com.jervis.ui.design.JIconButton
 import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JSecondaryButton
 import com.jervis.ui.design.JTextField
@@ -42,8 +46,7 @@ import com.jervis.ui.design.JTextButton
 
 /**
  * Dialog for assigning speaker profiles to diarization labels in a meeting transcript.
- * Shows unique speaker labels from transcript, dropdown to pick speakers,
- * "New Speaker" form at the top, and voice sample extraction.
+ * Uses custom Dialog (not AlertDialog) to allow full-height scrollable content.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -78,17 +81,33 @@ internal fun SpeakerAssignmentDialog(
     var newLanguages by remember { mutableStateOf("") }
     var newNotes by remember { mutableStateOf("") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Přiřazení mluvčích", style = MaterialTheme.typography.headlineSmall) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .heightIn(max = 500.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                // "New Speaker" button — always visible at top
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f),
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = 6.dp,
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                // Title row with close button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Přiřazení mluvčích", style = MaterialTheme.typography.headlineSmall)
+                    JIconButton(
+                        onClick = onDismiss,
+                        icon = Icons.Default.Close,
+                        contentDescription = "Zavřít",
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Sticky "New Speaker" button — always visible, outside scroll
                 JSecondaryButton(
                     onClick = { showCreateForm = !showCreateForm },
                     modifier = Modifier.fillMaxWidth(),
@@ -102,9 +121,12 @@ internal fun SpeakerAssignmentDialog(
                     Text(if (showCreateForm) "Skrýt formulář" else "Nový řečník")
                 }
 
-                // Inline create form
+                // Inline create form — outside scroll, collapses when hidden
                 AnimatedVisibility(visible = showCreateForm) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
                         JTextField(
                             value = newName,
                             onValueChange = { newName = it },
@@ -163,122 +185,141 @@ internal fun SpeakerAssignmentDialog(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
                 HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
 
-                if (uniqueLabels.isEmpty()) {
-                    Text(
-                        text = "Přepis neobsahuje rozlišení řečníků (diarizace).",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    // Speaker label -> dropdown mapping rows
-                    uniqueLabels.forEach { label ->
-                        val selectedId = localMapping[label]
-                        val selectedSpeaker = speakers.find { it.id == selectedId }
-                        val autoMatch = meeting.autoSpeakerMapping?.get(label)
-                        val dropdownItems = listOf<SpeakerDto?>(null) + speakers
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Column(modifier = Modifier.padding(top = 12.dp)) {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                                if (autoMatch != null) {
-                                    val pct = (autoMatch.confidence * 100).toInt()
-                                    val embLabel = autoMatch.matchedEmbeddingLabel
-                                    val suffix = if (embLabel != null) " [$embLabel]" else ""
-                                    Text(
-                                        text = "${autoMatch.speakerName} ($pct%)$suffix",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (autoMatch.confidence > 0.70f)
-                                            MaterialTheme.colorScheme.tertiary
-                                        else
-                                            MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                            JDropdown(
-                                items = dropdownItems,
-                                selectedItem = selectedSpeaker,
-                                onItemSelected = { speaker ->
-                                    if (speaker != null) {
-                                        localMapping[label] = speaker.id
-                                    } else {
-                                        localMapping.remove(label)
-                                    }
-                                },
-                                label = "Řečník",
-                                itemLabel = { it?.name ?: "--- Nepřiřazeno ---" },
-                                modifier = Modifier.weight(1f),
+                // Scrollable speaker mapping rows only
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (uniqueLabels.isEmpty()) {
+                        item {
+                            Text(
+                                text = "Přepis neobsahuje rozlišení řečníků (diarizace).",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                    } else {
+                        // Speaker label -> dropdown mapping rows
+                        items(uniqueLabels) { label ->
+                            val selectedId = localMapping[label]
+                            val selectedSpeaker = speakers.find { it.id == selectedId }
+                            val autoMatch = meeting.autoSpeakerMapping?.get(label)
+                            val dropdownItems = listOf<SpeakerDto?>(null) + speakers
 
-                        // Voice sample button
-                        if (selectedSpeaker != null) {
-                            val firstSegment = segments.firstOrNull { it.speaker == label }
-                            if (firstSegment != null && selectedSpeaker.voiceSampleRef == null) {
-                                JTextButton(
-                                    onClick = {
-                                        onSetVoiceSample(
-                                            selectedSpeaker.id,
-                                            VoiceSampleRefDto(
-                                                meetingId = meeting.id,
-                                                startSec = firstSegment.startSec,
-                                                endSec = firstSegment.endSec,
-                                            ),
-                                        )
-                                    },
+                            Column {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    Text("Uložit vzorek hlasu")
+                                    Column(modifier = Modifier.padding(top = 12.dp)) {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                        if (autoMatch != null) {
+                                            val pct = (autoMatch.confidence * 100).toInt()
+                                            val embLabel = autoMatch.matchedEmbeddingLabel
+                                            val suffix = if (embLabel != null) " [$embLabel]" else ""
+                                            Text(
+                                                text = "${autoMatch.speakerName} ($pct%)$suffix",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (autoMatch.confidence > 0.70f)
+                                                    MaterialTheme.colorScheme.tertiary
+                                                else
+                                                    MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                    JDropdown(
+                                        items = dropdownItems,
+                                        selectedItem = selectedSpeaker,
+                                        onItemSelected = { speaker ->
+                                            if (speaker != null) {
+                                                localMapping[label] = speaker.id
+                                            } else {
+                                                localMapping.remove(label)
+                                            }
+                                        },
+                                        label = "Řečník",
+                                        itemLabel = { it?.name ?: "--- Nepřiřazeno ---" },
+                                        modifier = Modifier.weight(1f),
+                                    )
                                 }
-                            } else if (selectedSpeaker.voiceSampleRef != null) {
-                                Text(
-                                    text = "Vzorek hlasu uložen",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+
+                                // Voice sample button
+                                if (selectedSpeaker != null) {
+                                    val firstSegment = segments.firstOrNull { it.speaker == label }
+                                    if (firstSegment != null && selectedSpeaker.voiceSampleRef == null) {
+                                        JTextButton(
+                                            onClick = {
+                                                onSetVoiceSample(
+                                                    selectedSpeaker.id,
+                                                    VoiceSampleRefDto(
+                                                        meetingId = meeting.id,
+                                                        startSec = firstSegment.startSec,
+                                                        endSec = firstSegment.endSec,
+                                                    ),
+                                                )
+                                            },
+                                        ) {
+                                            Text("Uložit vzorek hlasu")
+                                        }
+                                    } else if (selectedSpeaker.voiceSampleRef != null) {
+                                        Text(
+                                            text = "Vzorek hlasu uložen",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            }
-        },
-        confirmButton = {
-            JPrimaryButton(
-                onClick = {
-                    onAssignSpeakers(localMapping.toMap())
-                    // Auto-save voice embeddings
-                    val embeddings = meeting.speakerEmbeddings
-                    if (embeddings != null) {
-                        for ((lbl, speakerId) in localMapping) {
-                            val emb = embeddings[lbl]
-                            if (emb != null) {
-                                onSetVoiceEmbedding(
-                                    SpeakerEmbeddingDto(
-                                        speakerId = speakerId,
-                                        embedding = emb,
-                                        label = meeting.title ?: lbl,
-                                        meetingId = meeting.id,
-                                    ),
-                                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Action buttons at bottom
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    JTextButton(onClick = onDismiss) { Text("Zrušit") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    JPrimaryButton(
+                        onClick = {
+                            onAssignSpeakers(localMapping.toMap())
+                            // Auto-save voice embeddings
+                            val embeddings = meeting.speakerEmbeddings
+                            if (embeddings != null) {
+                                for ((lbl, speakerId) in localMapping) {
+                                    val emb = embeddings[lbl]
+                                    if (emb != null) {
+                                        onSetVoiceEmbedding(
+                                            SpeakerEmbeddingDto(
+                                                speakerId = speakerId,
+                                                embedding = emb,
+                                                label = meeting.title ?: lbl,
+                                                meetingId = meeting.id,
+                                            ),
+                                        )
+                                    }
+                                }
                             }
-                        }
+                            onDismiss()
+                        },
+                        enabled = uniqueLabels.isNotEmpty(),
+                    ) {
+                        Text("Uložit mapování")
                     }
-                    onDismiss()
-                },
-                enabled = uniqueLabels.isNotEmpty(),
-            ) {
-                Text("Uložit mapování")
+                }
             }
-        },
-        dismissButton = {
-            JTextButton(onClick = onDismiss) { Text("Zrušit") }
-        },
-    )
+        }
+    }
 }

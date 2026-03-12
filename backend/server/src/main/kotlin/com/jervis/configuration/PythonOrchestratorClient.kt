@@ -263,6 +263,12 @@ class PythonOrchestratorClient(baseUrl: String) {
                 logger.info { "PYTHON_QUALIFY_BUSY: returned 429, skipping" }
                 return false
             }
+            if (response.status.value !in 200..299) {
+                val body = runCatching { response.bodyAsText() }.getOrDefault("")
+                logger.error { "PYTHON_QUALIFY_ERROR: taskId=${request.taskId} status=${response.status.value} body=$body" }
+                circuitBreaker.recordFailure()
+                return false
+            }
             circuitBreaker.recordSuccess()
             logger.info { "PYTHON_QUALIFY_DISPATCHED: taskId=${request.taskId}" }
             true

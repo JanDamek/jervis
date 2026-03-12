@@ -223,21 +223,29 @@ def get_ready_vertices(graph: AgentGraph) -> list[GraphVertex]:
     """Get all vertices that are READY for execution.
 
     A vertex is READY when:
-    - It has no incoming edges (source vertex), OR
-    - ALL incoming edges have payloads (all upstream completed)
+    - It has no incoming DEPENDENCY edges, OR
+    - ALL incoming DEPENDENCY edges have payloads (all upstream completed)
     AND
     - Its current status is PENDING or READY
+
+    Note: DECOMPOSITION edges (parent→child structural) do NOT gate readiness.
+    They are for traceability only. Only DEPENDENCY edges carry data flow
+    constraints.
     """
     ready = []
     for vertex in graph.vertices.values():
         if vertex.status not in (VertexStatus.PENDING, VertexStatus.READY):
             continue
-        incoming = get_incoming_edges(graph, vertex.id)
-        if not incoming:
-            # No dependencies — always ready
+        # Only DEPENDENCY edges gate readiness — DECOMPOSITION edges are structural
+        dep_edges = [
+            e for e in get_incoming_edges(graph, vertex.id)
+            if e.edge_type == EdgeType.DEPENDENCY
+        ]
+        if not dep_edges:
+            # No dependency edges — always ready
             vertex.status = VertexStatus.READY
             ready.append(vertex)
-        elif all(e.payload is not None for e in incoming):
+        elif all(e.payload is not None for e in dep_edges):
             vertex.status = VertexStatus.READY
             ready.append(vertex)
     return ready
@@ -497,15 +505,22 @@ def get_final_result(graph: AgentGraph) -> str:
 
 
 def _update_vertex_readiness(graph: AgentGraph, vertex_id: str) -> None:
-    """Recalculate readiness of a vertex based on incoming edges."""
+    """Recalculate readiness of a vertex based on incoming DEPENDENCY edges.
+
+    DECOMPOSITION edges (parent→child structural) do NOT gate readiness.
+    Only DEPENDENCY edges carry data flow constraints.
+    """
     vertex = graph.vertices.get(vertex_id)
     if not vertex or vertex.status not in (VertexStatus.PENDING, VertexStatus.READY):
         return
 
-    incoming = get_incoming_edges(graph, vertex_id)
-    if not incoming:
+    dep_edges = [
+        e for e in get_incoming_edges(graph, vertex_id)
+        if e.edge_type == EdgeType.DEPENDENCY
+    ]
+    if not dep_edges:
         vertex.status = VertexStatus.READY
-    elif all(e.payload is not None for e in incoming):
+    elif all(e.payload is not None for e in dep_edges):
         vertex.status = VertexStatus.READY
     else:
         vertex.status = VertexStatus.PENDING

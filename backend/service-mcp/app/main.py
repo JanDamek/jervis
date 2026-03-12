@@ -994,31 +994,23 @@ async def submit_task(
         task_name: Display name for the task (auto-generated if empty)
         processing_mode: FOREGROUND (interactive) or BACKGROUND (autonomous)
     """
-    from bson import ObjectId as BsonObjectId
-
-    db = await get_db()
-    task_id = BsonObjectId()
-    correlation_id = str(BsonObjectId())
-    now = datetime.now(tz=None)
-
-    task_doc = {
-        "_id": task_id,
-        "type": "USER_INPUT_PROCESSING",
-        "taskName": task_name or query[:60],
-        "content": query,
-        "projectId": BsonObjectId(project_id) if project_id else None,
-        "clientId": BsonObjectId(client_id),
-        "createdAt": now,
-        "state": "QUEUED",
-        "processingMode": processing_mode,
-        "correlationId": correlation_id,
-        "sourceUrn": "chat:coding-agent",
-        "qualificationRetries": 0,
-        "dispatchRetryCount": 0,
+    payload: dict = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "query": query,
+        "createdBy": "mcp-submit",
+        "priority": 1,
     }
-
-    await db["tasks"].insert_one(task_doc)
-    return f"Task created: id={task_id}, state=QUEUED, mode={processing_mode}"
+    if task_name:
+        payload["title"] = task_name
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/tasks/create",
+            json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return f"Task created: id={data.get('taskId', '?')}, state={data.get('state', '?')}, name={data.get('name', '?')}"
 
 
 # ── Scheduled Task Tools ─────────────────────────────────────────────────
@@ -2801,6 +2793,127 @@ async def o365_files_search(
                 path = f" in {item['parentReference']['path']}"
             item_id = item.get("id", "?")
             lines.append(f"{icon} {name}{size}{path} (id={item_id})")
+        return "\n".join(lines)
+
+
+# ── Issue / Bug Tracker tools ────────────────────────────────────────────
+
+
+@mcp.tool
+async def create_issue(
+    client_id: str,
+    project_id: str,
+    title: str,
+    description: str = "",
+    labels: str = "",
+) -> str:
+    """Create a new issue on the project's bug tracker (GitHub Issues or GitLab Issues).
+
+    Uses the project's BUGTRACKER connection to create an issue via the provider API.
+
+    Args:
+        client_id: Client ID that owns the project
+        project_id: Project ID (must have a BUGTRACKER or REPOSITORY connection)
+        title: Issue title
+        description: Issue body/description (markdown supported)
+        labels: Comma-separated labels (e.g. "bug,priority:high")
+    """
+    body: dict = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "title": title,
+    }
+    if description:
+        body["description"] = description
+    if labels:
+        body["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/issues/create",
+            json=body,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        if data.get("ok"):
+            return (
+                f"Issue created: {data.get('key', '?')}\n"
+                f"  URL: {data.get('url', '?')}"
+            )
+        return f"Error: {data.get('error', 'unknown')}"
+
+
+@mcp.tool
+async def add_issue_comment(
+    client_id: str,
+    project_id: str,
+    issue_key: str,
+    comment: str,
+) -> str:
+    """Add a comment to an existing issue on the project's bug tracker.
+
+    Args:
+        client_id: Client ID that owns the project
+        project_id: Project ID
+        issue_key: Issue number/key (e.g. "#1", "1", "#42")
+        comment: Comment body (markdown supported)
+    """
+    # Normalize issue key to include #
+    key = issue_key if issue_key.startswith("#") else f"#{issue_key}"
+    body: dict = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "issueKey": key,
+        "comment": comment,
+    }
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/issues/comment",
+            json=body,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        if data.get("ok"):
+            url_info = f"\n  URL: {data['url']}" if data.get("url") else ""
+            return f"Comment added to issue {key}{url_info}"
+        return f"Error: {data.get('error', 'unknown')}"
+
+
+@mcp.tool
+async def list_issues(
+    client_id: str,
+    project_id: str,
+) -> str:
+    """List issues from the project's bug tracker (GitHub Issues or GitLab Issues).
+
+    Args:
+        client_id: Client ID that owns the project
+        project_id: Project ID
+    """
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.get(
+            f"{settings.kotlin_server_url}/internal/issues/list",
+            params={"clientId": client_id, "projectId": project_id},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        if not data.get("ok"):
+            return f"Error: {data.get('error', 'unknown')}"
+
+        issues = data.get("issues", [])
+        if not issues:
+            return "No issues found."
+
+        lines = [f"Found {len(issues)} issue(s):"]
+        for issue in issues:
+            lines.append(
+                f"  {issue['key']} [{issue['state']}] {issue['title']}\n"
+                f"    URL: {issue['url']}"
+            )
         return "\n".join(lines)
 
 

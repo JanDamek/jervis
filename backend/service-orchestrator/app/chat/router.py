@@ -216,6 +216,7 @@ async def qualify(request: dict):
     try:
         qualify_request = QualifyRequest(**request)
     except Exception as e:
+        logger.error("QUALIFY_VALIDATION_FAILED: %s | keys=%s", e, list(request.keys()))
         raise HTTPException(status_code=400, detail=f"Invalid qualify request: {e}")
 
     thread_id = f"qual-{qualify_request.task_id}-{uuid.uuid4().hex[:8]}"

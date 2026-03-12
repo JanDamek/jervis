@@ -34,6 +34,7 @@ import java.time.Instant
     CompoundIndex(name = "client_state_idx", def = "{'clientId': 1, 'state': 1}"),
     CompoundIndex(name = "project_state_idx", def = "{'projectId': 1, 'state': 1}"),
     CompoundIndex(name = "client_started_idx", def = "{'clientId': 1, 'startedAt': -1}"),
+    CompoundIndex(name = "dedup_idx", def = "{'clientId': 1, 'meetingType': 1, 'state': 1, 'deleted': 1}"),
 )
 data class MeetingDocument(
     @Id
@@ -66,6 +67,8 @@ data class MeetingDocument(
     val qualified: Boolean = false,
     val deleted: Boolean = false,
     val deletedAt: Instant? = null,
+    /** Device session ID for multi-device deduplication (future: merge recordings from multiple devices). */
+    val deviceSessionId: String? = null,
 )
 
 data class CorrectionChatMessage(

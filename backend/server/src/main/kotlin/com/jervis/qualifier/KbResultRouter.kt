@@ -62,6 +62,18 @@ class KbResultRouter(
         result: FullIngestResult,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit = { _, _ -> },
     ): RoutingDecision {
+        // MCP-submitted tasks always go to QUALIFYING (user explicitly requested processing)
+        if (task.sourceUrn.value.startsWith("agent://mcp")) {
+            logger.info {
+                "KB_ROUTE: taskId=${task.id} reason=mcp_submitted → QUALIFYING (always process MCP tasks)"
+            }
+            onProgress(
+                "MCP task → vždy zpracovat orchestrátorem",
+                mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "MCP task", "result" to "Kvalifikace"),
+            )
+            return RoutingDecision(TaskStateEnum.QUALIFYING, "mcp_submitted")
+        }
+
         // Infer structured fields from KB result
         val inferred = actionTypeInferrer.infer(result)
 

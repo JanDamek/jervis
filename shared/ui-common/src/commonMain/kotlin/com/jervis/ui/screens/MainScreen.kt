@@ -24,11 +24,11 @@ fun MainScreen(
     val backgroundMessageCount by viewModel.chat.backgroundMessageCount.collectAsState()
     val userTaskCount by viewModel.chat.userTaskCount.collectAsState()
 
-    // K reakci: server returns unified timeline (DB-sorted), no client-side merge needed
+    // K reakci: server returns only actionable items (unified timeline, DB-filtered)
     // Chat/Tasky: client-side filter on message type (same DB source, just visibility toggle)
     val filteredMessages = remember(chatMessages, showChat, showTasks, showNeedReaction) {
         when {
-            showNeedReaction -> chatMessages // Server already returned unified timeline
+            showNeedReaction -> chatMessages // Server already filtered via UnifiedTimelineService
             showTasks -> chatMessages.filter { it.messageType == ChatMessage.MessageType.BACKGROUND_RESULT }
             showChat -> chatMessages.filter { it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT }
             else -> chatMessages

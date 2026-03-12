@@ -18,6 +18,7 @@ from app.graph.nodes._helpers import llm_with_cloud_fallback, parse_json_respons
 from app.agent.graph import (
     add_edge,
     add_vertex,
+    complete_vertex,
     get_children,
     has_cycle,
     topological_order,
@@ -39,10 +40,10 @@ logger = logging.getLogger(__name__)
 
 # Max vertices per single decomposition call
 MAX_VERTICES_PER_DECOMPOSE = 10
-# Max total vertices in a graph (higher to support deep recursive decomposition)
-MAX_TOTAL_VERTICES = 200
-# Max decomposition depth (deep enough for large projects: root → modules → sub-modules → components → tasks)
-MAX_DECOMPOSE_DEPTH = 8
+# Max total vertices in a graph — prevents runaway growth when vertices fail/timeout
+MAX_TOTAL_VERTICES = 50
+# Max decomposition depth (root → modules → sub-modules → tasks)
+MAX_DECOMPOSE_DEPTH = 5
 
 
 # ---------------------------------------------------------------------------
@@ -109,10 +110,13 @@ async def decompose_root(
     # Build sub-graph from LLM output
     _build_subgraph(graph, root, vertices_data)
 
-    # Mark root as completed (decomposition done)
-    root.status = VertexStatus.COMPLETED
-    root.result = f"Decomposed into {len(vertices_data)} vertices"
-    root.result_summary = root.result
+    # Mark root as completed via complete_vertex() — fills outgoing edge payloads
+    # and propagates readiness to downstream vertices
+    complete_vertex(
+        graph, root.id,
+        result=f"Decomposed into {len(vertices_data)} vertices",
+        result_summary=f"Decomposed into {len(vertices_data)} vertices",
+    )
 
     # Update graph status
     graph.status = GraphStatus.READY
@@ -189,10 +193,13 @@ async def decompose_vertex(
 
     _build_subgraph(graph, vertex, vertices_data)
 
-    # Mark the DECOMPOSE vertex as completed
-    vertex.status = VertexStatus.COMPLETED
-    vertex.result = f"Decomposed into {len(vertices_data)} sub-vertices"
-    vertex.result_summary = vertex.result
+    # Mark the DECOMPOSE vertex as completed via complete_vertex() — fills outgoing
+    # edge payloads and propagates readiness to downstream vertices
+    complete_vertex(
+        graph, vertex_id,
+        result=f"Decomposed into {len(vertices_data)} sub-vertices",
+        result_summary=f"Decomposed into {len(vertices_data)} sub-vertices",
+    )
 
     return graph
 
@@ -441,9 +448,12 @@ def _single_vertex_fallback(graph: AgentGraph, root: GraphVertex) -> AgentGraph:
     )
     add_edge(graph, root.id, v.id, EdgeType.DECOMPOSITION)
     v.status = VertexStatus.READY
-    root.status = VertexStatus.COMPLETED
-    root.result = "Single-vertex fallback"
-    root.result_summary = root.result
+    # Use complete_vertex() — fills outgoing edge payloads properly
+    complete_vertex(
+        graph, root.id,
+        result="Single-vertex fallback",
+        result_summary="Single-vertex fallback",
+    )
     graph.status = GraphStatus.READY
     return graph
 
