@@ -1000,6 +1000,7 @@ async def submit_task(
         "query": query,
         "createdBy": "mcp-submit",
         "priority": 1,
+        "skipIndexing": True,
     }
     if task_name:
         payload["title"] = task_name

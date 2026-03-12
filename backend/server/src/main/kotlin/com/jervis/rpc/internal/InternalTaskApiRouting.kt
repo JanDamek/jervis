@@ -57,8 +57,13 @@ fun Routing.installInternalTaskApi(
                 try { java.time.Instant.parse(it) } catch (_: Exception) { null }
             }
             val isScheduled = scheduledInstant != null
+            val skipKb = body.skipIndexing == true
             val taskType = if (isScheduled) TaskTypeEnum.SCHEDULED_TASK else TaskTypeEnum.USER_INPUT_PROCESSING
-            val taskState = if (isScheduled) TaskStateEnum.NEW else TaskStateEnum.INDEXING
+            val taskState = when {
+                isScheduled -> TaskStateEnum.NEW
+                skipKb -> TaskStateEnum.QUEUED      // MCP/explicit → skip KB, go straight to orchestrator
+                else -> TaskStateEnum.INDEXING
+            }
 
             val task = taskService.createTask(
                 taskType = taskType,
@@ -580,6 +585,7 @@ data class InternalCreateTaskRequest(
     val createdBy: String? = null,
     val metadata: Map<String, String>? = null,
     val priority: Int? = null,
+    val skipIndexing: Boolean? = null,
 )
 
 @Serializable
