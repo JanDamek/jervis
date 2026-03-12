@@ -122,6 +122,14 @@ async def orchestrate(request: dict):
         try:
             result = await handle_background(orchestrate_request, thread_id=thread_id)
 
+            # Job limit reached — task requeued, just log and return
+            if result.get("requeue"):
+                logger.info(
+                    "ORCHESTRATE_REQUEUED | task_id=%s | thread=%s — job limit, will retry later",
+                    orchestrate_request.task_id, thread_id,
+                )
+                return  # Task already set to QUEUED via direct DB update
+
             # Coding agent dispatched — task is now CODING, watcher handles completion
             if result.get("coding_dispatched"):
                 logger.info(

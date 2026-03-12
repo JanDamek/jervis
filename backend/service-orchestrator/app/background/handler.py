@@ -277,17 +277,41 @@ async def _run_coding_agent_background(
         kube_namespaces = [request.environment["namespace"]]
 
     # 6. Dispatch K8s Job (returns immediately)
-    dispatch_info = await job_runner.dispatch_coding_agent(
-        task_id=request.task_id,
-        agent_type=agent_type,
-        client_id=request.client_id,
-        project_id=request.project_id,
-        workspace_path=str(workspace_path),
-        gpg_key_id=request.rules.git_gpg_key_id if request.rules and not is_review else None,
-        git_user_name=request.rules.git_author_name if request.rules and not is_review else None,
-        git_user_email=request.rules.git_author_email if request.rules and not is_review else None,
-        kube_namespaces=kube_namespaces,
-    )
+    try:
+        dispatch_info = await job_runner.dispatch_coding_agent(
+            task_id=request.task_id,
+            agent_type=agent_type,
+            client_id=request.client_id,
+            project_id=request.project_id,
+            workspace_path=str(workspace_path),
+            gpg_key_id=request.rules.git_gpg_key_id if request.rules and not is_review else None,
+            git_user_name=request.rules.git_author_name if request.rules and not is_review else None,
+            git_user_email=request.rules.git_author_email if request.rules and not is_review else None,
+            kube_namespaces=kube_namespaces,
+        )
+    except RuntimeError as e:
+        if "running jobs" in str(e):
+            # Job limit reached — requeue task instead of failing
+            logger.warning("JOB_LIMIT_REACHED | task=%s | agent=%s | %s — requeueing", request.task_id, agent_type, e)
+            try:
+                from app.config import settings as _s
+                from motor.motor_asyncio import AsyncIOMotorClient
+                from urllib.parse import urlparse
+                from bson import ObjectId as BsonObjectId
+                _parsed = urlparse(_s.mongodb_url)
+                _db_name = _parsed.path.lstrip("/").split("?")[0] or "jervis"
+                _client = AsyncIOMotorClient(_s.mongodb_url)
+                _db = _client[_db_name]
+                await _db.tasks.update_one(
+                    {"_id": BsonObjectId(request.task_id)},
+                    {"$set": {"state": "QUEUED", "claimedAt": None}},
+                )
+                _client.close()
+                logger.info("REQUEUED | task=%s — will retry when job slot frees up", request.task_id)
+            except Exception as db_err:
+                logger.error("Failed to requeue task %s: %s", request.task_id, db_err)
+            return {"coding_dispatched": False, "requeue": True, "summary": ""}
+        raise  # Re-raise non-job-limit RuntimeErrors
     job_name = dispatch_info["job_name"]
 
     # 7. Notify Kotlin — task state → CODING
