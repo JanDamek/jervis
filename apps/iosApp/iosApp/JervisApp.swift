@@ -58,6 +58,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         )
         UNUserNotificationCenter.current().setNotificationCategories([approvalCategory])
 
+        // Activate WatchConnectivity for watch app communication
+        WatchSessionManager.shared.activate()
+
         return true
     }
 
