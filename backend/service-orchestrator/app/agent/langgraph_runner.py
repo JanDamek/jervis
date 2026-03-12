@@ -887,6 +887,21 @@ async def _agentic_vertex(
             result = remaining_text or message.content or ""
             break
 
+        # Filter out tool calls for tools not in current list
+        # (Ollama models may generate calls for removed tools from conversation history)
+        if tools:
+            available_names = {t.get("function", {}).get("name") for t in tools}
+            # Always allow meta-tools
+            available_names.update({"request_tools", "extend_thinking_map"})
+            filtered = [tc for tc in tool_calls if tc.function.name in available_names]
+            if len(filtered) < len(tool_calls):
+                removed = [tc.function.name for tc in tool_calls if tc.function.name not in available_names]
+                logger.warning("Filtered out %d phantom tool calls: %s", len(removed), removed)
+            tool_calls = filtered
+            if not tool_calls:
+                result = remaining_text or message.content or ""
+                break
+
         # Append assistant message with tool calls to history
         _append_assistant_message(messages, message, tool_calls)
 
@@ -939,7 +954,7 @@ async def _agentic_vertex(
                 })
                 continue
 
-            # Loop detection
+            # Loop detection — prevent repeated calls with identical arguments
             loop_reason, loop_count = detect_tool_loop(
                 tool_call_history, tool_name, arguments,
             )
@@ -948,10 +963,14 @@ async def _agentic_vertex(
                     "role": "tool",
                     "tool_call_id": tc.id,
                     "name": tool_name,
-                    "content": f"ERROR: {loop_reason}",
+                    "content": (
+                        f"ERROR: {loop_reason} "
+                        "You already called this tool with the same arguments. "
+                        "Use a DIFFERENT tool or provide your final answer."
+                    ),
                 })
-                # After 3rd repeat, remove the tool entirely so LLM cannot call it again
-                if loop_count >= 3 and tools:
+                # After 2nd repeat, remove the tool entirely
+                if loop_count >= 2 and tools:
                     tools = [t for t in tools if t.get("function", {}).get("name") != tool_name]
                     logger.warning("Removed tool %s from available tools after %d repeats", tool_name, loop_count)
                 continue
