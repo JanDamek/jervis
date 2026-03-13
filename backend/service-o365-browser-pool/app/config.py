@@ -36,8 +36,12 @@ class Settings(BaseSettings):
     scraper_calendar_interval: int = 1800  # 30 min
 
     # MongoDB for scrape result storage
-    mongodb_uri: str = "mongodb://jervis-mongodb:27017"
+    mongodb_host: str = "192.168.100.117"
+    mongodb_port: int = 27017
     mongodb_database: str = "jervis"
+    mongodb_username: str = "root"
+    mongodb_password: str = ""
+    mongodb_auth_db: str = "admin"
 
     model_config = {"env_prefix": "O365_POOL_", "env_file": ".env", "extra": "ignore"}
 
