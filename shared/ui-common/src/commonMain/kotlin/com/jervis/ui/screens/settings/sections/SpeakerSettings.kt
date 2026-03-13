@@ -17,11 +17,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,6 +32,7 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -44,12 +48,12 @@ import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.dto.meeting.SpeakerChannelDto
 import com.jervis.dto.meeting.SpeakerDto
+import com.jervis.dto.meeting.SpeakerMergeRequestDto
 import com.jervis.dto.meeting.SpeakerUpdateDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JActionBar
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JConfirmDialog
-import com.jervis.ui.design.JDestructiveButton
 import com.jervis.ui.design.JDetailScreen
 import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JListDetailLayout
@@ -60,7 +64,6 @@ import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.util.RefreshIconButton
 import kotlinx.coroutines.launch
 
-/** Connection providers that represent chat/communication channels */
 private val CHAT_PROVIDERS = setOf(
     ProviderEnum.MICROSOFT_TEAMS,
     ProviderEnum.SLACK,
@@ -78,6 +81,7 @@ internal fun SpeakerSettings(repository: JervisRepository) {
     var speakers by remember { mutableStateOf<List<SpeakerDto>>(emptyList()) }
     var selectedSpeaker by remember { mutableStateOf<SpeakerDto?>(null) }
     var isLoading by remember { mutableStateOf(false) }
+    var mergingSpeaker by remember { mutableStateOf<SpeakerDto?>(null) }
 
     fun loadSpeakers() {
         scope.launch {
@@ -129,7 +133,7 @@ internal fun SpeakerSettings(repository: JervisRepository) {
             selectedItem = selectedSpeaker,
             isLoading = isLoading,
             onItemSelected = { selectedSpeaker = it },
-            emptyMessage = "Žádní řečníci — vznikají automaticky z přepisu meetingů",
+            emptyMessage = "Žádní řečníci",
             emptyIcon = "\uD83C\uDFA4",
             listHeader = {
                 JActionBar {
@@ -142,6 +146,19 @@ internal fun SpeakerSettings(repository: JervisRepository) {
                     clients = clients,
                     connections = chatConnections,
                     onClick = { selectedSpeaker = speaker },
+                    onDelete = {
+                        scope.launch {
+                            try {
+                                repository.speakers.deleteSpeaker(speaker.id)
+                                selectedSpeaker = null
+                                loadSpeakers()
+                                snackbarHostState.showSnackbar("Řečník smazán")
+                            } catch (e: Exception) {
+                                snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                            }
+                        }
+                    },
+                    onMerge = { mergingSpeaker = speaker },
                 )
             },
             detailContent = { speaker ->
@@ -161,24 +178,27 @@ internal fun SpeakerSettings(repository: JervisRepository) {
                             }
                         }
                     },
-                    onDelete = {
-                        scope.launch {
-                            try {
-                                repository.speakers.deleteSpeaker(speaker.id)
-                                selectedSpeaker = null
-                                loadSpeakers()
-                                snackbarHostState.showSnackbar("Řečník smazán")
-                            } catch (e: Exception) {
-                                snackbarHostState.showSnackbar("Chyba: ${e.message}")
-                            }
-                        }
-                    },
                     onCancel = { selectedSpeaker = null },
                 )
             },
         )
 
         JSnackbarHost(snackbarHostState)
+    }
+
+    if (mergingSpeaker != null) {
+        SpeakerMergeDialog(
+            source = mergingSpeaker!!,
+            allSpeakers = speakers,
+            repository = repository,
+            snackbarHostState = snackbarHostState,
+            onDismiss = { mergingSpeaker = null },
+            onMerged = {
+                mergingSpeaker = null
+                selectedSpeaker = null
+                loadSpeakers()
+            },
+        )
     }
 }
 
@@ -188,8 +208,13 @@ private fun SpeakerListCard(
     clients: List<ClientDto>,
     connections: List<ConnectionResponseDto>,
     onClick: () -> Unit,
+    onDelete: () -> Unit,
+    onMerge: () -> Unit,
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     val clientNames = clients.filter { it.id in speaker.clientIds }.map { it.name }
+
     JCard(onClick = onClick) {
         Row(
             modifier = Modifier
@@ -242,13 +267,168 @@ private fun SpeakerListCard(
                     )
                 }
             }
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            IconButton(
+                onClick = { showMenu = true },
+                modifier = Modifier.size(JervisSpacing.touchTarget),
+            ) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Akce")
+            }
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Sloučit") },
+                    onClick = { showMenu = false; onMerge() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Smazat", color = MaterialTheme.colorScheme.error) },
+                    onClick = { showMenu = false; showDeleteDialog = true },
+                )
+            }
         }
     }
+
+    JConfirmDialog(
+        visible = showDeleteDialog,
+        title = "Smazat řečníka",
+        message = "Opravdu chcete smazat řečníka \"${speaker.name}\"? Tato akce je nevratná.",
+        confirmText = "Smazat",
+        onConfirm = { showDeleteDialog = false; onDelete() },
+        onDismiss = { showDeleteDialog = false },
+        isDestructive = true,
+    )
+}
+
+@Composable
+private fun SpeakerMergeDialog(
+    source: SpeakerDto,
+    allSpeakers: List<SpeakerDto>,
+    repository: JervisRepository,
+    snackbarHostState: SnackbarHostState,
+    onDismiss: () -> Unit,
+    onMerged: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val otherSpeakers = allSpeakers.filter { it.id != source.id }
+    var selectedTarget by remember { mutableStateOf<SpeakerDto?>(null) }
+    var similarity by remember { mutableStateOf<Float?>(null) }
+    var isChecking by remember { mutableStateOf(false) }
+    var showLowSimilarityConfirm by remember { mutableStateOf(false) }
+    var isMerging by remember { mutableStateOf(false) }
+
+    fun doMerge(target: SpeakerDto) {
+        scope.launch {
+            isMerging = true
+            try {
+                repository.speakers.mergeSpeakers(
+                    SpeakerMergeRequestDto(
+                        targetSpeakerId = target.id,
+                        sourceSpeakerId = source.id,
+                    ),
+                )
+                snackbarHostState.showSnackbar("Sloučeno: ${source.name} -> ${target.name}")
+                onMerged()
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                isMerging = false
+            }
+        }
+    }
+
+    fun checkAndMerge(target: SpeakerDto) {
+        if (!source.hasVoiceprint || !target.hasVoiceprint) {
+            doMerge(target)
+            return
+        }
+        scope.launch {
+            isChecking = true
+            try {
+                val result = repository.speakers.checkSimilarity(source.id, target.id)
+                similarity = result.similarity
+                if (result.similarity >= 0.75f) {
+                    doMerge(target)
+                } else {
+                    showLowSimilarityConfirm = true
+                }
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar("Chyba: ${e.message}")
+            } finally {
+                isChecking = false
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sloučit řečníka") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Sloučit \"${source.name}\" do vybraného řečníka. " +
+                        "Klienti, emaily, kanály a hlasové otisky budou spojeny.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                JDropdown(
+                    items = otherSpeakers,
+                    selectedItem = selectedTarget,
+                    onItemSelected = {
+                        selectedTarget = it
+                        similarity = null
+                    },
+                    label = "Sloučit do",
+                    itemLabel = { it.name },
+                    placeholder = "Vyberte řečníka",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (isChecking) {
+                    Text(
+                        "Ověřuji podobnost hlasových otisků...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (isMerging) {
+                    Text(
+                        "Slučuji...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val target = selectedTarget ?: return@TextButton
+                    checkAndMerge(target)
+                },
+                enabled = selectedTarget != null && !isChecking && !isMerging,
+            ) {
+                Text("Sloučit")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Zrušit")
+            }
+        },
+    )
+
+    val simPercent = ((similarity ?: 0f) * 100).toInt()
+    JConfirmDialog(
+        visible = showLowSimilarityConfirm,
+        title = "Nízká podobnost hlasových otisků",
+        message = "Podobnost hlasových otisků je pouze ${simPercent}%. Opravdu chcete tyto řečníky sloučit?",
+        confirmText = "Přesto sloučit",
+        onConfirm = {
+            showLowSimilarityConfirm = false
+            val target = selectedTarget ?: return@JConfirmDialog
+            doMerge(target)
+        },
+        onDismiss = { showLowSimilarityConfirm = false },
+        isDestructive = true,
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -258,7 +438,6 @@ private fun SpeakerEditForm(
     clients: List<ClientDto>,
     chatConnections: List<ConnectionResponseDto>,
     onSave: (SpeakerUpdateDto) -> Unit,
-    onDelete: () -> Unit,
     onCancel: () -> Unit,
 ) {
     var name by remember(speaker.id) { mutableStateOf(speaker.name) }
@@ -271,8 +450,6 @@ private fun SpeakerEditForm(
     var newChannelConnection by remember(speaker.id) { mutableStateOf<ConnectionResponseDto?>(null) }
     var newChannelId by remember(speaker.id) { mutableStateOf("") }
     var newChannelName by remember(speaker.id) { mutableStateOf("") }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-
     var selectedClientIds by remember(speaker.id) { mutableStateOf(speaker.clientIds.toSet()) }
 
     JDetailScreen(
@@ -293,13 +470,6 @@ private fun SpeakerEditForm(
             )
         },
         saveEnabled = name.isNotBlank(),
-        actions = {
-            JDestructiveButton(onClick = { showDeleteDialog = true }) {
-                Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Smazat")
-            }
-        },
     ) {
         Column(
             modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -532,14 +702,4 @@ private fun SpeakerEditForm(
             }
         }
     }
-
-    JConfirmDialog(
-        visible = showDeleteDialog,
-        title = "Smazat řečníka",
-        message = "Opravdu chcete smazat řečníka \"${speaker.name}\"? Tato akce je nevratná.",
-        confirmText = "Smazat",
-        onConfirm = { showDeleteDialog = false; onDelete() },
-        onDismiss = { showDeleteDialog = false },
-        isDestructive = true,
-    )
 }

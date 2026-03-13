@@ -78,6 +78,22 @@ data class SpeakerEmbeddingDto(
 )
 
 @Serializable
+data class SpeakerMergeRequestDto(
+    /** Speaker to keep (target) */
+    val targetSpeakerId: String,
+    /** Speaker to merge into target and delete */
+    val sourceSpeakerId: String,
+)
+
+@Serializable
+data class SpeakerSimilarityDto(
+    val speakerId1: String,
+    val speakerId2: String,
+    /** Best cosine similarity between any pair of embeddings, or -1 if no embeddings */
+    val similarity: Float,
+)
+
+@Serializable
 data class SpeakerMappingDto(
     val meetingId: String,
     val speakerMapping: Map<String, String>,

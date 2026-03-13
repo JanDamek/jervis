@@ -6,6 +6,8 @@ import com.jervis.dto.meeting.SpeakerCreateDto
 import com.jervis.dto.meeting.SpeakerDto
 import com.jervis.dto.meeting.SpeakerEmbeddingDto
 import com.jervis.dto.meeting.SpeakerMappingDto
+import com.jervis.dto.meeting.SpeakerMergeRequestDto
+import com.jervis.dto.meeting.SpeakerSimilarityDto
 import com.jervis.dto.meeting.SpeakerUpdateDto
 import com.jervis.dto.meeting.VoiceSampleRefDto
 import com.jervis.entity.SpeakerChannelEntry
@@ -100,6 +102,61 @@ class SpeakerRpcImpl(
         return saved.toDto()
     }
 
+    override suspend fun checkSimilarity(speakerId1: String, speakerId2: String): SpeakerSimilarityDto {
+        val s1 = speakerRepository.findById(ObjectId(speakerId1)) ?: error("Speaker not found: $speakerId1")
+        val s2 = speakerRepository.findById(ObjectId(speakerId2)) ?: error("Speaker not found: $speakerId2")
+        val emb1 = s1.allEmbeddings()
+        val emb2 = s2.allEmbeddings()
+        if (emb1.isEmpty() || emb2.isEmpty()) {
+            return SpeakerSimilarityDto(speakerId1, speakerId2, similarity = -1f)
+        }
+        var bestSim = 0f
+        for (e1 in emb1) {
+            for (e2 in emb2) {
+                val sim = cosineSimilarity(e1.embedding, e2.embedding)
+                if (sim > bestSim) bestSim = sim
+            }
+        }
+        return SpeakerSimilarityDto(speakerId1, speakerId2, similarity = bestSim)
+    }
+
+    override suspend fun mergeSpeakers(request: SpeakerMergeRequestDto): SpeakerDto {
+        val targetId = ObjectId(request.targetSpeakerId)
+        val sourceId = ObjectId(request.sourceSpeakerId)
+        val target = speakerRepository.findById(targetId) ?: error("Target speaker not found: ${request.targetSpeakerId}")
+        val source = speakerRepository.findById(sourceId) ?: error("Source speaker not found: ${request.sourceSpeakerId}")
+
+        val merged = target.copy(
+            clientIds = (target.clientIds + source.clientIds).distinct(),
+            emails = (target.emails + source.emails).distinct(),
+            channels = (target.channels + source.channels).distinctBy { it.connectionId to it.identifier },
+            voiceEmbeddings = target.voiceEmbeddings + source.voiceEmbeddings,
+            languagesSpoken = (target.languagesSpoken + source.languagesSpoken).distinct(),
+            notes = listOfNotNull(target.notes, source.notes).joinToString("\n").ifBlank { null },
+            nationality = target.nationality ?: source.nationality,
+            updatedAt = Instant.now(),
+        )
+        val saved = speakerRepository.save(merged)
+
+        // Update meeting speaker mappings that reference the source speaker
+        val sourceIdStr = source.id.toHexString()
+        val targetIdStr = target.id.toHexString()
+        for (clientId in source.clientIds) {
+            meetingRepository.findByClientIdAndDeletedIsFalseOrderByStartedAtDesc(clientId).collect { meeting ->
+                if (sourceIdStr in meeting.speakerMapping.values) {
+                    val updatedMapping = meeting.speakerMapping.mapValues { (_, v) ->
+                        if (v == sourceIdStr) targetIdStr else v
+                    }
+                    meetingRepository.save(meeting.copy(speakerMapping = updatedMapping))
+                }
+            }
+        }
+
+        speakerRepository.deleteById(sourceId)
+        logger.info { "Merged speaker ${source.name} (${source.id}) into ${target.name} (${target.id})" }
+        return saved.toDto()
+    }
+
     override suspend fun setVoiceEmbedding(request: SpeakerEmbeddingDto): SpeakerDto {
         val id = ObjectId(request.speakerId)
         val existing = speakerRepository.findById(id) ?: error("Speaker not found: ${request.speakerId}")
@@ -159,3 +216,17 @@ private fun SpeakerChannelEntry.toDto() = SpeakerChannelDto(
     identifier = identifier,
     displayName = displayName,
 )
+
+private fun cosineSimilarity(a: List<Float>, b: List<Float>): Float {
+    if (a.size != b.size) return 0f
+    var dot = 0f
+    var normA = 0f
+    var normB = 0f
+    for (i in a.indices) {
+        dot += a[i] * b[i]
+        normA += a[i] * a[i]
+        normB += b[i] * b[i]
+    }
+    val denom = kotlin.math.sqrt(normA) * kotlin.math.sqrt(normB)
+    return if (denom > 0f) dot / denom else 0f
+}
