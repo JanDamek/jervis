@@ -44,6 +44,14 @@ spec:
               value: "10"
             - name: O365_POOL_NOVNC_ENABLED
               value: "true"
+            # MongoDB for scrape result storage
+            - name: O365_POOL_MONGODB_URI
+              value: "mongodb://jervis-mongodb:27017"
+            - name: O365_POOL_MONGODB_DATABASE
+              value: "jervis"
+            # VLM screen scraping
+            - name: O365_POOL_OLLAMA_ROUTER_URL
+              value: "http://jervis-ollama-router:11430"
           resources:
             requests:
               memory: "1Gi"

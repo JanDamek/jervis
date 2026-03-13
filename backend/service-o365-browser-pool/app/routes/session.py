@@ -80,6 +80,8 @@ def create_session_router(
             if context:
                 caps = _client_capabilities.get(client_id, [])
                 await tab_manager.setup_tabs(client_id, context, caps)
+                # client_id IS the connectionId (set by Kotlin server)
+                screen_scraper.set_connection_id(client_id, client_id)
                 await screen_scraper.start_scraping(client_id)
 
         token_info = token_extractor.get_graph_token(client_id)

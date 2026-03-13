@@ -27,6 +27,7 @@ from app.routes.scrape import create_scrape_router
 from app.routes.session import create_session_router
 from app.routes.token import create_token_router
 from app.routes.vnc_auth import create_vnc_auth_router
+from app.scrape_storage import ScrapeStorage
 from app.screen_scraper import ScreenScraper
 from app.session_monitor import SessionMonitor
 from app.tab_manager import TabManager
@@ -44,7 +45,8 @@ browser_manager = BrowserManager()
 token_extractor = TokenExtractor()
 vnc_auth_manager = VncAuthManager()
 tab_manager = TabManager(token_extractor)
-screen_scraper = ScreenScraper(browser_manager, tab_manager)
+scrape_storage = ScrapeStorage()
+screen_scraper = ScreenScraper(browser_manager, tab_manager, scrape_storage)
 session_monitor = SessionMonitor(browser_manager, token_extractor)
 
 
@@ -52,11 +54,13 @@ session_monitor = SessionMonitor(browser_manager, token_extractor)
 async def lifespan(app: FastAPI):
     logger.info("Starting O365 Browser Pool on %s:%d", settings.host, settings.port)
     await browser_manager.startup()
+    await scrape_storage.start()
     await session_monitor.start()
     await screen_scraper.start()
     yield
     await screen_scraper.stop()
     await session_monitor.stop()
+    await scrape_storage.stop()
     await browser_manager.shutdown()
     logger.info("O365 Browser Pool stopped")
 

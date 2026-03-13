@@ -31,10 +31,13 @@ class Settings(BaseSettings):
     # VLM screen scraping
     ollama_router_url: str = "http://jervis-ollama-router:11430"
     openrouter_api_key: str = ""
-    kotlin_server_url: str = "http://jervis-server:5500"
     scraper_chat_interval: int = 300  # 5 min
     scraper_email_interval: int = 900  # 15 min
     scraper_calendar_interval: int = 1800  # 30 min
+
+    # MongoDB for scrape result storage
+    mongodb_uri: str = "mongodb://jervis-mongodb:27017"
+    mongodb_database: str = "jervis"
 
     model_config = {"env_prefix": "O365_POOL_", "env_file": ".env", "extra": "ignore"}
 

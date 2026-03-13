@@ -13,11 +13,10 @@ import json
 import logging
 from datetime import datetime, timezone
 
-import httpx
-
 from app.browser_manager import BrowserManager
 from app.config import settings
 from app.models import SessionState
+from app.scrape_storage import ScrapeStorage
 from app.tab_manager import TabManager, TabType
 from app.vlm_client import analyze_screenshot
 
@@ -87,9 +86,13 @@ class ScreenScraper:
         self,
         browser_manager: BrowserManager,
         tab_manager: TabManager,
+        scrape_storage: ScrapeStorage,
     ) -> None:
         self._bm = browser_manager
         self._tm = tab_manager
+        self._storage = scrape_storage
+        # Map clientId → connectionId for storage
+        self._connection_ids: dict[str, str] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._intervals: dict[str, dict[TabType, int]] = {}
         self._last_results: dict[str, dict[TabType, dict]] = {}
@@ -110,6 +113,10 @@ class ScreenScraper:
                 pass
         self._tasks.clear()
         logger.info("ScreenScraper stopped")
+
+    def set_connection_id(self, client_id: str, connection_id: str) -> None:
+        """Set the connectionId for a clientId (for MongoDB storage)."""
+        self._connection_ids[client_id] = connection_id
 
     async def start_scraping(self, client_id: str) -> None:
         """Start scraping loop for a client after successful login."""
@@ -224,38 +231,29 @@ class ScreenScraper:
             else:
                 intervals[TabType.CHAT] = _DEFAULT_INTERVALS[TabType.CHAT]
 
-        # Post result to Kotlin server
-        await self._post_result(client_id, tab_type, parsed)
+        # Store result in MongoDB
+        connection_id = self._connection_ids.get(client_id, client_id)
+        await self._storage.store_scrape_result(
+            client_id, connection_id, tab_type, parsed,
+        )
+
+        # For chat tab, also store individual messages
+        if tab_type == TabType.CHAT:
+            open_conv = parsed.get("open_conversation", {})
+            if open_conv and open_conv.get("messages"):
+                msgs = [
+                    {**m, "chat_name": open_conv.get("name")}
+                    for m in open_conv["messages"]
+                ]
+                await self._storage.store_chat_messages(
+                    client_id, connection_id, msgs,
+                )
 
         logger.info(
             "Scraped %s/%s — %d items",
             client_id, tab_type.value,
             _count_items(tab_type, parsed),
         )
-
-    async def _post_result(
-        self,
-        client_id: str,
-        tab_type: TabType,
-        data: dict,
-    ) -> None:
-        """Post scraped data to Kotlin server internal API."""
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                await client.post(
-                    f"{settings.kotlin_server_url}/internal/o365-scrape",
-                    json={
-                        "clientId": client_id,
-                        "tabType": tab_type.value,
-                        "data": data,
-                        "scrapedAt": datetime.now(timezone.utc).isoformat(),
-                    },
-                )
-        except Exception as e:
-            logger.debug(
-                "Failed to post scrape result for %s/%s: %s",
-                client_id, tab_type.value, e,
-            )
 
 
 def _parse_vlm_response(text: str) -> dict | None:
