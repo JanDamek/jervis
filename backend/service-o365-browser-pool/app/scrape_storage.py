@@ -64,7 +64,7 @@ class ScrapeStorage:
         logger.info("ScrapeStorage connected to MongoDB")
 
     async def stop(self) -> None:
-        if self._client:
+        if self._client is not None:
             self._client.close()
             self._client = None
             self._db = None
@@ -77,7 +77,7 @@ class ScrapeStorage:
         data: dict,
     ) -> None:
         """Upsert latest scrape result for a client+tab combination."""
-        if not self._db:
+        if self._db is None:
             return
 
         now = datetime.now(timezone.utc)
@@ -110,7 +110,7 @@ class ScrapeStorage:
         Messages are deduplicated by connectionId + messageHash.
         Returns count of newly inserted messages.
         """
-        if not self._db or not messages:
+        if self._db is None or not messages:
             return 0
 
         import hashlib
@@ -160,7 +160,7 @@ class ScrapeStorage:
         tab_type: str,
     ) -> dict | None:
         """Get latest scrape result for a client+tab."""
-        if not self._db:
+        if self._db is None:
             return None
 
         return await self._db["o365_scrape_results"].find_one(
@@ -173,7 +173,7 @@ class ScrapeStorage:
         connection_id: str,
     ) -> list[dict]:
         """Get all discovered resources for a connection (from chat scrape)."""
-        if not self._db:
+        if self._db is None:
             return []
 
         result = await self._db["o365_scrape_results"].find_one(
