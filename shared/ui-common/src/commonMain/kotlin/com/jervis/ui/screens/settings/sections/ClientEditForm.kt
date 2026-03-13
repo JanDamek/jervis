@@ -253,7 +253,16 @@ internal fun ClientEditForm(
                 ClientConnectionsSection(
                     selectedConnectionIds = selectedConnectionIds,
                     availableConnections = availableConnections,
-                    onConnectionsChanged = {},
+                    onAddConnection = { connId ->
+                        selectedConnectionIds = (selectedConnectionIds + connId).toMutableSet()
+                    },
+                    onRemoveConnection = { connId ->
+                        selectedConnectionIds = (selectedConnectionIds - connId).toMutableSet()
+                        // Clean up capability configs for removed connection
+                        connectionCapabilities = connectionCapabilities
+                            .filter { it.connectionId != connId }
+                            .toMutableList()
+                    },
                 )
 
                 // Capability configuration section
@@ -294,9 +303,20 @@ internal fun ClientEditForm(
                 }
 
                 // Provider resources → project creation section
+                // Filter resources based on capability config — only show selected resources
+                val filteredResources = availableResources.mapValues { (key, resources) ->
+                    val (connId, capability) = key
+                    val config = getCapabilityConfig(connId, capability)
+                    when {
+                        config == null || !config.enabled -> emptyList()
+                        config.indexAllResources -> resources
+                        else -> resources.filter { it.id in config.selectedResources }
+                    }
+                }
+
                 JSection(title = "Dostupné zdroje z providerů") {
                     Text(
-                        "Zdroje z připojených služeb. Můžete vytvořit projekt propojený s daným zdrojem.",
+                        "Zdroje vybrané v konfiguraci schopností. Můžete vytvořit projekt propojený s daným zdrojem.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -310,50 +330,67 @@ internal fun ClientEditForm(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
-                        selectedConnectionIds.forEach { connId ->
-                            val connection = availableConnections.firstOrNull { it.id == connId }
-                            if (connection != null && connection.capabilities.isNotEmpty()) {
-                                ProviderResourcesCard(
-                                    connection = connection,
-                                    availableResources = availableResources,
-                                    loadingResources = loadingResources,
-                                    errorResources = errorResources,
-                                    findLinkedProject = { capability, resourceId ->
-                                        findLinkedProject(connId, capability, resourceId)
-                                    },
-                                    onCreateProject = { resource, capability ->
-                                        scope.launch {
-                                            try {
-                                                repository.projects.saveProject(
-                                                    ProjectDto(
-                                                        name = resource.name,
-                                                        description = resource.description,
-                                                        clientId = client.id,
-                                                        connectionCapabilities = listOf(
-                                                            ProjectConnectionCapabilityDto(
-                                                                connectionId = connId,
-                                                                capability = capability,
-                                                                enabled = true,
-                                                                resourceIdentifier = resource.id,
-                                                                selectedResources = listOf(resource.id),
+                        val hasAnyConfiguredCapability = selectedConnectionIds.any { connId ->
+                            connectionCapabilities.any { it.connectionId == connId && it.enabled }
+                        }
+                        if (!hasAnyConfiguredCapability) {
+                            Text(
+                                "Nejprve zapněte alespoň jednu schopnost v konfiguraci výše.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            selectedConnectionIds.forEach { connId ->
+                                val connection = availableConnections.firstOrNull { it.id == connId }
+                                if (connection != null && connection.capabilities.isNotEmpty()) {
+                                    // Only show card if at least one capability is enabled for this connection
+                                    val hasEnabledCapability = connection.capabilities.any { cap ->
+                                        getCapabilityConfig(connId, cap)?.enabled == true
+                                    }
+                                    if (hasEnabledCapability) {
+                                        ProviderResourcesCard(
+                                            connection = connection,
+                                            availableResources = filteredResources,
+                                            loadingResources = loadingResources,
+                                            errorResources = errorResources,
+                                            findLinkedProject = { capability, resourceId ->
+                                                findLinkedProject(connId, capability, resourceId)
+                                            },
+                                            onCreateProject = { resource, capability ->
+                                                scope.launch {
+                                                    try {
+                                                        repository.projects.saveProject(
+                                                            ProjectDto(
+                                                                name = resource.name,
+                                                                description = resource.description,
+                                                                clientId = client.id,
+                                                                connectionCapabilities = listOf(
+                                                                    ProjectConnectionCapabilityDto(
+                                                                        connectionId = connId,
+                                                                        capability = capability,
+                                                                        enabled = true,
+                                                                        resourceIdentifier = resource.id,
+                                                                        selectedResources = listOf(resource.id),
+                                                                    ),
+                                                                ),
+                                                                resources = listOf(
+                                                                    ProjectResourceDto(
+                                                                        connectionId = connId,
+                                                                        capability = capability,
+                                                                        resourceIdentifier = resource.id,
+                                                                        displayName = resource.name,
+                                                                    ),
+                                                                ),
                                                             ),
-                                                        ),
-                                                        resources = listOf(
-                                                            ProjectResourceDto(
-                                                                connectionId = connId,
-                                                                capability = capability,
-                                                                resourceIdentifier = resource.id,
-                                                                displayName = resource.name,
-                                                            ),
-                                                        ),
-                                                    ),
-                                                )
-                                                loadProjects()
-                                            } catch (_: Exception) {
-                                            }
-                                        }
-                                    },
-                                )
+                                                        )
+                                                        loadProjects()
+                                                    } catch (_: Exception) {
+                                                    }
+                                                }
+                                            },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

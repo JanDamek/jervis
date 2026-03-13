@@ -42,9 +42,10 @@ import kotlinx.coroutines.launch
 
 @Composable
 internal fun ClientConnectionsSection(
-    selectedConnectionIds: MutableSet<String>,
+    selectedConnectionIds: Set<String>,
     availableConnections: List<ConnectionResponseDto>,
-    onConnectionsChanged: () -> Unit,
+    onAddConnection: (String) -> Unit,
+    onRemoveConnection: (String) -> Unit,
 ) {
     var showConnectionsDialog by remember { mutableStateOf(false) }
 
@@ -93,10 +94,7 @@ internal fun ClientConnectionsSection(
                             )
                         }
                         JRemoveIconButton(
-                            onConfirmed = {
-                                selectedConnectionIds.remove(connId)
-                                onConnectionsChanged()
-                            },
+                            onConfirmed = { onRemoveConnection(connId) },
                             title = "Odebrat připojení?",
                             message = "Připojení \"${connection?.name ?: ""}\" bude odebráno od klienta.",
                         )
@@ -117,9 +115,8 @@ internal fun ClientConnectionsSection(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    selectedConnectionIds.add(conn.id)
+                                    onAddConnection(conn.id)
                                     showConnectionsDialog = false
-                                    onConnectionsChanged()
                                 }
                                 .padding(12.dp)
                                 .heightIn(min = JervisSpacing.touchTarget),
