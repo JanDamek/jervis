@@ -14,6 +14,7 @@ from app.background.tools import ALL_BACKGROUND_TOOLS
 from app.config import settings, estimate_tokens
 from app.llm.provider import llm_provider
 from app.models import ModelTier, OrchestrateRequest
+from app.tools.kotlin_client import kotlin_client
 
 logger = logging.getLogger(__name__)
 
@@ -90,12 +91,14 @@ async def _run_graph_agent_background(
         request.task_id, thread_id,
     )
 
+    task_title = request.task_name or request.query[:80] or f"Task {request.task_id}"
+
     # Link to memory map immediately (RUNNING state) so UI shows active task
     try:
         await agent_store.link_thinking_map(
             task_id=request.task_id,
             sub_graph_id="",
-            title=request.task_name or request.query[:80] or f"Task {request.task_id}",
+            title=task_title,
             completed=False,
             failed=False,
             result_summary="",
@@ -109,6 +112,17 @@ async def _run_graph_agent_background(
         )
     except Exception as e:
         logger.warning("Failed to link running task to master map: %s", e)
+
+    # Push "started" to chat
+    try:
+        await kotlin_client.notify_thinking_map_update(
+            task_id=request.task_id,
+            task_title=task_title,
+            status="started",
+            message=f"Přemýšlím nad úlohou: {task_title}",
+        )
+    except Exception:
+        pass
 
     # Run graph agent — always update memory map on completion (even on crash)
     state: dict = {}
@@ -133,7 +147,7 @@ async def _run_graph_agent_background(
         await agent_store.link_thinking_map(
             task_id=request.task_id,
             sub_graph_id=graph_id,
-            title=request.task_name or request.query[:80] or f"Task {request.task_id}",
+            title=task_title,
             completed=success,
             failed=not success,
             result_summary=summary or "",
@@ -146,6 +160,18 @@ async def _run_graph_agent_background(
         )
     except Exception as e:
         logger.warning("Failed to link sub-graph to master map: %s", e)
+
+    # Push completion/failure to chat
+    try:
+        await kotlin_client.notify_thinking_map_update(
+            task_id=request.task_id,
+            task_title=task_title,
+            graph_id=graph_id,
+            status="completed" if success else "failed",
+            message=(summary[:200] if summary else "") if success else (summary[:200] if summary else "Selhalo"),
+        )
+    except Exception:
+        pass
 
     return {
         "success": success,

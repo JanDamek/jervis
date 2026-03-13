@@ -354,6 +354,31 @@ class KtorRpcServer(
                                 }
                             }
 
+                            // Internal endpoint: thinking map update push from background orchestrator
+                            post("/internal/thinking-map-update") {
+                                try {
+                                    val body = call.receive<ThinkingMapUpdateCallback>()
+                                    launch {
+                                        chatRpcImpl.pushThinkingMapUpdate(
+                                            taskId = body.taskId,
+                                            taskTitle = body.taskTitle,
+                                            graphId = body.graphId,
+                                            status = body.status,
+                                            message = body.message,
+                                            metadata = body.metadata ?: emptyMap(),
+                                        )
+                                    }
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to process thinking map update callback" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
                             // Internal endpoint: orchestrator fetches GPG key for agent commit signing
                             get("/internal/gpg-key/{clientId}") {
                                 val clientId = call.parameters["clientId"] ?: return@get call.respondText(
@@ -1321,6 +1346,16 @@ data class KbCompletionResult(
     @kotlinx.serialization.SerialName("suggested_agent") val suggestedAgent: String? = null,
     @kotlinx.serialization.SerialName("affected_files") val affectedFiles: List<String> = emptyList(),
     @kotlinx.serialization.SerialName("related_kb_nodes") val relatedKbNodes: List<String> = emptyList(),
+)
+
+@kotlinx.serialization.Serializable
+data class ThinkingMapUpdateCallback(
+    val taskId: String,
+    val taskTitle: String = "",
+    val graphId: String = "",
+    val status: String,  // "started", "vertex_completed", "completed", "failed"
+    val message: String = "",
+    val metadata: Map<String, String>? = null,
 )
 
 @kotlinx.serialization.Serializable

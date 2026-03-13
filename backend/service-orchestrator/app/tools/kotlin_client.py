@@ -958,6 +958,41 @@ class KotlinServerClient:
             logger.warning("Failed to retry task %s: %s", task_id, e)
             return f"Error: {e}"
 
+    # ------------------------------------------------------------------
+    # Thinking map push to chat
+    # ------------------------------------------------------------------
+
+    async def notify_thinking_map_update(
+        self,
+        task_id: str,
+        task_title: str,
+        graph_id: str = "",
+        status: str = "vertex_completed",
+        message: str = "",
+        metadata: dict[str, str] | None = None,
+    ) -> bool:
+        """Push thinking map update to Kotlin → chat stream.
+
+        Status values: "started", "vertex_completed", "completed", "failed"
+        Terminal states (started/completed/failed) are persisted to chat history.
+        """
+        try:
+            client = await self._get_client()
+            payload: dict = {
+                "taskId": task_id,
+                "taskTitle": task_title,
+                "graphId": graph_id,
+                "status": status,
+                "message": message,
+            }
+            if metadata:
+                payload["metadata"] = metadata
+            await client.post("/internal/thinking-map-update", json=payload)
+            return True
+        except Exception as e:
+            logger.debug("Failed to push thinking map update: %s", e)
+            return False
+
     async def invalidate_cache(self, collection: str) -> None:
         """Invalidate Kotlin in-memory cache for a collection after MongoDB write."""
         try:

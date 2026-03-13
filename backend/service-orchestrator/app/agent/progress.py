@@ -53,6 +53,10 @@ async def report_vertex_started(
     if graph.graph_type == GraphType.MEMORY_MAP:
         await kotlin_client.notify_memory_map_changed()
 
+    # Push thinking map update to chat (for thinking_map graphs)
+    if graph.graph_type == GraphType.THINKING_MAP:
+        await _push_thinking_map_update(graph, "vertex_completed", f"⟳ {vertex.title}")
+
 
 async def report_vertex_completed(
     graph: AgentGraph,
@@ -86,6 +90,13 @@ async def report_vertex_completed(
     # Notify UI about memory map change (only for memory_map graphs)
     if graph.graph_type == GraphType.MEMORY_MAP:
         await kotlin_client.notify_memory_map_changed()
+
+    # Push thinking map update to chat (for thinking_map graphs)
+    if graph.graph_type == GraphType.THINKING_MAP:
+        await _push_thinking_map_update(
+            graph, "vertex_completed",
+            f"{status_icon} {vertex.title} ({completed}/{total})",
+        )
 
 
 async def report_graph_status(
@@ -169,3 +180,48 @@ async def _report(
         )
     except Exception as e:
         logger.debug("Graph progress report failed: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Thinking map push to chat (throttled)
+# ---------------------------------------------------------------------------
+
+import time as _time
+
+_thinking_map_last_push: dict[str, float] = {}
+_THINKING_MAP_THROTTLE_S = 5.0  # max 1 push per 5s per graph (except terminal)
+
+
+async def _push_thinking_map_update(
+    graph: AgentGraph,
+    status: str,
+    message: str,
+) -> None:
+    """Push thinking map update to chat via Kotlin.
+
+    Terminal states (started/completed/failed) are always pushed.
+    Intermediate updates are throttled to max 1 per 5s per graph.
+    """
+    is_terminal = status in ("started", "completed", "failed")
+    now = _time.monotonic()
+
+    if not is_terminal:
+        last = _thinking_map_last_push.get(graph.id, 0.0)
+        if now - last < _THINKING_MAP_THROTTLE_S:
+            return
+    _thinking_map_last_push[graph.id] = now
+
+    # Get title from root vertex
+    root = graph.vertices.get(graph.root_vertex_id)
+    title = root.title if root else graph.task_id
+
+    try:
+        await kotlin_client.notify_thinking_map_update(
+            task_id=graph.task_id,
+            task_title=title,
+            graph_id=graph.id,
+            status=status,
+            message=message,
+        )
+    except Exception as e:
+        logger.debug("Thinking map push failed: %s", e)

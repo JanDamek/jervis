@@ -520,6 +520,61 @@ class ChatRpcImpl(
         logger.info { "CHAT_PUSH_ALERT | sourceUrn=$sourceUrn | taskId=$taskId | summary=${summary.take(80)}" }
     }
 
+    /**
+     * Push a thinking map update from background orchestrator into the chat stream.
+     * "started"/"completed"/"failed" are persisted to DB; intermediate updates are live-only.
+     */
+    suspend fun pushThinkingMapUpdate(
+        taskId: String,
+        taskTitle: String,
+        graphId: String,
+        status: String,
+        message: String,
+        metadata: Map<String, String> = emptyMap(),
+    ) {
+        val content = when (status) {
+            "started" -> "🧠 Přemýšlím: $taskTitle"
+            "completed" -> "✅ Hotovo: $taskTitle"
+            "failed" -> "❌ Selhalo: $taskTitle${if (message.isNotBlank()) " — $message" else ""}"
+            else -> "🧠 $taskTitle: $message"
+        }
+
+        // Check if task has a graph
+        val hasGraph = taskGraphExistsService.findExistingGraphTaskIds(listOf(taskId)).isNotEmpty()
+
+        val allMetadata = buildMap {
+            put("sender", "thinking_map")
+            put("taskId", taskId)
+            put("taskTitle", taskTitle)
+            put("status", status)
+            put("hasGraph", hasGraph.toString())
+            if (graphId.isNotBlank()) put("graph_id", graphId)
+            put("timestamp", java.time.Instant.now().toString())
+            putAll(metadata)
+        }
+
+        // Persist terminal states to DB for chat history
+        if (status in listOf("started", "completed", "failed")) {
+            val session = chatService.getOrCreateActiveSession()
+            chatService.saveSystemMessage(
+                sessionId = session.id,
+                role = MessageRole.BACKGROUND,
+                content = content,
+                metadata = allMetadata,
+            )
+        }
+
+        // Emit to live stream
+        chatEventStream.emit(
+            ChatResponseDto(
+                message = content,
+                type = ChatResponseType.THINKING_MAP_UPDATE,
+                metadata = allMetadata,
+            ),
+        )
+        logger.info { "CHAT_PUSH_THINKING_MAP | taskId=$taskId | status=$status | title=$taskTitle" }
+    }
+
     private fun mapStreamEventToResponse(event: ChatStreamEvent): Pair<ChatResponseType, Map<String, String>> {
         val type = when (event.type) {
             "token" -> ChatResponseType.STREAMING_TOKEN
