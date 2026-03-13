@@ -90,6 +90,20 @@ def create_scrape_router(
             results[tt.value] = result
         return {"client_id": client_id, "tabs": results}
 
+    @router.get("/scrape/{client_id}/{tab_type}/screenshot")
+    async def get_screenshot(client_id: str, tab_type: str):
+        """Get raw screenshot PNG for debugging."""
+        from fastapi.responses import Response as RawResponse
+        try:
+            tt = TabType(tab_type)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid tab type: {tab_type}")
+
+        screenshot = await tab_manager.screenshot_tab(client_id, tt)
+        if not screenshot:
+            raise HTTPException(status_code=500, detail="Screenshot failed")
+        return RawResponse(content=screenshot, media_type="image/png")
+
     @router.post("/scrape/{client_id}/{tab_type}/click")
     async def click_tab(
         client_id: str, tab_type: str, body: dict,
