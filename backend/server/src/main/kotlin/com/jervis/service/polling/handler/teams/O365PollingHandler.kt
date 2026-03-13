@@ -74,7 +74,7 @@ class O365PollingHandler(
         val o365ClientId = connectionDocument.o365ClientId
         if (!isOAuth2 && o365ClientId.isNullOrBlank()) {
             logger.warn { "O365 connection '${connectionDocument.name}' has no o365ClientId and no OAuth2 token" }
-            return PollingResult(errors = 1)
+            return PollingResult(errors = 1, authenticationError = true)
         }
 
         // For OAuth2, refresh token if needed
@@ -84,7 +84,7 @@ class O365PollingHandler(
 
         if (isOAuth2 && accessToken == null) {
             logger.warn { "OAuth2 token refresh failed for '${connectionDocument.name}'" }
-            return PollingResult(errors = 1)
+            return PollingResult(errors = 1, authenticationError = true)
         }
 
         val mode = if (isOAuth2) "OAuth2/GraphAPI" else "Gateway/$o365ClientId"
@@ -119,11 +119,16 @@ class O365PollingHandler(
             totalErrors++
         }
 
+        // If all calls failed and nothing was discovered, treat as auth error
+        // This stops CentralPoller from retrying indefinitely
+        val isAuthError = totalErrors > 0 && totalDiscovered == 0 && totalCreated == 0
+
         return PollingResult(
             itemsDiscovered = totalDiscovered,
             itemsCreated = totalCreated,
             itemsSkipped = totalSkipped,
             errors = totalErrors,
+            authenticationError = isAuthError,
         )
     }
 
