@@ -28,6 +28,7 @@ _SKIP_AUTH_PREFIXES = (
     "/session/", "/token/",
     "/vnc-login", "/vnc-token/", "/vnc-auth",
     "/graph/",  # Graph API proxy — internal K8s service calls
+    "/scrape/",  # VLM scrape endpoints — internal K8s service calls
 )
 
 
