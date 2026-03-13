@@ -233,7 +233,6 @@ private fun GpgSystemImport(
                     label = "Passphrase (volitelné)",
                     placeholder = "Pouze pokud je klíč chráněný heslem",
                     singleLine = true,
-                    visualTransformation = VisualTransformation.None,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
@@ -384,7 +383,6 @@ private fun GpgUploadForm(
                     label = "Passphrase (volitelné)",
                     placeholder = "Pouze pokud je klíč chráněný heslem",
                     singleLine = true,
-                    visualTransformation = VisualTransformation.None,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
