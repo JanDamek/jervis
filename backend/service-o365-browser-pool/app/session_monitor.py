@@ -62,8 +62,26 @@ class SessionMonitor:
             if state != SessionState.ACTIVE:
                 continue
 
+            # Web scraping mode — no token needed, session stays active
+            # as long as browser is logged in (detected by URL check)
+            if not self._te.has_any_token(client_id):
+                # No token was ever captured — this is a scraping-only session
+                # Check if browser is still on a logged-in page
+                context = self._bm.get_context(client_id)
+                if context and context.pages:
+                    page = context.pages[0]
+                    url = page.url
+                    if "login.microsoftonline.com" in url or "login.live.com" in url:
+                        logger.warning(
+                            "Browser redirected to login for %s, marking EXPIRED",
+                            client_id,
+                        )
+                        self._bm.set_state(client_id, SessionState.EXPIRED)
+                self._last_check[client_id] = now
+                continue
+
+            # Token-based mode (OAuth proxy) — check token validity
             if not self._te.has_valid_token(client_id):
-                # Try to re-acquire token from MSAL cache before expiring
                 context = self._bm.get_context(client_id)
                 if context and context.pages:
                     acquired = await self._te.acquire_graph_token(

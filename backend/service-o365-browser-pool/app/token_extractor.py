@@ -236,3 +236,7 @@ class TokenExtractor:
 
     def has_valid_token(self, client_id: str) -> bool:
         return self.get_graph_token(client_id) is not None
+
+    def has_any_token(self, client_id: str) -> bool:
+        """Check if any token was ever captured for this client (even expired)."""
+        return client_id in self._tokens or client_id in self._skype_tokens
