@@ -27,7 +27,6 @@ struct StartRecordingIntent: AppIntent {
     static var openAppWhenRun: Bool = true
 
     func perform() async throws -> some IntentResult {
-        // Post notification to open app in recording mode
         NotificationCenter.default.post(name: .jervisStartRecording, object: nil)
         return .result()
     }
@@ -42,10 +41,8 @@ struct JervisShortcutsProvider: AppShortcutsProvider {
             intent: AskJervisIntent(),
             phrases: [
                 "Zeptej se \(.applicationName)",
-                "Jervis \(\.$query)",
-                "\(.applicationName) \(\.$query)",
-                "Zeptej se \(.applicationName) \(\.$query)",
                 "Hey \(.applicationName)",
+                "Dotaz na \(.applicationName)",
             ],
             shortTitle: "Zeptej se Jervise",
             systemImageName: "bubble.left.fill"

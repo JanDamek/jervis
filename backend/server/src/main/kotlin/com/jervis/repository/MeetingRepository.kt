@@ -97,4 +97,5 @@ interface MeetingRepository : CoroutineCrudRepository<MeetingDocument, ObjectId>
         from: java.time.Instant,
         to: java.time.Instant,
     ): Flow<MeetingDocument>
+
 }

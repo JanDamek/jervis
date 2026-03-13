@@ -55,10 +55,8 @@ struct JervisShortcutsProvider: AppShortcutsProvider {
             intent: AskJervisIntent(),
             phrases: [
                 "Zeptej se \(.applicationName)",
-                "Jervis \(\.$query)",
-                "\(.applicationName) \(\.$query)",
-                "Zeptej se \(.applicationName) \(\.$query)",
                 "Hey \(.applicationName)",
+                "Dotaz na \(.applicationName)",
             ],
             shortTitle: "Zeptej se Jervise",
             systemImageName: "bubble.left.fill"

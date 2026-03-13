@@ -1,5 +1,18 @@
 import SwiftUI
 
+/// Wraps .symbolEffect(.pulse) with availability check for watchOS 10+
+struct PulseEffectModifier: ViewModifier {
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        if #available(watchOS 10.0, *) {
+            content.symbolEffect(.pulse, isActive: isActive)
+        } else {
+            content.opacity(isActive ? 0.6 : 1.0)
+        }
+    }
+}
+
 struct ChatView: View {
     @ObservedObject var chatManager: WatchChatManager
     @ObservedObject var connectivity: WatchConnectivityManager
@@ -51,7 +64,7 @@ struct ChatView: View {
                     Image(systemName: isListening ? "waveform.circle.fill" : "mic.circle.fill")
                         .font(.system(size: 56))
                         .foregroundColor(isListening ? .green : .blue)
-                        .symbolEffect(.pulse, isActive: isListening)
+                        .modifier(PulseEffectModifier(isActive: isListening))
                 }
                 .buttonStyle(.plain)
 

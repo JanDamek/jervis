@@ -18,10 +18,6 @@ struct JervisApp: App {
     }
 }
 
-extension Notification.Name {
-    static let jervisStartRecording = Notification.Name("jervisStartRecording")
-}
-
 class AppDelegate: NSObject, UIApplicationDelegate {
     let notificationDelegate = NotificationDelegate()
 
