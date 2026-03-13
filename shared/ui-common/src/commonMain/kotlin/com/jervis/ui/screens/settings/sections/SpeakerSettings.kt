@@ -191,12 +191,25 @@ internal fun SpeakerSettings(repository: JervisRepository) {
             source = mergingSpeaker!!,
             allSpeakers = speakers,
             repository = repository,
-            snackbarHostState = snackbarHostState,
             onDismiss = { mergingSpeaker = null },
-            onMerged = {
+            onMerge = { target ->
+                val src = mergingSpeaker ?: return@SpeakerMergeDialog
                 mergingSpeaker = null
                 selectedSpeaker = null
-                loadSpeakers()
+                scope.launch {
+                    try {
+                        repository.speakers.mergeSpeakers(
+                            SpeakerMergeRequestDto(
+                                targetSpeakerId = target.id,
+                                sourceSpeakerId = src.id,
+                            ),
+                        )
+                        loadSpeakers()
+                    } catch (e: Exception) {
+                        snackbarHostState.showSnackbar("Chyba sloučení: ${e.message}")
+                        loadSpeakers()
+                    }
+                }
             },
         )
     }
@@ -305,48 +318,32 @@ private fun SpeakerMergeDialog(
     source: SpeakerDto,
     allSpeakers: List<SpeakerDto>,
     repository: JervisRepository,
-    snackbarHostState: SnackbarHostState,
     onDismiss: () -> Unit,
-    onMerged: () -> Unit,
+    onMerge: (SpeakerDto) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val otherSpeakers = allSpeakers.filter { it.id != source.id }
     var selectedTarget by remember { mutableStateOf<SpeakerDto?>(null) }
-    var similarity by remember { mutableStateOf<Float?>(null) }
     var showLowSimilarityConfirm by remember { mutableStateOf(false) }
+    var similarityPercent by remember { mutableStateOf(0) }
 
-    fun doMerge(target: SpeakerDto) {
-        onMerged()
-        scope.launch {
-            try {
-                repository.speakers.mergeSpeakers(
-                    SpeakerMergeRequestDto(
-                        targetSpeakerId = target.id,
-                        sourceSpeakerId = source.id,
-                    ),
-                )
-            } catch (e: Exception) {
-                snackbarHostState.showSnackbar("Chyba sloučení: ${e.message}")
-            }
-        }
-    }
-
-    fun checkAndMerge(target: SpeakerDto) {
+    fun onConfirmClicked() {
+        val target = selectedTarget ?: return
         if (!source.hasVoiceprint || !target.hasVoiceprint) {
-            doMerge(target)
+            onMerge(target)
             return
         }
         scope.launch {
             try {
                 val result = repository.speakers.checkSimilarity(source.id, target.id)
-                similarity = result.similarity
-                if (result.similarity >= 0.75f) {
-                    doMerge(target)
+                if (result.similarity >= 0.75f || result.similarity < 0f) {
+                    onMerge(target)
                 } else {
+                    similarityPercent = (result.similarity * 100).toInt()
                     showLowSimilarityConfirm = true
                 }
-            } catch (e: Exception) {
-                snackbarHostState.showSnackbar("Chyba: ${e.message}")
+            } catch (_: Exception) {
+                onMerge(target)
             }
         }
     }
@@ -365,10 +362,7 @@ private fun SpeakerMergeDialog(
                     JDropdown(
                         items = otherSpeakers,
                         selectedItem = selectedTarget,
-                        onItemSelected = {
-                            selectedTarget = it
-                            similarity = null
-                        },
+                        onItemSelected = { selectedTarget = it },
                         label = "Sloučit do",
                         itemLabel = { it.name },
                         placeholder = "Vyberte řečníka",
@@ -378,10 +372,7 @@ private fun SpeakerMergeDialog(
             },
             confirmButton = {
                 TextButton(
-                    onClick = {
-                        val target = selectedTarget ?: return@TextButton
-                        checkAndMerge(target)
-                    },
+                    onClick = { onConfirmClicked() },
                     enabled = selectedTarget != null,
                 ) {
                     Text("Sloučit")
@@ -395,16 +386,15 @@ private fun SpeakerMergeDialog(
         )
     }
 
-    val simPercent = ((similarity ?: 0f) * 100).toInt()
     JConfirmDialog(
         visible = showLowSimilarityConfirm,
         title = "Nízká podobnost hlasových otisků",
-        message = "Podobnost hlasových otisků je pouze ${simPercent}%. Opravdu chcete tyto řečníky sloučit?",
+        message = "Podobnost hlasových otisků je pouze ${similarityPercent}%. Opravdu chcete tyto řečníky sloučit?",
         confirmText = "Přesto sloučit",
         onConfirm = {
             showLowSimilarityConfirm = false
             val target = selectedTarget ?: return@JConfirmDialog
-            doMerge(target)
+            onMerge(target)
         },
         onDismiss = { showLowSimilarityConfirm = false },
         isDestructive = true,
