@@ -359,61 +359,49 @@ private fun SpeakerMergeDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Sloučit řečníka") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Sloučit \"${source.name}\" do vybraného řečníka. " +
-                        "Klienti, emaily, kanály a hlasové otisky budou spojeny.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                JDropdown(
-                    items = otherSpeakers,
-                    selectedItem = selectedTarget,
-                    onItemSelected = {
-                        selectedTarget = it
-                        similarity = null
+    if (!showLowSimilarityConfirm) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Sloučit řečníka") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Sloučit \"${source.name}\" do vybraného řečníka. " +
+                            "Klienti, emaily, kanály a hlasové otisky budou spojeny.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    JDropdown(
+                        items = otherSpeakers,
+                        selectedItem = selectedTarget,
+                        onItemSelected = {
+                            selectedTarget = it
+                            similarity = null
+                        },
+                        label = "Sloučit do",
+                        itemLabel = { it.name },
+                        placeholder = "Vyberte řečníka",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val target = selectedTarget ?: return@TextButton
+                        checkAndMerge(target)
                     },
-                    label = "Sloučit do",
-                    itemLabel = { it.name },
-                    placeholder = "Vyberte řečníka",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (isChecking) {
-                    Text(
-                        "Ověřuji podobnost hlasových otisků...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    enabled = selectedTarget != null && !isChecking && !isMerging,
+                ) {
+                    Text("Sloučit")
                 }
-                if (isMerging) {
-                    Text(
-                        "Slučuji...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("Zrušit")
                 }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val target = selectedTarget ?: return@TextButton
-                    checkAndMerge(target)
-                },
-                enabled = selectedTarget != null && !isChecking && !isMerging,
-            ) {
-                Text("Sloučit")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Zrušit")
-            }
-        },
-    )
+            },
+        )
+    }
 
     val simPercent = ((similarity ?: 0f) * 100).toInt()
     JConfirmDialog(
