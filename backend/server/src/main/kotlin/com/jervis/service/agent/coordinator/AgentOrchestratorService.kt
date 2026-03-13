@@ -146,7 +146,12 @@ class AgentOrchestratorService(
         logger.info { "AGENT_ORCHESTRATOR_START: correlationId=${task.correlationId}" }
 
         // Path 1: Resume from Python orchestrator (approval flow)
-        if (task.orchestratorThreadId != null) {
+        // Skip for coding agent / code-review tasks — they run as K8s Jobs without LangGraph
+        // checkpoints, so /approve/{thread_id} would always fail with "no valid checkpoint".
+        val isK8sJobTask = task.sourceUrn?.value?.let {
+            it.contains("coding-agent") || it.startsWith("code-review:") || it.startsWith("code-review-fix:")
+        } == true
+        if (task.orchestratorThreadId != null && !isK8sJobTask) {
             try {
                 val dispatched = resumePythonOrchestrator(task, userInput, onProgress)
                 if (dispatched) {
@@ -156,6 +161,11 @@ class AgentOrchestratorService(
             } catch (e: Exception) {
                 logger.warn(e) { "Python orchestrator resume failed: ${e.message}" }
             }
+        } else if (isK8sJobTask && task.orchestratorThreadId != null) {
+            logger.info { "SKIP_RESUME: K8s job task has stale orchestratorThreadId=${task.orchestratorThreadId}, clearing and dispatching fresh" }
+            // Clear stale thread ID so Path 2 dispatches fresh
+            val cleared = task.copy(orchestratorThreadId = null)
+            taskRepository.save(cleared)
         }
 
         // Path 2: Dispatch to Python orchestrator
