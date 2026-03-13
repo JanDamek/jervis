@@ -296,8 +296,14 @@ private fun ConnectionItemCard(
 
         // AUTH_EXPIRED warning
         if (connection.state == ConnectionStateEnum.AUTH_EXPIRED) {
+            val isBrowserSession = connection.provider == com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS &&
+                connection.authType == AuthTypeEnum.NONE
             Text(
-                text = "⚠ Token expiroval — obnovte přes Re-auth tlačítko",
+                text = if (isBrowserSession) {
+                    "⚠ Přihlášení vypršelo — klikněte na Přihlásit k Teams"
+                } else {
+                    "⚠ Token expiroval — obnovte přes Re-auth tlačítko"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -336,25 +342,33 @@ private fun ConnectionItemCard(
             }
         }
 
-        // Action buttons - wrapped in a flow-like row for mobile
+        // Action buttons
+        val isBrowserSession = connection.provider == com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS &&
+            connection.authType == AuthTypeEnum.NONE
         Spacer(Modifier.height(12.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            JPrimaryButton(onClick = onTest) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Test")
-                Spacer(Modifier.width(4.dp))
-                Text("Test")
+            if (!isBrowserSession) {
+                // Graph API test — only for non-browser-session connections
+                JPrimaryButton(onClick = onTest) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Test")
+                    Spacer(Modifier.width(4.dp))
+                    Text("Test")
+                }
             }
             if (connection.authType == AuthTypeEnum.OAUTH2) {
                 JPrimaryButton(onClick = onReauthorize) {
                     Text("Re-auth")
                 }
             }
-            if (connection.provider == com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS &&
-                connection.authType == AuthTypeEnum.NONE
+            if (isBrowserSession && (
+                    connection.state == ConnectionStateEnum.AUTH_EXPIRED ||
+                    connection.state == ConnectionStateEnum.INVALID ||
+                    connection.state == ConnectionStateEnum.NEW
+                )
             ) {
                 JPrimaryButton(onClick = onTeamsLogin) {
                     Text("Přihlásit k Teams")

@@ -166,17 +166,10 @@ data class ProviderDescriptor(
                     ),
                     AuthOption(
                         authType = AuthTypeEnum.NONE,
-                        displayName = "Browser Session (K8s pod)",
+                        displayName = "Web Scraping (Browser Session)",
                         fields = listOf(
                             FormField(FormFieldType.USERNAME, "E-mail (přihlášení)", required = false),
                             FormField(FormFieldType.PASSWORD, "Heslo", required = false, isSecret = true),
-                        ),
-                    ),
-                    AuthOption(
-                        authType = AuthTypeEnum.BEARER,
-                        displayName = "Lokální token (skript)",
-                        fields = listOf(
-                            FormField(FormFieldType.BEARER_TOKEN, "Bearer Token", isSecret = true),
                         ),
                     ),
                 ),
