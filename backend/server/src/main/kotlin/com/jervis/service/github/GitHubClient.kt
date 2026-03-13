@@ -116,6 +116,35 @@ class GitHubClient(
         return json.decodeFromString(GitHubComment.serializer(), response.bodyAsText())
     }
 
+    suspend fun updateIssue(
+        connection: ConnectionDocument,
+        owner: String,
+        repo: String,
+        issueNumber: Int,
+        title: String? = null,
+        body: String? = null,
+        state: String? = null,
+        labels: List<String>? = null,
+    ): GitHubIssue {
+        val token = requireToken(connection)
+        val requestBody = buildJsonObject {
+            title?.let { put("title", it) }
+            body?.let { put("body", it) }
+            state?.let { put("state", it) }
+            labels?.let { l -> putJsonArray("labels") { l.forEach { add(it) } } }
+        }.toString()
+        val response = httpClient.patch("https://api.github.com/repos/$owner/$repo/issues/$issueNumber") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        if (!response.status.isSuccess()) {
+            error("GitHub issue update failed: ${response.status} — ${response.bodyAsText()}")
+        }
+        return json.decodeFromString(GitHubIssue.serializer(), response.bodyAsText())
+    }
+
     // --- PR read operations ---
 
     suspend fun listOpenPullRequests(
@@ -308,7 +337,15 @@ data class GitHubIssue(
     val state: String,
     val html_url: String,
     val created_at: String,
-    val updated_at: String
+    val updated_at: String,
+    val labels: List<GitHubLabel> = emptyList(),
+)
+
+@Serializable
+data class GitHubLabel(
+    val id: Long = 0,
+    val name: String,
+    val color: String? = null,
 )
 
 @Serializable

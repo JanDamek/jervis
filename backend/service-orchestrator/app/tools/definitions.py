@@ -1296,7 +1296,7 @@ ENVIRONMENT_TOOLS: list[dict] = [
     TOOL_ENVIRONMENT_KEEP_RUNNING,
 ]
 
-ALL_RESPOND_TOOLS_FULL: list[dict] = ALL_RESPOND_TOOLS_FULL_BASE + MEMORY_TOOLS + [TOOL_ENVIRONMENT_KEEP_RUNNING]
+ALL_RESPOND_TOOLS_FULL: list[dict] = ALL_RESPOND_TOOLS_FULL_BASE + MEMORY_TOOLS + [TOOL_ENVIRONMENT_KEEP_RUNNING] + ISSUE_TOOLS
 
 
 # ============================================================
@@ -1532,6 +1532,83 @@ PROJECT_MANAGEMENT_TOOLS: list[dict] = [
 
 
 # ============================================================
+# Issue Tracker tools (GitHub Issues / GitLab Issues)
+# ============================================================
+
+TOOL_CREATE_ISSUE: dict = {
+    "type": "function",
+    "function": {
+        "name": "create_issue",
+        "description": (
+            "Create a new issue on the project's bug tracker (GitHub Issues or GitLab Issues). "
+            "Returns the issue key and URL."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Issue title"},
+                "description": {"type": "string", "description": "Issue body/description (markdown supported)"},
+                "labels": {"type": "string", "description": "Comma-separated labels (e.g. 'bug,priority:high')"},
+            },
+            "required": ["title"],
+        },
+    },
+}
+
+TOOL_UPDATE_ISSUE: dict = {
+    "type": "function",
+    "function": {
+        "name": "update_issue",
+        "description": (
+            "Update an existing issue — change title, description, state (open/closed), or labels. "
+            "Only provided fields are changed. Use state='closed' to close an issue. "
+            "Labels replace all existing labels on the issue."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "issue_key": {"type": "string", "description": "Issue number (e.g. '#6', '6')"},
+                "title": {"type": "string", "description": "New title (omit to keep current)"},
+                "description": {"type": "string", "description": "New description (omit to keep current)"},
+                "state": {"type": "string", "enum": ["open", "closed"], "description": "New state"},
+                "labels": {"type": "string", "description": "Comma-separated labels to SET (replaces existing)"},
+            },
+            "required": ["issue_key"],
+        },
+    },
+}
+
+TOOL_ADD_ISSUE_COMMENT: dict = {
+    "type": "function",
+    "function": {
+        "name": "add_issue_comment",
+        "description": "Add a comment to an existing issue on the project's bug tracker.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "issue_key": {"type": "string", "description": "Issue number (e.g. '#6', '6')"},
+                "comment": {"type": "string", "description": "Comment body (markdown supported)"},
+            },
+            "required": ["issue_key", "comment"],
+        },
+    },
+}
+
+TOOL_LIST_ISSUES: dict = {
+    "type": "function",
+    "function": {
+        "name": "list_issues",
+        "description": "List all issues from the project's bug tracker (GitHub Issues or GitLab Issues).",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+ISSUE_TOOLS: list[dict] = [
+    TOOL_CREATE_ISSUE, TOOL_UPDATE_ISSUE, TOOL_ADD_ISSUE_COMMENT, TOOL_LIST_ISSUES,
+]
+
+
+# ============================================================
 # Per-agent tool sets (multi-agent delegation system)
 # Each specialist agent gets ONLY its own tools.
 # ============================================================
@@ -1555,8 +1632,8 @@ CODE_REVIEW_AGENT_TOOLS: list[dict] = [
 # TestAgent — terminal + filesystem (for running tests, reading results)
 TEST_AGENT_TOOLS: list[dict] = TERMINAL_TOOLS + FILESYSTEM_TOOLS
 
-# IssueTrackerAgent — KB search for cross-project work
-TRACKER_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS]
+# IssueTrackerAgent — KB search + issue CRUD for cross-project work
+TRACKER_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS] + ISSUE_TOOLS
 
 # WikiAgent — KB search for context
 WIKI_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS]

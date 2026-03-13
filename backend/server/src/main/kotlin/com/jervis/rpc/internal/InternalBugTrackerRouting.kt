@@ -229,6 +229,95 @@ fun Routing.installInternalBugTrackerApi(
         }
     }
 
+    // Update an existing issue (title, body, state, labels)
+    post("/internal/issues/update") {
+        try {
+            val body = call.receive<UpdateIssueRequest>()
+
+            val resolved = resolveBugTrackerConnection(
+                body.clientId, body.projectId, projectService, connectionService,
+            )
+            if (resolved == null) {
+                return@post call.respondText(
+                    """{"ok":false,"error":"No BUGTRACKER connection found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                )
+            }
+
+            val (connection, resourceId) = resolved
+
+            when (connection.provider) {
+                ProviderEnum.GITHUB -> {
+                    val issueNumber = body.issueKey.removePrefix("#").toIntOrNull()
+                        ?: return@post call.respondText(
+                            """{"ok":false,"error":"Invalid issue number: ${body.issueKey}"}""",
+                            ContentType.Application.Json,
+                            HttpStatusCode.BadRequest,
+                        )
+                    val parts = resourceId.split("/", limit = 2)
+                    if (parts.size != 2) error("Invalid GitHub resource identifier: $resourceId")
+                    val issue = gitHubClient.updateIssue(
+                        connection = connection,
+                        owner = parts[0],
+                        repo = parts[1],
+                        issueNumber = issueNumber,
+                        title = body.title,
+                        body = body.description,
+                        state = body.state,
+                        labels = body.labels,
+                    )
+                    logger.info { "ISSUE_UPDATED | github | ${parts[0]}/${parts[1]}#$issueNumber | state=${body.state} labels=${body.labels}" }
+                    call.respondText(
+                        json.encodeToString(IssueResponse(ok = true, key = "#${issue.number}", url = issue.html_url)),
+                        ContentType.Application.Json,
+                    )
+                }
+                ProviderEnum.GITLAB -> {
+                    val issueIid = body.issueKey.removePrefix("#").toIntOrNull()
+                        ?: return@post call.respondText(
+                            """{"ok":false,"error":"Invalid issue IID: ${body.issueKey}"}""",
+                            ContentType.Application.Json,
+                            HttpStatusCode.BadRequest,
+                        )
+                    val stateEvent = when (body.state) {
+                        "closed" -> "close"
+                        "open" -> "reopen"
+                        else -> null
+                    }
+                    val issue = gitLabClient.updateIssue(
+                        connection = connection,
+                        projectId = resourceId,
+                        issueIid = issueIid,
+                        title = body.title,
+                        description = body.description,
+                        stateEvent = stateEvent,
+                        labels = body.labels,
+                    )
+                    logger.info { "ISSUE_UPDATED | gitlab | $resourceId#$issueIid | state=${body.state} labels=${body.labels}" }
+                    call.respondText(
+                        json.encodeToString(IssueResponse(ok = true, key = "#${issue.iid}", url = issue.web_url)),
+                        ContentType.Application.Json,
+                    )
+                }
+                else -> {
+                    call.respondText(
+                        """{"ok":false,"error":"update_issue not supported for provider: ${connection.provider}"}""",
+                        ContentType.Application.Json,
+                        HttpStatusCode.BadRequest,
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "ISSUE_UPDATE_FAILED | ${e.message}" }
+            call.respondText(
+                """{"ok":false,"error":"${e.message?.replace("\"", "'")}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
     // List issues from the project's bug tracker
     get("/internal/issues/list") {
         try {
@@ -410,6 +499,17 @@ private data class IssueListItem(
     val url: String,
     val created: String,
     val updated: String,
+)
+
+@Serializable
+private data class UpdateIssueRequest(
+    val clientId: String,
+    val projectId: String,
+    val issueKey: String,
+    val title: String? = null,
+    val description: String? = null,
+    val state: String? = null, // "open" or "closed"
+    val labels: List<String>? = null,
 )
 
 @Serializable

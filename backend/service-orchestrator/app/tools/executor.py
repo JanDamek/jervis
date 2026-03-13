@@ -500,6 +500,33 @@ async def execute_tool(
             result = await _execute_get_stack_recommendations(
                 requirements=arguments.get("requirements", ""),
             )
+        # --- Issue tracker tools ---
+        elif tool_name == "create_issue":
+            result = await _execute_issue_create(
+                client_id=client_id, project_id=project_id,
+                title=arguments.get("title", ""),
+                description=arguments.get("description", ""),
+                labels=arguments.get("labels", ""),
+            )
+        elif tool_name == "update_issue":
+            result = await _execute_issue_update(
+                client_id=client_id, project_id=project_id,
+                issue_key=arguments.get("issue_key", ""),
+                title=arguments.get("title"),
+                description=arguments.get("description"),
+                state=arguments.get("state"),
+                labels=arguments.get("labels"),
+            )
+        elif tool_name == "add_issue_comment":
+            result = await _execute_issue_comment(
+                client_id=client_id, project_id=project_id,
+                issue_key=arguments.get("issue_key", ""),
+                comment=arguments.get("comment", ""),
+            )
+        elif tool_name == "list_issues":
+            result = await _execute_issue_list(
+                client_id=client_id, project_id=project_id,
+            )
         # --- Guidelines tools (available in graph agent + chat) ---
         elif tool_name == "get_guidelines":
             result = await _execute_get_guidelines(
@@ -3842,3 +3869,106 @@ def _extract_sender(message: dict) -> str:
     if from_data.get("application"):
         return from_data["application"].get("displayName", "bot")
     return "?"
+
+
+# ============================================================
+# Issue Tracker tool handlers
+# ============================================================
+
+async def _execute_issue_create(
+    client_id: str, project_id: str,
+    title: str, description: str = "", labels: str = "",
+) -> str:
+    body: dict = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "title": title,
+    }
+    if description:
+        body["description"] = description
+    if labels:
+        body["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/issues/create", json=body)
+            data = resp.json()
+            if data.get("ok"):
+                url_info = f"\n  URL: {data.get('url', '')}" if data.get("url") else ""
+                return f"Issue created: {data.get('key', '?')}{url_info}"
+            return f"Error: {data.get('error', resp.text)}"
+    except Exception as e:
+        return f"Error creating issue: {e}"
+
+
+async def _execute_issue_update(
+    client_id: str, project_id: str, issue_key: str,
+    title: str | None = None, description: str | None = None,
+    state: str | None = None, labels: str | None = None,
+) -> str:
+    key = issue_key if issue_key.startswith("#") else f"#{issue_key}"
+    body: dict = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "issueKey": key,
+    }
+    if title:
+        body["title"] = title
+    if description:
+        body["description"] = description
+    if state:
+        body["state"] = state
+    if labels is not None and labels != "":
+        body["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/issues/update", json=body)
+            data = resp.json()
+            if data.get("ok"):
+                url_info = f"\n  URL: {data.get('url', '')}" if data.get("url") else ""
+                return f"Issue {key} updated{url_info}"
+            return f"Error: {data.get('error', resp.text)}"
+    except Exception as e:
+        return f"Error updating issue: {e}"
+
+
+async def _execute_issue_comment(
+    client_id: str, project_id: str,
+    issue_key: str, comment: str,
+) -> str:
+    key = issue_key if issue_key.startswith("#") else f"#{issue_key}"
+    body: dict = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "issueKey": key,
+        "comment": comment,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/issues/comment", json=body)
+            data = resp.json()
+            if data.get("ok"):
+                return f"Comment added to {key}"
+            return f"Error: {data.get('error', resp.text)}"
+    except Exception as e:
+        return f"Error adding comment: {e}"
+
+
+async def _execute_issue_list(client_id: str, project_id: str) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.get(
+                f"{_KOTLIN_INTERNAL_URL}/internal/issues/list",
+                params={"clientId": client_id, "projectId": project_id},
+            )
+            data = resp.json()
+            if not data.get("ok"):
+                return f"Error: {data.get('error', resp.text)}"
+            issues = data.get("issues", [])
+            if not issues:
+                return "No issues found."
+            lines = [f"Found {len(issues)} issue(s):"]
+            for issue in issues:
+                lines.append(f"  {issue['key']} [{issue['state']}] {issue['title']}\n    URL: {issue.get('url', '')}")
+            return "\n".join(lines)
+    except Exception as e:
+        return f"Error listing issues: {e}"

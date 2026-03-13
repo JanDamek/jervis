@@ -2884,6 +2884,59 @@ async def add_issue_comment(
 
 
 @mcp.tool
+async def update_issue(
+    client_id: str,
+    project_id: str,
+    issue_key: str,
+    title: str = "",
+    description: str = "",
+    state: str = "",
+    labels: str = "",
+) -> str:
+    """Update an existing issue on the project's bug tracker.
+
+    Can change title, description, state (open/closed), and labels.
+    Only provided (non-empty) fields are updated.
+
+    Args:
+        client_id: Client ID that owns the project
+        project_id: Project ID
+        issue_key: Issue number/key (e.g. "#6", "6", "#42")
+        title: New title (leave empty to keep current)
+        description: New description/body (leave empty to keep current)
+        state: New state - "open" or "closed" (leave empty to keep current)
+        labels: Comma-separated labels (e.g. "bug,priority:high,analysis"). Replaces all existing labels.
+    """
+    key = issue_key if issue_key.startswith("#") else f"#{issue_key}"
+    body: dict = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "issueKey": key,
+    }
+    if title:
+        body["title"] = title
+    if description:
+        body["description"] = description
+    if state:
+        body["state"] = state
+    if labels:
+        body["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/issues/update",
+            json=body,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        if data.get("ok"):
+            url_info = f"\n  URL: {data['url']}" if data.get("url") else ""
+            return f"Issue {key} updated successfully{url_info}"
+        return f"Error: {data.get('error', 'unknown')}"
+
+
+@mcp.tool
 async def list_issues(
     client_id: str,
     project_id: str,

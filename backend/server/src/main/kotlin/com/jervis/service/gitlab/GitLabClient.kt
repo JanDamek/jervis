@@ -121,6 +121,32 @@ class GitLabClient(
         return json.decodeFromString(GitLabNote.serializer(), body)
     }
 
+    suspend fun updateIssue(
+        connection: ConnectionDocument,
+        projectId: String,
+        issueIid: Int,
+        title: String? = null,
+        description: String? = null,
+        stateEvent: String? = null, // "close" or "reopen"
+        labels: List<String>? = null,
+    ): GitLabIssue {
+        val token = requireToken(connection)
+        val baseUrl = getBaseUrl(connection)
+        val payload = buildJsonObject {
+            title?.let { put("title", it) }
+            description?.let { put("description", it) }
+            stateEvent?.let { put("state_event", it) }
+            labels?.let { put("labels", it.joinToString(",")) }
+        }
+        val response = httpClient.put("$baseUrl/projects/${projectId.encodeURLParameter()}/issues/$issueIid") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val body = response.checkProviderResponse("GitLab", "updateIssue(#$issueIid)")
+        return json.decodeFromString(GitLabIssue.serializer(), body)
+    }
+
     // ── Merge Request operations ──────────────────────────────────
 
     suspend fun listOpenMergeRequests(
