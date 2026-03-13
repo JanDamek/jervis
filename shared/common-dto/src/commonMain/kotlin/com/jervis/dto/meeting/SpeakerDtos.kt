@@ -62,6 +62,7 @@ data class SpeakerUpdateDto(
     val nationality: String? = null,
     val languagesSpoken: List<String> = emptyList(),
     val notes: String? = null,
+    val clientIds: List<String> = emptyList(),
     val emails: List<String> = emptyList(),
     val channels: List<SpeakerChannelDto> = emptyList(),
 )

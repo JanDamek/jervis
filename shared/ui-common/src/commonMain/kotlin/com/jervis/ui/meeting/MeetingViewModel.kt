@@ -925,7 +925,7 @@ class MeetingViewModel(
         scope.launch {
             try {
                 repository.speakers.createSpeaker(request)
-                loadSpeakers(request.clientId)
+                loadSpeakers(request.clientIds.firstOrNull() ?: return@launch)
             } catch (e: Exception) {
                 _error.value = "Chyba při vytváření řečníka: ${e.message}"
             }

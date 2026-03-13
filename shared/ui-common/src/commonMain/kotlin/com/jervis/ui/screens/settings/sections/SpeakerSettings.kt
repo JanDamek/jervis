@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
@@ -272,7 +273,7 @@ private fun SpeakerEditForm(
     var newChannelName by remember(speaker.id) { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    val clientNames = clients.filter { it.id in speaker.clientIds }.map { it.name }
+    var selectedClientIds by remember(speaker.id) { mutableStateOf(speaker.clientIds.toSet()) }
 
     JDetailScreen(
         title = speaker.name,
@@ -285,6 +286,7 @@ private fun SpeakerEditForm(
                     nationality = nationality.trim().ifBlank { null },
                     languagesSpoken = languages.split(",").map { it.trim() }.filter { it.isNotBlank() },
                     notes = notes.trim().ifBlank { null },
+                    clientIds = selectedClientIds.toList(),
                     emails = emails,
                     channels = channels,
                 ),
@@ -326,13 +328,24 @@ private fun SpeakerEditForm(
                 )
             }
 
-            if (clientNames.isNotEmpty()) {
-                JSection(title = "Klienti (automaticky přiřazení)") {
-                    Text(
-                        clientNames.joinToString(", "),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            JSection(title = "Klienti") {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    clients.forEach { client ->
+                        FilterChip(
+                            selected = client.id in selectedClientIds,
+                            onClick = {
+                                selectedClientIds = if (client.id in selectedClientIds) {
+                                    selectedClientIds - client.id
+                                } else {
+                                    selectedClientIds + client.id
+                                }
+                            },
+                            label = { Text(client.name) },
+                        )
+                    }
                 }
             }
 

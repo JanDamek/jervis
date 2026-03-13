@@ -58,7 +58,7 @@ class SpeakerRpcImpl(
             nationality = request.nationality,
             languagesSpoken = request.languagesSpoken,
             notes = request.notes,
-            // clientIds are NOT updated here — managed automatically via meeting assignment
+            clientIds = request.clientIds.map { ClientId.fromString(it) },
             emails = request.emails,
             channels = request.channels.map { it.toEntry() },
             updatedAt = Instant.now(),
