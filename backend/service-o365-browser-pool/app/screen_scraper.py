@@ -23,49 +23,54 @@ from app.vlm_client import analyze_screenshot
 logger = logging.getLogger("o365-browser-pool.scraper")
 
 # VLM prompts per tab type
+_LOGIN_PAGE_NOTE = """
+IMPORTANT: If the screenshot shows a login/sign-in page instead of the expected content,
+return: {"login_page": true, "page_description": "what the page shows"}
+"""
+
 _PROMPTS = {
-    TabType.CHAT: """Analyze this Microsoft Teams screenshot. Extract:
+    TabType.CHAT: f"""Analyze this Microsoft Teams screenshot. Extract:
 1. List of visible chats/conversations in the sidebar (name, last message preview, unread count)
 2. If a conversation is open: all visible messages (sender, timestamp, content)
 3. Any notifications or badges
-
+{_LOGIN_PAGE_NOTE}
 Return JSON:
-{
-  "chats": [{"name": "...", "preview": "...", "unread": 0}],
-  "open_conversation": {
+{{
+  "chats": [{{"name": "...", "preview": "...", "unread": 0}}],
+  "open_conversation": {{
     "name": "...",
-    "messages": [{"sender": "...", "time": "...", "content": "..."}]
-  },
+    "messages": [{{"sender": "...", "time": "...", "content": "..."}}]
+  }},
   "has_unread": false,
   "active_conversation": false
-}""",
+}}""",
 
-    TabType.CALENDAR: """Analyze this Outlook Calendar screenshot. Extract:
+    TabType.CALENDAR: f"""Analyze this Outlook Calendar screenshot. Extract:
 1. Current view (day/week/month) and visible date range
 2. All visible calendar events (title, time, duration, attendees if visible)
 3. Any pending meeting notifications
-
+{_LOGIN_PAGE_NOTE}
 Return JSON:
-{
+{{
   "view": "week",
   "date_range": "...",
-  "events": [{"title": "...", "start": "...", "end": "...", "attendees": []}],
+  "events": [{{"title": "...", "start": "...", "end": "...", "attendees": []}}],
   "notifications": []
-}""",
+}}""",
 
-    TabType.EMAIL: """Analyze this Outlook Email screenshot. Extract:
+    TabType.EMAIL: f"""Analyze this Outlook Email screenshot. Extract:
 1. Folder currently viewed (Inbox, Sent, etc.)
 2. List of visible emails (sender, subject, preview, timestamp, read/unread)
 3. If an email is open: full content summary
 4. Any notifications or badges
-
+{_LOGIN_PAGE_NOTE}
 Return JSON:
-{
+{{
   "folder": "Inbox",
-  "emails": [{"sender": "...", "subject": "...", "preview": "...", "time": "...", "unread": true}],
+  "emails": [{{"sender": "...", "subject": "...", "preview": "...", "time": "...", "unread": true}}],
   "open_email": null,
   "unread_count": 0
-}""",
+}}""",
 }
 
 # Default intervals (seconds) — can be overridden by adaptive logic
@@ -203,9 +208,18 @@ class ScreenScraper:
         parsed = _parse_vlm_response(result_text)
         if not parsed:
             logger.warning(
-                "Failed to parse VLM response for %s/%s",
+                "Failed to parse VLM response for %s/%s: raw=%s",
+                client_id, tab_type.value, result_text[:200],
+            )
+            return
+
+        # Detect if VLM sees a login page instead of expected content
+        if parsed.get("login_page") or parsed.get("sign_in"):
+            logger.warning(
+                "VLM detected login page for %s/%s — session may need re-login",
                 client_id, tab_type.value,
             )
+            self._bm.set_state(client_id, SessionState.EXPIRED)
             return
 
         # Store result

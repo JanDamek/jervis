@@ -75,18 +75,28 @@ async def auto_login(
     - ERROR: login failed
     """
     try:
-        # Navigate to login page
+        # Navigate to login page — use networkidle to wait for redirects
         logger.info("Auto-login: navigating to %s", login_url)
-        await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+        try:
+            await page.goto(login_url, wait_until="networkidle", timeout=30000)
+        except Exception:
+            # networkidle can timeout on heavy pages — fallback
+            logger.warning("Auto-login: networkidle timeout, continuing...")
         await asyncio.sleep(3)
 
         # Wait for Microsoft login page to load
         stage = await _detect_stage(page)
         logger.info("Auto-login: initial stage = %s", stage)
 
-        # If already on Teams (previous session), we're done
+        # If apparently logged in (from cached URL), wait and verify
+        # Teams may briefly show /v2 URL before redirecting to login
         if stage == LoginStage.LOGGED_IN:
-            return LoginResult(stage=LoginStage.LOGGED_IN)
+            logger.info("Auto-login: LOGGED_IN detected, verifying (wait 5s)...")
+            await asyncio.sleep(5)
+            stage = await _detect_stage(page)
+            logger.info("Auto-login: after verification, stage = %s", stage)
+            if stage == LoginStage.LOGGED_IN:
+                return LoginResult(stage=LoginStage.LOGGED_IN)
 
         # Step 1: Enter email
         if stage in (LoginStage.EMAIL_ENTRY, LoginStage.NAVIGATING):
