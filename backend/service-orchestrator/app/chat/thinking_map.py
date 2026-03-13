@@ -338,7 +338,8 @@ async def handle_vertex_result(
     vertex = graph.vertices.get(vertex_id)
     if vertex:
         vertex.status = VertexStatus.COMPLETED
-        vertex.result_summary = result[:500] if result else ""
+        vertex.result = result or ""
+        vertex.result_summary = result or ""
         await agent_store.save(graph)
         logger.info("Updated vertex '%s' with background result (task %s)", vertex_id, task_id)
 

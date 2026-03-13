@@ -1137,7 +1137,7 @@ class DelegationMessage(BaseModel):
 ```
 
 - `depth` limits recursion (max 4 levels of sub-delegation).
-- `context` is trimmed to fit the target agent's token budget.
+- `context` is passed in full to the target agent (no truncation — routing handles context limits).
 - `response_language` ensures the final user-facing output matches the detected input language.
 
 ### AgentOutput

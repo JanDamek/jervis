@@ -518,7 +518,7 @@ class ChatContextAssembler:
         formatted = []
         for m in messages:
             label = {"user": "Uživatel", "assistant": "Jervis"}.get(m.role, m.role)
-            formatted.append(f"[{label}]: {m.content[:2000]}")
+            formatted.append(f"[{label}]: {m.content}")
         conversation_text = "\n".join(formatted)
 
         previous_context = ""
@@ -575,13 +575,13 @@ class ChatContextAssembler:
                 parsed = _parse_json_response(content)
                 if not parsed:
                     logger.warning("COMPRESS_PARSE_FAILED | conversationId=%s | attempt=%d", conversation_id, attempt)
-                    parsed = {"summary": content[:2000]}
+                    parsed = {"summary": content}
 
                 await self._save_summary(
                     conversation_id=conversation_id,
                     sequence_start=messages[0].sequence,
                     sequence_end=messages[-1].sequence,
-                    summary=parsed.get("summary", content[:2000]),
+                    summary=parsed.get("summary", content),
                     key_decisions=parsed.get("key_decisions", []),
                     topics=parsed.get("topics", []),
                     is_checkpoint=parsed.get("is_checkpoint", False),

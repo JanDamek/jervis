@@ -1975,7 +1975,7 @@ Zpráva < 16k chars → normální agentic loop
 
 ### Content Reducer (`app/memory/content_reducer.py`)
 
-Centrální modul pro **LLM-based content reduction** — nahrazuje veškeré hard-coded `[:N]` truncation v memory a context modulech.
+Centrální modul pro **LLM-based content reduction**. All hard-coded `[:N]` truncation has been REMOVED from the codebase. Content reduction is done exclusively via LLM summarization or whole-message removal.
 
 **Tři funkce:**
 

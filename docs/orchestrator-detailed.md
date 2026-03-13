@@ -3002,7 +3002,7 @@ Systematic hardening of the Python orchestrator addressing 15 weak spots identif
 ### 30.2 Changes by File
 
 #### `app/tools/executor.py`
-- **W-11: Tool Result Size Bound** — `MAX_TOOL_RESULT_CHARS = 8000`. All tool results are truncated via `_truncate_result()` before returning. Preserves 70% head + 20% tail with truncation marker.
+- **W-11: Tool Result Size Bound** — **REMOVED.** `_truncate_result()` is now a pass-through (returns result as-is). No truncation of tool results — routing system handles context limits (>48k → OpenRouter).
 - **W-22: Tool Execution Timeout** — `_TOOL_EXECUTION_TIMEOUT_S = 120`. Exported for use in respond node.
 
 #### `app/graph/nodes/respond.py`
@@ -3013,12 +3013,12 @@ Systematic hardening of the Python orchestrator addressing 15 weak spots identif
 - **W-19: User Message Save** — User query and assistant answer saved to MongoDB via `chat_context_assembler.save_message()` for chat history persistence.
 
 #### `app/graph/nodes/_helpers.py`
-- **W-14: Context Overflow Guard** — Before LLM call, validates `context_tokens` fits selected tier's `num_ctx`. If exceeded, calls `_truncate_messages_to_budget()` which removes oldest tool results first, then middle messages, while protecting system message and last 4 messages.
+- **W-14: Context Overflow Guard** — Before LLM call, validates `context_tokens` fits selected tier's `num_ctx`. If exceeded, removes whole messages (oldest tool results first, then middle messages) while protecting system message and last 4 messages. **No per-message content truncation** — messages are either included in full or removed entirely.
 
 #### `app/chat/context.py`
 - **W-20: Sequence Number Race** — `get_next_sequence()` uses atomic `findOneAndUpdate` on `chat_sequence_counters` collection instead of `count_documents + 1`.
 - **W-15: Compression Error Handling** — `_compress_block()` retries `COMPRESS_MAX_RETRIES = 2` times with exponential backoff. On exhaustion, saves placeholder marker so block isn't re-attempted. `maybe_compress()` accepts `done_callback` for completion notification. Compression prompt is content-complete (no arbitrary char limit), preserves KB references (sourceUrn, correlationId, ticket IDs), and tags multi-project summaries with `[Projekt X]:` prefixes. Input messages are truncated to 2000 chars (not 500).
-- **W-10: Checkpoint Message Growth** — `save_message()` truncates TOOL role messages to `MAX_TOOL_RESULT_IN_MSG = 2000` chars before MongoDB write.
+- **W-10: Checkpoint Message Growth** — **REMOVED.** `save_message()` stores full TOOL role messages without truncation. No `MAX_TOOL_RESULT_IN_MSG` limit.
 
 #### `app/llm/provider.py`
 - **W-21: REMOVED** — LLM rate limiting semaphores removed. Router manages all GPU concurrency via its request queue (priority-based dispatch, CRITICAL preemption). No artificial limits on orchestrator side.
@@ -3039,12 +3039,12 @@ Systematic hardening of the Python orchestrator addressing 15 weak spots identif
 
 | Constant | Value | File | Purpose |
 |----------|-------|------|---------|
-| `MAX_TOOL_RESULT_CHARS` | 8000 | executor.py | W-11: Max tool result size |
+| `MAX_TOOL_RESULT_CHARS` | ~~8000~~ REMOVED | executor.py | W-11: No longer enforced — pass-through |
 | `_TOOL_EXECUTION_TIMEOUT_S` | 120 | executor.py | W-22: Per-tool timeout |
 | `_MIN_ANSWER_CHARS` | 40 | respond.py | W-13: Short answer threshold |
 | `_MAX_SHORT_RETRIES` | 1 | respond.py | W-13: Retry limit |
 | `COMPRESS_MAX_RETRIES` | 2 | context.py | W-15: Compression retry limit |
-| `MAX_TOOL_RESULT_IN_MSG` | 2000 | context.py | W-10: Stored message truncation |
+| `MAX_TOOL_RESULT_IN_MSG` | ~~2000~~ REMOVED | context.py | W-10: No longer enforced — full storage |
 
 ### 30.5 Test Suite
 
@@ -3550,13 +3550,13 @@ Message > 8000 chars?
 - **Fallback**: any classifier/parse failure → existing single-pass flow (zero regression)
 - **Latency**: 3-topic message ~90s (classifier 3s + 3×25s + combiner 8s) vs 4-8 min single-pass CPU-spill
 
-#### L. Pre-trim: Oversized Messages
+#### L. Context Overflow Handling (NO TRUNCATION)
 
-When a user message exceeds the tier's context window capacity, the LLM provider
-automatically trims it before sending to Ollama (preserving 75% head + 25% tail
-with a truncation marker). This prevents sending excess data to Ollama where it
-would be internally discarded anyway — saves network transfer and tokenization overhead.
-Non-user messages are never trimmed.
+**No message content is ever truncated.** When context exceeds the GPU's 48k token limit,
+the routing system automatically sends the request to OpenRouter (up to 200k context).
+For content exceeding even OpenRouter limits, LLM-based summarization (`reduce_for_prompt`)
+is used — the original is saved to KB first, so nothing is lost.
+If summarization fails, a background task is suggested instead of truncating.
 
 #### M. Anti-dump Guards
 

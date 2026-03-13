@@ -42,13 +42,13 @@ async def memory_flush(state: dict) -> dict:
 
             if query:
                 agent.session.active_affair.messages.append(
-                    AffairMessage(role="user", content=query[:2000], timestamp=now)
+                    AffairMessage(role="user", content=query, timestamp=now)
                 )
             if final_result:
                 agent.session.active_affair.messages.append(
                     AffairMessage(
                         role="assistant",
-                        content=final_result[:2000],
+                        content=final_result,
                         timestamp=now,
                     )
                 )

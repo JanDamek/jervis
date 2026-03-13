@@ -104,7 +104,7 @@ async def execute_delegation(state: dict) -> dict:
                     DelegationStatus.COMPLETED if output.success
                     else DelegationStatus.FAILED
                 )
-                ds.result_summary = output.result[:500] if output.result else ""
+                ds.result_summary = output.result or ""
                 delegation_states[did] = ds
 
             delegation_results[did] = summarize_agent_output(output)

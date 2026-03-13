@@ -66,20 +66,20 @@ def _build_respond_context(state: dict) -> str:
         parts.append(f"## Working Memory (affairs & context)\n{memory_context}")
 
     if project_context:
-        parts.append(f"## Project Context (from Knowledge Base)\n{project_context[:4000]}")
+        parts.append(f"## Project Context (from Knowledge Base)\n{project_context}")
 
     # Evidence pack KB results
     if evidence:
         for kr in evidence.get("kb_results", []):
             content = kr.get("content", "")
             if content:
-                parts.append(f"## Knowledge Base\n{content[:4000]}")
+                parts.append(f"## Knowledge Base\n{content}")
         tracker_artifacts = evidence.get("tracker_artifacts", [])
         if tracker_artifacts:
             parts.append("## Referenced Items")
             for ta in tracker_artifacts:
                 ref = ta.get("ref", "?")
-                content = ta.get("content", "")[:1000]
+                content = ta.get("content", "")
                 parts.append(f"### {ref}\n{content}")
 
     # Chat history
@@ -104,7 +104,7 @@ def _build_respond_context(state: dict) -> str:
 
     env_data = state.get("environment")
     if env_data:
-        parts.append(f"## Environment\n{json.dumps(env_data, default=str)[:4000]}")
+        parts.append(f"## Environment\n{json.dumps(env_data, default=str)}")
 
     return "\n\n".join(parts)
 

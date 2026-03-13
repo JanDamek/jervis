@@ -427,21 +427,8 @@ def _truncate_messages_to_budget(messages: list, token_budget: int) -> list:
     # Remove from oldest, prioritizing tool results
     result = list(messages)
     removed = 0
-    for i in range(removable_start, removable_end):
-        if total <= token_budget:
-            break
-        msg = result[i]
-        if msg.get("role") == "tool":
-            tokens = _estimate_tokens(msg)
-            # Truncate content instead of removing entirely
-            content = msg.get("content", "")
-            if len(content) > CONTENT_TRUNCATION_CHARS:
-                msg["content"] = content[:CONTENT_TRUNCATION_CHARS] + " [truncated for context budget]"
-                saved = tokens - _estimate_tokens(msg)
-                total -= saved
-                removed += saved
-
-    # If still over budget, remove middle messages entirely
+    # No content truncation — results must never be trimmed.
+    # If over budget, remove middle messages entirely (whole messages, not partial content).
     if total > token_budget:
         new_result = result[:protected_head]
         for i in range(protected_head, len(result) - protected_tail):

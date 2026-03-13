@@ -121,7 +121,7 @@ async def evidence_pack(state: dict) -> dict:
             if ref_context:
                 tracker_artifacts.append({
                     "ref": ref,
-                    "content": ref_context[:2000],  # Truncate per-ref
+                    "content": ref_context,
                 })
                 facts.append(f"Found KB context for {ref}")
             else:

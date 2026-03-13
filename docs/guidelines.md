@@ -40,7 +40,31 @@ repository.findByArchivedTrue()  // DB does the filtering
 - Never `MongoTemplate` when Spring Data can do it
 - Prefer `Flow` over `List` (don't `.toList()` unless needed)
 
-### 2. FAIL-FAST Philosophy
+### 2. NO TRUNCATION — Results Must Never Be Trimmed
+
+**NEVER use `[:N]` slicing or any truncation on stored results, tool outputs, KB writes, or LLM prompt content.**
+
+The routing system handles context limits — content exceeding 48k GPU context is automatically routed to OpenRouter. There is NO reason to truncate data at the application level.
+
+**What is FORBIDDEN:**
+- `result[:500]`, `content[:2000]`, `summary[:8000]` — any hard-coded string slicing
+- `_truncate_result()` functions that cut content
+- Per-message character limits before storage or LLM calls
+
+**What is ALLOWED:**
+- Whole-message removal for context budget (remove oldest messages entirely, never partial content)
+- LLM-based summarization (`reduce_for_prompt`) when content truly exceeds token budget
+- `trim_for_display()` ONLY for UI progress indicators and debug logging — NEVER for storage or LLM prompts
+
+**Context overflow handling:**
+```
+content fits GPU (≤48k) → use as-is
+content > 48k → router sends to OpenRouter (up to 200k context)
+content > 200k → LLM summarization (reduce_for_prompt), original saved to KB
+summarization fails → suggest background task (NEVER fall back to truncation)
+```
+
+### 3. FAIL-FAST Philosophy
 
 **Exceptions must propagate. Never hide errors.**
 
@@ -53,13 +77,13 @@ repository.findByArchivedTrue()  // DB does the filtering
 - Validate input, fail fast
 - Background/batch jobs: skip + warn on stale IDs, don't crash entire batch
 
-### 3. IF-LESS Pattern
+### 4. IF-LESS Pattern
 
 Replace `if/when` with polymorphism/sealed classes/routing tables where code might expand.
 
 **OK for trivial cases**: `if/when` is fine for simple decisions.
 
-### 4. Documentation is Part of the Deliverable
+### 5. Documentation is Part of the Deliverable
 
 **After every code change, update docs BEFORE committing.**
 
@@ -71,7 +95,7 @@ Replace `if/when` with polymorphism/sealed classes/routing tables where code mig
 | Architecture/modules | `architecture.md` |
 | Orchestrator behavior | `orchestrator-final-spec.md` or `orchestrator-detailed.md` |
 
-### 5. Kotlin-First & Idiomatic Code
+### 6. Kotlin-First & Idiomatic Code
 
 - Use coroutines + `Flow` for async work
 - No "Java in Kotlin" patterns
@@ -79,7 +103,7 @@ Replace `if/when` with polymorphism/sealed classes/routing tables where code mig
 - Extension functions, not utils classes
 - No `@Deprecated` code — refactor immediately
 
-### 6. Language
+### 7. Language
 
 - **Code/comments/logs**: English
 - **UI text**: Czech

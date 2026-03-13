@@ -136,7 +136,7 @@ async def _run_graph_agent_background(
             title=request.task_name or request.query[:80] or f"Task {request.task_id}",
             completed=success,
             failed=not success,
-            result_summary=summary[:500] if summary else "",
+            result_summary=summary or "",
             client_id=request.client_id,
             client_name=request.client_name or "",
             group_id=request.group_id,

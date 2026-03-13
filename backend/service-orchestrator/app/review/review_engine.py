@@ -231,11 +231,11 @@ Review Checklist:
     messages = [
         {"role": "system", "content": _REVIEW_SYSTEM_PROMPT},
         {"role": "user", "content": (
-            f"## Task Description\n{task_description[:2000]}\n\n"
+            f"## Task Description\n{task_description}\n\n"
             f"## Guidelines{guidelines_text}\n"
             f"{checklist_text}\n"
             f"{static_text}\n\n"
-            f"## Diff to Review\n```\n{diff[:8000]}\n```"
+            f"## Diff to Review\n```\n{diff}\n```"
         )},
     ]
 

@@ -61,12 +61,12 @@ async def _execute_respond_step(
     # Build context
     context_parts: list[str] = []
     if project_context:
-        context_parts.append(f"## Project Context\n{project_context[:3000]}")
+        context_parts.append(f"## Project Context\n{project_context}")
     if evidence:
         for kr in evidence.get("kb_results", []):
             content = kr.get("content", "")
             if content:
-                context_parts.append(f"## Knowledge Base\n{content[:3000]}")
+                context_parts.append(f"## Knowledge Base\n{content}")
 
     context_block = "\n\n".join(context_parts)
 
@@ -96,7 +96,7 @@ async def _execute_respond_step(
     step_result = StepResult(
         step_index=step.index,
         success=True,
-        summary=answer[:500],
+        summary=answer,
         agent_type="llm",
     )
 

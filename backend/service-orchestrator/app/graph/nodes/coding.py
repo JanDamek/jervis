@@ -45,7 +45,7 @@ async def decompose(state: dict) -> dict:
 
     project_context = state.get("project_context", "")
     if project_context:
-        context_parts.append(f"## Existing Project Context\n{project_context[:3000]}")
+        context_parts.append(f"## Existing Project Context\n{project_context}")
 
     clarification = state.get("clarification_response")
     if clarification:
@@ -55,7 +55,7 @@ async def decompose(state: dict) -> dict:
 
     env_data = state.get("environment")
     if env_data:
-        context_parts.append(f"## Environment\n{json.dumps(env_data, default=str)[:4000]}")
+        context_parts.append(f"## Environment\n{json.dumps(env_data, default=str)}")
 
     # Evidence pack context
     evidence = state.get("evidence_pack", {})
@@ -63,7 +63,7 @@ async def decompose(state: dict) -> dict:
         for kr in evidence.get("kb_results", []):
             content = kr.get("content", "")
             if content:
-                context_parts.append(f"## Knowledge Base\n{content[:2000]}")
+                context_parts.append(f"## Knowledge Base\n{content}")
 
     context_block = "\n\n".join(context_parts)
 
@@ -215,7 +215,7 @@ async def plan_steps(state: dict) -> dict:
 
     project_context = state.get("project_context", "")
     if project_context:
-        context_parts.append(f"\n## Project Context\n{project_context[:2000]}")
+        context_parts.append(f"\n## Project Context\n{project_context}")
 
     context_block = "\n".join(context_parts)
 

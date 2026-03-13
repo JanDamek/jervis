@@ -93,7 +93,7 @@ async def extract_touched_artifacts(
                 f"## Vertex: {vertex.title}\n"
                 f"Type: {vertex.vertex_type.value}\n"
                 f"Description: {vertex.description}\n\n"
-                f"## Result\n{vertex.result[:4000]}"
+                f"## Result\n{vertex.result}"
             ),
         },
     ]

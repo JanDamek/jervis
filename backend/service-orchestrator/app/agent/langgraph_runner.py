@@ -1159,7 +1159,7 @@ async def _agentic_vertex(
         if not result:
             result = remaining_text or "(max tool iterations reached)"
 
-    summary = result[:500]
+    summary = result
     return result, summary
 
 
@@ -1186,7 +1186,7 @@ async def _try_specialist_agent(
                 project_id=state.get("task", {}).get("project_id"),
             )
             output = await agent.execute(msg, state)
-            return output.result, output.result[:500]
+            return output.result, output.result
     except Exception as e:
         logger.warning("Agent dispatch failed, falling back to LLM: %s", e)
     return None

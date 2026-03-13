@@ -677,28 +677,13 @@ async def execute_tool(
 
 
 def _truncate_result(result: str, tool_name: str) -> str:
-    """W-11: Truncate tool result to MAX_TOOL_RESULT_CHARS.
+    """W-11: Return tool result as-is (no truncation).
 
-    Preserves beginning and end of content for context, inserts truncation marker.
+    Previously truncated to MAX_TOOL_RESULT_CHARS, but truncation is now forbidden —
+    results must always be preserved in full. Context budget management in _helpers.py
+    handles overall prompt size; routing to OpenRouter handles large contexts (>48k).
     """
-    if len(result) <= MAX_TOOL_RESULT_CHARS:
-        return result
-
-    # Keep 70% from start, 20% from end, 10% for marker
-    head_chars = int(MAX_TOOL_RESULT_CHARS * 0.70)
-    tail_chars = int(MAX_TOOL_RESULT_CHARS * 0.20)
-    truncated_chars = len(result) - head_chars - tail_chars
-
-    logger.info(
-        "TOOL_RESULT_TRUNCATED | tool=%s | original=%d chars | truncated=%d chars",
-        tool_name, len(result), truncated_chars,
-    )
-
-    return (
-        result[:head_chars]
-        + f"\n\n... [TRUNCATED {truncated_chars} chars — result too large] ...\n\n"
-        + result[-tail_chars:]
-    )
+    return result
 
 
 def _sanitize_text(text: str) -> str:
@@ -1832,10 +1817,6 @@ async def _execute_git_show(
             return f"Error: git show failed: {result.stderr}"
 
         output = result.stdout.strip()
-
-        # Truncate if too long
-        if len(output) > 8000:
-            output = output[:8000] + "\n\n... (truncated, output too large)"
 
         return f"## Git Show: {commit}\n\n```\n{output}\n```"
     except subprocess.TimeoutExpired:
@@ -3610,7 +3591,7 @@ async def _execute_o365_mail_read(client_id: str, message_id: str) -> str:
                 for r in (m.get("ccRecipients") or [])
                 if r.get("emailAddress")
             ]
-            body_content = (m.get("body") or {}).get("content", "")[:3000]
+            body_content = (m.get("body") or {}).get("content", "")
             parts = [
                 f"Subject: {m.get('subject', '(none)')}",
                 f"From: {sender}",

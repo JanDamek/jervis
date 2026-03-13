@@ -333,7 +333,7 @@ class AgentTaskWatcher:
                     original_task_id = source_urn.replace("code-review:", "")
                     await kotlin_client.post_mr_inline_comments(
                         task_id=original_task_id,
-                        summary=f"### Jervis Code Review\n\n{summary[:3000]}",
+                        summary=f"### Jervis Code Review\n\n{summary}",
                         verdict="COMMENT",
                         merge_request_url=mr_url,
                     )
@@ -493,7 +493,7 @@ class AgentTaskWatcher:
                 title=review_title,
                 completed=(verdict == "APPROVE"),
                 failed=(verdict in ("REJECT",)),
-                result_summary=f"{review_summary[:300]}\nMR: {mr_url}",
+                result_summary=f"{review_summary}\nMR: {mr_url}",
                 client_id=str(task_data.get("clientId", "")),
                 project_id=str(task_data.get("projectId", "")) if task_data.get("projectId") else None,
             )

@@ -33,7 +33,7 @@ async def analyze_denial(
 
 Action denied: {denial_action}
 Reason given: {denial_reason or 'No reason provided'}
-Task context: {task_summary[:500]}
+Task context: {task_summary}
 
 Rules:
 - Only propose a rule if the denial suggests a repeating pattern

@@ -345,7 +345,7 @@ async def run_agentic_loop(
                 result = f"[Cached — tento tool se stejnými argumenty už byl volán] {cached_result}"
                 used_tools.append(tool_name)
                 tool_summaries.append(f"{tool_name}: (cached)")
-                yield ChatStreamEvent(type="tool_result", content=result[:500], metadata={"tool": tool_name, "cached": True})
+                yield ChatStreamEvent(type="tool_result", content=result, metadata={"tool": tool_name, "cached": True})
                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
                 continue
 
@@ -459,7 +459,7 @@ async def run_agentic_loop(
                             logger.info("Chat: user denied %s", approval_exc.action)
 
                 used_tools.append(tool_name)
-                tool_summaries.append(f"{tool_name}: {result[:100]}")
+                tool_summaries.append(f"{tool_name}: {result}")
                 logger.info("Chat: tool %s result (%d chars): %s", tool_name, len(result), result[:200])
 
                 # EPIC 14-S2: Track KB sources for attribution
@@ -525,7 +525,7 @@ async def run_agentic_loop(
                         },
                     )
 
-            yield ChatStreamEvent(type="tool_result", content=result[:500], metadata={"tool": tool_name})
+            yield ChatStreamEvent(type="tool_result", content=result, metadata={"tool": tool_name})
             messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
 
             # Enriched thinking — short summary of tool result for UI

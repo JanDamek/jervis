@@ -310,7 +310,7 @@ async def _llm_decompose(
             context_lines.append(
                 f"### From: {payload.source_vertex_title}\n"
                 f"Summary: {payload.summary}\n"
-                f"Details: {payload.context[:2000]}"
+                f"Details: {payload.context}"
             )
         user_prompt += "\n".join(context_lines)
 
@@ -493,7 +493,7 @@ def _format_evidence(evidence: dict) -> str:
 
     chat_summary = evidence.get("chat_history_summary", "")
     if chat_summary:
-        parts.append(f"### Conversation Context\n{chat_summary[:1000]}")
+        parts.append(f"### Conversation Context\n{chat_summary}")
 
     existing_resources = evidence.get("existing_resources", "")
     if existing_resources:

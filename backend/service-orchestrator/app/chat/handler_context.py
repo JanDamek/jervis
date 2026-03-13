@@ -162,7 +162,7 @@ def build_messages(
                 try:
                     raw = base64.b64decode(b64)
                     text = raw.decode("utf-8", errors="replace")
-                    attachment_parts.append(f"\n\n--- Příloha: {filename} ---\n{text[:8000]}")
+                    attachment_parts.append(f"\n\n--- Příloha: {filename} ---\n{text}")
                 except Exception:
                     attachment_parts.append(f"\n\n--- Příloha: {filename} (nepodařilo se dekódovat) ---")
             elif b64 and mime.startswith("image/"):

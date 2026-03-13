@@ -257,8 +257,8 @@ async def handle_chat_sse(
                 # Update existing live vertex if created, otherwise create new
                 if _live_vertex_id and _live_vertex_id in master.vertices:
                     v = master.vertices[_live_vertex_id]
-                    v.result = _full_record[:2000] if _full_record else "(no response)"
-                    v.result_summary = _full_response[:120] if _full_response else request.message[:80]
+                    v.result = _full_record or "(no response)"
+                    v.result_summary = _full_response or request.message
                     v.status = _vertex_status
                     if _vertex_status != VertexStatus.RUNNING:
                         v.completed_at = datetime.now(timezone.utc).isoformat()
@@ -266,9 +266,9 @@ async def handle_chat_sse(
                     from app.agent.graph import add_request_vertex
                     add_request_vertex(
                         master,
-                        message=request.message[:200],
-                        response=_full_record[:2000] if _full_record else "(no response)",
-                        response_summary=_full_response[:120] if _full_response else request.message[:80],
+                        message=request.message,
+                        response=_full_record or "(no response)",
+                        response_summary=_full_response or request.message,
                         client_id=request.active_client_id,
                         client_name=request.active_client_name or "",
                         group_id=request.active_group_id,

@@ -188,7 +188,7 @@ async def intake(state: dict) -> dict:
     environment = state.get("environment")
     env_summary = ""
     if environment:
-        env_summary = f"Environment: {json.dumps(environment, default=str)[:4000]}"
+        env_summary = f"Environment: {json.dumps(environment, default=str)}"
 
     # 4. Detect cloud prompt
     allow_cloud_prompt = detect_cloud_prompt(query)
@@ -208,7 +208,7 @@ async def intake(state: dict) -> dict:
         context_parts.append(env_summary)
 
     if project_context:
-        context_parts.append(f"Project context (from KB):\n{project_context[:2000]}")
+        context_parts.append(f"Project context (from KB):\n{project_context}")
 
     # Recent chat for continuity — FILTER OUT ERROR MESSAGES
     if chat_history:
@@ -221,7 +221,7 @@ async def intake(state: dict) -> dict:
             ]
             if valid_messages:
                 recent_text = "\n".join(
-                    f"[{m.get('role', '?')}] {m.get('content', '')[:200]}"
+                    f"[{m.get('role', '?')}] {m.get('content', '')}"
                     for m in valid_messages
                 )
                 context_parts.append(f"Recent conversation:\n{recent_text}")

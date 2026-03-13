@@ -61,12 +61,12 @@ async def plan(state: dict) -> dict:
             "All code changes should target this branch."
         )
     if project_context:
-        context_parts.append(f"## Project Context\n{project_context[:3000]}")
+        context_parts.append(f"## Project Context\n{project_context}")
     if evidence:
         for kr in evidence.get("kb_results", []):
             content = kr.get("content", "")
             if content:
-                context_parts.append(f"## Knowledge Base\n{content[:3000]}")
+                context_parts.append(f"## Knowledge Base\n{content}")
     if clarification:
         context_parts.append(
             f"## User Clarification\n{json.dumps(clarification, default=str, indent=2)}"

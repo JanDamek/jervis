@@ -161,7 +161,7 @@ async def extract_outcome(state: dict) -> dict | None:
             parked_titles = [a.get("title", "?") for a in parked[:5]]
             context_parts.append(f"Parked affairs: {', '.join(parked_titles)}")
 
-    context_parts.append(f"Final result: {final_result[:2000]}")
+    context_parts.append(f"Final result: {final_result}")
 
     messages = [
         {"role": "system", "content": _EXTRACTION_SYSTEM_PROMPT},

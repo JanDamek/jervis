@@ -404,7 +404,7 @@ def fail_vertex(
     error_payload = EdgePayload(
         source_vertex_id=vertex.id,
         source_vertex_title=vertex.title,
-        summary=f"FAILED: {error[:200]}",
+        summary=f"FAILED: {error}",
         context=f"Vertex '{vertex.title}' failed: {error}",
     )
     for edge in get_outgoing_edges(graph, vertex_id):

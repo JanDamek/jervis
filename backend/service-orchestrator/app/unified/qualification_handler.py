@@ -288,11 +288,11 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
     system_prompt = _build_system_prompt(request)
     messages: list[dict] = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Analyzuj a rozhodni o následujícím obsahu:\n\n{request.content[:4000]}"},
+        {"role": "user", "content": f"Analyzuj a rozhodni o následujícím obsahu:\n\n{request.content}"},
     ]
 
     # Route to extraction model (8b on GPU-2) — frees GPU-1 for orchestrator/chat
-    estimated_tokens_count = estimate_tokens(system_prompt) + estimate_tokens(request.content[:4000]) + 500
+    estimated_tokens_count = estimate_tokens(system_prompt) + estimate_tokens(request.content) + 500
     route = await route_request(
         capability="extraction",
         estimated_tokens=estimated_tokens_count,
@@ -353,7 +353,7 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": str(tool_result)[:4000],
+                    "content": str(tool_result),
                 })
 
             continue
@@ -428,7 +428,7 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
             request.task_id, len(extracts),
         )
 
-        task_context = decision.get("context_summary", request.summary) or request.content[:1000]
+        task_context = decision.get("context_summary", request.summary) or request.content
         results = []
 
         for extract in extracts:
@@ -439,10 +439,10 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
 
             # Score relevance using a simple structured prompt (non-reasoning model)
             prompt = (
-                f"Úkol: {request.content[:500]}\n"
-                f"Kontext: {task_context[:500]}\n\n"
+                f"Úkol: {request.content}\n"
+                f"Kontext: {task_context}\n\n"
                 f"Obsah přílohy '{filename}':\n"
-                f"{extracted_text[:4000]}\n\n"
+                f"{extracted_text}\n\n"
                 f"Je tato příloha relevantní pro splnění úkolu?\n"
                 f"Odpověz JSON: {{\"relevant\": true/false, \"score\": 0.0-1.0, \"reason\": \"...\"}}"
             )
