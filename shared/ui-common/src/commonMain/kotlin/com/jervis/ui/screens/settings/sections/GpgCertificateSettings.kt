@@ -29,7 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.coding.GpgCertificateDeleteDto
 import com.jervis.dto.coding.GpgCertificateDto
@@ -233,7 +233,7 @@ private fun GpgSystemImport(
                     label = "Passphrase (volitelné)",
                     placeholder = "Pouze pokud je klíč chráněný heslem",
                     singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
+                    visualTransformation = VisualTransformation.None,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
@@ -384,7 +384,7 @@ private fun GpgUploadForm(
                     label = "Passphrase (volitelné)",
                     placeholder = "Pouze pokud je klíč chráněný heslem",
                     singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
+                    visualTransformation = VisualTransformation.None,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

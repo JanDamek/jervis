@@ -15,7 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.connection.AuthOption
@@ -170,7 +170,7 @@ internal fun FormFields(
                     label = field.label,
                     placeholder = field.placeholder.ifEmpty { null },
                     singleLine = true,
-                    visualTransformation = if (field.isSecret) PasswordVisualTransformation() else VisualTransformation.None,
+                    visualTransformation = VisualTransformation.None, // Private app — secrets always visible (docs/ui-design.md)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
