@@ -122,6 +122,9 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Code review handler: `backend/service-orchestrator/app/review/code_review_handler.py` (orchestration: KB prefetch → static analysis → dispatch review agent → post MR comment → fix task)
 - Review engine: `backend/service-orchestrator/app/review/review_engine.py` (static analysis: forbidden patterns, credentials, file restrictions)
 - MR/PR internal API: `backend/server/.../rpc/internal/InternalMergeRequestRouting.kt` (create-merge-request, post-mr-comment — GitHub PR + GitLab MR)
+- Issue tracker internal API: `backend/server/.../rpc/internal/InternalBugTrackerRouting.kt` (list, create, update, comment — GitHub Issues + GitLab Issues)
+- Issue tools (orchestrator): `backend/service-orchestrator/app/tools/definitions.py` (TOOL_CREATE_ISSUE, TOOL_UPDATE_ISSUE, TOOL_ADD_ISSUE_COMMENT, TOOL_LIST_ISSUES, ISSUE_TOOLS, TRACKER_AGENT_TOOLS)
+- Issue tools (MCP): `backend/service-mcp/app/main.py` (create_issue, update_issue, add_issue_comment, list_issues)
 - MR/PR continuous indexer: `backend/server/.../service/indexing/git/MergeRequestContinuousIndexer.kt` (polls GitLab/GitHub for open MRs, creates review tasks)
 - MR/PR state: `backend/server/.../service/indexing/git/state/MergeRequestDocument.kt`, `MergeRequestRepository.kt`
 - Gemini decomposer: `backend/service-orchestrator/app/agent/gemini_decomposer.py` (large context >100k tokens → Gemini 1M → sub-vertices + synthesis)
