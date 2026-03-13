@@ -1099,6 +1099,128 @@ private fun ChatMessageItem(
                 }
             }
         }
+    } else if (message.messageType == ChatMessage.MessageType.THINKING_MAP_UPDATE
+        && message.metadata["sender"] == "thinking_map"
+    ) {
+        // Background thinking map bubble — shows task processing status
+        val status = message.metadata["status"] ?: "started"
+        val taskTitle = message.metadata["taskTitle"] ?: ""
+        val taskId = message.metadata["taskId"]
+        val hasGraph = message.metadata["hasGraph"] == "true"
+
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            ),
+            border = CardDefaults.outlinedCardBorder(),
+            modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    when (status) {
+                        "started", "vertex_completed" -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
+                        "completed" -> {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        "failed" -> {
+                            Icon(
+                                Icons.Default.Error,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = when (status) {
+                            "started" -> "Přemýšlím: $taskTitle"
+                            "vertex_completed" -> "Zpracovávám: $taskTitle"
+                            "completed" -> "Hotovo: $taskTitle"
+                            "failed" -> "Selhalo: $taskTitle"
+                            else -> taskTitle
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (status == "failed") {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        modifier = Modifier.weight(1f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                // Expandable task graph — only on completion with graph
+                if (taskId != null && hasGraph && status in listOf("completed", "failed")) {
+                    val graphEntry = taskGraphs[taskId]
+                    if (graphEntry != null && graphEntry.vertices.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TaskGraphSection(graph = graphEntry)
+                    } else if (taskId !in taskGraphs) {
+                        TextButton(
+                            onClick = { onLoadTaskGraph(taskId) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.AccountTree,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "Zobrazit graf",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    } else if (graphEntry == null) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 1.5.dp,
+                            )
+                            Text(
+                                "Načítání grafu…",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                // Timestamp
+                message.timestamp?.let { ts ->
+                    if (ts.isNotBlank()) {
+                        Text(
+                            text = formatMessageTime(ts),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+            }
+        }
     } else {
         // standard chat bubble - iMessage/WhatsApp style (width based on content)
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {

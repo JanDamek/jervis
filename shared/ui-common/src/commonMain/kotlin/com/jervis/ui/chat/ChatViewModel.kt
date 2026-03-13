@@ -642,7 +642,13 @@ class ChatViewModel(
                     }
                     val msgType = when (msg.role) {
                         com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
-                        com.jervis.dto.ChatRole.BACKGROUND -> ChatMessage.MessageType.BACKGROUND_RESULT
+                        com.jervis.dto.ChatRole.BACKGROUND -> {
+                            if (msg.metadata["sender"] == "thinking_map") {
+                                ChatMessage.MessageType.THINKING_MAP_UPDATE
+                            } else {
+                                ChatMessage.MessageType.BACKGROUND_RESULT
+                            }
+                        }
                         com.jervis.dto.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
                         else -> ChatMessage.MessageType.FINAL
                     }
@@ -907,16 +913,45 @@ class ChatViewModel(
             }
 
             ChatMessage.MessageType.THINKING_MAP_UPDATE -> {
-                // Show live thinking map being built
+                val isBackgroundPush = response.metadata["sender"] == "thinking_map"
+                val taskId = response.metadata["taskId"]
                 val graphId = response.metadata["graph_id"]
+                val status = response.metadata["status"]
+
+                if (isBackgroundPush && taskId != null) {
+                    // Background thinking map push — show/update chat bubble
+                    val existingIdx = messages.indexOfLast {
+                        it.messageType == ChatMessage.MessageType.THINKING_MAP_UPDATE
+                                && it.metadata["taskId"] == taskId
+                    }
+                    val bubble = ChatMessage(
+                        from = ChatMessage.Sender.Assistant,
+                        text = response.message,
+                        contextId = projectId,
+                        messageType = messageType,
+                        metadata = response.metadata,
+                        timestamp = response.metadata["timestamp"],
+                    )
+                    if (existingIdx >= 0) {
+                        messages[existingIdx] = bubble  // Update in-place
+                    } else {
+                        messages.add(bubble)
+                    }
+                }
+
+                // Open thinking map panel for graphs (both foreground and background)
                 if (!graphId.isNullOrBlank()) {
-                    // Auto-open panel and navigate to the live graph
                     if (!_thinkingMapPanelVisible.value) {
                         _thinkingMapPanelVisible.value = true
                     }
                     openSubGraph(graphId)
                 }
                 loadMemoryMap()
+
+                // Reload task graph for inline display on completion
+                if (status in listOf("completed", "failed") && taskId != null) {
+                    loadTaskGraph(taskId)
+                }
             }
         }
         _chatMessages.value = messages
@@ -961,7 +996,14 @@ class ChatViewModel(
             }
             val msgType = when (msg.role) {
                 com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
-                com.jervis.dto.ChatRole.BACKGROUND -> ChatMessage.MessageType.BACKGROUND_RESULT
+                com.jervis.dto.ChatRole.BACKGROUND -> {
+                    // Distinguish thinking map updates from regular background results
+                    if (msg.metadata["sender"] == "thinking_map") {
+                        ChatMessage.MessageType.THINKING_MAP_UPDATE
+                    } else {
+                        ChatMessage.MessageType.BACKGROUND_RESULT
+                    }
+                }
                 com.jervis.dto.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
                 else -> ChatMessage.MessageType.FINAL
             }
