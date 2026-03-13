@@ -719,7 +719,7 @@ class TranscriptCorrectionService(
         val mapping = meeting.speakerMapping
         if (mapping.isEmpty() || meeting.clientId == null) return null
 
-        val speakers = speakerRepository.findByClientIdOrderByNameAsc(meeting.clientId)
+        val speakers = speakerRepository.findByClientIdsContainingOrderByNameAsc(meeting.clientId)
             .toList()
             .associateBy { it.id.toHexString() }
 

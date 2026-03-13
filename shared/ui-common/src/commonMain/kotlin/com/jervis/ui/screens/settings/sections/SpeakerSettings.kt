@@ -2,6 +2,8 @@ package com.jervis.ui.screens.settings.sections
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,11 +15,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -32,6 +39,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
+import com.jervis.dto.connection.ConnectionResponseDto
+import com.jervis.dto.connection.ProviderEnum
+import com.jervis.dto.meeting.SpeakerChannelDto
 import com.jervis.dto.meeting.SpeakerDto
 import com.jervis.dto.meeting.SpeakerUpdateDto
 import com.jervis.repository.JervisRepository
@@ -49,23 +59,34 @@ import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.util.RefreshIconButton
 import kotlinx.coroutines.launch
 
+/** Connection providers that represent chat/communication channels */
+private val CHAT_PROVIDERS = setOf(
+    ProviderEnum.MICROSOFT_TEAMS,
+    ProviderEnum.SLACK,
+    ProviderEnum.DISCORD,
+)
+
 @Composable
 internal fun SpeakerSettings(repository: JervisRepository) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
-    var selectedClient by remember { mutableStateOf<ClientDto?>(null) }
+    var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
+    var filterClient by remember { mutableStateOf<ClientDto?>(null) }
     var speakers by remember { mutableStateOf<List<SpeakerDto>>(emptyList()) }
     var selectedSpeaker by remember { mutableStateOf<SpeakerDto?>(null) }
     var isLoading by remember { mutableStateOf(false) }
 
     fun loadSpeakers() {
-        val clientId = selectedClient?.id ?: return
         scope.launch {
             isLoading = true
             try {
-                speakers = repository.speakers.listSpeakers(clientId)
+                speakers = if (filterClient != null) {
+                    repository.speakers.listSpeakers(filterClient!!.id)
+                } else {
+                    repository.speakers.listAllSpeakers()
+                }
             } catch (e: Exception) {
                 snackbarHostState.showSnackbar("Chyba: ${e.message}")
             } finally {
@@ -77,86 +98,97 @@ internal fun SpeakerSettings(repository: JervisRepository) {
     LaunchedEffect(Unit) {
         try {
             clients = repository.clients.getAllClients()
-            if (clients.size == 1) {
-                selectedClient = clients.first()
-            }
+            connections = repository.connections.getAllConnections()
         } catch (_: Exception) {}
+        loadSpeakers()
     }
 
-    LaunchedEffect(selectedClient) {
+    LaunchedEffect(filterClient) {
         selectedSpeaker = null
-        if (selectedClient != null) loadSpeakers()
+        loadSpeakers()
     }
+
+    val chatConnections = connections.filter { it.provider in CHAT_PROVIDERS }
 
     Column {
-        // Client selector
         JDropdown(
-            items = clients,
-            selectedItem = selectedClient,
-            onItemSelected = { selectedClient = it },
-            label = "Klient",
-            itemLabel = { it.name },
-            placeholder = "Vyberte klienta",
+            items = listOf(null) + clients,
+            selectedItem = filterClient,
+            onItemSelected = { filterClient = it },
+            label = "Filtr klienta",
+            itemLabel = { it?.name ?: "Všichni řečníci" },
+            placeholder = "Všichni řečníci",
             modifier = Modifier.fillMaxWidth().padding(horizontal = JervisSpacing.outerPadding),
         )
 
         Spacer(Modifier.height(8.dp))
 
-        if (selectedClient != null) {
-            JListDetailLayout(
-                items = speakers,
-                selectedItem = selectedSpeaker,
-                isLoading = isLoading,
-                onItemSelected = { selectedSpeaker = it },
-                emptyMessage = "Žádní řečníci — vznikají automaticky z přepisu meetingů",
-                emptyIcon = "\uD83C\uDFA4",
-                listHeader = {
-                    JActionBar {
-                        RefreshIconButton(onClick = { loadSpeakers() })
-                    }
-                },
-                listItem = { speaker ->
-                    SpeakerListCard(speaker = speaker, onClick = { selectedSpeaker = speaker })
-                },
-                detailContent = { speaker ->
-                    SpeakerEditForm(
-                        speaker = speaker,
-                        onSave = { update ->
-                            scope.launch {
-                                try {
-                                    repository.speakers.updateSpeaker(update)
-                                    selectedSpeaker = null
-                                    loadSpeakers()
-                                    snackbarHostState.showSnackbar("Řečník uložen")
-                                } catch (e: Exception) {
-                                    snackbarHostState.showSnackbar("Chyba: ${e.message}")
-                                }
+        JListDetailLayout(
+            items = speakers,
+            selectedItem = selectedSpeaker,
+            isLoading = isLoading,
+            onItemSelected = { selectedSpeaker = it },
+            emptyMessage = "Žádní řečníci — vznikají automaticky z přepisu meetingů",
+            emptyIcon = "\uD83C\uDFA4",
+            listHeader = {
+                JActionBar {
+                    RefreshIconButton(onClick = { loadSpeakers() })
+                }
+            },
+            listItem = { speaker ->
+                SpeakerListCard(
+                    speaker = speaker,
+                    clients = clients,
+                    connections = chatConnections,
+                    onClick = { selectedSpeaker = speaker },
+                )
+            },
+            detailContent = { speaker ->
+                SpeakerEditForm(
+                    speaker = speaker,
+                    clients = clients,
+                    chatConnections = chatConnections,
+                    onSave = { update ->
+                        scope.launch {
+                            try {
+                                repository.speakers.updateSpeaker(update)
+                                selectedSpeaker = null
+                                loadSpeakers()
+                                snackbarHostState.showSnackbar("Řečník uložen")
+                            } catch (e: Exception) {
+                                snackbarHostState.showSnackbar("Chyba: ${e.message}")
                             }
-                        },
-                        onDelete = {
-                            scope.launch {
-                                try {
-                                    repository.speakers.deleteSpeaker(speaker.id)
-                                    selectedSpeaker = null
-                                    loadSpeakers()
-                                    snackbarHostState.showSnackbar("Řečník smazán")
-                                } catch (e: Exception) {
-                                    snackbarHostState.showSnackbar("Chyba: ${e.message}")
-                                }
+                        }
+                    },
+                    onDelete = {
+                        scope.launch {
+                            try {
+                                repository.speakers.deleteSpeaker(speaker.id)
+                                selectedSpeaker = null
+                                loadSpeakers()
+                                snackbarHostState.showSnackbar("Řečník smazán")
+                            } catch (e: Exception) {
+                                snackbarHostState.showSnackbar("Chyba: ${e.message}")
                             }
-                        },
-                        onCancel = { selectedSpeaker = null },
-                    )
-                },
-            )
-        }
+                        }
+                    },
+                    onCancel = { selectedSpeaker = null },
+                )
+            },
+        )
 
         JSnackbarHost(snackbarHostState)
     }
 }
 
 @Composable
-private fun SpeakerListCard(speaker: SpeakerDto, onClick: () -> Unit) {
+private fun SpeakerListCard(
+    speaker: SpeakerDto,
+    clients: List<ClientDto>,
+    connections: List<ConnectionResponseDto>,
+    onClick: () -> Unit,
+) {
+    val clientNames = clients.filter { it.id in speaker.clientIds }.map { it.name }
     JCard(onClick = onClick) {
         Row(
             modifier = Modifier
@@ -184,9 +216,26 @@ private fun SpeakerListCard(speaker: SpeakerDto, onClick: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (speaker.hasVoiceprint) {
+                if (clientNames.isNotEmpty()) {
                     Text(
-                        "Hlasový otisk",
+                        clientNames.joinToString(", "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                val badges = buildList {
+                    if (speaker.hasVoiceprint) add("Hlasový otisk")
+                    if (speaker.emails.isNotEmpty()) add("${speaker.emails.size} email${if (speaker.emails.size > 1) "ů" else ""}")
+                    if (speaker.channels.isNotEmpty()) {
+                        val channelSummary = speaker.channels
+                            .mapNotNull { ch -> connections.find { it.id == ch.connectionId }?.name }
+                            .distinct()
+                        if (channelSummary.isNotEmpty()) add(channelSummary.joinToString(", "))
+                    }
+                }
+                if (badges.isNotEmpty()) {
+                    Text(
+                        badges.joinToString(" \u2022 "),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.tertiary,
                     )
@@ -201,9 +250,12 @@ private fun SpeakerListCard(speaker: SpeakerDto, onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SpeakerEditForm(
     speaker: SpeakerDto,
+    clients: List<ClientDto>,
+    chatConnections: List<ConnectionResponseDto>,
     onSave: (SpeakerUpdateDto) -> Unit,
     onDelete: () -> Unit,
     onCancel: () -> Unit,
@@ -212,7 +264,15 @@ private fun SpeakerEditForm(
     var nationality by remember(speaker.id) { mutableStateOf(speaker.nationality ?: "") }
     var languages by remember(speaker.id) { mutableStateOf(speaker.languagesSpoken.joinToString(", ")) }
     var notes by remember(speaker.id) { mutableStateOf(speaker.notes ?: "") }
+    var emails by remember(speaker.id) { mutableStateOf(speaker.emails) }
+    var newEmail by remember(speaker.id) { mutableStateOf("") }
+    var channels by remember(speaker.id) { mutableStateOf(speaker.channels) }
+    var newChannelConnection by remember(speaker.id) { mutableStateOf<ConnectionResponseDto?>(null) }
+    var newChannelId by remember(speaker.id) { mutableStateOf("") }
+    var newChannelName by remember(speaker.id) { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
+
+    val clientNames = clients.filter { it.id in speaker.clientIds }.map { it.name }
 
     JDetailScreen(
         title = speaker.name,
@@ -225,6 +285,8 @@ private fun SpeakerEditForm(
                     nationality = nationality.trim().ifBlank { null },
                     languagesSpoken = languages.split(",").map { it.trim() }.filter { it.isNotBlank() },
                     notes = notes.trim().ifBlank { null },
+                    emails = emails,
+                    channels = channels,
                 ),
             )
         },
@@ -264,6 +326,156 @@ private fun SpeakerEditForm(
                 )
             }
 
+            if (clientNames.isNotEmpty()) {
+                JSection(title = "Klienti (automaticky přiřazení)") {
+                    Text(
+                        clientNames.joinToString(", "),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            JSection(title = "Emaily") {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    emails.forEach { email ->
+                        InputChip(
+                            selected = false,
+                            onClick = { emails = emails - email },
+                            label = { Text(email) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(16.dp))
+                            },
+                            trailingIcon = {
+                                Icon(Icons.Default.Close, contentDescription = "Odebrat", modifier = Modifier.size(16.dp))
+                            },
+                        )
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    JTextField(
+                        value = newEmail,
+                        onValueChange = { newEmail = it },
+                        label = "Nový email",
+                        placeholder = "user@example.com",
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = {
+                            val trimmed = newEmail.trim()
+                            if (trimmed.isNotBlank() && trimmed !in emails) {
+                                emails = emails + trimmed
+                                newEmail = ""
+                            }
+                        },
+                        enabled = newEmail.trim().isNotBlank(),
+                        modifier = Modifier.size(JervisSpacing.touchTarget),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Přidat email")
+                    }
+                }
+            }
+
+            JSection(title = "Komunikační kanály") {
+                channels.forEachIndexed { index, channel ->
+                    val conn = chatConnections.find { it.id == channel.connectionId }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        AssistChip(
+                            onClick = {},
+                            label = {
+                                Text(
+                                    buildString {
+                                        append(conn?.name ?: channel.connectionId)
+                                        append(": ")
+                                        append(channel.displayName ?: channel.identifier)
+                                    },
+                                )
+                            },
+                        )
+                        IconButton(
+                            onClick = { channels = channels.toMutableList().also { it.removeAt(index) } },
+                            modifier = Modifier.size(JervisSpacing.touchTarget),
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Odebrat kanál", modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+                if (chatConnections.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        JDropdown(
+                            items = chatConnections,
+                            selectedItem = newChannelConnection,
+                            onItemSelected = { newChannelConnection = it },
+                            label = "Spojení",
+                            itemLabel = { "${it.name} (${it.provider.name})" },
+                            placeholder = "Vyberte spojení",
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        JTextField(
+                            value = newChannelId,
+                            onValueChange = { newChannelId = it },
+                            label = "ID / handle uživatele",
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        JTextField(
+                            value = newChannelName,
+                            onValueChange = { newChannelName = it },
+                            label = "Zobrazovaný název (volitelné)",
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(
+                            onClick = {
+                                val conn = newChannelConnection ?: return@IconButton
+                                val trimmedId = newChannelId.trim()
+                                if (trimmedId.isNotBlank()) {
+                                    channels = channels + SpeakerChannelDto(
+                                        connectionId = conn.id,
+                                        identifier = trimmedId,
+                                        displayName = newChannelName.trim().ifBlank { null },
+                                    )
+                                    newChannelId = ""
+                                    newChannelName = ""
+                                    newChannelConnection = null
+                                }
+                            },
+                            enabled = newChannelConnection != null && newChannelId.trim().isNotBlank(),
+                            modifier = Modifier.size(JervisSpacing.touchTarget),
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Přidat kanál")
+                        }
+                    }
+                } else {
+                    Text(
+                        "Nejsou k dispozici žádná spojení typu Teams, Slack nebo Discord.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             JSection(title = "Poznámky pro LLM") {
                 JTextField(
                     value = notes,
@@ -279,18 +491,23 @@ private fun SpeakerEditForm(
 
             JSection(title = "Hlasový profil (${speaker.voiceprintCount} otisků)") {
                 if (speaker.hasVoiceprint) {
-                    speaker.voiceprintLabels.forEach { label ->
-                        AssistChip(
-                            onClick = {},
-                            label = { Text(label) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.RecordVoiceOver,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            },
-                        )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        speaker.voiceprintLabels.forEach { label ->
+                            AssistChip(
+                                onClick = {},
+                                label = { Text(label) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.RecordVoiceOver,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                },
+                            )
+                        }
                     }
                 } else {
                     Text(
@@ -313,5 +530,3 @@ private fun SpeakerEditForm(
         isDestructive = true,
     )
 }
-
-

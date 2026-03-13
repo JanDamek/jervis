@@ -1,12 +1,14 @@
 package com.jervis.rpc
 
 import com.jervis.common.types.ClientId
+import com.jervis.dto.meeting.SpeakerChannelDto
 import com.jervis.dto.meeting.SpeakerCreateDto
 import com.jervis.dto.meeting.SpeakerDto
 import com.jervis.dto.meeting.SpeakerEmbeddingDto
 import com.jervis.dto.meeting.SpeakerMappingDto
 import com.jervis.dto.meeting.SpeakerUpdateDto
 import com.jervis.dto.meeting.VoiceSampleRefDto
+import com.jervis.entity.SpeakerChannelEntry
 import com.jervis.entity.SpeakerDocument
 import com.jervis.entity.VoiceEmbeddingEntry
 import com.jervis.entity.VoiceSampleRef
@@ -28,18 +30,23 @@ class SpeakerRpcImpl(
 ) : ISpeakerService {
 
     override suspend fun listSpeakers(clientId: String): List<SpeakerDto> =
-        speakerRepository.findByClientIdOrderByNameAsc(ClientId.fromString(clientId)).toList().map { it.toDto() }
+        speakerRepository.findByClientIdsContainingOrderByNameAsc(ClientId.fromString(clientId)).toList().map { it.toDto() }
+
+    override suspend fun listAllSpeakers(): List<SpeakerDto> =
+        speakerRepository.findAllByOrderByNameAsc().toList().map { it.toDto() }
 
     override suspend fun createSpeaker(request: SpeakerCreateDto): SpeakerDto {
         val doc = SpeakerDocument(
-            clientId = ClientId.fromString(request.clientId),
+            clientIds = request.clientIds.map { ClientId.fromString(it) },
             name = request.name,
             nationality = request.nationality,
             languagesSpoken = request.languagesSpoken,
             notes = request.notes,
+            emails = request.emails,
+            channels = request.channels.map { it.toEntry() },
         )
         val saved = speakerRepository.save(doc)
-        logger.info { "Created speaker: ${saved.id} name=${saved.name} client=${saved.clientId}" }
+        logger.info { "Created speaker: ${saved.id} name=${saved.name} clients=${saved.clientIds}" }
         return saved.toDto()
     }
 
@@ -51,6 +58,9 @@ class SpeakerRpcImpl(
             nationality = request.nationality,
             languagesSpoken = request.languagesSpoken,
             notes = request.notes,
+            // clientIds are NOT updated here — managed automatically via meeting assignment
+            emails = request.emails,
+            channels = request.channels.map { it.toEntry() },
             updatedAt = Instant.now(),
         )
         val saved = speakerRepository.save(updated)
@@ -90,9 +100,6 @@ class SpeakerRpcImpl(
         return saved.toDto()
     }
 
-    /**
-     * ADD a voice embedding to the speaker (multi-embedding — each call adds, never replaces).
-     */
     override suspend fun setVoiceEmbedding(request: SpeakerEmbeddingDto): SpeakerDto {
         val id = ObjectId(request.speakerId)
         val existing = speakerRepository.findById(id) ?: error("Speaker not found: ${request.speakerId}")
@@ -106,7 +113,6 @@ class SpeakerRpcImpl(
 
         val updated = existing.copy(
             voiceEmbeddings = existing.voiceEmbeddings + entry,
-            // Clear legacy single field on first multi-embedding add
             voiceEmbedding = null,
             updatedAt = Instant.now(),
         )
@@ -120,11 +126,13 @@ private fun SpeakerDocument.toDto(): SpeakerDto {
     val allEmb = allEmbeddings()
     return SpeakerDto(
         id = id.toHexString(),
-        clientId = clientId.toString(),
+        clientIds = clientIds.map { it.toString() },
         name = name,
         nationality = nationality,
         languagesSpoken = languagesSpoken,
         notes = notes,
+        emails = emails,
+        channels = channels.map { it.toDto() },
         voiceSampleRef = voiceSampleRef?.let {
             VoiceSampleRefDto(
                 meetingId = it.meetingId.toHexString(),
@@ -139,3 +147,15 @@ private fun SpeakerDocument.toDto(): SpeakerDto {
         updatedAt = updatedAt.toString(),
     )
 }
+
+private fun SpeakerChannelDto.toEntry() = SpeakerChannelEntry(
+    connectionId = connectionId,
+    identifier = identifier,
+    displayName = displayName,
+)
+
+private fun SpeakerChannelEntry.toDto() = SpeakerChannelDto(
+    connectionId = connectionId,
+    identifier = identifier,
+    displayName = displayName,
+)

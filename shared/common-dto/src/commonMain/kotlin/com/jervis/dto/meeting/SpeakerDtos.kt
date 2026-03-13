@@ -5,11 +5,16 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class SpeakerDto(
     val id: String,
-    val clientId: String,
+    /** Clients this speaker is associated with */
+    val clientIds: List<String> = emptyList(),
     val name: String,
     val nationality: String? = null,
     val languagesSpoken: List<String> = emptyList(),
     val notes: String? = null,
+    /** Email addresses associated with this speaker */
+    val emails: List<String> = emptyList(),
+    /** Communication channels (Teams, Slack, Discord, etc.) */
+    val channels: List<SpeakerChannelDto> = emptyList(),
     val voiceSampleRef: VoiceSampleRefDto? = null,
     /** True if this speaker has at least one stored voice embedding */
     val hasVoiceprint: Boolean = false,
@@ -22,6 +27,16 @@ data class SpeakerDto(
 )
 
 @Serializable
+data class SpeakerChannelDto(
+    /** Reference to a Connection ID */
+    val connectionId: String,
+    /** User identifier in the source system (user ID, handle, etc.) */
+    val identifier: String,
+    /** Human-readable display name */
+    val displayName: String? = null,
+)
+
+@Serializable
 data class VoiceSampleRefDto(
     val meetingId: String,
     val startSec: Double,
@@ -30,11 +45,14 @@ data class VoiceSampleRefDto(
 
 @Serializable
 data class SpeakerCreateDto(
-    val clientId: String,
+    /** Initial client IDs (auto-populated from meeting context) */
+    val clientIds: List<String> = emptyList(),
     val name: String,
     val nationality: String? = null,
     val languagesSpoken: List<String> = emptyList(),
     val notes: String? = null,
+    val emails: List<String> = emptyList(),
+    val channels: List<SpeakerChannelDto> = emptyList(),
 )
 
 @Serializable
@@ -44,6 +62,8 @@ data class SpeakerUpdateDto(
     val nationality: String? = null,
     val languagesSpoken: List<String> = emptyList(),
     val notes: String? = null,
+    val emails: List<String> = emptyList(),
+    val channels: List<SpeakerChannelDto> = emptyList(),
 )
 
 @Serializable

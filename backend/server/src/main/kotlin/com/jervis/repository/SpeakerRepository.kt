@@ -9,5 +9,6 @@ import org.springframework.stereotype.Repository
 
 @Repository
 interface SpeakerRepository : CoroutineCrudRepository<SpeakerDocument, ObjectId> {
-    fun findByClientIdOrderByNameAsc(clientId: ClientId): Flow<SpeakerDocument>
+    fun findByClientIdsContainingOrderByNameAsc(clientId: ClientId): Flow<SpeakerDocument>
+    fun findAllByOrderByNameAsc(): Flow<SpeakerDocument>
 }

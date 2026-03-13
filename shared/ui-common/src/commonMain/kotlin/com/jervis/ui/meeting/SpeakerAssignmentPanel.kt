@@ -159,7 +159,7 @@ internal fun SpeakerAssignmentDialog(
                                     if (newName.isNotBlank() && meeting.clientId != null) {
                                         onCreateSpeaker(
                                             SpeakerCreateDto(
-                                                clientId = meeting.clientId!!,
+                                                clientIds = listOf(meeting.clientId!!),
                                                 name = newName.trim(),
                                                 nationality = newNationality.trim().ifBlank { null },
                                                 languagesSpoken = newLanguages.split(",")

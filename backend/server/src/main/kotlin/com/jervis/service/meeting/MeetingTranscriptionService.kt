@@ -149,7 +149,7 @@ class MeetingTranscriptionService(
         embeddings: Map<String, List<Float>>,
         clientId: com.jervis.common.types.ClientId,
     ): Map<String, String> {
-        val knownSpeakers = speakerRepository.findByClientIdOrderByNameAsc(clientId)
+        val knownSpeakers = speakerRepository.findByClientIdsContainingOrderByNameAsc(clientId)
             .toList()
             .filter { it.allEmbeddings().isNotEmpty() }
 

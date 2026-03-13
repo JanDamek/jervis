@@ -11,6 +11,7 @@ import kotlinx.rpc.annotations.Rpc
 @Rpc
 interface ISpeakerService {
     suspend fun listSpeakers(clientId: String): List<SpeakerDto>
+    suspend fun listAllSpeakers(): List<SpeakerDto>
     suspend fun createSpeaker(request: SpeakerCreateDto): SpeakerDto
     suspend fun updateSpeaker(request: SpeakerUpdateDto): SpeakerDto
     suspend fun deleteSpeaker(speakerId: String): Boolean

@@ -209,7 +209,7 @@ class MeetingRpcImpl(
         if (meeting.clientId == null) return emptyMap()
         // Load speakers when there's a mapping OR embeddings (for auto-match display)
         if (meeting.speakerMapping.isEmpty() && meeting.speakerEmbeddings.isNullOrEmpty()) return emptyMap()
-        val speakers = speakerRepository.findByClientIdOrderByNameAsc(meeting.clientId).toList()
+        val speakers = speakerRepository.findByClientIdsContainingOrderByNameAsc(meeting.clientId).toList()
         return speakers.associateBy { it.id.toHexString() }
     }
 
