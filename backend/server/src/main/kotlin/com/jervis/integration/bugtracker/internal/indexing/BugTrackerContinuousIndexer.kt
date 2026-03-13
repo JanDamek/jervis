@@ -337,7 +337,7 @@ class BugTrackerContinuousIndexer(
                     if (jiraComments.isNotEmpty()) {
                         append("## Comments\n\n")
                         for (comment in jiraComments) {
-                            val authorName = comment.author?.displayName ?: comment.author?.name ?: "unknown"
+                            val authorName = comment.author?.displayName ?: "unknown"
                             val bodyText = comment.body?.toString()?.let { raw ->
                                 // ADF is a JSON structure — extract text content for display
                                 if (raw.startsWith("{") || raw.startsWith("[")) {

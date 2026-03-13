@@ -128,6 +128,8 @@ class RpcClientsConfig(
                 withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().addComment(request) }
             override suspend fun transitionIssue(request: BugTrackerTransitionRpcRequest) =
                 withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().transitionIssue(request) }
+            override suspend fun getComments(request: BugTrackerGetCommentsRequest) =
+                withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().getComments(request) }
         }
 
     @Bean
@@ -149,6 +151,8 @@ class RpcClientsConfig(
                 withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().addComment(request) }
             override suspend fun transitionIssue(request: BugTrackerTransitionRpcRequest) =
                 withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().transitionIssue(request) }
+            override suspend fun getComments(request: BugTrackerGetCommentsRequest) =
+                withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().getComments(request) }
         }
 
     @Bean
@@ -170,6 +174,8 @@ class RpcClientsConfig(
                 withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().addComment(request) }
             override suspend fun transitionIssue(request: BugTrackerTransitionRpcRequest) =
                 withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().transitionIssue(request) }
+            override suspend fun getComments(request: BugTrackerGetCommentsRequest) =
+                withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().getComments(request) }
         }
 
     @Bean
