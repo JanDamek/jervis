@@ -9,7 +9,9 @@ import com.jervis.dto.connection.ProviderEnum
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import com.jervis.entity.connection.ConnectionDocument
+import com.jervis.entity.teams.O365ScrapeMessageDocument
 import com.jervis.entity.teams.TeamsMessageIndexDocument
+import com.jervis.repository.O365ScrapeMessageRepository
 import com.jervis.repository.TeamsMessageIndexRepository
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.oauth2.OAuth2Service
@@ -23,10 +25,15 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate
+import org.springframework.data.mongodb.core.query.Criteria
+import org.springframework.data.mongodb.core.query.Query
+import org.springframework.data.mongodb.core.query.Update
 import org.springframework.stereotype.Component
 import java.time.Instant
 
@@ -35,9 +42,10 @@ private val logger = KotlinLogging.logger {}
 /**
  * Polling handler for Microsoft Teams / Microsoft 365.
  *
- * Dual-mode:
+ * Triple-mode:
  * - **OAuth2 connections**: call Microsoft Graph API directly with bearer token
- * - **Browser Session connections**: call O365 Gateway (which uses browser pool tokens)
+ * - **Browser Session (with token)**: call O365 Gateway (which uses browser pool tokens)
+ * - **Browser Session (VLM scraping)**: read from o365_scrape_messages collection
  *
  * Messages are stored as TeamsMessageIndexDocument (NEW state).
  * TeamsContinuousIndexer picks them up for KB indexing.
@@ -45,10 +53,12 @@ private val logger = KotlinLogging.logger {}
 @Component
 class O365PollingHandler(
     private val repository: TeamsMessageIndexRepository,
+    private val scrapeMessageRepository: O365ScrapeMessageRepository,
     private val pollingStateService: PollingStateService,
     private val httpClient: HttpClient,
     private val oauth2Service: OAuth2Service,
     private val connectionService: ConnectionService,
+    private val mongoTemplate: ReactiveMongoTemplate,
     @Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
     private val gatewayUrl: String,
 ) : PollingHandler {
@@ -70,11 +80,25 @@ class O365PollingHandler(
         val isOAuth2 = connectionDocument.authType == AuthTypeEnum.OAUTH2 &&
             !connectionDocument.bearerToken.isNullOrBlank()
 
-        // Browser Session connections → call O365 Gateway (needs o365ClientId)
+        // Browser Session connections (authType=NONE) → read VLM scrape data from MongoDB
+        val isBrowserScraping = connectionDocument.authType == AuthTypeEnum.NONE &&
+            !connectionDocument.o365ClientId.isNullOrBlank()
+
         val o365ClientId = connectionDocument.o365ClientId
-        if (!isOAuth2 && o365ClientId.isNullOrBlank()) {
+        if (!isOAuth2 && !isBrowserScraping && o365ClientId.isNullOrBlank()) {
             logger.warn { "O365 connection '${connectionDocument.name}' has no o365ClientId and no OAuth2 token" }
             return PollingResult(errors = 1, authenticationError = true)
+        }
+
+        // Browser scraping mode — read from o365_scrape_messages collection
+        if (isBrowserScraping) {
+            logger.debug { "O365 Teams polling for '${connectionDocument.name}' (VLM scraping/${o365ClientId})" }
+            return try {
+                pollFromScrapeMessages(connectionDocument, context)
+            } catch (e: Exception) {
+                logger.error(e) { "Error polling scrape messages for ${connectionDocument.name}" }
+                PollingResult(errors = 1)
+            }
         }
 
         // For OAuth2, refresh token if needed
@@ -130,6 +154,125 @@ class O365PollingHandler(
             errors = totalErrors,
             authenticationError = isAuthError,
         )
+    }
+
+    /**
+     * Read VLM-scraped messages from o365_scrape_messages collection (state=NEW).
+     * Convert to TeamsMessageIndexDocument and mark as PROCESSED.
+     *
+     * Server-side filtering: messages are matched against assigned resources
+     * (project/client level). Unmatched messages are marked SKIPPED for auditability.
+     */
+    private suspend fun pollFromScrapeMessages(
+        connection: ConnectionDocument,
+        context: PollingContext,
+    ): PollingResult {
+        val o365ClientId = connection.o365ClientId ?: return PollingResult()
+        val scrapeMessages = scrapeMessageRepository
+            .findByConnectionIdAndState(o365ClientId, "NEW")
+            .toList()
+
+        if (scrapeMessages.isEmpty()) return PollingResult()
+
+        var discovered = 0
+        var created = 0
+        var skipped = 0
+
+        for (msg in scrapeMessages) {
+            discovered++
+
+            val syntheticMessageId = "scrape_${msg.messageHash}"
+
+            if (repository.existsByConnectionIdAndMessageId(connection.id, syntheticMessageId)) {
+                markScrapeMessageState(msg.id, "PROCESSED")
+                skipped++
+                continue
+            }
+
+            // Server-side filtering: resolve target client/project by chatName
+            val chatName = msg.chatName ?: ""
+            val (targetClientId, targetProjectId) = resolveScrapeTarget(connection, context, chatName)
+
+            if (targetClientId == null) {
+                // No resource filter matches this chat — mark SKIPPED for auditability
+                markScrapeMessageState(msg.id, "SKIPPED")
+                skipped++
+                continue
+            }
+
+            val doc = TeamsMessageIndexDocument(
+                connectionId = connection.id,
+                clientId = targetClientId,
+                projectId = targetProjectId,
+                messageId = syntheticMessageId,
+                chatDisplayName = msg.chatName,
+                from = msg.sender,
+                body = msg.content,
+                bodyContentType = "text",
+                createdDateTime = parseInstant(msg.timestamp) ?: Instant.now(),
+            )
+            repository.save(doc)
+            markScrapeMessageState(msg.id, "PROCESSED")
+            created++
+        }
+
+        if (created > 0) {
+            logger.info { "Processed $created VLM scrape messages for '${connection.name}'" }
+        }
+
+        return PollingResult(
+            itemsDiscovered = discovered,
+            itemsCreated = created,
+            itemsSkipped = skipped,
+        )
+    }
+
+    /**
+     * Resolve target client/project for a VLM-scraped message by chatName.
+     * Checks project-level resources first, then client-level.
+     * If no filter is configured (IndexAll), routes to first client.
+     */
+    private fun resolveScrapeTarget(
+        connection: ConnectionDocument,
+        context: PollingContext,
+        chatName: String,
+    ): Pair<ClientId?, ProjectId?> {
+        // Check projects first — project-level resources take priority
+        for (project in context.projects) {
+            val filter = context.getProjectResourceFilter(
+                project.id, project.clientId, ConnectionCapability.CHAT_READ,
+            )
+            if (filter != null && filter.shouldIndex(chatName)) {
+                return Pair(project.clientId, project.id)
+            }
+        }
+
+        // Check client-level filters
+        for (client in context.clients) {
+            val filter = context.getResourceFilter(client.id, ConnectionCapability.CHAT_READ)
+            if (filter != null && filter.shouldIndex(chatName)) {
+                return Pair(client.id, null)
+            }
+        }
+
+        return Pair(null, null)
+    }
+
+    /**
+     * Mark a scrape message with given state (PROCESSED or SKIPPED).
+     */
+    private suspend fun markScrapeMessageState(id: org.bson.types.ObjectId, state: String) {
+        try {
+            kotlinx.coroutines.reactive.awaitFirstOrNull(
+                mongoTemplate.updateFirst(
+                    Query.query(Criteria.where("_id").`is`(id)),
+                    Update.update("state", state),
+                    O365ScrapeMessageDocument::class.java,
+                )
+            )
+        } catch (e: Exception) {
+            logger.warn { "Failed to mark scrape message $id as $state: ${e.message}" }
+        }
     }
 
     /**

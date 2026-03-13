@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.auto_login import LoginStage, auto_login, submit_mfa_code
 from app.browser_manager import BrowserManager
+from app.kotlin_callback import notify_session_state
 from app.models import (
     SessionInitRequest,
     SessionInitResponse,
@@ -170,14 +171,22 @@ def create_session_router(
 
             if result.stage == LoginStage.MFA_REQUIRED:
                 browser_manager.set_state(client_id, SessionState.AWAITING_MFA)
+                mfa_type_val = result.mfa_type.value if result.mfa_type else None
                 _mfa_state[client_id] = {
-                    "mfa_type": result.mfa_type.value if result.mfa_type else None,
+                    "mfa_type": mfa_type_val,
                     "mfa_message": result.mfa_message,
                     "mfa_number": result.mfa_number,
                 }
                 logger.info(
                     "Auto-login: MFA required for %s — %s",
                     client_id, result.mfa_type,
+                )
+                # Notify Kotlin server (creates USER_TASK if user not in settings)
+                await notify_session_state(
+                    client_id, client_id, "AWAITING_MFA",
+                    mfa_type=mfa_type_val,
+                    mfa_message=result.mfa_message,
+                    mfa_number=result.mfa_number,
                 )
                 return SessionInitResponse(
                     client_id=client_id,

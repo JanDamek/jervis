@@ -62,6 +62,8 @@ async def lifespan(app: FastAPI):
     await session_monitor.stop()
     await scrape_storage.stop()
     await browser_manager.shutdown()
+    from app.kotlin_callback import shutdown as callback_shutdown
+    await callback_shutdown()
     logger.info("O365 Browser Pool stopped")
 
 

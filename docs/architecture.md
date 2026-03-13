@@ -2299,6 +2299,38 @@ MCP Tool Call → O365 Gateway → Token Service (cache → browser pool) → Gr
 - **Per-client rate limiting**: 4 req/s safety margin under Graph API's 5 req/s Teams limit.
 - **Persistent browser profiles**: Cookies and local storage persisted to PVC, surviving pod restarts.
 
+### VLM Screen Scraping (Conditional Access Fallback)
+
+When Graph API tokens cannot be captured (Conditional Access blocks Graph API but allows web UI), the browser pool falls back to **VLM screen scraping**:
+
+```
+Browser Pool (Playwright, headed mode with Xvfb)
+  → Periodic screenshots of Teams/Outlook/Calendar tabs
+  → VLM analysis (Qwen3-VL via ollama-router)
+  → Extracted messages → MongoDB (o365_scrape_messages, state=NEW)
+  → Kotlin O365PollingHandler reads NEW, creates TeamsMessageIndexDocument
+  → Marks as PROCESSED (or SKIPPED if resource filter doesn't match)
+```
+
+**Session lifecycle notifications** (Python → Kotlin push):
+- Browser pool detects MFA requirement or session expiry
+- `kotlin_callback.py` POSTs to `/internal/o365/session-event`
+- Kotlin creates USER_TASK with VNC link + sends FCM/APNs push
+
+**Persistent resource discovery**:
+- VLM scraping auto-discovers chats/channels/teams from sidebar
+- Stored in `o365_discovered_resources` collection (upsert by connectionId + externalId)
+- Settings UI reads from DB (cached 1h) instead of on-demand browser pool calls
+
+**Historical backfill**:
+- `POST /scrape/{client_id}/backfill` — navigates to channel, scrolls up, screenshots + VLM extraction
+- Messages stored in `o365_scrape_messages` with standard NEW state for polling pipeline
+
+**MongoDB collections** (written by Python, read by Kotlin):
+- `o365_scrape_messages` — individual extracted messages (state: NEW → PROCESSED/SKIPPED)
+- `o365_scrape_results` — latest VLM analysis per tab (used by screen_scraper caching)
+- `o365_discovered_resources` — persistent resource inventory for settings UI
+
 ### MCP Tools
 
 | Tool | Graph API Endpoint | Phase |
@@ -2344,7 +2376,7 @@ CentralPoller
 
 | Platform | PollingHandler | API | Auth | Resource Key |
 |----------|---------------|-----|------|-------------|
-| Microsoft Teams | `O365PollingHandler` | O365 Gateway REST / Graph API (OAuth2) | OAuth2 / Browser session / Lokální token | `teamId/channelId` |
+| Microsoft Teams | `O365PollingHandler` | Triple-mode: Graph API (OAuth2) / O365 Gateway (browser token) / VLM scrape (MongoDB) | OAuth2 / Browser session (token) / Browser session (VLM) | `teamId/channelId` or `chatName` |
 | Slack | `SlackPollingHandler` | Slack Web API (`conversations.list`, `conversations.history`) | Bot Token (`xoxb-...`) via BEARER | `channelId` |
 | Discord | `DiscordPollingHandler` | Discord REST API v10 (`/guilds`, `/channels`, `/messages`) | Bot Token via BEARER (`Bot` prefix) | `guildId/channelId` |
 
@@ -2381,6 +2413,13 @@ CentralPoller
 | `backend/server/.../entity/teams/TeamsMessageIndexDocument.kt` | Teams message tracking in MongoDB |
 | `backend/server/.../entity/slack/SlackMessageIndexDocument.kt` | Slack message tracking in MongoDB |
 | `backend/server/.../entity/discord/DiscordMessageIndexDocument.kt` | Discord message tracking in MongoDB |
+| `backend/server/.../entity/teams/O365ScrapeMessageDocument.kt` | VLM-scraped message entity (maps to `o365_scrape_messages`) |
+| `backend/server/.../entity/teams/O365DiscoveredResourceDocument.kt` | Persistent discovered O365 resources |
+| `backend/server/.../repository/O365ScrapeMessageRepository.kt` | Scrape message queries (by connectionId + state) |
+| `backend/server/.../repository/O365DiscoveredResourceRepository.kt` | Discovered resource queries |
+| `backend/server/.../rpc/internal/InternalO365SessionRouting.kt` | Session callback API (MFA/expiry → USER_TASK + push) |
+| `backend/service-o365-browser-pool/app/kotlin_callback.py` | Python→Kotlin session state notification |
+| `backend/service-o365-browser-pool/app/scrape_storage.py` | MongoDB storage for scrape messages + discovered resources |
 | `backend/server/.../integration/chat/ChatReplyService.kt` | Outbound message sending (stubs, EPIC 11-S5) |
 
 ---

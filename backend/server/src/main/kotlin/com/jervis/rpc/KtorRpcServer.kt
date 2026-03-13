@@ -29,6 +29,7 @@ import com.jervis.rpc.internal.installInternalProjectManagementApi
 import com.jervis.rpc.internal.installInternalMeetingApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalBugTrackerApi
+import com.jervis.rpc.internal.installInternalO365SessionApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -99,6 +100,9 @@ class KtorRpcServer(
     private val bugTrackerService: com.jervis.integration.bugtracker.BugTrackerService,
     private val whisperRestClient: com.jervis.service.meeting.WhisperRestClient,
     private val whisperProperties: com.jervis.configuration.properties.WhisperProperties,
+    private val connectionRepository: com.jervis.repository.ConnectionRepository,
+    private val fcmPushService: com.jervis.service.notification.FcmPushService,
+    private val apnsPushService: com.jervis.service.notification.ApnsPushService,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -137,6 +141,7 @@ class KtorRpcServer(
                             installInternalCacheApi(guidelinesService)
                             installInternalMeetingApi(meetingRpcImpl)
                             installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
+                            installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)

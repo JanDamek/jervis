@@ -52,6 +52,7 @@ class ConnectionRpcImpl(
     private val providerRegistry: ProviderRegistry,
     private val oauth2Service: OAuth2Service,
     private val httpClient: io.ktor.client.HttpClient,
+    private val discoveredResourceRepository: com.jervis.repository.O365DiscoveredResourceRepository,
     @org.springframework.beans.factory.annotation.Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
     private val o365GatewayUrl: String = "http://jervis-o365-gateway:8080",
     @org.springframework.beans.factory.annotation.Value("\${jervis.o365-browser-pool.url:http://jervis-o365-browser-pool:8090}")
@@ -811,17 +812,49 @@ class ConnectionRpcImpl(
             return listO365ResourcesViaGraphApi(connection, capability)
         }
 
-        // For browser pool connections, use VLM discovery
+        // For browser pool connections, first check persistent cache
         val clientId = connection.o365ClientId
         if (clientId.isNullOrBlank()) {
             logger.warn { "O365 connection ${connection.id} has no o365ClientId" }
             return emptyList()
         }
 
-        return listO365ResourcesViaScraper(clientId, capability)
+        // Try cached resources first (available even if browser pool is down)
+        val cached = discoveredResourceRepository
+            .findByConnectionIdAndActive(connection.id, true)
+            .toList()
+
+        if (cached.isNotEmpty()) {
+            val freshEnough = cached.any {
+                it.lastSeenAt.isAfter(java.time.Instant.now().minusSeconds(3600))
+            }
+            if (freshEnough) {
+                return cached.mapNotNull { res ->
+                    val matches = when (capability) {
+                        ConnectionCapability.CHAT_READ, ConnectionCapability.CHAT_SEND ->
+                            res.resourceType == "chat" || res.resourceType == "channel"
+                        ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND ->
+                            res.resourceType == "email" || res.resourceType == "folder"
+                        ConnectionCapability.CALENDAR_READ, ConnectionCapability.CALENDAR_WRITE ->
+                            res.resourceType == "calendar"
+                        else -> false
+                    }
+                    if (matches) ConnectionResourceDto(
+                        id = res.externalId,
+                        name = res.displayName,
+                        description = res.description,
+                        capability = capability,
+                    ) else null
+                }
+            }
+        }
+
+        // Cache miss or stale — call browser pool discovery
+        return listO365ResourcesViaScraper(connection, clientId, capability)
     }
 
     private suspend fun listO365ResourcesViaScraper(
+        connection: ConnectionDocument,
         clientId: String,
         capability: ConnectionCapability,
     ): List<ConnectionResourceDto> {
@@ -834,20 +867,46 @@ class ConnectionRpcImpl(
             val jsonParser = Json { ignoreUnknownKeys = true }
             val body = jsonParser.parseToJsonElement(resp.bodyAsText()).jsonObject
             val resources = body["resources"]?.jsonArray ?: return emptyList()
-            resources.mapNotNull { element ->
+            val result = mutableListOf<ConnectionResourceDto>()
+
+            for (element in resources) {
                 val obj = element.jsonObject
                 val type = obj["type"]?.jsonPrimitive?.content ?: ""
-                val name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                val name = obj["name"]?.jsonPrimitive?.content ?: continue
+                val id = obj["id"]?.jsonPrimitive?.content ?: continue
                 val description = obj["description"]?.jsonPrimitive?.contentOrNull
+
+                // Persist to MongoDB for cache and settings UI
+                try {
+                    val now = java.time.Instant.now()
+                    if (!discoveredResourceRepository.existsByConnectionIdAndExternalId(connection.id, id)) {
+                        discoveredResourceRepository.save(
+                            com.jervis.entity.teams.O365DiscoveredResourceDocument(
+                                connectionId = connection.id,
+                                clientId = connection.clientId,
+                                resourceType = type,
+                                externalId = id,
+                                displayName = name,
+                                description = description,
+                                discoveredAt = now,
+                                lastSeenAt = now,
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    logger.debug { "Failed to persist discovered resource $id: ${e.message}" }
+                }
+
                 val matches = when (capability) {
                     ConnectionCapability.CHAT_READ, ConnectionCapability.CHAT_SEND -> type == "chat" || type == "channel"
                     ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND -> type == "email" || type == "folder"
                     ConnectionCapability.CALENDAR_READ, ConnectionCapability.CALENDAR_WRITE -> type == "calendar"
                     else -> false
                 }
-                if (matches) ConnectionResourceDto(id = id, name = name, description = description, capability = capability) else null
+                if (matches) result.add(ConnectionResourceDto(id = id, name = name, description = description, capability = capability))
             }
+
+            result
         } catch (e: Exception) {
             logger.error(e) { "Failed to discover O365 resources via scraper for $clientId" }
             emptyList()

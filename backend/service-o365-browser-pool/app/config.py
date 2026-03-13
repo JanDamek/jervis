@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     scraper_email_interval: int = 900  # 15 min
     scraper_calendar_interval: int = 1800  # 30 min
 
+    # Kotlin server callback (for MFA/session notifications)
+    kotlin_server_url: str = "http://jervis-server:8080"
+
     # MongoDB for scrape result storage
     mongodb_host: str = "192.168.100.117"
     mongodb_port: int = 27017

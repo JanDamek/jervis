@@ -61,6 +61,17 @@ class ScrapeStorage:
             name="connection_state_idx",
         )
 
+        resources = self._db["o365_discovered_resources"]
+        await resources.create_index(
+            [("connectionId", 1), ("externalId", 1)],
+            unique=True,
+            name="connection_resource_unique",
+        )
+        await resources.create_index(
+            [("connectionId", 1), ("resourceType", 1)],
+            name="connection_type_idx",
+        )
+
         logger.info("ScrapeStorage connected to MongoDB")
 
     async def stop(self) -> None:
@@ -99,16 +110,20 @@ class ScrapeStorage:
             upsert=True,
         )
 
-    async def store_chat_messages(
+    async def store_messages(
         self,
         client_id: str,
         connection_id: str,
         messages: list[dict],
+        message_type: str = "chat",
     ) -> int:
-        """Store individual chat messages extracted from VLM scrape.
+        """Store individual messages extracted from VLM scrape.
 
         Messages are deduplicated by connectionId + messageHash.
         Returns count of newly inserted messages.
+
+        Args:
+            message_type: "chat", "email", or "calendar"
         """
         if self._db is None or not messages:
             return 0
@@ -135,6 +150,7 @@ class ScrapeStorage:
                             "content": msg.get("content"),
                             "timestamp": msg.get("time"),
                             "chatName": msg.get("chat_name"),
+                            "messageType": message_type,
                             "state": "NEW",
                             "createdAt": now,
                         },
@@ -148,8 +164,72 @@ class ScrapeStorage:
 
         if inserted:
             logger.info(
-                "Stored %d new chat messages for %s",
-                inserted, client_id,
+                "Stored %d new %s messages for %s",
+                inserted, message_type, client_id,
+            )
+
+        return inserted
+
+    async def store_chat_messages(
+        self,
+        client_id: str,
+        connection_id: str,
+        messages: list[dict],
+    ) -> int:
+        """Backward-compatible wrapper for store_messages with type=chat."""
+        return await self.store_messages(client_id, connection_id, messages, "chat")
+
+    async def store_discovered_resources(
+        self,
+        connection_id: str,
+        client_id: str,
+        resources: list[dict],
+    ) -> int:
+        """Store discovered Teams resources (chats, channels, teams) in MongoDB.
+
+        Upserts by connectionId + externalId. Returns count of new resources.
+        """
+        if self._db is None or not resources:
+            return 0
+
+        now = datetime.now(timezone.utc)
+        inserted = 0
+
+        for res in resources:
+            external_id = res.get("id", "")
+            if not external_id:
+                continue
+
+            try:
+                result = await self._db["o365_discovered_resources"].update_one(
+                    {"connectionId": connection_id, "externalId": external_id},
+                    {
+                        "$set": {
+                            "displayName": res.get("name", ""),
+                            "description": res.get("description"),
+                            "resourceType": res.get("type", "chat"),
+                            "teamName": res.get("team_name"),
+                            "lastSeenAt": now,
+                            "active": True,
+                        },
+                        "$setOnInsert": {
+                            "connectionId": connection_id,
+                            "clientId": client_id,
+                            "externalId": external_id,
+                            "discoveredAt": now,
+                        },
+                    },
+                    upsert=True,
+                )
+                if result.upserted_id:
+                    inserted += 1
+            except Exception:
+                logger.debug("Failed to store resource %s", external_id)
+
+        if inserted:
+            logger.info(
+                "Discovered %d new resources for connection %s",
+                inserted, connection_id,
             )
 
         return inserted

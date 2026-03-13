@@ -274,4 +274,119 @@ Return JSON:
             "resources": parsed.get("resources", []),
         }
 
+    @router.post("/scrape/{client_id}/backfill")
+    async def backfill_channel(client_id: str, body: dict) -> dict:
+        """Navigate to a channel and scroll back to capture historical messages.
+
+        Body: {"channel_name": "Team / Channel", "max_scrolls": 20}
+
+        The scraper navigates to the channel, scrolls up repeatedly,
+        takes screenshots, and extracts messages via VLM. Messages are
+        stored in o365_scrape_messages with state=NEW for the polling handler.
+        """
+        channel_name = body.get("channel_name", "")
+        if not channel_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing 'channel_name' in request body",
+            )
+
+        max_scrolls = body.get("max_scrolls", 20)
+
+        if not tab_manager.has_tabs(client_id):
+            raise HTTPException(
+                status_code=404,
+                detail=f"No tabs set up for client '{client_id}'",
+            )
+
+        page = await tab_manager.get_tab(client_id, TabType.CHAT)
+        if not page:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Chat tab not available for {client_id}",
+            )
+
+        import asyncio
+        from app.vlm_client import analyze_screenshot as vlm_analyze
+        from app.screen_scraper import _PROMPTS, _parse_vlm_response
+
+        total_messages = 0
+        scrolls_done = 0
+
+        # Navigate to the channel using Teams search
+        try:
+            await page.keyboard.press("Control+e")
+            await asyncio.sleep(1)
+            await page.keyboard.type(channel_name, delay=50)
+            await asyncio.sleep(3)
+            await page.keyboard.press("Enter")
+            await asyncio.sleep(3)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Navigation to channel failed: {e}",
+            )
+
+        # Scroll up and scrape repeatedly
+        for i in range(max_scrolls):
+            try:
+                # Screenshot current view
+                screenshot = await tab_manager.screenshot_tab(client_id, TabType.CHAT)
+                if not screenshot:
+                    break
+
+                # Extract messages via VLM
+                result_text = await vlm_analyze(screenshot, _PROMPTS[TabType.CHAT])
+                parsed = _parse_vlm_response(result_text)
+                if not parsed:
+                    break
+
+                # Check for login page
+                if parsed.get("login_page") or parsed.get("sign_in"):
+                    logger.warning("Login page detected during backfill for %s", client_id)
+                    break
+
+                # Store messages
+                open_conv = parsed.get("open_conversation", {})
+                if open_conv and open_conv.get("messages"):
+                    msgs = [
+                        {**m, "chat_name": open_conv.get("name", channel_name)}
+                        for m in open_conv["messages"]
+                    ]
+                    stored = await screen_scraper._storage.store_messages(
+                        client_id,
+                        screen_scraper._connection_ids.get(client_id, client_id),
+                        msgs,
+                        "chat",
+                    )
+                    total_messages += stored
+                else:
+                    # No messages found — likely at the top
+                    break
+
+                scrolls_done += 1
+
+                # Scroll up
+                await page.mouse.wheel(0, -3000)
+                await asyncio.sleep(2)
+
+            except Exception as e:
+                logger.warning(
+                    "Backfill scroll %d failed for %s: %s",
+                    i, client_id, e,
+                )
+                break
+
+        logger.info(
+            "Backfill complete for %s/%s: %d scrolls, %d messages",
+            client_id, channel_name, scrolls_done, total_messages,
+        )
+
+        return {
+            "client_id": client_id,
+            "channel_name": channel_name,
+            "scrolls_done": scrolls_done,
+            "messages_stored": total_messages,
+        }
+
     return router

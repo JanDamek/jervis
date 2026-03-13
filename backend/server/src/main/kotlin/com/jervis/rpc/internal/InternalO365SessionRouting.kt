@@ -1,0 +1,205 @@
+package com.jervis.rpc.internal
+
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
+import com.jervis.common.types.SourceUrn
+import com.jervis.dto.TaskStateEnum
+import com.jervis.dto.TaskTypeEnum
+import com.jervis.entity.TaskDocument
+import com.jervis.repository.ConnectionRepository
+import com.jervis.repository.TaskRepository
+import com.jervis.rpc.NotificationRpcImpl
+import com.jervis.service.notification.ApnsPushService
+import com.jervis.service.notification.FcmPushService
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.request.receive
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.Routing
+import io.ktor.server.routing.post
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import mu.KotlinLogging
+import org.bson.types.ObjectId
+import java.time.Instant
+
+private val logger = KotlinLogging.logger {}
+private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
+
+/**
+ * Internal REST endpoint for O365 browser pool session callbacks.
+ *
+ * When the browser pool detects MFA requirement or session expiry,
+ * it POSTs here so the Kotlin server can create a USER_TASK notification
+ * visible in the chat UI (with VNC link and MFA details).
+ */
+fun Routing.installInternalO365SessionApi(
+    connectionRepository: ConnectionRepository,
+    taskRepository: TaskRepository,
+    notificationRpc: NotificationRpcImpl,
+    fcmPushService: FcmPushService,
+    apnsPushService: ApnsPushService,
+) {
+    post("/internal/o365/session-event") {
+        try {
+            val body = call.receive<O365SessionEventRequest>()
+            logger.info { "O365 session event: state=${body.state} for connection=${body.connectionId}" }
+
+            // Look up connection to find clientId
+            val connectionId = try {
+                ConnectionId(ObjectId(body.connectionId))
+            } catch (_: Exception) {
+                logger.warn { "Invalid connectionId: ${body.connectionId}" }
+                call.respondText(
+                    """{"error":"invalid connectionId"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                )
+                return@post
+            }
+
+            val connection = connectionRepository.getById(connectionId)
+            if (connection == null) {
+                logger.warn { "Connection not found: ${body.connectionId}" }
+                call.respondText(
+                    """{"error":"connection not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+                return@post
+            }
+
+            val clientId = connection.clientId
+
+            when (body.state) {
+                "AWAITING_MFA" -> {
+                    val title = buildString {
+                        append("Microsoft 365: ")
+                        when (body.mfaType) {
+                            "authenticator_number" -> append("Potvrďte číslo ${body.mfaNumber ?: ""} v Authenticator")
+                            "authenticator_code" -> append("Zadejte kód z Authenticator")
+                            "sms_code" -> append("Zadejte SMS kód")
+                            "phone_call" -> append("Potvrďte telefonní hovor")
+                            else -> append("Vyžadováno dvoufaktorové ověření")
+                        }
+                    }
+                    val description = buildString {
+                        appendLine("Připojení **${connection.name}** vyžaduje MFA ověření.")
+                        body.mfaMessage?.let { appendLine(it) }
+                        body.mfaNumber?.let { appendLine("**Číslo k potvrzení: $it**") }
+                        body.vncUrl?.let { appendLine("\n[Otevřít vzdálený přístup k prohlížeči]($it)") }
+                    }
+
+                    createSessionNotification(
+                        taskRepository, notificationRpc, fcmPushService, apnsPushService,
+                        clientId, connection.name, title, description,
+                        interruptAction = "o365_mfa",
+                    )
+                }
+
+                "EXPIRED" -> {
+                    val title = "Microsoft 365: Session vypršela — je potřeba se znovu přihlásit"
+                    val description = buildString {
+                        appendLine("Připojení **${connection.name}** ztratilo přihlášení.")
+                        appendLine("Otevřete nastavení připojení a přihlaste se znovu.")
+                        body.vncUrl?.let { appendLine("\n[Otevřít vzdálený přístup k prohlížeči]($it)") }
+                    }
+
+                    createSessionNotification(
+                        taskRepository, notificationRpc, fcmPushService, apnsPushService,
+                        clientId, connection.name, title, description,
+                        interruptAction = "o365_relogin",
+                    )
+                }
+
+                else -> {
+                    logger.debug { "Ignoring session event state=${body.state} for ${body.connectionId}" }
+                }
+            }
+
+            call.respondText(
+                """{"status":"ok"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.OK,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Error handling O365 session event" }
+            call.respondText(
+                json.encodeToString(mapOf("error" to (e.message ?: "internal error"))),
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+}
+
+private suspend fun createSessionNotification(
+    taskRepository: TaskRepository,
+    notificationRpc: NotificationRpcImpl,
+    fcmPushService: FcmPushService,
+    apnsPushService: ApnsPushService,
+    clientId: ClientId,
+    connectionName: String,
+    title: String,
+    description: String,
+    interruptAction: String,
+) {
+    // Check if UI has active subscribers — skip push if app is open
+    val hasActiveUi = notificationRpc.hasActiveSubscribers(clientId.toString())
+
+    val task = TaskDocument(
+        clientId = clientId,
+        taskName = title,
+        content = description,
+        state = TaskStateEnum.USER_TASK,
+        type = TaskTypeEnum.USER_TASK,
+        sourceUrn = SourceUrn("o365-browser-pool::event:session-notification"),
+        pendingUserQuestion = title,
+        userQuestionContext = description,
+        priorityScore = 70, // High priority — needs immediate attention
+        lastActivityAt = Instant.now(),
+    )
+    taskRepository.save(task)
+
+    // Emit kRPC event for real-time UI notification
+    notificationRpc.emitUserTaskCreated(
+        clientId = clientId.toString(),
+        taskId = task.id.toString(),
+        title = title,
+        interruptAction = interruptAction,
+        interruptDescription = description,
+    )
+
+    // Send push notification if app is not actively connected
+    if (!hasActiveUi) {
+        val pushData = mapOf(
+            "taskId" to task.id.toString(),
+            "type" to "user_task",
+            "interruptAction" to interruptAction,
+        )
+        try {
+            fcmPushService.sendPushNotification(clientId.toString(), "Microsoft 365", title, pushData)
+        } catch (e: Exception) {
+            logger.warn { "FCM push failed for $clientId: ${e.message}" }
+        }
+        try {
+            apnsPushService.sendPushNotification(clientId.toString(), "Microsoft 365", title, pushData)
+        } catch (e: Exception) {
+            logger.warn { "APNs push failed for $clientId: ${e.message}" }
+        }
+    }
+
+    logger.info { "Created O365 session notification for $clientId: $title" }
+}
+
+@Serializable
+private data class O365SessionEventRequest(
+    val clientId: String? = null,
+    val connectionId: String,
+    val state: String,
+    val mfaType: String? = null,
+    val mfaMessage: String? = null,
+    val mfaNumber: String? = null,
+    val vncUrl: String? = null,
+)

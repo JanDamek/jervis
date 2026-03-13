@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timezone
 
 from app.browser_manager import BrowserManager
+from app.kotlin_callback import notify_session_state
 from app.models import SessionState
 from app.token_extractor import TokenExtractor
 
@@ -77,6 +78,9 @@ class SessionMonitor:
                             client_id,
                         )
                         self._bm.set_state(client_id, SessionState.EXPIRED)
+                        await notify_session_state(
+                            client_id, client_id, "EXPIRED",
+                        )
                 self._last_check[client_id] = now
                 continue
 
@@ -100,6 +104,9 @@ class SessionMonitor:
                     client_id,
                 )
                 self._bm.set_state(client_id, SessionState.EXPIRED)
+                await notify_session_state(
+                    client_id, client_id, "EXPIRED",
+                )
 
             self._last_check[client_id] = now
 

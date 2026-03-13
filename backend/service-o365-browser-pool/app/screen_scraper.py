@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 from app.browser_manager import BrowserManager
 from app.config import settings
+from app.kotlin_callback import notify_session_state
 from app.models import SessionState
 from app.scrape_storage import ScrapeStorage
 from app.tab_manager import TabManager, TabType
@@ -220,6 +221,10 @@ class ScreenScraper:
                 client_id, tab_type.value,
             )
             self._bm.set_state(client_id, SessionState.EXPIRED)
+            connection_id = self._connection_ids.get(client_id, client_id)
+            await notify_session_state(
+                client_id, connection_id, "EXPIRED",
+            )
             return
 
         # Store result
@@ -251,7 +256,7 @@ class ScreenScraper:
             client_id, connection_id, tab_type, parsed,
         )
 
-        # For chat tab, also store individual messages
+        # Store individual messages per tab type
         if tab_type == TabType.CHAT:
             open_conv = parsed.get("open_conversation", {})
             if open_conv and open_conv.get("messages"):
@@ -259,8 +264,56 @@ class ScreenScraper:
                     {**m, "chat_name": open_conv.get("name")}
                     for m in open_conv["messages"]
                 ]
-                await self._storage.store_chat_messages(
-                    client_id, connection_id, msgs,
+                await self._storage.store_messages(
+                    client_id, connection_id, msgs, "chat",
+                )
+
+            # Auto-discover resources from sidebar chats
+            chats = parsed.get("chats", [])
+            if chats:
+                resources = [
+                    {
+                        "id": f"chat_{c.get('name', '').lower().replace(' ', '_')[:50]}",
+                        "name": c.get("name", ""),
+                        "description": c.get("preview"),
+                        "type": "chat",
+                    }
+                    for c in chats if c.get("name")
+                ]
+                await self._storage.store_discovered_resources(
+                    connection_id, client_id, resources,
+                )
+
+        elif tab_type == TabType.EMAIL:
+            emails = parsed.get("emails", [])
+            if emails:
+                msgs = [
+                    {
+                        "sender": e.get("sender", ""),
+                        "time": e.get("time", ""),
+                        "content": f"[{e.get('subject', '')}] {e.get('preview', '')}",
+                        "chat_name": parsed.get("folder", "Inbox"),
+                    }
+                    for e in emails
+                ]
+                await self._storage.store_messages(
+                    client_id, connection_id, msgs, "email",
+                )
+
+        elif tab_type == TabType.CALENDAR:
+            events = parsed.get("events", [])
+            if events:
+                msgs = [
+                    {
+                        "sender": ", ".join(ev.get("attendees", [])) if ev.get("attendees") else "",
+                        "time": ev.get("start", ""),
+                        "content": f"[Event] {ev.get('title', '')} ({ev.get('start', '')} - {ev.get('end', '')})",
+                        "chat_name": "Calendar",
+                    }
+                    for ev in events
+                ]
+                await self._storage.store_messages(
+                    client_id, connection_id, msgs, "calendar",
                 )
 
         logger.info(
