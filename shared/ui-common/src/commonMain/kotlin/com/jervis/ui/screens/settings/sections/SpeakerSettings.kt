@@ -313,38 +313,33 @@ private fun SpeakerMergeDialog(
     val otherSpeakers = allSpeakers.filter { it.id != source.id }
     var selectedTarget by remember { mutableStateOf<SpeakerDto?>(null) }
     var similarity by remember { mutableStateOf<Float?>(null) }
-    var isChecking by remember { mutableStateOf(false) }
     var showLowSimilarityConfirm by remember { mutableStateOf(false) }
-    var isMerging by remember { mutableStateOf(false) }
 
-    suspend fun doMerge(target: SpeakerDto) {
-        isMerging = true
-        try {
-            repository.speakers.mergeSpeakers(
-                SpeakerMergeRequestDto(
-                    targetSpeakerId = target.id,
-                    sourceSpeakerId = source.id,
-                ),
-            )
-            snackbarHostState.showSnackbar("Sloučeno: ${source.name} -> ${target.name}")
-            onMerged()
-        } catch (e: Exception) {
-            snackbarHostState.showSnackbar("Chyba sloučení: ${e.message}")
-            isMerging = false
+    fun doMerge(target: SpeakerDto) {
+        onMerged()
+        scope.launch {
+            try {
+                repository.speakers.mergeSpeakers(
+                    SpeakerMergeRequestDto(
+                        targetSpeakerId = target.id,
+                        sourceSpeakerId = source.id,
+                    ),
+                )
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar("Chyba sloučení: ${e.message}")
+            }
         }
     }
 
     fun checkAndMerge(target: SpeakerDto) {
+        if (!source.hasVoiceprint || !target.hasVoiceprint) {
+            doMerge(target)
+            return
+        }
         scope.launch {
-            if (!source.hasVoiceprint || !target.hasVoiceprint) {
-                doMerge(target)
-                return@launch
-            }
-            isChecking = true
             try {
                 val result = repository.speakers.checkSimilarity(source.id, target.id)
                 similarity = result.similarity
-                isChecking = false
                 if (result.similarity >= 0.75f) {
                     doMerge(target)
                 } else {
@@ -352,7 +347,6 @@ private fun SpeakerMergeDialog(
                 }
             } catch (e: Exception) {
                 snackbarHostState.showSnackbar("Chyba: ${e.message}")
-                isChecking = false
             }
         }
     }
@@ -388,7 +382,7 @@ private fun SpeakerMergeDialog(
                         val target = selectedTarget ?: return@TextButton
                         checkAndMerge(target)
                     },
-                    enabled = selectedTarget != null && !isChecking && !isMerging,
+                    enabled = selectedTarget != null,
                 ) {
                     Text("Sloučit")
                 }
@@ -410,7 +404,7 @@ private fun SpeakerMergeDialog(
         onConfirm = {
             showLowSimilarityConfirm = false
             val target = selectedTarget ?: return@JConfirmDialog
-            scope.launch { doMerge(target) }
+            doMerge(target)
         },
         onDismiss = { showLowSimilarityConfirm = false },
         isDestructive = true,
