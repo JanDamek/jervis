@@ -440,8 +440,10 @@ When `ClientDocument.archived = true`, the entire pipeline is blocked for that c
 
 - **Non-stop polling** on NEW documents in MongoDB (30s delay when empty)
 - **No API calls** - only read from MongoDB and create PendingTask
+- **Exception: BugTrackerContinuousIndexer** — also calls `IBugTrackerClient.getComments()` to fetch issue comments from GitHub/GitLab (Jira comments come from issue response)
 - **States:** NEW (from API) → INDEXING (processing) → INDEXED (task created)
 - **INDEXED = "content passed to Jervis as pending task", NOT "already in RAG/Graph"!**
+- **@Mention detection:** BugTrackerContinuousIndexer checks comment bodies for `@selfUsername` (from connection self-identity). If found → `TaskDocument.mentionsJervis=true` → priority score 80 in TaskPriorityCalculator → overrides IGNORE/not-actionable in kb-done callback
 
 For indexer details see [knowledge-base.md § Continuous Indexers](knowledge-base.md#continuous-indexers).
 
@@ -700,6 +702,7 @@ The `/internal/kb-done` callback handler saves KB results to the TaskDocument an
 4. Progress events pushed via `POST /internal/kb-progress` (real-time UI updates)
 5. On completion: KB POSTs `FullIngestResult` to `POST /internal/kb-done`
 6. `/internal/kb-done` handler saves kbSummary/kbEntities/kbActionable to TaskDocument, applies filters, routes to DONE or QUEUED
+   - **Mention override:** If `task.mentionsJervis=true`, IGNORE filter and not-actionable routing are bypassed → always QUEUED
 
 **Progress steps (pushed from KB via callback):**
 1. `start` — processing begins
@@ -721,6 +724,9 @@ uses these server-side timestamps for step timing display instead of client-side
 
 ```
 KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, ...)
+  │
+  ├─ Step 0: mentionsJervis=true (from @mention in issue/MR comments)
+  │    → QUEUED (priority 80, overrides ALL below — direct mention always actioned)
   │
   ├─ Step 1: hasActionableContent=false
   │    → DONE (info_only — indexed, no action needed, terminal)

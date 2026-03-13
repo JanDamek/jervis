@@ -133,6 +133,10 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Issue tools (MCP): `backend/service-mcp/app/main.py` (create_issue, update_issue, add_issue_comment, list_issues)
 - MR/PR continuous indexer: `backend/server/.../service/indexing/git/MergeRequestContinuousIndexer.kt` (polls GitLab/GitHub for open MRs, creates review tasks)
 - MR/PR state: `backend/server/.../service/indexing/git/state/MergeRequestDocument.kt`, `MergeRequestRepository.kt`
+- BugTracker comment fetching: `IBugTrackerClient.getComments()`, `GitHubBugTrackerService`, `GitLabBugTrackerService` (Phase 1 of comment/mention pipeline)
+- BugTracker continuous indexer: `backend/server/.../integration/bugtracker/internal/indexing/BugTrackerContinuousIndexer.kt` (fetches+embeds comments, detects @mentions via selfUsername)
+- Connection self-identity: `ConnectionDocument.selfUsername/selfId/selfDisplayName/selfEmail` (auto-detected on test), `ConnectionDocument.isJervisOwned` (Jervis vs client account flag)
+- Mention priority: `TaskDocument.mentionsJervis`, `TaskPriorityCalculator` (score 80), `KtorRpcServer` kb-done callback (overrides IGNORE/not-actionable)
 - Gemini decomposer: `backend/service-orchestrator/app/agent/gemini_decomposer.py` (large context >100k tokens → Gemini 1M → sub-vertices + synthesis)
 - Claude SDK runner: `backend/service-claude/claude_sdk_runner.py` (K8s Job entrypoint, result.json with branch field, kubectl binary available)
 - Coding agent RBAC: `k8s/orchestrator-rbac.yaml` (ServiceAccount jervis-coding-agent + ClusterRole jervis-environment-manager)
