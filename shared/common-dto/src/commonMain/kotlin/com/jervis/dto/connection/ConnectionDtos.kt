@@ -256,10 +256,13 @@ data class ConnectionImportProjectDto(
  */
 @Serializable
 data class BrowserSessionStatusDto(
-    val state: String, // PENDING_LOGIN, ACTIVE, EXPIRED, ERROR
+    val state: String, // PENDING_LOGIN, ACTIVE, AWAITING_MFA, EXPIRED, ERROR
     val hasToken: Boolean = false,
     val vncUrl: String? = null,
     val message: String? = null,
+    val mfaType: String? = null,     // authenticator_code, authenticator_number, sms_code
+    val mfaMessage: String? = null,  // Human-readable MFA instruction
+    val mfaNumber: String? = null,   // Number to approve in authenticator app
 )
 
 /**

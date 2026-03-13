@@ -12,6 +12,7 @@ class SessionState(str, Enum):
     ACTIVE = "ACTIVE"
     EXPIRED = "EXPIRED"
     PENDING_LOGIN = "PENDING_LOGIN"
+    AWAITING_MFA = "AWAITING_MFA"
     ERROR = "ERROR"
 
 
@@ -35,6 +36,10 @@ class SessionStatus(BaseModel):
     last_activity: str | None = None
     last_token_extract: str | None = None
     novnc_url: str | None = None
+    # MFA info (when state == AWAITING_MFA)
+    mfa_type: str | None = None
+    mfa_message: str | None = None
+    mfa_number: str | None = None  # Number to approve in authenticator
 
 
 class SessionInitRequest(BaseModel):
@@ -46,6 +51,9 @@ class SessionInitRequest(BaseModel):
     )
     # Capabilities from connection — determines which tabs to open
     capabilities: list[str] = []  # e.g. ["CHAT_READ", "EMAIL_READ", "CALENDAR_READ"]
+    # Auto-login credentials (optional — if provided, Playwright fills the login form)
+    username: str | None = None
+    password: str | None = None
 
 
 class SessionInitResponse(BaseModel):

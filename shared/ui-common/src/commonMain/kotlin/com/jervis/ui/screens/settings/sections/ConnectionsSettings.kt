@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
@@ -405,6 +406,10 @@ private fun TeamsLoginDialog(
     var vncUrl by remember { mutableStateOf<String?>(null) }
     var vncOpened by remember { mutableStateOf(false) }
     var tokenCaptured by remember { mutableStateOf(false) }
+    var mfaCode by remember { mutableStateOf("") }
+    var mfaSubmitting by remember { mutableStateOf(false) }
+    var mfaError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     // Poll session status every 3 seconds
     LaunchedEffect(connection.id) {
@@ -414,8 +419,8 @@ private fun TeamsLoginDialog(
                 status = s
                 // Remember VNC URL once we get it
                 if (s.vncUrl != null) vncUrl = s.vncUrl
-                // Auto-close only when state is ACTIVE (fresh token captured after login)
-                if (s.state == "ACTIVE" && vncOpened) {
+                // Auto-close when state is ACTIVE
+                if (s.state == "ACTIVE") {
                     tokenCaptured = true
                     delay(2000)
                     onDismiss()
@@ -428,6 +433,8 @@ private fun TeamsLoginDialog(
         }
     }
 
+    val hasCredentials = connection.username?.isNotBlank() == true
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Přihlášení k Microsoft Teams") },
@@ -435,90 +442,212 @@ private fun TeamsLoginDialog(
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (tokenCaptured) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        JStatusBadge(status = "VALID")
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "Přihlášení úspěšné!",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    Text(
-                        "Token byl zachycen. Dialog se automaticky zavře.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else if (vncOpened) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            "Čekám na přihlášení k Microsoft...",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    Text(
-                        "Dokončete přihlášení v otevřeném okně prohlížeče. " +
-                            "Po úspěšném přihlášení se dialog automaticky zavře.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    Text(
-                        "Klikněte na tlačítko pro otevření přihlašovacího okna Microsoft.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "Po přihlášení k Microsoft účtu bude token automaticky zachycen a dialog se zavře.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (status?.state == "EXPIRED") {
-                        Text(
-                            "Předchozí token expiroval — je nutné se znovu přihlásit.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                    if (status == null) {
+                when {
+                    tokenCaptured -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                            )
+                            JStatusBadge(status = "VALID")
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                "Připravuji session...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                "Přihlášení úspěšné!",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
                             )
+                        }
+                        Text(
+                            "Dialog se automaticky zavře.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    status?.state == "AWAITING_MFA" -> {
+                        // MFA required — show code input
+                        Text(
+                            status?.mfaMessage ?: "Vyžadováno dvoufaktorové ověření",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        if (status?.mfaNumber != null) {
+                            // Authenticator number matching — show the number prominently
+                            Text(
+                                status?.mfaNumber ?: "",
+                                style = MaterialTheme.typography.headlineLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                        }
+                        if (status?.mfaType == "authenticator_code" || status?.mfaType == "sms_code") {
+                            OutlinedTextField(
+                                value = mfaCode,
+                                onValueChange = { mfaCode = it.filter { c -> c.isDigit() }.take(8) },
+                                label = { Text("Ověřovací kód") },
+                                placeholder = { Text("123456") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !mfaSubmitting,
+                            )
+                        }
+                        if (mfaError != null) {
+                            Text(
+                                mfaError ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        if (mfaSubmitting) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Ověřuji...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+
+                    status?.state == "PENDING_LOGIN" && hasCredentials -> {
+                        // Auto-login in progress
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "Přihlašuji se automaticky...",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Text(
+                            "Heslo bylo zadáno v nastavení připojení. Přihlášení probíhá automaticky.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    vncOpened -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "Čekám na přihlášení k Microsoft...",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Text(
+                            "Dokončete přihlášení v otevřeném okně prohlížeče. " +
+                                "Po úspěšném přihlášení se dialog automaticky zavře.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    status?.state == "ERROR" -> {
+                        Text(
+                            status?.message ?: "Chyba přihlášení",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        // Offer VNC fallback
+                        Text(
+                            "Můžete se přihlásit ručně přes prohlížeč.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    else -> {
+                        Text(
+                            "Klikněte na tlačítko pro otevření přihlašovacího okna Microsoft.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            "Po přihlášení k Microsoft účtu bude token automaticky zachycen a dialog se zavře.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (status?.state == "EXPIRED") {
+                            Text(
+                                "Předchozí token expiroval — je nutné se znovu přihlásit.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        if (status == null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Připravuji session...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            if (tokenCaptured) {
-                TextButton(onClick = onDismiss) {
-                    Text("Zavřít")
+            when {
+                tokenCaptured -> {
+                    TextButton(onClick = onDismiss) {
+                        Text("Zavřít")
+                    }
                 }
-            } else {
-                val url = vncUrl
-                JPrimaryButton(
-                    onClick = {
-                        if (url != null) {
-                            openUrlInBrowser(url)
-                            vncOpened = true
-                        }
-                    },
-                    enabled = url != null,
-                ) {
-                    Text(if (vncOpened) "Otevřít znovu" else "Otevřít přihlášení")
+
+                status?.state == "AWAITING_MFA" && (status?.mfaType == "authenticator_code" || status?.mfaType == "sms_code") -> {
+                    JPrimaryButton(
+                        onClick = {
+                            mfaSubmitting = true
+                            mfaError = null
+                            scope.launch {
+                                try {
+                                    val result = repository.connections.submitBrowserSessionMfa(
+                                        connection.id, mfaCode,
+                                    )
+                                    if (result.state == "ACTIVE") {
+                                        tokenCaptured = true
+                                    } else {
+                                        mfaError = result.message ?: "Kód nebyl přijat"
+                                        mfaCode = ""
+                                    }
+                                } catch (e: Exception) {
+                                    mfaError = "Chyba: ${e.message}"
+                                } finally {
+                                    mfaSubmitting = false
+                                }
+                            }
+                        },
+                        enabled = mfaCode.length >= 4 && !mfaSubmitting,
+                    ) {
+                        Text("Ověřit")
+                    }
+                }
+
+                else -> {
+                    val url = vncUrl
+                    JPrimaryButton(
+                        onClick = {
+                            if (url != null) {
+                                openUrlInBrowser(url)
+                                vncOpened = true
+                            }
+                        },
+                        enabled = url != null,
+                    ) {
+                        Text(if (vncOpened) "Otevřít znovu" else "Otevřít přihlášení")
+                    }
                 }
             }
         },

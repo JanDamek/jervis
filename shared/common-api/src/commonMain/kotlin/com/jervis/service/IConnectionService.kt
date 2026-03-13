@@ -62,4 +62,9 @@ interface IConnectionService {
      * Returns session state, VNC URL with auto-auth, and token status.
      */
     suspend fun getBrowserSessionStatus(connectionId: String): BrowserSessionStatusDto
+
+    /**
+     * Submit MFA code for a browser session awaiting multi-factor authentication.
+     */
+    suspend fun submitBrowserSessionMfa(connectionId: String, code: String): BrowserSessionStatusDto
 }

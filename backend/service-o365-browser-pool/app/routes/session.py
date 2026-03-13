@@ -1,12 +1,14 @@
-"""Session management endpoints – init, status, refresh, close."""
+"""Session management endpoints – init, status, refresh, close, MFA."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
+from app.auto_login import LoginStage, auto_login, submit_mfa_code
 from app.browser_manager import BrowserManager
 from app.models import (
     SessionInitRequest,
@@ -31,6 +33,8 @@ def create_session_router(
 ) -> APIRouter:
     # Store capabilities per client (set during init, used during activation)
     _client_capabilities: dict[str, list[str]] = {}
+    # Store MFA state per client
+    _mfa_state: dict[str, dict] = {}
 
     @router.get("/session/{client_id}")
     async def get_session(client_id: str) -> SessionStatus:
@@ -48,7 +52,7 @@ def create_session_router(
                     has_token = True
 
         # Detect login completion: check if Teams/Outlook loaded (not on login page)
-        if state == SessionState.PENDING_LOGIN and not has_token:
+        if state in (SessionState.PENDING_LOGIN, SessionState.AWAITING_MFA) and not has_token:
             context = browser_manager.get_context(client_id)
             if context and context.pages:
                 page_url = context.pages[0].url or ""
@@ -73,6 +77,7 @@ def create_session_router(
             browser_manager.set_state(client_id, SessionState.ACTIVE)
             state = SessionState.ACTIVE
             await browser_manager.save_state(client_id)
+            _mfa_state.pop(client_id, None)
             logger.info("Session activated for %s", client_id)
 
             # Set up tabs and start scraping (using stored capabilities)
@@ -84,6 +89,9 @@ def create_session_router(
                 screen_scraper.set_connection_id(client_id, client_id)
                 await screen_scraper.start_scraping(client_id)
 
+        # Include MFA info in status if awaiting
+        mfa_info = _mfa_state.get(client_id)
+
         token_info = token_extractor.get_graph_token(client_id)
         return SessionStatus(
             client_id=client_id,
@@ -93,6 +101,9 @@ def create_session_router(
             last_token_extract=(
                 token_info.extracted_at.isoformat() if token_info else None
             ),
+            mfa_type=mfa_info.get("mfa_type") if mfa_info else None,
+            mfa_message=mfa_info.get("mfa_message") if mfa_info else None,
+            mfa_number=mfa_info.get("mfa_number") if mfa_info else None,
         )
 
     @router.post("/session/{client_id}/init")
@@ -100,11 +111,11 @@ def create_session_router(
         client_id: str,
         request: SessionInitRequest | None = None,
     ) -> SessionInitResponse:
-        """Create a browser context and navigate to the O365 login page.
+        """Create a browser context and start login.
 
-        Reuses existing page if one already exists (avoids duplicate tabs).
-        The user must complete login manually (via noVNC or screenshot).
-        After login, token interception starts automatically.
+        If credentials (username/password) are provided, auto-login is attempted.
+        If MFA is required, state changes to AWAITING_MFA.
+        Without credentials, opens login page for manual VNC login.
         """
         req = request or SessionInitRequest()
 
@@ -132,7 +143,65 @@ def create_session_router(
             page = await context.new_page()
             await token_extractor.setup_interception(client_id, page)
 
-        # Only navigate if not already on Teams/login
+        # Auto-login if credentials provided
+        if req.username and req.password:
+            browser_manager.set_state(client_id, SessionState.PENDING_LOGIN)
+            logger.info("Auto-login starting for %s (user: %s)", client_id, req.username)
+
+            result = await auto_login(page, req.username, req.password, req.login_url)
+
+            if result.stage == LoginStage.LOGGED_IN:
+                browser_manager.set_state(client_id, SessionState.ACTIVE)
+                await browser_manager.save_state(client_id)
+                _mfa_state.pop(client_id, None)
+                logger.info("Auto-login successful for %s", client_id)
+
+                # Set up tabs and start scraping
+                caps = _client_capabilities.get(client_id, [])
+                await tab_manager.setup_tabs(client_id, context, caps)
+                screen_scraper.set_connection_id(client_id, client_id)
+                await screen_scraper.start_scraping(client_id)
+
+                return SessionInitResponse(
+                    client_id=client_id,
+                    state=SessionState.ACTIVE,
+                    message="Automatické přihlášení úspěšné",
+                )
+
+            if result.stage == LoginStage.MFA_REQUIRED:
+                browser_manager.set_state(client_id, SessionState.AWAITING_MFA)
+                _mfa_state[client_id] = {
+                    "mfa_type": result.mfa_type.value if result.mfa_type else None,
+                    "mfa_message": result.mfa_message,
+                    "mfa_number": result.mfa_number,
+                }
+                logger.info(
+                    "Auto-login: MFA required for %s — %s",
+                    client_id, result.mfa_type,
+                )
+                return SessionInitResponse(
+                    client_id=client_id,
+                    state=SessionState.AWAITING_MFA,
+                    message=result.mfa_message or "Vyžadováno dvoufaktorové ověření",
+                )
+
+            if result.stage == LoginStage.ERROR:
+                browser_manager.set_state(client_id, SessionState.ERROR)
+                return SessionInitResponse(
+                    client_id=client_id,
+                    state=SessionState.ERROR,
+                    message=f"Přihlášení selhalo: {result.error}",
+                )
+
+            # Unexpected — fall through to pending login
+            browser_manager.set_state(client_id, SessionState.PENDING_LOGIN)
+            return SessionInitResponse(
+                client_id=client_id,
+                state=SessionState.PENDING_LOGIN,
+                message=f"Přihlášení nedokončeno (stage: {result.stage})",
+            )
+
+        # No credentials — manual login via VNC
         current_url = page.url or ""
         if (
             "teams.microsoft.com" not in current_url
@@ -149,12 +218,74 @@ def create_session_router(
                 )
 
         browser_manager.set_state(client_id, SessionState.PENDING_LOGIN)
-        logger.info("Session initialized for %s → %s", client_id, req.login_url)
+        logger.info("Session initialized for %s → %s (manual login)", client_id, req.login_url)
 
         return SessionInitResponse(
             client_id=client_id,
             state=SessionState.PENDING_LOGIN,
             message=f"Session created. Navigate to login page: {req.login_url}",
+        )
+
+    @router.post("/session/{client_id}/mfa")
+    async def submit_mfa(client_id: str, body: dict) -> SessionInitResponse:
+        """Submit MFA code for a session awaiting MFA.
+
+        Body: {"code": "123456"}
+        """
+        code = body.get("code", "")
+        if not code:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing 'code' in request body",
+            )
+
+        state = browser_manager.get_state(client_id)
+        if state != SessionState.AWAITING_MFA:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Session not awaiting MFA (state: {state})",
+            )
+
+        context = browser_manager.get_context(client_id)
+        if not context or not context.pages:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No browser page for client '{client_id}'",
+            )
+
+        page = context.pages[0]
+        result = await submit_mfa_code(page, code)
+
+        if result.stage == LoginStage.LOGGED_IN:
+            browser_manager.set_state(client_id, SessionState.ACTIVE)
+            await browser_manager.save_state(client_id)
+            _mfa_state.pop(client_id, None)
+            logger.info("MFA verified, session active for %s", client_id)
+
+            # Set up tabs and start scraping
+            caps = _client_capabilities.get(client_id, [])
+            await tab_manager.setup_tabs(client_id, context, caps)
+            screen_scraper.set_connection_id(client_id, client_id)
+            await screen_scraper.start_scraping(client_id)
+
+            return SessionInitResponse(
+                client_id=client_id,
+                state=SessionState.ACTIVE,
+                message="MFA ověřeno — přihlášení úspěšné",
+            )
+
+        if result.stage == LoginStage.ERROR:
+            return SessionInitResponse(
+                client_id=client_id,
+                state=SessionState.AWAITING_MFA,
+                message=f"MFA selhalo: {result.error}",
+            )
+
+        # Still awaiting (wrong code?)
+        return SessionInitResponse(
+            client_id=client_id,
+            state=SessionState.AWAITING_MFA,
+            message="Kód nebyl přijat — zkuste znovu",
         )
 
     @router.post("/session/{client_id}/refresh")
@@ -202,6 +333,7 @@ def create_session_router(
         tab_manager.remove_client(client_id)
         await browser_manager.close_context(client_id)
         token_extractor.invalidate(client_id)
+        _mfa_state.pop(client_id, None)
         logger.info("Session closed for %s", client_id)
         return {"status": "closed", "client_id": client_id}
 

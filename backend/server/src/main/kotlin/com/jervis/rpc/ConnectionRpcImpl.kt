@@ -31,11 +31,15 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -433,9 +437,15 @@ class ConnectionRpcImpl(
                 }
             }
 
+            // MFA info
+            val mfaType = sessionJson["mfa_type"]?.jsonPrimitive?.contentOrNull
+            val mfaMessage = sessionJson["mfa_message"]?.jsonPrimitive?.contentOrNull
+            val mfaNumber = sessionJson["mfa_number"]?.jsonPrimitive?.contentOrNull
+
             val message = when (state) {
                 "PENDING_LOGIN" -> "Čeká na přihlášení — otevřete okno pro Microsoft login"
-                "ACTIVE" -> "Přihlášení úspěšné! Token byl zachycen."
+                "ACTIVE" -> "Přihlášení úspěšné!"
+                "AWAITING_MFA" -> mfaMessage ?: "Vyžadováno dvoufaktorové ověření"
                 "EXPIRED" -> "Token expiroval — je nutné se znovu přihlásit"
                 "ERROR" -> "Chyba browser session"
                 else -> state
@@ -446,6 +456,9 @@ class ConnectionRpcImpl(
                 hasToken = hasToken,
                 vncUrl = vncUrl,
                 message = message,
+                mfaType = mfaType,
+                mfaMessage = mfaMessage,
+                mfaNumber = mfaNumber,
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to get browser session status for $clientId" }
@@ -453,6 +466,39 @@ class ConnectionRpcImpl(
                 state = "ERROR",
                 message = "Chyba komunikace s browser pool: ${e.message}",
             )
+        }
+    }
+
+    override suspend fun submitBrowserSessionMfa(connectionId: String, code: String): BrowserSessionStatusDto {
+        val connection = connectionService.findById(ConnectionId.fromString(connectionId))
+            ?: throw IllegalArgumentException("Connection not found: $connectionId")
+
+        val clientId = connection.o365ClientId
+            ?: return BrowserSessionStatusDto(state = "ERROR", message = "Připojení nemá o365ClientId")
+
+        return try {
+            val response = httpClient.post("$o365BrowserPoolUrl/session/$clientId/mfa") {
+                contentType(ContentType.Application.Json)
+                setBody(buildJsonObject { put("code", code) }.toString())
+            }
+            val responseText = response.bodyAsText()
+            val json = Json { ignoreUnknownKeys = true }
+            val responseJson = json.parseToJsonElement(responseText).jsonObject
+            val state = responseJson["state"]?.jsonPrimitive?.content ?: "ERROR"
+            val message = responseJson["message"]?.jsonPrimitive?.content
+
+            if (state == "ACTIVE") {
+                connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+            }
+
+            BrowserSessionStatusDto(
+                state = state,
+                hasToken = state == "ACTIVE",
+                message = message ?: if (state == "ACTIVE") "MFA ověřeno — přihlášení úspěšné" else "MFA ověření",
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to submit MFA for $clientId" }
+            BrowserSessionStatusDto(state = "ERROR", message = "Chyba: ${e.message}")
         }
     }
 
@@ -466,12 +512,40 @@ class ConnectionRpcImpl(
             ?: throw IllegalArgumentException("Connection ${connection.id} has no o365ClientId")
 
         return try {
-            val response = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init")
+            val capabilities = connection.availableCapabilities.map { it.name }
+            val response = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init") {
+                contentType(ContentType.Application.Json)
+                setBody(buildJsonObject {
+                    put("login_url", "https://teams.microsoft.com")
+                    putJsonArray("capabilities") { capabilities.forEach { add(it) } }
+                    // Pass credentials for auto-login (username/password from connection)
+                    connection.username?.takeIf { it.isNotBlank() }?.let { put("username", it) }
+                    connection.password?.takeIf { it.isNotBlank() }?.let { put("password", it) }
+                }.toString())
+            }
             val responseText = response.bodyAsText()
             logger.info { "Browser pool session init for $clientId: $responseText" }
 
-            connectionService.save(connection.copy(state = ConnectionStateEnum.NEW))
-            "Browser session inicializována pro '$clientId'. Dokončete přihlášení přes noVNC."
+            // Parse response to check for MFA
+            val json = Json { ignoreUnknownKeys = true }
+            val responseJson = json.parseToJsonElement(responseText).jsonObject
+            val state = responseJson["state"]?.jsonPrimitive?.content ?: ""
+            val message = responseJson["message"]?.jsonPrimitive?.content ?: ""
+
+            when (state) {
+                "ACTIVE" -> {
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+                    "Automatické přihlášení úspěšné!"
+                }
+                "AWAITING_MFA" -> {
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.NEW))
+                    message
+                }
+                else -> {
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.NEW))
+                    "Browser session inicializována pro '$clientId'. $message"
+                }
+            }
         } catch (e: Exception) {
             logger.error(e) { "Failed to init browser pool session for ${connection.id}" }
             "Chyba inicializace browser session: ${e.message}"
