@@ -44,7 +44,7 @@ class SpeakerRpcImpl(
             nationality = request.nationality,
             languagesSpoken = request.languagesSpoken,
             notes = request.notes,
-            emails = request.emails,
+            emails = request.emails.map { it.lowercase().trim() }.distinct(),
             channels = request.channels.map { it.toEntry() },
         )
         val saved = speakerRepository.save(doc)
@@ -61,7 +61,7 @@ class SpeakerRpcImpl(
             languagesSpoken = request.languagesSpoken,
             notes = request.notes,
             clientIds = request.clientIds.map { ClientId.fromString(it) },
-            emails = request.emails,
+            emails = request.emails.map { it.lowercase().trim() }.distinct(),
             channels = request.channels.map { it.toEntry() },
             updatedAt = Instant.now(),
         )
@@ -128,7 +128,7 @@ class SpeakerRpcImpl(
 
         val merged = target.copy(
             clientIds = (target.clientIds + source.clientIds).distinct(),
-            emails = (target.emails + source.emails).distinct(),
+            emails = (target.emails + source.emails).map { it.lowercase().trim() }.distinct(),
             channels = (target.channels + source.channels).distinctBy { it.connectionId to it.identifier },
             voiceEmbeddings = target.voiceEmbeddings + source.voiceEmbeddings,
             languagesSpoken = (target.languagesSpoken + source.languagesSpoken).distinct(),

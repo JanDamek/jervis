@@ -531,7 +531,7 @@ private fun SpeakerEditForm(
                     )
                     IconButton(
                         onClick = {
-                            val trimmed = newEmail.trim()
+                            val trimmed = newEmail.trim().lowercase()
                             if (trimmed.isNotBlank() && trimmed !in emails) {
                                 emails = emails + trimmed
                                 newEmail = ""
