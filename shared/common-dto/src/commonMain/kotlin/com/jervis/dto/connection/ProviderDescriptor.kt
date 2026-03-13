@@ -167,7 +167,10 @@ data class ProviderDescriptor(
                     AuthOption(
                         authType = AuthTypeEnum.NONE,
                         displayName = "Browser Session (K8s pod)",
-                        fields = emptyList(),
+                        fields = listOf(
+                            FormField(FormFieldType.USERNAME, "E-mail (přihlášení)", required = false),
+                            FormField(FormFieldType.PASSWORD, "Heslo", required = false, isSecret = true),
+                        ),
                     ),
                     AuthOption(
                         authType = AuthTypeEnum.BEARER,
