@@ -191,6 +191,29 @@ class GitHubApiClient(
         return json.decodeFromString(GitHubIssue.serializer(), responseText)
     }
 
+    suspend fun listIssueComments(
+        token: String,
+        owner: String,
+        repo: String,
+        issueNumber: Int,
+        baseUrl: String? = null,
+    ): List<GitHubComment> {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/repos/$owner/$repo/issues/$issueNumber/comments?per_page=100"
+        rateLimit(url)
+        return paginateViaLinkHeader(
+            httpClient = httpClient,
+            initialUrl = url,
+            provider = "GitHub",
+            context = "listIssueComments(#$issueNumber)",
+            requestBuilder = {
+                header(HttpHeaders.Authorization, "Bearer $token")
+                header(HttpHeaders.Accept, "application/vnd.github+json")
+            },
+            deserialize = { body -> json.decodeFromString(body) },
+        )
+    }
+
     suspend fun addComment(
         token: String,
         owner: String,
@@ -279,4 +302,5 @@ data class GitHubComment(
 @Serializable
 data class GitHubCommentUser(
     val login: String,
+    val id: Long? = null,
 )

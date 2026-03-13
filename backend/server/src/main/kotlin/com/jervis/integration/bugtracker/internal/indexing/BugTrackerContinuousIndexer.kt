@@ -5,6 +5,8 @@ import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.dto.AuthType
 import com.jervis.common.dto.atlassian.JiraAttachmentDownloadRequest
 import com.jervis.common.dto.atlassian.JiraIssueRequest
+import com.jervis.common.dto.bugtracker.BugTrackerGetCommentsRequest
+import com.jervis.common.dto.bugtracker.BugTrackerGetCommentsResponse
 import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
 import com.jervis.common.types.SourceUrn
 import com.jervis.domain.PollingStatusEnum
@@ -119,6 +121,15 @@ class BugTrackerContinuousIndexer(
             val response = githubBugTrackerClient.searchIssues(searchRequest)
             val issue = response.issues.find { it.key == "#$issueNumber" }
 
+            // Fetch comments (outside buildString so they're accessible for mention detection)
+            val commentsResponse = fetchComments(
+                client = githubBugTrackerClient,
+                connection = connection,
+                issueKey = "#$issueNumber",
+                projectKey = repoKey,
+                label = doc.issueKey,
+            )
+
             val issueContent = buildString {
                 append("# ${doc.issueKey}: ${issue?.title ?: doc.summary}\n\n")
 
@@ -138,6 +149,15 @@ class BugTrackerContinuousIndexer(
                     }
                 }
 
+                if (commentsResponse.comments.isNotEmpty()) {
+                    append("## Comments\n\n")
+                    for (comment in commentsResponse.comments) {
+                        append("**${comment.author}** (${comment.created}):\n")
+                        append(comment.body)
+                        append("\n\n")
+                    }
+                }
+
                 append("## Document Metadata\n")
                 append("- **Source:** GitHub Issue\n")
                 append("- **Repository:** $repoKey\n")
@@ -145,6 +165,12 @@ class BugTrackerContinuousIndexer(
                 append("- **Connection ID:** ${doc.connectionId}\n")
                 append("- **Issue Key:** ${doc.issueKey}\n")
             }
+
+            // Detect if Jervis is @mentioned in any comment
+            val mentionsJervis = detectMentionsJervis(
+                connection = connection,
+                commentBodies = commentsResponse.comments.map { it.body },
+            )
 
             taskService.createTask(
                 taskType = TaskTypeEnum.BUGTRACKER_PROCESSING,
@@ -157,6 +183,7 @@ class BugTrackerContinuousIndexer(
                     issueKey = doc.issueKey,
                 ),
                 taskName = "${doc.issueKey}: ${(issue?.title ?: doc.summary ?: doc.issueKey).take(100)}",
+                mentionsJervis = mentionsJervis,
             )
 
             stateManager.markAsIndexed(doc)
@@ -184,6 +211,15 @@ class BugTrackerContinuousIndexer(
             val response = gitlabBugTrackerClient.searchIssues(searchRequest)
             val issue = response.issues.find { it.key == "#$issueNumber" }
 
+            // Fetch comments (outside buildString so they're accessible for mention detection)
+            val commentsResponse = fetchComments(
+                client = gitlabBugTrackerClient,
+                connection = connection,
+                issueKey = "$projectKey#$issueNumber",
+                projectKey = projectKey,
+                label = doc.issueKey,
+            )
+
             val issueContent = buildString {
                 append("# ${doc.issueKey}: ${issue?.title ?: doc.summary}\n\n")
 
@@ -203,6 +239,15 @@ class BugTrackerContinuousIndexer(
                     }
                 }
 
+                if (commentsResponse.comments.isNotEmpty()) {
+                    append("## Comments\n\n")
+                    for (comment in commentsResponse.comments) {
+                        append("**${comment.author}** (${comment.created}):\n")
+                        append(comment.body)
+                        append("\n\n")
+                    }
+                }
+
                 append("## Document Metadata\n")
                 append("- **Source:** GitLab Issue\n")
                 append("- **Project:** $projectKey\n")
@@ -210,6 +255,12 @@ class BugTrackerContinuousIndexer(
                 append("- **Connection ID:** ${doc.connectionId}\n")
                 append("- **Issue Key:** ${doc.issueKey}\n")
             }
+
+            // Detect if Jervis is @mentioned in any comment
+            val mentionsJervis = detectMentionsJervis(
+                connection = connection,
+                commentBodies = commentsResponse.comments.map { it.body },
+            )
 
             taskService.createTask(
                 taskType = TaskTypeEnum.BUGTRACKER_PROCESSING,
@@ -222,6 +273,7 @@ class BugTrackerContinuousIndexer(
                     issueKey = doc.issueKey,
                 ),
                 taskName = "${doc.issueKey}: ${(issue?.title ?: doc.summary ?: doc.issueKey).take(100)}",
+                mentionsJervis = mentionsJervis,
             )
 
             stateManager.markAsIndexed(doc)
@@ -280,6 +332,31 @@ class BugTrackerContinuousIndexer(
                         append("\n\n")
                     }
 
+                    // Embed Jira comments (returned in the issue response)
+                    val jiraComments = issueDetails.comments ?: emptyList()
+                    if (jiraComments.isNotEmpty()) {
+                        append("## Comments\n\n")
+                        for (comment in jiraComments) {
+                            val authorName = comment.author?.displayName ?: comment.author?.name ?: "unknown"
+                            val bodyText = comment.body?.toString()?.let { raw ->
+                                // ADF is a JSON structure — extract text content for display
+                                if (raw.startsWith("{") || raw.startsWith("[")) {
+                                    // Rough extraction: strip JSON structure, keep text content
+                                    raw.replace(Regex("""[{}\[\]":]"""), " ")
+                                        .replace(Regex("""\s+"""), " ")
+                                        .trim()
+                                        .take(5000)
+                                } else {
+                                    // Plain text string (with surrounding quotes from JsonElement)
+                                    raw.trim('"').take(5000)
+                                }
+                            } ?: ""
+                            append("**$authorName** (${comment.created ?: ""}):\n")
+                            append(bodyText)
+                            append("\n\n")
+                        }
+                    }
+
                     // Add metadata for qualifier
                     append("## Document Metadata\n")
                     append("- **Source:** Atlassian Jira Issue\n")
@@ -287,6 +364,15 @@ class BugTrackerContinuousIndexer(
                     append("- **Connection ID:** ${doc.connectionId}\n")
                     append("- **Issue Key:** ${doc.issueKey}\n")
                 }
+
+            // Detect if Jervis is @mentioned in Jira comments
+            val jiraCommentBodies = (issueDetails.comments ?: emptyList()).map { comment ->
+                comment.body?.toString() ?: ""
+            }
+            val mentionsJervis = detectMentionsJervis(
+                connection = connection,
+                commentBodies = jiraCommentBodies,
+            )
 
             val attachmentMetadata: List<AttachmentMetadata> =
                 issueDetails.fields.attachments
@@ -357,6 +443,7 @@ class BugTrackerContinuousIndexer(
                     ),
                 attachments = attachmentMetadata,
                 taskName = "${doc.issueKey}: ${(issueDetails.fields.summary ?: doc.summary ?: doc.issueKey).take(100)}",
+                mentionsJervis = mentionsJervis,
             )
 
             // Index Jira attachments as KB documents for full-text search and RAG
@@ -393,6 +480,58 @@ class BugTrackerContinuousIndexer(
         } catch (e: Exception) {
             logger.error(e) { "Failed to create task for Atlassian issue ${doc.issueKey}" }
             stateManager.markAsFailed(doc, "Task creation failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Detect if Jervis (@selfUsername) is mentioned in any comment body.
+     * Returns true if connection has a selfUsername and it appears as @mention in any comment.
+     */
+    private fun detectMentionsJervis(
+        connection: ConnectionDocument,
+        commentBodies: List<String>,
+    ): Boolean {
+        val selfUsername = connection.selfUsername ?: return false
+        if (commentBodies.isEmpty()) return false
+
+        val mentioned = commentBodies.any { body ->
+            body.contains("@$selfUsername", ignoreCase = true)
+        }
+
+        if (mentioned) {
+            logger.info { "Detected @$selfUsername mention in comments (connection=${connection.id})" }
+        }
+
+        return mentioned
+    }
+
+    /**
+     * Fetch comments for an issue from the appropriate bug tracker client.
+     * Returns empty response on failure (non-blocking — issue content is still indexed).
+     */
+    private suspend fun fetchComments(
+        client: IBugTrackerClient,
+        connection: ConnectionDocument,
+        issueKey: String,
+        projectKey: String?,
+        label: String,
+    ): BugTrackerGetCommentsResponse {
+        return runCatching {
+            client.getComments(
+                BugTrackerGetCommentsRequest(
+                    baseUrl = connection.baseUrl,
+                    authType = AuthType.valueOf(connection.authType.name),
+                    bearerToken = connection.bearerToken,
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    cloudId = connection.cloudId,
+                    issueKey = issueKey,
+                    projectKey = projectKey,
+                ),
+            )
+        }.getOrElse { e ->
+            logger.warn(e) { "Failed to fetch comments for $label, continuing without comments" }
+            BugTrackerGetCommentsResponse(emptyList())
         }
     }
 }

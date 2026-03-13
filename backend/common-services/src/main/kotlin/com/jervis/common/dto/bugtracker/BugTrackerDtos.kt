@@ -118,3 +118,31 @@ data class BugTrackerAttachmentRequest(
     val attachmentId: String,
     val attachmentUrl: String,
 )
+
+// ==================== COMMENTS READ DTOs ====================
+
+@Serializable
+data class BugTrackerGetCommentsRequest(
+    val baseUrl: String,
+    val authType: AuthType,
+    val bearerToken: String? = null,
+    val basicUsername: String? = null,
+    val basicPassword: String? = null,
+    val cloudId: String? = null,
+    val issueKey: String,
+    val projectKey: String? = null,
+)
+
+@Serializable
+data class BugTrackerGetCommentsResponse(
+    val comments: List<BugTrackerCommentDto>,
+)
+
+@Serializable
+data class BugTrackerCommentDto(
+    val id: String,
+    val author: String,
+    val authorId: String? = null,
+    val body: String,
+    val created: String,
+)

@@ -878,18 +878,22 @@ class KtorRpcServer(
                                                 null
                                             }
 
-                                            // IGNORE filter → DONE
-                                            if (filterAction == com.jervis.dto.filtering.FilterAction.IGNORE) {
+                                            // IGNORE filter → DONE (but @mention overrides IGNORE)
+                                            if (filterAction == com.jervis.dto.filtering.FilterAction.IGNORE && !task.mentionsJervis) {
                                                 taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
                                                 logger.info { "KB_DONE_CALLBACK: filtered IGNORE taskId=${body.taskId}" }
                                                 return@launch
                                             }
 
                                             // Not actionable → DONE (info only, indexed in KB)
-                                            if (!r.hasActionableContent) {
+                                            // BUT: @mention overrides — if Jervis is mentioned, always QUEUE
+                                            if (!r.hasActionableContent && !task.mentionsJervis) {
                                                 taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
                                                 logger.info { "KB_DONE_CALLBACK: not actionable taskId=${body.taskId}" }
                                                 return@launch
+                                            }
+                                            if (task.mentionsJervis && !r.hasActionableContent) {
+                                                logger.info { "KB_DONE_CALLBACK: not actionable BUT mentionsJervis=true → QUEUED taskId=${body.taskId}" }
                                             }
 
                                             // Push urgent alert if applicable

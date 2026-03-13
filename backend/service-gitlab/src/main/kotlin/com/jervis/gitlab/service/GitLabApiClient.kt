@@ -208,6 +208,32 @@ class GitLabApiClient(
         return json.decodeFromString(GitLabIssue.serializer(), responseText)
     }
 
+    suspend fun listIssueNotes(
+        baseUrl: String,
+        token: String,
+        projectId: String,
+        issueIid: Int,
+    ): List<GitLabNote> {
+        val apiUrl = getApiUrl(baseUrl)
+        return paginateViaOffset(
+            provider = "GitLab",
+            context = "listIssueNotes($projectId#$issueIid)",
+            fetchPage = { page, perPage ->
+                val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/issues/$issueIid/notes"
+                rateLimit(url)
+                val response = httpClient.get(url) {
+                    header(HttpHeaders.Authorization, "Bearer $token")
+                    parameter("per_page", perPage)
+                    parameter("page", page)
+                    parameter("sort", "asc")
+                }
+                val responseText = response.checkProviderResponse("GitLab", "listIssueNotes")
+                val notes: List<GitLabNote> = json.decodeFromString(responseText)
+                notes to response
+            },
+        )
+    }
+
     suspend fun addIssueNote(
         baseUrl: String,
         token: String,
@@ -502,6 +528,7 @@ data class GitLabNote(
 @Serializable
 data class GitLabNoteAuthor(
     val username: String,
+    val id: Long? = null,
 )
 
 @Serializable

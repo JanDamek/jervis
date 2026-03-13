@@ -63,6 +63,45 @@ class GitHubBugTrackerService(
         )
     }
 
+    override suspend fun getComments(request: BugTrackerGetCommentsRequest): BugTrackerGetCommentsResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitHub")
+        val issueNumber = request.issueKey.removePrefix("#").toIntOrNull()
+            ?: throw IllegalArgumentException("Invalid issue key: ${request.issueKey}")
+
+        val ownerRepo = request.projectKey?.split("/")
+        val owner: String
+        val repo: String
+        if (ownerRepo != null && ownerRepo.size == 2) {
+            owner = ownerRepo[0]
+            repo = ownerRepo[1]
+        } else {
+            val parsed = extractOwnerRepo(request.baseUrl.trimEnd('/'))
+                ?: throw IllegalArgumentException("Cannot determine repository. Provide projectKey (owner/repo) or valid baseUrl")
+            owner = parsed.first
+            repo = parsed.second
+        }
+
+        val comments = apiClient.listIssueComments(
+            token = token,
+            owner = owner,
+            repo = repo,
+            issueNumber = issueNumber,
+            baseUrl = request.baseUrl.takeIf { it.isNotBlank() },
+        )
+
+        return BugTrackerGetCommentsResponse(
+            comments = comments.map { c ->
+                BugTrackerCommentDto(
+                    id = c.id.toString(),
+                    author = c.user?.login ?: "unknown",
+                    authorId = c.user?.id?.toString(),
+                    body = c.body,
+                    created = c.created_at,
+                )
+            },
+        )
+    }
+
     override suspend fun listProjects(request: BugTrackerProjectsRequest): BugTrackerProjectsResponse {
         val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitHub")
         val repos = apiClient.listRepositories(token, request.baseUrl.takeIf { it.isNotBlank() })

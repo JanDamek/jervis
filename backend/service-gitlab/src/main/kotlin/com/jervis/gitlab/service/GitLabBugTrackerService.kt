@@ -85,6 +85,30 @@ class GitLabBugTrackerService(
         )
     }
 
+    override suspend fun getComments(request: BugTrackerGetCommentsRequest): BugTrackerGetCommentsResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
+        val (projectPath, iid) = parseIssueKey(request.issueKey)
+
+        val notes = apiClient.listIssueNotes(
+            baseUrl = request.baseUrl,
+            token = token,
+            projectId = projectPath,
+            issueIid = iid,
+        )
+
+        return BugTrackerGetCommentsResponse(
+            comments = notes.map { n ->
+                BugTrackerCommentDto(
+                    id = n.id.toString(),
+                    author = n.author?.username ?: "unknown",
+                    authorId = n.author?.id?.toString(),
+                    body = n.body,
+                    created = n.created_at,
+                )
+            },
+        )
+    }
+
     override suspend fun listProjects(request: BugTrackerProjectsRequest): BugTrackerProjectsResponse {
         val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
         val projects = apiClient.listProjects(request.baseUrl, token)

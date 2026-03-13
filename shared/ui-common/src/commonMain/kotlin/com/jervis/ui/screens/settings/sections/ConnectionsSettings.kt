@@ -290,6 +290,15 @@ private fun ConnectionItemCard(
                     Text(providerLabel, style = MaterialTheme.typography.labelSmall)
                 },
             )
+            if (connection.isJervisOwned) {
+                Spacer(Modifier.width(4.dp))
+                SuggestionChip(
+                    onClick = {},
+                    label = {
+                        Text("🤖 Jervis", style = MaterialTheme.typography.labelSmall)
+                    },
+                )
+            }
             Spacer(Modifier.width(8.dp))
             JStatusBadge(status = connection.state.name)
         }
@@ -320,6 +329,18 @@ private fun ConnectionItemCard(
                 text = "Používá: ${assignedClient.name}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        // Self-identity info
+        connection.selfUsername?.let { username ->
+            val identityText = buildString {
+                append("Identita: @$username")
+                connection.selfDisplayName?.let { append(" ($it)") }
+            }
+            Text(
+                text = identityText,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 

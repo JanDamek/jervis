@@ -83,6 +83,15 @@ data class ConnectionDocument(
     // O365 Gateway (browser session relay — clientId for browser pool)
     val o365ClientId: String? = null,
 
+    // Jervis self-identity — who this connection authenticates as
+    val selfUsername: String? = null,
+    val selfDisplayName: String? = null,
+    val selfId: String? = null,
+    val selfEmail: String? = null,
+
+    // Whether this connection belongs to Jervis itself (vs. client's human account)
+    val isJervisOwned: Boolean = false,
+
     // Legacy fields (deprecated, kept for backwards compatibility)
     @Deprecated("Use protocol instead")
     val connectionType: ConnectionTypeEnum? = null,

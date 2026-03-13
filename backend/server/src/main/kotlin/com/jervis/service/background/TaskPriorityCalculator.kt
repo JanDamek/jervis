@@ -40,6 +40,7 @@ class TaskPriorityCalculator {
         result: FullIngestResult,
         inferred: ActionTypeInferrer.InferredFields,
         isUserCreated: Boolean = false,
+        mentionsJervis: Boolean = false,
     ): PriorityResult {
         var score = 50 // Default for auto-discovered actionable content
         val reasons = mutableListOf<String>()
@@ -48,6 +49,12 @@ class TaskPriorityCalculator {
         if (isUserCreated) {
             score = maxOf(score, 70)
             reasons.add("user-created")
+        }
+
+        // Direct @mention of Jervis → high priority (above assigned-to-me)
+        if (mentionsJervis) {
+            score = maxOf(score, 80)
+            reasons.add("mentioned-jervis")
         }
 
         // Urgency from qualifier

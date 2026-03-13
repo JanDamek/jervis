@@ -4,6 +4,7 @@ import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.dto.AuthType
 import com.jervis.common.dto.bugtracker.BugTrackerAddCommentRpcRequest
 import com.jervis.common.dto.bugtracker.BugTrackerCreateIssueRpcRequest
+import com.jervis.common.dto.bugtracker.BugTrackerGetCommentsRequest
 import com.jervis.common.dto.bugtracker.BugTrackerIssueRequest
 import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
 import com.jervis.common.dto.bugtracker.BugTrackerTransitionRpcRequest
@@ -127,7 +128,33 @@ class BugTrackerServiceImpl(
         clientId: ClientId,
         issueKey: String,
     ): List<BugTrackerComment> {
-        return emptyList()
+        val connection = findBugTrackerConnection(clientId) ?: return emptyList()
+
+        val response = withRpcRetry(
+            name = "BugTrackerGetComments",
+            reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+        ) {
+            bugTrackerClient.getComments(
+                BugTrackerGetCommentsRequest(
+                    baseUrl = connection.baseUrl,
+                    authType = AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
+                    issueKey = issueKey,
+                ),
+            )
+        }
+
+        return response.comments.map { dto ->
+            BugTrackerComment(
+                id = dto.id,
+                author = dto.author,
+                body = dto.body,
+                created = dto.created,
+            )
+        }
     }
 
     override suspend fun createIssue(

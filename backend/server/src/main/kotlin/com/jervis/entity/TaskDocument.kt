@@ -220,6 +220,8 @@ data class TaskDocument(
     val topicId: String? = null,
     /** Last activity timestamp — updated when new thread messages arrive. Used for "K reakci" sorting. */
     val lastActivityAt: Instant? = null,
+    /** Whether Jervis (@selfUsername) was mentioned in comments/discussion. Boosts priority. */
+    val mentionsJervis: Boolean = false,
 ) {
     companion object {
         /**
@@ -282,6 +284,7 @@ data class TaskDocument(
             kbActionable: Boolean?,
             topicId: String?,
             lastActivityAt: Instant?,
+            mentionsJervis: Boolean?,
         ): TaskDocument = TaskDocument(
             id = TaskId(id),
             type = type,
@@ -334,6 +337,7 @@ data class TaskDocument(
             kbActionable = kbActionable ?: false,
             topicId = topicId,
             lastActivityAt = lastActivityAt,
+            mentionsJervis = mentionsJervis ?: false,
         )
     }
 }

@@ -118,6 +118,7 @@ class ConnectionRpcImpl(
             gitRemoteUrl = request.gitRemoteUrl,
             // Use connectionId as o365ClientId for browser pool (unique, not name-based)
             o365ClientId = request.o365ClientId,
+            isJervisOwned = request.isJervisOwned,
         )
 
         // For Teams browser session without explicit o365ClientId, use the generated connectionId
@@ -197,6 +198,7 @@ class ConnectionRpcImpl(
             bitbucketRepoSlug = request.bitbucketRepoSlug ?: existing.bitbucketRepoSlug,
             gitRemoteUrl = request.gitRemoteUrl ?: existing.gitRemoteUrl,
             o365ClientId = request.o365ClientId ?: existing.o365ClientId,
+            isJervisOwned = request.isJervisOwned ?: existing.isJervisOwned,
         )
 
         val saved = connectionService.save(updated)
@@ -229,7 +231,13 @@ class ConnectionRpcImpl(
         return try {
             val result = providerRegistry.withClient(refreshedConnection.provider) { it.testConnection(refreshedConnection.toTestRequest()) }
             refreshedConnection.state = if (result.success) ConnectionStateEnum.VALID else ConnectionStateEnum.INVALID
-            connectionService.save(refreshedConnection)
+            // Auto-detect self-identity on successful test
+            val toSave = if (result.success) {
+                detectSelfIdentity(refreshedConnection)
+            } else {
+                refreshedConnection
+            }
+            connectionService.save(toSave)
             result
         } catch (e: com.jervis.common.http.ProviderAuthException) {
             // Token expired or revoked — attempt reactive refresh and retry once
@@ -239,7 +247,8 @@ class ConnectionRpcImpl(
                 try {
                     val retryResult = providerRegistry.withClient(retryConnection.provider) { it.testConnection(retryConnection.toTestRequest()) }
                     retryConnection.state = if (retryResult.success) ConnectionStateEnum.VALID else ConnectionStateEnum.INVALID
-                    connectionService.save(retryConnection)
+                    val retryToSave = if (retryResult.success) detectSelfIdentity(retryConnection) else retryConnection
+                    connectionService.save(retryToSave)
                     return retryResult
                 } catch (retryEx: Exception) {
                     logger.warn { "Retry after token refresh also failed for ${retryConnection.name}: ${retryEx.message}" }
@@ -291,7 +300,8 @@ class ConnectionRpcImpl(
             if (!clientId.isNullOrBlank()) {
                 val response = httpClient.get("$o365BrowserPoolUrl/session/$clientId")
                 return if (response.status.isSuccess()) {
-                    connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+                    val withIdentity = detectSelfIdentity(connection.copy(state = ConnectionStateEnum.VALID))
+                    connectionService.save(withIdentity)
                     ConnectionTestResultDto(true, "Browser session aktivní")
                 } else {
                     connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
@@ -305,7 +315,16 @@ class ConnectionRpcImpl(
             header("Authorization", "Bearer $token")
         }
         return if (response.status.isSuccess()) {
-            connectionService.save(refreshed.copy(state = ConnectionStateEnum.VALID))
+            // Auto-detect self-identity from /me response
+            val body = runCatching { Json.parseToJsonElement(response.bodyAsText()).jsonObject }.getOrNull()
+            val withIdentity = refreshed.copy(
+                state = ConnectionStateEnum.VALID,
+                selfUsername = body?.get("userPrincipalName")?.jsonPrimitive?.contentOrNull ?: refreshed.selfUsername,
+                selfDisplayName = body?.get("displayName")?.jsonPrimitive?.contentOrNull ?: refreshed.selfDisplayName,
+                selfId = body?.get("id")?.jsonPrimitive?.contentOrNull ?: refreshed.selfId,
+                selfEmail = body?.get("mail")?.jsonPrimitive?.contentOrNull ?: refreshed.selfEmail,
+            )
+            connectionService.save(withIdentity)
             ConnectionTestResultDto(true, "Microsoft Graph API OK")
         } else {
             connectionService.save(refreshed.copy(state = ConnectionStateEnum.AUTH_EXPIRED))
@@ -323,7 +342,15 @@ class ConnectionRpcImpl(
             header("Authorization", "Bearer $token")
         }
         return if (response.status.isSuccess()) {
-            connectionService.save(refreshed.copy(state = ConnectionStateEnum.VALID))
+            val body = runCatching { Json.parseToJsonElement(response.bodyAsText()).jsonObject }.getOrNull()
+            val withIdentity = refreshed.copy(
+                state = ConnectionStateEnum.VALID,
+                selfUsername = body?.get("email")?.jsonPrimitive?.contentOrNull ?: refreshed.selfUsername,
+                selfDisplayName = body?.get("name")?.jsonPrimitive?.contentOrNull ?: refreshed.selfDisplayName,
+                selfId = body?.get("id")?.jsonPrimitive?.contentOrNull ?: refreshed.selfId,
+                selfEmail = body?.get("email")?.jsonPrimitive?.contentOrNull ?: refreshed.selfEmail,
+            )
+            connectionService.save(withIdentity)
             ConnectionTestResultDto(true, "Google API OK")
         } else {
             connectionService.save(refreshed.copy(state = ConnectionStateEnum.AUTH_EXPIRED))
@@ -340,7 +367,13 @@ class ConnectionRpcImpl(
             header("Authorization", "Bearer $token")
         }
         return if (response.status.isSuccess()) {
-            connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+            val body = runCatching { Json.parseToJsonElement(response.bodyAsText()).jsonObject }.getOrNull()
+            val withIdentity = connection.copy(
+                state = ConnectionStateEnum.VALID,
+                selfUsername = body?.get("user")?.jsonPrimitive?.contentOrNull ?: connection.selfUsername,
+                selfId = body?.get("user_id")?.jsonPrimitive?.contentOrNull ?: connection.selfId,
+            )
+            connectionService.save(withIdentity)
             ConnectionTestResultDto(true, "Slack API OK")
         } else {
             connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
@@ -357,11 +390,100 @@ class ConnectionRpcImpl(
             header("Authorization", "Bot $token")
         }
         return if (response.status.isSuccess()) {
-            connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+            val body = runCatching { Json.parseToJsonElement(response.bodyAsText()).jsonObject }.getOrNull()
+            val withIdentity = connection.copy(
+                state = ConnectionStateEnum.VALID,
+                selfUsername = body?.get("username")?.jsonPrimitive?.contentOrNull ?: connection.selfUsername,
+                selfDisplayName = body?.get("global_name")?.jsonPrimitive?.contentOrNull ?: connection.selfDisplayName,
+                selfId = body?.get("id")?.jsonPrimitive?.contentOrNull ?: connection.selfId,
+                selfEmail = body?.get("email")?.jsonPrimitive?.contentOrNull ?: connection.selfEmail,
+            )
+            connectionService.save(withIdentity)
             ConnectionTestResultDto(true, "Discord API OK")
         } else {
             connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
             ConnectionTestResultDto(false, "Discord API: ${response.status}")
+        }
+    }
+
+    /**
+     * Auto-detect self-identity for registry-based providers (GitHub, GitLab, Atlassian).
+     * Calls the provider's user endpoint and stores username/id/displayName/email.
+     * Only updates fields that are currently null (doesn't overwrite manual settings).
+     */
+    private suspend fun detectSelfIdentity(connection: ConnectionDocument): ConnectionDocument {
+        if (connection.selfUsername != null && connection.selfId != null) {
+            // Already populated, skip detection
+            return connection
+        }
+
+        return try {
+            when (connection.provider) {
+                ProviderEnum.GITHUB -> {
+                    val apiUrl = connection.baseUrl.takeIf { it.isNotBlank() } ?: "https://api.github.com"
+                    val token = connection.bearerToken ?: return connection
+                    val response = httpClient.get("${apiUrl.trimEnd('/')}/user") {
+                        header("Authorization", "Bearer $token")
+                        header("Accept", "application/vnd.github+json")
+                    }
+                    if (response.status.isSuccess()) {
+                        val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+                        connection.copy(
+                            selfUsername = connection.selfUsername ?: body["login"]?.jsonPrimitive?.contentOrNull,
+                            selfId = connection.selfId ?: body["id"]?.jsonPrimitive?.contentOrNull,
+                            selfDisplayName = connection.selfDisplayName ?: body["name"]?.jsonPrimitive?.contentOrNull,
+                            selfEmail = connection.selfEmail ?: body["email"]?.jsonPrimitive?.contentOrNull,
+                        )
+                    } else connection
+                }
+
+                ProviderEnum.GITLAB -> {
+                    val apiUrl = connection.baseUrl.takeIf { it.isNotBlank() } ?: "https://gitlab.com"
+                    val token = connection.bearerToken ?: return connection
+                    val response = httpClient.get("${apiUrl.trimEnd('/')}/api/v4/user") {
+                        header("Authorization", "Bearer $token")
+                    }
+                    if (response.status.isSuccess()) {
+                        val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+                        connection.copy(
+                            selfUsername = connection.selfUsername ?: body["username"]?.jsonPrimitive?.contentOrNull,
+                            selfId = connection.selfId ?: body["id"]?.jsonPrimitive?.contentOrNull,
+                            selfDisplayName = connection.selfDisplayName ?: body["name"]?.jsonPrimitive?.contentOrNull,
+                            selfEmail = connection.selfEmail ?: body["email"]?.jsonPrimitive?.contentOrNull,
+                        )
+                    } else connection
+                }
+
+                ProviderEnum.ATLASSIAN -> {
+                    val token = connection.bearerToken ?: return connection
+                    val cloudId = connection.cloudId
+                    // Jira Cloud uses /rest/api/3/myself with cloudId
+                    val url = if (cloudId != null) {
+                        "https://api.atlassian.com/ex/jira/$cloudId/rest/api/3/myself"
+                    } else {
+                        val baseUrl = connection.baseUrl.takeIf { it.isNotBlank() } ?: return connection
+                        "${baseUrl.trimEnd('/')}/rest/api/3/myself"
+                    }
+                    val response = httpClient.get(url) {
+                        header("Authorization", "Bearer $token")
+                        header("Accept", "application/json")
+                    }
+                    if (response.status.isSuccess()) {
+                        val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+                        connection.copy(
+                            selfUsername = connection.selfUsername ?: body["emailAddress"]?.jsonPrimitive?.contentOrNull,
+                            selfId = connection.selfId ?: body["accountId"]?.jsonPrimitive?.contentOrNull,
+                            selfDisplayName = connection.selfDisplayName ?: body["displayName"]?.jsonPrimitive?.contentOrNull,
+                            selfEmail = connection.selfEmail ?: body["emailAddress"]?.jsonPrimitive?.contentOrNull,
+                        )
+                    } else connection
+                }
+
+                else -> connection // Non-DevOps providers are handled in their test methods
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to auto-detect self-identity for ${connection.name} (${connection.provider}), continuing without" }
+            connection
         }
     }
 
@@ -1287,6 +1409,11 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
         bitbucketRepoSlug = bitbucketRepoSlug,
         gitRemoteUrl = gitRemoteUrl,
         o365ClientId = o365ClientId,
+        selfUsername = selfUsername,
+        selfDisplayName = selfDisplayName,
+        selfId = selfId,
+        selfEmail = selfEmail,
+        isJervisOwned = isJervisOwned,
     )
 
 private fun ConnectionDocument.RateLimitConfig.toDto(): RateLimitConfigDto =

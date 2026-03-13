@@ -69,7 +69,7 @@ class AutoTaskCreationService(
             return null
         }
 
-        val priority = priorityCalculator.calculate(result, inferred)
+        val priority = priorityCalculator.calculate(result, inferred, mentionsJervis = originalTask.mentionsJervis)
 
         return when (inferred.actionType) {
             ActionType.CODE_FIX -> createCodeFixTask(originalTask, result, inferred, priority, actionCorrelationId)

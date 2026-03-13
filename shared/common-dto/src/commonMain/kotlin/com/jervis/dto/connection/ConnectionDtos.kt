@@ -124,6 +124,15 @@ data class ConnectionResponseDto(
 
     // O365 Gateway (browser session relay)
     val o365ClientId: String? = null,
+
+    // Jervis self-identity — who this connection authenticates as
+    val selfUsername: String? = null,
+    val selfDisplayName: String? = null,
+    val selfId: String? = null,
+    val selfEmail: String? = null,
+
+    // Whether this connection belongs to Jervis itself (vs. client's human account)
+    val isJervisOwned: Boolean = false,
 )
 
 /**
@@ -175,6 +184,9 @@ data class ConnectionCreateRequestDto(
 
     // O365 Gateway (browser session relay)
     val o365ClientId: String? = null,
+
+    // Whether this connection belongs to Jervis itself (vs. client's human account)
+    val isJervisOwned: Boolean = false,
 )
 
 /**
@@ -227,6 +239,9 @@ data class ConnectionUpdateRequestDto(
 
     // O365 Gateway (browser session relay)
     val o365ClientId: String? = null,
+
+    // Whether this connection belongs to Jervis itself (vs. client's human account)
+    val isJervisOwned: Boolean? = null,
 )
 
 /**

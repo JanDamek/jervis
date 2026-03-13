@@ -23,6 +23,7 @@ import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.ui.design.JFormDialog
+import com.jervis.ui.design.JSwitch
 import com.jervis.ui.design.JTextField
 
 @Composable
@@ -163,6 +164,7 @@ internal fun ConnectionEditDialog(
     var name by remember { mutableStateOf(connection.name) }
     val state = connection.state
     var provider by remember { mutableStateOf(connection.provider) }
+    var isJervisOwned by remember { mutableStateOf(connection.isJervisOwned) }
 
     val descriptor = descriptors[provider]
     val authOptions = descriptor?.authOptions ?: emptyList()
@@ -249,6 +251,7 @@ internal fun ConnectionEditDialog(
                 useSsl = fieldValues[FormFieldType.USE_SSL]?.let { it == "true" },
                 folderName = fieldValues[FormFieldType.FOLDER_NAME]?.takeIf { it.isNotBlank() },
                 o365ClientId = fieldValues[FormFieldType.O365_CLIENT_ID]?.takeIf { it.isNotBlank() },
+                isJervisOwned = isJervisOwned,
             )
             onSave(connection.id, request)
         },
@@ -294,5 +297,36 @@ internal fun ConnectionEditDialog(
             fieldValues = fieldValues,
             availableProtocols = descriptor?.protocols ?: setOf(ProtocolEnum.HTTP),
         )
+
+        // Jervis ownership toggle
+        Spacer(modifier = Modifier.height(12.dp))
+        JSwitch(
+            label = "Účet patří Jervisovi",
+            description = "Zapněte, pokud se jedná o účet Jervise (ne klientský účet)",
+            checked = isJervisOwned,
+            onCheckedChange = { isJervisOwned = it },
+        )
+
+        // Self-identity info (read-only, auto-detected on connection test)
+        val selfInfo = listOfNotNull(
+            connection.selfUsername?.let { "Uživatel: $it" },
+            connection.selfDisplayName?.let { "Jméno: $it" },
+            connection.selfEmail?.let { "Email: $it" },
+        )
+        if (selfInfo.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Identita (auto-detekováno)",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            selfInfo.forEach { info ->
+                Text(
+                    info,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }

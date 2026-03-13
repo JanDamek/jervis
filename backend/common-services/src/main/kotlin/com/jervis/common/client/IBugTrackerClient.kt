@@ -3,6 +3,8 @@ package com.jervis.common.client
 import com.jervis.common.dto.bugtracker.BugTrackerAddCommentRpcRequest
 import com.jervis.common.dto.bugtracker.BugTrackerCommentResponse
 import com.jervis.common.dto.bugtracker.BugTrackerCreateIssueRpcRequest
+import com.jervis.common.dto.bugtracker.BugTrackerGetCommentsRequest
+import com.jervis.common.dto.bugtracker.BugTrackerGetCommentsResponse
 import com.jervis.common.dto.bugtracker.BugTrackerIssueRequest
 import com.jervis.common.dto.bugtracker.BugTrackerIssueResponse
 import com.jervis.common.dto.bugtracker.BugTrackerProjectsRequest
@@ -22,6 +24,7 @@ interface IBugTrackerClient {
     suspend fun searchIssues(request: BugTrackerSearchRequest): BugTrackerSearchResponse
     suspend fun getIssue(request: BugTrackerIssueRequest): BugTrackerIssueResponse
     suspend fun listProjects(request: BugTrackerProjectsRequest): BugTrackerProjectsResponse
+    suspend fun getComments(request: BugTrackerGetCommentsRequest): BugTrackerGetCommentsResponse
 
     // Write operations
     suspend fun createIssue(request: BugTrackerCreateIssueRpcRequest): BugTrackerIssueResponse

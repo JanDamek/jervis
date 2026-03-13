@@ -69,6 +69,9 @@ class QualifyRequest(BaseModel):
     # Active tasks for consolidation check
     active_tasks: list[dict[str, str | None]] = Field(default_factory=list)
 
+    # Mention detection — set when @jervis is mentioned in comments
+    mentions_jervis: bool = False
+
 
 def _build_system_prompt(request: QualifyRequest) -> str:
     """Build system prompt for qualification agent with orchestrator context preparation."""
@@ -84,6 +87,15 @@ def _build_system_prompt(request: QualifyRequest) -> str:
 Uživatel v chatu nedávno řešil:
 {topics_text}
 Pokud příchozí data souvisí s aktivním tématem, zvyš prioritu."""
+
+    mention_context = ""
+    if request.mentions_jervis:
+        mention_context = """
+
+## ⚠️ PŘÍMÁ ZMÍNKA @JERVIS
+Tento obsah obsahuje přímou @zmínku Jervise v komentářích.
+**POVINNÉ**: VŽDY zvol QUEUED nebo URGENT_ALERT (NIKDY DONE).
+Přímá zmínka znamená, že uživatel explicitně žádá Jervise o akci."""
 
     active_tasks_context = ""
     if request.active_tasks:
@@ -114,7 +126,8 @@ Systém již zpracovává tyto úkoly:
 - **Složitost**: {request.estimated_complexity or 'neuvedeno'}
 - **Přiřazeno mně**: {'ano' if request.is_assigned_to_me else 'ne'}
 - **Budoucí termín**: {'ano' if request.has_future_deadline else 'ne'}{f' ({request.suggested_deadline})' if request.suggested_deadline else ''}
-{topic_context}{active_tasks_context}
+- **Zmínka @Jervis**: {'⚠️ ANO — přímá zmínka' if request.mentions_jervis else 'ne'}
+{mention_context}{topic_context}{active_tasks_context}
 
 ## Tvůj úkol
 1. **Prohledej KB** (`kb_search`) — co už víme o tomto tématu? Související issues, commity, kontext.
