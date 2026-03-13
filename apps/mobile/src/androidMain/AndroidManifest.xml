@@ -25,6 +25,21 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".VoiceQueryActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <meta-data
+            android:name="android.app.shortcuts"
+            android:resource="@xml/actions" />
+
         <service
             android:name="com.jervis.ui.audio.RecordingForegroundService"
             android:foregroundServiceType="microphone"

@@ -13,6 +13,8 @@
 		A1000019000000000000001 /* NotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000018000000000000001 /* NotificationDelegate.swift */; };
 		A1000021000000000000001 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000022000000000000001 /* WatchSessionManager.swift */; };
 		A1000023000000000000001 /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1000024000000000000001 /* WatchConnectivity.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
+		A1000025000000000000001 /* JervisIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000026000000000000001 /* JervisIntents.swift */; };
+		A1000027000000000000001 /* JervisApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000028000000000000001 /* JervisApiClient.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +27,8 @@
 		A1000020000000000000001 /* iosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iosApp.entitlements; sourceTree = "<group>"; };
 		A1000022000000000000001 /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
 		A1000024000000000000001 /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
+		A1000026000000000000001 /* JervisIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisIntents.swift; sourceTree = "<group>"; };
+		A1000028000000000000001 /* JervisApiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisApiClient.swift; sourceTree = "<group>"; };
 		EB6333CC2F43830E00326387 /* APNS_SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = APNS_SETUP.md; sourceTree = "<group>"; };
 		EB6333CD2F43832000326387 /* deploy-apns-secret.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "deploy-apns-secret.sh"; sourceTree = "<group>"; };
 		EB6333CE2F43835500326387 /* BACKEND_APNS_INTEGRATION.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = BACKEND_APNS_INTEGRATION.md; sourceTree = "<group>"; };
@@ -62,6 +66,8 @@
 				A1000004000000000000001 /* ContentView.swift */,
 				A1000018000000000000001 /* NotificationDelegate.swift */,
 				A1000022000000000000001 /* WatchSessionManager.swift */,
+				A1000026000000000000001 /* JervisIntents.swift */,
+				A1000028000000000000001 /* JervisApiClient.swift */,
 				A1000006000000000000001 /* Assets.xcassets */,
 				A1000008000000000000001 /* Info.plist */,
 			);
@@ -168,6 +174,8 @@
 				A1000001000000000000001 /* JervisApp.swift in Sources */,
 				A1000019000000000000001 /* NotificationDelegate.swift in Sources */,
 				A1000021000000000000001 /* WatchSessionManager.swift in Sources */,
+				A1000025000000000000001 /* JervisIntents.swift in Sources */,
+				A1000027000000000000001 /* JervisApiClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

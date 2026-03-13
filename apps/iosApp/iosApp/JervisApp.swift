@@ -10,8 +10,16 @@ struct JervisApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onReceive(NotificationCenter.default.publisher(for: .jervisStartRecording)) { _ in
+                    // Siri triggered recording — handled by Compose UI via deep link or state
+                    print("[Jervis] Siri requested recording start")
+                }
         }
     }
+}
+
+extension Notification.Name {
+    static let jervisStartRecording = Notification.Name("jervisStartRecording")
 }
 
 class AppDelegate: NSObject, UIApplicationDelegate {

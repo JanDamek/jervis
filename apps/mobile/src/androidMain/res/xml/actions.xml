@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- "Hey Google, ask Jervis about ..." -->
+    <capability android:name="custom.actions.intent.ASK_JERVIS">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.jervis.mobile"
+            android:targetClass="com.jervis.mobile.VoiceQueryActivity">
+            <parameter
+                android:name="query"
+                android:key="query" />
+        </intent>
+    </capability>
+
+    <!-- "Hey Google, start recording with Jervis" -->
+    <capability android:name="custom.actions.intent.START_RECORDING">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.jervis.mobile"
+            android:targetClass="com.jervis.mobile.MainActivity">
+            <extra android:key="action" android:value="start_recording" />
+        </intent>
+    </capability>
+
+    <!-- Built-in: "Hey Google, open Jervis" -->
+    <capability android:name="actions.intent.OPEN_APP_FEATURE">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.jervis.mobile"
+            android:targetClass="com.jervis.mobile.MainActivity">
+            <parameter
+                android:name="feature"
+                android:key="feature" />
+        </intent>
+    </capability>
+
+</shortcuts>

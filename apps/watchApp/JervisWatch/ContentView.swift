@@ -59,5 +59,11 @@ struct ContentView: View {
                 .padding()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .jervisStartRecording)) { _ in
+            activeMode = .recording
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .jervisOpenChat)) { _ in
+            activeMode = .chat
+        }
     }
 }

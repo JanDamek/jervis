@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- "Hey Google, ask Jervis about ..." -->
+    <capability android:name="custom.actions.intent.ASK_JERVIS">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.jervis.wear"
+            android:targetClass="com.jervis.wear.presentation.VoiceQueryActivity">
+            <parameter
+                android:name="query"
+                android:key="query" />
+        </intent>
+    </capability>
+
+    <!-- "Hey Google, open Jervis chat" -->
+    <capability android:name="actions.intent.OPEN_APP_FEATURE">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.jervis.wear"
+            android:targetClass="com.jervis.wear.presentation.MainActivity">
+            <parameter
+                android:name="feature"
+                android:key="feature" />
+        </intent>
+    </capability>
+
+</shortcuts>

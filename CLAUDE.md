@@ -91,6 +91,12 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - TTS client: `shared/ui-common/.../audio/TtsClient.kt` (POST /tts, /tts/stream)
 - watchOS app: `apps/watchApp/` (SwiftUI, WatchConnectivity → iPhone WatchSessionManager → RecordingUploadService)
 - Wear OS app: `apps/wearApp/` (Compose for Wear OS, DataLayer API → phone → RecordingUploadService)
+- Siri intents (iOS): `apps/iosApp/iosApp/JervisIntents.swift` (AskJervisIntent, StartRecordingIntent, JervisShortcutsProvider)
+- Siri intents (watchOS): `apps/watchApp/JervisWatch/JervisIntents.swift` (AskJervisIntent, StartWatchChatIntent, StartWatchRecordingIntent)
+- Siri API client: `apps/iosApp/iosApp/JervisApiClient.swift`, `apps/watchApp/JervisWatch/WatchJervisApiClient.swift`
+- Google Assistant (Android): `apps/mobile/src/androidMain/res/xml/actions.xml`, `apps/mobile/src/androidMain/kotlin/.../VoiceQueryActivity.kt`
+- Google Assistant (Wear OS): `apps/wearApp/src/main/res/xml/actions.xml`, `apps/wearApp/src/main/kotlin/.../VoiceQueryActivity.kt`
+- Siri/Assistant backend: `backend/server/src/main/kotlin/com/jervis/rpc/SiriChatRouting.kt` (POST /api/v1/chat/siri)
 - Environment Manager: `shared/ui-common/.../screens/environment/` (EnvironmentManagerScreen, OverviewTab, ComponentsTab, ComponentEditPanel, PropertyMappingsTab, K8sResourcesTab, LogsEventsTab)
 - Environment sidebar: `shared/ui-common/.../environment/` (EnvironmentPanel, EnvironmentViewModel, EnvironmentTreeComponents)
 - Environment mapper: `backend/server/.../mapper/EnvironmentMapper.kt` (toDto, toDocument, toAgentContext, toAgentContextJson)

@@ -4,6 +4,8 @@
 <dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>Jervis needs microphone access to record meeting audio and voice commands.</string>
+    <key>NSSiriUsageDescription</key>
+    <string>Jervis uses Siri to let you ask questions and start recordings with voice commands.</string>
     <key>WKApplication</key>
     <true/>
     <key>WKCompanionAppBundleIdentifier</key>

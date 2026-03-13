@@ -2418,6 +2418,46 @@ Watch (audio capture)
       → RecordingUploadService → server upload
 ```
 
+### Voice Assistant Integration (Siri + Google Assistant)
+
+All platforms support voice assistant activation for hands-free interaction:
+
+#### Apple (iOS + watchOS) — App Intents + Shortcuts
+
+Uses `AppShortcutsProvider` (iOS 16+ / watchOS 9+) for automatic Siri phrase registration:
+
+- **"Siri, Jervis [dotaz]"** — sends text query to `/api/v1/chat/siri`, returns spoken response
+- **"Siri, nahravej s Jervisem"** — opens app in recording mode
+- **"Siri, Jervis chat"** (watchOS) — opens chat view on watch
+
+Files:
+- `apps/iosApp/iosApp/JervisIntents.swift` — `AskJervisIntent`, `StartRecordingIntent`, `JervisShortcutsProvider`
+- `apps/iosApp/iosApp/JervisApiClient.swift` — HTTP client for Siri → backend
+- `apps/watchApp/JervisWatch/JervisIntents.swift` — watchOS intents (includes `StartWatchChatIntent`)
+- `apps/watchApp/JervisWatch/WatchJervisApiClient.swift` — watchOS HTTP client
+
+#### Android (phone + Wear OS) — App Actions
+
+Uses `shortcuts.xml` for Google Assistant integration:
+
+- **"Hey Google, ask Jervis [query]"** — launches `VoiceQueryActivity`, sends query, speaks response via TTS
+- **"Hey Google, open Jervis"** — opens main app
+
+Files:
+- `apps/mobile/src/androidMain/res/xml/actions.xml` — App Actions capability definitions
+- `apps/mobile/src/androidMain/kotlin/.../VoiceQueryActivity.kt` — transparent Activity for voice queries
+- `apps/wearApp/src/main/res/xml/actions.xml` — Wear OS App Actions
+- `apps/wearApp/src/main/kotlin/.../VoiceQueryActivity.kt` — Wear OS voice query handler
+
+#### Backend Endpoint
+
+`POST /api/v1/chat/siri` — public REST endpoint for voice assistant queries.
+
+- Accepts: `{ "query": "...", "source": "siri|google_assistant|...", "clientId?": "...", "projectId?": "..." }`
+- Returns: `{ "response": "...", "taskId": "...", "state": "DONE|PROCESSING|..." }`
+- Creates a task (QUEUED, skip KB indexing), polls up to 25s for completion
+- File: `backend/server/src/main/kotlin/com/jervis/rpc/SiriChatRouting.kt`
+
 ---
 
 ## TTS Service (Piper)
