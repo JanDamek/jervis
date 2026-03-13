@@ -57,22 +57,41 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     func session(_ session: WCSession, didReceive file: WCSessionFile) {
         guard let metadata = file.metadata,
-              let type = metadata["type"] as? String, type == "audio_chunk",
-              let chunkIndex = metadata["chunkIndex"] as? Int,
-              let isLast = metadata["isLast"] as? Bool else { return }
+              let type = metadata["type"] as? String else { return }
 
-        do {
-            let data = try Data(contentsOf: file.fileURL)
-            DispatchQueue.main.async {
-                self.onAudioChunkReceived?(data, chunkIndex, isLast)
+        switch type {
+        case "audio_chunk":
+            guard let chunkIndex = metadata["chunkIndex"] as? Int,
+                  let isLast = metadata["isLast"] as? Bool else { return }
+            do {
+                let data = try Data(contentsOf: file.fileURL)
+                DispatchQueue.main.async {
+                    self.onAudioChunkReceived?(data, chunkIndex, isLast)
+                }
+            } catch {
+                print("[WatchSession] Failed to read audio chunk: \(error)")
             }
-        } catch {
-            print("[WatchSession] Failed to read audio file: \(error)")
+
+        case "voice_command":
+            do {
+                let data = try Data(contentsOf: file.fileURL)
+                DispatchQueue.main.async {
+                    self.onVoiceCommandReceived?(data) { response in
+                        // Send response back to watch via message
+                        self.sendChatResponse(response)
+                    }
+                }
+            } catch {
+                print("[WatchSession] Failed to read voice command: \(error)")
+            }
+
+        default:
+            break
         }
     }
 
     func session(_ session: WCSession, didReceiveMessageData messageData: Data, replyHandler: @escaping (Data) -> Void) {
-        // Voice command from watch — forward audio for STT + chat, return text response
+        // Legacy path — voice command via sendMessageData (small payloads only)
         DispatchQueue.main.async {
             self.onVoiceCommandReceived?(messageData) { response in
                 if let data = response.data(using: .utf8) {

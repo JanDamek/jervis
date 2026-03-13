@@ -86,12 +86,18 @@ struct ChatView: View {
 
     private func toggleListening() {
         if isListening {
-            // Stop listening, send audio for processing
+            // Stop listening, send audio directly to backend
             isListening = false
             isProcessing = true
 
             if let audioData = chatManager.stopListening() {
-                connectivity.sendVoiceCommand(audioData)
+                Task {
+                    let response = await WatchJervisApiClient.shared.sendVoiceCommand(audioData)
+                    await MainActor.run {
+                        isProcessing = false
+                        responseText = response
+                    }
+                }
             }
         } else {
             isListening = true

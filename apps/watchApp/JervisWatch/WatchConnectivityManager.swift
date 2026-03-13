@@ -52,28 +52,29 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     func sendVoiceCommand(_ audioData: Data) {
-        guard let session = session, session.isReachable else {
-            print("[Watch] Phone not reachable for voice command")
+        guard let session = session else {
+            print("[Watch] No WCSession for voice command")
             return
         }
 
-        // For chat, we need immediate response — use sendMessageData
-        session.sendMessageData(
-            audioData,
-            replyHandler: { replyData in
-                if let response = String(data: replyData, encoding: .utf8) {
-                    DispatchQueue.main.async {
-                        self.lastChatResponse = response
-                    }
-                }
-            },
-            errorHandler: { error in
-                print("[Watch] Voice command failed: \(error)")
-                DispatchQueue.main.async {
-                    self.lastChatResponse = "Chyba: \(error.localizedDescription)"
-                }
+        // Use transferFile — sendMessageData has ~65KB limit, audio is larger
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("voice_cmd_\(Int(Date().timeIntervalSince1970)).wav")
+        do {
+            try audioData.write(to: tempURL)
+        } catch {
+            print("[Watch] Failed to write voice command audio: \(error)")
+            DispatchQueue.main.async {
+                self.lastChatResponse = "Chyba: nelze ulozit audio"
             }
-        )
+            return
+        }
+
+        let metadata: [String: Any] = [
+            "type": "voice_command",
+            "size": audioData.count,
+        ]
+        session.transferFile(tempURL, metadata: metadata)
+        print("[Watch] Voice command sent via transferFile (\(audioData.count) bytes)")
     }
 
     // MARK: - WCSessionDelegate

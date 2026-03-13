@@ -97,6 +97,8 @@ class KtorRpcServer(
     private val gitLabClient: com.jervis.service.gitlab.GitLabClient,
     private val reviewLanguageResolver: com.jervis.service.ReviewLanguageResolver,
     private val bugTrackerService: com.jervis.integration.bugtracker.BugTrackerService,
+    private val whisperRestClient: com.jervis.service.meeting.WhisperRestClient,
+    private val whisperProperties: com.jervis.configuration.properties.WhisperProperties,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -120,7 +122,7 @@ class KtorRpcServer(
 
                         routing {
                             // Public API (Siri / Google Assistant voice queries)
-                            installSiriChatApi(taskRepository, taskService)
+                            installSiriChatApi(taskRepository, taskService, whisperRestClient, whisperProperties)
 
                             // Internal REST API modules (Python orchestrator → Kotlin)
                             installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl)

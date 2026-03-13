@@ -1,7 +1,7 @@
 import Foundation
 
-/// Lightweight API client for Siri intents on watchOS.
-/// Falls back to phone relay via WatchConnectivity if direct network is unavailable.
+/// API client for watchOS — handles both text queries (Siri) and audio voice commands (Chat).
+/// Sends directly to backend, no phone relay needed.
 class WatchJervisApiClient {
     static let shared = WatchJervisApiClient()
 
@@ -50,6 +50,60 @@ class WatchJervisApiClient {
 
             return "Jervis zpracoval pozadavek."
         } catch {
+            return "Chyba: \(error.localizedDescription)"
+        }
+    }
+
+    /// Send audio data to backend — STT + chat processing happens server-side.
+    func sendVoiceCommand(_ audioData: Data) async -> String {
+        return await sendAudioForChat(audioData)
+    }
+
+    /// Send audio to backend /api/v1/chat/voice — backend does STT + chat in one call.
+    private func sendAudioForChat(_ audioData: Data) async -> String {
+        guard let url = URL(string: "\(baseURL)/api/v1/chat/voice") else {
+            return "Chyba: neplatna URL"
+        }
+
+        let boundary = UUID().uuidString
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 60 // STT + chat processing can take time
+
+        // Build multipart body
+        var body = Data()
+        // Audio file part
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"voice.wav\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
+        body.append(audioData)
+        body.append("\r\n".data(using: .utf8)!)
+        // Source field
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"source\"\r\n\r\n".data(using: .utf8)!)
+        body.append("watch_chat\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = body
+
+        do {
+            let (data, response) = try await session.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                print("[WatchAPI] Voice endpoint returned \(code)")
+                return "Server neodpovida (\(code))"
+            }
+
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let text = json["response"] as? String {
+                return text
+            }
+
+            return String(data: data, encoding: .utf8) ?? "Neznama odpoved"
+        } catch {
+            print("[WatchAPI] Voice error: \(error)")
             return "Chyba: \(error.localizedDescription)"
         }
     }
