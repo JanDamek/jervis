@@ -173,7 +173,7 @@ async def init_checkpointer() -> MongoDBSaver:
     global _checkpointer, _compiled_graph
 
     client = MongoClient(settings.mongodb_url)
-    _checkpointer = MongoDBSaver(client, db_name="jervis_checkpoints")
+    _checkpointer = MongoDBSaver(client, db_name="jervis")
     _compiled_graph = None  # Force rebuild with new checkpointer
     logger.info("MongoDB checkpointer initialized (persistent state)")
     return _checkpointer

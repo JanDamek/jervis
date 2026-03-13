@@ -559,7 +559,7 @@ async def init_graph_agent_checkpointer() -> None:
     """Initialize MongoDB checkpointer + AgentStore for Graph Agent."""
     global _checkpointer, _compiled_graph
     client = MongoClient(settings.mongodb_url)
-    _checkpointer = MongoDBSaver(client, db_name="jervis_graph_agent")
+    _checkpointer = MongoDBSaver(client, db_name="jervis")
     _compiled_graph = None
 
     # Initialize AgentStore (MongoDB + RAM cache + periodic flush)

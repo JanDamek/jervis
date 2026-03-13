@@ -424,7 +424,7 @@ class ChatHistoryPayload(BaseModel):
 ### 5.3 State persistence
 
 - **Checkpointer**: `MongoDBSaver` z `langgraph-checkpoint-mongodb`
-- **Databáze**: `jervis_checkpoints` (separátní MongoDB database)
+- **Databáze**: `jervis` (shared MongoDB database, collections `checkpoints` + `checkpoint_writes`)
 - Automaticky ukládá stav po každém node
 - Thread ID = `thread-{task_id}-{uuid[:8]}` — link mezi TaskDocument a checkpoint
 - `recursion_limit = 150` (prevence infinite loops)
@@ -2637,7 +2637,7 @@ CorrectionTargetedRequestDto, CorrectionDeleteRequestDto
 
 | Kolekce | Účel | Indexy |
 |---------|------|--------|
-| `jervis_checkpoints.*` | LangGraph graph state | thread_id |
+| `checkpoints` / `checkpoint_writes` | LangGraph graph state | thread_id |
 | `orchestrator_context` | Hierarchické context store | (task_id, scope, scope_key), TTL 30d |
 | `orchestrator_locks` | Distributed lock | _id = "orchestration_slot" |
 | `chat_messages` | Jednotlivé zprávy | (taskId, sequence), taskId, correlationId |
@@ -3909,7 +3909,7 @@ decompose → select_next → dispatch_vertex → select_next → ... → synthe
 
 **Routing:** `route_after_select` → dispatch_vertex (if vertex found) or synthesize (if done). `route_after_dispatch` → always back to select_next.
 
-**Checkpointing:** MongoDB (`jervis_graph_agent` DB) via `MongoDBSaver`. Recursion limit: 200.
+**Checkpointing:** MongoDB (`jervis` DB) via `MongoDBSaver`. Recursion limit: 200.
 
 ### 34.11 Agentic Tool Loop
 
