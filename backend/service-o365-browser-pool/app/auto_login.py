@@ -105,12 +105,20 @@ async def auto_login(
                 return result
             stage = result.stage
 
+        # Wait for page transition if still navigating
+        if stage == LoginStage.NAVIGATING:
+            stage = await _wait_for_stage_change(page, LoginStage.NAVIGATING)
+
         # Step 2: Enter password
         if stage == LoginStage.PASSWORD_ENTRY:
             result = await _enter_password(page, password)
             if result.stage == LoginStage.ERROR:
                 return result
             stage = result.stage
+
+        # Wait for page transition if still navigating
+        if stage == LoginStage.NAVIGATING:
+            stage = await _wait_for_stage_change(page, LoginStage.NAVIGATING)
 
         # Step 3: Handle MFA if required
         if stage == LoginStage.MFA_REQUIRED:
@@ -198,6 +206,25 @@ async def submit_mfa_code(page: Page, code: str) -> LoginResult:
 
 
 # ─── Internal helpers ───
+
+
+async def _wait_for_stage_change(
+    page: Page,
+    current_stage: LoginStage,
+    timeout: int = 15,
+    poll_interval: float = 2,
+) -> LoginStage:
+    """Poll until the login stage changes from current_stage (or timeout)."""
+    elapsed = 0.0
+    while elapsed < timeout:
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
+        stage = await _detect_stage(page)
+        if stage != current_stage:
+            logger.info("Auto-login: stage changed to %s after %.0fs", stage, elapsed)
+            return stage
+    logger.warning("Auto-login: stage still %s after %ds", current_stage, timeout)
+    return current_stage
 
 
 async def _detect_stage(page: Page) -> LoginStage:
@@ -296,7 +323,7 @@ async def _enter_email(page: Page, email: str) -> LoginResult:
     else:
         await page.keyboard.press("Enter")
 
-    await asyncio.sleep(3)
+    await asyncio.sleep(5)
 
     # Detect next stage
     stage = await _detect_stage(page)
@@ -348,7 +375,7 @@ async def _enter_password(page: Page, password: str) -> LoginResult:
     else:
         await page.keyboard.press("Enter")
 
-    await asyncio.sleep(5)
+    await asyncio.sleep(8)
 
     stage = await _detect_stage(page)
     return LoginResult(stage=stage)
