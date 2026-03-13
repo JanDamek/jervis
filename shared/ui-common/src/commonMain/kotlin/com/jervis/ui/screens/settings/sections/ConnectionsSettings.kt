@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,11 +19,14 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.connection.AuthTypeEnum
+import com.jervis.dto.connection.BrowserSessionStatusDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionStateEnum
@@ -53,6 +58,7 @@ import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.util.ConfirmDialog
 import com.jervis.ui.util.RefreshIconButton
 import com.jervis.ui.util.openUrlInBrowser
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -70,6 +76,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf<ConnectionResponseDto?>(null) }
     var showDeleteDialog by remember { mutableStateOf<ConnectionResponseDto?>(null) }
+    var showTeamsLoginDialog by remember { mutableStateOf<ConnectionResponseDto?>(null) }
 
     suspend fun loadConnections() {
         try {
@@ -152,6 +159,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                         }
                                     }
                                 },
+                                onTeamsLogin = { showTeamsLoginDialog = connection },
                                 onEdit = { showEditDialog = connection },
                                 onDelete = { showDeleteDialog = connection },
                             )
@@ -183,8 +191,8 @@ fun ConnectionsSettings(repository: JervisRepository) {
                             }
                             request.provider == com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS &&
                                 request.authType == AuthTypeEnum.NONE -> {
-                                // Browser Session: server auto-inits browser pool, show result
-                                snackbarHostState.showSnackbar("Browser session inicializována. Dokončete přihlášení přes noVNC.")
+                                // Browser Session: server auto-inits browser pool, show login dialog
+                                showTeamsLoginDialog = created
                             }
                             else -> {
                                 snackbarHostState.showSnackbar("Připojení vytvořeno")
@@ -209,9 +217,9 @@ fun ConnectionsSettings(repository: JervisRepository) {
                 scope.launch {
                     try {
                         repository.connections.updateConnection(id, request)
-                        snackbarHostState.showSnackbar("Připojení aktualizováno")
-                        loadConnections()
                         showEditDialog = null
+                        loadConnections()
+                        snackbarHostState.showSnackbar("Připojení aktualizováno")
                     } catch (e: Exception) {
                         snackbarHostState.showSnackbar("Chyba: ${e.message}")
                     }
@@ -240,6 +248,17 @@ fun ConnectionsSettings(repository: JervisRepository) {
             onDismiss = { showDeleteDialog = null },
         )
     }
+
+    showTeamsLoginDialog?.let { connection ->
+        TeamsLoginDialog(
+            connection = connection,
+            repository = repository,
+            onDismiss = {
+                showTeamsLoginDialog = null
+                scope.launch { loadConnections() }
+            },
+        )
+    }
 }
 
 @Composable
@@ -248,6 +267,7 @@ private fun ConnectionItemCard(
     clients: List<ClientDto>,
     onTest: () -> Unit,
     onReauthorize: () -> Unit,
+    onTeamsLogin: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -332,6 +352,13 @@ private fun ConnectionItemCard(
                     Text("Re-auth")
                 }
             }
+            if (connection.provider == com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS &&
+                connection.authType == AuthTypeEnum.NONE
+            ) {
+                JPrimaryButton(onClick = onTeamsLogin) {
+                    Text("Přihlásit k Teams")
+                }
+            }
             JIconButton(
                 onClick = onEdit,
                 icon = Icons.Default.Edit,
@@ -360,6 +387,148 @@ private fun CapabilityChip(capability: ConnectionCapability) {
     SuggestionChip(
         onClick = {},
         label = { Text(label, style = MaterialTheme.typography.labelSmall, color = color) },
+    )
+}
+
+/**
+ * Teams Browser Session login dialog.
+ * Guides user through Microsoft login via remote browser (noVNC).
+ * Polls session status and auto-closes when token is captured.
+ */
+@Composable
+private fun TeamsLoginDialog(
+    connection: ConnectionResponseDto,
+    repository: JervisRepository,
+    onDismiss: () -> Unit,
+) {
+    var status by remember { mutableStateOf<BrowserSessionStatusDto?>(null) }
+    var vncUrl by remember { mutableStateOf<String?>(null) }
+    var vncOpened by remember { mutableStateOf(false) }
+    var tokenCaptured by remember { mutableStateOf(false) }
+
+    // Poll session status every 3 seconds
+    LaunchedEffect(connection.id) {
+        while (true) {
+            try {
+                val s = repository.connections.getBrowserSessionStatus(connection.id)
+                status = s
+                // Remember VNC URL once we get it
+                if (s.vncUrl != null) vncUrl = s.vncUrl
+                // Auto-close only when state is ACTIVE (fresh token captured after login)
+                if (s.state == "ACTIVE" && vncOpened) {
+                    tokenCaptured = true
+                    delay(2000)
+                    onDismiss()
+                    return@LaunchedEffect
+                }
+            } catch (_: Exception) {
+                // Ignore polling errors — keep dialog open
+            }
+            delay(3000)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Přihlášení k Microsoft Teams") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (tokenCaptured) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        JStatusBadge(status = "VALID")
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Přihlášení úspěšné!",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Text(
+                        "Token byl zachycen. Dialog se automaticky zavře.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (vncOpened) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            "Čekám na přihlášení k Microsoft...",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Text(
+                        "Dokončete přihlášení v otevřeném okně prohlížeče. " +
+                            "Po úspěšném přihlášení se dialog automaticky zavře.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text(
+                        "Klikněte na tlačítko pro otevření přihlašovacího okna Microsoft.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "Po přihlášení k Microsoft účtu bude token automaticky zachycen a dialog se zavře.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (status?.state == "EXPIRED") {
+                        Text(
+                            "Předchozí token expiroval — je nutné se znovu přihlásit.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    if (status == null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Připravuji session...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (tokenCaptured) {
+                TextButton(onClick = onDismiss) {
+                    Text("Zavřít")
+                }
+            } else {
+                val url = vncUrl
+                JPrimaryButton(
+                    onClick = {
+                        if (url != null) {
+                            openUrlInBrowser(url)
+                            vncOpened = true
+                        }
+                    },
+                    enabled = url != null,
+                ) {
+                    Text(if (vncOpened) "Otevřít znovu" else "Otevřít přihlášení")
+                }
+            }
+        },
+        dismissButton = {
+            if (!tokenCaptured) {
+                TextButton(onClick = onDismiss) {
+                    Text("Zrušit")
+                }
+            }
+        },
     )
 }
 

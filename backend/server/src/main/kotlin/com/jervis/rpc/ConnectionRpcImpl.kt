@@ -4,6 +4,7 @@ import com.jervis.common.client.ProviderListResourcesRequest
 import com.jervis.common.client.ProviderTestRequest
 import com.jervis.common.types.ConnectionId
 import com.jervis.configuration.ProviderRegistry
+import com.jervis.dto.connection.BrowserSessionStatusDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionStateEnum
@@ -26,6 +27,10 @@ import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -198,6 +203,11 @@ class ConnectionRpcImpl(
             connectionService.findById(ConnectionId.fromString(id))
                 ?: throw IllegalArgumentException("Connection not found: $id")
 
+        // Non-registry providers: test via their specific APIs
+        if (providerRegistry.getDescriptorOrNull(connection.provider) == null) {
+            return testNonRegistryConnection(connection)
+        }
+
         // Attempt proactive token refresh for OAuth2 connections before making API call
         val refreshedConnection = refreshTokenIfNeeded(connection)
 
@@ -237,6 +247,109 @@ class ConnectionRpcImpl(
         }
     }
 
+    /**
+     * Test connections that are not in the ProviderRegistry (Teams, Google, Slack, Discord).
+     * Validates by making a simple API call with the connection's credentials.
+     */
+    private suspend fun testNonRegistryConnection(connection: ConnectionDocument): ConnectionTestResultDto {
+        return try {
+            when (connection.provider) {
+                ProviderEnum.MICROSOFT_TEAMS -> testMicrosoftConnection(connection)
+                ProviderEnum.GOOGLE_WORKSPACE -> testGoogleConnection(connection)
+                ProviderEnum.SLACK -> testSlackConnection(connection)
+                ProviderEnum.DISCORD -> testDiscordConnection(connection)
+                else -> ConnectionTestResultDto(false, "Test pro ${connection.provider} není implementován")
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Test failed for ${connection.name}: ${e.message}" }
+            connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+            ConnectionTestResultDto(false, "Test selhal: ${e.message}")
+        }
+    }
+
+    private suspend fun testMicrosoftConnection(connection: ConnectionDocument): ConnectionTestResultDto {
+        val refreshed = refreshTokenIfNeeded(connection)
+        val token = refreshed.bearerToken
+        if (token.isNullOrBlank()) {
+            // Browser Session: check if O365 Gateway can reach the browser pool
+            val clientId = connection.o365ClientId
+            if (!clientId.isNullOrBlank()) {
+                val response = httpClient.get("$o365BrowserPoolUrl/session/$clientId")
+                return if (response.status.isSuccess()) {
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+                    ConnectionTestResultDto(true, "Browser session aktivní")
+                } else {
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+                    ConnectionTestResultDto(false, "Browser session neaktivní — přihlaste se přes noVNC")
+                }
+            }
+            return ConnectionTestResultDto(false, "Žádný token ani browser session")
+        }
+        // OAuth2: test with /me endpoint
+        val response = httpClient.get("https://graph.microsoft.com/v1.0/me") {
+            header("Authorization", "Bearer $token")
+        }
+        return if (response.status.isSuccess()) {
+            connectionService.save(refreshed.copy(state = ConnectionStateEnum.VALID))
+            ConnectionTestResultDto(true, "Microsoft Graph API OK")
+        } else {
+            connectionService.save(refreshed.copy(state = ConnectionStateEnum.AUTH_EXPIRED))
+            ConnectionTestResultDto(false, "Microsoft Graph API: ${response.status}")
+        }
+    }
+
+    private suspend fun testGoogleConnection(connection: ConnectionDocument): ConnectionTestResultDto {
+        val refreshed = refreshTokenIfNeeded(connection)
+        val token = refreshed.bearerToken
+        if (token.isNullOrBlank()) {
+            return ConnectionTestResultDto(false, "Žádný OAuth2 token")
+        }
+        val response = httpClient.get("https://www.googleapis.com/oauth2/v1/userinfo") {
+            header("Authorization", "Bearer $token")
+        }
+        return if (response.status.isSuccess()) {
+            connectionService.save(refreshed.copy(state = ConnectionStateEnum.VALID))
+            ConnectionTestResultDto(true, "Google API OK")
+        } else {
+            connectionService.save(refreshed.copy(state = ConnectionStateEnum.AUTH_EXPIRED))
+            ConnectionTestResultDto(false, "Google API: ${response.status}")
+        }
+    }
+
+    private suspend fun testSlackConnection(connection: ConnectionDocument): ConnectionTestResultDto {
+        val token = connection.bearerToken
+        if (token.isNullOrBlank()) {
+            return ConnectionTestResultDto(false, "Žádný Slack token")
+        }
+        val response = httpClient.get("https://slack.com/api/auth.test") {
+            header("Authorization", "Bearer $token")
+        }
+        return if (response.status.isSuccess()) {
+            connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+            ConnectionTestResultDto(true, "Slack API OK")
+        } else {
+            connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+            ConnectionTestResultDto(false, "Slack API: ${response.status}")
+        }
+    }
+
+    private suspend fun testDiscordConnection(connection: ConnectionDocument): ConnectionTestResultDto {
+        val token = connection.bearerToken
+        if (token.isNullOrBlank()) {
+            return ConnectionTestResultDto(false, "Žádný Discord token")
+        }
+        val response = httpClient.get("https://discord.com/api/v10/users/@me") {
+            header("Authorization", "Bot $token")
+        }
+        return if (response.status.isSuccess()) {
+            connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+            ConnectionTestResultDto(true, "Discord API OK")
+        } else {
+            connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+            ConnectionTestResultDto(false, "Discord API: ${response.status}")
+        }
+    }
+
     override suspend fun initiateOAuth2(connectionId: String): String {
         connectionService.findById(ConnectionId.fromString(connectionId))
             ?: throw IllegalArgumentException("Connection not found: $connectionId")
@@ -249,6 +362,93 @@ class ConnectionRpcImpl(
         return initBrowserPoolSession(connection)
     }
 
+    override suspend fun getBrowserSessionStatus(connectionId: String): BrowserSessionStatusDto {
+        val connection = connectionService.findById(ConnectionId.fromString(connectionId))
+            ?: throw IllegalArgumentException("Connection not found: $connectionId")
+
+        val clientId = connection.o365ClientId
+            ?: return BrowserSessionStatusDto(
+                state = "ERROR",
+                message = "Připojení nemá nastavené o365ClientId",
+            )
+
+        return try {
+            // Get session status from browser pool
+            val response = httpClient.get("$o365BrowserPoolUrl/session/$clientId")
+            if (!response.status.isSuccess()) {
+                return BrowserSessionStatusDto(
+                    state = "ERROR",
+                    message = "Browser pool nedostupný: ${response.status}",
+                )
+            }
+
+            val json = Json { ignoreUnknownKeys = true }
+            val sessionJson = json.parseToJsonElement(response.bodyAsText()).jsonObject
+            var state = sessionJson["state"]?.jsonPrimitive?.content ?: "ERROR"
+            val hasToken = sessionJson["has_token"]?.jsonPrimitive?.booleanOrNull ?: false
+
+            // Auto re-init session only if EXPIRED (not PENDING_LOGIN — user may be logging in)
+            if (state == "EXPIRED") {
+                try {
+                    val capabilities = connection.capabilities.map { it.name }
+                    val initResponse = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init") {
+                        io.ktor.http.contentType(io.ktor.http.ContentType.Application.Json)
+                        setBody("""{"capabilities": ${capabilities.joinToString(",", "[", "]") { "\"$it\"" }}}""")
+                    }
+                    if (initResponse.status.isSuccess()) {
+                        state = "PENDING_LOGIN"
+                        logger.info { "Auto re-init browser session for $clientId (was EXPIRED)" }
+                    }
+                } catch (e: Exception) {
+                    logger.warn { "Failed to auto re-init session for $clientId: ${e.message}" }
+                }
+            }
+
+            // Update connection state if token was captured
+            if (hasToken && state == "ACTIVE" && connection.state != ConnectionStateEnum.VALID) {
+                connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+            }
+
+            // Generate one-time VNC token if login is needed (not active = needs login/re-login)
+            var vncUrl: String? = null
+            if (state != "ACTIVE") {
+                try {
+                    val tokenResponse = httpClient.post("$o365BrowserPoolUrl/vnc-token/$clientId")
+                    if (tokenResponse.status.isSuccess()) {
+                        val tokenJson = json.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
+                        val vncToken = tokenJson["token"]?.jsonPrimitive?.content
+                        if (vncToken != null) {
+                            vncUrl = "https://jervis-vnc.damek-soft.eu/vnc-login?token=$vncToken"
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.warn { "Failed to generate VNC token for $clientId: ${e.message}" }
+                }
+            }
+
+            val message = when (state) {
+                "PENDING_LOGIN" -> "Čeká na přihlášení — otevřete okno pro Microsoft login"
+                "ACTIVE" -> "Přihlášení úspěšné! Token byl zachycen."
+                "EXPIRED" -> "Token expiroval — je nutné se znovu přihlásit"
+                "ERROR" -> "Chyba browser session"
+                else -> state
+            }
+
+            BrowserSessionStatusDto(
+                state = state,
+                hasToken = hasToken,
+                vncUrl = vncUrl,
+                message = message,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to get browser session status for $clientId" }
+            BrowserSessionStatusDto(
+                state = "ERROR",
+                message = "Chyba komunikace s browser pool: ${e.message}",
+            )
+        }
+    }
+
     /**
      * Initialize browser pool session for Teams Browser Session auth.
      * Calls POST /session/{clientId}/init on the browser pool service.
@@ -259,9 +459,13 @@ class ConnectionRpcImpl(
             ?: throw IllegalArgumentException("Connection ${connection.id} has no o365ClientId")
 
         return try {
-            val response = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init")
+            val capabilities = connection.capabilities.map { it.name }
+            val response = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init") {
+                io.ktor.http.contentType(io.ktor.http.ContentType.Application.Json)
+                setBody("""{"capabilities": ${capabilities.joinToString(",", "[", "]") { "\"$it\"" }}}""")
+            }
             val responseText = response.bodyAsText()
-            logger.info { "Browser pool session init for $clientId: $responseText" }
+            logger.info { "Browser pool session init for $clientId (caps=$capabilities): $responseText" }
 
             connectionService.save(connection.copy(state = ConnectionStateEnum.NEW))
             "Browser session inicializována pro '$clientId'. Dokončete přihlášení přes noVNC."
@@ -282,6 +486,11 @@ class ConnectionRpcImpl(
         // MICROSOFT_TEAMS: list resources directly via O365 Gateway (no ProviderRegistry)
         if (connection.provider == ProviderEnum.MICROSOFT_TEAMS) {
             return listO365Resources(connection, capability)
+        }
+
+        // GOOGLE_WORKSPACE: list resources via Gmail/Calendar API (no ProviderRegistry)
+        if (connection.provider == ProviderEnum.GOOGLE_WORKSPACE) {
+            return listGoogleResources(connection, capability)
         }
 
         // SLACK: list channels via Slack Web API (no ProviderRegistry)
@@ -615,6 +824,90 @@ class ConnectionRpcImpl(
         }
     }
 
+    // ─── Google Workspace (Gmail API + Google Calendar API) ───
+
+    private suspend fun listGoogleResources(
+        connection: ConnectionDocument,
+        capability: ConnectionCapability,
+    ): List<ConnectionResourceDto> {
+        val refreshed = refreshTokenIfNeeded(connection)
+        val accessToken = refreshed.bearerToken
+        if (accessToken.isNullOrBlank()) {
+            logger.warn { "Google OAuth2 connection ${connection.id} has no access token" }
+            return emptyList()
+        }
+
+        return try {
+            when (capability) {
+                ConnectionCapability.EMAIL_READ ->
+                    listGmailLabels(accessToken)
+                ConnectionCapability.EMAIL_SEND ->
+                    emptyList() // Send doesn't need resource selection
+                ConnectionCapability.CALENDAR_READ, ConnectionCapability.CALENDAR_WRITE ->
+                    listGoogleCalendars(accessToken)
+                else -> emptyList()
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to list Google resources for ${connection.id}: ${e.message}" }
+            listOf(
+                ConnectionResourceDto(
+                    id = "__error__",
+                    name = "Nedostupné na tomto účtu",
+                    description = "Chyba: ${e.message?.take(100)}",
+                    capability = capability,
+                ),
+            )
+        }
+    }
+
+    private suspend fun listGmailLabels(accessToken: String): List<ConnectionResourceDto> {
+        val response = httpClient.get("https://gmail.googleapis.com/gmail/v1/users/me/labels") {
+            header("Authorization", "Bearer $accessToken")
+        }
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException("Gmail labels API returned ${response.status}")
+        }
+
+        val body = response.body<GmailLabelsResponse>()
+        // Show only user-visible labels (skip CATEGORY_*, UNREAD, STARRED, etc.)
+        val visibleTypes = setOf("system", "user")
+        return body.labels
+            .filter { it.type in visibleTypes }
+            .filter { label ->
+                // Skip internal system labels that aren't useful as mail folders
+                val id = label.id ?: ""
+                !id.startsWith("CATEGORY_") && id !in setOf("UNREAD", "STARRED", "IMPORTANT", "CHAT", "SPAM", "TRASH")
+            }
+            .sortedWith(compareBy({ it.type != "system" }, { it.name }))
+            .map { label ->
+                ConnectionResourceDto(
+                    id = label.id ?: "",
+                    name = label.name ?: "Label",
+                    description = "Gmail label: ${label.id}",
+                    capability = ConnectionCapability.EMAIL_READ,
+                )
+            }
+    }
+
+    private suspend fun listGoogleCalendars(accessToken: String): List<ConnectionResourceDto> {
+        val response = httpClient.get("https://www.googleapis.com/calendar/v3/users/me/calendarList") {
+            header("Authorization", "Bearer $accessToken")
+        }
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException("Google Calendar API returned ${response.status}")
+        }
+
+        val body = response.body<GoogleCalendarListResponse>()
+        return body.items.map { calendar ->
+            ConnectionResourceDto(
+                id = calendar.id ?: "",
+                name = calendar.summary ?: "Calendar",
+                description = if (calendar.primary == true) "Výchozí kalendář" else calendar.description,
+                capability = ConnectionCapability.CALENDAR_READ,
+            )
+        }
+    }
+
     /**
      * List available Slack channels via Slack Web API.
      * Returns channels as resources with id = channelId.
@@ -792,6 +1085,35 @@ class ConnectionRpcImpl(
         val id: String? = null,
         val name: String? = null,
         val type: Int = 0,
+    )
+
+    // ─── Gmail API DTOs ───
+
+    @kotlinx.serialization.Serializable
+    private data class GmailLabelsResponse(
+        val labels: List<GmailLabelDto> = emptyList(),
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class GmailLabelDto(
+        val id: String? = null,
+        val name: String? = null,
+        val type: String? = null, // "system" or "user"
+    )
+
+    // ─── Google Calendar API DTOs ───
+
+    @kotlinx.serialization.Serializable
+    private data class GoogleCalendarListResponse(
+        val items: List<GoogleCalendarEntryDto> = emptyList(),
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class GoogleCalendarEntryDto(
+        val id: String? = null,
+        val summary: String? = null,
+        val description: String? = null,
+        val primary: Boolean? = null,
     )
 }
 

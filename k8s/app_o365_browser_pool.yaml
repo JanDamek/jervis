@@ -3,6 +3,7 @@
 #
 # Stateful service. Manages Playwright browser instances for extracting
 # O365 Bearer tokens from live web sessions. One context per client.
+# Includes Xvfb + noVNC for interactive login via browser.
 # =============================================================================
 
 # ===== StatefulSet =====
@@ -30,14 +31,19 @@ spec:
           ports:
             - containerPort: 8090
               name: api
+            - containerPort: 6080
+              name: novnc
           volumeMounts:
             - name: browser-profiles
               mountPath: /browser-profiles
           env:
+            # Headed mode — Xvfb provides virtual display, noVNC for user interaction
             - name: O365_POOL_HEADLESS
-              value: "true"
+              value: "false"
             - name: O365_POOL_MAX_CONTEXTS
               value: "10"
+            - name: O365_POOL_NOVNC_ENABLED
+              value: "true"
           resources:
             requests:
               memory: "1Gi"
@@ -83,3 +89,6 @@ spec:
     - name: api
       port: 8090
       targetPort: 8090
+    - name: novnc
+      port: 6080
+      targetPort: 6080

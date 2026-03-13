@@ -2,19 +2,29 @@ FROM mcr.microsoft.com/playwright/python:v1.58.0-noble
 
 WORKDIR /app
 
+# Install Xvfb, x11vnc, noVNC for headed browser mode
+# Allow unsigned repos (Playwright base image GPG issue)
+RUN apt-get update --allow-insecure-repositories || true && \
+    apt-get install -y --no-install-recommends --allow-unauthenticated \
+    xvfb \
+    x11vnc \
+    novnc \
+    websockify \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --ignore-installed -r requirements.txt
 
 COPY app/ app/
+COPY entrypoint.sh /entrypoint.sh
 
 # Create browser profiles directory
-RUN mkdir -p /browser-profiles
-
-# Playwright image already has UID 1000 (pwuser), reuse it
-RUN chown -R 1000:1000 /app /browser-profiles
+RUN mkdir -p /browser-profiles && \
+    chown -R 1000:1000 /app /browser-profiles && \
+    chmod +x /entrypoint.sh
 
 USER 1000
 
-EXPOSE 8090
+EXPOSE 8090 6080
 
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8090"]
+CMD ["/entrypoint.sh"]

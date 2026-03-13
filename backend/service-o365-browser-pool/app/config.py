@@ -24,6 +24,17 @@ class Settings(BaseSettings):
     # noVNC (only used in headed mode)
     novnc_enabled: bool = False
     novnc_port: int = 6080
+    vnc_password: str = ""  # Auto-generated if empty (read from /tmp/vnc_password)
+    vnc_token_ttl: int = 300  # One-time VNC token TTL in seconds (5 min)
+    novnc_external_url: str = "https://jervis-vnc.damek-soft.eu"
+
+    # VLM screen scraping
+    ollama_router_url: str = "http://jervis-ollama-router:11430"
+    openrouter_api_key: str = ""
+    kotlin_server_url: str = "http://jervis-server:5500"
+    scraper_chat_interval: int = 300  # 5 min
+    scraper_email_interval: int = 900  # 15 min
+    scraper_calendar_interval: int = 1800  # 30 min
 
     model_config = {"env_prefix": "O365_POOL_", "env_file": ".env", "extra": "ignore"}
 

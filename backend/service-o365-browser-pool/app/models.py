@@ -31,6 +31,7 @@ class TokenResponse(BaseModel):
 class SessionStatus(BaseModel):
     client_id: str
     state: SessionState
+    has_token: bool = False
     last_activity: str | None = None
     last_token_extract: str | None = None
     novnc_url: str | None = None
@@ -43,6 +44,8 @@ class SessionInitRequest(BaseModel):
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/131.0.0.0 Safari/537.36"
     )
+    # Capabilities from connection — determines which tabs to open
+    capabilities: list[str] = []  # e.g. ["CHAT_READ", "EMAIL_READ", "CALENDAR_READ"]
 
 
 class SessionInitResponse(BaseModel):

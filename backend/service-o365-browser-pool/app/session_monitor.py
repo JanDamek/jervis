@@ -14,7 +14,11 @@ logger = logging.getLogger("o365-browser-pool")
 
 
 class SessionMonitor:
-    """Periodically checks browser sessions for token expiry and liveness."""
+    """Periodically checks browser sessions for token expiry and liveness.
+
+    Before marking a session as EXPIRED, attempts to re-acquire a Graph
+    token from the browser's MSAL cache.
+    """
 
     def __init__(
         self,
@@ -59,6 +63,20 @@ class SessionMonitor:
                 continue
 
             if not self._te.has_valid_token(client_id):
+                # Try to re-acquire token from MSAL cache before expiring
+                context = self._bm.get_context(client_id)
+                if context and context.pages:
+                    acquired = await self._te.acquire_graph_token(
+                        client_id, context.pages[0],
+                    )
+                    if acquired:
+                        logger.info(
+                            "Re-acquired Graph token for %s via MSAL cache",
+                            client_id,
+                        )
+                        self._last_check[client_id] = now
+                        continue
+
                 logger.warning(
                     "Token expired for client %s, marking session EXPIRED",
                     client_id,

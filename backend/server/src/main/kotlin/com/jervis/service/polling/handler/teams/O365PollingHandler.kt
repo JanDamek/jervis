@@ -3,6 +3,7 @@ package com.jervis.service.polling.handler.teams
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.ProjectId
+import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.entity.ClientDocument
@@ -10,6 +11,8 @@ import com.jervis.entity.ProjectDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.teams.TeamsMessageIndexDocument
 import com.jervis.repository.TeamsMessageIndexRepository
+import com.jervis.service.connection.ConnectionService
+import com.jervis.service.oauth2.OAuth2Service
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.PollingStateService
 import com.jervis.service.polling.handler.PollingContext
@@ -18,6 +21,7 @@ import com.jervis.service.polling.handler.ResourceFilter
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.http.isSuccess
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -29,23 +33,22 @@ import java.time.Instant
 private val logger = KotlinLogging.logger {}
 
 /**
- * Polling handler for Microsoft Teams via O365 Gateway.
+ * Polling handler for Microsoft Teams / Microsoft 365.
  *
- * Architecture:
- * - O365 Gateway relays requests to Microsoft Graph API using browser-pool tokens
- * - This handler calls Gateway REST endpoints (not Graph API directly)
- * - Messages are stored as TeamsMessageIndexDocument (NEW state)
- * - TeamsContinuousIndexer picks them up for KB indexing
+ * Dual-mode:
+ * - **OAuth2 connections**: call Microsoft Graph API directly with bearer token
+ * - **Browser Session connections**: call O365 Gateway (which uses browser pool tokens)
  *
- * Routing (same as email):
- * - Client has "all" → everything goes to client level
- * - Project has specific channels → those index to project, rest to client
+ * Messages are stored as TeamsMessageIndexDocument (NEW state).
+ * TeamsContinuousIndexer picks them up for KB indexing.
  */
 @Component
 class O365PollingHandler(
     private val repository: TeamsMessageIndexRepository,
     private val pollingStateService: PollingStateService,
     private val httpClient: HttpClient,
+    private val oauth2Service: OAuth2Service,
+    private val connectionService: ConnectionService,
     @Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
     private val gatewayUrl: String,
 ) : PollingHandler {
@@ -63,13 +66,29 @@ class O365PollingHandler(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {
+        // OAuth2 connections → call Graph API directly with bearer token
+        val isOAuth2 = connectionDocument.authType == AuthTypeEnum.OAUTH2 &&
+            !connectionDocument.bearerToken.isNullOrBlank()
+
+        // Browser Session connections → call O365 Gateway (needs o365ClientId)
         val o365ClientId = connectionDocument.o365ClientId
-        if (o365ClientId.isNullOrBlank()) {
-            logger.warn { "O365 connection '${connectionDocument.name}' has no o365ClientId configured" }
+        if (!isOAuth2 && o365ClientId.isNullOrBlank()) {
+            logger.warn { "O365 connection '${connectionDocument.name}' has no o365ClientId and no OAuth2 token" }
             return PollingResult(errors = 1)
         }
 
-        logger.debug { "O365 Teams polling for connection '${connectionDocument.name}' (clientId=$o365ClientId)" }
+        // For OAuth2, refresh token if needed
+        val accessToken = if (isOAuth2) {
+            refreshOAuth2Token(connectionDocument)
+        } else null
+
+        if (isOAuth2 && accessToken == null) {
+            logger.warn { "OAuth2 token refresh failed for '${connectionDocument.name}'" }
+            return PollingResult(errors = 1)
+        }
+
+        val mode = if (isOAuth2) "OAuth2/GraphAPI" else "Gateway/$o365ClientId"
+        logger.debug { "O365 Teams polling for '${connectionDocument.name}' ($mode)" }
 
         var totalDiscovered = 0
         var totalCreated = 0
@@ -78,7 +97,7 @@ class O365PollingHandler(
 
         // Poll chats (1:1 and group chats)
         try {
-            val chatResult = pollChats(connectionDocument, context, o365ClientId)
+            val chatResult = pollChats(connectionDocument, context, o365ClientId, accessToken)
             totalDiscovered += chatResult.itemsDiscovered
             totalCreated += chatResult.itemsCreated
             totalSkipped += chatResult.itemsSkipped
@@ -90,7 +109,7 @@ class O365PollingHandler(
 
         // Poll team channels
         try {
-            val channelResult = pollChannels(connectionDocument, context, o365ClientId)
+            val channelResult = pollChannels(connectionDocument, context, o365ClientId, accessToken)
             totalDiscovered += channelResult.itemsDiscovered
             totalCreated += channelResult.itemsCreated
             totalSkipped += channelResult.itemsSkipped
@@ -109,14 +128,33 @@ class O365PollingHandler(
     }
 
     /**
+     * Refresh OAuth2 access token if needed. Returns current valid access token.
+     */
+    private suspend fun refreshOAuth2Token(connection: ConnectionDocument): String? {
+        try {
+            oauth2Service.refreshAccessToken(connection)
+        } catch (e: Exception) {
+            logger.warn { "Token refresh failed for ${connection.name}: ${e.message}" }
+        }
+        // Re-read connection to get potentially refreshed token
+        val refreshed = connectionService.findById(connection.id) ?: connection
+        return refreshed.bearerToken?.takeIf { it.isNotBlank() }
+    }
+
+    /**
      * Poll 1:1 and group chats — always at client level (not channel-specific).
      */
     private suspend fun pollChats(
         connection: ConnectionDocument,
         context: PollingContext,
-        o365ClientId: String,
+        o365ClientId: String?,
+        accessToken: String?,
     ): PollingResult {
-        val chats = fetchChats(o365ClientId) ?: return PollingResult(errors = 1)
+        val chats = if (accessToken != null) {
+            fetchChatsGraphApi(accessToken)
+        } else {
+            fetchChats(o365ClientId!!)
+        } ?: return PollingResult(errors = 1)
         if (chats.isEmpty()) return PollingResult()
 
         var discovered = 0
@@ -125,7 +163,11 @@ class O365PollingHandler(
 
         for (chat in chats.take(20)) {
             val chatId = chat.id ?: continue
-            val messages = fetchChatMessages(o365ClientId, chatId) ?: continue
+            val messages = if (accessToken != null) {
+                fetchChatMessagesGraphApi(accessToken, chatId)
+            } else {
+                fetchChatMessages(o365ClientId!!, chatId)
+            } ?: continue
 
             for (msg in messages) {
                 val msgId = msg.id ?: continue
@@ -165,9 +207,14 @@ class O365PollingHandler(
     private suspend fun pollChannels(
         connection: ConnectionDocument,
         context: PollingContext,
-        o365ClientId: String,
+        o365ClientId: String?,
+        accessToken: String?,
     ): PollingResult {
-        val teams = fetchTeams(o365ClientId) ?: return PollingResult(errors = 1)
+        val teams = if (accessToken != null) {
+            fetchTeamsGraphApi(accessToken)
+        } else {
+            fetchTeams(o365ClientId!!)
+        } ?: return PollingResult(errors = 1)
         if (teams.isEmpty()) return PollingResult()
 
         var discovered = 0
@@ -176,7 +223,11 @@ class O365PollingHandler(
 
         for (team in teams) {
             val teamId = team.id ?: continue
-            val channels = fetchChannels(o365ClientId, teamId) ?: continue
+            val channels = if (accessToken != null) {
+                fetchChannelsGraphApi(accessToken, teamId)
+            } else {
+                fetchChannels(o365ClientId!!, teamId)
+            } ?: continue
 
             for (channel in channels) {
                 val channelId = channel.id ?: continue
@@ -188,7 +239,11 @@ class O365PollingHandler(
                 )
                 if (targetClientId == null) continue
 
-                val messages = fetchChannelMessages(o365ClientId, teamId, channelId) ?: continue
+                val messages = if (accessToken != null) {
+                    fetchChannelMessagesGraphApi(accessToken, teamId, channelId)
+                } else {
+                    fetchChannelMessages(o365ClientId!!, teamId, channelId)
+                } ?: continue
 
                 for (msg in messages) {
                     val msgId = msg.id ?: continue
@@ -225,10 +280,6 @@ class O365PollingHandler(
 
     /**
      * Resolve target client/project for a channel.
-     *
-     * Rules (same hierarchy as email/git):
-     * - If project claims this channel in its resources → index to project
-     * - Otherwise → index to client (if client has CHAT_READ enabled or indexAllResources)
      */
     private fun resolveTarget(
         connection: ConnectionDocument,
@@ -256,7 +307,85 @@ class O365PollingHandler(
         return Pair(null, null)
     }
 
-    // -- Gateway REST API calls -----------------------------------------------
+    // -- Graph API direct calls (for OAuth2 connections) -----------------------
+
+    private val graphBaseUrl = "https://graph.microsoft.com/v1.0"
+
+    private suspend fun fetchChatsGraphApi(token: String): List<GatewayChat>? {
+        return try {
+            val response = httpClient.get("$graphBaseUrl/me/chats?\$top=20") {
+                header("Authorization", "Bearer $token")
+            }
+            if (!response.status.isSuccess()) {
+                logger.warn { "Graph API /me/chats returned ${response.status}" }
+                return null
+            }
+            response.body<GraphListResponse<GatewayChat>>().value
+        } catch (e: Exception) {
+            logger.error(e) { "Error fetching chats from Graph API" }
+            null
+        }
+    }
+
+    private suspend fun fetchChatMessagesGraphApi(token: String, chatId: String): List<GatewayMessage>? {
+        return try {
+            val response = httpClient.get("$graphBaseUrl/me/chats/$chatId/messages?\$top=20") {
+                header("Authorization", "Bearer $token")
+            }
+            if (!response.status.isSuccess()) return null
+            response.body<GraphListResponse<GatewayMessage>>().value
+        } catch (e: Exception) {
+            logger.error(e) { "Error fetching chat messages from Graph API" }
+            null
+        }
+    }
+
+    private suspend fun fetchTeamsGraphApi(token: String): List<GatewayTeam>? {
+        return try {
+            val response = httpClient.get("$graphBaseUrl/me/joinedTeams") {
+                header("Authorization", "Bearer $token")
+            }
+            if (!response.status.isSuccess()) return null
+            response.body<GraphListResponse<GatewayTeam>>().value
+        } catch (e: Exception) {
+            logger.error(e) { "Error fetching Teams from Graph API" }
+            null
+        }
+    }
+
+    private suspend fun fetchChannelsGraphApi(token: String, teamId: String): List<GatewayChannel>? {
+        return try {
+            val response = httpClient.get("$graphBaseUrl/teams/$teamId/channels") {
+                header("Authorization", "Bearer $token")
+            }
+            if (!response.status.isSuccess()) return null
+            response.body<GraphListResponse<GatewayChannel>>().value
+        } catch (e: Exception) {
+            logger.error(e) { "Error fetching channels from Graph API" }
+            null
+        }
+    }
+
+    private suspend fun fetchChannelMessagesGraphApi(
+        token: String,
+        teamId: String,
+        channelId: String,
+    ): List<GatewayMessage>? {
+        return try {
+            val response = httpClient.get(
+                "$graphBaseUrl/teams/$teamId/channels/$channelId/messages?\$top=20",
+            ) {
+                header("Authorization", "Bearer $token")
+            }
+            if (!response.status.isSuccess()) return null
+            response.body<GraphListResponse<GatewayMessage>>().value
+        } catch (e: Exception) {
+            logger.error(e) { "Error fetching channel messages from Graph API" }
+            null
+        }
+    }
+
+    // -- Gateway REST API calls (for Browser Session connections) ---------------
 
     private suspend fun fetchChats(clientId: String): List<GatewayChat>? {
         return try {
@@ -331,7 +460,14 @@ class O365PollingHandler(
         }
     }
 
-    // -- Gateway response models (minimal, ignoreUnknownKeys) -----------------
+    // -- Response models (shared between Graph API and Gateway) ----------------
+
+    @Serializable
+    private data class GraphListResponse<T>(
+        val value: List<T> = emptyList(),
+        @kotlinx.serialization.SerialName("@odata.nextLink")
+        val nextLink: String? = null,
+    )
 
     @Serializable
     data class GatewayChat(

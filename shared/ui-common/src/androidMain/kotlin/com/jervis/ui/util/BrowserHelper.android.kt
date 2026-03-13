@@ -2,11 +2,16 @@ package com.jervis.ui.util
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.ui.platform.LocalContext
+import com.jervis.ui.notification.AndroidContextHolder
 
 actual fun openUrlInBrowser(url: String) {
-    // Note: This is a simplified version. In real Android app, you need to pass Context.
-    // For now, this is a placeholder that won't crash compilation.
-    // The actual implementation should use androidx.compose.ui.platform.LocalContext
-    // and call context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    try {
+        val context = AndroidContextHolder.applicationContext
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
 }

@@ -251,6 +251,18 @@ data class ConnectionImportProjectDto(
 )
 
 /**
+ * Browser session status for Teams Browser Session connections.
+ * Used by UI to show login progress dialog.
+ */
+@Serializable
+data class BrowserSessionStatusDto(
+    val state: String, // PENDING_LOGIN, ACTIVE, EXPIRED, ERROR
+    val hasToken: Boolean = false,
+    val vncUrl: String? = null,
+    val message: String? = null,
+)
+
+/**
  * Available resource from a connection for a given capability.
  * Used to populate dropdowns in UI for selecting which resources to index.
  */

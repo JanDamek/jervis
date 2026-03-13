@@ -28,27 +28,37 @@ import mu.KotlinLogging
 private val logger = KotlinLogging.logger {}
 
 /**
- * Raw HTTP calls to Microsoft Graph API using relay Bearer tokens.
+ * Graph API calls routed through browser pool proxy.
  *
- * No Graph SDK dependency – uses Ktor HTTP client directly.
- * All calls go through rate limiter and token service.
+ * All requests go through the Playwright browser in the browser pool pod,
+ * which is required for environments with Conditional Access policies.
+ * The browser pool executes fetch() from within the browser context,
+ * so requests originate from the same IP/device as the login session.
+ *
+ * URL pattern: {browserPoolUrl}/graph/{clientId}/{graphPath}
  */
 class GraphApiService(
     private val httpClient: HttpClient,
     private val tokenService: TokenService,
     private val rateLimiter: GraphRateLimiter,
     private val graphBaseUrl: String = "https://graph.microsoft.com/v1.0",
+    private val browserPoolUrl: String = "http://jervis-o365-browser-pool:8090",
 ) {
+    /**
+     * Build the URL for a Graph API call — routed through browser pool proxy.
+     * The browser pool handles auth internally (captured Bearer token + browser fetch).
+     */
+    private fun proxyUrl(clientId: String, path: String): String {
+        return "$browserPoolUrl/graph/$clientId/$path"
+    }
+
     // -- Teams Chats ----------------------------------------------------------
 
     suspend fun listChats(clientId: String, top: Int = 20): List<GraphChat> {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
         val response = httpClient.get(
-            "$graphBaseUrl/me/chats?\$top=$top&\$orderby=lastMessagePreview/createdDateTime desc"
-        ) {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
+            proxyUrl(clientId, "me/chats?\$top=$top&\$orderby=lastMessagePreview/createdDateTime desc")
+        )
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -57,12 +67,9 @@ class GraphApiService(
 
     suspend fun readChat(clientId: String, chatId: String, top: Int = 20): List<GraphMessage> {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
         val response = httpClient.get(
-            "$graphBaseUrl/me/chats/$chatId/messages?\$top=$top&\$orderby=createdDateTime desc"
-        ) {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
+            proxyUrl(clientId, "me/chats/$chatId/messages?\$top=$top&\$orderby=createdDateTime desc")
+        )
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -76,9 +83,7 @@ class GraphApiService(
         contentType: String = "text",
     ): GraphMessage {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
-        val response = httpClient.post("$graphBaseUrl/me/chats/$chatId/messages") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+        val response = httpClient.post(proxyUrl(clientId, "me/chats/$chatId/messages")) {
             contentType(ContentType.Application.Json)
             setBody(SendMessageRequest(body = GraphMessageBody(contentType = contentType, content = content)))
         }
@@ -92,10 +97,7 @@ class GraphApiService(
 
     suspend fun listTeams(clientId: String): List<GraphTeam> {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
-        val response = httpClient.get("$graphBaseUrl/me/joinedTeams") {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
+        val response = httpClient.get(proxyUrl(clientId, "me/joinedTeams"))
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -104,10 +106,7 @@ class GraphApiService(
 
     suspend fun listChannels(clientId: String, teamId: String): List<GraphChannel> {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
-        val response = httpClient.get("$graphBaseUrl/teams/$teamId/channels") {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
+        val response = httpClient.get(proxyUrl(clientId, "teams/$teamId/channels"))
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -121,12 +120,9 @@ class GraphApiService(
         top: Int = 20,
     ): List<GraphMessage> {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
         val response = httpClient.get(
-            "$graphBaseUrl/teams/$teamId/channels/$channelId/messages?\$top=$top"
-        ) {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
+            proxyUrl(clientId, "teams/$teamId/channels/$channelId/messages?\$top=$top")
+        )
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -140,11 +136,9 @@ class GraphApiService(
         content: String,
     ): GraphMessage {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
         val response = httpClient.post(
-            "$graphBaseUrl/teams/$teamId/channels/$channelId/messages"
+            proxyUrl(clientId, "teams/$teamId/channels/$channelId/messages")
         ) {
-            header(HttpHeaders.Authorization, "Bearer $token")
             contentType(ContentType.Application.Json)
             setBody(SendMessageRequest(body = GraphMessageBody(contentType = "text", content = content)))
         }
@@ -163,13 +157,10 @@ class GraphApiService(
         filter: String? = null,
     ): List<GraphMailMessage> {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
         val filterParam = if (filter != null) "&\$filter=$filter" else ""
         val response = httpClient.get(
-            "$graphBaseUrl/me/mailFolders/$folder/messages?\$top=$top&\$orderby=receivedDateTime desc$filterParam"
-        ) {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
+            proxyUrl(clientId, "me/mailFolders/$folder/messages?\$top=$top&\$orderby=receivedDateTime desc$filterParam")
+        )
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -178,10 +169,7 @@ class GraphApiService(
 
     suspend fun readMail(clientId: String, messageId: String): GraphMailMessage {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
-        val response = httpClient.get("$graphBaseUrl/me/messages/$messageId") {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
+        val response = httpClient.get(proxyUrl(clientId, "me/messages/$messageId"))
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -190,9 +178,7 @@ class GraphApiService(
 
     suspend fun sendMail(clientId: String, request: SendMailRequest) {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
-        val response = httpClient.post("$graphBaseUrl/me/sendMail") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+        val response = httpClient.post(proxyUrl(clientId, "me/sendMail")) {
             contentType(ContentType.Application.Json)
             setBody(request)
         }
@@ -210,16 +196,12 @@ class GraphApiService(
         endDateTime: String? = null,
     ): List<GraphEvent> {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
-        val url = if (startDateTime != null && endDateTime != null) {
-            "$graphBaseUrl/me/calendarView?startDateTime=$startDateTime&endDateTime=$endDateTime&\$top=$top&\$orderby=start/dateTime"
+        val path = if (startDateTime != null && endDateTime != null) {
+            "me/calendarView?startDateTime=$startDateTime&endDateTime=$endDateTime&\$top=$top&\$orderby=start/dateTime"
         } else {
-            "$graphBaseUrl/me/events?\$top=$top&\$orderby=start/dateTime"
+            "me/events?\$top=$top&\$orderby=start/dateTime"
         }
-        val response = httpClient.get(url) {
-            header(HttpHeaders.Authorization, "Bearer $token")
-            header("Prefer", "outlook.timezone=\"UTC\"")
-        }
+        val response = httpClient.get(proxyUrl(clientId, path))
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -228,9 +210,7 @@ class GraphApiService(
 
     suspend fun createEvent(clientId: String, request: CreateEventRequest): GraphEvent {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
-        val response = httpClient.post("$graphBaseUrl/me/events") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+        val response = httpClient.post(proxyUrl(clientId, "me/events")) {
             contentType(ContentType.Application.Json)
             setBody(request)
         }
@@ -248,15 +228,12 @@ class GraphApiService(
         top: Int = 50,
     ): List<GraphDriveItem> {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
-        val url = if (path == "root") {
-            "$graphBaseUrl/me/drive/root/children?\$top=$top"
+        val graphPath = if (path == "root") {
+            "me/drive/root/children?\$top=$top"
         } else {
-            "$graphBaseUrl/me/drive/root:/$path:/children?\$top=$top"
+            "me/drive/root:/$path:/children?\$top=$top"
         }
-        val response = httpClient.get(url) {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
+        val response = httpClient.get(proxyUrl(clientId, graphPath))
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -265,10 +242,7 @@ class GraphApiService(
 
     suspend fun getDriveItem(clientId: String, itemId: String): GraphDriveItem {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
-        val response = httpClient.get("$graphBaseUrl/me/drive/items/$itemId") {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
+        val response = httpClient.get(proxyUrl(clientId, "me/drive/items/$itemId"))
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -277,10 +251,7 @@ class GraphApiService(
 
     suspend fun downloadDriveItem(clientId: String, itemId: String): ByteArray {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
-        val response = httpClient.get("$graphBaseUrl/me/drive/items/$itemId/content") {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
+        val response = httpClient.get(proxyUrl(clientId, "me/drive/items/$itemId/content"))
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -293,12 +264,9 @@ class GraphApiService(
         top: Int = 25,
     ): List<GraphDriveItem> {
         rateLimiter.acquire(clientId)
-        val token = requireToken(clientId)
         val response = httpClient.get(
-            "$graphBaseUrl/me/drive/root/search(q='$query')?\$top=$top"
-        ) {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
+            proxyUrl(clientId, "me/drive/root/search(q='$query')?\$top=$top")
+        )
         if (!response.status.isSuccess()) {
             handleGraphError(clientId, response.status.value)
         }
@@ -306,11 +274,6 @@ class GraphApiService(
     }
 
     // -- helpers --------------------------------------------------------------
-
-    private suspend fun requireToken(clientId: String): String {
-        return tokenService.getToken(clientId)
-            ?: throw IllegalStateException("No valid token for client '$clientId'. Session may need login.")
-    }
 
     private fun handleGraphError(clientId: String, statusCode: Int) {
         when (statusCode) {

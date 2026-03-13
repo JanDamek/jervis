@@ -1,0 +1,113 @@
+"""VNC one-time token authentication manager.
+
+Manages one-time access tokens for noVNC. Each token is consumed on first use
+(when user opens VNC login page), and a new token is required for each access.
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone, timedelta
+
+from app.config import settings
+
+logger = logging.getLogger("o365-browser-pool.vnc-auth")
+
+
+@dataclass
+class VncAccessToken:
+    """One-time VNC access token."""
+    token: str
+    client_id: str
+    created_at: datetime
+    expires_at: datetime
+
+
+class VncAuthManager:
+    """Manages one-time VNC access tokens and active sessions."""
+
+    def __init__(self) -> None:
+        # token_string -> VncAccessToken (pending, not yet consumed)
+        self._tokens: dict[str, VncAccessToken] = {}
+        # session_id -> expiry (active VNC sessions after token consumption)
+        self._sessions: dict[str, datetime] = {}
+
+    def create_token(self, client_id: str) -> str:
+        """Create a one-time VNC access token for a client.
+
+        Returns the token string. Token is valid for vnc_token_ttl seconds.
+        """
+        # Invalidate any previous tokens for this client
+        self._tokens = {
+            k: v for k, v in self._tokens.items()
+            if v.client_id != client_id
+        }
+
+        token = uuid.uuid4().hex
+        now = datetime.now(timezone.utc)
+        self._tokens[token] = VncAccessToken(
+            token=token,
+            client_id=client_id,
+            created_at=now,
+            expires_at=now + timedelta(seconds=settings.vnc_token_ttl),
+        )
+        logger.info("Created VNC token for client %s (expires in %ds)", client_id, settings.vnc_token_ttl)
+        return token
+
+    def validate_and_consume_token(self, token: str) -> str | None:
+        """Validate a one-time token and consume it.
+
+        Returns client_id if valid, None if invalid/expired.
+        Token is removed after validation (one-time use).
+        """
+        access_token = self._tokens.pop(token, None)
+        if access_token is None:
+            logger.warning("VNC token not found or already consumed")
+            return None
+
+        now = datetime.now(timezone.utc)
+        if now > access_token.expires_at:
+            logger.warning("VNC token expired for client %s", access_token.client_id)
+            return None
+
+        logger.info("VNC token consumed for client %s", access_token.client_id)
+        return access_token.client_id
+
+    def create_session(self, ttl_seconds: int = 3600) -> str:
+        """Create a VNC session (cookie-based) after token validation.
+
+        Returns session ID. Session is valid for ttl_seconds (default 1 hour).
+        """
+        session_id = uuid.uuid4().hex
+        self._sessions[session_id] = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+        self._cleanup_expired()
+        logger.info("Created VNC session (ttl=%ds, active=%d)", ttl_seconds, len(self._sessions))
+        return session_id
+
+    def is_session_valid(self, session_id: str) -> bool:
+        """Check if a VNC session is still valid."""
+        expiry = self._sessions.get(session_id)
+        if expiry is None:
+            return False
+        if datetime.now(timezone.utc) > expiry:
+            del self._sessions[session_id]
+            return False
+        return True
+
+    def invalidate_session(self, session_id: str) -> None:
+        """Invalidate a specific VNC session."""
+        self._sessions.pop(session_id, None)
+
+    def _cleanup_expired(self) -> None:
+        """Remove expired tokens and sessions."""
+        now = datetime.now(timezone.utc)
+        self._tokens = {
+            k: v for k, v in self._tokens.items()
+            if v.expires_at > now
+        }
+        self._sessions = {
+            k: v for k, v in self._sessions.items()
+            if v > now
+        }

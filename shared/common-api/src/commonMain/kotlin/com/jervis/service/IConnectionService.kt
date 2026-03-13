@@ -1,5 +1,6 @@
 package com.jervis.service
 
+import com.jervis.dto.connection.BrowserSessionStatusDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResourceDto
@@ -55,4 +56,10 @@ interface IConnectionService {
      * Returns noVNC URL for completing login, or status message.
      */
     suspend fun initBrowserSession(connectionId: String): String
+
+    /**
+     * Get browser session status for a Teams Browser Session connection.
+     * Returns session state, VNC URL with auto-auth, and token status.
+     */
+    suspend fun getBrowserSessionStatus(connectionId: String): BrowserSessionStatusDto
 }
