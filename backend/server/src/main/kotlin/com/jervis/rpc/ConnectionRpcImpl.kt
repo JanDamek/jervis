@@ -24,11 +24,16 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.flow.map
@@ -107,12 +112,18 @@ class ConnectionRpcImpl(
             confluenceRootPageId = request.confluenceRootPageId,
             bitbucketRepoSlug = request.bitbucketRepoSlug,
             gitRemoteUrl = request.gitRemoteUrl,
-            // Auto-derive o365ClientId from connection name for Teams browser session
-            o365ClientId = request.o365ClientId
-                ?: if (provider == ProviderEnum.MICROSOFT_TEAMS) request.name.lowercase().replace(" ", "-") else null,
+            // Use connectionId as o365ClientId for browser pool (unique, not name-based)
+            o365ClientId = request.o365ClientId,
         )
 
-        val created = connectionService.save(connectionDocument)
+        // For Teams browser session without explicit o365ClientId, use the generated connectionId
+        val toSave = if (provider == ProviderEnum.MICROSOFT_TEAMS && connectionDocument.o365ClientId == null) {
+            connectionDocument.copy(o365ClientId = connectionDocument.id.toString())
+        } else {
+            connectionDocument
+        }
+
+        val created = connectionService.save(toSave)
         logger.info { "Created connection: ${created.name} (${created.id}) - provider=$provider, protocol=$protocol, authType=$authType" }
 
         // Auto-init browser pool session for Teams Browser Session auth
@@ -390,11 +401,7 @@ class ConnectionRpcImpl(
             // Auto re-init session only if EXPIRED (not PENDING_LOGIN — user may be logging in)
             if (state == "EXPIRED") {
                 try {
-                    val capabilities = connection.capabilities.map { it.name }
-                    val initResponse = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init") {
-                        io.ktor.http.contentType(io.ktor.http.ContentType.Application.Json)
-                        setBody("""{"capabilities": ${capabilities.joinToString(",", "[", "]") { "\"$it\"" }}}""")
-                    }
+                    val initResponse = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init")
                     if (initResponse.status.isSuccess()) {
                         state = "PENDING_LOGIN"
                         logger.info { "Auto re-init browser session for $clientId (was EXPIRED)" }
@@ -459,13 +466,9 @@ class ConnectionRpcImpl(
             ?: throw IllegalArgumentException("Connection ${connection.id} has no o365ClientId")
 
         return try {
-            val capabilities = connection.capabilities.map { it.name }
-            val response = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init") {
-                io.ktor.http.contentType(io.ktor.http.ContentType.Application.Json)
-                setBody("""{"capabilities": ${capabilities.joinToString(",", "[", "]") { "\"$it\"" }}}""")
-            }
+            val response = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init")
             val responseText = response.bodyAsText()
-            logger.info { "Browser pool session init for $clientId (caps=$capabilities): $responseText" }
+            logger.info { "Browser pool session init for $clientId: $responseText" }
 
             connectionService.save(connection.copy(state = ConnectionStateEnum.NEW))
             "Browser session inicializována pro '$clientId'. Dokončete přihlášení přes noVNC."
@@ -612,18 +615,47 @@ class ConnectionRpcImpl(
             return listO365ResourcesViaGraphApi(connection, capability)
         }
 
-        // For browser pool connections, use O365 Gateway
+        // For browser pool connections, use VLM discovery
         val clientId = connection.o365ClientId
         if (clientId.isNullOrBlank()) {
             logger.warn { "O365 connection ${connection.id} has no o365ClientId" }
             return emptyList()
         }
 
-        if (capability != ConnectionCapability.CHAT_READ && capability != ConnectionCapability.CHAT_SEND) {
-            return emptyList()
-        }
+        return listO365ResourcesViaScraper(clientId, capability)
+    }
 
-        return listO365ChatsViaGateway(clientId, capability)
+    private suspend fun listO365ResourcesViaScraper(
+        clientId: String,
+        capability: ConnectionCapability,
+    ): List<ConnectionResourceDto> {
+        return try {
+            val resp = httpClient.post("$o365BrowserPoolUrl/scrape/$clientId/discover")
+            if (!resp.status.isSuccess()) {
+                logger.warn { "Browser pool discovery failed for $clientId: ${resp.status}" }
+                return emptyList()
+            }
+            val jsonParser = Json { ignoreUnknownKeys = true }
+            val body = jsonParser.parseToJsonElement(resp.bodyAsText()).jsonObject
+            val resources = body["resources"]?.jsonArray ?: return emptyList()
+            resources.mapNotNull { element ->
+                val obj = element.jsonObject
+                val type = obj["type"]?.jsonPrimitive?.content ?: ""
+                val name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                val description = obj["description"]?.jsonPrimitive?.contentOrNull
+                val matches = when (capability) {
+                    ConnectionCapability.CHAT_READ, ConnectionCapability.CHAT_SEND -> type == "chat" || type == "channel"
+                    ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND -> type == "email" || type == "folder"
+                    ConnectionCapability.CALENDAR_READ, ConnectionCapability.CALENDAR_WRITE -> type == "calendar"
+                    else -> false
+                }
+                if (matches) ConnectionResourceDto(id = id, name = name, description = description, capability = capability) else null
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to discover O365 resources via scraper for $clientId" }
+            emptyList()
+        }
     }
 
     private suspend fun listO365ChatsViaGateway(
