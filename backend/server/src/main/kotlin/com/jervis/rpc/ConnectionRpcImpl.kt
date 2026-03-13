@@ -487,10 +487,10 @@ class ConnectionRpcImpl(
         }
     }
 
-    override suspend fun initiateOAuth2(connectionId: String): String {
+    override suspend fun initiateOAuth2(connectionId: String, forceLogin: Boolean): String {
         connectionService.findById(ConnectionId.fromString(connectionId))
             ?: throw IllegalArgumentException("Connection not found: $connectionId")
-        return oauth2Service.getAuthorizationUrl(ConnectionId.fromString(connectionId)).authorizationUrl
+        return oauth2Service.getAuthorizationUrl(ConnectionId.fromString(connectionId), forceLogin).authorizationUrl
     }
 
     override suspend fun initBrowserSession(connectionId: String): String {

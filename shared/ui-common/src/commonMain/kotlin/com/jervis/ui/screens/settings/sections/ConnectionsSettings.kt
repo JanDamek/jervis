@@ -53,12 +53,14 @@ import com.jervis.ui.design.JDestructiveButton
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JIconButton
 import com.jervis.ui.design.JPrimaryButton
+import com.jervis.ui.design.JSecondaryButton
 import com.jervis.ui.design.JSnackbarHost
 import com.jervis.ui.design.JStatusBadge
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.util.ConfirmDialog
 import com.jervis.ui.util.RefreshIconButton
 import com.jervis.ui.util.openUrlInBrowser
+import com.jervis.ui.util.openUrlInPrivateBrowser
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -157,6 +159,17 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                             snackbarHostState.showSnackbar("OAuth2 re-autorizace spuštěna. Dokončete ji v prohlížeči.")
                                         } catch (e: Exception) {
                                             snackbarHostState.showSnackbar("Chyba re-autorizace: ${e.message}")
+                                        }
+                                    }
+                                },
+                                onReauthorizePrivate = {
+                                    scope.launch {
+                                        try {
+                                            val authUrl = repository.connections.initiateOAuth2(connection.id, forceLogin = true)
+                                            openUrlInPrivateBrowser(authUrl)
+                                            snackbarHostState.showSnackbar("Otevřeno v privátním okně. Přihlaste se jako jiný uživatel.")
+                                        } catch (e: Exception) {
+                                            snackbarHostState.showSnackbar("Chyba: ${e.message}")
                                         }
                                     }
                                 },
@@ -268,6 +281,7 @@ private fun ConnectionItemCard(
     clients: List<ClientDto>,
     onTest: () -> Unit,
     onReauthorize: () -> Unit,
+    onReauthorizePrivate: () -> Unit,
     onTeamsLogin: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -383,6 +397,9 @@ private fun ConnectionItemCard(
             if (connection.authType == AuthTypeEnum.OAUTH2) {
                 JPrimaryButton(onClick = onReauthorize) {
                     Text("Re-auth")
+                }
+                JSecondaryButton(onClick = onReauthorizePrivate) {
+                    Text("Jiný účet")
                 }
             }
             if (isBrowserSession && (

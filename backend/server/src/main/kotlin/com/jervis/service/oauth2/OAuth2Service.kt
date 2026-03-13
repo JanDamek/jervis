@@ -52,8 +52,8 @@ class OAuth2Service(
      * Generate authorization URL for OAuth2 flow.
      * Uses global OAuth2 credentials from application.yml.
      */
-    suspend fun getAuthorizationUrl(connectionId: ConnectionId): OAuth2AuthorizationResponse {
-        log.info { "Initiating OAuth2 flow for connectionId=$connectionId" }
+    suspend fun getAuthorizationUrl(connectionId: ConnectionId, forceLogin: Boolean = false): OAuth2AuthorizationResponse {
+        log.info { "Initiating OAuth2 flow for connectionId=$connectionId, forceLogin=$forceLogin" }
 
         val connection =
             connectionService.findById(connectionId)
@@ -77,6 +77,7 @@ class OAuth2Service(
                 clientId = providerConfig.clientId,
                 redirectUri = oauth2Properties.redirectUri,
                 state = state,
+                forceLogin = forceLogin,
             )
 
         log.info { "OAuth2 authorization URL generated for $provider: ${authorizationUrl.take(200)}..." }
@@ -214,6 +215,7 @@ class OAuth2Service(
         clientId: String,
         redirectUri: String,
         state: String,
+        forceLogin: Boolean = false,
     ): String {
         val baseUrl =
             when (provider) {
@@ -229,21 +231,31 @@ class OAuth2Service(
         // Fetch scopes from the provider service
         val scope = fetchScopesFromService(provider)
 
-        // Provider-specific URL building
+        // Provider-specific URL building with optional force-login parameters
         return when (provider) {
             OAuth2Provider.ATLASSIAN ->
                 "$baseUrl?audience=api.atlassian.com&client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code&prompt=consent"
             OAuth2Provider.SLACK ->
                 // Slack V2 OAuth uses user_scope (not scope) for user tokens (xoxp-)
                 "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&user_scope=${scope.encodeURLParameter()}"
-            OAuth2Provider.GMAIL ->
+            OAuth2Provider.GMAIL -> {
                 // Google requires access_type=offline for refresh_token
-                "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code&access_type=offline&prompt=consent"
-            OAuth2Provider.MICROSOFT ->
+                val prompt = if (forceLogin) "consent%20select_account" else "consent"
+                "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code&access_type=offline&prompt=$prompt"
+            }
+            OAuth2Provider.MICROSOFT -> {
                 // Microsoft uses common tenant for multi-tenant apps
+                val promptParam = if (forceLogin) "&prompt=login" else ""
+                "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code$promptParam"
+            }
+            OAuth2Provider.GITLAB -> {
+                val promptParam = if (forceLogin) "&prompt=login" else ""
+                "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code$promptParam"
+            }
+            else -> {
+                // GitHub, Bitbucket — no standard force-login, rely on incognito window
                 "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code"
-            else ->
-                "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code"
+            }
         }
     }
 

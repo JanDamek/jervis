@@ -34,7 +34,7 @@ interface IConnectionService {
         externalId: String,
     ): com.jervis.dto.ProjectDto
 
-    suspend fun initiateOAuth2(connectionId: String): String
+    suspend fun initiateOAuth2(connectionId: String, forceLogin: Boolean = false): String
 
     /**
      * List available resources for a given capability from a connection.

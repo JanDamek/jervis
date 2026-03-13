@@ -9,3 +9,8 @@ actual fun openUrlInBrowser(url: String) {
         UIApplication.sharedApplication.openURL(nsUrl)
     }
 }
+
+actual fun openUrlInPrivateBrowser(url: String) {
+    // iOS: cannot control private mode, fallback to normal browser
+    openUrlInBrowser(url)
+}

@@ -15,3 +15,8 @@ actual fun openUrlInBrowser(url: String) {
         e.printStackTrace()
     }
 }
+
+actual fun openUrlInPrivateBrowser(url: String) {
+    // Android: cannot control incognito mode, fallback to normal browser
+    openUrlInBrowser(url)
+}
