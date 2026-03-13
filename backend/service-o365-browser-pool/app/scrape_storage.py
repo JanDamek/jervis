@@ -29,7 +29,13 @@ class ScrapeStorage:
         self._db: AsyncIOMotorDatabase | None = None
 
     async def start(self) -> None:
-        self._client = AsyncIOMotorClient(settings.mongodb_uri)
+        # Build URI from individual env-var settings (configmap + secret)
+        uri = (
+            f"mongodb://{settings.mongodb_username}:{settings.mongodb_password}"
+            f"@{settings.mongodb_host}:{settings.mongodb_port}"
+            f"/{settings.mongodb_database}?authSource={settings.mongodb_auth_db}"
+        )
+        self._client = AsyncIOMotorClient(uri)
         self._db = self._client[settings.mongodb_database]
 
         # Create indexes
