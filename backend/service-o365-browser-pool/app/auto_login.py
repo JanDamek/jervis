@@ -2,16 +2,20 @@
 
 Automates the Microsoft login flow:
 1. Enter email on login.microsoftonline.com
-2. Enter password
-3. Handle MFA if required (detect type, notify user, wait for code)
-4. Handle "Stay signed in?" prompt
-5. Detect successful login (Teams/Outlook loaded)
+2. Handle "Pick an account" page (select existing account)
+3. Enter password
+4. Handle MFA if required (detect type, notify user, wait for code)
+5. Handle "Stay signed in?" prompt
+6. Handle consent / permissions page
+7. Wait for Teams/Outlook to fully load
+8. Detect successful login (Teams/Outlook loaded)
 
 Supports:
 - Password-only login
 - Password + Authenticator app (number matching or code)
 - Password + SMS code
 - "Use another method" selection
+- Consumer (*.live.com) and business (*.office.com) accounts
 """
 
 from __future__ import annotations
@@ -29,9 +33,12 @@ class LoginStage(str, Enum):
     """Current stage of the login flow."""
     NAVIGATING = "navigating"
     EMAIL_ENTRY = "email_entry"
+    PICK_ACCOUNT = "pick_account"
     PASSWORD_ENTRY = "password_entry"
     MFA_REQUIRED = "mfa_required"
     STAY_SIGNED_IN = "stay_signed_in"
+    CONSENT = "consent"
+    TEAMS_LOADING = "teams_loading"
     LOGGED_IN = "logged_in"
     ERROR = "error"
 
@@ -61,6 +68,23 @@ class LoginResult:
         self.error = error
 
 
+# Domains that indicate successful login
+_LOGGED_IN_DOMAINS = [
+    "teams.microsoft.com/v2",
+    "teams.microsoft.com/_",
+    "teams.live.com",
+    "outlook.office.com",
+    "outlook.office365.com",
+    "outlook.live.com",
+]
+
+# Teams loading indicators (app loaded but still initializing)
+_TEAMS_LOADING_PATTERNS = [
+    "teams.microsoft.com",
+    "teams.live.com",
+]
+
+
 async def auto_login(
     page: Page,
     username: str,
@@ -75,67 +99,343 @@ async def auto_login(
     - ERROR: login failed
     """
     try:
-        # Navigate to login page — use networkidle to wait for redirects
+        # ── FIDO/Passkey bypass ──
+        # Microsoft consumer accounts redirect to login.microsoft.com/consumers/fido/*
+        # which hangs in headless Chromium (no real authenticator hardware).
+        #
+        # Strategy 1: Override navigator.credentials.get to reject immediately
+        # Strategy 2: Intercept FIDO navigation at network level and abort it
+        try:
+            await page.context.add_init_script("""
+                // Override WebAuthn credentials API to force fallback to password
+                if (navigator.credentials) {
+                    const origGet = navigator.credentials.get.bind(navigator.credentials);
+                    navigator.credentials.get = function(options) {
+                        if (options && options.publicKey) {
+                            console.log('[jervis] FIDO credentials.get intercepted — rejecting');
+                            return Promise.reject(new DOMException('No authenticator available', 'NotAllowedError'));
+                        }
+                        return origGet(options);
+                    };
+                    navigator.credentials.create = function(options) {
+                        if (options && options.publicKey) {
+                            console.log('[jervis] FIDO credentials.create intercepted — rejecting');
+                            return Promise.reject(new DOMException('No authenticator available', 'NotAllowedError'));
+                        }
+                        return origGet(options);
+                    };
+                }
+            """)
+            logger.info("Auto-login: FIDO/WebAuthn bypass script injected")
+        except Exception as e:
+            logger.warning("Auto-login: failed to inject FIDO bypass: %s", e)
+
+        # No FIDO route interception — let the page load.
+        # The init script above rejects navigator.credentials.get, which should
+        # trigger the FIDO page's fallback UI.
+
+        # Navigate to login page — use domcontentloaded (networkidle too slow for Teams)
         logger.info("Auto-login: navigating to %s", login_url)
         try:
-            await page.goto(login_url, wait_until="networkidle", timeout=30000)
+            await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
         except Exception:
-            # networkidle can timeout on heavy pages — fallback
-            logger.warning("Auto-login: networkidle timeout, continuing...")
+            logger.warning("Auto-login: navigation timeout, continuing...")
         await asyncio.sleep(3)
 
-        # Wait for Microsoft login page to load
-        stage = await _detect_stage(page)
-        logger.info("Auto-login: initial stage = %s", stage)
+        # Track FIDO retries
+        _fido_retry_count = 0
 
-        # If apparently logged in (from cached URL), wait and verify
-        # Teams may briefly show /v2 URL before redirecting to login
-        if stage == LoginStage.LOGGED_IN:
-            logger.info("Auto-login: LOGGED_IN detected, verifying (wait 5s)...")
-            await asyncio.sleep(5)
+        # Main login loop — handles all stages sequentially
+        max_iterations = 25
+        for iteration in range(max_iterations):
             stage = await _detect_stage(page)
-            logger.info("Auto-login: after verification, stage = %s", stage)
+            logger.info("Auto-login: iteration %d, stage = %s, url = %s",
+                        iteration, stage, page.url[:80])
+
             if stage == LoginStage.LOGGED_IN:
+                # Verify it's not a brief redirect
+                if iteration == 0:
+                    logger.info("Auto-login: LOGGED_IN on first check, verifying...")
+                    await asyncio.sleep(5)
+                    stage = await _detect_stage(page)
+                    if stage == LoginStage.LOGGED_IN:
+                        return LoginResult(stage=LoginStage.LOGGED_IN)
+                    continue
                 return LoginResult(stage=LoginStage.LOGGED_IN)
 
-        # Step 1: Enter email
-        if stage in (LoginStage.EMAIL_ENTRY, LoginStage.NAVIGATING):
-            result = await _enter_email(page, username)
-            if result.stage == LoginStage.ERROR:
-                return result
-            stage = result.stage
+            if stage == LoginStage.TEAMS_LOADING:
+                logger.info("Auto-login: Teams is loading, waiting...")
+                await asyncio.sleep(5)
+                continue
 
-        # Wait for page transition if still navigating
-        if stage == LoginStage.NAVIGATING:
-            stage = await _wait_for_stage_change(page, LoginStage.NAVIGATING)
+            if stage == LoginStage.EMAIL_ENTRY:
+                result = await _enter_email(page, username)
+                if result.stage == LoginStage.ERROR:
+                    return result
+                await asyncio.sleep(3)
+                continue
 
-        # Step 2: Enter password
-        if stage == LoginStage.PASSWORD_ENTRY:
-            result = await _enter_password(page, password)
-            if result.stage == LoginStage.ERROR:
-                return result
-            stage = result.stage
+            if stage == LoginStage.PICK_ACCOUNT:
+                result = await _pick_account(page, username)
+                if result.stage == LoginStage.ERROR:
+                    return result
+                await asyncio.sleep(3)
+                continue
 
-        # Wait for page transition if still navigating
-        if stage == LoginStage.NAVIGATING:
-            stage = await _wait_for_stage_change(page, LoginStage.NAVIGATING)
+            if stage == LoginStage.PASSWORD_ENTRY:
+                result = await _enter_password(page, password)
+                if result.stage == LoginStage.ERROR:
+                    return result
+                await asyncio.sleep(5)
+                continue
 
-        # Step 3: Handle MFA if required
-        if stage == LoginStage.MFA_REQUIRED:
-            return await _detect_mfa_type(page)
+            if stage == LoginStage.MFA_REQUIRED:
+                return await _detect_mfa_type(page)
 
-        # Step 4: Handle "Stay signed in?"
-        if stage == LoginStage.STAY_SIGNED_IN:
-            await _handle_stay_signed_in(page)
-            return LoginResult(stage=LoginStage.LOGGED_IN)
+            if stage == LoginStage.STAY_SIGNED_IN:
+                await _handle_stay_signed_in(page)
+                await asyncio.sleep(5)
+                continue
 
-        # Check if we ended up logged in
-        if stage == LoginStage.LOGGED_IN:
+            if stage == LoginStage.CONSENT:
+                await _handle_consent(page)
+                await asyncio.sleep(3)
+                continue
+
+            if stage == LoginStage.NAVIGATING:
+                current_url = page.url or ""
+
+                # Chrome error page (e.g. from blocked navigation)
+                if "chrome-error://" in current_url:
+                    logger.info("Auto-login: chrome error page, going back...")
+                    try:
+                        await page.go_back(wait_until="domcontentloaded", timeout=10000)
+                    except Exception:
+                        # If go_back fails, navigate to login URL
+                        try:
+                            await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+                        except Exception:
+                            pass
+                    await asyncio.sleep(3)
+                    continue
+
+                # FIDO/passkey page — wait for credentials.get rejection to trigger fallback
+                if "login.microsoft.com" in current_url and "fido" in current_url:
+                    _fido_retry_count += 1
+                    logger.info(
+                        "Auto-login: FIDO page (attempt %d), url=%s",
+                        _fido_retry_count, current_url[:100],
+                    )
+
+                    if _fido_retry_count <= 3:
+                        # Wait for credentials.get rejection to trigger fallback UI
+                        await asyncio.sleep(5)
+
+                        # The FIDO page shows "We couldn't sign you in" with
+                        # "Sign in another way" link (id=idA_PWD_SwitchToCredPicker)
+                        # Click it to get to password/credential picker
+                        switch_link = await _find_element(page, [
+                            '#idA_PWD_SwitchToCredPicker',
+                            'a:has-text("Sign in another way")',
+                            'a:has-text("Jiný způsob přihlášení")',
+                            'a:has-text("Other ways to sign in")',
+                        ])
+                        if switch_link:
+                            logger.info("Auto-login: clicking 'Sign in another way' on FIDO page")
+                            await switch_link.click()
+                            await asyncio.sleep(3)
+
+                            # After clicking, look for password option in credential picker
+                            pwd_option = await _find_element(page, [
+                                '#idA_PWD_SwitchToPassword',
+                                'div[data-value="pwd"]',
+                                'div[data-testid="password"]',
+                                'a:has-text("Use your password")',
+                                'a:has-text("Use a password")',
+                                'a:has-text("Password")',
+                                'a:has-text("Heslo")',
+                                'a:has-text("Použít heslo")',
+                                'div:has-text("Password"):not(:has(div))',
+                                'div:has-text("Enter password"):not(:has(div))',
+                            ])
+                            if pwd_option:
+                                logger.info("Auto-login: clicking password option in credential picker")
+                                await pwd_option.click()
+                                await asyncio.sleep(3)
+                            else:
+                                # Log what credential picker shows
+                                try:
+                                    page_info = await page.evaluate("""
+                                        (() => ({
+                                            text: document.body?.innerText?.substring(0, 500),
+                                            links: Array.from(document.querySelectorAll('a')).map(a => ({
+                                                text: a.textContent?.trim()?.substring(0, 50),
+                                                id: a.id,
+                                                visible: a.offsetWidth > 0 && a.offsetHeight > 0
+                                            })),
+                                            divs: Array.from(document.querySelectorAll('div[data-value]')).map(d => ({
+                                                text: d.textContent?.trim()?.substring(0, 50),
+                                                value: d.getAttribute('data-value'),
+                                                visible: d.offsetWidth > 0 && d.offsetHeight > 0
+                                            })),
+                                        }))()
+                                    """)
+                                    logger.info(
+                                        "Auto-login: credential picker text: %s",
+                                        (page_info.get("text") or "")[:300],
+                                    )
+                                    logger.info(
+                                        "Auto-login: credential picker links: %s",
+                                        page_info.get("links", []),
+                                    )
+                                    logger.info(
+                                        "Auto-login: credential picker divs: %s",
+                                        page_info.get("divs", []),
+                                    )
+                                except Exception:
+                                    pass
+                        else:
+                            # No "Sign in another way" link — try back button
+                            back_btn = await _find_element(page, [
+                                '#idBtn_Back',
+                            ])
+                            if back_btn:
+                                logger.info("Auto-login: clicking Back on FIDO page")
+                                await back_btn.click()
+                                await asyncio.sleep(3)
+                        continue
+
+                    if _fido_retry_count == 4:
+                        # Try going back
+                        logger.info("Auto-login: FIDO stuck, going back...")
+                        try:
+                            await page.go_back(wait_until="domcontentloaded", timeout=10000)
+                            await asyncio.sleep(5)
+                        except Exception:
+                            pass
+                        continue
+
+                    if _fido_retry_count >= 5:
+                        return LoginResult(
+                            stage=LoginStage.ERROR,
+                            error="FIDO/passkey page stuck — cannot bypass. "
+                                  "Disable passkey in Microsoft account security settings, "
+                                  "or use a business account.",
+                        )
+                        continue
+
+                # Stuck on login.live.com/oauth20_authorize with no UI
+                if "login.live.com" in current_url and "oauth20_authorize" in current_url:
+                    _fido_retry_count += 1
+                    logger.info(
+                        "Auto-login: stuck on oauth20_authorize (attempt %d), checking page...",
+                        _fido_retry_count,
+                    )
+
+                    # Debug: log page text to understand what we're looking at
+                    try:
+                        body_text = await page.text_content("body") or ""
+                        logger.info(
+                            "Auto-login: oauth page body (%d chars): %s",
+                            len(body_text), body_text[:300].replace("\n", " "),
+                        )
+                    except Exception:
+                        pass
+
+                    # Maybe the page has login inputs but _detect_stage missed them
+                    # (e.g., login.live.com page with a different layout)
+                    email_input = await _find_element(page, [
+                        'input[type="email"]',
+                        'input[name="loginfmt"]',
+                        'input[name="login"]',
+                    ])
+                    if email_input:
+                        logger.info("Auto-login: found email input on oauth page!")
+                        # This is actually an email entry page
+                        result = await _enter_email(page, username)
+                        await asyncio.sleep(3)
+                        continue
+
+                    password_input = await _find_element(page, [
+                        'input[type="password"]',
+                        'input[name="passwd"]',
+                    ])
+                    if password_input:
+                        logger.info("Auto-login: found password input on oauth page!")
+                        result = await _enter_password(page, password)
+                        await asyncio.sleep(3)
+                        continue
+
+                    if _fido_retry_count >= 6:
+                        # Try clearing cookies and going direct to teams.microsoft.com
+                        await page.context.clear_cookies()
+                        try:
+                            await page.goto(
+                                login_url,
+                                wait_until="domcontentloaded",
+                                timeout=30000,
+                            )
+                        except Exception:
+                            pass
+                        await asyncio.sleep(3)
+                        continue
+
+                    await asyncio.sleep(3)
+                    continue
+
+                # Generic: check for "Sign in another way" on any login page
+                # (passkey error on microsoftonline.com shows this link)
+                if "login" in current_url:
+                    switch_link = await _find_element(page, [
+                        '#idA_PWD_SwitchToCredPicker',
+                        'a:has-text("Sign in another way")',
+                        'a:has-text("Jiný způsob přihlášení")',
+                    ])
+                    if switch_link:
+                        _fido_retry_count += 1
+                        logger.info(
+                            "Auto-login: found 'Sign in another way' on login page "
+                            "(attempt %d)", _fido_retry_count,
+                        )
+                        await switch_link.click()
+                        await asyncio.sleep(3)
+
+                        # Look for password option in credential picker
+                        pwd_option = await _find_element(page, [
+                            '#idA_PWD_SwitchToPassword',
+                            'div[data-value="pwd"]',
+                            'div[data-testid="password"]',
+                            'a:has-text("Use your password")',
+                            'a:has-text("Use a password")',
+                            'a:has-text("Password")',
+                            'a:has-text("Heslo")',
+                            'div:has-text("Password"):not(:has(div))',
+                        ])
+                        if pwd_option:
+                            logger.info("Auto-login: clicking password option")
+                            await pwd_option.click()
+                            await asyncio.sleep(3)
+                        continue
+
+                await asyncio.sleep(3)
+                continue
+
+            if stage == LoginStage.ERROR:
+                error_text = await _get_error_text(page)
+                return LoginResult(
+                    stage=LoginStage.ERROR,
+                    error=f"Login error: {error_text}",
+                )
+
+        # Exhausted iterations — check final state
+        final_stage = await _detect_stage(page)
+        if final_stage == LoginStage.LOGGED_IN:
             return LoginResult(stage=LoginStage.LOGGED_IN)
 
         return LoginResult(
             stage=LoginStage.ERROR,
-            error=f"Unexpected stage after login: {stage}",
+            error=f"Login did not complete after {max_iterations} iterations "
+                  f"(last stage: {final_stage}, url: {page.url[:100]})",
         )
 
     except Exception as e:
@@ -208,40 +508,46 @@ async def submit_mfa_code(page: Page, code: str) -> LoginResult:
 # ─── Internal helpers ───
 
 
-async def _wait_for_stage_change(
-    page: Page,
-    current_stage: LoginStage,
-    timeout: int = 15,
-    poll_interval: float = 2,
-) -> LoginStage:
-    """Poll until the login stage changes from current_stage (or timeout)."""
-    elapsed = 0.0
-    while elapsed < timeout:
-        await asyncio.sleep(poll_interval)
-        elapsed += poll_interval
-        stage = await _detect_stage(page)
-        if stage != current_stage:
-            logger.info("Auto-login: stage changed to %s after %.0fs", stage, elapsed)
-            return stage
-    logger.warning("Auto-login: stage still %s after %ds", current_stage, timeout)
-    return current_stage
-
-
 async def _detect_stage(page: Page) -> LoginStage:
-    """Detect current login stage from page content."""
+    """Detect current login stage from page URL and DOM content."""
     url = page.url or ""
 
-    # Already on Teams/Outlook?
-    if any(d in url for d in [
-        "teams.microsoft.com/v2",
-        "teams.live.com",
-        "outlook.office.com",
-        "outlook.live.com",
-    ]):
-        return LoginStage.LOGGED_IN
+    # On Teams/Outlook domain — check if actually loaded (not just URL redirect)
+    is_on_teams = any(d in url for d in _LOGGED_IN_DOMAINS)
+    is_on_teams_domain = any(p in url for p in _TEAMS_LOADING_PATTERNS) and "login" not in url
+
+    if is_on_teams or is_on_teams_domain:
+        # MUST verify with DOM elements — URL alone is not reliable!
+        # Teams SPA may briefly show /v2/ URL before redirecting to login.
+        app_loaded = await _find_element(page, [
+            '[data-tid="app-layout"]',          # Teams v2 app container
+            '[data-app-section="main"]',         # Teams main section
+            'button[aria-label*="Chat"]',        # Chat nav button
+            'button[aria-label*="Chaty"]',       # Chat nav button (Czech)
+            'button[aria-label*="Teams"]',       # Teams nav button
+            'button[aria-label*="Activity"]',    # Activity nav button
+            'button[aria-label*="Aktivita"]',    # Activity nav button (Czech)
+            'div[data-tid="app-bar"]',           # Navigation bar
+            '#app-bar-container',                # Nav bar container
+        ])
+        if app_loaded:
+            return LoginStage.LOGGED_IN
+        # Teams domain but not loaded yet — could be loading OR about to redirect
+        return LoginStage.TEAMS_LOADING
 
     # Microsoft login page?
     if "login.microsoftonline.com" in url or "login.live.com" in url:
+        # Check for "Pick an account" page (multiple accounts listed)
+        pick_account = await _find_element(page, [
+            '#tilesHolder',                              # Account tiles container
+            'div[data-test-id="accountList"]',           # Account list
+            '.table[role="presentation"]',               # Account table
+            'div:has-text("Pick an account")',
+            'div:has-text("Vyberte účet")',
+        ])
+        if pick_account:
+            return LoginStage.PICK_ACCOUNT
+
         # Check for email input
         email_input = await _find_element(page, [
             'input[type="email"]',
@@ -265,31 +571,87 @@ async def _detect_stage(page: Page) -> LoginStage:
             '#idDiv_SAOTCC_Description',
             '#idDiv_SAOTCAS_Description',
             'div[data-bind*="authenticator"]',
+            '#idRichContext_DisplaySign',              # Number matching
             'div:has-text("Approve sign in request")',
+            'div:has-text("Schvalte žádost")',
         ])
         if mfa_element:
             return LoginStage.MFA_REQUIRED
 
-        # Check for "Stay signed in?"
+        # Check for "Stay signed in?" (text + Yes/No buttons)
+        stay_text = await _find_element(page, [
+            '#KmsiBanner',                             # KMSI banner
+            'div:has-text("Stay signed in?")',
+            'div:has-text("Zůstat přihlášeni?")',
+        ])
         stay_btn = await _find_element(page, [
             'input[id="idSIButton9"]',
             'input[value="Yes"]',
             'button:has-text("Yes")',
+            'button:has-text("Ano")',
         ])
-        if stay_btn:
+        if stay_text or stay_btn:
             return LoginStage.STAY_SIGNED_IN
+
+        # Check for consent / permissions page
+        consent = await _find_element(page, [
+            'input[value="Accept"]',
+            'input[value="Přijmout"]',
+            'button:has-text("Accept")',
+            'button:has-text("Přijmout")',
+            '#idBtn_Accept',
+            'div:has-text("Permissions requested")',
+            'div:has-text("Požadovaná oprávnění")',
+        ])
+        if consent:
+            return LoginStage.CONSENT
 
         # Check for error messages
         error_el = await _find_element(page, [
             '#usernameError',
             '#passwordError',
             '.alert-error',
+            '#service_exception_message',
             'div[role="alert"]',
         ])
         if error_el:
-            text = await error_el.text_content()
-            logger.warn("Login error detected: %s", text)
+            text = await error_el.text_content() or ""
+            # Passkey/FIDO errors are expected — the init script rejects
+            # navigator.credentials.get, causing this error. The page should
+            # have "Sign in another way" link. Don't treat as fatal error.
+            if "passkey" in text.lower() or "fido" in text.lower():
+                logger.info(
+                    "Login: passkey error detected (expected): %s", text[:100],
+                )
+                # Check for "Sign in another way" on the same page
+                switch_link = await _find_element(page, [
+                    '#idA_PWD_SwitchToCredPicker',
+                    'a:has-text("Sign in another way")',
+                    'a:has-text("Jiný způsob přihlášení")',
+                ])
+                if switch_link:
+                    return LoginStage.NAVIGATING  # Will be handled by FIDO handler
+                return LoginStage.NAVIGATING
+            logger.warning("Login error detected: %s", text)
             return LoginStage.ERROR
+
+    # FIDO/passkey page (consumer accounts) — iframe-based, can't interact directly
+    # The login loop handles this: after 3 iterations, it goes back and retries
+    if "login.microsoft.com" in url and "fido" in url:
+        # Check if password input magically appeared (rare, but possible)
+        pwd_input = await _find_element(page, [
+            'input[type="password"]',
+            'input[name="passwd"]',
+        ])
+        if pwd_input:
+            return LoginStage.PASSWORD_ENTRY
+
+        # FIDO page is iframe-based — treat as NAVIGATING (loop will handle bypass)
+        return LoginStage.NAVIGATING
+
+    # On microsoftonline.com but might be a redirect page
+    if "microsoftonline.com" in url or "login.microsoft.com" in url:
+        return LoginStage.NAVIGATING
 
     return LoginStage.NAVIGATING
 
@@ -308,6 +670,9 @@ async def _enter_email(page: Page, email: str) -> LoginResult:
             error="Email input not found on login page",
         )
 
+    # Clear any existing value first
+    await email_input.click()
+    await page.keyboard.press("Control+a")
     await email_input.fill(email)
     await asyncio.sleep(0.5)
 
@@ -323,11 +688,71 @@ async def _enter_email(page: Page, email: str) -> LoginResult:
     else:
         await page.keyboard.press("Enter")
 
-    await asyncio.sleep(5)
+    await asyncio.sleep(3)
 
     # Detect next stage
     stage = await _detect_stage(page)
     return LoginResult(stage=stage)
+
+
+async def _pick_account(page: Page, username: str) -> LoginResult:
+    """Handle 'Pick an account' page — select the matching account or use another."""
+    logger.info("Auto-login: 'Pick an account' page, looking for %s", username)
+
+    # Try to click the account tile matching the username
+    # Account tiles contain the email address as text
+    try:
+        # Try data-test-id first (most reliable)
+        tile = page.locator(f'div[data-test-id="{username}"]').first
+        if await tile.is_visible(timeout=1000):
+            await tile.click()
+            logger.info("Auto-login: clicked account tile for %s", username)
+            await asyncio.sleep(3)
+            return LoginResult(stage=await _detect_stage(page))
+    except Exception:
+        pass
+
+    # Try to find the account by text content
+    try:
+        # Look for small text elements containing the email
+        tiles = page.locator(f'small:has-text("{username}")')
+        count = await tiles.count()
+        if count > 0:
+            await tiles.first.click()
+            logger.info("Auto-login: clicked account small text for %s", username)
+            await asyncio.sleep(3)
+            return LoginResult(stage=await _detect_stage(page))
+    except Exception:
+        pass
+
+    # Try clicking on any list item that contains the username
+    try:
+        account_item = page.locator(f'div[role="listitem"]:has-text("{username}")').first
+        if await account_item.is_visible(timeout=1000):
+            await account_item.click()
+            logger.info("Auto-login: clicked account listitem for %s", username)
+            await asyncio.sleep(3)
+            return LoginResult(stage=await _detect_stage(page))
+    except Exception:
+        pass
+
+    # Fallback: click "Use another account"
+    use_another = await _find_element(page, [
+        '#otherTile',
+        'div[data-test-id="otherTile"]',
+        'div:has-text("Use another account")',
+        'div:has-text("Použít jiný účet")',
+    ])
+    if use_another:
+        await use_another.click()
+        logger.info("Auto-login: clicked 'Use another account'")
+        await asyncio.sleep(3)
+        return LoginResult(stage=await _detect_stage(page))
+
+    return LoginResult(
+        stage=LoginStage.ERROR,
+        error="Could not select account on 'Pick an account' page",
+    )
 
 
 async def _enter_password(page: Page, password: str) -> LoginResult:
@@ -339,22 +764,60 @@ async def _enter_password(page: Page, password: str) -> LoginResult:
         'input[name="passwd"]',
     ])
     if not password_input:
-        # Maybe "Use password" link needs to be clicked first
+        # Maybe on FIDO/passkey page or "Use password" link needs clicking
         use_password = await _find_element(page, [
+            # Standard "Use password" links
             'a:has-text("Use your password instead")',
+            'a:has-text("Use a password instead")',
             'a:has-text("Použít heslo")',
             '#idA_PWD_SwitchToPassword',
             'a[id*="Password"]',
+            # FIDO page alternatives
+            'a:has-text("Other ways to sign in")',
+            'a:has-text("Sign in another way")',
+            'a:has-text("Jiný způsob přihlášení")',
+            'a:has-text("Try another way")',
+            'button:has-text("Other ways to sign in")',
+            'button:has-text("Sign in another way")',
+            # Back button on FIDO page
+            '#backButton',
+            'a[id="back"]',
         ])
         if use_password:
             await use_password.click()
-            await asyncio.sleep(2)
+            logger.info("Auto-login: clicked alternative sign-in method")
+            await asyncio.sleep(3)
+
+            # After clicking "other ways", may need to select "password"
+            password_option = await _find_element(page, [
+                'div:has-text("Password")',
+                'div:has-text("Heslo")',
+                'a:has-text("Password")',
+                'a:has-text("Heslo")',
+                '#idA_PWD_SwitchToPassword',
+                'a:has-text("Use your password instead")',
+                'a:has-text("Use a password instead")',
+            ])
+            if password_option:
+                await password_option.click()
+                logger.info("Auto-login: selected password option")
+                await asyncio.sleep(2)
+
             password_input = await _find_element(page, [
                 'input[type="password"]',
                 'input[name="passwd"]',
             ])
 
     if not password_input:
+        # Debug: log page content to understand the current page
+        try:
+            page_text = await page.text_content("body") or ""
+            logger.warning(
+                "Auto-login: password input not found. URL=%s, body_preview=%s",
+                page.url[:100], page_text[:500].replace("\n", " "),
+            )
+        except Exception:
+            pass
         return LoginResult(
             stage=LoginStage.ERROR,
             error="Password input not found",
@@ -369,13 +832,14 @@ async def _enter_password(page: Page, password: str) -> LoginResult:
         'input[type="submit"]',
         'button:has-text("Sign in")',
         'button:has-text("Přihlásit")',
+        'button:has-text("Přihlásit se")',
     ])
     if sign_in_btn:
         await sign_in_btn.click()
     else:
         await page.keyboard.press("Enter")
 
-    await asyncio.sleep(8)
+    await asyncio.sleep(5)
 
     stage = await _detect_stage(page)
     return LoginResult(stage=stage)
@@ -441,8 +905,8 @@ async def _detect_mfa_type(page: Page) -> LoginResult:
             mfa_message="Potvrďte přihlášení na telefonu",
         )
 
-    # Unknown MFA type — take screenshot for VLM analysis
-    logger.warning("Auto-login: unknown MFA type, taking screenshot for analysis")
+    # Unknown MFA type
+    logger.warning("Auto-login: unknown MFA type")
     return LoginResult(
         stage=LoginStage.MFA_REQUIRED,
         mfa_type=MfaType.UNKNOWN,
@@ -463,9 +927,46 @@ async def _handle_stay_signed_in(page: Page) -> None:
         await yes_btn.click()
         await asyncio.sleep(3)
     else:
-        # Some pages also have "Don't show this again" checkbox
+        # Fallback: press Enter (usually selects the primary button)
         await page.keyboard.press("Enter")
         await asyncio.sleep(3)
+
+
+async def _handle_consent(page: Page) -> None:
+    """Accept consent / permissions page."""
+    logger.info("Auto-login: handling consent/permissions page")
+    accept_btn = await _find_element(page, [
+        '#idBtn_Accept',
+        'input[value="Accept"]',
+        'input[value="Přijmout"]',
+        'button:has-text("Accept")',
+        'button:has-text("Přijmout")',
+        'input[type="submit"]',
+    ])
+    if accept_btn:
+        await accept_btn.click()
+        await asyncio.sleep(3)
+    else:
+        await page.keyboard.press("Enter")
+        await asyncio.sleep(3)
+
+
+async def _get_error_text(page: Page) -> str:
+    """Extract error message text from login page."""
+    for selector in [
+        '#usernameError',
+        '#passwordError',
+        '.alert-error',
+        '#service_exception_message',
+        'div[role="alert"]',
+    ]:
+        try:
+            el = page.locator(selector).first
+            if await el.is_visible(timeout=500):
+                return await el.text_content() or "Unknown error"
+        except Exception:
+            continue
+    return "Unknown error"
 
 
 async def _find_element(page: Page, selectors: list[str]):

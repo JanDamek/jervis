@@ -33,23 +33,20 @@ async def analyze_screenshot(
     image_b64 = base64.b64encode(image_bytes).decode()
     estimated_tokens = 1500 + len(prompt) // 4  # ~1k for image + prompt tokens
 
-    route = await _get_route_decision(
-        capability="visual",
-        estimated_tokens=estimated_tokens,
-        processing_mode=processing_mode,
-        max_tier=max_tier,
-    )
+    # Always use local ollama for VLM — OpenRouter has no free VLM models
+    route = {
+        "target": "local",
+        "model": "qwen3-vl-tool:latest",
+        "api_base": settings.ollama_router_url,
+    }
 
     for attempt, delay in enumerate(_RETRY_DELAYS):
         try:
-            if route["target"] == "openrouter":
-                return await _call_openrouter(route, image_b64, prompt)
-            else:
-                return await _call_ollama(route, image_b64, prompt)
+            return await _call_ollama(route, image_b64, prompt)
         except Exception as e:
             logger.warning(
-                "VLM call attempt %d failed (%s): %s",
-                attempt + 1, route["target"], e,
+                "VLM call attempt %d failed (ollama): %s",
+                attempt + 1, e,
             )
             if attempt < len(_RETRY_DELAYS) - 1:
                 await asyncio.sleep(delay)

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException
 
+from app.browser_manager import BrowserManager
+from app.scrape_storage import ScrapeStorage
 from app.screen_scraper import ScreenScraper
 from app.tab_manager import TabManager, TabType
+from app.teams_crawler import TeamsCrawler
 
 logger = logging.getLogger("o365-browser-pool.scrape")
 
@@ -17,7 +21,114 @@ router = APIRouter(tags=["scrape"])
 def create_scrape_router(
     screen_scraper: ScreenScraper,
     tab_manager: TabManager,
+    teams_crawler: TeamsCrawler | None = None,
+    browser_manager: BrowserManager | None = None,
+    scrape_storage: ScrapeStorage | None = None,
 ) -> APIRouter:
+
+    # ── Teams crawler endpoints (registered FIRST to avoid {tab_type} catch-all) ──
+
+    _crawl_tasks: dict[str, asyncio.Task] = {}
+
+    @router.post("/scrape/{client_id}/crawl")
+    async def trigger_crawl(client_id: str, body: dict | None = None) -> dict:
+        """Start systematic crawl of all Teams chats.
+
+        Body (optional): {"max_chats": 50, "max_scrolls_per_chat": 5}
+
+        Returns immediately — crawl runs in background.
+        Use GET /scrape/{client_id}/crawl to check status.
+        """
+        if not teams_crawler or not browser_manager:
+            raise HTTPException(status_code=501, detail="Crawler not available")
+
+        if client_id in _crawl_tasks and not _crawl_tasks[client_id].done():
+            return {"client_id": client_id, "status": "already_running"}
+
+        # Get the chat tab page
+        page = await tab_manager.get_tab(client_id, TabType.CHAT)
+        if not page:
+            # Fallback: get any page from the browser context
+            context = browser_manager.get_context(client_id)
+            if not context or not context.pages:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No browser page for client '{client_id}'",
+                )
+            page = context.pages[0]
+
+        body = body or {}
+        max_chats = body.get("max_chats", 50)
+        max_scrolls = body.get("max_scrolls_per_chat", 5)
+        connection_id = screen_scraper._connection_ids.get(client_id, client_id)
+
+        async def _run_crawl():
+            try:
+                return await teams_crawler.crawl_all_chats(
+                    page, client_id, connection_id, scrape_storage,
+                    max_chats=max_chats,
+                    max_scrolls_per_chat=max_scrolls,
+                )
+            except Exception as e:
+                logger.error("Crawl task failed for %s: %s", client_id, e)
+
+        task = asyncio.create_task(_run_crawl())
+        _crawl_tasks[client_id] = task
+
+        return {
+            "client_id": client_id,
+            "status": "started",
+            "max_chats": max_chats,
+            "max_scrolls_per_chat": max_scrolls,
+        }
+
+    @router.get("/scrape/{client_id}/crawl")
+    async def get_crawl_status(client_id: str) -> dict:
+        """Get crawl status/result for a client."""
+        task = _crawl_tasks.get(client_id)
+        if not task:
+            return {"client_id": client_id, "status": "not_started"}
+
+        if not task.done():
+            return {"client_id": client_id, "status": "running"}
+
+        # Task completed
+        try:
+            result = task.result()
+            if result:
+                return {
+                    "client_id": client_id,
+                    "status": "completed",
+                    "chats_found": result.chats_found,
+                    "chats_crawled": result.chats_crawled,
+                    "messages_extracted": result.messages_extracted,
+                    "errors": result.errors[:10],
+                }
+        except Exception as e:
+            return {"client_id": client_id, "status": "error", "error": str(e)}
+
+        return {"client_id": client_id, "status": "completed"}
+
+    # ── Screenshot endpoint (registered before {tab_type} catch-all) ──
+
+    @router.get("/scrape/{client_id}/screenshot/{tab_type}")
+    async def get_screenshot_by_tab(client_id: str, tab_type: str):
+        """Get raw screenshot JPEG for debugging. Path: /scrape/{id}/screenshot/{tab}"""
+        from fastapi.responses import Response as RawResponse
+        try:
+            tt = TabType(tab_type)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid tab type: {tab_type}")
+
+        screenshot = await tab_manager.screenshot_tab(client_id, tt)
+        if not screenshot or len(screenshot) < 1000:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Screenshot failed or too small ({len(screenshot) if screenshot else 0} bytes)",
+            )
+        return RawResponse(content=screenshot, media_type="image/jpeg")
+
+    # ── Tab-specific endpoints (catch-all {tab_type}) ──
 
     @router.get("/scrape/{client_id}/{tab_type}")
     async def get_scrape_result(client_id: str, tab_type: str) -> dict:
@@ -92,7 +203,7 @@ def create_scrape_router(
 
     @router.get("/scrape/{client_id}/{tab_type}/screenshot")
     async def get_screenshot(client_id: str, tab_type: str):
-        """Get raw screenshot PNG for debugging."""
+        """Get raw screenshot JPEG for debugging."""
         from fastapi.responses import Response as RawResponse
         try:
             tt = TabType(tab_type)
@@ -100,9 +211,17 @@ def create_scrape_router(
             raise HTTPException(status_code=400, detail=f"Invalid tab type: {tab_type}")
 
         screenshot = await tab_manager.screenshot_tab(client_id, tt)
-        if not screenshot:
-            raise HTTPException(status_code=500, detail="Screenshot failed")
-        return RawResponse(content=screenshot, media_type="image/png")
+        if not screenshot or len(screenshot) < 1000:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Screenshot failed or too small ({len(screenshot) if screenshot else 0} bytes)",
+            )
+        if not screenshot[:2] == b"\xff\xd8":
+            raise HTTPException(
+                status_code=500,
+                detail="Screenshot is not valid JPEG data",
+            )
+        return RawResponse(content=screenshot, media_type="image/jpeg")
 
     @router.post("/scrape/{client_id}/{tab_type}/click")
     async def click_tab(

@@ -10,6 +10,7 @@ Auto-detects consumer (*.live.com) vs business (*.office.com) URLs.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from enum import Enum
 
@@ -28,10 +29,13 @@ class TabType(str, Enum):
 
 # Capability → TabType mapping
 CAPABILITY_TO_TAB: dict[str, TabType] = {
+    "CHAT": TabType.CHAT,
     "CHAT_READ": TabType.CHAT,
     "CHAT_SEND": TabType.CHAT,
+    "EMAIL": TabType.EMAIL,
     "EMAIL_READ": TabType.EMAIL,
     "EMAIL_SEND": TabType.EMAIL,
+    "CALENDAR": TabType.CALENDAR,
     "CALENDAR_READ": TabType.CALENDAR,
     "CALENDAR_WRITE": TabType.CALENDAR,
 }
@@ -94,24 +98,49 @@ class TabManager:
         self._enabled_tabs[client_id] = enabled
         tabs = self._tabs.get(client_id, {})
 
-        # Reuse existing pages
-        existing_pages = list(context.pages)
+        # Reuse existing pages — match them to tabs by current URL first
+        existing_pages = [p for p in context.pages if not p.is_closed()]
+        unassigned_pages = list(existing_pages)
 
+        # Phase 1: Match existing pages to tabs by URL domain
+        # This ensures the logged-in Teams page stays as the chat tab
         for tab_type in enabled:
-            if tab_type in tabs:
-                page = tabs[tab_type]
-                if not page.is_closed():
-                    continue
+            if tab_type in tabs and not tabs[tab_type].is_closed():
+                continue
 
-            # Create new page or reuse existing one
-            if existing_pages:
-                page = existing_pages.pop(0)
+            target_url = tab_urls[tab_type]
+            target_domain = target_url.split("//")[1].split("/")[0]
+
+            # Find an existing page already on the right domain
+            matched_page = None
+            for p in unassigned_pages:
+                page_url = p.url or ""
+                if target_domain in page_url:
+                    matched_page = p
+                    break
+
+            if matched_page:
+                unassigned_pages.remove(matched_page)
+                tabs[tab_type] = matched_page
+                await self._token_extractor.setup_interception(client_id, matched_page)
+                logger.info(
+                    "Tab %s matched existing page at %s for %s",
+                    tab_type.value, matched_page.url[:60], client_id,
+                )
+
+        # Phase 2: Assign remaining tabs — reuse unassigned pages or create new
+        for tab_type in enabled:
+            if tab_type in tabs and not tabs[tab_type].is_closed():
+                continue
+
+            if unassigned_pages:
+                page = unassigned_pages.pop(0)
             else:
                 page = await context.new_page()
 
             await self._token_extractor.setup_interception(client_id, page)
 
-            # Navigate to the correct URL if not already there
+            # Navigate to the correct URL
             current_url = page.url or ""
             target_url = tab_urls[tab_type]
             target_domain = target_url.split("//")[1].split("/")[0]
@@ -123,6 +152,60 @@ class TabManager:
                         wait_until="domcontentloaded",
                         timeout=30000,
                     )
+                    # Check if we ended up on a login page instead
+                    final_url = page.url or ""
+                    is_login_redirect = (
+                        "login.microsoftonline.com" in final_url
+                        or "login.live.com" in final_url
+                    )
+
+                    # Also check for Outlook/Microsoft marketing page
+                    # (consumer accounts without Outlook access land here)
+                    # The marketing page has "Sign in" links and "Buy now" buttons.
+                    # Wait a bit for the page JS to render before checking.
+                    if not is_login_redirect:
+                        await asyncio.sleep(3)
+                        # Check if the page is a marketing/promo page instead of
+                        # the actual Outlook app. Marketing pages don't have the
+                        # Outlook app shell elements.
+                        try:
+                            is_app_loaded = False
+                            app_indicator = page.locator(
+                                # Outlook app indicators
+                                '[data-app-section], '
+                                '#LeftRail, '
+                                'div[role="navigation"], '
+                                '#MainModule, '
+                                'div[data-testid="reading-pane"], '
+                                'div[data-testid="folder-list"]'
+                            ).first
+                            try:
+                                is_app_loaded = await app_indicator.is_visible(timeout=3000)
+                            except Exception:
+                                pass
+
+                            if not is_app_loaded:
+                                # Not an Outlook app page — likely marketing page
+                                is_login_redirect = True
+                                logger.info(
+                                    "Tab %s shows marketing/promo page (no app shell) for %s",
+                                    tab_type.value, client_id,
+                                )
+                        except Exception:
+                            pass
+
+                    if is_login_redirect:
+                        logger.warning(
+                            "Tab %s redirected to login/marketing for %s — "
+                            "service not available with current session",
+                            tab_type.value, client_id,
+                        )
+                        # Close the page — this service is not accessible
+                        try:
+                            await page.close()
+                        except Exception:
+                            pass
+                        continue
                     logger.info(
                         "Tab %s navigated to %s for %s",
                         tab_type.value, target_url, client_id,
@@ -136,7 +219,7 @@ class TabManager:
             tabs[tab_type] = page
 
         # Close any leftover pages (not assigned to a tab)
-        for extra_page in existing_pages:
+        for extra_page in unassigned_pages:
             try:
                 await extra_page.close()
             except Exception:

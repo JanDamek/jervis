@@ -17,8 +17,10 @@ from app.models import (
     SessionState,
     SessionStatus,
 )
+from app.scrape_storage import ScrapeStorage
 from app.screen_scraper import ScreenScraper
-from app.tab_manager import TabManager
+from app.tab_manager import TabManager, TabType
+from app.teams_crawler import TeamsCrawler
 from app.token_extractor import TokenExtractor
 
 logger = logging.getLogger("o365-browser-pool")
@@ -31,11 +33,45 @@ def create_session_router(
     token_extractor: TokenExtractor,
     tab_manager: TabManager,
     screen_scraper: ScreenScraper,
+    teams_crawler: TeamsCrawler | None = None,
+    scrape_storage: ScrapeStorage | None = None,
 ) -> APIRouter:
     # Store capabilities per client (set during init, used during activation)
     _client_capabilities: dict[str, list[str]] = {}
     # Store MFA state per client
     _mfa_state: dict[str, dict] = {}
+    # Track crawl tasks per client
+    _crawl_tasks: dict[str, asyncio.Task] = {}
+
+    async def _trigger_crawl(client_id: str, context) -> None:
+        """Start Teams crawl in background after session activation."""
+        if not teams_crawler or not scrape_storage:
+            return
+        if client_id in _crawl_tasks and not _crawl_tasks[client_id].done():
+            return
+
+        # Get chat tab or first available page
+        page = await tab_manager.get_tab(client_id, TabType.CHAT)
+        if not page and context and context.pages:
+            page = context.pages[0]
+        if not page:
+            return
+
+        connection_id = client_id  # connectionId == clientId for O365
+
+        async def _run():
+            # Wait for scraping to initialize tabs
+            await asyncio.sleep(15)
+            try:
+                return await teams_crawler.crawl_all_chats(
+                    page, client_id, connection_id, scrape_storage,
+                    max_chats=50, max_scrolls_per_chat=3,
+                )
+            except Exception as e:
+                logger.error("Auto-crawl failed for %s: %s", client_id, e)
+
+        _crawl_tasks[client_id] = asyncio.create_task(_run())
+        logger.info("Auto-crawl started for %s", client_id)
 
     @router.get("/session/{client_id}")
     async def get_session(client_id: str) -> SessionStatus:
@@ -89,6 +125,8 @@ def create_session_router(
                 # client_id IS the connectionId (set by Kotlin server)
                 screen_scraper.set_connection_id(client_id, client_id)
                 await screen_scraper.start_scraping(client_id)
+                # Auto-crawl Teams chats
+                await _trigger_crawl(client_id, context)
 
         # Include MFA info in status if awaiting
         mfa_info = _mfa_state.get(client_id)
@@ -162,6 +200,8 @@ def create_session_router(
                 await tab_manager.setup_tabs(client_id, context, caps)
                 screen_scraper.set_connection_id(client_id, client_id)
                 await screen_scraper.start_scraping(client_id)
+                # Auto-crawl Teams chats
+                await _trigger_crawl(client_id, context)
 
                 return SessionInitResponse(
                     client_id=client_id,
@@ -276,6 +316,8 @@ def create_session_router(
             await tab_manager.setup_tabs(client_id, context, caps)
             screen_scraper.set_connection_id(client_id, client_id)
             await screen_scraper.start_scraping(client_id)
+            # Auto-crawl Teams chats
+            await _trigger_crawl(client_id, context)
 
             return SessionInitResponse(
                 client_id=client_id,
