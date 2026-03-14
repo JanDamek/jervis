@@ -12,7 +12,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /app
+# Pre-download Czech male voice model (cs_CZ-jirka-medium)
+COPY download_tts_model.py /tmp/download_tts_model.py
+RUN python3 /tmp/download_tts_model.py && rm /tmp/download_tts_model.py
+
+RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /app /opt/jervis
 
 USER 1000
 

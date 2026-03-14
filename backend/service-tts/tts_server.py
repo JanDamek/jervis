@@ -50,12 +50,14 @@ def _load_voice():
 
     if not model_path.exists():
         print(f"[TTS] Downloading model {TTS_MODEL}...")
-        from piper.download import ensure_voice_exists, find_voice, get_voices
+        from piper.download import ensure_voice_exists, get_voices
 
         data_dirs = [str(model_dir)]
         voices_info = get_voices(model_dir, update_voices=True)
         ensure_voice_exists(TTS_MODEL, data_dirs, model_dir, voices_info)
-        model_path, config_path = find_voice(TTS_MODEL, data_dirs)
+
+    if not model_path.exists():
+        raise RuntimeError(f"TTS model not found after download: {model_path}")
 
     print(f"[TTS] Loading voice from {model_path}")
     _voice = piper.PiperVoice.load(str(model_path), config_path=str(config_path))

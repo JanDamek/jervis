@@ -131,10 +131,11 @@ fun Routing.installVoiceChatApi(
             val tempFile = Files.createTempFile("voice_", ".wav")
             Files.write(tempFile, audio)
 
-            // Watch uses CPU Whisper (K8s internal, always available) with small model for speed.
+            // Watch uses CPU Whisper (K8s internal, always available) with medium model.
+            // vad_filter=false for short recordings (watch audio is typically 2-10s).
             // Falls back to GPU Whisper if CPU service is unavailable.
             val cpuWhisperUrl = "http://jervis-whisper-cpu:8786"
-            val whisperOptions = """{"model":"small","beam_size":1,"vad_filter":true,"language":"cs"}"""
+            val whisperOptions = """{"model":"medium","beam_size":1,"vad_filter":false,"language":"cs"}"""
             val gpuWhisperOptions = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":true,"language":"cs"}"""
             val whisperResult = try {
                 // Try CPU Whisper first (always available, no GPU contention)
@@ -233,7 +234,7 @@ private suspend fun collectChatResponse(
     try {
         val eventFlow = chatService.sendMessage(
             userId = "jan",
-            text = "[Watch/$source] $message",
+            text = "[Watch/$source, odpovez max 2 vety, cisla pis slovne pro TTS] $message",
             activeClientId = DEFAULT_CLIENT_ID,
             activeProjectId = DEFAULT_PROJECT_ID,
             maxOpenRouterTier = "FREE", // Watch needs fast response — allow cloud models

@@ -265,11 +265,13 @@ class BackgroundEngine(
 
     /**
      * Called by the Ollama Router when all GPUs have been idle for >= gpu_idle_notify_after_s
-     * (default 5 min). Immediately creates an idle task if the system is truly idle,
-     * without waiting for the normal 30-min idle review interval.
+     * (default 5 min). Runs 3-phase idle maintenance pipeline:
      *
-     * Creates a single IDLE task (ProcessingMode.IDLE) that is lowest priority —
-     * automatically preempted by any FOREGROUND or BACKGROUND task.
+     * Phase 1 (CPU-only): memory map cleanup, thinking map eviction, LQM drain, affair archival.
+     * Phase 2 (GPU-light): KB dedup for ONE client (NORMAL priority, auto-preempted by CRITICAL).
+     * Phase 3 (deep analysis): existing IDLE task mechanism for code quality, vuln scans etc.
+     *
+     * Each phase checks for incoming FG/BG work before proceeding.
      */
     fun onGpuIdle() {
         if (!backgroundProperties.idleReviewEnabled) {
@@ -278,29 +280,59 @@ class BackgroundEngine(
         }
         scope.launch {
             try {
-                // Check if there are active FOREGROUND or BACKGROUND tasks
-                val activeFgBg = taskRepository.countByProcessingModeAndState(
-                    com.jervis.entity.ProcessingMode.FOREGROUND, TaskStateEnum.QUEUED,
-                ) + taskRepository.countByProcessingModeAndState(
-                    com.jervis.entity.ProcessingMode.BACKGROUND, TaskStateEnum.QUEUED,
-                ) + taskRepository.countByState(TaskStateEnum.PROCESSING)
-
-                if (activeFgBg > 0) {
-                    logger.debug { "GPU_IDLE_NOTIFY: System has $activeFgBg active FG/BG tasks, skipping" }
+                // Abort if system is not truly idle
+                if (hasActiveFgBgWork()) {
+                    logger.debug { "GPU_IDLE_NOTIFY: System busy, skipping" }
                     return@launch
                 }
 
-                // Check if there's already a pending/running IDLE task
-                if (hasExistingIdleTask()) {
-                    logger.debug { "GPU_IDLE_NOTIFY: Idle task already exists, skipping" }
-                    return@launch
+                // Phase 1: CPU-only maintenance (idempotent, <5s)
+                val phase1 = pythonOrchestratorClient.runMaintenance(phase = 1)
+                if (phase1 != null) {
+                    val total = phase1.memRemoved + phase1.thinkingEvicted + phase1.lqmDrained + phase1.affairsArchived
+                    if (total > 0) {
+                        logger.info {
+                            "GPU_IDLE_P1: mem=${phase1.memRemoved} thinking=${phase1.thinkingEvicted} " +
+                                "lqm=${phase1.lqmDrained} affairs=${phase1.affairsArchived}"
+                        }
+                    }
                 }
 
-                createIdleTask()
+                // Abort if work arrived during Phase 1
+                if (hasActiveFgBgWork()) return@launch
+
+                // Phase 2: GPU-light KB maintenance for one client
+                val nextClient = phase1?.nextClientForPhase2
+                if (nextClient != null) {
+                    val phase2 = pythonOrchestratorClient.runMaintenance(phase = 2, clientId = nextClient)
+                    if (phase2 != null && phase2.findings.isNotEmpty()) {
+                        logger.info { "GPU_IDLE_P2: client=$nextClient findings=${phase2.findings.size}" }
+                    }
+                }
+
+                // Abort if work arrived during Phase 2
+                if (hasActiveFgBgWork()) return@launch
+
+                // Phase 3: deep analysis via existing IDLE task mechanism
+                if (!hasExistingIdleTask()) {
+                    createIdleTask()
+                }
             } catch (e: Exception) {
-                logger.error(e) { "GPU_IDLE_NOTIFY: Error creating idle task" }
+                logger.error(e) { "GPU_IDLE_MAINTENANCE: Error in idle pipeline" }
             }
         }
+    }
+
+    /**
+     * Check if there are active FOREGROUND/BACKGROUND tasks (system is not truly idle).
+     */
+    private suspend fun hasActiveFgBgWork(): Boolean {
+        val count = taskRepository.countByProcessingModeAndState(
+            com.jervis.entity.ProcessingMode.FOREGROUND, TaskStateEnum.QUEUED,
+        ) + taskRepository.countByProcessingModeAndState(
+            com.jervis.entity.ProcessingMode.BACKGROUND, TaskStateEnum.QUEUED,
+        ) + taskRepository.countByState(TaskStateEnum.PROCESSING)
+        return count > 0
     }
 
     /**

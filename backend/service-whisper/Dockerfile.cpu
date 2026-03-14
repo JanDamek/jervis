@@ -19,10 +19,11 @@ RUN pip3 install --no-cache-dir \
 
 WORKDIR /opt/jervis/whisper
 
-# Pre-download CPU models (tiny/base/small — no large-v3 to keep image small)
+# Pre-download CPU models (tiny/base/small/medium — no large-v3 to keep image small)
 RUN python3 -c "from faster_whisper.utils import download_model; download_model('tiny')"
 RUN python3 -c "from faster_whisper.utils import download_model; download_model('base')"
 RUN python3 -c "from faster_whisper.utils import download_model; download_model('small')"
+RUN python3 -c "from faster_whisper.utils import download_model; download_model('medium')"
 
 COPY backend/service-whisper/whisper_runner.py /opt/jervis/whisper/whisper_runner.py
 COPY backend/service-whisper/whisper_rest_server.py /opt/jervis/whisper/whisper_rest_server.py

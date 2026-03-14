@@ -57,14 +57,14 @@ spec:
             - name: WHISPER_COMPUTE_TYPE
               value: "int8"
             - name: WHISPER_DEFAULT_MODEL
-              value: "small"
+              value: "medium"
           resources:
             requests:
-              cpu: "500m"
-              memory: "1Gi"
-            limits:
-              cpu: "2"
+              cpu: "1"
               memory: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "4Gi"
           readinessProbe:
             httpGet:
               path: /health

@@ -853,7 +853,7 @@ class AgentStore:
         # Skip hierarchy/root vertices — not useful in archive
         indexable_types = ("task_ref", "request", "incoming")
         try:
-            if not self._archive_coll:
+            if self._archive_coll is None:
                 coll = await self._ensure_collection()
                 self._archive_coll = coll.database["master_map_archive"]
 
@@ -1005,7 +1005,7 @@ class AgentStore:
         """
         if not client_id:
             return []
-        if not self._archive_coll:
+        if self._archive_coll is None:
             coll = await self._ensure_collection()
             self._archive_coll = coll.database["master_map_archive"]
 
@@ -1029,7 +1029,7 @@ class AgentStore:
     # --- Maintenance cycles (per-client progress tracking) ---
 
     async def _ensure_maintenance_coll(self) -> AsyncIOMotorCollection:
-        if not self._maintenance_coll:
+        if self._maintenance_coll is None:
             coll = await self._ensure_collection()
             self._maintenance_coll = coll.database["maintenance_cycles"]
         return self._maintenance_coll

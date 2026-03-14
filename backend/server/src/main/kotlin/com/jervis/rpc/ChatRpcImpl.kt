@@ -597,6 +597,13 @@ class ChatRpcImpl(
 
         return type to metadata
     }
+    override fun streamVoiceChat(
+        audioChunks: kotlinx.coroutines.flow.Flow<com.jervis.dto.VoiceAudioChunk>,
+    ): kotlinx.coroutines.flow.Flow<com.jervis.dto.VoiceChatEvent> {
+        return kotlinx.coroutines.flow.flow {
+            emit(com.jervis.dto.VoiceChatEvent(type = com.jervis.dto.VoiceChatEventType.ERROR, text = "Voice chat not yet implemented via kRPC"))
+        }
+    }
 }
 
 /** Convert ChatMessageDocument to ChatMessageDto with graph enrichment. */

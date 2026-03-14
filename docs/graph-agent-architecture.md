@@ -29,6 +29,20 @@ are GC'd when they have no remaining data descendants. Content is indexed to KB 
 
 **Search cascade:** RAM → MongoDB archive → KB (with "vzpomíná..." indicator in UI during Tier 2-3).
 
+### 3-Phase Idle GPU Maintenance Pipeline
+
+Triggered by Ollama Router when GPU idle ≥5min → `POST /internal/gpu-idle` → `BackgroundEngine.onGpuIdle()`:
+
+| Phase | Type | Duration | What |
+|-------|------|----------|------|
+| 1 | CPU-only | <5s | Memory map cleanup, thinking map eviction, LQM drain, affair archival |
+| 2 | GPU-light | 30s-2min | KB dedup for ONE client (NORMAL priority, auto-preempted) |
+| 3 | Deep analysis | 10-30min | Existing IDLE task (code quality, vuln scan, daily report) |
+
+Each phase checks for incoming FG/BG work before proceeding. Phase 2 uses `maintenance_cycles`
+MongoDB collection to track per-client progress (round-robin, oldest first).
+Endpoint: `POST /maintenance/run?phase=1|2&client_id=X`
+
 ### Transient Error Retry
 
 Failed vertices with transient errors (rate limit 429, 503, timeout, connection errors) are
