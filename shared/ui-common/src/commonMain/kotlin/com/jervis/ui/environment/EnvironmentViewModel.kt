@@ -5,6 +5,7 @@ import com.jervis.dto.environment.EnvironmentStateEnum
 import com.jervis.dto.environment.EnvironmentStatusDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,7 +27,11 @@ class EnvironmentViewModel(
     private val selectedClientId: StateFlow<String?>,
     private val selectedProjectId: StateFlow<String?>,
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + CoroutineExceptionHandler { _, e ->
+        if (e !is CancellationException) {
+            println("EnvironmentViewModel: uncaught exception: ${e::class.simpleName}: ${e.message}")
+        }
+    })
 
     private val _environments = MutableStateFlow<List<EnvironmentDto>>(emptyList())
     val environments: StateFlow<List<EnvironmentDto>> = _environments.asStateFlow()

@@ -16,6 +16,7 @@ struct PulseEffectModifier: ViewModifier {
 struct ChatView: View {
     @ObservedObject var chatManager: WatchChatManager
     @ObservedObject var connectivity: WatchConnectivityManager
+    var autoStart: Bool = false
     var onDismiss: () -> Void
 
     @State private var isListening = false
@@ -25,21 +26,33 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 12) {
             if let response = responseText {
+                // Response received — show text + play TTS
+                Spacer()
+
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundColor(.green)
+
                 ScrollView {
                     Text(response)
-                        .font(.body)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
                         .padding(.horizontal, 4)
                 }
-                .frame(maxHeight: .infinity)
+
+                Spacer()
 
                 HStack(spacing: 16) {
+                    // Ask again
                     Button(action: { responseText = nil }) {
                         Image(systemName: "mic.circle.fill")
                             .font(.system(size: 30))
+                            .foregroundColor(.blue)
                     }
                     .buttonStyle(.plain)
-                    .tint(.blue)
 
+                    // Close
                     Button(action: onDismiss) {
                         Image(systemName: "xmark.circle")
                             .font(.system(size: 30))
@@ -48,11 +61,15 @@ struct ChatView: View {
                     .buttonStyle(.plain)
                 }
             } else if isProcessing {
+                Spacer()
+
                 ProgressView()
                     .scaleEffect(1.5)
-                Text("Zpracovavam...")
+                Text("Cekam na odpoved od JERVISe...")
                     .font(.caption)
                     .foregroundColor(.secondary)
+
+                Spacer()
             } else {
                 Spacer()
 
@@ -76,28 +93,39 @@ struct ChatView: View {
         }
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)
-        .onReceive(connectivity.$lastChatResponse) { response in
-            if let response = response {
-                isProcessing = false
-                responseText = response
+        .onAppear {
+            if autoStart && !isListening && !isProcessing {
+                isListening = true
+                chatManager.startListening()
             }
         }
     }
 
     private func toggleListening() {
         if isListening {
-            // Stop listening, send audio directly to backend
             isListening = false
             isProcessing = true
 
             if let audioData = chatManager.stopListening() {
                 Task {
-                    let response = await WatchJervisApiClient.shared.sendVoiceCommand(audioData)
+                    let info = ProcessInfo.processInfo
+                    info.performExpiringActivity(withReason: "Sending voice to Jervis") { expired in
+                        if expired { return }
+                    }
+                    let result = await WatchJervisApiClient.shared.sendVoiceCommand(audioData)
                     await MainActor.run {
                         isProcessing = false
-                        responseText = response
+                        responseText = result.text
+
+                        // Play TTS audio if available
+                        if let ttsData = result.ttsAudioData {
+                            WatchJervisApiClient.shared.playTtsAudio(ttsData)
+                        }
                     }
                 }
+            } else {
+                isProcessing = false
+                responseText = "Zadna nahravka"
             }
         } else {
             isListening = true

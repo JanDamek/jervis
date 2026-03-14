@@ -125,8 +125,9 @@ class KtorRpcServer(
                         }
 
                         routing {
-                            // Public API (Siri / Google Assistant voice queries)
-                            installSiriChatApi(taskRepository, taskService, whisperRestClient, whisperProperties)
+                            // Public API (Watch / voice queries + recording)
+                            installVoiceChatApi(taskRepository, taskService, whisperRestClient, whisperProperties, chatService)
+                            installWatchMeetingApi(meetingRpcImpl)
 
                             // Internal REST API modules (Python orchestrator → Kotlin)
                             installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl)

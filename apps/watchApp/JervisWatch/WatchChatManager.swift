@@ -39,6 +39,7 @@ class WatchChatManager: ObservableObject {
     func stopListening() -> Data? {
         recorder?.stop()
         isListening = false
+        try? AVAudioSession.sharedInstance().setActive(false)
 
         guard let url = recordingURL else { return nil }
         defer {

@@ -20,9 +20,9 @@ class TaskGraphRpcImpl(
     private val pythonClient: PythonOrchestratorClient,
 ) : ITaskGraphService {
 
-    override suspend fun getGraph(taskId: String): TaskGraphDto? {
+    override suspend fun getGraph(taskId: String, clientId: String?): TaskGraphDto? {
         return try {
-            val json = pythonClient.getTaskGraph(taskId) ?: return null
+            val json = pythonClient.getTaskGraph(taskId, clientId) ?: return null
             lenientJson.decodeFromString<TaskGraphDto>(json)
         } catch (e: Exception) {
             logger.warn(e) { "Failed to fetch task graph for taskId=$taskId" }

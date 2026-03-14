@@ -89,11 +89,16 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Whisper REST client: `backend/server/.../service/meeting/WhisperRestClient.kt`
 - TTS service: `backend/service-tts/` (Piper TTS FastAPI, CPU-only), deploy: `k8s/build_tts.sh`
 - TTS client: `shared/ui-common/.../audio/TtsClient.kt` (POST /tts, /tts/stream)
-- watchOS app: `apps/watchApp/` (SwiftUI, WatchConnectivity → iPhone WatchSessionManager → RecordingUploadService)
+- watchOS app: `apps/watchApp/` (SwiftUI, embedded as target in `apps/iosApp/iosApp.xcodeproj`, WatchConnectivity → iPhone WatchRecordingRelay → REST API)
 - Wear OS app: `apps/wearApp/` (Compose for Wear OS, DataLayer API → phone → RecordingUploadService)
 - Siri intents (iOS): `apps/iosApp/iosApp/JervisIntents.swift` (AskJervisIntent, StartRecordingIntent, JervisShortcutsProvider)
 - Siri intents (watchOS): `apps/watchApp/JervisWatch/JervisIntents.swift` (AskJervisIntent, StartWatchChatIntent, StartWatchRecordingIntent)
 - Siri API client: `apps/iosApp/iosApp/JervisApiClient.swift`, `apps/watchApp/JervisWatch/WatchJervisApiClient.swift`
+- Watch recording relay: `apps/iosApp/iosApp/WatchRecordingRelay.swift` (iPhone receives watch audio via WatchConnectivity, uploads to server REST)
+- Voice chat endpoint: `backend/server/.../rpc/VoiceChatRouting.kt` (POST /api/v1/chat/voice — Whisper STT → orchestrator chat → TTS)
+- Watch meeting REST: `backend/server/.../rpc/WatchMeetingRouting.kt` (POST /api/v1/meeting/start|chunk|stop — ad-hoc recording from watch)
+- CPU Whisper: `backend/service-whisper/Dockerfile.cpu` (K8s pod, always available, model=small, fallback from GPU)
+- Watch complications: `apps/watchApp/JervisComplication/` (WidgetKit — app launcher, recording, chat shortcuts on watch face)
 - Google Assistant (Android): `apps/mobile/src/androidMain/res/xml/actions.xml`, `apps/mobile/src/androidMain/kotlin/.../VoiceQueryActivity.kt`
 - Google Assistant (Wear OS): `apps/wearApp/src/main/res/xml/actions.xml`, `apps/wearApp/src/main/kotlin/.../VoiceQueryActivity.kt`
 - Siri/Assistant backend: `backend/server/src/main/kotlin/com/jervis/rpc/SiriChatRouting.kt` (POST /api/v1/chat/siri)
@@ -120,6 +125,9 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - VLM image service: `backend/service-knowledgebase/app/services/image_service.py` (qwen3-vl-tool, ChatOllama)
 - Text extraction endpoint: `backend/service-knowledgebase/app/services/knowledge_service.py` (extract_text_only — DocumentExtractor/VLM without RAG)
 - Agent (unified): `backend/service-orchestrator/app/agent/` (models.py, graph.py, decomposer.py, gemini_decomposer.py, validation.py, langgraph_runner.py, tool_sets.py, persistence.py, progress.py, artifact_graph.py, impact.py, vertex_executor.py, chat_router.py, sse_handler.py)
+- Memory lifecycle: 3-tier (RAM 24h → MongoDB archive 7d → KB permanent), per-client cleanup, hierarchy GC. See `docs/graph-agent-architecture.md`
+- Memory search cascade: `GET /memory/search?query=...&client_id=...` — Tier 1 RAM, Tier 2 MongoDB `master_map_archive`, Tier 3 KB
+- Memory map client filtering: `GET /graph/master?client_id=...` — returns only vertices for the given client
 - MongoDB tools + cache invalidation: `backend/service-orchestrator/app/tools/definitions.py` (MONGO_TOOLS), `backend/service-orchestrator/app/tools/executor.py` (handlers + auto cache invalidation), `backend/service-orchestrator/app/tools/kotlin_client.py` (invalidate_cache)
 - Graph UI visualization: `shared/ui-common/.../chat/TaskGraphComponents.kt` (TaskGraphSection, VertexCard, EdgeRow)
 - Graph DTOs: `shared/common-dto/.../graph/TaskGraphDtos.kt`, `shared/common-api/.../ITaskGraphService.kt`, `backend/server/.../rpc/TaskGraphRpcImpl.kt`

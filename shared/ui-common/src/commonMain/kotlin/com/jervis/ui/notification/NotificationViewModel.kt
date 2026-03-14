@@ -4,6 +4,7 @@ import com.jervis.dto.events.JervisEvent
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,7 +22,11 @@ class NotificationViewModel(
     private val repository: JervisRepository,
     private val selectedClientId: StateFlow<String?>,
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + CoroutineExceptionHandler { _, e ->
+        if (e !is CancellationException) {
+            println("NotificationViewModel: uncaught exception: ${e::class.simpleName}: ${e.message}")
+        }
+    })
 
     val notificationManager = PlatformNotificationManager()
 

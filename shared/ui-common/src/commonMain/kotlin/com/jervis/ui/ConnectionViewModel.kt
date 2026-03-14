@@ -1,6 +1,8 @@
 package com.jervis.ui
 
 import com.jervis.di.RpcConnectionManager
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,7 +19,11 @@ import kotlinx.coroutines.flow.stateIn
 class ConnectionViewModel(
     private val connectionManager: RpcConnectionManager,
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + CoroutineExceptionHandler { _, e ->
+        if (e !is CancellationException) {
+            println("ConnectionViewModel: uncaught exception: ${e::class.simpleName}: ${e.message}")
+        }
+    })
 
     enum class State { DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING }
 

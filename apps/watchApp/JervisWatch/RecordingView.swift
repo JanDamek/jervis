@@ -3,25 +3,40 @@ import SwiftUI
 struct RecordingView: View {
     @ObservedObject var recorder: WatchAudioRecorder
     @ObservedObject var connectivity: WatchConnectivityManager
+    var autoStart: Bool = false
     var onDismiss: () -> Void
 
     @State private var isRecording = false
+    @State private var isSending = false
     @State private var elapsedSeconds: Int = 0
     @State private var timer: Timer? = nil
     @State private var status: String = "Pripraveno"
 
     var body: some View {
         VStack(spacing: 12) {
-            Text(status)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            if isSending {
+                // Sending state — clean, no buttons
+                Spacer()
 
-            Text(formatDuration(elapsedSeconds))
-                .font(.system(size: 32, weight: .bold, design: .monospaced))
-                .foregroundColor(isRecording ? .red : .primary)
+                ProgressView()
+                    .scaleEffect(2)
 
-            // Waveform indicator
-            if isRecording {
+                Text("Odesilam...")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+                    .padding(.top, 8)
+
+                Spacer()
+            } else if isRecording {
+                // Recording state
+                Text(status)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text(formatDuration(elapsedSeconds))
+                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                    .foregroundColor(.red)
+
                 HStack(spacing: 2) {
                     ForEach(0..<7, id: \.self) { _ in
                         RoundedRectangle(cornerRadius: 2)
@@ -31,9 +46,7 @@ struct RecordingView: View {
                 }
                 .frame(height: 30)
                 .animation(.easeInOut(duration: 0.3).repeatForever(), value: isRecording)
-            }
 
-            if isRecording {
                 Button(action: stopRecording) {
                     Image(systemName: "stop.circle.fill")
                         .font(.system(size: 44))
@@ -41,6 +54,15 @@ struct RecordingView: View {
                 }
                 .buttonStyle(.plain)
             } else {
+                // Ready state
+                Text(status)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text(formatDuration(elapsedSeconds))
+                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                    .foregroundColor(.primary)
+
                 HStack(spacing: 16) {
                     Button(action: startRecording) {
                         Image(systemName: "record.circle")
@@ -60,6 +82,11 @@ struct RecordingView: View {
         }
         .navigationTitle("Nahravani")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if autoStart && !isRecording {
+                startRecording()
+            }
+        }
     }
 
     private func startRecording() {
@@ -69,7 +96,6 @@ struct RecordingView: View {
         elapsedSeconds = 0
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             elapsedSeconds += 1
-            // Send chunk every 10 seconds
             if elapsedSeconds % 10 == 0 {
                 if let chunk = recorder.getAndClearBuffer() {
                     connectivity.sendAudioChunk(chunk, chunkIndex: elapsedSeconds / 10)
@@ -77,7 +103,6 @@ struct RecordingView: View {
             }
         }
 
-        // Notify phone that recording started
         connectivity.sendCommand(.startRecording)
     }
 
@@ -85,21 +110,15 @@ struct RecordingView: View {
         timer?.invalidate()
         timer = nil
         isRecording = false
-        status = "Odesilam..."
+        isSending = true
 
-        // Get final audio chunk
         if let finalChunk = recorder.stopRecording() {
             connectivity.sendAudioChunk(finalChunk, chunkIndex: -1, isLast: true)
         }
 
         connectivity.sendCommand(.stopRecording)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            status = "Hotovo"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                onDismiss()
-            }
-        }
+        isSending = false
+        onDismiss()
     }
 
     private func formatDuration(_ seconds: Int) -> String {

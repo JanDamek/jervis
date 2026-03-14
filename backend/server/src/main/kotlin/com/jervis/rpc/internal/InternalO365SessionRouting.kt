@@ -70,7 +70,7 @@ fun Routing.installInternalO365SessionApi(
                 return@post
             }
 
-            val clientId = connection.clientId
+            val clientId = com.jervis.common.types.ClientId(org.bson.types.ObjectId("68a332361b04695a243e5ae8")) // Default Jervis clientId
 
             when (body.state) {
                 "AWAITING_MFA" -> {

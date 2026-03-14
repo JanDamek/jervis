@@ -16,11 +16,16 @@ import com.jervis.ui.storage.RecordingSession
 import com.jervis.ui.storage.RecordingSessionStorage
 import com.jervis.ui.storage.RecordingStateStorage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -44,10 +49,18 @@ class RecordingUploadService(
     private val connectionManager: RpcConnectionManager,
     private val repository: JervisRepository,
 ) {
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob() + CoroutineExceptionHandler { _, e ->
+        if (e !is CancellationException) {
+            println("RecordingUploadService: uncaught exception: ${e::class.simpleName}: ${e.message}")
+        }
+    })
 
     private val _sessions = MutableStateFlow<List<RecordingSession>>(emptyList())
     val sessions: StateFlow<List<RecordingSession>> = _sessions.asStateFlow()
+
+    /** Emits server meeting ID when a session is finalized — MeetingViewModel listens to refresh list. */
+    private val _sessionFinalized = MutableSharedFlow<String>(extraBufferCapacity = 5)
+    val sessionFinalized: SharedFlow<String> = _sessionFinalized
 
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
@@ -55,7 +68,7 @@ class RecordingUploadService(
     companion object {
         private const val CHUNK_SIZE_BYTES = 4 * 1024 * 1024
         private const val MAX_RETRIES = 5
-        private const val POLL_INTERVAL_MS = 5_000L
+        private const val POLL_INTERVAL_MS = 2_000L
     }
 
     init {
@@ -72,6 +85,16 @@ class RecordingUploadService(
                 .distinctUntilChanged()
                 .collect { connected ->
                     if (connected) {
+                        // Reset errors on reconnect so stuck sessions retry immediately
+                        val all = RecordingSessionStorage.load()
+                        val hasErrors = all.any { !it.finalized && it.error != null }
+                        if (hasErrors) {
+                            val reset = all.map { s ->
+                                if (!s.finalized && s.error != null) s.copy(error = null, retryCount = 0) else s
+                            }
+                            RecordingSessionStorage.save(reset)
+                            _sessions.value = reset.filter { !it.finalized }
+                        }
                         runUploadCycle()
                     }
                 }
@@ -140,21 +163,37 @@ class RecordingUploadService(
 
     @OptIn(ExperimentalEncodingApi::class)
     private suspend fun runUploadCycle() {
-        if (_isSyncing.value) return
+        if (_isSyncing.value) {
+            println("[Upload] Skipping cycle — already syncing")
+            return
+        }
         _isSyncing.value = true
 
         try {
-            val sessions = RecordingSessionStorage.load()
-                .filter { !it.finalized && it.error == null }
+            val allSessions = RecordingSessionStorage.load()
+            val sessions = allSessions.filter { !it.finalized && it.error == null }
+            val errorSessions = allSessions.filter { !it.finalized && it.error != null }
+            println("[Upload] Cycle start: ${sessions.size} active, ${errorSessions.size} with errors, ${allSessions.count { it.finalized }} finalized")
 
-            for (session in sessions) {
-                try {
-                    uploadSession(session)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    val newRetry = session.retryCount + 1
-                    println("[Upload] Failed session ${session.localId} (attempt $newRetry/$MAX_RETRIES): ${e.message}")
+            // Upload all sessions in parallel — server handles concurrent uploads fine
+            val jobs = sessions.map { session ->
+                async {
+                    println("[Upload] Processing session ${session.localId}: serverMeetingId=${session.serverMeetingId}, chunks=${session.uploadedChunkCount}/${session.chunkCount}, stopped=${session.stoppedAtMs != null}")
+                    try {
+                        uploadSession(session)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // If server says meeting is already processed, mark as finalized locally
+                        val msg = e.message ?: ""
+                        if (msg.contains("not in recording") || msg.contains("INDEXED") || msg.contains("TRANSCRIBING") || msg.contains("DONE")) {
+                            println("[Upload] Session ${session.localId} already processed on server, marking finalized: $msg")
+                            AudioChunkQueue.clearMeeting(session.localId)
+                            updateSession(session.localId) { it.copy(finalized = true, error = null) }
+                            return@async
+                        }
+                        val newRetry = session.retryCount + 1
+                        println("[Upload] FAILED session ${session.localId} (attempt $newRetry/$MAX_RETRIES): ${e::class.simpleName}: ${e.message}")
                     if (newRetry >= MAX_RETRIES) {
                         updateSession(session.localId) {
                             it.copy(error = e.message ?: "Upload failed", retryCount = newRetry)
@@ -162,9 +201,10 @@ class RecordingUploadService(
                     } else {
                         updateSession(session.localId) { it.copy(retryCount = newRetry) }
                     }
+                    }
                 }
-                delay(500) // Brief pause between sessions
             }
+            jobs.awaitAll()
         } finally {
             _isSyncing.value = false
             _sessions.value = RecordingSessionStorage.load().filter { !it.finalized }
@@ -244,6 +284,7 @@ class RecordingUploadService(
             AudioChunkQueue.clearMeeting(session.localId)
             updateSession(session.localId) { it.copy(finalized = true) }
             println("[Upload] Session ${session.localId} finalized successfully")
+            _sessionFinalized.tryEmit(serverMeetingId)
         }
     }
 

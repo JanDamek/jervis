@@ -65,6 +65,20 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // Activate WatchConnectivity for watch app communication
         WatchSessionManager.shared.activate()
 
+        // Wire up watch recording callbacks → relay to server via REST
+        WatchSessionManager.shared.onWatchRecordingStarted = {
+            print("[Jervis] Watch recording started — creating meeting")
+            WatchRecordingRelay.shared.startRecording()
+        }
+        WatchSessionManager.shared.onAudioChunkReceived = { data, chunkIndex, isLast in
+            print("[Jervis] Watch audio chunk \(chunkIndex) received (\(data.count) bytes, isLast=\(isLast))")
+            WatchRecordingRelay.shared.addChunk(data: data, chunkIndex: chunkIndex, isLast: isLast)
+        }
+        WatchSessionManager.shared.onWatchRecordingStopped = {
+            print("[Jervis] Watch recording stopped — finalizing meeting")
+            WatchRecordingRelay.shared.stopRecording()
+        }
+
         return true
     }
 

@@ -6,6 +6,7 @@ struct ContentView: View {
     @StateObject private var recorder = WatchAudioRecorder()
     @StateObject private var chatManager = WatchChatManager()
     @State private var activeMode: ActiveMode? = nil
+    @State private var autoStart = false
 
     enum ActiveMode {
         case recording, chat
@@ -16,47 +17,54 @@ struct ContentView: View {
             if let mode = activeMode {
                 switch mode {
                 case .recording:
-                    RecordingView(recorder: recorder, connectivity: connectivity) {
+                    RecordingView(recorder: recorder, connectivity: connectivity, autoStart: autoStart) {
                         activeMode = nil
+                        autoStart = false
                     }
                 case .chat:
-                    ChatView(chatManager: chatManager, connectivity: connectivity) {
+                    ChatView(chatManager: chatManager, connectivity: connectivity, autoStart: autoStart) {
                         activeMode = nil
+                        autoStart = false
                     }
                 }
             } else {
-                VStack(spacing: 16) {
+                VStack(spacing: 12) {
                     Text("Jervis")
-                        .font(.headline)
-                        .foregroundColor(.blue)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.blue)
 
                     Button(action: { activeMode = .recording }) {
-                        VStack(spacing: 4) {
-                            Image(systemName: "mic.circle.fill")
-                                .font(.system(size: 36))
-                            Text("Ad-hoc")
-                                .font(.caption)
+                        HStack(spacing: 10) {
+                            Image(systemName: "mic.fill")
+                                .font(.title3)
+                                .foregroundStyle(.white)
+                            Text("Nahravani")
+                                .font(.body)
+                                .foregroundStyle(.white)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 10)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
+                    .background(Color.red.opacity(0.85))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
 
                     Button(action: { activeMode = .chat }) {
-                        VStack(spacing: 4) {
-                            Image(systemName: "bubble.left.circle.fill")
-                                .font(.system(size: 36))
+                        HStack(spacing: 10) {
+                            Image(systemName: "bubble.left.fill")
+                                .font(.title3)
+                                .foregroundStyle(.white)
                             Text("Chat")
-                                .font(.caption)
+                                .font(.body)
+                                .foregroundStyle(.white)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 10)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
+                    .background(Color.blue.opacity(0.85))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-                .padding()
+                .padding(.horizontal, 8)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .jervisStartRecording)) { _ in
@@ -64,6 +72,17 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .jervisOpenChat)) { _ in
             activeMode = .chat
+        }
+        .onOpenURL { url in
+            autoStart = true
+            switch url.host {
+            case "recording":
+                activeMode = .recording
+            case "chat":
+                activeMode = .chat
+            default:
+                autoStart = false
+            }
         }
     }
 }

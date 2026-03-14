@@ -35,23 +35,28 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     }
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        guard let type = message["type"] as? String else { return }
+        handleCommand(message)
+    }
 
-        switch type {
-        case "command":
-            let command = message["command"] as? String ?? ""
-            DispatchQueue.main.async {
-                switch command {
-                case "start_recording":
-                    self.onWatchRecordingStarted?()
-                case "stop_recording":
-                    self.onWatchRecordingStopped?()
-                default:
-                    break
-                }
+    // Receives commands sent via transferUserInfo (reliable, works in background)
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        handleCommand(userInfo)
+    }
+
+    private func handleCommand(_ info: [String: Any]) {
+        guard let type = info["type"] as? String, type == "command",
+              let command = info["command"] as? String else { return }
+
+        print("[WatchSession] Received command: \(command)")
+        DispatchQueue.main.async {
+            switch command {
+            case "start_recording":
+                self.onWatchRecordingStarted?()
+            case "stop_recording":
+                self.onWatchRecordingStopped?()
+            default:
+                break
             }
-        default:
-            break
         }
     }
 

@@ -263,13 +263,11 @@ class O365PollingHandler(
      */
     private suspend fun markScrapeMessageState(id: org.bson.types.ObjectId, state: String) {
         try {
-            kotlinx.coroutines.reactive.awaitFirstOrNull(
-                mongoTemplate.updateFirst(
-                    Query.query(Criteria.where("_id").`is`(id)),
-                    Update.update("state", state),
-                    O365ScrapeMessageDocument::class.java,
-                )
-            )
+            mongoTemplate.updateFirst(
+                Query.query(Criteria.where("_id").`is`(id)),
+                Update.update("state", state),
+                O365ScrapeMessageDocument::class.java,
+            ).block()
         } catch (e: Exception) {
             logger.warn { "Failed to mark scrape message $id as $state: ${e.message}" }
         }

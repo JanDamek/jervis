@@ -28,6 +28,8 @@ import com.jervis.ui.audio.RecordingServiceBridge
 import com.jervis.ui.storage.AudioChunkQueue
 import com.jervis.ui.storage.RecordingSession
 import com.jervis.ui.storage.RecordingSessionStorage
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlin.time.Clock
 import kotlinx.coroutines.Dispatchers
@@ -56,7 +58,11 @@ class MeetingViewModel(
     internal val repository: JervisRepository,
     private val uploadService: RecordingUploadService,
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + CoroutineExceptionHandler { _, e ->
+        if (e !is CancellationException) {
+            println("MeetingViewModel: uncaught exception: ${e::class.simpleName}: ${e.message}")
+        }
+    })
 
     private val _meetings = MutableStateFlow<List<MeetingDto>>(emptyList())
     val meetings: StateFlow<List<MeetingDto>> = _meetings.asStateFlow()
@@ -159,6 +165,17 @@ class MeetingViewModel(
     }
 
     init {
+        // Auto-refresh meeting list when a recording session is finalized
+        scope.launch {
+            uploadService.sessionFinalized.collect { meetingId ->
+                println("[MeetingVM] Session finalized (meeting=$meetingId), refreshing list")
+                val cid = lastClientId
+                if (cid != null) {
+                    loadMeetings(cid, lastProjectId, silent = true)
+                }
+            }
+        }
+
         // Listen for stop requests from platform controls (notification / lock screen)
         scope.launch {
             RecordingServiceBridge.stopRequested.collect {

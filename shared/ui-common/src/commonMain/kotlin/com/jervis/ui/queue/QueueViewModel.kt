@@ -11,6 +11,7 @@ import com.jervis.ui.model.NodeStatus
 import com.jervis.ui.model.PendingQueueItem
 import com.jervis.ui.model.TaskHistoryEntry
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,7 +33,11 @@ class QueueViewModel(
     private val connectionManager: RpcConnectionManager,
     private val selectedClientId: StateFlow<String?>,
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + CoroutineExceptionHandler { _, e ->
+        if (e !is CancellationException) {
+            println("QueueViewModel: uncaught exception: ${e::class.simpleName}: ${e.message}")
+        }
+    })
 
     private val _queueSize = MutableStateFlow(0)
     val queueSize: StateFlow<Int> = _queueSize.asStateFlow()

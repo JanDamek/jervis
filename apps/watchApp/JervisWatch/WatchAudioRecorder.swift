@@ -41,6 +41,7 @@ class WatchAudioRecorder: ObservableObject {
     func stopRecording() -> Data? {
         recorder?.stop()
         isRecording = false
+        try? AVAudioSession.sharedInstance().setActive(false)
 
         guard let url = recordingURL else { return nil }
         defer {

@@ -20,6 +20,7 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,7 +50,11 @@ class ChatViewModel(
     private val onConnectionReady: () -> Unit,
     private val onError: (String) -> Unit,
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + CoroutineExceptionHandler { _, e ->
+        if (e !is CancellationException) {
+            println("ChatViewModel: uncaught exception: ${e::class.simpleName}: ${e.message}")
+        }
+    })
 
     private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
@@ -367,9 +372,10 @@ class ChatViewModel(
         memoryMapLoadJob = scope.launch {
             delay(500)
             try {
-                val graph = repository.taskGraphs.getGraph("master")
+                val clientId = selectedClientId.value
+                val graph = repository.taskGraphs.getGraph("master", clientId)
                 if (graph != null && graph.vertices.isNotEmpty()) {
-                    println("ChatViewModel: memory map refreshed — ${graph.vertices.size} vertices")
+                    println("ChatViewModel: memory map refreshed — ${graph.vertices.size} vertices (client=$clientId)")
                     _activeThinkingMap.value = graph
                 } else {
                     println("ChatViewModel: memory map not found or empty")

@@ -97,7 +97,9 @@ class MeetingRpcImpl(
             ?: throw IllegalStateException("Meeting not found: ${chunk.meetingId}")
 
         if (meeting.state != MeetingStateEnum.RECORDING && meeting.state != MeetingStateEnum.UPLOADING) {
-            throw IllegalStateException("Meeting ${chunk.meetingId} is not in recording/uploading state: ${meeting.state}")
+            // Re-open meeting for additional data — mobile may send delayed chunks after transcription started
+            logger.info { "Meeting ${chunk.meetingId} is ${meeting.state}, re-opening to UPLOADING for additional audio data" }
+            meetingRepository.save(meeting.copy(state = MeetingStateEnum.UPLOADING))
         }
 
         // Idempotency: skip chunks already received (prevents duplicates on retry)

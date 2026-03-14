@@ -883,7 +883,7 @@ class ConnectionRpcImpl(
                         discoveredResourceRepository.save(
                             com.jervis.entity.teams.O365DiscoveredResourceDocument(
                                 connectionId = connection.id,
-                                clientId = connection.clientId,
+                                clientId = null,
                                 resourceType = type,
                                 externalId = id,
                                 displayName = name,

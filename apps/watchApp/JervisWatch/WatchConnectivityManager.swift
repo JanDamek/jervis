@@ -22,17 +22,14 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     func sendCommand(_ command: WatchCommand) {
-        guard let session = session, session.isReachable else {
-            print("[Watch] Phone not reachable for command: \(command.rawValue)")
+        guard let session = session else {
+            print("[Watch] No WCSession for command: \(command.rawValue)")
             return
         }
-        session.sendMessage(
-            ["type": "command", "command": command.rawValue],
-            replyHandler: nil,
-            errorHandler: { error in
-                print("[Watch] Failed to send command: \(error)")
-            }
-        )
+        // Use transferUserInfo — works even when phone is not immediately reachable.
+        // sendMessage requires isReachable and foreground app, transferUserInfo queues reliably.
+        session.transferUserInfo(["type": "command", "command": command.rawValue])
+        print("[Watch] Command queued: \(command.rawValue)")
     }
 
     func sendAudioChunk(_ data: Data, chunkIndex: Int, isLast: Bool = false) {

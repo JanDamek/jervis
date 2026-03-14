@@ -3,6 +3,8 @@ package com.jervis.ui.meeting
 import com.jervis.dto.meeting.TranscriptCorrectionDto
 import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
 import com.jervis.service.ITranscriptCorrectionService
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,7 +16,11 @@ import kotlinx.coroutines.launch
 class CorrectionViewModel(
     private val correctionService: ITranscriptCorrectionService,
 ) {
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob() + CoroutineExceptionHandler { _, e ->
+        if (e !is CancellationException) {
+            println("CorrectionViewModel: uncaught exception: ${e::class.simpleName}: ${e.message}")
+        }
+    })
 
     private val _corrections = MutableStateFlow<List<TranscriptCorrectionDto>>(emptyList())
     val corrections: StateFlow<List<TranscriptCorrectionDto>> = _corrections.asStateFlow()
