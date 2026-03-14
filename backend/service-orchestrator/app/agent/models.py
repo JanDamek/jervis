@@ -189,6 +189,7 @@ class GraphVertex(BaseModel):
     started_at: str | None = None
     completed_at: str | None = None
     error: str | None = None                # Error message if FAILED
+    retry_count: int = 0                    # Number of times this vertex was retried
 
 
 # ---------------------------------------------------------------------------

@@ -1211,7 +1211,8 @@ Qualifier creates INCOMING vertices. All share the same agentic loop (`vertex_ex
 
 - **TaskDocument** (Kotlin/MongoDB): SSOT for task lifecycle, USER_TASK state
 - **AgentGraph** (Python/MongoDB `task_graphs`): Graph structure — vertices, edges, status
-- **AgentStore** (Python RAM): In-memory singleton for Paměťová mapa, periodic DB flush (30s)
+- **AgentStore** (Python RAM): In-memory singleton for Paměťová mapa, periodic DB flush (30s), 3-tier lifecycle (RAM 24h → MongoDB archive 7d → KB permanent), per-client cleanup + hierarchy GC
+- **master_map_archive** (MongoDB): Tier 2 archive — per-vertex documents with 7d TTL, text-searchable
 - **Per-vertex state**: `agent_messages` + `agent_iteration` on GraphVertex for resume
 
 ### Chat Context Persistence

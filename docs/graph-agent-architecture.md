@@ -8,11 +8,40 @@
 ## Core Concept
 
 **Paměťová mapa (Memory Map)** = global persistent DAG — everything Jervis knows and has worked on.
-One per user, lives in RAM with periodic DB flush.
+One per orchestrator instance, lives in RAM with periodic DB flush.
+Client isolation: server-side filtering via `?client_id=` on `/graph/master` endpoint.
 
 **Myšlenková mapa (Thinking Map)** = per-task decomposition sub-graph linked to the Memory Map.
 Each vertex solves a focused part of a problem with limited context (48k GPU).
 Edges carry processed results (summaries), not raw data.
+RAM lifecycle: 1h after completion → evicted from RAM (stays in DB 30d). Hidden in UI after 10min.
+
+### 3-Tier Memory Lifecycle
+
+| Tier | Storage | Retention | Search | Use Case |
+|------|---------|-----------|--------|----------|
+| 1 (Hot) | RAM — Paměťová mapa | Active + 24h after completion | Instant, per-client filtered | Active work, topic continuation |
+| 2 (Warm) | MongoDB `master_map_archive` | 7 days (TTL index) | Text search | Recent history recall |
+| 3 (Cold) | KB (permanent) | Forever | RAG semantic search | Long-term knowledge |
+
+**Cleanup (per-client):** Last 5 chats + 5 task_refs per client. Hierarchy vertices (CLIENT/GROUP/PROJECT)
+are GC'd when they have no remaining data descendants. Content is indexed to KB before removal from RAM.
+
+**Search cascade:** RAM → MongoDB archive → KB (with "vzpomíná..." indicator in UI during Tier 2-3).
+
+### Transient Error Retry
+
+Failed vertices with transient errors (rate limit 429, 503, timeout, connection errors) are
+automatically retried up to 2 times. In `node_select_next`, when no READY vertices remain,
+FAILED vertices matching transient patterns are reset to READY with `retry_count` incremented.
+Outgoing error payloads are cleared so downstream vertices get fresh results.
+
+### Thinking Map Compaction
+
+When a thinking map completes (`node_synthesize`), heavy fields are stripped from completed
+vertices: `result` (full text), `agent_messages` (LLM history), `incoming_context`, `local_context`.
+Only `result_summary`, `error`, `tools_used`, and metadata remain. This reduces MongoDB
+document size from MB to KB for large graphs (100+ vertices).
 
 **Agent** = ONE unified system for everything. No separate "chat handler" or "orchestrator".
 

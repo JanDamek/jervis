@@ -213,6 +213,10 @@ async def node_select_next(state: GraphAgentState) -> dict:
 
     A vertex is READY when all its incoming edges have payloads.
     Returns the first ready vertex ID, or None if all done.
+
+    Transient error retry: when no READY vertices remain but some FAILED
+    vertices have transient errors (rate limit, 503, timeout), reset them
+    to READY for one more attempt (max 2 retries per vertex).
     """
     graph_data = state.get("task_graph")
     if not graph_data:
@@ -220,15 +224,25 @@ async def node_select_next(state: GraphAgentState) -> dict:
 
     graph = AgentGraph(**graph_data)
 
-    # Stop scheduling if graph is cancelled or failed
+    # Stop scheduling if graph is cancelled (but NOT failed — retry may fix it)
     if graph.status == GraphStatus.CANCELLED:
         logger.info("Graph %s cancelled — stopping vertex scheduling", graph.id)
         return {"task_graph": graph.model_dump(), "current_vertex_id": None}
-    if graph.status == GraphStatus.FAILED:
-        logger.info("Graph %s has failures — stopping vertex scheduling", graph.id)
-        return {"task_graph": graph.model_dump(), "current_vertex_id": None}
 
     ready = get_ready_vertices(graph)
+
+    if not ready:
+        # Before giving up, check for transient failures that can be retried
+        retried = _retry_transient_failures(graph)
+        if retried:
+            ready = get_ready_vertices(graph)
+            logger.info(
+                "SELECT_NEXT | graph=%s | retried %d transient failures → %d now ready",
+                graph.id, retried, len(ready),
+            )
+            # Clear graph-level FAILED status so scheduling continues
+            if graph.status == GraphStatus.FAILED:
+                graph.status = GraphStatus.EXECUTING
 
     if not ready:
         # Log status summary for debugging stalled graphs
@@ -481,9 +495,14 @@ async def node_synthesize(state: GraphAgentState) -> dict:
     else:
         result = raw_result
 
+    # Compact completed vertices — keep result_summary, drop heavy fields
+    # This reduces MongoDB document size significantly for large thinking maps
+    _compact_completed_graph(graph)
+
     # Final save — synchronous (graph is complete, flush immediately)
     await agent_store.save(graph)
-    agent_store.remove_cached_subgraph(graph.task_id)
+    # Don't remove from RAM cache immediately — keep for 1h (debug visibility)
+    # cleanup_thinking_maps() in persistence.py handles RAM eviction
     await report_graph_status(graph, "Graph execution completed")
 
     vs = stats.get("vertex_statuses", {})
@@ -497,6 +516,98 @@ async def node_synthesize(state: GraphAgentState) -> dict:
     )
 
     return {"final_result": result, "task_graph": graph.model_dump()}
+
+
+# ---------------------------------------------------------------------------
+# Graph compaction — reduce memory footprint of completed thinking maps
+# ---------------------------------------------------------------------------
+
+
+def _compact_completed_graph(graph: AgentGraph) -> None:
+    """Strip heavy fields from completed/failed vertices.
+
+    Keeps: title, vertex_type, status, result_summary, error, tools_used,
+           started_at, completed_at, client_id, project_id, parent_id, depth.
+    Drops: result (full text), agent_messages (LLM history), incoming_context,
+           local_context, input_request (preserved in result_summary).
+    """
+    for v in graph.vertices.values():
+        if v.status not in (VertexStatus.COMPLETED, VertexStatus.FAILED, VertexStatus.SKIPPED):
+            continue
+        # Keep result_summary as the compressed representation
+        v.result = ""
+        v.local_context = ""
+        v.agent_messages = []
+        v.incoming_context = []
+        # input_request is useful for understanding what was asked — keep it
+
+
+# ---------------------------------------------------------------------------
+# Transient failure retry
+# ---------------------------------------------------------------------------
+
+_TRANSIENT_PATTERNS = [
+    "ratelimit", "rate limit", "rate_limit",
+    "429", "503",
+    "service unavailable", "internal server error",
+    "timeout", "tokentimeouterror",
+    "connection", "connectionerror",
+]
+_MAX_VERTEX_RETRIES = 2  # Max retries per vertex
+
+
+def _retry_transient_failures(graph: AgentGraph) -> int:
+    """Reset FAILED vertices with transient errors back to READY.
+
+    Only retries vertices that:
+    - Have a transient error (rate limit, timeout, 503, connection)
+    - Have not exceeded _MAX_VERTEX_RETRIES
+
+    Clears error payload on outgoing edges so downstream vertices
+    can be re-evaluated after retry succeeds.
+
+    Returns number of vertices reset.
+    """
+    retried = 0
+    for v in graph.vertices.values():
+        if v.status != VertexStatus.FAILED:
+            continue
+        if v.retry_count >= _MAX_VERTEX_RETRIES:
+            continue
+        error_lower = (v.error or "").lower()
+        if not any(p in error_lower for p in _TRANSIENT_PATTERNS):
+            continue
+
+        # Reset vertex for retry
+        prev_error = v.error
+        v.status = VertexStatus.READY
+        v.error = None
+        v.retry_count += 1
+        v.completed_at = None
+        v.result = ""
+        v.result_summary = ""
+
+        # Clear error payloads on outgoing edges (will be re-filled on retry)
+        from app.agent.graph import get_outgoing_edges
+        for edge in get_outgoing_edges(graph, v.id):
+            edge.payload = None
+
+        # Reset downstream vertices that received error payload back to PENDING
+        for edge in get_outgoing_edges(graph, v.id):
+            target = graph.vertices.get(edge.target_id)
+            if target and target.status in (VertexStatus.READY, VertexStatus.COMPLETED):
+                # Only reset if it hasn't done meaningful work yet
+                if target.status == VertexStatus.READY:
+                    target.status = VertexStatus.PENDING
+
+        logger.info(
+            "RETRY_TRANSIENT | vertex=%s | title='%s' | retry=%d/%d | prev_error=%s",
+            v.id, v.title, v.retry_count, _MAX_VERTEX_RETRIES,
+            (prev_error or "")[:100],
+        )
+        retried += 1
+
+    return retried
 
 
 # ---------------------------------------------------------------------------

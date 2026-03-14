@@ -46,8 +46,8 @@ private const val TTS_URL = "http://jervis-tts:8787/tts"
 
 private val ttsClient = HttpClient(CIO) {
     install(HttpTimeout) {
-        requestTimeoutMillis = 10_000
-        connectTimeoutMillis = 3_000
+        requestTimeoutMillis = 30_000
+        connectTimeoutMillis = 5_000
     }
 }
 
@@ -157,8 +157,15 @@ fun Routing.installVoiceChatApi(
 
             val transcription = whisperResult.text.trim()
             if (transcription.isEmpty()) {
+                val errorMsg = "Nepodarilo se rozpoznat rec. Zkuste to znovu."
+                val tts = try { generateTtsAudio(errorMsg) } catch (_: Exception) { null }
                 call.respondText(
-                    """{"response":"Nepodarilo se rozpoznat rec.","transcription":""}""",
+                    Json.encodeToString(VoiceChatResponse.serializer(), VoiceChatResponse(
+                        response = errorMsg,
+                        transcription = "",
+                        ttsAudio = tts,
+                        complete = true,
+                    )),
                     ContentType.Application.Json,
                 )
                 return@post
@@ -229,6 +236,7 @@ private suspend fun collectChatResponse(
             text = "[Watch/$source] $message",
             activeClientId = DEFAULT_CLIENT_ID,
             activeProjectId = DEFAULT_PROJECT_ID,
+            maxOpenRouterTier = "FREE", // Watch needs fast response — allow cloud models
         )
 
         // Collect tokens with 45s timeout — orchestrator needs time for KB search + LLM

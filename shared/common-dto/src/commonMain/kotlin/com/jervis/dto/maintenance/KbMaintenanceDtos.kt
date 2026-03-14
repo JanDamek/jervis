@@ -89,3 +89,19 @@ data class DocFreshnessResult(
     val staleDays: Int,
     val affectedCodePaths: List<String> = emptyList(),
 )
+
+/**
+ * Response from Python orchestrator's /maintenance/run endpoint.
+ * Covers both Phase 1 (CPU-only cleanup) and Phase 2 (GPU-light KB maintenance).
+ */
+@Serializable
+data class MaintenanceResultDto(
+    val phase: Int = 1,
+    @kotlinx.serialization.SerialName("mem_removed") val memRemoved: Int = 0,
+    @kotlinx.serialization.SerialName("thinking_evicted") val thinkingEvicted: Int = 0,
+    @kotlinx.serialization.SerialName("lqm_drained") val lqmDrained: Int = 0,
+    @kotlinx.serialization.SerialName("affairs_archived") val affairsArchived: Int = 0,
+    @kotlinx.serialization.SerialName("next_client_for_phase2") val nextClientForPhase2: String? = null,
+    @kotlinx.serialization.SerialName("client_id") val clientId: String? = null,
+    val findings: List<String> = emptyList(),
+)

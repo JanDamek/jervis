@@ -126,14 +126,17 @@ class WatchJervisApiClient: NSObject, AVAudioPlayerDelegate {
 
     /// Play TTS audio on watch speaker.
     func playTtsAudio(_ wavData: Data) {
+        print("[WatchAPI] Playing TTS audio: \(wavData.count) bytes")
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default)
+            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
             try audioSession.setActive(true)
 
             audioPlayer = try AVAudioPlayer(data: wavData)
             audioPlayer?.delegate = self
-            audioPlayer?.play()
+            audioPlayer?.volume = 1.0
+            let started = audioPlayer?.play() ?? false
+            print("[WatchAPI] TTS playback started: \(started), duration: \(audioPlayer?.duration ?? 0)s")
         } catch {
             print("[WatchAPI] TTS playback error: \(error)")
         }

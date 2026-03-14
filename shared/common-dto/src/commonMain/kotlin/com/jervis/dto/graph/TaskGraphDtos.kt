@@ -27,6 +27,8 @@ data class TaskGraphDto(
     @SerialName("completed_at") val completedAt: String? = null,
     @SerialName("total_token_count") val totalTokenCount: Int = 0,
     @SerialName("total_llm_calls") val totalLlmCalls: Int = 0,
+    /** True if this thinking map is older than 10min — UI should dim/collapse (debug). */
+    val hidden: Boolean = false,
 )
 
 @Serializable

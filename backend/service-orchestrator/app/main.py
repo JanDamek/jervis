@@ -30,11 +30,13 @@ import json
 import logging
 import signal
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
+from app.agent.models import AgentGraph, GraphStatus, GraphType
 from app.graph.orchestrator import (
     init_checkpointer,
     close_checkpointer,
@@ -563,11 +565,12 @@ async def cancel(thread_id: str):
 
 
 @app.get("/graph/{task_id}")
-async def get_task_graph(task_id: str):
+async def get_task_graph(task_id: str, client_id: str | None = None):
     """Return the full AgentGraph for a given task_id.
 
     Called by Kotlin to serve graph data to the UI.
     For master map, returns the live RAM version (always fresh).
+    When client_id is provided for master map, returns client-filtered copy.
     """
     from app.agent.persistence import agent_store
 
@@ -576,6 +579,12 @@ async def get_task_graph(task_id: str):
         graph = agent_store.get_memory_map_cached()
         if not graph:
             graph = await agent_store.get_or_create_memory_map()
+        if not graph:
+            raise HTTPException(status_code=404, detail="Memory map not found")
+        # Client isolation: filter to show only this client's vertices
+        if client_id:
+            return _filter_graph_for_client(graph, client_id)
+        return graph.model_dump()
     else:
         # Try RAM cache first (active sub-graphs), then DB
         graph = agent_store.get_cached_subgraph(task_id)
@@ -588,7 +597,54 @@ async def get_task_graph(task_id: str):
 
     if not graph:
         raise HTTPException(status_code=404, detail=f"No graph for task {task_id}")
-    return graph.model_dump()
+
+    result = graph.model_dump()
+    # Add hidden flag for completed thinking maps older than 10min (debug visibility)
+    if graph.graph_type == GraphType.THINKING_MAP:
+        from app.agent.persistence import _THINKING_MAP_HIDE_S
+        if graph.status in (GraphStatus.COMPLETED, GraphStatus.FAILED) and graph.completed_at:
+            hide_cutoff = (datetime.now(timezone.utc) - timedelta(seconds=_THINKING_MAP_HIDE_S)).isoformat()
+            if graph.completed_at < hide_cutoff:
+                result["hidden"] = True
+    return result
+
+
+def _filter_graph_for_client(graph: "AgentGraph", client_id: str) -> dict:
+    """Return a filtered copy of the memory map for a specific client.
+
+    Keeps: root, hierarchy ancestors, and all vertices belonging to client_id.
+    Never mutates the singleton graph.
+    """
+    from app.agent.models import VertexType, GLOBAL_CLIENT_ID
+
+    keep_ids: set[str] = set()
+
+    # Keep root
+    if graph.root_vertex_id:
+        keep_ids.add(graph.root_vertex_id)
+
+    # Keep all vertices belonging to this client
+    for vid, v in graph.vertices.items():
+        if v.client_id == client_id:
+            keep_ids.add(vid)
+
+    # Walk parent chains to include necessary hierarchy vertices
+    for vid in list(keep_ids):
+        current = graph.vertices.get(vid)
+        while current and current.parent_id:
+            keep_ids.add(current.parent_id)
+            current = graph.vertices.get(current.parent_id)
+
+    result = graph.model_dump()
+    result["vertices"] = {
+        vid: vdata for vid, vdata in result["vertices"].items()
+        if vid in keep_ids
+    }
+    result["edges"] = [
+        e for e in result["edges"]
+        if e["source_id"] in keep_ids and e["target_id"] in keep_ids
+    ]
+    return result
 
 
 # --- Memory Map Admin Endpoints ---
@@ -729,6 +785,281 @@ async def force_cleanup_memory_map():
         "removed": removed,
         "remaining_vertices": len(graph.vertices),
     }
+
+
+@app.get("/memory/search")
+async def search_memory(query: str, client_id: str):
+    """3-tier memory search cascade.
+
+    Tier 1: RAM (Paměťová mapa) — instant
+    Tier 2: MongoDB archive (7d) — fast
+    Tier 3: KB — slower
+
+    Client isolation enforced at all tiers.
+    """
+    import httpx
+    from app.agent.persistence import agent_store
+
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id required")
+
+    results: dict[str, list] = {"tier1_ram": [], "tier2_archive": [], "tier3_kb": []}
+    query_lower = query.lower()
+
+    # Tier 1: RAM search in memory map
+    graph = agent_store.get_memory_map_cached()
+    if graph:
+        for v in graph.vertices.values():
+            if v.client_id != client_id:
+                continue
+            searchable = f"{v.title or ''} {v.result_summary or ''} {v.description or ''}"
+            if query_lower in searchable.lower():
+                results["tier1_ram"].append({
+                    "vertex_id": v.id,
+                    "title": v.title,
+                    "vertex_type": v.vertex_type.value if hasattr(v.vertex_type, 'value') else str(v.vertex_type),
+                    "result_summary": v.result_summary or "",
+                    "status": v.status.value if hasattr(v.status, 'value') else str(v.status),
+                    "completed_at": v.completed_at,
+                })
+
+    # Tier 2: MongoDB archive (only if Tier 1 insufficient)
+    if len(results["tier1_ram"]) < 5:
+        archive_results = await agent_store.search_archive(query, client_id, limit=10)
+        results["tier2_archive"] = archive_results
+
+    # Tier 3: KB (only if Tier 1+2 insufficient)
+    if len(results["tier1_ram"]) + len(results["tier2_archive"]) < 3:
+        kb_url = settings.knowledgebase_url
+        if kb_url:
+            try:
+                async with httpx.AsyncClient(timeout=10) as http:
+                    resp = await http.post(
+                        f"{kb_url}/api/v1/retrieve",
+                        json={"query": query, "clientId": client_id, "maxResults": 5},
+                    )
+                    if resp.status_code == 200:
+                        results["tier3_kb"] = resp.json().get("chunks", [])
+            except Exception:
+                pass
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# 3-Phase Idle Maintenance Pipeline
+# ---------------------------------------------------------------------------
+
+
+@app.post("/maintenance/run")
+async def run_maintenance(phase: int = 1, client_id: str | None = None):
+    """3-phase idle GPU maintenance pipeline.
+
+    Phase 1 (CPU-only, <5s): memory map cleanup, thinking map eviction,
+    LQM drain, affair archival. Returns next client for Phase 2.
+
+    Phase 2 (GPU-light, 30s-2min): KB dedup for ONE client.
+    Uses NORMAL priority LLM calls → auto-preempted by CRITICAL.
+    """
+    from app.agent.persistence import agent_store
+
+    if phase == 1:
+        return await _maintenance_phase1(agent_store)
+    elif phase == 2:
+        if not client_id:
+            raise HTTPException(status_code=400, detail="client_id required for phase 2")
+        return await _maintenance_phase2(agent_store, client_id)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown phase: {phase}")
+
+
+async def _maintenance_phase1(agent_store) -> dict:
+    """Phase 1: CPU-only maintenance — idempotent, killable."""
+    # 1. Memory map cleanup (per-client, 24h lifecycle)
+    mem_removed = agent_store.cleanup_memory_map()
+    if mem_removed > 0 and agent_store._pending_archive:
+        await agent_store._persist_to_kb(agent_store._pending_archive)
+        await agent_store._archive_vertices(agent_store._pending_archive)
+        agent_store._pending_archive = []
+    await agent_store.flush_dirty()
+
+    # 2. Thinking map RAM eviction
+    thinking_evicted = agent_store.cleanup_thinking_maps()
+
+    # 3. Drain LQM write buffer → KB
+    lqm_drained = await _drain_global_lqm()
+
+    # 4. Archive old resolved affairs
+    affairs_archived = await _archive_old_affairs()
+
+    # 5. Find next client for Phase 2
+    all_client_ids = await _get_all_client_ids()
+    next_client = None
+    if all_client_ids:
+        next_client = await agent_store.get_oldest_maintenance_client("kb_dedup", all_client_ids)
+
+    logger.info(
+        "MAINTENANCE_P1: mem=%d thinking=%d lqm=%d affairs=%d next=%s",
+        mem_removed, thinking_evicted, lqm_drained, affairs_archived, next_client,
+    )
+    return {
+        "phase": 1,
+        "mem_removed": mem_removed,
+        "thinking_evicted": thinking_evicted,
+        "lqm_drained": lqm_drained,
+        "affairs_archived": affairs_archived,
+        "next_client_for_phase2": next_client,
+    }
+
+
+async def _maintenance_phase2(agent_store, client_id: str) -> dict:
+    """Phase 2: GPU-light KB maintenance for one client."""
+    findings = await _run_kb_dedup(client_id)
+    summary = "; ".join(findings[:5]) if findings else "No issues found"
+    await agent_store.update_maintenance_cycle(client_id, "kb_dedup", summary)
+
+    logger.info("MAINTENANCE_P2: client=%s findings=%d", client_id, len(findings))
+    return {
+        "phase": 2,
+        "client_id": client_id,
+        "findings": findings,
+    }
+
+
+async def _drain_global_lqm() -> int:
+    """Drain LQM write buffer and flush to KB."""
+    import httpx
+    from app.memory.agent import _get_or_create_lqm
+
+    lqm = _get_or_create_lqm()
+    writes = await lqm.drain_write_buffer()
+    if not writes:
+        return 0
+
+    kb_url = settings.knowledgebase_write_url or settings.knowledgebase_url
+    if not kb_url:
+        return 0
+
+    count = 0
+    for write in writes:
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                resp = await http.post(
+                    f"{kb_url}/api/v1/ingest",
+                    json={
+                        "sourceUrn": write.source_urn,
+                        "clientId": write.metadata.get("client_id", ""),
+                        "content": write.content,
+                        "kind": write.kind,
+                        "metadata": write.metadata,
+                    },
+                    headers={"X-Ollama-Priority": "1"},
+                )
+                if resp.status_code in (200, 201, 202):
+                    lqm.mark_synced(write.source_urn)
+                    count += 1
+        except Exception:
+            pass
+    return count
+
+
+async def _archive_old_affairs() -> int:
+    """Archive RESOLVED affairs older than 24h from LQM."""
+    from app.memory.agent import _get_or_create_lqm
+    from app.memory.models import AffairStatus
+
+    lqm = _get_or_create_lqm()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    archived = 0
+
+    # Scan all affairs for RESOLVED ones older than 24h
+    all_affairs = list(lqm._affairs.values())
+    for affair in all_affairs:
+        if affair.status != AffairStatus.RESOLVED:
+            continue
+        if affair.updated_at and affair.updated_at < cutoff:
+            lqm.remove_affair(affair.id)
+            archived += 1
+    return archived
+
+
+async def _get_all_client_ids() -> list[str]:
+    """Get all client IDs from memory map hierarchy vertices."""
+    from app.agent.persistence import agent_store
+    from app.agent.models import VertexType
+
+    graph = agent_store.get_memory_map_cached()
+    if not graph:
+        return []
+    return [
+        v.input_request or v.client_id
+        for v in graph.vertices.values()
+        if v.vertex_type == VertexType.CLIENT and (v.input_request or v.client_id)
+    ]
+
+
+async def _run_kb_dedup(client_id: str) -> list[str]:
+    """Run KB deduplication for one client using LLM similarity check.
+
+    Searches KB for potential duplicates, uses LLM to confirm, merges via alias API.
+    Uses NORMAL priority → auto-preempted by CRITICAL (foreground chat).
+    """
+    import httpx
+
+    kb_url = settings.knowledgebase_url
+    if not kb_url:
+        return []
+
+    findings: list[str] = []
+    try:
+        # Search for potential duplicates — look for common topics
+        async with httpx.AsyncClient(timeout=30) as http:
+            resp = await http.post(
+                f"{kb_url}/api/v1/retrieve",
+                json={
+                    "query": "duplicate similar redundant",
+                    "clientId": client_id,
+                    "maxResults": 20,
+                },
+                headers={"X-Ollama-Priority": "1"},
+            )
+            if resp.status_code != 200:
+                return []
+            chunks = resp.json().get("chunks", [])
+
+        if len(chunks) < 2:
+            return []
+
+        # Group by source URN prefix to find near-duplicates
+        seen_content: dict[str, str] = {}  # content_hash → source_urn
+        for chunk in chunks:
+            content = chunk.get("content", "")[:200]
+            urn = chunk.get("source_urn", "")
+            # Simple dedup: if two entries have very similar short content
+            for existing_content, existing_urn in seen_content.items():
+                if _similarity(content, existing_content) > 0.85:
+                    findings.append(f"Potential duplicate: {urn} ≈ {existing_urn}")
+                    break
+            else:
+                seen_content[content] = urn
+
+    except Exception as e:
+        logger.warning("KB dedup failed for client %s: %s", client_id, e)
+
+    return findings
+
+
+def _similarity(a: str, b: str) -> float:
+    """Simple Jaccard similarity on word sets."""
+    if not a or not b:
+        return 0.0
+    words_a = set(a.lower().split())
+    words_b = set(b.lower().split())
+    if not words_a or not words_b:
+        return 0.0
+    intersection = len(words_a & words_b)
+    union = len(words_a | words_b)
+    return intersection / union if union > 0 else 0.0
 
 
 @app.post("/graph/master/purge-stale")

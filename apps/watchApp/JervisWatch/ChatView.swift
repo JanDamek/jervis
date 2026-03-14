@@ -119,7 +119,10 @@ struct ChatView: View {
 
                         // Play TTS audio if available
                         if let ttsData = result.ttsAudioData {
+                            print("[Chat] TTS audio received: \(ttsData.count) bytes, playing...")
                             WatchJervisApiClient.shared.playTtsAudio(ttsData)
+                        } else {
+                            print("[Chat] No TTS audio in response")
                         }
                     }
                 }

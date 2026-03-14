@@ -117,11 +117,16 @@ async def synthesize(request: TtsRequest) -> Response:
             wav.setframerate(voice.config.sample_rate)
             wav.setsampwidth(2)  # 16-bit
             wav.setnchannels(1)  # mono
+            # Only pass speaker_id for multi-speaker models (num_speakers > 1)
+            synth_kwargs = dict(
+                length_scale=1.0 / max(0.1, request.speed),
+            )
+            if hasattr(voice.config, 'num_speakers') and voice.config.num_speakers > 1:
+                synth_kwargs['speaker_id'] = TTS_SPEAKER_ID
             voice.synthesize(
                 request.text,
                 wav,
-                speaker_id=TTS_SPEAKER_ID,
-                length_scale=1.0 / max(0.1, request.speed),
+                **synth_kwargs,
             )
         return audio_buffer.getvalue()
 
@@ -167,11 +172,15 @@ async def synthesize_stream(request: TtsRequest):
                 wav.setframerate(voice.config.sample_rate)
                 wav.setsampwidth(2)
                 wav.setnchannels(1)
+                synth_kwargs = dict(
+                    length_scale=1.0 / max(0.1, request.speed),
+                )
+                if hasattr(voice.config, 'num_speakers') and voice.config.num_speakers > 1:
+                    synth_kwargs['speaker_id'] = TTS_SPEAKER_ID
                 voice.synthesize(
                     sentence,
                     wav,
-                    speaker_id=TTS_SPEAKER_ID,
-                    length_scale=1.0 / max(0.1, request.speed),
+                    **synth_kwargs,
                 )
             yield buf.getvalue()
 

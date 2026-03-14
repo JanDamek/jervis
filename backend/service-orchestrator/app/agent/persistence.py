@@ -36,10 +36,13 @@ _COLLECTION_NAME = "task_graphs"
 _TTL_DAYS = 30
 _FLUSH_INTERVAL_S = 30  # Periodic DB flush interval
 _CLEANUP_INTERVAL_S = 600  # Memory map cleanup every 10 min
-_KEEP_CHAT_VERTICES = 5  # Keep last N chat exchanges
-_KEEP_TASK_VERTICES = 5  # Keep last N completed/failed task refs
-_MAX_COMPLETED_AGE_S = 3600  # Remove completed vertices older than 1 hour
-_MIN_KEEP_VERTICES = 2  # Always keep at least N newest per category
+_KEEP_CHAT_PER_CLIENT = 5  # Keep last N chat exchanges PER CLIENT
+_KEEP_TASK_PER_CLIENT = 5  # Keep last N completed/failed task refs PER CLIENT
+_MAX_COMPLETED_AGE_S = 86400  # 24 hours — Tier 1 retention in RAM
+_MIN_KEEP_PER_CLIENT = 2  # Always keep at least N newest per category per client
+_THINKING_MAP_TTL_S = 3600  # Thinking maps: keep 1h in RAM after completion
+_THINKING_MAP_HIDE_S = 600  # 10min → hidden in UI (debug visibility)
+_ARCHIVE_TTL_DAYS = 7  # Tier 2: MongoDB archive retention
 
 
 class AgentStore:
@@ -53,6 +56,8 @@ class AgentStore:
         self._client: AsyncIOMotorClient | None = None
         self._collection: AsyncIOMotorCollection | None = None
         self._vertex_tasks_coll: AsyncIOMotorCollection | None = None
+        self._archive_coll: AsyncIOMotorCollection | None = None
+        self._maintenance_coll: AsyncIOMotorCollection | None = None
 
         # RAM cache
         self._memory_map: AgentGraph | None = None
@@ -90,6 +95,26 @@ class AgentStore:
         await self._vertex_tasks_coll.create_index(
             [("created_at", 1)],
             expireAfterSeconds=7 * 86400,
+        )
+
+        # Tier 2: Memory map archive — per-vertex docs with 7d TTL
+        self._archive_coll = db["master_map_archive"]
+        await self._archive_coll.create_index(
+            [("archived_at", 1)],
+            expireAfterSeconds=_ARCHIVE_TTL_DAYS * 86400,
+        )
+        await self._archive_coll.create_index([("client_id", 1)])
+        await self._archive_coll.create_index(
+            [("title", "text"), ("result_summary", "text"), ("input_request", "text")],
+        )
+
+        # Maintenance cycles — tracks per-client maintenance progress
+        self._maintenance_coll = db["maintenance_cycles"]
+        await self._maintenance_coll.create_index(
+            [("client_id", 1), ("task_type", 1)], unique=True,
+        )
+        await self._maintenance_coll.create_index(
+            [("task_type", 1), ("last_run_at", 1)],
         )
         logger.info(
             "AgentStore initialized (collection=%s, ttl=%dd)",
@@ -553,80 +578,112 @@ class AgentStore:
         return count
 
     def cleanup_memory_map(self) -> int:
-        """Remove old completed/failed vertices from memory map.
+        """Remove old completed/failed vertices from memory map (per-client).
 
-        Keeps:
+        3-tier lifecycle:
+        - Tier 1 (RAM): active vertices + last N per client, max 24h after completion
+        - Tier 2 (MongoDB archive): 7 days, per-vertex documents
+        - Tier 3 (KB): permanent, content indexed before removal
+
+        Keeps per client:
         - All active vertices (PENDING, READY, RUNNING, BLOCKED)
-        - Last N REQUEST vertices (for summary context)
-        - Last N completed/failed TASK_REF vertices (for summary context)
-        - Root vertex
-        - All edges referencing kept vertices
+        - Last _KEEP_CHAT_PER_CLIENT REQUEST vertices
+        - Last _KEEP_TASK_PER_CLIENT completed/failed TASK_REF vertices
+        - Root vertex always
 
-        Removed vertices are archived to `master_map_archive` collection
-        via _archive_vertices() (called separately, async).
+        Hierarchy GC: CLIENT/GROUP/PROJECT vertices are removed when they have
+        no remaining data vertex descendants.
 
         Returns number of removed vertices.
         """
         if not self._memory_map:
             return 0
 
-        # First pass: mark stale RUNNING vertices as FAILED so they can be cleaned up
         self._mark_stale_running_vertices()
 
         graph = self._memory_map
         keep_ids: set[str] = set()
+        hierarchy_types = {VertexType.CLIENT, VertexType.GROUP, VertexType.PROJECT}
 
-        # Always keep active (non-terminal) vertices
+        # Always keep root
+        if graph.root_vertex_id:
+            keep_ids.add(graph.root_vertex_id)
+
+        # Always keep active (non-terminal) vertices regardless of client
         for vid, v in graph.vertices.items():
             if v.status in self._ACTIVE_STATUSES:
                 keep_ids.add(vid)
 
-        # Keep last N chat exchanges (sorted by completed_at desc)
-        chats = sorted(
-            [(vid, v) for vid, v in graph.vertices.items()
-             if v.vertex_type == VertexType.REQUEST],
-            key=lambda x: x[1].completed_at or "0",
-            reverse=True,
-        )
-        for vid, _ in chats[:_KEEP_CHAT_VERTICES]:
-            keep_ids.add(vid)
+        # --- Per-client cleanup ---
+        # Group data vertices by client_id
+        from collections import defaultdict
+        client_chats: dict[str, list[tuple[str, GraphVertex]]] = defaultdict(list)
+        client_tasks: dict[str, list[tuple[str, GraphVertex]]] = defaultdict(list)
 
-        # Keep last N task refs (sorted by completed_at desc)
-        task_refs = sorted(
-            [(vid, v) for vid, v in graph.vertices.items()
-             if v.vertex_type == VertexType.TASK_REF],
-            key=lambda x: x[1].completed_at or "0",
-            reverse=True,
-        )
-        for vid, _ in task_refs[:_KEEP_TASK_VERTICES]:
-            keep_ids.add(vid)
+        for vid, v in graph.vertices.items():
+            if v.vertex_type in hierarchy_types or v.vertex_type == VertexType.ROOT:
+                continue
+            cid = v.client_id or self._resolve_client_id(v)
+            if v.vertex_type == VertexType.REQUEST:
+                client_chats[cid].append((vid, v))
+            elif v.vertex_type == VertexType.TASK_REF:
+                client_tasks[cid].append((vid, v))
 
-        # Time-based: remove old completed vertices even if within count limit
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=_MAX_COMPLETED_AGE_S)).isoformat()
 
-        def _time_prune(kept_vids: list[str]) -> None:
-            """Remove vertices older than cutoff, keeping at least _MIN_KEEP_VERTICES."""
-            still_kept = sum(1 for vid in kept_vids if vid in keep_ids)
-            for vid in kept_vids:
-                if vid not in keep_ids:
+        def _keep_per_client(items: list[tuple[str, GraphVertex]], limit: int) -> None:
+            """Keep last N items per client, respecting 24h cutoff."""
+            sorted_items = sorted(items, key=lambda x: x[1].completed_at or "0", reverse=True)
+            kept = 0
+            for vid, v in sorted_items:
+                if vid in keep_ids:
+                    kept += 1
                     continue
-                v = graph.vertices.get(vid)
-                if not v or v.status in self._ACTIVE_STATUSES:
+                if kept >= limit:
                     continue
+                # 24h cutoff — but always keep at least _MIN_KEEP_PER_CLIENT
                 completed = v.completed_at or v.started_at or ""
-                if completed and completed < cutoff and still_kept > _MIN_KEEP_VERTICES:
-                    keep_ids.discard(vid)
-                    still_kept -= 1
-
-        _time_prune([vid for vid, _ in chats[:_KEEP_CHAT_VERTICES]])
-        _time_prune([vid for vid, _ in task_refs[:_KEEP_TASK_VERTICES]])
-
-        # Always keep root, CLIENT, GROUP, and PROJECT vertices (structural hierarchy)
-        if graph.root_vertex_id:
-            keep_ids.add(graph.root_vertex_id)
-        for vid, v in graph.vertices.items():
-            if v.vertex_type in (VertexType.CLIENT, VertexType.GROUP, VertexType.PROJECT):
+                if completed and completed < cutoff and kept >= _MIN_KEEP_PER_CLIENT:
+                    continue
                 keep_ids.add(vid)
+                kept += 1
+
+        for cid, chats in client_chats.items():
+            _keep_per_client(chats, _KEEP_CHAT_PER_CLIENT)
+        for cid, tasks in client_tasks.items():
+            _keep_per_client(tasks, _KEEP_TASK_PER_CLIENT)
+
+        # Also keep INCOMING vertices within 24h
+        for vid, v in graph.vertices.items():
+            if v.vertex_type == VertexType.INCOMING and vid not in keep_ids:
+                completed = v.completed_at or v.started_at or ""
+                if not completed or completed >= cutoff:
+                    keep_ids.add(vid)
+
+        # --- Hierarchy GC ---
+        # Keep hierarchy vertices only if they have at least one data descendant in keep_ids
+        referenced_hierarchy: set[str] = set()
+        for vid in keep_ids:
+            v = graph.vertices.get(vid)
+            if not v or v.vertex_type in hierarchy_types or v.vertex_type == VertexType.ROOT:
+                continue
+            # Walk parent chain and mark hierarchy ancestors as referenced
+            current = v
+            for _ in range(5):
+                if not current.parent_id:
+                    break
+                parent = graph.vertices.get(current.parent_id)
+                if not parent:
+                    break
+                if parent.vertex_type in hierarchy_types:
+                    referenced_hierarchy.add(parent.id)
+                current = parent
+
+        for vid, v in graph.vertices.items():
+            if v.vertex_type in hierarchy_types:
+                if vid in referenced_hierarchy:
+                    keep_ids.add(vid)
+                # else: hierarchy vertex has no descendants → will be removed
 
         # Identify vertices to remove
         to_remove = set(graph.vertices.keys()) - keep_ids
@@ -649,19 +706,64 @@ class AgentStore:
 
         self._dirty.add(graph.task_id)
         logger.info(
-            "Memory map cleanup: removed %d vertices, kept %d (active=%d, chats=%d, tasks=%d)",
+            "Memory map cleanup: removed %d vertices (kept %d, clients=%d)",
             len(to_remove), len(keep_ids),
-            sum(1 for v in graph.vertices.values() if v.status in self._ACTIVE_STATUSES),
-            min(len(chats), _KEEP_CHAT_VERTICES),
-            min(len(task_refs), _KEEP_TASK_VERTICES),
+            len(set(v.client_id for v in graph.vertices.values() if v.client_id)),
         )
         return len(to_remove)
 
-    async def _persist_to_kb(self, vertices: list[dict]) -> None:
-        """Persist completed task/request summaries to KB (fire-and-forget).
+    def _resolve_client_id(self, vertex: GraphVertex) -> str:
+        """Resolve client_id for a vertex by walking parent chain (legacy fallback)."""
+        if not self._memory_map:
+            return ""
+        current = vertex
+        for _ in range(5):
+            if not current.parent_id:
+                return ""
+            parent = self._memory_map.vertices.get(current.parent_id)
+            if not parent:
+                return ""
+            if parent.vertex_type == VertexType.CLIENT:
+                return parent.input_request or parent.client_id or ""
+            current = parent
+        return ""
 
-        Writes meaningful summaries to the KB scoped by client_id/project_id,
-        so Jervis can "remember" what happened even after memory map cleanup.
+    def cleanup_thinking_maps(self) -> int:
+        """Remove completed thinking maps from RAM after _THINKING_MAP_TTL_S.
+
+        Does NOT delete from MongoDB (30d TTL handles that).
+        Returns number of evicted sub-graphs.
+        """
+        if not self._subgraphs:
+            return 0
+
+        now = datetime.now(timezone.utc)
+        cutoff = (now - timedelta(seconds=_THINKING_MAP_TTL_S)).isoformat()
+        to_evict: list[str] = []
+
+        for task_id, graph in self._subgraphs.items():
+            if graph.status not in (GraphStatus.COMPLETED, GraphStatus.FAILED):
+                continue
+            completed = graph.completed_at or ""
+            if completed and completed < cutoff:
+                to_evict.append(task_id)
+
+        for task_id in to_evict:
+            del self._subgraphs[task_id]
+
+        if to_evict:
+            logger.info("Evicted %d completed thinking maps from RAM", len(to_evict))
+        return len(to_evict)
+
+    async def _persist_to_kb(self, vertices: list[dict]) -> None:
+        """Persist vertex content to KB (Tier 3 — permanent).
+
+        Indexes rich content so Jervis can "remember" what happened:
+        - REQUEST: user message + response summary
+        - TASK_REF: task title + result + tools used
+        - INCOMING: qualified item context + approach
+
+        Threshold: any vertex with at least 20 chars of meaningful content.
         """
         import httpx
 
@@ -669,27 +771,52 @@ class AgentStore:
         if not kb_url:
             return
 
+        indexable_types = ("task_ref", "request", "incoming")
         persisted = 0
-        for v in vertices:
-            if v.get("vertex_type") not in ("task_ref", "request"):
-                continue
-            summary = v.get("result_summary") or ""
-            client_id = v.get("client_id", "")
-            if not summary or len(summary) < 50 or not client_id:
-                continue
 
-            # Resolve project_id: direct field or walk parent hierarchy
-            project_id = v.get("project_id") or ""
+        for v in vertices:
+            vtype = v.get("vertex_type", "")
+            if vtype not in indexable_types:
+                continue
+            client_id = v.get("client_id", "")
+            if not client_id:
+                continue
 
             title = v.get("title", "Task")
-            vtype = v.get("vertex_type", "")
-            content = (
-                f"# {title}\n\n"
-                f"Type: {vtype}\n"
-                f"Status: {v.get('status')}\n"
-                f"Completed: {v.get('completed_at')}\n\n"
-                f"{summary}"
-            )
+            summary = v.get("result_summary") or ""
+            input_req = v.get("input_request") or ""
+            description = v.get("description") or ""
+            error = v.get("error") or ""
+            tools_used = v.get("tools_used") or []
+
+            # At least 20 chars of meaningful content
+            meaningful = summary or input_req or description
+            if len(meaningful) < 20:
+                continue
+
+            # Build rich content for KB indexing
+            parts = [f"# {title}\n"]
+            parts.append(f"Type: {vtype}")
+            parts.append(f"Status: {v.get('status')}")
+            if v.get("started_at"):
+                parts.append(f"Started: {v.get('started_at')}")
+            if v.get("completed_at"):
+                parts.append(f"Completed: {v.get('completed_at')}")
+            parts.append("")
+            if input_req and input_req != title:
+                parts.append(f"## Request\n{input_req}\n")
+            if description and description != title and description != input_req:
+                parts.append(f"## Description\n{description}\n")
+            if summary:
+                parts.append(f"## Result\n{summary}\n")
+            if error:
+                parts.append(f"## Error\n{error}\n")
+            if tools_used:
+                parts.append(f"Tools: {', '.join(str(t) for t in tools_used)}")
+
+            content = "\n".join(parts)
+            project_id = v.get("project_id") or ""
+
             payload = {
                 "clientId": client_id,
                 "projectId": project_id or None,
@@ -713,55 +840,71 @@ class AgentStore:
                 logger.debug("KB persist failed for %s: %s", v.get("id"), e)
 
         if persisted:
-            logger.info("Persisted %d vertices to KB", persisted)
+            logger.info("Persisted %d vertices to KB (Tier 3)", persisted)
 
     async def _archive_vertices(self, vertices: list[dict]) -> None:
-        """Archive removed vertices to a separate MongoDB collection.
+        """Archive removed vertices to MongoDB (Tier 2 — 7 days).
 
-        Stores as a batch document with vertex summaries. Retrievable for
-        future context if needed.
+        Stores per-vertex documents with full data. TTL index handles
+        automatic deletion after _ARCHIVE_TTL_DAYS.
         """
         if not vertices:
             return
+        # Skip hierarchy/root vertices — not useful in archive
+        indexable_types = ("task_ref", "request", "incoming")
         try:
-            coll = await self._ensure_collection()
-            db = coll.database
-            archive_coll = db["master_map_archive"]
-            doc = {
-                "archived_at": datetime.now(timezone.utc),
-                "count": len(vertices),
-                "vertices": [
-                    {
-                        "id": v.get("id"),
-                        "title": v.get("title", ""),
-                        "vertex_type": v.get("vertex_type", ""),
-                        "status": v.get("status", ""),
-                        "result_summary": (v.get("result_summary") or "")[:300],
-                        "error": (v.get("error") or "")[:300],
-                        "completed_at": v.get("completed_at"),
-                        "input_request": v.get("input_request", ""),
-                    }
-                    for v in vertices
-                ],
-            }
-            await archive_coll.insert_one(doc)
-            logger.info("Archived %d vertices to master_map_archive", len(vertices))
+            if not self._archive_coll:
+                coll = await self._ensure_collection()
+                self._archive_coll = coll.database["master_map_archive"]
+
+            now = datetime.now(timezone.utc)
+            docs = []
+            for v in vertices:
+                if v.get("vertex_type") not in indexable_types:
+                    continue
+                if not v.get("client_id"):
+                    continue
+                docs.append({
+                    "vertex_id": v.get("id"),
+                    "title": v.get("title", ""),
+                    "vertex_type": v.get("vertex_type", ""),
+                    "status": v.get("status", ""),
+                    "client_id": v.get("client_id", ""),
+                    "project_id": v.get("project_id", ""),
+                    "input_request": v.get("input_request", ""),
+                    "description": v.get("description", ""),
+                    "result_summary": v.get("result_summary", ""),
+                    "error": v.get("error", ""),
+                    "tools_used": v.get("tools_used", []),
+                    "started_at": v.get("started_at"),
+                    "completed_at": v.get("completed_at"),
+                    "archived_at": now,
+                })
+
+            if docs:
+                await self._archive_coll.insert_many(docs)
+                logger.info("Archived %d vertices to master_map_archive (Tier 2)", len(docs))
         except Exception as e:
             logger.warning("Failed to archive vertices: %s", e)
 
     async def _periodic_cleanup(self) -> None:
-        """Background task: cleanup memory map every N seconds."""
+        """Background task: cleanup memory map + thinking maps every N seconds."""
         while True:
             try:
                 await asyncio.sleep(_CLEANUP_INTERVAL_S)
+
+                # 1. Memory map cleanup (per-client, 24h lifecycle)
                 removed = self.cleanup_memory_map()
                 if removed > 0:
-                    # Archive first, then persist to KB, then flush
-                    if hasattr(self, "_pending_archive") and self._pending_archive:
+                    if self._pending_archive:
                         await self._persist_to_kb(self._pending_archive)
                         await self._archive_vertices(self._pending_archive)
                         self._pending_archive = []
                     await self.flush_dirty()
+
+                # 2. Thinking map RAM eviction (1h after completion)
+                self.cleanup_thinking_maps()
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -846,6 +989,109 @@ class AgentStore:
              "root_vertex_id": 1, "parent_graph_id": 1},
         ).sort("created_at", -1).limit(50)
         return [doc async for doc in cursor]
+
+    # --- Tier 2: Archive search ---
+
+    async def search_archive(
+        self,
+        query: str,
+        client_id: str,
+        limit: int = 10,
+    ) -> list[dict]:
+        """Search the 7-day MongoDB archive (Tier 2).
+
+        Uses MongoDB text search on title, result_summary, input_request.
+        Client isolation enforced.
+        """
+        if not client_id:
+            return []
+        if not self._archive_coll:
+            coll = await self._ensure_collection()
+            self._archive_coll = coll.database["master_map_archive"]
+
+        try:
+            cursor = self._archive_coll.find(
+                {
+                    "$text": {"$search": query},
+                    "client_id": client_id,
+                },
+                {"score": {"$meta": "textScore"}},
+            ).sort([("score", {"$meta": "textScore"})]).limit(limit)
+            results = []
+            async for doc in cursor:
+                doc.pop("_id", None)
+                results.append(doc)
+            return results
+        except Exception as e:
+            logger.warning("Archive search failed: %s", e)
+            return []
+
+    # --- Maintenance cycles (per-client progress tracking) ---
+
+    async def _ensure_maintenance_coll(self) -> AsyncIOMotorCollection:
+        if not self._maintenance_coll:
+            coll = await self._ensure_collection()
+            self._maintenance_coll = coll.database["maintenance_cycles"]
+        return self._maintenance_coll
+
+    async def get_oldest_maintenance_client(
+        self, task_type: str, all_client_ids: list[str],
+    ) -> str | None:
+        """Return client_id with the oldest maintenance cycle for given task_type.
+
+        Clients never maintained are returned first. If all have been maintained,
+        returns the one with the oldest last_run_at.
+        """
+        if not all_client_ids:
+            return None
+        coll = await self._ensure_maintenance_coll()
+
+        # Find existing cycles for this task_type
+        maintained: dict[str, str] = {}  # client_id → last_run_at
+        async for doc in coll.find({"task_type": task_type}):
+            maintained[doc["client_id"]] = doc.get("last_run_at", "")
+
+        # Clients never maintained → pick first
+        never_maintained = [cid for cid in all_client_ids if cid not in maintained]
+        if never_maintained:
+            return never_maintained[0]
+
+        # All maintained → return oldest
+        return min(all_client_ids, key=lambda cid: maintained.get(cid, ""))
+
+    async def update_maintenance_cycle(
+        self, client_id: str, task_type: str, result_summary: str,
+    ) -> None:
+        """Upsert maintenance cycle record."""
+        coll = await self._ensure_maintenance_coll()
+        await coll.update_one(
+            {"client_id": client_id, "task_type": task_type},
+            {
+                "$set": {
+                    "client_id": client_id,
+                    "task_type": task_type,
+                    "last_run_at": datetime.now(timezone.utc).isoformat(),
+                    "result_summary": result_summary[:500],
+                },
+                "$inc": {"run_count": 1},
+            },
+            upsert=True,
+        )
+
+    async def all_clients_fresh(
+        self, task_type: str, all_client_ids: list[str], max_age_hours: int = 24,
+    ) -> bool:
+        """True if ALL clients have a maintenance cycle newer than max_age_hours."""
+        if not all_client_ids:
+            return True
+        coll = await self._ensure_maintenance_coll()
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
+        fresh_count = await coll.count_documents({
+            "task_type": task_type,
+            "client_id": {"$in": all_client_ids},
+            "last_run_at": {"$gte": cutoff},
+        })
+        return fresh_count >= len(all_client_ids)
 
     # --- Vertex task correlations (persistent) ---
 

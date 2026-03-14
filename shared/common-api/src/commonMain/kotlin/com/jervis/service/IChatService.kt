@@ -4,6 +4,8 @@ import com.jervis.dto.AttachmentDto
 import com.jervis.dto.ChatHistoryDto
 import com.jervis.dto.ChatMessageDto
 import com.jervis.dto.ChatResponseDto
+import com.jervis.dto.VoiceAudioChunk
+import com.jervis.dto.VoiceChatEvent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.rpc.annotations.Rpc
 
@@ -80,4 +82,16 @@ interface IChatService {
      * @param action The approval action type (e.g. "KB_DELETE")
      */
     suspend fun approveChatAction(approved: Boolean, always: Boolean = false, action: String? = null)
+
+    /**
+     * Streaming voice chat — bidirectional kRPC stream over WebSocket.
+     *
+     * Client streams audio chunks (base64 PCM/WAV) as user speaks.
+     * Server accumulates audio, runs Whisper STT, sends to orchestrator,
+     * and streams back events: transcription, response tokens, TTS audio.
+     *
+     * Latency: transcription starts immediately when audio arrives,
+     * so response comes ~2-3s after user stops speaking.
+     */
+    fun streamVoiceChat(audioChunks: Flow<VoiceAudioChunk>): Flow<VoiceChatEvent>
 }

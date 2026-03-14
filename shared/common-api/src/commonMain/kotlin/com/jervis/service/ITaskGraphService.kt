@@ -5,6 +5,7 @@ import kotlinx.rpc.annotations.Rpc
 
 @Rpc
 interface ITaskGraphService {
-    /** Get the full task graph for a given task ID. Returns null if not found. */
-    suspend fun getGraph(taskId: String): TaskGraphDto?
+    /** Get the full task graph for a given task ID. Returns null if not found.
+     *  For master map, pass clientId to get client-filtered view. */
+    suspend fun getGraph(taskId: String, clientId: String? = null): TaskGraphDto?
 }

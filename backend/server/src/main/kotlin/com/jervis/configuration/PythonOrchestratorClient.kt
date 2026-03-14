@@ -172,10 +172,17 @@ class PythonOrchestratorClient(baseUrl: String) {
      *
      * Returns the raw JSON string (Python snake_case format).
      * Caller is responsible for deserialization with @SerialName mappings.
+     *
+     * For master map (taskId="master"), pass clientId to get client-filtered view.
      */
-    suspend fun getTaskGraph(taskId: String): String? {
+    suspend fun getTaskGraph(taskId: String, clientId: String? = null): String? {
         return try {
-            val response = client.get("$apiBaseUrl/graph/$taskId")
+            val url = if (clientId != null && taskId == "master") {
+                "$apiBaseUrl/graph/$taskId?client_id=$clientId"
+            } else {
+                "$apiBaseUrl/graph/$taskId"
+            }
+            val response = client.get(url)
             if (response.status.value == 200) {
                 response.bodyAsText()
             } else {
@@ -183,6 +190,31 @@ class PythonOrchestratorClient(baseUrl: String) {
             }
         } catch (e: Exception) {
             logger.warn { "PYTHON_ORCHESTRATOR_GRAPH_FAIL: taskId=$taskId ${e.message}" }
+            null
+        }
+    }
+
+    /**
+     * Run idle maintenance on Python orchestrator.
+     *
+     * Phase 1 (CPU-only): memory map cleanup, thinking map eviction, LQM drain, affair archival.
+     * Phase 2 (GPU-light): KB dedup for one client (NORMAL priority, auto-preempted by CRITICAL).
+     */
+    suspend fun runMaintenance(phase: Int = 1, clientId: String? = null): com.jervis.dto.maintenance.MaintenanceResultDto? {
+        val params = buildString {
+            append("phase=$phase")
+            if (clientId != null) append("&client_id=$clientId")
+        }
+        return try {
+            val response = client.post("$apiBaseUrl/maintenance/run?$params")
+            if (response.status.value == 200) {
+                response.body()
+            } else {
+                logger.debug { "MAINTENANCE: phase=$phase returned ${response.status}" }
+                null
+            }
+        } catch (e: Exception) {
+            logger.warn { "MAINTENANCE_FAIL: phase=$phase ${e.message}" }
             null
         }
     }
