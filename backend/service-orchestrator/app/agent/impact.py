@@ -118,8 +118,8 @@ async def extract_touched_artifacts(
         deps: list[ArtifactDep] = []
 
         task_data = state.get("task", {})
-        client_id = task_data.get("client_id", "")
-        project_id = task_data.get("project_id", "")
+        client_id = task_data.get("client_id") or ""
+        project_id = task_data.get("project_id") or ""
 
         for item in data.get("touched", []):
             key = item.get("key", "")
