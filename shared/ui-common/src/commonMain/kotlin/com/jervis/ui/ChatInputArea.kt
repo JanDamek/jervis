@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,6 +57,7 @@ internal fun InputArea(
     onRemoveAttachment: (Int) -> Unit = {},
     requestFocus: Boolean = false,
     isRecordingVoice: Boolean = false,
+    voiceStatus: String = "",
     onMicClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -105,6 +107,27 @@ internal fun InputArea(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
+        // Voice recording status bar
+        if (isRecordingVoice) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    Icons.Default.Mic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    text = voiceStatus.ifBlank { "Nahravam..." },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+        }
+
         // Input row
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -114,27 +137,17 @@ internal fun InputArea(
             JIconButton(
                 onClick = onAttachFile,
                 icon = Icons.Default.AttachFile,
-                contentDescription = "Připojit soubor",
+                contentDescription = "Pripojit soubor",
                 enabled = enabled && !isRecordingVoice,
                 modifier = Modifier.size(44.dp),
             )
 
-            // Mic button — toggle voice recording
-            JIconButton(
-                onClick = onMicClick,
-                icon = if (isRecordingVoice) Icons.Default.Stop else Icons.Default.Mic,
-                contentDescription = if (isRecordingVoice) "Zastavit nahrávání" else "Hlasový vstup",
-                enabled = enabled,
-                tint = if (isRecordingVoice) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(44.dp),
-            )
-
             JTextField(
-                value = inputText,
+                value = if (isRecordingVoice) "" else inputText,
                 onValueChange = onInputChanged,
                 label = "",
-                placeholder = "Napište zprávu...",
-                enabled = enabled,
+                placeholder = if (isRecordingVoice) "Nahravam hlas..." else "Napiste zpravu...",
+                enabled = enabled && !isRecordingVoice,
                 modifier =
                     Modifier
                         .weight(1f)
@@ -143,16 +156,13 @@ internal fun InputArea(
                         .onPreviewKeyEvent { keyEvent ->
                             if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown) {
                                 if (keyEvent.isShiftPressed) {
-                                    // Shift+Enter → insert new line manually
-                                    // (Compose Desktop doesn't propagate Shift+Enter to text field)
                                     onInputChanged(inputText + "\n")
                                     true
                                 } else {
-                                    // Enter → send message
                                     if (enabled && inputText.isNotBlank()) {
                                         onSendClick()
                                     }
-                                    true // consume the event
+                                    true
                                 }
                             } else {
                                 false
@@ -160,17 +170,29 @@ internal fun InputArea(
                         },
                 maxLines = 4,
                 singleLine = false,
+                // Mic icon inside text field — visible when not typing, becomes stop when recording
+                trailingIcon = {
+                    if (inputText.isBlank() || isRecordingVoice) {
+                        IconButton(
+                            onClick = onMicClick,
+                            enabled = enabled,
+                        ) {
+                            Icon(
+                                if (isRecordingVoice) Icons.Default.Stop else Icons.Default.Mic,
+                                contentDescription = if (isRecordingVoice) "Zastavit" else "Hlasovy vstup",
+                                tint = if (isRecordingVoice) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                },
             )
 
-            // Foreground chat is global — always "Odeslat" regardless of background task state
-            val buttonText = "Odeslat"
-
             JPrimaryButton(
-                onClick = onSendClick,
-                enabled = enabled && (inputText.isNotBlank() || attachments.isNotEmpty()),
+                onClick = if (isRecordingVoice) onMicClick else onSendClick,
+                enabled = enabled && (inputText.isNotBlank() || attachments.isNotEmpty() || isRecordingVoice),
                 modifier = Modifier.height(56.dp),
             ) {
-                Text(buttonText)
+                Text(if (isRecordingVoice) "Stop" else "Odeslat")
             }
         }
     }

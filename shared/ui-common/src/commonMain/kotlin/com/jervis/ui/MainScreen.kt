@@ -86,6 +86,9 @@ fun MainScreenView(
     onToggleNeedReaction: () -> Unit = {},
     backgroundMessageCount: Int = 0,
     userTaskCount: Int = 0,
+    isRecordingVoice: Boolean = false,
+    voiceStatus: String = "",
+    onMicClick: () -> Unit = {},
     activeThinkingMap: TaskGraphDto? = null,
     thinkingMapPanelVisible: Boolean = false,
     thinkingMapPanelWidthFraction: Float = 0.35f,
@@ -157,6 +160,9 @@ fun MainScreenView(
                             onToggleNeedReaction = onToggleNeedReaction,
                             backgroundMessageCount = backgroundMessageCount,
                             userTaskCount = userTaskCount,
+                            isRecordingVoice = isRecordingVoice,
+                            voiceStatus = voiceStatus,
+                            onMicClick = onMicClick,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -219,6 +225,9 @@ fun MainScreenView(
                             onToggleNeedReaction = onToggleNeedReaction,
                             backgroundMessageCount = backgroundMessageCount,
                             userTaskCount = userTaskCount,
+                            isRecordingVoice = isRecordingVoice,
+                            voiceStatus = voiceStatus,
+                            onMicClick = onMicClick,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -323,6 +332,9 @@ private fun ChatContent(
     onToggleNeedReaction: () -> Unit = {},
     backgroundMessageCount: Int = 0,
     userTaskCount: Int = 0,
+    isRecordingVoice: Boolean = false,
+    voiceStatus: String = "",
+    onMicClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -421,6 +433,9 @@ private fun ChatContent(
             attachments = attachments,
             onAttachFile = onAttachFile,
             onRemoveAttachment = onRemoveAttachment,
+            isRecordingVoice = isRecordingVoice,
+            voiceStatus = voiceStatus,
+            onMicClick = onMicClick,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp),

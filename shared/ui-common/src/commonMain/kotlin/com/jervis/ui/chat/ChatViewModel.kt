@@ -1,6 +1,15 @@
 package com.jervis.ui.chat
 
 import com.jervis.di.RpcConnectionManager
+import com.jervis.ui.audio.AudioPlayer
+import com.jervis.ui.audio.AudioRecorder
+import io.ktor.client.HttpClient
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
+import io.ktor.utils.io.readUTF8Line
 import com.jervis.dto.ChatResponseType
 import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
@@ -70,6 +79,13 @@ class ChatViewModel(
 
     private val _isLoadingMore = MutableStateFlow(false)
     val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
+
+    // Voice recording state
+    private val _isRecordingVoice = MutableStateFlow(false)
+    val isRecordingVoice: StateFlow<Boolean> = _isRecordingVoice.asStateFlow()
+
+    private val _voiceStatus = MutableStateFlow("")
+    val voiceStatus: StateFlow<String> = _voiceStatus.asStateFlow()
 
     private val _compressionBoundaries = MutableStateFlow<List<CompressionBoundaryDto>>(emptyList())
     val compressionBoundaries: StateFlow<List<CompressionBoundaryDto>> = _compressionBoundaries.asStateFlow()
@@ -1120,6 +1136,152 @@ class ChatViewModel(
             }
             updatePendingInfo(isAutoRetrying = true)
             retrySendMessage()
+        }
+    }
+
+    // ── Voice Recording ──────────────────────────────────────────────────
+
+    private val voiceRecorder = AudioRecorder()
+    private var voiceJob: Job? = null
+
+    fun toggleVoiceRecording() {
+        if (_isRecordingVoice.value) {
+            stopVoiceAndSend()
+        } else {
+            startVoiceRecording()
+        }
+    }
+
+    private fun startVoiceRecording() {
+        val started = voiceRecorder.startRecording()
+        if (started) {
+            _isRecordingVoice.value = true
+            _voiceStatus.value = "Nahravam..."
+        }
+    }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    private fun stopVoiceAndSend() {
+        _isRecordingVoice.value = false
+        val audioData = voiceRecorder.stopRecording() ?: return
+        _voiceStatus.value = "Odesilam..."
+        _isLoading.value = true
+
+        // Show optimistic message
+        _chatMessages.value = _chatMessages.value + ChatMessage(
+            from = ChatMessage.Sender.Me,
+            text = "[Hlasova zprava]",
+            messageType = ChatMessage.MessageType.USER_MESSAGE,
+        )
+
+        voiceJob?.cancel()
+        voiceJob = scope.launch {
+            try {
+                val serverUrl = connectionManager.baseUrl.trimEnd('/')
+                val client = HttpClient()
+                try {
+                    val response = client.submitFormWithBinaryData(
+                        url = "$serverUrl/api/v1/voice/stream",
+                        formData = formData {
+                            append("file", audioData, Headers.build {
+                                append(HttpHeaders.ContentDisposition, "filename=voice.wav")
+                                append(HttpHeaders.ContentType, "audio/wav")
+                            })
+                            append("source", "desktop_chat")
+                        },
+                    )
+
+                    // Parse SSE stream
+                    val channel = response.bodyAsChannel()
+                    var currentEvent = ""
+                    var currentData = ""
+                    val responseBuilder = StringBuilder()
+                    var transcription = ""
+
+                    while (!channel.isClosedForRead) {
+                        val line = channel.readUTF8Line() ?: break
+                        when {
+                            line.startsWith("event: ") -> currentEvent = line.removePrefix("event: ")
+                            line.startsWith("data: ") -> currentData = line.removePrefix("data: ")
+                            line.isBlank() && currentData.isNotEmpty() -> {
+                                val json = try { Json.parseToJsonElement(currentData) } catch (_: Exception) { null }
+                                val text = json?.let {
+                                    (it as? kotlinx.serialization.json.JsonObject)
+                                        ?.get("text")
+                                        ?.let { v -> (v as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                                } ?: ""
+
+                                when (currentEvent) {
+                                    "transcribing" -> _voiceStatus.value = "Prepisuji rec..."
+                                    "transcribed" -> {
+                                        transcription = text
+                                        _voiceStatus.value = "Rozpoznano: ${text.take(40)}"
+                                        // Update optimistic message with transcription
+                                        _chatMessages.update { msgs ->
+                                            msgs.mapIndexed { i, m ->
+                                                if (i == msgs.lastIndex && m.text == "[Hlasova zprava]") {
+                                                    m.copy(text = text)
+                                                } else m
+                                            }
+                                        }
+                                    }
+                                    "responding" -> _voiceStatus.value = "Generuji odpoved..."
+                                    "token" -> responseBuilder.append(text)
+                                    "response" -> {
+                                        if (responseBuilder.isEmpty()) responseBuilder.append(text)
+                                    }
+                                    "tts_audio" -> {
+                                        val audioB64 = json?.let {
+                                            (it as? kotlinx.serialization.json.JsonObject)
+                                                ?.get("data")
+                                                ?.let { v -> (v as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                                        }
+                                        if (audioB64 != null) {
+                                            try {
+                                                val ttsBytes = Base64.decode(audioB64)
+                                                val player = AudioPlayer()
+                                                player.play(ttsBytes)
+                                            } catch (e: Exception) {
+                                                println("TTS playback error: ${e.message}")
+                                            }
+                                        }
+                                    }
+                                    "error" -> {
+                                        if (responseBuilder.isEmpty()) responseBuilder.append(text)
+                                    }
+                                    "done" -> {}
+                                }
+                                currentEvent = ""
+                                currentData = ""
+                            }
+                        }
+                    }
+
+                    // Add assistant response to chat
+                    val finalResponse = responseBuilder.toString().trim()
+                    if (finalResponse.isNotBlank()) {
+                        _chatMessages.value = _chatMessages.value + ChatMessage(
+                            from = ChatMessage.Sender.Assistant,
+                            text = finalResponse,
+                            messageType = ChatMessage.MessageType.FINAL,
+                        )
+                    }
+                } finally {
+                    client.close()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                println("Voice chat error: ${e.message}")
+                _chatMessages.value = _chatMessages.value + ChatMessage(
+                    from = ChatMessage.Sender.Assistant,
+                    text = "Chyba hlasoveho vstupu: ${e.message}",
+                    messageType = ChatMessage.MessageType.ERROR,
+                )
+            } finally {
+                _isLoading.value = false
+                _voiceStatus.value = ""
+            }
         }
     }
 }

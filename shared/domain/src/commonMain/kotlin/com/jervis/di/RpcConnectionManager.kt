@@ -41,7 +41,7 @@ sealed class RpcConnectionState {
  * This is the SINGLE source of truth for connection state — no other component
  * should create or manage RPC clients directly.
  */
-class RpcConnectionManager(private val baseUrl: String) {
+class RpcConnectionManager(val baseUrl: String) {
     private val _state = MutableStateFlow<RpcConnectionState>(RpcConnectionState.Disconnected)
     val state: StateFlow<RpcConnectionState> = _state.asStateFlow()
 

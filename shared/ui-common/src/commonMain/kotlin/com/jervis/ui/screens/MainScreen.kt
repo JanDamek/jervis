@@ -44,6 +44,8 @@ fun MainScreen(
     val thinkingMapPanelVisible by viewModel.chat.thinkingMapPanelVisible.collectAsState()
     val thinkingMapPanelWidthFraction by viewModel.chat.thinkingMapPanelWidthFraction.collectAsState()
     val liveLogTaskId by viewModel.chat.liveLogTaskId.collectAsState()
+    val isRecordingVoice by viewModel.chat.isRecordingVoice.collectAsState()
+    val voiceStatus by viewModel.chat.voiceStatus.collectAsState()
 
     // Environment panel state (delegated to EnvironmentViewModel)
     val environments by viewModel.environment.environments.collectAsState()
@@ -109,6 +111,9 @@ fun MainScreen(
         onToggleNeedReaction = viewModel.chat::toggleNeedReaction,
         backgroundMessageCount = backgroundMessageCount,
         userTaskCount = userTaskCount,
+        isRecordingVoice = isRecordingVoice,
+        voiceStatus = voiceStatus,
+        onMicClick = viewModel.chat::toggleVoiceRecording,
         activeThinkingMap = activeThinkingMap,
         thinkingMapPanelVisible = thinkingMapPanelVisible,
         thinkingMapPanelWidthFraction = thinkingMapPanelWidthFraction,
