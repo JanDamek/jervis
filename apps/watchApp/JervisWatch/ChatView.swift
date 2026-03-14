@@ -22,6 +22,7 @@ struct ChatView: View {
     @State private var isListening = false
     @State private var responseText: String? = nil
     @State private var isProcessing = false
+    @State private var statusText = "Cekam na odpoved od JERVISe..."
 
     var body: some View {
         VStack(spacing: 12) {
@@ -65,9 +66,10 @@ struct ChatView: View {
 
                 ProgressView()
                     .scaleEffect(1.5)
-                Text("Cekam na odpoved od JERVISe...")
+                Text(statusText)
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
 
                 Spacer()
             } else {
@@ -112,17 +114,20 @@ struct ChatView: View {
                     info.performExpiringActivity(withReason: "Sending voice to Jervis") { expired in
                         if expired { return }
                     }
+
+                    // SSE status updates → live UI feedback
+                    WatchJervisApiClient.shared.onStatusUpdate = { status in
+                        statusText = status
+                    }
+
                     let result = await WatchJervisApiClient.shared.sendVoiceCommand(audioData)
                     await MainActor.run {
                         isProcessing = false
                         responseText = result.text
 
-                        // Play TTS audio if available
                         if let ttsData = result.ttsAudioData {
-                            print("[Chat] TTS audio received: \(ttsData.count) bytes, playing...")
+                            print("[Chat] TTS audio: \(ttsData.count) bytes")
                             WatchJervisApiClient.shared.playTtsAudio(ttsData)
-                        } else {
-                            print("[Chat] No TTS audio in response")
                         }
                     }
                 }

@@ -28,7 +28,7 @@ spec:
             - name: TTS_PORT
               value: "8787"
             - name: TTS_MODEL
-              value: "cs_CZ-jirka-medium"
+              value: "cs_CZ-jirka-low"
             - name: TTS_DATA_DIR
               value: "/opt/jervis/data/tts"
           volumeMounts:

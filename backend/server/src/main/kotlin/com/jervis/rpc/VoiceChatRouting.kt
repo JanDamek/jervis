@@ -23,6 +23,7 @@ import io.ktor.http.contentType
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respondText
+import io.ktor.server.response.respondTextWriter
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.post
 import io.ktor.utils.io.readRemaining
@@ -214,7 +215,147 @@ fun Routing.installVoiceChatApi(
             )
         }
     }
+
+    // ── SSE Streaming Voice Chat ─────────────────────────────────────────
+    // Watch sends audio (multipart), server streams SSE events back in real-time:
+    //   transcribing → transcribed → responding → token* → tts_audio → done
+    post("/api/v1/voice/stream") {
+        // Parse multipart audio first (before starting SSE response)
+        var audioBytes: ByteArray? = null
+        var source = "watch"
+
+        val multipart = call.receiveMultipart()
+        multipart.forEachPart { part ->
+            when (part) {
+                is PartData.FileItem -> {
+                    if (part.name == "file" || part.name == "audio") {
+                        audioBytes = part.provider().readRemaining().readByteArray()
+                    }
+                }
+                is PartData.FormItem -> {
+                    if (part.name == "source") source = part.value
+                }
+                else -> {}
+            }
+            part.dispose()
+        }
+
+        val audio = audioBytes
+        if (audio == null || audio.isEmpty()) {
+            call.respondText("""event: error\ndata: {"text":"Zadne audio"}\n\n""", ContentType.Text.EventStream)
+            return@post
+        }
+
+        logger.info { "VOICE_STREAM | source=$source | audioSize=${audio.size}" }
+
+        // Stream SSE events back as each pipeline step completes
+        call.respondTextWriter(contentType = ContentType.Text.EventStream) {
+            // Helper to emit SSE event
+            suspend fun sse(event: String, data: String) {
+                write("event: $event\ndata: $data\n\n")
+                flush()
+            }
+
+            try {
+                // Step 1: Whisper STT
+                sse("transcribing", """{"text":"Prepisuji rec..."}""")
+
+                val tempFile = Files.createTempFile("voice_stream_", ".wav")
+                Files.write(tempFile, audio)
+
+                val cpuWhisperUrl = "http://jervis-whisper-cpu:8786"
+                val whisperOpts = """{"model":"medium","beam_size":1,"vad_filter":false,"language":"cs"}"""
+                val gpuWhisperOpts = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":false,"language":"cs"}"""
+
+                val whisperResult = try {
+                    whisperRestClient.transcribe(cpuWhisperUrl, tempFile.toString(), whisperOpts)
+                } catch (cpuError: Exception) {
+                    logger.warn { "VOICE_STREAM_CPU_FAILED: ${cpuError.message}, fallback GPU" }
+                    whisperRestClient.transcribe(whisperProperties.restRemoteUrl, tempFile.toString(), gpuWhisperOpts)
+                } finally {
+                    Files.deleteIfExists(tempFile)
+                }
+
+                val transcription = whisperResult.text.trim()
+                if (transcription.isEmpty()) {
+                    sse("error", """{"text":"Nepodarilo se rozpoznat rec."}""")
+                    sse("done", "{}")
+                    return@respondTextWriter
+                }
+
+                logger.info { "VOICE_STREAM_STT | text=${transcription.take(100)}" }
+                sse("transcribed", """{"text":"${transcription.escapeJson()}"}""")
+
+                // Step 2: Orchestrator — stream response tokens
+                sse("responding", """{"text":"Generuji odpoved..."}""")
+
+                val responseBuilder = StringBuilder()
+                var chatComplete = false
+
+                try {
+                    val eventFlow = chatService.sendMessage(
+                        userId = "jan",
+                        text = "[Watch/$source, odpovez max 2 vety, cisla pis slovne pro TTS] $transcription",
+                        activeClientId = DEFAULT_CLIENT_ID,
+                        activeProjectId = DEFAULT_PROJECT_ID,
+                        maxOpenRouterTier = "FREE",
+                    )
+
+                    withTimeoutOrNull(45_000) {
+                        eventFlow.collect { event ->
+                            when (event.type) {
+                                "token" -> {
+                                    responseBuilder.append(event.content)
+                                    sse("token", """{"text":"${event.content.escapeJson()}"}""")
+                                }
+                                "done" -> {
+                                    chatComplete = true
+                                    return@collect
+                                }
+                                "error" -> {
+                                    chatComplete = true
+                                    return@collect
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.warn { "VOICE_STREAM_CHAT_ERROR: ${e.message}" }
+                }
+
+                val responseText = responseBuilder.toString().trim().ifBlank {
+                    "Zpracovavam dotaz. Vysledek najdete v aplikaci."
+                }
+
+                logger.info { "VOICE_STREAM_RESPONSE | complete=$chatComplete | text=${responseText.take(100)}" }
+                sse("response", """{"text":"${responseText.escapeJson()}","complete":$chatComplete}""")
+
+                // Step 3: TTS audio
+                try {
+                    val ttsAudio = generateTtsAudio(responseText.take(300))
+                    if (ttsAudio != null) {
+                        sse("tts_audio", """{"data":"$ttsAudio"}""")
+                    }
+                } catch (e: Exception) {
+                    logger.warn { "VOICE_STREAM_TTS_FAILED: ${e.message}" }
+                }
+
+                sse("done", "{}")
+
+            } catch (e: Exception) {
+                logger.error(e) { "VOICE_STREAM_ERROR" }
+                try {
+                    write("event: error\ndata: {\"text\":\"${e.message?.take(100)?.escapeJson() ?: "Chyba"}\"}\n\n")
+                    flush()
+                } catch (_: Exception) {}
+            }
+        }
+    }
 }
+
+/** Escape JSON special chars for SSE data. */
+private fun String.escapeJson(): String =
+    replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
 
 /**
  * Send message to orchestrator via ChatService and collect response tokens.
@@ -278,7 +419,7 @@ private suspend fun collectChatResponse(
 private suspend fun generateTtsAudio(text: String): String? {
     val response = ttsClient.post(TTS_URL) {
         contentType(ContentType.Application.Json)
-        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":1.1}""")
+        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":1.35}""")
     }
 
     val audioBytes = response.readBytes()

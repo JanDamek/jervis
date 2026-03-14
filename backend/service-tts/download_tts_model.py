@@ -3,7 +3,7 @@ import os
 import glob
 from piper.download import ensure_voice_exists, get_voices
 
-MODEL = "cs_CZ-jirka-medium"
+MODEL = "cs_CZ-jirka-low"
 model_dir = "/opt/jervis/data/tts/models"
 os.makedirs(model_dir, exist_ok=True)
 

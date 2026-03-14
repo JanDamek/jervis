@@ -1425,41 +1425,70 @@ def _handle_extend_thinking_map(
 
         # New vertex depends on current vertex (executes after it completes)
         add_edge(graph, vertex.id, new_v.id, EdgeType.DEPENDENCY)
-        # Status stays PENDING — will become READY when current vertex completes
-        # and complete_vertex fills the edge payload
         created.append(new_v.id)
 
-    # Optionally connect to existing synthesis vertex
-    if connect_to_synthesis:
-        synthesis_vertices = [
-            v for v in graph.vertices.values()
-            if v.vertex_type == VertexType.SYNTHESIS
-            and v.status in (VertexStatus.PENDING, VertexStatus.READY)
-            and v.id not in created
-        ]
-        if synthesis_vertices:
-            target_synthesis = synthesis_vertices[-1]  # Latest synthesis
-            for cid in created:
-                add_edge(graph, cid, target_synthesis.id, EdgeType.DEPENDENCY)
-            logger.info(
-                "Connected %d new vertices to existing synthesis %s",
-                len(created), target_synthesis.id,
-            )
-
-    # Optionally create a new synthesis vertex
-    if create_final_synthesis and len(created) > 1:
+    # --- CONVERGENCE GUARANTEE ---
+    # Always connect new vertices to the root synthesis so the graph converges.
+    # New vertices added via extend_thinking_map must feed into the final synthesis,
+    # otherwise their results become orphaned terminal vertices.
+    root_synth_id = graph.synthesis_vertex_id
+    if root_synth_id and root_synth_id in graph.vertices:
+        root_synth = graph.vertices[root_synth_id]
+        # Only connect if root synthesis hasn't started yet
+        if root_synth.status in (VertexStatus.PENDING, VertexStatus.READY):
+            non_synthesis_created = [
+                cid for cid in created
+                if graph.vertices[cid].vertex_type != VertexType.SYNTHESIS
+            ]
+            for cid in non_synthesis_created:
+                add_edge(graph, cid, root_synth_id, EdgeType.DEPENDENCY)
+            if non_synthesis_created:
+                logger.info(
+                    "CONVERGENCE: Connected %d new vertices to root synthesis %s",
+                    len(non_synthesis_created), root_synth_id,
+                )
+    elif not root_synth_id and len(graph.vertices) > 3:
+        # No root synthesis exists — create one (safety net for old graphs)
         synth_v = add_vertex(
             graph=graph,
-            title="Synthesize extended results",
-            description="Combine results from all extended investigation vertices into a coherent summary.",
+            title="Syntéza výsledků",
+            description="Combine all results into a coherent answer to the original request.",
             vertex_type=VertexType.SYNTHESIS,
             parent_id=vertex.parent_id or vertex.id,
             input_request="Synthesize all upstream results",
             client_id=vertex.client_id,
             project_id=vertex.project_id,
         )
+        graph.synthesis_vertex_id = synth_v.id
         for cid in created:
             add_edge(graph, cid, synth_v.id, EdgeType.DEPENDENCY)
+        created.append(synth_v.id)
+        logger.info(
+            "CONVERGENCE: Created root synthesis %s for %d new vertices",
+            synth_v.id, len(created) - 1,
+        )
+
+    # Legacy: still support connect_to_synthesis/create_final_synthesis for
+    # sub-synthesis within branches (e.g. 3 sub-investigators → local synthesis → root synthesis)
+    if create_final_synthesis and len(created) > 1:
+        synth_v = add_vertex(
+            graph=graph,
+            title="Synthesize extended results",
+            description="Combine results from extended investigation into a summary.",
+            vertex_type=VertexType.SYNTHESIS,
+            parent_id=vertex.parent_id or vertex.id,
+            input_request="Synthesize all upstream results",
+            client_id=vertex.client_id,
+            project_id=vertex.project_id,
+        )
+        non_synthesis = [cid for cid in created if graph.vertices[cid].vertex_type != VertexType.SYNTHESIS]
+        for cid in non_synthesis:
+            add_edge(graph, cid, synth_v.id, EdgeType.DEPENDENCY)
+        # Connect sub-synthesis to root synthesis
+        if root_synth_id and root_synth_id in graph.vertices:
+            root_synth = graph.vertices[root_synth_id]
+            if root_synth.status in (VertexStatus.PENDING, VertexStatus.READY):
+                add_edge(graph, synth_v.id, root_synth_id, EdgeType.DEPENDENCY)
         created.append(synth_v.id)
 
     logger.info(

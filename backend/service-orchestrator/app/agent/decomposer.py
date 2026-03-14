@@ -340,12 +340,13 @@ async def _llm_decompose(
         # Enforce limit
         vertices = vertices[:MAX_VERTICES_PER_DECOMPOSE]
 
-        # Attach synthesis if provided
-        synthesis = data.get("synthesis")
-        if synthesis and len(vertices) > 1:
+        # MANDATORY synthesis vertex — guarantees graph convergence.
+        # All leaf vertices must eventually converge to this synthesis.
+        synthesis = data.get("synthesis", {})
+        if len(vertices) >= 1:
             vertices.append({
-                "title": synthesis.get("title", "Synthesize results"),
-                "description": synthesis.get("description", "Combine all vertex results"),
+                "title": synthesis.get("title", "Syntéza výsledků"),
+                "description": synthesis.get("description", "Combine all vertex results into a coherent, complete answer to the original request."),
                 "type": "synthesis",
                 "agent": None,
                 "depends_on": list(range(len(vertices))),
@@ -430,6 +431,11 @@ def _build_subgraph(
         ]
         if not incoming_deps:
             v.status = VertexStatus.READY
+
+    # 4. Track the root synthesis vertex for convergence
+    for v in created:
+        if v.vertex_type == VertexType.SYNTHESIS and graph.synthesis_vertex_id is None:
+            graph.synthesis_vertex_id = v.id
 
     return created
 

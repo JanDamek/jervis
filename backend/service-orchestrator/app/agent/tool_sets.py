@@ -25,10 +25,10 @@ TOOL_EXTEND_THINKING_MAP: dict = {
             "Dynamically add new vertices to the current thinking map. "
             "Use when you discover new aspects that need investigation, analysis, or work. "
             "New vertices execute AFTER the current vertex completes — they receive "
-            "this vertex's output as context. This allows the thinking map to grow "
-            "organically as analysis progresses.\n\n"
-            "Typical use: an investigator discovers 3 sub-topics → creates 3 new "
-            "investigator vertices + a synthesis vertex to combine results.\n\n"
+            "this vertex's output as context.\n\n"
+            "CONVERGENCE: New vertices are AUTOMATICALLY connected to the root synthesis vertex. "
+            "You don't need to manage graph convergence — all results will flow to the final synthesis. "
+            "Use create_final_synthesis=true only when you want a LOCAL sub-synthesis before the root one.\n\n"
             "IMPORTANT: dispatch_coding_agent is async — it returns immediately. "
             "If you need multiple coding analyses, create separate vertices for each "
             "via extend_thinking_map instead of calling dispatch_coding_agent repeatedly."
@@ -66,18 +66,13 @@ TOOL_EXTEND_THINKING_MAP: dict = {
                     "type": "string",
                     "description": "Why these new vertices are needed",
                 },
-                "connect_to_synthesis": {
-                    "type": "boolean",
-                    "description": (
-                        "Wire new vertices to feed into the EXISTING synthesis vertex (if any). "
-                        "Use when extending an investigation that should still converge to the original synthesis."
-                    ),
-                },
                 "create_final_synthesis": {
                     "type": "boolean",
                     "description": (
-                        "Create a new synthesis vertex that depends on ALL new vertices. "
-                        "Use when the new vertices form a self-contained sub-analysis."
+                        "Create a LOCAL synthesis vertex that combines results from the new vertices "
+                        "before feeding into the root synthesis. Use when new vertices form a "
+                        "self-contained sub-analysis. New vertices are AUTOMATICALLY connected "
+                        "to the root synthesis — you don't need to manage convergence."
                     ),
                 },
             },

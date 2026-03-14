@@ -217,6 +217,7 @@ class AgentGraph(BaseModel):
     parent_graph_id: str | None = None  # Memory map ID (for Myšlenkové mapy)
 
     root_vertex_id: str
+    synthesis_vertex_id: str | None = None  # Root synthesis — all paths converge here
     vertices: dict[str, GraphVertex] = Field(default_factory=dict)
     edges: list[GraphEdge] = Field(default_factory=list)
 

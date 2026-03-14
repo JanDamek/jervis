@@ -50,6 +50,18 @@ automatically retried up to 2 times. In `node_select_next`, when no READY vertic
 FAILED vertices matching transient patterns are reset to READY with `retry_count` incremented.
 Outgoing error payloads are cleared so downstream vertices get fresh results.
 
+### Graph Convergence Guarantee
+
+Every thinking map has a **mandatory root synthesis vertex** (`graph.synthesis_vertex_id`).
+All leaf vertices MUST have a DEPENDENCY edge path to this synthesis.
+
+**Decomposer:** Always creates a synthesis vertex, even for single-vertex decompositions.
+**extend_thinking_map:** Automatically connects new vertices to root synthesis — LLM doesn't
+manage convergence manually. `create_final_synthesis=true` creates a local sub-synthesis
+that itself feeds into the root synthesis.
+
+**Validation:** `_check_convergence()` warns about leaf vertices without path to synthesis.
+
 ### Thinking Map Compaction
 
 When a thinking map completes (`node_synthesize`), heavy fields are stripped from completed

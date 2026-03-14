@@ -22,6 +22,8 @@ from app.agent.graph import (
     topological_order,
 )
 from app.agent.models import (
+    EdgeType,
+    GraphType,
     GraphVertex,
     AgentGraph,
     VertexStatus,
@@ -68,6 +70,7 @@ def validate_graph(graph: AgentGraph) -> ValidationResult:
     _check_fan_limits(graph, result)
     _check_vertex_content(graph, result)
     _check_depth_limits(graph, result)
+    _check_convergence(graph, result)
 
     if result.errors:
         logger.error(
@@ -178,4 +181,44 @@ def _check_depth_limits(graph: AgentGraph, result: ValidationResult) -> None:
             result.add_error(
                 f"Vertex {vid} ({vertex.title}): depth {vertex.depth} "
                 f"exceeds limit {MAX_DEPTH}"
+            )
+
+
+def _check_convergence(graph: AgentGraph, result: ValidationResult) -> None:
+    """Check that graph has a root synthesis and all leaf vertices converge to it.
+
+    Convergence means every non-root, non-synthesis leaf vertex has a path
+    (via outgoing DEPENDENCY edges) to the synthesis vertex.
+    """
+    # Only check thinking maps (memory maps have different structure)
+    if graph.graph_type != GraphType.THINKING_MAP:
+        return
+
+    # Find synthesis vertex
+    synth_id = graph.synthesis_vertex_id
+    if not synth_id or synth_id not in graph.vertices:
+        # Check if there's at least one synthesis vertex
+        synth_vertices = [
+            v for v in graph.vertices.values()
+            if v.vertex_type == VertexType.SYNTHESIS
+        ]
+        if not synth_vertices and len(graph.vertices) > 2:
+            result.add_warning(
+                "No synthesis vertex — graph results will be unstructured terminal collection"
+            )
+        return
+
+    # Check that leaf vertices (no outgoing DEPENDENCY edges) converge
+    for vid, vertex in graph.vertices.items():
+        if vid == graph.root_vertex_id or vid == synth_id:
+            continue
+        if vertex.vertex_type in (VertexType.ROOT, VertexType.SYNTHESIS):
+            continue
+        outgoing_deps = [
+            e for e in graph.edges
+            if e.source_id == vid and e.edge_type == EdgeType.DEPENDENCY
+        ]
+        if not outgoing_deps:
+            result.add_warning(
+                f"Leaf vertex {vid} ({vertex.title[:40]}) has no path to synthesis"
             )
