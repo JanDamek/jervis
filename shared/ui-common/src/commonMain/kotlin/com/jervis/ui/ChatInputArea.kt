@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
@@ -53,6 +55,8 @@ internal fun InputArea(
     onAttachFile: () -> Unit = {},
     onRemoveAttachment: (Int) -> Unit = {},
     requestFocus: Boolean = false,
+    isRecordingVoice: Boolean = false,
+    onMicClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -111,7 +115,17 @@ internal fun InputArea(
                 onClick = onAttachFile,
                 icon = Icons.Default.AttachFile,
                 contentDescription = "Připojit soubor",
+                enabled = enabled && !isRecordingVoice,
+                modifier = Modifier.size(44.dp),
+            )
+
+            // Mic button — toggle voice recording
+            JIconButton(
+                onClick = onMicClick,
+                icon = if (isRecordingVoice) Icons.Default.Stop else Icons.Default.Mic,
+                contentDescription = if (isRecordingVoice) "Zastavit nahrávání" else "Hlasový vstup",
                 enabled = enabled,
+                tint = if (isRecordingVoice) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(44.dp),
             )
 
