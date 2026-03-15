@@ -193,6 +193,8 @@ internal fun ChatArea(
                         onEditMessage = onEditMessage,
                         onReplyToTask = onReplyToTask,
                         onSendReply = onSendReply,
+                        onTtsPlay = onTtsPlay,
+                        isTtsPlaying = isTtsPlaying,
                         taskGraphs = taskGraphs,
                         onLoadTaskGraph = onLoadTaskGraph,
                         jobLogsService = jobLogsService,
