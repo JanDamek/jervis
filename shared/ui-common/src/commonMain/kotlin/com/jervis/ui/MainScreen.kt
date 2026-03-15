@@ -282,6 +282,10 @@ fun MainScreenView(
                     onToggleNeedReaction = onToggleNeedReaction,
                     backgroundMessageCount = backgroundMessageCount,
                     userTaskCount = userTaskCount,
+                    isRecordingVoice = isRecordingVoice,
+                    voiceStatus = voiceStatus,
+                    onMicClick = onMicClick,
+                    onCancelVoice = onCancelVoice,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
