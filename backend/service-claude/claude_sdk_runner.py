@@ -79,39 +79,55 @@ async def main():
     print(f"System prompt: {len(system_prompt) if system_prompt else 0} chars")
     print(f"MCP servers: {list(mcp_servers.keys())}")
 
-    # Run SDK query — stream messages
+    # Run SDK query — stream messages (with retry for transient init failures)
     last_text = ""
     success = False
     error_msg = None
+    _MAX_SDK_RETRIES = 2
 
-    try:
-        async for message in query(prompt=instructions, options=options):
-            msg_type = getattr(message, "type", None)
+    for _attempt in range(_MAX_SDK_RETRIES + 1):
+        try:
+            async for message in query(prompt=instructions, options=options):
+                msg_type = getattr(message, "type", None)
 
-            if msg_type == "assistant":
-                # Capture assistant text for summary
-                for block in getattr(message, "content", []):
-                    if hasattr(block, "text"):
-                        last_text = block.text
-                        # Print to stdout for K8s log collection
-                        print(block.text)
+                if msg_type == "assistant":
+                    # Capture assistant text for summary
+                    for block in getattr(message, "content", []):
+                        if hasattr(block, "text"):
+                            last_text = block.text
+                            # Print to stdout for K8s log collection
+                            print(block.text)
 
-            elif msg_type == "result":
-                # Final result message
-                subtype = getattr(message, "subtype", "unknown")
-                success = subtype == "success"
-                if not success:
-                    error_msg = f"Agent finished with: {subtype}"
-                print(f"=== Result: {subtype} ===")
+                elif msg_type == "result":
+                    # Final result message
+                    subtype = getattr(message, "subtype", "unknown")
+                    success = subtype == "success"
+                    if not success:
+                        error_msg = f"Agent finished with: {subtype}"
+                    print(f"=== Result: {subtype} ===")
 
-        # If we got through without error and no explicit result, assume success
-        if not error_msg and not success:
-            success = True
+            # If we got through without error and no explicit result, assume success
+            if not error_msg and not success:
+                success = True
+            break  # Success or non-retryable — exit retry loop
 
-    except Exception as e:
-        tb = traceback.format_exc()
-        error_msg = f"{type(e).__name__}: {e}\n{tb[-500:]}"
-        print(f"=== SDK Error: {error_msg} ===", file=sys.stderr)
+        except Exception as e:
+            tb = traceback.format_exc()
+            err_str = str(e).lower()
+            # Retry on transient errors (timeout, connection, rate limit)
+            is_transient = any(p in err_str for p in [
+                "timeout", "initialize", "connection", "rate limit",
+                "503", "429", "service unavailable",
+            ])
+            if is_transient and _attempt < _MAX_SDK_RETRIES:
+                delay = 2 ** (_attempt + 1)  # 2s, 4s
+                print(f"=== SDK transient error (attempt {_attempt + 1}/{_MAX_SDK_RETRIES + 1}), retrying in {delay}s: {e} ===", file=sys.stderr)
+                await asyncio.sleep(delay)
+                error_msg = None
+                continue
+            error_msg = f"{type(e).__name__}: {e}\n{tb[-500:]}"
+            print(f"=== SDK Error: {error_msg} ===", file=sys.stderr)
+            break
 
     # Detect changed files and current branch via git
     changed_files = _get_changed_files(workspace)
