@@ -102,6 +102,7 @@
 		W100000A000000000000001 /* WatchJervisApiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchJervisApiClient.swift; sourceTree = "<group>"; };
 		W100000B000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		W100000C000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		W100000D000000000000001 /* JervisWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = JervisWatch.entitlements; sourceTree = "<group>"; };
 		W100001B000000000000001 /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
 		X1000001000000000000001 /* JervisComplication.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = JervisComplication.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		X1000002000000000000001 /* JervisComplications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisComplications.swift; sourceTree = "<group>"; };
@@ -184,6 +185,7 @@
 		W1000060000000000000001 /* JervisWatch */ = {
 			isa = PBXGroup;
 			children = (
+				W100000D000000000000001 /* JervisWatch.entitlements */,
 				W1000002000000000000001 /* JervisWatchApp.swift */,
 				W1000003000000000000001 /* ContentView.swift */,
 				W1000004000000000000001 /* ChatView.swift */,
@@ -650,6 +652,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Jervis;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jervis;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				CODE_SIGN_ENTITLEMENTS = ../watchApp/JervisWatch/JervisWatch.entitlements;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -681,6 +685,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Jervis;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jervis;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				CODE_SIGN_ENTITLEMENTS = ../watchApp/JervisWatch/JervisWatch.entitlements;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

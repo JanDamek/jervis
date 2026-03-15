@@ -26,5 +26,7 @@
     <true/>
     <key>WKCompanionAppBundleIdentifier</key>
     <string>com.jervis</string>
+    <key>WKRunsIndependentlyOfCompanionApp</key>
+    <true/>
 </dict>
 </plist>
