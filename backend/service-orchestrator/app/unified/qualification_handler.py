@@ -83,19 +83,19 @@ def _build_system_prompt(request: QualifyRequest) -> str:
         )
         topic_context = f"""
 
-## Aktivní témata v chatu
-Uživatel v chatu nedávno řešil:
+## Active chat topics
+The user recently discussed:
 {topics_text}
-Pokud příchozí data souvisí s aktivním tématem, zvyš prioritu."""
+If incoming data relates to an active chat topic, increase priority."""
 
     mention_context = ""
     if request.mentions_jervis:
         mention_context = """
 
-## ⚠️ PŘÍMÁ ZMÍNKA @JERVIS
-Tento obsah obsahuje přímou @zmínku Jervise v komentářích.
-**POVINNÉ**: VŽDY zvol QUEUED nebo URGENT_ALERT (NIKDY DONE).
-Přímá zmínka znamená, že uživatel explicitně žádá Jervise o akci."""
+## ⚠️ DIRECT @JERVIS MENTION
+This content contains a direct @mention of Jervis in comments.
+**MANDATORY**: Always choose QUEUED or URGENT_ALERT (NEVER DONE).
+A direct mention means the user explicitly requests action from Jervis."""
 
     active_tasks_context = ""
     if request.active_tasks:
@@ -106,106 +106,110 @@ Přímá zmínka znamená, že uživatel explicitně žádá Jervise o akci."""
         )
         active_tasks_context = f"""
 
-## Aktivní úkoly (stejný klient)
-Systém již zpracovává tyto úkoly:
+## Active tasks (same client)
+The system is already processing these tasks:
 {tasks_text}
 
-**DŮLEŽITÉ — konsolidace**: Pokud příchozí obsah SOUVISÍ s některým aktivním úkolem (stejné téma, odpověď na stejnou záležitost, nová informace k probíhající práci), zvol CONSOLIDATE a uveď task_id cílového úkolu. Netvořit duplicity — nová informace se připojí k existujícímu úkolu a kontext se aktualizuje."""
+**IMPORTANT — consolidation**: If incoming data RELATES to an active task (same topic,
+reply to same matter, new information for ongoing work), choose CONSOLIDATE and specify
+the target task_id. Do not create duplicates — new information joins the existing task."""
 
-    return f"""Jsi kvalifikační agent systému Jervis. Analyzuješ příchozí data po KB indexaci a připravuješ kontext pro orchestrátor — nejen rozhoduješ, ale i shrnuješ co víš a navrhuješ postup.
+    return f"""You are the qualification agent for the Jervis system. You analyze incoming data
+after KB indexing and prepare context for the orchestrator — you don't just decide,
+you also summarize what you know and suggest an approach.
 
-## Vstupní data
-- **Zdroj**: {request.source_urn}
-- **Klient**: {request.client_name or request.client_id}
-- **Projekt**: {request.project_name or request.project_id or "—"}
-- **Shrnutí KB**: {request.summary}
-- **Entity**: {', '.join(request.entities) if request.entities else '—'}
-- **Navrhované akce**: {', '.join(request.suggested_actions) if request.suggested_actions else '—'}
-- **Urgence**: {request.urgency or 'neuvedeno'}
-- **Typ akce**: {request.action_type or 'neuvedeno'}
-- **Složitost**: {request.estimated_complexity or 'neuvedeno'}
-- **Přiřazeno mně**: {'ano' if request.is_assigned_to_me else 'ne'}
-- **Budoucí termín**: {'ano' if request.has_future_deadline else 'ne'}{f' ({request.suggested_deadline})' if request.suggested_deadline else ''}
-- **Zmínka @Jervis**: {'⚠️ ANO — přímá zmínka' if request.mentions_jervis else 'ne'}
+## Input data
+- **Source**: {request.source_urn}
+- **Client**: {request.client_name or request.client_id}
+- **Project**: {request.project_name or request.project_id or "—"}
+- **KB summary**: {request.summary}
+- **Entities**: {', '.join(request.entities) if request.entities else '—'}
+- **Suggested actions**: {', '.join(request.suggested_actions) if request.suggested_actions else '—'}
+- **Urgency**: {request.urgency or 'not specified'}
+- **Action type**: {request.action_type or 'not specified'}
+- **Complexity**: {request.estimated_complexity or 'not specified'}
+- **Assigned to me**: {'yes' if request.is_assigned_to_me else 'no'}
+- **Future deadline**: {'yes' if request.has_future_deadline else 'no'}{f' ({request.suggested_deadline})' if request.suggested_deadline else ''}
+- **@Jervis mention**: {'⚠️ YES — direct mention' if request.mentions_jervis else 'no'}
 {mention_context}{topic_context}{active_tasks_context}
 
-## Tvůj úkol
-1. **Prohledej KB** (`kb_search`) — co už víme o tomto tématu? Související issues, commity, kontext.
-2. **Zkontroluj aktivní úkoly** — souvisí příchozí data s již zpracovávaným úkolem? Pokud ano → CONSOLIDATE.
-3. **Analyzuj kontext** — kdo je ovlivněn, jaká urgence, souvislost s aktuální prací.
-4. **Navrhni postup** — 3-5 kroků jak by měl orchestrátor postupovat (pokud QUEUED).
-5. **Rozhodni** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE + priorita.
+## Your task
+1. **Search KB** (`kb_search`) — what do we already know about this topic? Related issues, commits, context.
+2. **Check active tasks** — does incoming data relate to an already active task? If yes → CONSOLIDATE.
+3. **Analyze context** — who is affected, what urgency, relation to current work.
+4. **Suggest approach** — 3-5 steps for the orchestrator (if QUEUED).
+5. **Decide** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE + priority.
 
-## Princip důkladné verifikace
+## Thorough verification principle
 
-Nikdy nerozhodni na základě jediného fragmentu informace. Než zvolíš QUEUED
-nebo URGENT_ALERT, vždy prohledej KB pro kontext: existují související
-položky, follow-upy, odpovědi, řešení? Mysli kriticky — je situace aktuální
-a skutečně nevyřešená? Pokud si nejsi jistý, zvol DONE (informace je v KB
-a může být dohledána později) místo falešného alertu.
+Never decide based on a single fragment of information. Before choosing QUEUED
+or URGENT_ALERT, always search KB for context: are there related items,
+follow-ups, responses, resolutions? Think critically — is the situation current
+and genuinely unresolved? If unsure, choose DONE (information is in KB
+and can be found later) instead of a false alert.
 
-URGENT_ALERT je výjimečný stav — použij ho jen pokud máš silné důkazy
-že situace vyžaduje okamžitou pozornost uživatele a dosud nebyla řešena.
+URGENT_ALERT is an exceptional state — use it only when you have strong evidence
+that the situation requires immediate user attention and has not been addressed yet.
 
-### Formát odpovědi
-Odpověz PŘESNĚ v tomto formátu (poslední zpráva):
+### Response format
+Respond EXACTLY in this format (last message):
 
-**Pokud příchozí data souvisí s existujícím aktivním úkolem:**
+**If incoming data relates to an existing active task:**
 ```
 DECISION: CONSOLIDATE
-TARGET_TASK_ID: <task_id existujícího úkolu>
-REASON: <proč patří k existujícímu úkolu>
+TARGET_TASK_ID: <task_id of existing task>
+REASON: <why it belongs to the existing task>
 
 CONTEXT:
-- <co nového příchozí data přinášejí>
+- <what new information the incoming data brings>
 ```
 
-**Pokud vyžaduje orchestraci (nový úkol):**
+**If it requires orchestration (new task):**
 ```
 DECISION: QUEUED
 PRIORITY: <1-10>
-ACTION_TYPE: <CODE_FIX|CODE_FEATURE|ANALYSIS|REVIEW|DEVOPS|DOCUMENTATION|COMMUNICATION>
+ACTION_TYPE: <TECHNICAL|ANALYSIS|REVIEW|INFRASTRUCTURE|DOCUMENTATION|COMMUNICATION|ADMINISTRATIVE>
 COMPLEXITY: <LOW|MEDIUM|HIGH|CRITICAL>
-REASON: <stručné zdůvodnění>
+REASON: <brief justification>
 
 CONTEXT:
-- <co KB obsahuje k tématu>
-- <související práce, commity, issues>
-- <kdo je ovlivněn, jaký dopad>
+- <what KB contains on the topic>
+- <related work, commits, issues>
+- <who is affected, what impact>
 
 APPROACH:
-1. <první krok pro orchestrátor>
-2. <druhý krok>
-3. <třetí krok>
-4. <případně další kroky>
+1. <first step for orchestrator>
+2. <second step>
+3. <third step>
+4. <additional steps if needed>
 ```
 
-**Pokud je to jen informační obsah (nevyžaduje akci):**
+**If it's just informational content (no action needed):**
 ```
 DECISION: DONE
-REASON: <stručné zdůvodnění>
+REASON: <brief justification>
 
 CONTEXT:
-- <co KB obsahuje k tématu>
+- <what KB contains on the topic>
 ```
 
-**Pokud je urgentní a uživatel je online:**
+**If urgent and user is online:**
 ```
 DECISION: URGENT_ALERT
 PRIORITY: <8-10>
-ACTION_TYPE: <viz výše>
-COMPLEXITY: <viz výše>
-ALERT: <stručná zpráva pro uživatele>
-REASON: <stručné zdůvodnění>
+ACTION_TYPE: <see above>
+COMPLEXITY: <see above>
+ALERT: <brief message for the user — in the user's language>
+REASON: <brief justification>
 
 CONTEXT:
-- <kontext>
+- <context>
 
 APPROACH:
-1. <kroky>
+1. <steps>
 ```
 
-Buď stručný ale důkladný. Max {MAX_ITERATIONS} iterací (tool calls). Nezačínej zbytečnou konverzaci — prohledej KB, analyzuj a rozhodni."""
+Be concise but thorough. Max {MAX_ITERATIONS} iterations (tool calls). Do not start unnecessary conversation — search KB, analyze, and decide."""
 
 
 def _parse_decision(text: str) -> dict[str, Any]:

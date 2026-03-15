@@ -1739,20 +1739,36 @@ class BackgroundEngine(
         private val DEADLINE_SCAN_PROMPT = """
             |You are performing a periodic deadline scan across all projects.
             |
-            |Using kb_search:
-            |1. **Deadlines from KB**: Use kb_search to find issues/tasks with due dates
-            |   in the next 7 days. Report urgency for each.
-            |2. **KB deadlines**: Use kb_search to find documents mentioning deadlines,
-            |   due dates, or milestones in the next 7 days.
-            |3. **Overdue items**: Find any items past their deadline that are still open.
+            |## Step 1: Check what is already tracked or resolved
+            |BEFORE creating any USER_TASK for a found item:
+            |1. Use list_recent_tasks — if a USER_TASK already exists for this item (any state), SKIP.
+            |2. Use kb_search with the item's identifier — if KB indicates the item is resolved, paid,
+            |   closed, or otherwise handled, SKIP. User responses and resolutions are stored in KB.
+            |3. Only create a USER_TASK for genuinely NEW, UNTRACKED items that need attention.
             |
-            |For each approaching deadline:
-            |- If < 1 day: Create a USER_TASK with urgency=URGENT
+            |## Step 2: Search for deadlines
+            |Using kb_search, find:
+            |1. Issues/tasks with due dates in the next 7 days
+            |2. Documents mentioning deadlines or milestones
+            |3. Overdue items that are still open
+            |
+            |## Step 3: Take action (only for NEW findings not already tracked)
+            |- If < 1 day: Create USER_TASK with urgency=URGENT
             |- If 1-3 days: Add a comment on the JIRA issue as reminder
             |- If 3-7 days: Log the finding (no action needed)
-            |- If overdue: Create a USER_TASK flagging the overdue item
+            |- If overdue: Create USER_TASK flagging the overdue item
             |
-            |Summarize all findings at the end with a count of items per urgency level.
+            |## CRITICAL: USER_TASK content must include ALL details
+            |When creating a USER_TASK, the taskName and content MUST include:
+            |- Specific item identifier (ID, key, number)
+            |- What the item is (summary, description)
+            |- Which client/project it belongs to
+            |- Due date and how many days overdue or remaining
+            |- What specific action is needed from the user
+            |The user sees ONLY the taskName and content — if details are missing, the task is USELESS.
+            |
+            |## Step 4: Summarize
+            |Count items per urgency level. If nothing found, just report "No deadlines approaching."
         """.trimMargin()
     }
 

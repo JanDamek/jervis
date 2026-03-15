@@ -92,17 +92,17 @@ TOOL_GET_INDEXED_ITEMS: dict = {
         "name": "get_indexed_items",
         "description": (
             "Get a summary of what has been indexed into the Knowledge Base for this project. "
-            "Returns counts and examples of git commits, JIRA issues, Confluence pages, emails, "
-            "and other indexed content. Use this to understand what information is available "
-            "before searching for specific items."
+            "Returns counts and examples of indexed content by source type (git commits, "
+            "issue tracker items, documents, emails, chat messages, etc.). "
+            "Use this to understand what information is available before searching."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "item_type": {
                     "type": "string",
-                    "description": "Filter by type: 'git', 'jira', 'confluence', 'email', or 'all' (default).",
-                    "enum": ["all", "git", "jira", "confluence", "email"],
+                    "description": "Filter by source type: 'git', 'issues', 'documents', 'email', 'chat', or 'all' (default).",
+                    "enum": ["all", "git", "issues", "documents", "email", "chat"],
                     "default": "all",
                 },
                 "limit": {

@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
@@ -121,7 +123,7 @@ internal fun ChatArea(
     onLoadMore: () -> Unit = {},
     onEditMessage: (String) -> Unit = {},
     onReplyToTask: (taskId: String) -> Unit = {},
-    onSendReply: (taskId: String, text: String) -> Unit = { _, _ -> },
+    onSendReply: (taskId: String, text: String) -> Unit = { _, _ -> },\n    onTtsPlay: (String) -> Unit = {},\n    isTtsPlaying: Boolean = false,
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
     onLoadTaskGraph: (String) -> Unit = {},
     jobLogsService: IJobLogsService? = null,
@@ -1285,6 +1287,20 @@ private fun ChatMessageItem(
                                             contentDescription = "Upravit",
                                             modifier = Modifier.size(18.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        )
+                                    }
+                                }
+                                // TTS play button — for assistant messages
+                                if (!isMe && message.text.length > 5) {
+                                    IconButton(
+                                        onClick = { onTtsPlay(message.text) },
+                                        modifier = Modifier.size(32.dp),
+                                    ) {
+                                        Icon(
+                                            if (isTtsPlaying) Icons.Default.Stop else Icons.Default.VolumeUp,
+                                            contentDescription = if (isTtsPlaying) "Zastavit" else "Přečíst",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = if (isTtsPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                         )
                                     }
                                 }

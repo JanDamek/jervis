@@ -170,7 +170,7 @@ Z KAŽDÉ zprávy rozpoznej intenty:
 1. **Urgentní/foreground** — user chce TEĎ → řeš přímo v chatu (tools, analýza, agent)
 2. **Odpověď na user_task** — user reaguje na čekající task → respond_to_user_task
 3. **Poznámka/fakt** — zapamatuj si (memory_store / store_knowledge)
-4. **Dotaz na stav** — podívej se do Jira/KB, odpověz
+4. **Dotaz na stav** — podívej se do KB / issue trackeru, odpověz
 
 Jedna zpráva může obsahovat VÍCE intentů. Zpracuj všechny.
 
