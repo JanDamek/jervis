@@ -271,10 +271,18 @@ fun Routing.installVoiceChatApi(
                 val gpuWhisperOpts = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":false,"language":"cs"}"""
 
                 val whisperResult = try {
-                    whisperRestClient.transcribe(cpuWhisperUrl, tempFile.toString(), whisperOpts)
+                    whisperRestClient.transcribe(cpuWhisperUrl, tempFile.toString(), whisperOpts) { percent, segments, elapsed, lastText ->
+                        if (lastText != null && lastText.isNotBlank()) {
+                            sse("transcribing", """{"text":"${lastText.escapeJson()}","percent":$percent}""")
+                        }
+                    }
                 } catch (cpuError: Exception) {
                     logger.warn { "VOICE_STREAM_CPU_FAILED: ${cpuError.message}, fallback GPU" }
-                    whisperRestClient.transcribe(whisperProperties.restRemoteUrl, tempFile.toString(), gpuWhisperOpts)
+                    whisperRestClient.transcribe(whisperProperties.restRemoteUrl, tempFile.toString(), gpuWhisperOpts) { percent, _, _, lastText ->
+                        if (lastText != null && lastText.isNotBlank()) {
+                            sse("transcribing", """{"text":"${lastText.escapeJson()}","percent":$percent}""")
+                        }
+                    }
                 } finally {
                     Files.deleteIfExists(tempFile)
                 }
@@ -332,25 +340,25 @@ fun Routing.installVoiceChatApi(
 
                 logger.info { "VOICE_STREAM_RESPONSE | complete=$chatComplete | text=${responseText.take(100)}" }
 
-                // Step 3: TTS audio — generate BEFORE sending response (client may close after response)
-                var ttsBase64: String? = null
+                // Send response text first
+                sse("response", """{"text":"${responseText.escapeJson()}","complete":$chatComplete}""")
+
+                // Step 3: TTS streaming — sentence by sentence for low latency
                 logger.info { "VOICE_STREAM_TTS_START | text=${responseText.take(50)}" }
                 try {
-                    ttsBase64 = generateTtsAudio(responseText.take(300))
-                    if (ttsBase64 != null) {
-                        logger.info { "VOICE_STREAM_TTS_OK | audioSize=${ttsBase64.length}" }
-                    } else {
-                        logger.warn { "VOICE_STREAM_TTS_NULL" }
+                    // Split into sentences and TTS each one separately
+                    val sentences = responseText.take(500).split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
+                    for (sentence in sentences) {
+                        val ttsAudio = generateTtsAudio(sentence)
+                        if (ttsAudio != null) {
+                            sse("tts_audio", """{"data":"$ttsAudio"}""")
+                            logger.info { "VOICE_STREAM_TTS_CHUNK | sentence=${sentence.take(40)} | audioSize=${ttsAudio.length}" }
+                        }
                     }
                 } catch (e: Exception) {
                     logger.warn { "VOICE_STREAM_TTS_FAILED: ${e::class.simpleName}: ${e.message}" }
                 }
 
-                // Send response text + TTS audio together, then done
-                sse("response", """{"text":"${responseText.escapeJson()}","complete":$chatComplete}""")
-                if (ttsBase64 != null) {
-                    sse("tts_audio", """{"data":"$ttsBase64"}""")
-                }
                 sse("done", "{}")
 
             } catch (e: Exception) {
@@ -362,7 +370,40 @@ fun Routing.installVoiceChatApi(
             }
         }
     }
+
+    // ── TTS Stream endpoint — read any text aloud ─────────────────────────
+    // POST /api/v1/tts/stream — accepts JSON {text}, returns SSE with tts_audio chunks per sentence
+    post("/api/v1/tts/stream") {
+        val body = call.receive<TtsStreamRequest>()
+        if (body.text.isBlank()) {
+            call.respondText("""{"error":"empty text"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
+            return@post
+        }
+
+        call.response.headers.append("Cache-Control", "no-cache, no-store")
+        call.response.headers.append("X-Accel-Buffering", "no")
+        call.respondTextWriter(contentType = ContentType.Text.EventStream) {
+            suspend fun sse(event: String, data: String) { write("event: $event\ndata: $data\n\n"); flush() }
+
+            try {
+                val sentences = body.text.split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
+                for (sentence in sentences) {
+                    val ttsAudio = generateTtsAudio(sentence)
+                    if (ttsAudio != null) {
+                        sse("tts_audio", """{"data":"$ttsAudio","sentence":"${sentence.escapeJson()}"}""")
+                    }
+                }
+                sse("done", "{}")
+            } catch (e: Exception) {
+                logger.warn { "TTS_STREAM_ERROR: ${e.message}" }
+                try { sse("error", """{"text":"${e.message?.take(100)?.escapeJson() ?: "Chyba"}"}""") } catch (_: Exception) {}
+            }
+        }
+    }
 }
+
+@Serializable
+data class TtsStreamRequest(val text: String, val speed: Float = 1.7f)
 
 /** Escape JSON special chars for SSE data. */
 private fun String.escapeJson(): String =
