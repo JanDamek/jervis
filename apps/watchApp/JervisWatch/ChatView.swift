@@ -1,18 +1,5 @@
 import SwiftUI
 
-/// Wraps .symbolEffect(.pulse) with availability check for watchOS 10+
-struct PulseEffectModifier: ViewModifier {
-    let isActive: Bool
-
-    func body(content: Content) -> some View {
-        if #available(watchOS 10.0, *) {
-            content.symbolEffect(.pulse, isActive: isActive)
-        } else {
-            content.opacity(isActive ? 0.6 : 1.0)
-        }
-    }
-}
-
 struct ChatView: View {
     @ObservedObject var chatManager: WatchChatManager
     @ObservedObject var connectivity: WatchConnectivityManager
@@ -22,12 +9,12 @@ struct ChatView: View {
     @State private var isListening = false
     @State private var responseText: String? = nil
     @State private var isProcessing = false
-    @State private var statusText = "Cekam na odpoved od JERVISe..."
+    @State private var statusText = "Čekám na odpověď..."
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             if let response = responseText {
-                // Response — compact layout, max space for text
+                // Response view
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14))
@@ -36,7 +23,7 @@ struct ChatView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Button(action: { responseText = nil }) {
+                    Button(action: { responseText = nil; isListening = false }) {
                         Image(systemName: "mic.fill")
                             .font(.caption)
                             .foregroundColor(.blue)
@@ -57,35 +44,65 @@ struct ChatView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 2)
                 }
-            } else if isProcessing {
+            } else if isListening {
+                // Recording mode — stop + cancel
                 Spacer()
 
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 44))
+                    .foregroundColor(.green)
+
+                Text("Poslouchám...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 20) {
+                    // Send (stop + send)
+                    Button(action: stopAndSend) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 36))
+                            .foregroundColor(.blue)
+                    }
+                    .buttonStyle(.plain)
+
+                    // Cancel
+                    Button(action: cancelRecording) {
+                        Image(systemName: "xmark.circle")
+                            .font(.system(size: 30))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+            } else if isProcessing {
+                // Processing
+                Spacer()
                 ProgressView()
                     .scaleEffect(1.5)
                 Text(statusText)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-
                 Spacer()
             } else {
+                // Idle — tap to record
                 Spacer()
 
-                Text(isListening ? "Posloucham..." : "Klepni a mluv")
+                Text("Klepni a mluv")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                Button(action: toggleListening) {
-                    Image(systemName: isListening ? "waveform.circle.fill" : "mic.circle.fill")
+                Button(action: startRecording) {
+                    Image(systemName: "mic.circle.fill")
                         .font(.system(size: 56))
-                        .foregroundColor(isListening ? .green : .blue)
-                        .modifier(PulseEffectModifier(isActive: isListening))
+                        .foregroundColor(.blue)
                 }
                 .buttonStyle(.plain)
 
                 Spacer()
 
-                Button("Zpet", action: onDismiss)
+                Button("Zpět", action: onDismiss)
                     .font(.caption)
             }
         }
@@ -93,47 +110,53 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if autoStart && !isListening && !isProcessing {
-                isListening = true
-                chatManager.startListening()
+                startRecording()
             }
         }
     }
 
-    private func toggleListening() {
-        if isListening {
-            isListening = false
-            isProcessing = true
+    private func startRecording() {
+        isListening = true
+        chatManager.startListening()
+    }
 
-            if let audioData = chatManager.stopListening() {
-                Task {
-                    let info = ProcessInfo.processInfo
-                    info.performExpiringActivity(withReason: "Sending voice to Jervis") { expired in
-                        if expired { return }
-                    }
+    private func cancelRecording() {
+        chatManager.stopListening()
+        isListening = false
+    }
 
-                    // SSE status updates → live UI feedback
-                    WatchJervisApiClient.shared.onStatusUpdate = { status in
-                        statusText = status
-                    }
+    private func stopAndSend() {
+        isListening = false
+        isProcessing = true
+        statusText = "Odesílám..."
 
-                    let result = await WatchJervisApiClient.shared.sendVoiceCommand(audioData)
-                    await MainActor.run {
-                        isProcessing = false
-                        responseText = result.text
+        guard let audioData = chatManager.stopListening() else {
+            isProcessing = false
+            responseText = "Žádná nahrávka"
+            return
+        }
 
-                        if let ttsData = result.ttsAudioData {
-                            print("[Chat] TTS audio: \(ttsData.count) bytes")
-                            WatchJervisApiClient.shared.playTtsAudio(ttsData)
-                        }
-                    }
-                }
-            } else {
-                isProcessing = false
-                responseText = "Zadna nahravka"
+        Task {
+            let info = ProcessInfo.processInfo
+            info.performExpiringActivity(withReason: "Voice to Jervis") { expired in
+                if expired { return }
             }
-        } else {
-            isListening = true
-            chatManager.startListening()
+
+            WatchJervisApiClient.shared.onStatusUpdate = { status in
+                DispatchQueue.main.async { statusText = status }
+            }
+
+            let result = await WatchJervisApiClient.shared.sendVoiceCommand(audioData)
+            await MainActor.run {
+                isProcessing = false
+                responseText = result.text
+
+                // TTS is played inline by SSE handler (first chunk)
+                // Play remaining if SSE didn't play
+                if let ttsData = result.ttsAudioData, ttsData.count > 0 {
+                    WatchJervisApiClient.shared.playTtsAudio(ttsData)
+                }
+            }
         }
     }
 }

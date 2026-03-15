@@ -2,6 +2,7 @@ package com.jervis.repository
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
+import com.jervis.common.types.SourceUrn
 import com.jervis.common.types.TaskId
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
@@ -275,5 +276,14 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
      * Used by WorkPlanExecutor to iterate BLOCKED tasks for dependency resolution.
      */
     fun findByStateOrderByOrderInPhaseAsc(state: TaskStateEnum): Flow<TaskDocument>
+
+    /**
+     * Find tasks by sourceUrn and state. Used by deadline scan dedup to check
+     * if a scan is already pending before creating a new one.
+     */
+    suspend fun findBySourceUrnAndStateIn(
+        sourceUrn: SourceUrn,
+        states: List<TaskStateEnum>,
+    ): List<TaskDocument>
 
 }

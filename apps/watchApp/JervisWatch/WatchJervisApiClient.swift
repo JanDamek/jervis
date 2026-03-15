@@ -1,8 +1,7 @@
 import Foundation
 import AVFoundation
 
-/// API client for watchOS — handles text queries (Siri) and audio voice commands (Chat).
-/// Sends directly to backend, no phone relay needed.
+/// API client for watchOS — voice chat via SSE streaming.
 class WatchJervisApiClient: NSObject, AVAudioPlayerDelegate {
     static let shared = WatchJervisApiClient()
 
@@ -10,79 +9,38 @@ class WatchJervisApiClient: NSObject, AVAudioPlayerDelegate {
     private let session: URLSession
     private var audioPlayer: AVAudioPlayer?
 
+    /// Callback for SSE status updates
+    var onStatusUpdate: ((String) -> Void)?
+
     private override init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 90
-        config.timeoutIntervalForResource = 120
+        config.timeoutIntervalForRequest = 120
+        config.timeoutIntervalForResource = 180
         config.waitsForConnectivity = false
         session = URLSession(configuration: config)
         super.init()
     }
 
-    /// Voice chat response from server
     struct VoiceChatResponse {
         let text: String
-        let ttsAudioData: Data? // WAV audio
+        let ttsAudioData: Data?
         let transcription: String?
     }
 
-    /// Send a text chat query to Jervis and return the response text.
-    func sendChatQuery(_ query: String) async -> String {
-        guard let url = URL(string: "\(baseURL)/api/v1/chat/siri") else {
-            return "Chyba: neplatna URL"
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body: [String: Any] = [
-            "query": query,
-            "source": "siri_watch",
-        ]
-
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, response) = try await session.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                return "Chyba: server neodpovida"
-            }
-
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let text = json["response"] as? String {
-                return text
-            }
-
-            if let text = String(data: data, encoding: .utf8), !text.isEmpty {
-                return text
-            }
-
-            return "Jervis zpracoval pozadavek."
-        } catch {
-            return "Chyba: \(error.localizedDescription)"
-        }
-    }
-
-    /// Callback for SSE status updates (transcribing, responding, tokens...)
-    var onStatusUpdate: ((String) -> Void)?
-
-    /// Send audio to voice endpoint — returns text + TTS audio.
+    /// Send audio via SSE streaming endpoint — real-time status updates.
     func sendVoiceCommand(_ audioData: Data) async -> VoiceChatResponse {
-        print("[WatchAPI] Voice command, audio size: \(audioData.count) bytes")
+        print("[WatchAPI] SSE voice, audio: \(audioData.count) bytes")
 
-        guard let url = URL(string: "\(baseURL)/api/v1/chat/voice") else {
-            return VoiceChatResponse(text: "Chyba: neplatna URL", ttsAudioData: nil, transcription: nil)
+        guard let url = URL(string: "\(baseURL)/api/v1/voice/stream") else {
+            return VoiceChatResponse(text: "Chyba URL", ttsAudioData: nil, transcription: nil)
         }
 
         let boundary = UUID().uuidString
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 120 // SSE stream can take a while
+        request.timeoutInterval = 120
 
-        // Build multipart body
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"file\"; filename=\"voice.wav\"\r\n".data(using: .utf8)!)
@@ -94,56 +52,115 @@ class WatchJervisApiClient: NSObject, AVAudioPlayerDelegate {
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
 
+        var transcription: String? = nil
+        var responseText = ""
+        var ttsDataParts: [Data] = []
+
         do {
-            DispatchQueue.main.async { self.onStatusUpdate?("Odesilam na server...") }
-            let (data, response) = try await session.data(for: request)
+            DispatchQueue.main.async { self.onStatusUpdate?("Odesílám...") }
+
+            // Try SSE streaming first
+            let (bytes, response) = try await session.bytes(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                return VoiceChatResponse(text: "Server neodpovida (\(code))", ttsAudioData: nil, transcription: nil)
+                return VoiceChatResponse(text: "Server \(code)", ttsAudioData: nil, transcription: nil)
             }
 
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                let text = String(data: data, encoding: .utf8) ?? "Neznama odpoved"
-                return VoiceChatResponse(text: text, ttsAudioData: nil, transcription: nil)
+            var currentEvent = ""
+            var currentData = ""
+
+            for try await line in bytes.lines {
+                if line.hasPrefix("event: ") {
+                    currentEvent = String(line.dropFirst(7))
+                } else if line.hasPrefix("data: ") {
+                    currentData = String(line.dropFirst(6))
+                } else if line.isEmpty && !currentData.isEmpty {
+                    // Process SSE event
+                    if let jsonData = currentData.data(using: .utf8),
+                       let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+
+                        switch currentEvent {
+                        case "transcribing":
+                            let t = json["text"] as? String ?? "Přepisuji..."
+                            DispatchQueue.main.async { self.onStatusUpdate?(t) }
+
+                        case "transcribed":
+                            transcription = json["text"] as? String
+                            let preview = String((transcription ?? "").prefix(40))
+                            DispatchQueue.main.async { self.onStatusUpdate?("🎤 \(preview)") }
+
+                        case "responding":
+                            DispatchQueue.main.async { self.onStatusUpdate?("Generuji odpověď...") }
+
+                        case "token":
+                            responseText += json["text"] as? String ?? ""
+
+                        case "response":
+                            let t = json["text"] as? String ?? ""
+                            if responseText.isEmpty { responseText = t }
+
+                        case "tts_audio":
+                            if let b64 = json["data"] as? String, !b64.isEmpty,
+                               let data = Data(base64Encoded: b64) {
+                                ttsDataParts.append(data)
+                                // Play first chunk immediately
+                                if ttsDataParts.count == 1 {
+                                    playTtsAudio(data)
+                                }
+                            }
+
+                        case "error":
+                            let errText = json["text"] as? String ?? "Chyba"
+                            if responseText.isEmpty { responseText = errText }
+
+                        case "done":
+                            break
+
+                        default: break
+                        }
+                    }
+                    currentEvent = ""
+                    currentData = ""
+                }
             }
 
-            let text = json["response"] as? String ?? "Zpracovavam"
-            let transcription = json["transcription"] as? String
+            print("[WatchAPI] SSE done: text=\(responseText.prefix(60)), tts=\(ttsDataParts.count) chunks")
 
-            var ttsData: Data? = nil
-            if let ttsBase64 = json["ttsAudio"] as? String, !ttsBase64.isEmpty {
-                ttsData = Data(base64Encoded: ttsBase64)
-            }
+            // Combine all TTS chunks
+            let combinedTts = ttsDataParts.isEmpty ? nil : ttsDataParts.reduce(Data()) { $0 + $1 }
 
-            print("[WatchAPI] Result: \(text.prefix(80)), tts=\(ttsData?.count ?? 0)b")
-            return VoiceChatResponse(text: text, ttsAudioData: ttsData, transcription: transcription)
+            return VoiceChatResponse(
+                text: responseText.isEmpty ? "Zpracováno" : responseText,
+                ttsAudioData: combinedTts,
+                transcription: transcription
+            )
         } catch {
-            print("[WatchAPI] Voice error: \(error)")
+            print("[WatchAPI] SSE error: \(error)")
+            // Return whatever we collected
+            if !responseText.isEmpty {
+                return VoiceChatResponse(text: responseText, ttsAudioData: nil, transcription: transcription)
+            }
             return VoiceChatResponse(text: "Chyba: \(error.localizedDescription)", ttsAudioData: nil, transcription: nil)
         }
     }
 
     /// Play TTS audio on watch speaker.
     func playTtsAudio(_ wavData: Data) {
-        print("[WatchAPI] Playing TTS audio: \(wavData.count) bytes")
         do {
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
             try audioSession.setActive(true)
-
             audioPlayer = try AVAudioPlayer(data: wavData)
             audioPlayer?.delegate = self
             audioPlayer?.volume = 1.0
-            let started = audioPlayer?.play() ?? false
-            print("[WatchAPI] TTS playback started: \(started), duration: \(audioPlayer?.duration ?? 0)s")
+            audioPlayer?.play()
         } catch {
-            print("[WatchAPI] TTS playback error: \(error)")
+            print("[WatchAPI] TTS error: \(error)")
         }
     }
 
-    // AVAudioPlayerDelegate — cleanup after playback
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         try? AVAudioSession.sharedInstance().setActive(false)
         audioPlayer = nil

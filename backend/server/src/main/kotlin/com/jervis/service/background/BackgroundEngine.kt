@@ -1674,9 +1674,9 @@ class BackgroundEngine(
      * Only creates if no pending deadline scan task exists.
      */
     private suspend fun dispatchDeadlineScan() {
-        // Check if a deadline scan task is already pending
-        val existing = taskRepository.findFirstByTypeAndStateIn(
-            type = com.jervis.dto.TaskTypeEnum.SCHEDULED_TASK,
+        // Check if a deadline scan task is already pending (by sourceUrn, not generic type)
+        val pendingScans = taskRepository.findBySourceUrnAndStateIn(
+            sourceUrn = com.jervis.common.types.SourceUrn("system:deadline-scan"),
             states = listOf(
                 TaskStateEnum.NEW,
                 TaskStateEnum.INDEXING,
@@ -1684,8 +1684,17 @@ class BackgroundEngine(
                 TaskStateEnum.PROCESSING,
             ),
         )
-        if (existing != null && existing.sourceUrn.value == "system:deadline-scan") {
-            logger.debug { "DEADLINE_SCAN: Already pending (${existing.id}), skipping" }
+        if (pendingScans.isNotEmpty()) {
+            // Cleanup: if multiple scans queued (from accumulation bug), keep only the newest
+            if (pendingScans.size > 1) {
+                val sorted = pendingScans.sortedByDescending { it.createdAt }
+                for (old in sorted.drop(1)) {
+                    old.state = TaskStateEnum.DONE
+                    taskRepository.save(old)
+                }
+                logger.info { "DEADLINE_SCAN: Cleaned up ${pendingScans.size - 1} stale queued scans" }
+            }
+            logger.debug { "DEADLINE_SCAN: Already pending, skipping" }
             return
         }
 
