@@ -1181,11 +1181,24 @@ class ChatViewModel(
         }
     }
 
+    fun cancelVoiceRecording() {
+        if (_isRecordingVoice.value) {
+            voiceRecorder.stopRecording() // discard audio
+            _isRecordingVoice.value = false
+            _voiceStatus.value = ""
+        }
+    }
+
     private fun startVoiceRecording() {
+        println("ChatViewModel: startVoiceRecording()")
         val started = voiceRecorder.startRecording()
+        println("ChatViewModel: AudioRecorder.startRecording() = $started")
         if (started) {
             _isRecordingVoice.value = true
             _voiceStatus.value = "Nahravam..."
+        } else {
+            _voiceStatus.value = "Mikrofon neni dostupny"
+            println("ChatViewModel: AudioRecorder failed to start — check microphone permission")
         }
     }
 

@@ -114,6 +114,7 @@ fun MainScreen(
         isRecordingVoice = isRecordingVoice,
         voiceStatus = voiceStatus,
         onMicClick = viewModel.chat::toggleVoiceRecording,
+        onCancelVoice = viewModel.chat::cancelVoiceRecording,
         activeThinkingMap = activeThinkingMap,
         thinkingMapPanelVisible = thinkingMapPanelVisible,
         thinkingMapPanelWidthFraction = thinkingMapPanelWidthFraction,

@@ -89,6 +89,7 @@ fun MainScreenView(
     isRecordingVoice: Boolean = false,
     voiceStatus: String = "",
     onMicClick: () -> Unit = {},
+    onCancelVoice: () -> Unit = {},
     activeThinkingMap: TaskGraphDto? = null,
     thinkingMapPanelVisible: Boolean = false,
     thinkingMapPanelWidthFraction: Float = 0.35f,
@@ -436,6 +437,7 @@ private fun ChatContent(
             isRecordingVoice = isRecordingVoice,
             voiceStatus = voiceStatus,
             onMicClick = onMicClick,
+            onCancelVoice = onCancelVoice,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp),

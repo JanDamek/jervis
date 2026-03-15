@@ -59,6 +59,7 @@ internal fun InputArea(
     isRecordingVoice: Boolean = false,
     voiceStatus: String = "",
     onMicClick: () -> Unit = {},
+    onCancelVoice: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -129,70 +130,103 @@ internal fun InputArea(
         }
 
         // Input row
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            // Attach file button
-            JIconButton(
-                onClick = onAttachFile,
-                icon = Icons.Default.AttachFile,
-                contentDescription = "Pripojit soubor",
-                enabled = enabled && !isRecordingVoice,
-                modifier = Modifier.size(44.dp),
-            )
-
-            JTextField(
-                value = if (isRecordingVoice) "" else inputText,
-                onValueChange = onInputChanged,
-                label = "",
-                placeholder = if (isRecordingVoice) "Nahravam hlas..." else "Napiste zpravu...",
-                enabled = enabled && !isRecordingVoice,
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = 56.dp, max = 120.dp)
-                        .focusRequester(focusRequester)
-                        .onPreviewKeyEvent { keyEvent ->
-                            if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown) {
-                                if (keyEvent.isShiftPressed) {
-                                    onInputChanged(inputText + "\n")
-                                    true
-                                } else {
-                                    if (enabled && inputText.isNotBlank()) {
-                                        onSendClick()
-                                    }
-                                    true
-                                }
-                            } else {
-                                false
-                            }
-                        },
-                maxLines = 4,
-                singleLine = false,
-                // Mic icon inside text field — visible when not typing, becomes stop when recording
-                trailingIcon = {
-                    if (inputText.isBlank() || isRecordingVoice) {
-                        IconButton(
-                            onClick = onMicClick,
-                            enabled = enabled,
-                        ) {
-                            Icon(
-                                if (isRecordingVoice) Icons.Default.Stop else Icons.Default.Mic,
-                                contentDescription = if (isRecordingVoice) "Zastavit" else "Hlasovy vstup",
-                                tint = if (isRecordingVoice) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                },
-            )
-
-            JPrimaryButton(
-                onClick = if (isRecordingVoice) onMicClick else onSendClick,
-                enabled = enabled && (inputText.isNotBlank() || attachments.isNotEmpty() || isRecordingVoice),
-                modifier = Modifier.height(56.dp),
+        if (isRecordingVoice) {
+            // Recording mode — stop + cancel, no text input
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.heightIn(min = 56.dp),
             ) {
-                Text(if (isRecordingVoice) "Stop" else "Odeslat")
+                Icon(
+                    Icons.Default.Mic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp),
+                )
+                Text(
+                    text = voiceStatus.ifBlank { "Nahravam..." },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+                JPrimaryButton(
+                    onClick = onMicClick, // stop + send
+                    enabled = true,
+                    modifier = Modifier.height(44.dp),
+                ) {
+                    Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Odeslat")
+                }
+                JIconButton(
+                    onClick = onCancelVoice,
+                    icon = Icons.Default.Close,
+                    contentDescription = "Zrusit",
+                    modifier = Modifier.size(44.dp),
+                )
+            }
+        } else {
+            // Normal mode — attach + text + mic + send
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                JIconButton(
+                    onClick = onAttachFile,
+                    icon = Icons.Default.AttachFile,
+                    contentDescription = "Pripojit soubor",
+                    enabled = enabled,
+                    modifier = Modifier.size(44.dp),
+                )
+
+                JTextField(
+                    value = inputText,
+                    onValueChange = onInputChanged,
+                    label = "",
+                    placeholder = "Napiste zpravu...",
+                    enabled = enabled,
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .heightIn(min = 56.dp, max = 120.dp)
+                            .focusRequester(focusRequester)
+                            .onPreviewKeyEvent { keyEvent ->
+                                if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown) {
+                                    if (keyEvent.isShiftPressed) {
+                                        onInputChanged(inputText + "\n")
+                                        true
+                                    } else {
+                                        if (enabled && inputText.isNotBlank()) {
+                                            onSendClick()
+                                        }
+                                        true
+                                    }
+                                } else {
+                                    false
+                                }
+                            },
+                    maxLines = 4,
+                    singleLine = false,
+                    trailingIcon = if (inputText.isBlank()) {
+                        {
+                            IconButton(onClick = onMicClick, enabled = enabled) {
+                                Icon(
+                                    Icons.Default.Mic,
+                                    contentDescription = "Hlasovy vstup",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    } else null,
+                )
+
+                JPrimaryButton(
+                    onClick = onSendClick,
+                    enabled = enabled && (inputText.isNotBlank() || attachments.isNotEmpty()),
+                    modifier = Modifier.height(56.dp),
+                ) {
+                    Text("Odeslat")
+                }
             }
         }
     }
