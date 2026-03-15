@@ -553,6 +553,11 @@ def _update_vertex_readiness(graph: AgentGraph, vertex_id: str) -> None:
 
     DECOMPOSITION edges (parent→child structural) do NOT gate readiness.
     Only DEPENDENCY edges carry data flow constraints.
+
+    ROOT SYNTHESIS GUARD: The root synthesis vertex must NOT become READY
+    while there are still non-terminal, non-synthesis vertices in the graph.
+    This prevents synthesis from completing before late-added vertices
+    (via extend_thinking_map) have finished.
     """
     vertex = graph.vertices.get(vertex_id)
     if not vertex or vertex.status not in (VertexStatus.PENDING, VertexStatus.READY):
@@ -562,9 +567,24 @@ def _update_vertex_readiness(graph: AgentGraph, vertex_id: str) -> None:
         e for e in get_incoming_edges(graph, vertex_id)
         if e.edge_type == EdgeType.DEPENDENCY
     ]
-    if not dep_edges:
-        vertex.status = VertexStatus.READY
-    elif all(e.payload is not None for e in dep_edges):
+    deps_satisfied = (not dep_edges) or all(e.payload is not None for e in dep_edges)
+
+    if deps_satisfied:
+        # Root synthesis guard: don't become READY if other work is still pending
+        if (vertex.vertex_type == VertexType.SYNTHESIS
+                and graph.synthesis_vertex_id == vertex_id):
+            terminal = {VertexStatus.COMPLETED, VertexStatus.FAILED, VertexStatus.SKIPPED}
+            has_pending_work = any(
+                v.status not in terminal
+                for vid, v in graph.vertices.items()
+                if vid != vertex_id
+                and v.vertex_type != VertexType.ROOT
+                and v.vertex_type != VertexType.SYNTHESIS
+            )
+            if has_pending_work:
+                vertex.status = VertexStatus.PENDING
+                return
+
         vertex.status = VertexStatus.READY
     else:
         vertex.status = VertexStatus.PENDING
@@ -620,9 +640,35 @@ def _check_graph_completion(graph: AgentGraph) -> None:
     """Update graph status if all vertices are done.
 
     Master maps are never "completed" — they grow with each interaction.
+
+    Also handles root synthesis readiness: when all non-synthesis work is done
+    but root synthesis is still PENDING (held back by the guard), release it.
     """
     if graph.graph_type == GraphType.MEMORY_MAP:
         return  # Master map never completes
+
+    # Check if root synthesis should be released (all non-synthesis work done)
+    if graph.synthesis_vertex_id and graph.synthesis_vertex_id in graph.vertices:
+        synth = graph.vertices[graph.synthesis_vertex_id]
+        if synth.status == VertexStatus.PENDING:
+            terminal = {VertexStatus.COMPLETED, VertexStatus.FAILED, VertexStatus.SKIPPED}
+            all_work_done = all(
+                v.status in terminal
+                for vid, v in graph.vertices.items()
+                if vid != graph.synthesis_vertex_id
+                and v.vertex_type != VertexType.ROOT
+                and v.vertex_type != VertexType.SYNTHESIS
+            )
+            if all_work_done:
+                # All data vertices done — release synthesis
+                _update_vertex_readiness(graph, graph.synthesis_vertex_id)
+                logger.info(
+                    "SYNTHESIS_RELEASED | graph=%s | synthesis=%s — all %d data vertices complete",
+                    graph.id, graph.synthesis_vertex_id,
+                    sum(1 for v in graph.vertices.values()
+                        if v.vertex_type not in (VertexType.ROOT, VertexType.SYNTHESIS)),
+                )
+
     if _is_graph_complete(graph):
         has_failures = any(
             v.status == VertexStatus.FAILED for v in graph.vertices.values()

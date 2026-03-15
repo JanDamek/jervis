@@ -549,29 +549,46 @@ class AgentStore:
         VertexStatus.RUNNING, VertexStatus.BLOCKED,
     }
 
-    _STALE_RUNNING_AGE_S = 30 * 60  # 30 min — RUNNING vertex is likely stale
+    _STALE_RUNNING_AGE_S = 30 * 60  # 30 min — RUNNING TASK_REF/INCOMING is stale
+    _STALE_REQUEST_AGE_S = 10 * 60  # 10 min — RUNNING REQUEST is stale (chat SSE broke)
 
     def _mark_stale_running_vertices(self) -> int:
-        """Mark RUNNING TASK_REF vertices as FAILED if older than threshold.
+        """Mark stale RUNNING vertices as FAILED.
 
-        Prevents indefinite accumulation of stale vertices when the graph agent
-        crashes without calling link_thinking_map(completed=True).
+        Handles two scenarios:
+        1. TASK_REF/INCOMING: orchestrator crashed mid-execution (30min threshold)
+        2. REQUEST: SSE stream broke during chat (10min threshold)
+
+        After a pod restart, these vertices have no worker — they'll be RUNNING
+        forever unless we detect and fail them. The result_summary is preserved
+        (if any partial response was saved), and the error explains what happened.
         """
         if not self._memory_map:
             return 0
         graph = self._memory_map
-        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=self._STALE_RUNNING_AGE_S)).isoformat()
+        now = datetime.now(timezone.utc)
+        task_cutoff = (now - timedelta(seconds=self._STALE_RUNNING_AGE_S)).isoformat()
+        request_cutoff = (now - timedelta(seconds=self._STALE_REQUEST_AGE_S)).isoformat()
         count = 0
+
+        stale_types = {
+            VertexType.TASK_REF: task_cutoff,
+            VertexType.INCOMING: task_cutoff,
+            VertexType.REQUEST: request_cutoff,
+        }
+
         for v in graph.vertices.values():
             if v.status != VertexStatus.RUNNING:
                 continue
-            if v.vertex_type not in (VertexType.TASK_REF, VertexType.INCOMING):
+            cutoff = stale_types.get(v.vertex_type)
+            if cutoff is None:
                 continue
             started = v.started_at or v.created_at or ""
             if started and started < cutoff:
                 v.status = VertexStatus.FAILED
-                v.result_summary = v.result_summary or "Stale — no completion signal received"
-                v.completed_at = datetime.now(timezone.utc).isoformat()
+                v.error = "Stale — no completion signal (likely pod restart or SSE disconnect)"
+                v.result_summary = v.result_summary or "Interrupted — no response received"
+                v.completed_at = now.isoformat()
                 count += 1
         if count:
             logger.info("Marked %d stale RUNNING vertices as FAILED", count)
