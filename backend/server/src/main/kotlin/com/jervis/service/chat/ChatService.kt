@@ -211,6 +211,16 @@ class ChatService(
     }
 
     /**
+     * Count actionable BACKGROUND messages in current session (failed or needsReaction).
+     * Used together with USER_TASK count for "K reakci" badge.
+     */
+    suspend fun countActionableBackground(userId: String = "jan"): Long {
+        val session = chatSessionRepository.findFirstByUserIdAndArchivedOrderByLastMessageAtDesc(userId, false)
+            ?: return 0
+        return chatMessageService.countActionableBackground(session.id)
+    }
+
+    /**
      * Update session scope when Python emits scope_change.
      * Called by ChatRpcImpl when it sees a SCOPE_CHANGE event.
      */

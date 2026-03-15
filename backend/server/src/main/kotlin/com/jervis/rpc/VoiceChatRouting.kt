@@ -331,13 +331,17 @@ fun Routing.installVoiceChatApi(
                 sse("response", """{"text":"${responseText.escapeJson()}","complete":$chatComplete}""")
 
                 // Step 3: TTS audio
+                logger.info { "VOICE_STREAM_TTS_START | text=${responseText.take(50)}" }
                 try {
                     val ttsAudio = generateTtsAudio(responseText.take(300))
                     if (ttsAudio != null) {
+                        logger.info { "VOICE_STREAM_TTS_OK | audioSize=${ttsAudio.length}" }
                         sse("tts_audio", """{"data":"$ttsAudio"}""")
+                    } else {
+                        logger.warn { "VOICE_STREAM_TTS_NULL" }
                     }
                 } catch (e: Exception) {
-                    logger.warn { "VOICE_STREAM_TTS_FAILED: ${e.message}" }
+                    logger.warn { "VOICE_STREAM_TTS_FAILED: ${e::class.simpleName}: ${e.message}" }
                 }
 
                 sse("done", "{}")

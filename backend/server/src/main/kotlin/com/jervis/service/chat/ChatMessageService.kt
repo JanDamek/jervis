@@ -91,10 +91,9 @@ class ChatMessageService(
         require(limit > 0) { "Limit must be positive" }
 
         val messages = if (excludeBackground) {
-            // Chat mode: exclude BACKGROUND but keep BACKGROUND messages with hasGraph=true
-            // (important results with thinking maps must remain visible)
+            // Chat mode: exclude ALL BACKGROUND messages (strict chat-only)
             chatMessageRepository
-                .findChatWithGraphResults(conversationId)
+                .findByConversationIdAndRoleNotOrderByIdDesc(conversationId, MessageRole.BACKGROUND)
                 .take(limit)
                 .toList()
         } else {
@@ -134,9 +133,9 @@ class ChatMessageService(
         require(limit > 0) { "Limit must be positive" }
 
         val messages = if (excludeBackground) {
-            // Chat mode: exclude BACKGROUND but keep BACKGROUND messages with hasGraph=true
+            // Chat mode: exclude ALL BACKGROUND messages (strict chat-only)
             chatMessageRepository
-                .findChatWithGraphResultsBefore(conversationId, beforeId)
+                .findByConversationIdAndRoleNotAndIdLessThanOrderByIdDesc(conversationId, MessageRole.BACKGROUND, beforeId)
                 .toList()
                 .take(limit)
         } else {
@@ -191,8 +190,8 @@ class ChatMessageService(
      */
     suspend fun getMessageCount(conversationId: ObjectId, excludeBackground: Boolean = false): Long =
         if (excludeBackground) {
-            // Chat mode: exclude BACKGROUND but keep BACKGROUND messages with hasGraph=true
-            chatMessageRepository.countChatWithGraphResults(conversationId)
+            // Chat mode: exclude ALL BACKGROUND messages (strict chat-only)
+            chatMessageRepository.countByConversationIdAndRoleNot(conversationId, MessageRole.BACKGROUND)
         } else {
             chatMessageRepository.countByConversationId(conversationId)
         }
@@ -202,6 +201,13 @@ class ChatMessageService(
      */
     suspend fun countByRole(conversationId: ObjectId, role: MessageRole): Long =
         chatMessageRepository.countByConversationIdAndRole(conversationId, role)
+
+    /**
+     * Count actionable BACKGROUND messages (needsReaction=true OR success=false).
+     * Used for "K reakci" badge — combined with USER_TASK count.
+     */
+    suspend fun countActionableBackground(conversationId: ObjectId): Long =
+        chatMessageRepository.countActionableBackground(conversationId)
 
     /**
      * Load messages filtered to a specific role only (newest first, chronological order).

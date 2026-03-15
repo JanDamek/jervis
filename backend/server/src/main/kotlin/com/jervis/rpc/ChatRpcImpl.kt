@@ -286,7 +286,9 @@ class ChatRpcImpl(
     }
 
     override suspend fun getChatHistory(limit: Int, beforeMessageId: String?, showChat: Boolean, showTasks: Boolean, showNeedReaction: Boolean): ChatHistoryDto {
-        val userTaskCount = taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toInt()
+        val pendingUserTasks = taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toInt()
+        val actionableBackground = chatService.countActionableBackground().toInt()
+        val userTaskCount = pendingUserTasks + actionableBackground
         val session = chatService.getOrCreateActiveSession()
 
         // Optimized paths for single-filter cases (no aggregation needed)

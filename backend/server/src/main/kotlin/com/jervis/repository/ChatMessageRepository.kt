@@ -172,6 +172,16 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
     ): Flow<ChatMessageDocument>
 
     /**
+     * Count actionable BACKGROUND messages (needsReaction=true OR success=false).
+     * Used for "K reakci" badge count — combined with USER_TASK count.
+     */
+    @Query(
+        value = "{ 'conversationId': ?0, 'role': 'BACKGROUND', '\$or': [ { 'metadata.needsReaction': 'true' }, { 'metadata.success': 'false' } ] }",
+        count = true,
+    )
+    suspend fun countActionableBackground(conversationId: ObjectId): Long
+
+    /**
      * Check if a message with the given client-generated ID already exists.
      * Used for deduplication — prevents duplicate processing on retry.
      */

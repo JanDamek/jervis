@@ -27,39 +27,35 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 12) {
             if let response = responseText {
-                // Response received — show text + play TTS
-                Spacer()
-
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundColor(.green)
-
-                ScrollView {
-                    Text(response)
-                        .font(.caption)
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 4)
-                }
-
-                Spacer()
-
-                HStack(spacing: 16) {
-                    // Ask again
+                // Response — compact layout, max space for text
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.green)
+                    Text("Jervis")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Spacer()
                     Button(action: { responseText = nil }) {
-                        Image(systemName: "mic.circle.fill")
-                            .font(.system(size: 30))
+                        Image(systemName: "mic.fill")
+                            .font(.caption)
                             .foregroundColor(.blue)
                     }
                     .buttonStyle(.plain)
-
-                    // Close
                     Button(action: onDismiss) {
-                        Image(systemName: "xmark.circle")
-                            .font(.system(size: 30))
+                        Image(systemName: "xmark")
+                            .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                }
+
+                ScrollView {
+                    Text(response)
+                        .font(.body)
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 2)
                 }
             } else if isProcessing {
                 Spacer()

@@ -912,24 +912,36 @@ class ChatViewModel(
             ChatMessage.MessageType.BACKGROUND_RESULT,
             ChatMessage.MessageType.URGENT_ALERT,
             -> {
-                // Track new background messages for filter chip counter
+                // Always update counters (badge must reflect reality even when hidden)
                 if (messageType == ChatMessage.MessageType.BACKGROUND_RESULT) {
                     _backgroundMessageCount.value++
                 }
-                // Clean up stale progress indicators
-                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
-                thinkingHistory.clear()
-                // Append directly — no deduplication needed, these are push-only
-                messages.add(
-                    ChatMessage(
-                        from = ChatMessage.Sender.Assistant,
-                        text = response.message,
-                        contextId = projectId,
-                        messageType = messageType,
-                        metadata = response.metadata,
-                        timestamp = response.metadata["timestamp"],
-                    ),
-                )
+                val isActionable = response.metadata["success"] == "false" ||
+                    response.metadata["needsReaction"] == "true" ||
+                    messageType == ChatMessage.MessageType.URGENT_ALERT
+                if (isActionable) {
+                    _userTaskCount.update { it + 1 }
+                }
+
+                // Only add to visible messages if current filter includes this type
+                val showInTasks = _showTasks.value
+                val showInReaction = _showNeedReaction.value && isActionable
+                if (showInTasks || showInReaction) {
+                    // Clean up stale progress indicators
+                    messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+                    thinkingHistory.clear()
+                    // Append directly — no deduplication needed, these are push-only
+                    messages.add(
+                        ChatMessage(
+                            from = ChatMessage.Sender.Assistant,
+                            text = response.message,
+                            contextId = projectId,
+                            messageType = messageType,
+                            metadata = response.metadata,
+                            timestamp = response.metadata["timestamp"],
+                        ),
+                    )
+                }
                 // Refresh master map after background task completion
                 loadMemoryMap()
             }
