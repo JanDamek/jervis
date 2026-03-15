@@ -92,6 +92,8 @@ fun MainScreenView(
     voiceStatus: String = "",
     onMicClick: () -> Unit = {},
     onCancelVoice: () -> Unit = {},
+    onTtsPlay: (String) -> Unit = {},
+    isTtsPlaying: Boolean = false,
     activeThinkingMap: TaskGraphDto? = null,
     thinkingMapPanelVisible: Boolean = false,
     thinkingMapPanelWidthFraction: Float = 0.35f,
@@ -166,6 +168,8 @@ fun MainScreenView(
                             isRecordingVoice = isRecordingVoice,
                             voiceStatus = voiceStatus,
                             onMicClick = onMicClick,
+                            onTtsPlay = onTtsPlay,
+                            isTtsPlaying = isTtsPlaying,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -231,6 +235,8 @@ fun MainScreenView(
                             isRecordingVoice = isRecordingVoice,
                             voiceStatus = voiceStatus,
                             onMicClick = onMicClick,
+                            onTtsPlay = onTtsPlay,
+                            isTtsPlaying = isTtsPlaying,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -343,6 +349,8 @@ private fun ChatContent(
     voiceStatus: String = "",
     onMicClick: () -> Unit = {},
     onCancelVoice: () -> Unit = {},
+    onTtsPlay: (String) -> Unit = {},
+    isTtsPlaying: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -402,6 +410,8 @@ private fun ChatContent(
             onEditMessage = onEditMessage,
             onReplyToTask = onReplyToTask,
             onSendReply = onSendReply,
+            onTtsPlay = onTtsPlay,
+            isTtsPlaying = isTtsPlaying,
             taskGraphs = taskGraphs,
             onLoadTaskGraph = onLoadTaskGraph,
             jobLogsService = jobLogsService,
