@@ -1234,7 +1234,7 @@ class ChatViewModel(
         // Show optimistic message
         _chatMessages.value = _chatMessages.value + ChatMessage(
             from = ChatMessage.Sender.Me,
-            text = "[Hlasova zprava]",
+            text = "🎤 Hlasová zpráva",
             messageType = ChatMessage.MessageType.USER_MESSAGE,
         )
 
@@ -1242,7 +1242,7 @@ class ChatViewModel(
         voiceJob = scope.launch {
             try {
                 val serverUrl = connectionManager.baseUrl.trimEnd('/')
-                val client = HttpClient()
+                val client = com.jervis.di.createPlatformHttpClient { }
                 try {
                     _voiceStatus.value = "Odesílám na server..."
 
@@ -1268,7 +1268,7 @@ class ChatViewModel(
                     if (transcription.isNotBlank()) {
                         _chatMessages.update { msgs ->
                             msgs.mapIndexed { i, m ->
-                                if (i == msgs.lastIndex && m.text == "[Hlasová zpráva]") m.copy(text = transcription) else m
+                                if (i == msgs.lastIndex && m.text == "🎤 Hlasová zpráva") m.copy(text = transcription) else m
                             }
                         }
                     }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
@@ -40,10 +41,19 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import com.jervis.ui.design.JIconButton
-import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JTextField
 import com.jervis.ui.util.PickedFile
 
+/**
+ * Unified chat input component — used in main chat and reply bubbles.
+ *
+ * Features:
+ * - Text input with mic icon inside (trailingIcon) — hidden when typing
+ * - Attach file button
+ * - Send arrow button
+ * - Voice recording mode: status bar + stop/cancel
+ * - Shift+Enter = new line, Enter = send
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun InputArea(
@@ -60,18 +70,20 @@ internal fun InputArea(
     voiceStatus: String = "",
     onMicClick: () -> Unit = {},
     onCancelVoice: () -> Unit = {},
+    showAttach: Boolean = true,
+    showCancel: Boolean = false,
+    onCancel: () -> Unit = {},
+    placeholder: String = "Napište zprávu...",
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(requestFocus) {
-        if (requestFocus) {
-            focusRequester.requestFocus()
-        }
+        if (requestFocus) focusRequester.requestFocus()
     }
 
     Column(modifier = modifier) {
-        // Attachment chips row
+        // Attachment chips
         if (attachments.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -82,164 +94,115 @@ internal fun InputArea(
                         onClick = { onRemoveAttachment(index) },
                         label = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    getFileTypeIcon(file.mimeType),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = file.filename,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    maxLines = 1,
-                                )
+                                Icon(getFileTypeIcon(file.mimeType), null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(file.filename, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                             }
                         },
-                        trailingIcon = {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Odebrat",
-                                modifier = Modifier.size(16.dp),
-                            )
-                        },
+                        trailingIcon = { Icon(Icons.Default.Close, "Odebrat", Modifier.size(16.dp)) },
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
         }
 
-        // Voice recording status bar
         if (isRecordingVoice) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    Icons.Default.Mic,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp),
-                )
-                Text(
-                    text = voiceStatus.ifBlank { "Nahrávám..." },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-        }
-
-        // Input row
-        if (isRecordingVoice) {
-            // Recording mode — stop + cancel, no text input
+            // Recording mode
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.heightIn(min = 56.dp),
+                modifier = Modifier.heightIn(min = 48.dp),
             ) {
-                Icon(
-                    Icons.Default.Mic,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(24.dp),
-                )
+                Icon(Icons.Default.Mic, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(24.dp))
                 Text(
-                    text = voiceStatus.ifBlank { "Nahrávám..." },
+                    voiceStatus.ifBlank { "Nahrávám..." },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.weight(1f),
                 )
-                JPrimaryButton(
-                    onClick = onMicClick, // stop + send
-                    enabled = true,
-                    modifier = Modifier.height(44.dp),
-                ) {
-                    Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Odeslat")
+                // Stop + send
+                IconButton(onClick = onMicClick, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.Send, "Odeslat", tint = MaterialTheme.colorScheme.primary)
                 }
-                JIconButton(
-                    onClick = onCancelVoice,
-                    icon = Icons.Default.Close,
-                    contentDescription = "Zrušit",
-                    modifier = Modifier.size(44.dp),
-                )
+                // Cancel
+                IconButton(onClick = onCancelVoice, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.Default.Close, "Zrušit")
+                }
             }
         } else {
-            // Normal mode — attach + text + mic + send
+            // Normal input mode
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
-                JIconButton(
-                    onClick = onAttachFile,
-                    icon = Icons.Default.AttachFile,
-                    contentDescription = "Připojit soubor",
-                    enabled = enabled,
-                    modifier = Modifier.size(44.dp),
-                )
+                if (showAttach) {
+                    JIconButton(
+                        onClick = onAttachFile,
+                        icon = Icons.Default.AttachFile,
+                        contentDescription = "Připojit soubor",
+                        enabled = enabled,
+                        modifier = Modifier.size(44.dp),
+                    )
+                }
 
                 JTextField(
                     value = inputText,
                     onValueChange = onInputChanged,
                     label = "",
-                    placeholder = "Napište zprávu...",
+                    placeholder = placeholder,
                     enabled = enabled,
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .heightIn(min = 56.dp, max = 120.dp)
-                            .focusRequester(focusRequester)
-                            .onPreviewKeyEvent { keyEvent ->
-                                if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown) {
-                                    if (keyEvent.isShiftPressed) {
-                                        onInputChanged(inputText + "\n")
-                                        true
-                                    } else {
-                                        if (enabled && inputText.isNotBlank()) {
-                                            onSendClick()
-                                        }
-                                        true
-                                    }
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp, max = 120.dp)
+                        .focusRequester(focusRequester)
+                        .onPreviewKeyEvent { keyEvent ->
+                            if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown) {
+                                if (keyEvent.isShiftPressed) {
+                                    onInputChanged(inputText + "\n")
+                                    true
                                 } else {
-                                    false
+                                    if (enabled && inputText.isNotBlank()) onSendClick()
+                                    true
                                 }
-                            },
+                            } else false
+                        },
                     maxLines = 4,
                     singleLine = false,
+                    // Mic inside text field — visible when text is empty
+                    trailingIcon = if (inputText.isBlank()) {
+                        {
+                            IconButton(onClick = onMicClick, enabled = enabled) {
+                                Icon(Icons.Default.Mic, "Hlasový vstup", tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    } else null,
                 )
 
-                // Mic button — plain IconButton (no TooltipBox, reliable on iOS)
+                // Send arrow
                 IconButton(
-                    onClick = {
-                        println("MIC BUTTON CLICKED!")
-                        onMicClick()
-                    },
-                    enabled = enabled,
+                    onClick = onSendClick,
+                    enabled = enabled && (inputText.isNotBlank() || attachments.isNotEmpty()),
                     modifier = Modifier.size(44.dp),
                 ) {
                     Icon(
-                        Icons.Default.Mic,
-                        contentDescription = "Hlasový vstup",
-                        tint = MaterialTheme.colorScheme.primary,
+                        Icons.AutoMirrored.Filled.Send,
+                        "Odeslat",
+                        tint = if (inputText.isNotBlank() || attachments.isNotEmpty())
+                            MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
-                JPrimaryButton(
-                    onClick = onSendClick,
-                    enabled = enabled && (inputText.isNotBlank() || attachments.isNotEmpty()),
-                    modifier = Modifier.height(56.dp),
-                ) {
-                    Text("Odeslat")
+                if (showCancel) {
+                    IconButton(onClick = onCancel, modifier = Modifier.size(44.dp)) {
+                        Icon(Icons.Default.Close, "Zavřít")
+                    }
                 }
             }
         }
     }
 }
 
-/**
- * Get an appropriate icon for a file based on its MIME type.
- */
 private fun getFileTypeIcon(mimeType: String) = when {
     mimeType.startsWith("image/") -> Icons.Default.Image
     mimeType == "application/pdf" -> Icons.Default.PictureAsPdf
