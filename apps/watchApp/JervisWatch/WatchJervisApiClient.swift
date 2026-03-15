@@ -165,9 +165,11 @@ class WatchJervisApiClient: NSObject, AVAudioPlayerDelegate {
             DispatchQueue.main.async { self.onStatusUpdate?(status) }
 
         case "transcribed":
-            transcription = json["text"] as? String
-            print("[WatchAPI] SSE: transcribed = \(transcription ?? "")")
-            DispatchQueue.main.async { self.onStatusUpdate?("Rozpoznano: \(self.truncate(transcription ?? "", 40))") }
+            let t = json["text"] as? String
+            transcription = t
+            print("[WatchAPI] SSE: transcribed = \(t ?? "")")
+            let statusText = "Rozpoznano: \(truncate(t ?? "", 40))"
+            DispatchQueue.main.async { self.onStatusUpdate?(statusText) }
 
         case "responding":
             print("[WatchAPI] SSE: responding")
