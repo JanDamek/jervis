@@ -123,6 +123,7 @@ fun PersistentTopBar(
     onGroupSelected: (String) -> Unit,
     // Connection
     connectionState: ConnectionViewModel.State,
+    connectionStatusDetail: String? = null,
     onReconnect: () -> Unit,
     // Recording
     isRecording: Boolean,
@@ -218,6 +219,7 @@ fun PersistentTopBar(
             // Connection status
             ConnectionIndicator(
                 connectionState = connectionState,
+                statusDetail = connectionStatusDetail,
                 onReconnect = onReconnect,
             )
         }
@@ -579,18 +581,32 @@ private fun formatDuration(seconds: Long): String {
 @Composable
 private fun ConnectionIndicator(
     connectionState: ConnectionViewModel.State,
+    statusDetail: String? = null,
     onReconnect: () -> Unit,
 ) {
     val semanticColors = LocalJervisSemanticColors.current
 
     when (connectionState) {
         ConnectionViewModel.State.CONNECTED -> {
-            Box(
-                modifier = Modifier
-                    .padding(horizontal = 6.dp)
-                    .size(8.dp)
-                    .background(semanticColors.success, CircleShape),
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(horizontal = 6.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(semanticColors.success, CircleShape),
+                )
+                if (!statusDetail.isNullOrBlank()) {
+                    Text(
+                        text = statusDetail,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 7.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
         ConnectionViewModel.State.DISCONNECTED -> {
             // "Offline" chip — clickable for manual reconnect
@@ -601,22 +617,35 @@ private fun ConnectionIndicator(
                 color = MaterialTheme.colorScheme.errorContainer,
                 shape = MaterialTheme.shapes.small,
             ) {
-                Row(
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.CloudOff,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                    )
-                    Text(
-                        text = "Offline",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Text(
+                            text = "Offline",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                    if (!statusDetail.isNullOrBlank()) {
+                        Text(
+                            text = statusDetail,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 7.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
         }
@@ -632,10 +661,11 @@ private fun ConnectionIndicator(
                     color = semanticColors.warning,
                 )
                 Text(
-                    text = "connecting",
+                    text = statusDetail ?: "connecting",
                     style = MaterialTheme.typography.labelSmall,
                     fontSize = 8.sp,
                     color = semanticColors.warning,
+                    maxLines = 1,
                 )
             }
         }

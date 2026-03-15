@@ -30,6 +30,10 @@ class ConnectionViewModel(
     private val _state = MutableStateFlow(State.DISCONNECTED)
     val state: StateFlow<State> = _state.asStateFlow()
 
+    /** Short detail label shown under the connection dot (e.g. "chat stream active", error text). */
+    private val _statusDetail = MutableStateFlow<String?>(null)
+    val statusDetail: StateFlow<String?> = _statusDetail.asStateFlow()
+
     private val _isInitialLoading = MutableStateFlow(true)
     val isInitialLoading: StateFlow<Boolean> = _isInitialLoading.asStateFlow()
 
@@ -39,6 +43,10 @@ class ConnectionViewModel(
 
     fun updateState(newState: State) {
         _state.value = newState
+    }
+
+    fun updateStatusDetail(detail: String?) {
+        _statusDetail.value = detail
     }
 
     fun setInitialLoading(loading: Boolean) {

@@ -83,6 +83,7 @@ fun App(
         val currentScreen by appNavigator.currentScreen.collectAsState()
         val canGoBack by appNavigator.canGoBack.collectAsState()
         val connectionState by viewModel.connection.state.collectAsState()
+        val connectionStatusDetail by viewModel.connection.statusDetail.collectAsState()
         val isInitialLoading by viewModel.connection.isInitialLoading.collectAsState()
 
         // Global recording state
@@ -121,6 +122,7 @@ fun App(
             onProjectSelected = { id -> viewModel.selectProject(id ?: "") },
             onGroupSelected = viewModel::selectGroup,
             connectionState = connectionState,
+            connectionStatusDetail = connectionStatusDetail,
             onReconnect = viewModel.connection::manualReconnect,
             isRecording = isRecordingGlobal,
             recordingDuration = recordingDurationGlobal,

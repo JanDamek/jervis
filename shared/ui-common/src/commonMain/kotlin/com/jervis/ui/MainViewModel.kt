@@ -110,6 +110,7 @@ class MainViewModel(
         selectedGroupId = _selectedGroupId,
         onScopeChange = ::updateChatScope,
         onConnectionReady = { connection.updateState(ConnectionViewModel.State.CONNECTED) },
+        onStatusDetail = { detail -> connection.updateStatusDetail(detail) },
         onError = ::reportError,
     )
 
@@ -158,6 +159,7 @@ class MainViewModel(
                 when (rpcState) {
                     is RpcConnectionState.Connected -> {
                         connection.updateState(ConnectionViewModel.State.CONNECTED)
+                        connection.updateStatusDetail("rpc ok")
 
                         // Always load clients when connected (refresh from server)
                         loadClients()
@@ -170,9 +172,11 @@ class MainViewModel(
                     }
                     is RpcConnectionState.Connecting -> {
                         connection.updateState(ConnectionViewModel.State.RECONNECTING)
+                        connection.updateStatusDetail("reconnecting...")
                     }
                     is RpcConnectionState.Disconnected -> {
                         connection.updateState(ConnectionViewModel.State.DISCONNECTED)
+                        connection.updateStatusDetail("disconnected")
                     }
                 }
             }

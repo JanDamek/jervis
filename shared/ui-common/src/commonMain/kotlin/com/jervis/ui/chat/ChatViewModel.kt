@@ -57,6 +57,7 @@ class ChatViewModel(
     private val selectedGroupId: StateFlow<String?>,
     private val onScopeChange: (clientId: String, projectId: String?, projectsJson: String?, groupId: String?) -> Unit,
     private val onConnectionReady: () -> Unit,
+    private val onStatusDetail: (String?) -> Unit,
     private val onError: (String) -> Unit,
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + CoroutineExceptionHandler { _, e ->
@@ -262,6 +263,7 @@ class ChatViewModel(
                 // We're inside resilientFlow — services are connected and ready.
                 services.chatService.subscribeToChatEvents().onStart {
                     onConnectionReady()
+                    onStatusDetail("stream")
                     try {
                         val history = services.chatService.getChatHistory(
                             limit = 50,
@@ -270,9 +272,11 @@ class ChatViewModel(
                             showNeedReaction = _showNeedReaction.value,
                         )
                         applyHistory(history)
+                        onStatusDetail("ok")
                         println("ChatViewModel: history loaded — ${history.messages.size} msgs, hasMore=${history.hasMore}, chat=${_showChat.value}, tasks=${_showTasks.value}, reaction=${_showNeedReaction.value}")
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
+                        onStatusDetail("history err")
                         println("ChatViewModel: history load failed: ${e.message}")
                     }
                     // Load master map on connection ready
@@ -433,10 +437,14 @@ class ChatViewModel(
                     showNeedReaction = _showNeedReaction.value,
                 )
                 applyHistory(history)
+                onStatusDetail("ok")
                 println("ChatViewModel: reload chat=${_showChat.value} tasks=${_showTasks.value} reaction=${_showNeedReaction.value} — ${history.messages.size} msgs")
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+                onStatusDetail("reload err")
                 println("ChatViewModel: reloadForCurrentFilter failed: ${e.message}")
+                // Trigger reconnect on connection errors
+                connectionManager.triggerReconnect("reload failed: ${e.message?.take(30)}")
             } finally {
                 _isLoadingMore.value = false
             }
@@ -532,11 +540,14 @@ class ChatViewModel(
                 if (e is CancellationException) throw e
                 println("Error sending message: ${e.message}")
                 e.printStackTrace()
+                onStatusDetail("send err")
 
-                // "RpcClient was cancelled" means WebSocket is dead — trigger immediate reconnect
-                // instead of waiting 30s for the next health ping to detect the stale connection.
-                if (e.message?.contains("cancelled", ignoreCase = true) == true) {
-                    connectionManager.triggerReconnect("send failed: cancelled")
+                // Trigger reconnect on connection errors (not just "cancelled")
+                if (e.message?.contains("cancelled", ignoreCase = true) == true ||
+                    e.message?.contains("closed", ignoreCase = true) == true ||
+                    e.message?.contains("timeout", ignoreCase = true) == true
+                ) {
+                    connectionManager.triggerReconnect("send failed: ${e.message?.take(30)}")
                 }
 
                 val error = classifySendError(e)
@@ -973,11 +984,8 @@ class ChatViewModel(
                     }
                 }
 
-                // Open thinking map panel for graphs (both foreground and background)
-                if (!graphId.isNullOrBlank()) {
-                    if (!_thinkingMapPanelVisible.value) {
-                        _thinkingMapPanelVisible.value = true
-                    }
+                // Update sub-graph data if panel is already open (never auto-open — user controls panel visibility)
+                if (!graphId.isNullOrBlank() && _thinkingMapPanelVisible.value) {
                     openSubGraph(graphId)
                 }
                 loadMemoryMap()
