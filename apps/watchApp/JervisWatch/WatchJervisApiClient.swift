@@ -68,11 +68,11 @@ class WatchJervisApiClient: NSObject, AVAudioPlayerDelegate {
     /// Callback for SSE status updates (transcribing, responding, tokens...)
     var onStatusUpdate: ((String) -> Void)?
 
-    /// Send audio to SSE streaming endpoint — get real-time updates + TTS audio.
+    /// Send audio to voice endpoint — returns text + TTS audio.
     func sendVoiceCommand(_ audioData: Data) async -> VoiceChatResponse {
-        print("[WatchAPI] SSE voice stream, audio size: \(audioData.count) bytes")
+        print("[WatchAPI] Voice command, audio size: \(audioData.count) bytes")
 
-        guard let url = URL(string: "\(baseURL)/api/v1/voice/stream") else {
+        guard let url = URL(string: "\(baseURL)/api/v1/chat/voice") else {
             return VoiceChatResponse(text: "Chyba: neplatna URL", ttsAudioData: nil, transcription: nil)
         }
 
@@ -94,12 +94,9 @@ class WatchJervisApiClient: NSObject, AVAudioPlayerDelegate {
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
 
-        var transcription: String? = nil
-        var responseText = ""
-        var ttsData: Data? = nil
-
         do {
-            let (bytes, response) = try await session.bytes(for: request)
+            DispatchQueue.main.async { self.onStatusUpdate?("Odesilam na server...") }
+            let (data, response) = try await session.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
@@ -107,104 +104,25 @@ class WatchJervisApiClient: NSObject, AVAudioPlayerDelegate {
                 return VoiceChatResponse(text: "Server neodpovida (\(code))", ttsAudioData: nil, transcription: nil)
             }
 
-            // Parse SSE stream line by line
-            var currentEvent = ""
-            var currentData = ""
-
-            for try await line in bytes.lines {
-                if line.hasPrefix("event: ") {
-                    currentEvent = String(line.dropFirst(7))
-                } else if line.hasPrefix("data: ") {
-                    currentData = String(line.dropFirst(6))
-                } else if line.isEmpty && !currentData.isEmpty {
-                    // End of SSE event — process it
-                    processSseEvent(event: currentEvent, data: currentData,
-                                    transcription: &transcription,
-                                    responseText: &responseText,
-                                    ttsData: &ttsData)
-                    currentEvent = ""
-                    currentData = ""
-                }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                let text = String(data: data, encoding: .utf8) ?? "Neznama odpoved"
+                return VoiceChatResponse(text: text, ttsAudioData: nil, transcription: nil)
             }
 
-            // Handle any remaining event
-            if !currentData.isEmpty {
-                processSseEvent(event: currentEvent, data: currentData,
-                                transcription: &transcription,
-                                responseText: &responseText,
-                                ttsData: &ttsData)
+            let text = json["response"] as? String ?? "Zpracovavam"
+            let transcription = json["transcription"] as? String
+
+            var ttsData: Data? = nil
+            if let ttsBase64 = json["ttsAudio"] as? String, !ttsBase64.isEmpty {
+                ttsData = Data(base64Encoded: ttsBase64)
             }
 
-            print("[WatchAPI] SSE complete: text=\(responseText.prefix(80)), tts=\(ttsData?.count ?? 0)b")
-            return VoiceChatResponse(
-                text: responseText.isEmpty ? "Zpracovavam..." : responseText,
-                ttsAudioData: ttsData,
-                transcription: transcription
-            )
+            print("[WatchAPI] Result: \(text.prefix(80)), tts=\(ttsData?.count ?? 0)b")
+            return VoiceChatResponse(text: text, ttsAudioData: ttsData, transcription: transcription)
         } catch {
-            print("[WatchAPI] SSE error: \(error)")
-            // Return whatever we collected before the error
-            if !responseText.isEmpty {
-                return VoiceChatResponse(text: responseText, ttsAudioData: ttsData, transcription: transcription)
-            }
+            print("[WatchAPI] Voice error: \(error)")
             return VoiceChatResponse(text: "Chyba: \(error.localizedDescription)", ttsAudioData: nil, transcription: nil)
         }
-    }
-
-    private func processSseEvent(event: String, data: String,
-                                  transcription: inout String?,
-                                  responseText: inout String,
-                                  ttsData: inout Data?) {
-        guard let jsonData = data.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { return }
-
-        switch event {
-        case "transcribing":
-            let status = json["text"] as? String ?? "Prepisuji..."
-            print("[WatchAPI] SSE: transcribing")
-            DispatchQueue.main.async { self.onStatusUpdate?(status) }
-
-        case "transcribed":
-            let t = json["text"] as? String
-            transcription = t
-            print("[WatchAPI] SSE: transcribed = \(t ?? "")")
-            let statusText = "Rozpoznano: \(truncate(t ?? "", 40))"
-            DispatchQueue.main.async { self.onStatusUpdate?(statusText) }
-
-        case "responding":
-            print("[WatchAPI] SSE: responding")
-            DispatchQueue.main.async { self.onStatusUpdate?("Generuji odpoved...") }
-
-        case "token":
-            let token = json["text"] as? String ?? ""
-            responseText += token
-
-        case "response":
-            let text = json["text"] as? String ?? ""
-            if responseText.isEmpty { responseText = text }
-            print("[WatchAPI] SSE: response = \(text.prefix(60))")
-
-        case "tts_audio":
-            if let base64 = json["data"] as? String, !base64.isEmpty {
-                ttsData = Data(base64Encoded: base64)
-                print("[WatchAPI] SSE: tts_audio = \(ttsData?.count ?? 0) bytes")
-            }
-
-        case "error":
-            let errText = json["text"] as? String ?? "Chyba"
-            print("[WatchAPI] SSE: error = \(errText)")
-            if responseText.isEmpty { responseText = errText }
-
-        case "done":
-            print("[WatchAPI] SSE: done")
-
-        default:
-            break
-        }
-    }
-
-    private func truncate(_ s: String, _ max: Int) -> String {
-        s.count > max ? String(s.prefix(max)) + "..." : s
     }
 
     /// Play TTS audio on watch speaker.

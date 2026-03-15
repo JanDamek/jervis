@@ -249,6 +249,9 @@ fun Routing.installVoiceChatApi(
         logger.info { "VOICE_STREAM | source=$source | audioSize=${audio.size}" }
 
         // Stream SSE events back as each pipeline step completes
+        call.response.headers.append("Cache-Control", "no-cache, no-store")
+        call.response.headers.append("X-Accel-Buffering", "no") // nginx: don't buffer SSE
+        call.response.headers.append("Connection", "keep-alive")
         call.respondTextWriter(contentType = ContentType.Text.EventStream) {
             // Helper to emit SSE event
             suspend fun sse(event: String, data: String) {
