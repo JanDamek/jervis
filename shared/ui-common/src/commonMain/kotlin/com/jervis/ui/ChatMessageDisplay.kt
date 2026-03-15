@@ -1335,9 +1335,13 @@ private fun ChatMessageItem(
                                             )
                                         }
                                     }
-                                    // Inline memory map — shows where this request was placed in the graph
+                                    // Inline memory map — only show if this message dispatched background tasks.
+                                    // Simple chat responses (time, greeting, Q&A) don't need a map view —
+                                    // the side panel (ThinkingMapPanel) always shows the full memory map.
+                                    // "dispatched_tasks" metadata is set by sse_handler when background work starts.
                                     val memoryMapId = message.metadata["memory_map_id"]
-                                    if (memoryMapId != null) {
+                                    val hasBackgroundWork = message.metadata["dispatched_tasks"] != null
+                                    if (memoryMapId != null && hasBackgroundWork) {
                                         var mapExpanded by remember { mutableStateOf(false) }
                                         val graphEntry = taskGraphs[memoryMapId]
 

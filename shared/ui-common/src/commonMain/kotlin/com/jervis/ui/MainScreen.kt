@@ -341,11 +341,7 @@ private fun ChatContent(
     onCancelVoice: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-
-    Column(modifier = modifier.pointerInput(Unit) {
-        detectTapGestures { focusManager.clearFocus() }
-    }) {
+    Column(modifier = modifier) {
         // Workspace status banner
         if (workspaceInfo != null) {
             WorkspaceBanner(
