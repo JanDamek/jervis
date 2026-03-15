@@ -207,17 +207,16 @@ internal fun InputArea(
                             },
                     maxLines = 4,
                     singleLine = false,
-                    trailingIcon = if (inputText.isBlank()) {
-                        {
-                            IconButton(onClick = onMicClick, enabled = enabled) {
-                                Icon(
-                                    Icons.Default.Mic,
-                                    contentDescription = "Hlasovy vstup",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
-                    } else null,
+                )
+
+                // Mic button — always visible, standalone
+                JIconButton(
+                    onClick = onMicClick,
+                    icon = Icons.Default.Mic,
+                    contentDescription = "Hlasovy vstup",
+                    enabled = enabled,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(44.dp),
                 )
 
                 JPrimaryButton(
