@@ -10,6 +10,7 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.utils.io.readRemaining
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.io.readByteArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -1225,6 +1226,38 @@ class ChatViewModel(
     }
 
     @OptIn(ExperimentalEncodingApi::class)
+    @OptIn(ExperimentalEncodingApi::class)
+    private fun processSseEvent(event: String, data: String, responseBuilder: StringBuilder) {
+        val json = try { Json.parseToJsonElement(data).jsonObject } catch (_: Exception) { return }
+        val text = json["text"]?.jsonPrimitive?.content ?: ""
+
+        when (event) {
+            "transcribing" -> _voiceStatus.value = "Přepisuji řeč..."
+            "transcribed" -> {
+                _voiceStatus.value = "Rozpoznáno: ${text.take(40)}"
+                _chatMessages.update { msgs ->
+                    msgs.mapIndexed { i, m ->
+                        if (i == msgs.lastIndex && m.text.startsWith("🎤")) m.copy(text = "🎤 $text") else m
+                    }
+                }
+            }
+            "responding" -> _voiceStatus.value = "Generuji odpověď..."
+            "token" -> responseBuilder.append(text)
+            "response" -> { if (responseBuilder.isEmpty()) responseBuilder.append(text) }
+            "tts_audio" -> {
+                val audioB64 = json["data"]?.jsonPrimitive?.content
+                if (!audioB64.isNullOrBlank()) {
+                    try {
+                        AudioPlayer().play(Base64.decode(audioB64))
+                    } catch (e: Exception) {
+                        println("TTS playback error: ${e.message}")
+                    }
+                }
+            }
+            "error" -> { if (responseBuilder.isEmpty()) responseBuilder.append(text) }
+        }
+    }
+
     /** Wrap raw PCM bytes in a WAV header (16-bit mono 16kHz). */
     private fun wrapInWav(pcm: ByteArray, sampleRate: Int = 16000, channels: Int = 1, bitsPerSample: Int = 16): ByteArray {
         val dataSize = pcm.size
@@ -1270,7 +1303,7 @@ class ChatViewModel(
                     _voiceStatus.value = "Odesílám na server..."
 
                     val response = client.submitFormWithBinaryData(
-                        url = "$serverUrl/api/v1/chat/voice",
+                        url = "$serverUrl/api/v1/voice/stream",
                         formData = formData {
                             append("file", audioData, Headers.build {
                                 append(HttpHeaders.ContentDisposition, "filename=voice.wav")
@@ -1280,41 +1313,33 @@ class ChatViewModel(
                         },
                     )
 
-                    val bodyBytes = response.bodyAsChannel().readRemaining().readByteArray()
-                    val bodyText = bodyBytes.decodeToString()
-                    val json = try { Json.parseToJsonElement(bodyText).jsonObject } catch (_: Exception) { null }
+                    // Parse SSE stream line by line — real-time events
+                    val channel = response.bodyAsChannel()
+                    var currentEvent = ""
+                    var currentData = ""
+                    val responseBuilder = StringBuilder()
 
-                    val responseText = json?.get("response")?.jsonPrimitive?.content ?: ""
-                    val transcription = json?.get("transcription")?.jsonPrimitive?.content ?: ""
-
-                    // Update optimistic message with transcription
-                    if (transcription.isNotBlank()) {
-                        _chatMessages.update { msgs ->
-                            msgs.mapIndexed { i, m ->
-                                if (i == msgs.lastIndex && m.text == "🎤 Hlasová zpráva") m.copy(text = transcription) else m
+                    while (!channel.isClosedForRead) {
+                        val line = channel.readUTF8Line() ?: break
+                        when {
+                            line.startsWith("event: ") -> currentEvent = line.removePrefix("event: ").trim()
+                            line.startsWith("data: ") -> currentData = line.removePrefix("data: ").trim()
+                            line.isBlank() && currentData.isNotEmpty() -> {
+                                processSseEvent(currentEvent, currentData, responseBuilder)
+                                currentEvent = ""
+                                currentData = ""
                             }
                         }
                     }
 
                     // Add assistant response
-                    if (responseText.isNotBlank()) {
+                    val finalResponse = responseBuilder.toString().trim()
+                    if (finalResponse.isNotBlank()) {
                         _chatMessages.value = _chatMessages.value + ChatMessage(
                             from = ChatMessage.Sender.Assistant,
-                            text = responseText,
+                            text = finalResponse,
                             messageType = ChatMessage.MessageType.FINAL,
                         )
-                    }
-
-                    // Play TTS audio
-                    val ttsB64 = json?.get("ttsAudio")?.jsonPrimitive?.content
-                    if (ttsB64 != null && ttsB64.isNotBlank()) {
-                        try {
-                            val ttsBytes = Base64.decode(ttsB64)
-                            val player = AudioPlayer()
-                            player.play(ttsBytes)
-                        } catch (e: Exception) {
-                            println("TTS playback error: ${e.message}")
-                        }
                     }
                 } finally {
                     client.close()
