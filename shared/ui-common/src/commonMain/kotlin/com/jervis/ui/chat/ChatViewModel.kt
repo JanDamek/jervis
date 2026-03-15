@@ -1225,9 +1225,32 @@ class ChatViewModel(
     }
 
     @OptIn(ExperimentalEncodingApi::class)
+    /** Wrap raw PCM bytes in a WAV header (16-bit mono 16kHz). */
+    private fun wrapInWav(pcm: ByteArray, sampleRate: Int = 16000, channels: Int = 1, bitsPerSample: Int = 16): ByteArray {
+        val dataSize = pcm.size
+        val byteRate = sampleRate * channels * bitsPerSample / 8
+        val blockAlign = channels * bitsPerSample / 8
+        val header = ByteArray(44)
+        fun writeInt(offset: Int, value: Int) { for (i in 0..3) header[offset + i] = (value shr (i * 8)).toByte() }
+        fun writeShort(offset: Int, value: Int) { header[offset] = value.toByte(); header[offset + 1] = (value shr 8).toByte() }
+        // RIFF header
+        header[0] = 'R'.code.toByte(); header[1] = 'I'.code.toByte(); header[2] = 'F'.code.toByte(); header[3] = 'F'.code.toByte()
+        writeInt(4, 36 + dataSize)
+        header[8] = 'W'.code.toByte(); header[9] = 'A'.code.toByte(); header[10] = 'V'.code.toByte(); header[11] = 'E'.code.toByte()
+        // fmt chunk
+        header[12] = 'f'.code.toByte(); header[13] = 'm'.code.toByte(); header[14] = 't'.code.toByte(); header[15] = ' '.code.toByte()
+        writeInt(16, 16); writeShort(20, 1) // PCM
+        writeShort(22, channels); writeInt(24, sampleRate); writeInt(28, byteRate); writeShort(32, blockAlign); writeShort(34, bitsPerSample)
+        // data chunk
+        header[36] = 'd'.code.toByte(); header[37] = 'a'.code.toByte(); header[38] = 't'.code.toByte(); header[39] = 'a'.code.toByte()
+        writeInt(40, dataSize)
+        return header + pcm
+    }
+
     private fun stopVoiceAndSend() {
         _isRecordingVoice.value = false
-        val audioData = voiceRecorder.stopRecording() ?: return
+        val rawPcm = voiceRecorder.stopRecording() ?: return
+        val audioData = wrapInWav(rawPcm) // Wrap raw PCM in WAV header for Whisper
         _voiceStatus.value = "Odesilam..."
         _isLoading.value = true
 
