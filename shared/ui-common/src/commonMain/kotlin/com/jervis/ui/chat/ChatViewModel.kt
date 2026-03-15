@@ -1381,11 +1381,14 @@ class ChatViewModel(
         ttsJob = scope.launch {
             try {
                 val serverUrl = connectionManager.baseUrl.trimEnd('/')
+                println("TTS: playing from $serverUrl/api/v1/tts/stream, text=${text.take(50)}")
                 val client = com.jervis.di.createPlatformHttpClient { }
                 try {
                     val response = client.post("$serverUrl/api/v1/tts/stream") {
                         contentType(io.ktor.http.ContentType.Application.Json)
                         setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}"}""")
+                    }
+                    println("TTS: response status=${response.status}")
                     }
                     val channel = response.bodyAsChannel()
                     while (!channel.isClosedForRead) {
