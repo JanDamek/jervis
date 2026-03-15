@@ -326,7 +326,14 @@ async def lifespan(app: FastAPI):
     )
     # Start GPU idle watchdog
     idle_task = asyncio.create_task(_gpu_idle_watchdog())
-    print("Server ready, accepting requests (GPU not loaded yet)", flush=True)
+
+    # Preload model at startup for fast first request (critical for watch voice chat)
+    if DEVICE == "cpu":
+        print(f"Preloading whisper model {DEFAULT_MODEL} at startup (CPU)...", flush=True)
+        await asyncio.get_event_loop().run_in_executor(None, _load_whisper_model)
+        print(f"Model {DEFAULT_MODEL} preloaded and ready", flush=True)
+    else:
+        print("Server ready, accepting requests (GPU model loaded on-demand)", flush=True)
     yield
     idle_task.cancel()
     if _gpu_loaded:

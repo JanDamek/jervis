@@ -69,13 +69,13 @@ spec:
             httpGet:
               path: /health
               port: 8786
-            initialDelaySeconds: 10
+            initialDelaySeconds: 60
             periodSeconds: 30
           livenessProbe:
             httpGet:
               path: /health
               port: 8786
-            initialDelaySeconds: 30
+            initialDelaySeconds: 90
             periodSeconds: 60
 ---
 apiVersion: v1
