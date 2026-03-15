@@ -228,6 +228,7 @@ class AgentGraph(BaseModel):
     completed_at: str | None = None
     total_token_count: int = 0
     total_llm_calls: int = 0
+    extend_count: int = 0  # Total extend_thinking_map vertices added (global cap)
 
 
 # Backward compatibility alias

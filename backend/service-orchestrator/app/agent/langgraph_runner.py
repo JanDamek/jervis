@@ -1388,7 +1388,16 @@ def _handle_extend_thinking_map(
     if not vertices_data:
         return "ERROR: No vertices provided."
 
-    # Enforce limits
+    # --- GLOBAL EXTEND CAP ---
+    _MAX_EXTEND_TOTAL = 30  # Max total vertices added via extend across entire graph
+    if graph.extend_count >= _MAX_EXTEND_TOTAL:
+        return (
+            f"ERROR: Graph extend limit reached ({graph.extend_count}/{_MAX_EXTEND_TOTAL} vertices added). "
+            "Focus on completing your task with the information you have. "
+            "Use kb_search to find what you need instead of creating new vertices."
+        )
+
+    # Enforce per-call limits
     if len(vertices_data) > 8:
         vertices_data = vertices_data[:8]
 
@@ -1398,8 +1407,16 @@ def _handle_extend_thinking_map(
             return f"ERROR: Graph already has {len(graph.vertices)} vertices (max {MAX_TOTAL_VERTICES}). Cannot add more."
         vertices_data = vertices_data[:remaining]
 
-    # Create new vertices — all depend on current vertex
+    # --- DEDUPLICATION: check existing vertices for same/similar titles ---
+    # Build index of existing titles (normalized)
+    existing_titles: dict[str, str] = {}  # normalized_title → vertex_id
+    for vid, ev in graph.vertices.items():
+        normalized = ev.title.lower().strip()
+        if normalized:
+            existing_titles[normalized] = vid
+
     created: list[str] = []
+    reused: list[str] = []  # Existing vertices we connected to instead of creating
     type_map = {
         "investigator": VertexType.INVESTIGATOR,
         "executor": VertexType.EXECUTOR,
@@ -1409,12 +1426,51 @@ def _handle_extend_thinking_map(
     }
 
     for vd in vertices_data:
+        new_title = (vd.get("title") or "Untitled").strip()
+        normalized = new_title.lower()
         vtype_str = vd.get("type", "task")
         vtype = type_map.get(vtype_str, VertexType.TASK)
 
+        # Check for duplicate: exact title match or very similar
+        existing_vid = existing_titles.get(normalized)
+        if not existing_vid:
+            # Fuzzy: check if any existing title contains this or vice versa
+            for et, evid in existing_titles.items():
+                if len(normalized) > 10 and len(et) > 10:
+                    if normalized in et or et in normalized:
+                        existing_vid = evid
+                        break
+
+        if existing_vid:
+            # REUSE: connect current vertex to existing one via edge (back-reference)
+            existing_v = graph.vertices[existing_vid]
+            # Only reuse if it's completed (has useful results to share)
+            if existing_v.status == VertexStatus.COMPLETED:
+                # Add edge so current vertex's downstream gets this vertex's context
+                # Check edge doesn't already exist
+                edge_exists = any(
+                    e.source_id == existing_vid and e.target_id == vertex.id
+                    for e in graph.edges
+                )
+                if not edge_exists:
+                    reused.append(existing_vid)
+                logger.info(
+                    "DEDUP: Reusing existing vertex '%s' (%s) instead of creating duplicate",
+                    existing_v.title[:40], existing_vid[:16],
+                )
+                continue
+            # If existing vertex is still pending/running, skip creating duplicate
+            if existing_v.status in (VertexStatus.PENDING, VertexStatus.READY, VertexStatus.RUNNING):
+                logger.info(
+                    "DEDUP: Skipping duplicate '%s' — vertex %s already %s",
+                    new_title[:40], existing_vid[:16], existing_v.status.value,
+                )
+                continue
+
+        # No duplicate found — create new vertex
         new_v = add_vertex(
             graph=graph,
-            title=vd.get("title", "Untitled"),
+            title=new_title,
             description=vd.get("description", ""),
             vertex_type=vtype,
             parent_id=vertex.parent_id or vertex.id,
@@ -1426,6 +1482,11 @@ def _handle_extend_thinking_map(
         # New vertex depends on current vertex (executes after it completes)
         add_edge(graph, vertex.id, new_v.id, EdgeType.DEPENDENCY)
         created.append(new_v.id)
+        # Update index for next iteration dedup
+        existing_titles[normalized] = new_v.id
+
+    # Update global extend counter
+    graph.extend_count += len(created)
 
     # --- CONVERGENCE GUARANTEE ---
     # Always connect new vertices to the root synthesis so the graph converges.
@@ -1491,17 +1552,30 @@ def _handle_extend_thinking_map(
                 add_edge(graph, synth_v.id, root_synth_id, EdgeType.DEPENDENCY)
         created.append(synth_v.id)
 
+    dedup_count = len(vertices_data) - len(created)
     logger.info(
-        "Vertex %s extended thinking map: +%d vertices, reason=%s",
-        vertex.id, len(created), reason,
+        "Vertex %s extended thinking map: +%d new, %d deduped, %d reused, total_extends=%d/%d, reason=%s",
+        vertex.id, len(created), dedup_count, len(reused),
+        graph.extend_count, _MAX_EXTEND_TOTAL, reason,
     )
 
-    titles = [vd.get("title", "?") for vd in vertices_data]
-    return (
-        f"Added {len(vertices_data)} new vertices to the thinking map: {', '.join(titles)}. "
-        f"They will execute after this vertex completes. "
-        f"Continue with your current analysis — the new vertices will handle the sub-topics."
-    )
+    if not created and not reused:
+        return (
+            "All requested vertices already exist in the thinking map (deduplicated). "
+            "Use the existing results — search with kb_search or check your incoming context."
+        )
+
+    parts = []
+    if created:
+        new_titles = [graph.vertices[cid].title for cid in created]
+        parts.append(f"Created {len(created)} new vertices: {', '.join(new_titles)}")
+    if reused:
+        reused_titles = [graph.vertices[rid].title[:30] for rid in reused]
+        parts.append(f"Reused {len(reused)} existing: {', '.join(reused_titles)}")
+    if dedup_count > 0:
+        parts.append(f"Skipped {dedup_count} duplicates")
+
+    return ". ".join(parts) + ". Continue with your current analysis."
 
 
 def _append_assistant_message(

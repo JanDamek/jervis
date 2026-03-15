@@ -1,6 +1,8 @@
 package com.jervis.ui
 
 import com.jervis.ui.queue.OrchestratorProgressInfo
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -336,9 +338,14 @@ private fun ChatContent(
     isRecordingVoice: Boolean = false,
     voiceStatus: String = "",
     onMicClick: () -> Unit = {},
+    onCancelVoice: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier) {
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+
+    Column(modifier = modifier.pointerInput(Unit) {
+        detectTapGestures { focusManager.clearFocus() }
+    }) {
         // Workspace status banner
         if (workspaceInfo != null) {
             WorkspaceBanner(

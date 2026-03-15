@@ -23,15 +23,14 @@ TOOL_EXTEND_THINKING_MAP: dict = {
         "name": "extend_thinking_map",
         "description": (
             "Dynamically add new vertices to the current thinking map. "
-            "Use when you discover new aspects that need investigation, analysis, or work. "
-            "New vertices execute AFTER the current vertex completes — they receive "
-            "this vertex's output as context.\n\n"
-            "CONVERGENCE: New vertices are AUTOMATICALLY connected to the root synthesis vertex. "
-            "You don't need to manage graph convergence — all results will flow to the final synthesis. "
-            "Use create_final_synthesis=true only when you want a LOCAL sub-synthesis before the root one.\n\n"
-            "IMPORTANT: dispatch_coding_agent is async — it returns immediately. "
-            "If you need multiple coding analyses, create separate vertices for each "
-            "via extend_thinking_map instead of calling dispatch_coding_agent repeatedly."
+            "Use ONLY when you discover NEW aspects that need SEPARATE investigation.\n\n"
+            "DEDUPLICATION: The system automatically checks for existing vertices with the same title. "
+            "If a matching vertex exists, it will be REUSED (connected via edge) instead of duplicated. "
+            "Do NOT request vertices that already exist in the graph — check your incoming context first.\n\n"
+            "CONVERGENCE: New vertices are AUTOMATICALLY connected to the root synthesis. "
+            "LIMIT: Max 30 total extended vertices per graph. Use sparingly.\n\n"
+            "IMPORTANT: Prefer using tools (kb_search, store_knowledge) over creating new vertices. "
+            "Only extend when the sub-task genuinely requires a SEPARATE execution context."
         ),
         "parameters": {
             "type": "object",

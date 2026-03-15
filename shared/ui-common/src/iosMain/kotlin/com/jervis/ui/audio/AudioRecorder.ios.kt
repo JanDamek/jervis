@@ -101,6 +101,7 @@ actual class AudioRecorder actual constructor() {
         }
 
         return try {
+            println("[AudioRecorder.ios] Permission granted, configuring session...")
             session.setCategory(
                 AVAudioSessionCategoryPlayAndRecord,
                 withOptions = AVAudioSessionCategoryOptionDefaultToSpeaker or
@@ -108,6 +109,7 @@ actual class AudioRecorder actual constructor() {
                 error = null,
             )
             session.setActive(true, error = null)
+            println("[AudioRecorder.ios] Audio session active")
 
             val tempPath = NSTemporaryDirectory() + "jervis_recording.wav"
             val url = NSURL.fileURLWithPath(tempPath)
@@ -129,7 +131,9 @@ actual class AudioRecorder actual constructor() {
 
             audioRecorder.prepareToRecord()
             val started = audioRecorder.record()
+            println("[AudioRecorder.ios] record() = $started, url=$tempPath")
             if (!started) {
+                println("[AudioRecorder.ios] AVAudioRecorder.record() returned false")
                 recorder = null
                 return false
             }
