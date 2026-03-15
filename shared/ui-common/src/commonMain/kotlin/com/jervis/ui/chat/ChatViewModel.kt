@@ -9,7 +9,10 @@ import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.readRemaining
+import kotlinx.io.readByteArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import com.jervis.dto.ChatResponseType
 import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
@@ -1241,91 +1244,54 @@ class ChatViewModel(
                 val serverUrl = connectionManager.baseUrl.trimEnd('/')
                 val client = HttpClient()
                 try {
+                    _voiceStatus.value = "Odesílám na server..."
+
                     val response = client.submitFormWithBinaryData(
-                        url = "$serverUrl/api/v1/voice/stream",
+                        url = "$serverUrl/api/v1/chat/voice",
                         formData = formData {
                             append("file", audioData, Headers.build {
                                 append(HttpHeaders.ContentDisposition, "filename=voice.wav")
                                 append(HttpHeaders.ContentType, "audio/wav")
                             })
-                            append("source", "desktop_chat")
+                            append("source", "app_chat")
                         },
                     )
 
-                    // Parse SSE stream
-                    val channel = response.bodyAsChannel()
-                    var currentEvent = ""
-                    var currentData = ""
-                    val responseBuilder = StringBuilder()
-                    var transcription = ""
+                    val bodyBytes = response.bodyAsChannel().readRemaining().readByteArray()
+                    val bodyText = bodyBytes.decodeToString()
+                    val json = try { Json.parseToJsonElement(bodyText).jsonObject } catch (_: Exception) { null }
 
-                    while (!channel.isClosedForRead) {
-                        val line = channel.readUTF8Line() ?: break
-                        when {
-                            line.startsWith("event: ") -> currentEvent = line.removePrefix("event: ")
-                            line.startsWith("data: ") -> currentData = line.removePrefix("data: ")
-                            line.isBlank() && currentData.isNotEmpty() -> {
-                                val json = try { Json.parseToJsonElement(currentData) } catch (_: Exception) { null }
-                                val text = json?.let {
-                                    (it as? kotlinx.serialization.json.JsonObject)
-                                        ?.get("text")
-                                        ?.let { v -> (v as? kotlinx.serialization.json.JsonPrimitive)?.content }
-                                } ?: ""
+                    val responseText = json?.get("response")?.jsonPrimitive?.content ?: ""
+                    val transcription = json?.get("transcription")?.jsonPrimitive?.content ?: ""
 
-                                when (currentEvent) {
-                                    "transcribing" -> _voiceStatus.value = "Prepisuji rec..."
-                                    "transcribed" -> {
-                                        transcription = text
-                                        _voiceStatus.value = "Rozpoznano: ${text.take(40)}"
-                                        // Update optimistic message with transcription
-                                        _chatMessages.update { msgs ->
-                                            msgs.mapIndexed { i, m ->
-                                                if (i == msgs.lastIndex && m.text == "[Hlasova zprava]") {
-                                                    m.copy(text = text)
-                                                } else m
-                                            }
-                                        }
-                                    }
-                                    "responding" -> _voiceStatus.value = "Generuji odpoved..."
-                                    "token" -> responseBuilder.append(text)
-                                    "response" -> {
-                                        if (responseBuilder.isEmpty()) responseBuilder.append(text)
-                                    }
-                                    "tts_audio" -> {
-                                        val audioB64 = json?.let {
-                                            (it as? kotlinx.serialization.json.JsonObject)
-                                                ?.get("data")
-                                                ?.let { v -> (v as? kotlinx.serialization.json.JsonPrimitive)?.content }
-                                        }
-                                        if (audioB64 != null) {
-                                            try {
-                                                val ttsBytes = Base64.decode(audioB64)
-                                                val player = AudioPlayer()
-                                                player.play(ttsBytes)
-                                            } catch (e: Exception) {
-                                                println("TTS playback error: ${e.message}")
-                                            }
-                                        }
-                                    }
-                                    "error" -> {
-                                        if (responseBuilder.isEmpty()) responseBuilder.append(text)
-                                    }
-                                    "done" -> {}
-                                }
-                                currentEvent = ""
-                                currentData = ""
+                    // Update optimistic message with transcription
+                    if (transcription.isNotBlank()) {
+                        _chatMessages.update { msgs ->
+                            msgs.mapIndexed { i, m ->
+                                if (i == msgs.lastIndex && m.text == "[Hlasová zpráva]") m.copy(text = transcription) else m
                             }
                         }
                     }
 
-                    // Add assistant response to chat
-                    val finalResponse = responseBuilder.toString().trim()
-                    if (finalResponse.isNotBlank()) {
+                    // Add assistant response
+                    if (responseText.isNotBlank()) {
                         _chatMessages.value = _chatMessages.value + ChatMessage(
                             from = ChatMessage.Sender.Assistant,
-                            text = finalResponse,
+                            text = responseText,
                             messageType = ChatMessage.MessageType.FINAL,
                         )
+                    }
+
+                    // Play TTS audio
+                    val ttsB64 = json?.get("ttsAudio")?.jsonPrimitive?.content
+                    if (ttsB64 != null && ttsB64.isNotBlank()) {
+                        try {
+                            val ttsBytes = Base64.decode(ttsB64)
+                            val player = AudioPlayer()
+                            player.play(ttsBytes)
+                        } catch (e: Exception) {
+                            println("TTS playback error: ${e.message}")
+                        }
                     }
                 } finally {
                     client.close()
