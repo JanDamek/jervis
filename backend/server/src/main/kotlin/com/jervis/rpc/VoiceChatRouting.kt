@@ -298,7 +298,7 @@ fun Routing.installVoiceChatApi(
                 try {
                     val eventFlow = chatService.sendMessage(
                         userId = "jan",
-                        text = "[Watch/$source, odpovez max 2 vety, cisla pis slovne pro TTS] $transcription",
+                        text = "$transcription",
                         activeClientId = DEFAULT_CLIENT_ID,
                         activeProjectId = DEFAULT_PROJECT_ID,
                         maxOpenRouterTier = "FREE",
@@ -386,7 +386,7 @@ private suspend fun collectChatResponse(
     try {
         val eventFlow = chatService.sendMessage(
             userId = "jan",
-            text = "[Watch/$source, odpovez max 2 vety, cisla pis slovne pro TTS] $message",
+            text = "$message",
             activeClientId = DEFAULT_CLIENT_ID,
             activeProjectId = DEFAULT_PROJECT_ID,
             maxOpenRouterTier = "FREE", // Watch needs fast response — allow cloud models
