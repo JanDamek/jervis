@@ -209,15 +209,21 @@ internal fun InputArea(
                     singleLine = false,
                 )
 
-                // Mic button — always visible, standalone
-                JIconButton(
-                    onClick = onMicClick,
-                    icon = Icons.Default.Mic,
-                    contentDescription = "Hlasovy vstup",
+                // Mic button — plain IconButton (no TooltipBox, reliable on iOS)
+                IconButton(
+                    onClick = {
+                        println("MIC BUTTON CLICKED!")
+                        onMicClick()
+                    },
                     enabled = enabled,
-                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(44.dp),
-                )
+                ) {
+                    Icon(
+                        Icons.Default.Mic,
+                        contentDescription = "Hlasovy vstup",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
 
                 JPrimaryButton(
                     onClick = onSendClick,

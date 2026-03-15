@@ -2,19 +2,24 @@ package com.jervis.di
 
 import com.jervis.api.SecurityConstants
 import io.ktor.client.*
+import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
 
 /**
- * iOS implementation using default engine selection
+ * iOS implementation using CIO engine (not Darwin).
  *
- * Let Ktor automatically choose the best engine for iOS platform
- * This typically selects Darwin engine but with proper configuration
+ * Darwin engine has a known crash in WebSocket sendMessages completion handler
+ * when connection is cancelled — CompletionHandlerException propagates as
+ * unhandled C++ exception → terminateWithUnhandledException → SIGABRT.
+ *
+ * CIO engine handles WebSocket disconnects gracefully via Kotlin coroutines.
  */
 actual fun createPlatformHttpClient(block: HttpClientConfig<*>.() -> Unit): HttpClient {
-    // Use HttpClient() without explicit engine - Ktor will auto-select
-    // This works better than forcing CIO or Darwin on iOS
-    return HttpClient {
-        // Add security headers for all requests
+    return HttpClient(CIO) {
+        engine {
+            requestTimeout = 0 // No timeout for WebSocket
+        }
+
         defaultRequest {
             headers.append(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
             headers.append(SecurityConstants.PLATFORM_HEADER, SecurityConstants.PLATFORM_IOS)

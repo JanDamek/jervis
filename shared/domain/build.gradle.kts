@@ -61,8 +61,9 @@ kotlin {
             }
 
             iosMain.dependencies {
-                // Darwin engine is the native iOS engine
-                implementation(libs.ktor.client.darwin)
+                // CIO engine instead of Darwin — Darwin has a crash in WebSocket
+                // sendMessages completion handler (SIGABRT on disconnect)
+                implementation(libs.ktor.client.cio)
             }
         }
 

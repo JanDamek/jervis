@@ -367,7 +367,9 @@ class ChatViewModel(
         _taskGraphs.update { it + (taskId to null) } // mark loading
         scope.launch {
             try {
-                val graph = repository.taskGraphs.getGraph(taskId)
+                // For master map, pass clientId for per-client filtering
+                val clientId = if (taskId == "master") selectedClientId.value else null
+                val graph = repository.taskGraphs.getGraph(taskId, clientId)
                 if (graph != null && graph.vertices.isNotEmpty()) {
                     println("ChatViewModel: graph loaded for taskId=$taskId — ${graph.vertices.size} vertices")
                     _taskGraphs.update { it + (taskId to graph) }
