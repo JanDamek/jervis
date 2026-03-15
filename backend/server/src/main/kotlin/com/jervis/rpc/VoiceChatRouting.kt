@@ -328,15 +328,14 @@ fun Routing.installVoiceChatApi(
                 }
 
                 logger.info { "VOICE_STREAM_RESPONSE | complete=$chatComplete | text=${responseText.take(100)}" }
-                sse("response", """{"text":"${responseText.escapeJson()}","complete":$chatComplete}""")
 
-                // Step 3: TTS audio
+                // Step 3: TTS audio — generate BEFORE sending response (client may close after response)
+                var ttsBase64: String? = null
                 logger.info { "VOICE_STREAM_TTS_START | text=${responseText.take(50)}" }
                 try {
-                    val ttsAudio = generateTtsAudio(responseText.take(300))
-                    if (ttsAudio != null) {
-                        logger.info { "VOICE_STREAM_TTS_OK | audioSize=${ttsAudio.length}" }
-                        sse("tts_audio", """{"data":"$ttsAudio"}""")
+                    ttsBase64 = generateTtsAudio(responseText.take(300))
+                    if (ttsBase64 != null) {
+                        logger.info { "VOICE_STREAM_TTS_OK | audioSize=${ttsBase64.length}" }
                     } else {
                         logger.warn { "VOICE_STREAM_TTS_NULL" }
                     }
@@ -344,6 +343,11 @@ fun Routing.installVoiceChatApi(
                     logger.warn { "VOICE_STREAM_TTS_FAILED: ${e::class.simpleName}: ${e.message}" }
                 }
 
+                // Send response text + TTS audio together, then done
+                sse("response", """{"text":"${responseText.escapeJson()}","complete":$chatComplete}""")
+                if (ttsBase64 != null) {
+                    sse("tts_audio", """{"data":"$ttsBase64"}""")
+                }
                 sse("done", "{}")
 
             } catch (e: Exception) {

@@ -952,8 +952,8 @@ class ChatViewModel(
                 val graphId = response.metadata["graph_id"]
                 val status = response.metadata["status"]
 
-                if (isBackgroundPush && taskId != null) {
-                    // Background thinking map push — show/update chat bubble
+                if (isBackgroundPush && taskId != null && (_showTasks.value || _showNeedReaction.value)) {
+                    // Background thinking map push — show/update chat bubble (only when tasks/reaction filter active)
                     val existingIdx = messages.indexOfLast {
                         it.messageType == ChatMessage.MessageType.THINKING_MAP_UPDATE
                                 && it.metadata["taskId"] == taskId
