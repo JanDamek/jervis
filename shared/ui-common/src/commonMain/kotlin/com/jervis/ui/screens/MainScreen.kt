@@ -46,6 +46,7 @@ fun MainScreen(
     val liveLogTaskId by viewModel.chat.liveLogTaskId.collectAsState()
     val isRecordingVoice by viewModel.chat.isRecordingVoice.collectAsState()
     val voiceStatus by viewModel.chat.voiceStatus.collectAsState()
+    val isTtsPlaying by viewModel.chat.isTtsPlaying.collectAsState()
 
     // Environment panel state (delegated to EnvironmentViewModel)
     val environments by viewModel.environment.environments.collectAsState()

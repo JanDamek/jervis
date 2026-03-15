@@ -6,7 +6,10 @@ import com.jervis.ui.audio.AudioRecorder
 import io.ktor.client.HttpClient
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.contentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.utils.io.readRemaining
@@ -1356,6 +1359,56 @@ class ChatViewModel(
             } finally {
                 _isLoading.value = false
                 _voiceStatus.value = ""
+            }
+        }
+    }
+
+    // ── TTS Playback for chat bubbles ────────────────────────────────────
+
+    private val _isTtsPlaying = MutableStateFlow(false)
+    val isTtsPlaying: StateFlow<Boolean> = _isTtsPlaying.asStateFlow()
+    private var ttsJob: Job? = null
+
+    @OptIn(ExperimentalEncodingApi::class)
+    fun playTts(text: String) {
+        if (_isTtsPlaying.value) {
+            // Stop
+            ttsJob?.cancel()
+            _isTtsPlaying.value = false
+            return
+        }
+
+        _isTtsPlaying.value = true
+        ttsJob = scope.launch {
+            try {
+                val serverUrl = connectionManager.baseUrl.trimEnd('/')
+                val client = com.jervis.di.createPlatformHttpClient { }
+                try {
+                    val response = client.post("$serverUrl/api/v1/tts/stream") {
+                        contentType(io.ktor.http.ContentType.Application.Json)
+                        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}"}""")
+                    }
+                    val channel = response.bodyAsChannel()
+                    while (!channel.isClosedForRead) {
+                        val line = channel.readUTF8Line() ?: break
+                        if (line.startsWith("data: ")) {
+                            val data = line.removePrefix("data: ")
+                            val json = try { Json.parseToJsonElement(data).jsonObject } catch (_: Exception) { null }
+                            val audioB64 = json?.get("data")?.jsonPrimitive?.content
+                            if (!audioB64.isNullOrBlank()) {
+                                AudioPlayer().play(Base64.decode(audioB64))
+                            }
+                        }
+                    }
+                } finally {
+                    client.close()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                println("TTS play error: ${e.message}")
+            } finally {
+                _isTtsPlaying.value = false
             }
         }
     }
