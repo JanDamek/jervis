@@ -220,6 +220,21 @@ fun MeetingsScreen(
                 viewModel.assignSpeakers(currentDetail.id, currentMapping)
             },
         )
+
+        // Delete confirmation dialog — rendered in detail view context (overlay on top of detail)
+        ConfirmDialog(
+            visible = showDeleteConfirmDialog != null,
+            title = "Smazat nahrávku?",
+            message = "Nahrávka bude přesunuta do koše, kde zůstane 30 dní. Poté bude trvale smazána.",
+            confirmText = "Smazat",
+            onConfirm = {
+                val meetingId = showDeleteConfirmDialog ?: return@ConfirmDialog
+                showDeleteConfirmDialog = null
+                viewModel.deleteMeeting(meetingId)
+                viewModel.selectMeeting(null)
+            },
+            onDismiss = { showDeleteConfirmDialog = null },
+        )
         return
     }
 

@@ -938,20 +938,29 @@ class ChatViewModel(
                 val showInTasks = _showTasks.value
                 val showInReaction = _showNeedReaction.value && isActionable
                 if (showInTasks || showInReaction) {
-                    // Clean up stale progress indicators
-                    messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
-                    thinkingHistory.clear()
-                    // Append directly — no deduplication needed, these are push-only
-                    messages.add(
-                        ChatMessage(
-                            from = ChatMessage.Sender.Assistant,
-                            text = response.message,
-                            contextId = projectId,
-                            messageType = messageType,
-                            metadata = response.metadata,
-                            timestamp = response.metadata["timestamp"],
-                        ),
-                    )
+                    // Deduplicate: skip if same taskId + timestamp already exists (SSE replay)
+                    val ts = response.metadata["timestamp"]
+                    val tid = response.metadata["taskId"]
+                    val alreadyExists = messages.any {
+                        it.messageType == messageType &&
+                            it.timestamp == ts &&
+                            it.metadata["taskId"] == tid
+                    }
+                    if (!alreadyExists) {
+                        // Clean up stale progress indicators
+                        messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+                        thinkingHistory.clear()
+                        messages.add(
+                            ChatMessage(
+                                from = ChatMessage.Sender.Assistant,
+                                text = response.message,
+                                contextId = projectId,
+                                messageType = messageType,
+                                metadata = response.metadata,
+                                timestamp = ts,
+                            ),
+                        )
+                    }
                 }
                 // Refresh master map after background task completion
                 loadMemoryMap()
