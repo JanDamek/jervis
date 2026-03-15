@@ -159,7 +159,7 @@ fun Routing.installVoiceChatApi(
 
             val transcription = whisperResult.text.trim()
             if (transcription.isEmpty()) {
-                val errorMsg = "Nepodarilo se rozpoznat rec. Zkuste to znovu."
+                val errorMsg = "Nepodařilo se rozpoznat řeč. Zkuste to znovu."
                 val tts = try { generateTtsAudio(errorMsg) } catch (_: Exception) { null }
                 call.respondText(
                     Json.encodeToString(VoiceChatResponse.serializer(), VoiceChatResponse(
@@ -184,7 +184,7 @@ fun Routing.installVoiceChatApi(
             val responseText = when {
                 chatResponse.complete && chatResponse.text.isNotBlank() -> chatResponse.text
                 chatResponse.text.isNotBlank() -> "${chatResponse.text} ...detaily v aplikaci."
-                else -> "Rozumim: ${transcription.take(80)}. Zpracovavam, vysledek najdete v aplikaci."
+                else -> "Rozumím: ${transcription.take(80)}. Zpracovávám, výsledek najdete v aplikaci."
             }
 
             logger.info { "VOICE_CHAT_FINAL | responseText=${responseText.take(100)}" }
@@ -261,7 +261,7 @@ fun Routing.installVoiceChatApi(
 
             try {
                 // Step 1: Whisper STT
-                sse("transcribing", """{"text":"Prepisuji rec..."}""")
+                sse("transcribing", """{"text":"Přepisuji řeč..."}""")
 
                 val tempFile = Files.createTempFile("voice_stream_", ".wav")
                 Files.write(tempFile, audio)
@@ -281,7 +281,7 @@ fun Routing.installVoiceChatApi(
 
                 val transcription = whisperResult.text.trim()
                 if (transcription.isEmpty()) {
-                    sse("error", """{"text":"Nepodarilo se rozpoznat rec."}""")
+                    sse("error", """{"text":"Nepodařilo se rozpoznat řeč."}""")
                     sse("done", "{}")
                     return@respondTextWriter
                 }
@@ -290,7 +290,7 @@ fun Routing.installVoiceChatApi(
                 sse("transcribed", """{"text":"${transcription.escapeJson()}"}""")
 
                 // Step 2: Orchestrator — stream response tokens
-                sse("responding", """{"text":"Generuji odpoved..."}""")
+                sse("responding", """{"text":"Generuji odpověď..."}""")
 
                 val responseBuilder = StringBuilder()
                 var chatComplete = false
@@ -327,7 +327,7 @@ fun Routing.installVoiceChatApi(
                 }
 
                 val responseText = responseBuilder.toString().trim().ifBlank {
-                    "Zpracovavam dotaz. Vysledek najdete v aplikaci."
+                    "Zpracovávám dotaz. Výsledek najdete v aplikaci."
                 }
 
                 logger.info { "VOICE_STREAM_RESPONSE | complete=$chatComplete | text=${responseText.take(100)}" }

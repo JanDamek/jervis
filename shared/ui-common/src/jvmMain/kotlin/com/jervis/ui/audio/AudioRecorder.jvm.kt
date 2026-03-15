@@ -129,6 +129,8 @@ actual class AudioRecorder actual constructor() {
 
             return true
         } catch (e: Exception) {
+            println("[AudioRecorder.jvm] startRecording FAILED: ${e::class.simpleName}: ${e.message}")
+            e.printStackTrace()
             targetLine?.close()
             targetLine = null
             _isRecording = false

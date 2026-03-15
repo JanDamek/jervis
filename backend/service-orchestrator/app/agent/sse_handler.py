@@ -208,6 +208,10 @@ async def handle_chat_sse(
                     event.metadata["memory_map_id"] = _memory_map_id
                 if _live_vertex_id:
                     event.metadata["memory_map_vertex_id"] = _live_vertex_id
+                # Signal to UI: only show inline map if background tasks were dispatched
+                _bg_tools_check = {"create_background_task", "dispatch_coding_agent"}
+                if any(any(t in p for t in _bg_tools_check) for p in _trace_parts if p.startswith("[tool]")):
+                    event.metadata["dispatched_tasks"] = "true"
             yield event
 
     except Exception as e:

@@ -121,7 +121,7 @@ internal fun InputArea(
                     modifier = Modifier.size(16.dp),
                 )
                 Text(
-                    text = voiceStatus.ifBlank { "Nahravam..." },
+                    text = voiceStatus.ifBlank { "Nahrávám..." },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -144,7 +144,7 @@ internal fun InputArea(
                     modifier = Modifier.size(24.dp),
                 )
                 Text(
-                    text = voiceStatus.ifBlank { "Nahravam..." },
+                    text = voiceStatus.ifBlank { "Nahrávám..." },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.weight(1f),
@@ -161,7 +161,7 @@ internal fun InputArea(
                 JIconButton(
                     onClick = onCancelVoice,
                     icon = Icons.Default.Close,
-                    contentDescription = "Zrusit",
+                    contentDescription = "Zrušit",
                     modifier = Modifier.size(44.dp),
                 )
             }
@@ -174,7 +174,7 @@ internal fun InputArea(
                 JIconButton(
                     onClick = onAttachFile,
                     icon = Icons.Default.AttachFile,
-                    contentDescription = "Pripojit soubor",
+                    contentDescription = "Připojit soubor",
                     enabled = enabled,
                     modifier = Modifier.size(44.dp),
                 )
@@ -183,7 +183,7 @@ internal fun InputArea(
                     value = inputText,
                     onValueChange = onInputChanged,
                     label = "",
-                    placeholder = "Napiste zpravu...",
+                    placeholder = "Napište zprávu...",
                     enabled = enabled,
                     modifier =
                         Modifier
@@ -220,7 +220,7 @@ internal fun InputArea(
                 ) {
                     Icon(
                         Icons.Default.Mic,
-                        contentDescription = "Hlasovy vstup",
+                        contentDescription = "Hlasový vstup",
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
