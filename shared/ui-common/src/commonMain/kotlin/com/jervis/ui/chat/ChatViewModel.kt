@@ -1189,6 +1189,8 @@ class ChatViewModel(
         }
     }
 
+    private var micRetryPending = false
+
     private fun startVoiceRecording() {
         println("ChatViewModel: startVoiceRecording()")
         val started = voiceRecorder.startRecording()
@@ -1196,9 +1198,24 @@ class ChatViewModel(
         if (started) {
             _isRecordingVoice.value = true
             _voiceStatus.value = "Nahravam..."
+            micRetryPending = false
         } else {
-            _voiceStatus.value = "Mikrofon neni dostupny"
-            println("ChatViewModel: AudioRecorder failed to start — check microphone permission")
+            // First attempt may trigger permission dialog — retry after short delay
+            if (!micRetryPending) {
+                micRetryPending = true
+                _voiceStatus.value = "Povolte mikrofon..."
+                scope.launch {
+                    delay(1500) // Wait for permission dialog
+                    val retried = voiceRecorder.startRecording()
+                    if (retried) {
+                        _isRecordingVoice.value = true
+                        _voiceStatus.value = "Nahravam..."
+                    } else {
+                        _voiceStatus.value = ""
+                    }
+                    micRetryPending = false
+                }
+            }
         }
     }
 
