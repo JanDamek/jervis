@@ -21,6 +21,21 @@ class WatchJervisApiClient: NSObject, AVAudioPlayerDelegate {
         super.init()
     }
 
+    /// Send a text chat query (Siri intents).
+    func sendChatQuery(_ query: String) async -> String {
+        guard let url = URL(string: "\(baseURL)/api/v1/chat/siri") else { return "Chyba URL" }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["query": query, "source": "siri_watch"])
+        do {
+            let (data, _) = try await session.data(for: request)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let text = json["response"] as? String { return text }
+            return String(data: data, encoding: .utf8) ?? "Zpracováno"
+        } catch { return "Chyba: \(error.localizedDescription)" }
+    }
+
     struct VoiceChatResponse {
         let text: String
         let ttsAudioData: Data?

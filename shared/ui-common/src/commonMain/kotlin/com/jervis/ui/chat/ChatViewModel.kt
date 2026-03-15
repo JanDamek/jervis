@@ -1229,7 +1229,6 @@ class ChatViewModel(
     }
 
     @OptIn(ExperimentalEncodingApi::class)
-    @OptIn(ExperimentalEncodingApi::class)
     private fun processSseEvent(event: String, data: String, responseBuilder: StringBuilder) {
         val json = try { Json.parseToJsonElement(data).jsonObject } catch (_: Exception) { return }
         val text = json["text"]?.jsonPrimitive?.content ?: ""

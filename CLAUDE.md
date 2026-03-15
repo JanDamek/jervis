@@ -95,7 +95,8 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Siri intents (watchOS): `apps/watchApp/JervisWatch/JervisIntents.swift` (AskJervisIntent, StartWatchChatIntent, StartWatchRecordingIntent)
 - Siri API client: `apps/iosApp/iosApp/JervisApiClient.swift`, `apps/watchApp/JervisWatch/WatchJervisApiClient.swift`
 - Watch recording relay: `apps/iosApp/iosApp/WatchRecordingRelay.swift` (iPhone receives watch audio via WatchConnectivity, uploads to server REST)
-- Voice chat endpoint: `backend/server/.../rpc/VoiceChatRouting.kt` (POST /api/v1/chat/voice — Whisper STT → orchestrator chat → TTS)
+- Voice chat endpoint: `backend/server/.../rpc/VoiceChatRouting.kt` (POST /api/v1/chat/voice, /voice/stream — Whisper STT → orchestrator chat → TTS)
+- Voice v2 plan (KB: `agent://claude-code/voice-input-v2-implementation-plan`): 4 modes — quick (FREE LLM, <3s), dictate (store to KB), listen (live assist), meeting+live (dual pipeline)
 - Watch meeting REST: `backend/server/.../rpc/WatchMeetingRouting.kt` (POST /api/v1/meeting/start|chunk|stop — ad-hoc recording from watch)
 - CPU Whisper: `backend/service-whisper/Dockerfile.cpu` (K8s pod, always available, model=small, fallback from GPU)
 - Watch complications: `apps/watchApp/JervisComplication/` (WidgetKit — app launcher, recording, chat shortcuts on watch face)
