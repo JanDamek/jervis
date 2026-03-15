@@ -61,9 +61,7 @@ kotlin {
             }
 
             iosMain.dependencies {
-                // CIO engine instead of Darwin — Darwin has a crash in WebSocket
-                // sendMessages completion handler (SIGABRT on disconnect)
-                implementation(libs.ktor.client.cio)
+                implementation(libs.ktor.client.darwin)
             }
         }
 
