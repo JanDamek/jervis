@@ -1,20 +1,11 @@
 package com.jervis.ui.chat
 
 import com.jervis.di.RpcConnectionManager
+import com.jervis.di.SseEvent
+import com.jervis.di.buildMultipartBody
+import com.jervis.di.postSseStream
 import com.jervis.ui.audio.AudioPlayer
 import com.jervis.ui.audio.AudioRecorder
-import io.ktor.client.HttpClient
-import io.ktor.client.request.forms.formData
-import io.ktor.client.request.forms.submitFormWithBinaryData
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.http.contentType
-import io.ktor.http.Headers
-import io.ktor.http.HttpHeaders
-import io.ktor.utils.io.readRemaining
-import io.ktor.utils.io.readUTF8Line
-import kotlinx.io.readByteArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import com.jervis.dto.ChatResponseType
@@ -1285,11 +1276,10 @@ class ChatViewModel(
     private fun stopVoiceAndSend() {
         _isRecordingVoice.value = false
         val rawPcm = voiceRecorder.stopRecording() ?: return
-        val audioData = wrapInWav(rawPcm) // Wrap raw PCM in WAV header for Whisper
+        val audioData = wrapInWav(rawPcm)
         _voiceStatus.value = "Odesilam..."
         _isLoading.value = true
 
-        // Show optimistic message
         _chatMessages.value = _chatMessages.value + ChatMessage(
             from = ChatMessage.Sender.Me,
             text = "🎤 Hlasová zpráva",
@@ -1300,51 +1290,33 @@ class ChatViewModel(
         voiceJob = scope.launch {
             try {
                 val serverUrl = connectionManager.baseUrl.trimEnd('/')
-                val client = com.jervis.di.createPlatformHttpClient { }
-                try {
-                    _voiceStatus.value = "Odesílám na server..."
+                _voiceStatus.value = "Odesílám na server..."
 
-                    val response = client.submitFormWithBinaryData(
-                        url = "$serverUrl/api/v1/voice/stream",
-                        formData = formData {
-                            append("file", audioData, Headers.build {
-                                append(HttpHeaders.ContentDisposition, "filename=voice.wav")
-                                append(HttpHeaders.ContentType, "audio/wav")
-                            })
-                            append("source", "app_chat")
-                        },
+                val (ct, body) = buildMultipartBody(
+                    fileFieldName = "file",
+                    fileName = "voice.wav",
+                    fileContentType = "audio/wav",
+                    fileBytes = audioData,
+                    fields = mapOf("source" to "app_chat"),
+                )
+
+                val responseBuilder = StringBuilder()
+
+                postSseStream(
+                    url = "$serverUrl/api/v1/voice/stream",
+                    bodyBytes = body,
+                    contentType = ct,
+                ) { event ->
+                    processSseEvent(event.event, event.data, responseBuilder)
+                }
+
+                val finalResponse = responseBuilder.toString().trim()
+                if (finalResponse.isNotBlank()) {
+                    _chatMessages.value = _chatMessages.value + ChatMessage(
+                        from = ChatMessage.Sender.Assistant,
+                        text = finalResponse,
+                        messageType = ChatMessage.MessageType.FINAL,
                     )
-
-                    // Parse SSE stream line by line — real-time events
-                    val channel = response.bodyAsChannel()
-                    var currentEvent = ""
-                    var currentData = ""
-                    val responseBuilder = StringBuilder()
-
-                    while (!channel.isClosedForRead) {
-                        val line = channel.readUTF8Line() ?: break
-                        when {
-                            line.startsWith("event: ") -> currentEvent = line.removePrefix("event: ").trim()
-                            line.startsWith("data: ") -> currentData = line.removePrefix("data: ").trim()
-                            line.isBlank() && currentData.isNotEmpty() -> {
-                                processSseEvent(currentEvent, currentData, responseBuilder)
-                                currentEvent = ""
-                                currentData = ""
-                            }
-                        }
-                    }
-
-                    // Add assistant response
-                    val finalResponse = responseBuilder.toString().trim()
-                    if (finalResponse.isNotBlank()) {
-                        _chatMessages.value = _chatMessages.value + ChatMessage(
-                            from = ChatMessage.Sender.Assistant,
-                            text = finalResponse,
-                            messageType = ChatMessage.MessageType.FINAL,
-                        )
-                    }
-                } finally {
-                    client.close()
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -1371,7 +1343,6 @@ class ChatViewModel(
     @OptIn(ExperimentalEncodingApi::class)
     fun playTts(text: String) {
         if (_isTtsPlaying.value) {
-            // Stop
             ttsJob?.cancel()
             _isTtsPlaying.value = false
             return
@@ -1381,29 +1352,37 @@ class ChatViewModel(
         ttsJob = scope.launch {
             try {
                 val serverUrl = connectionManager.baseUrl.trimEnd('/')
-                println("TTS: playing text=${text.take(50)}")
-                val client = com.jervis.di.createPlatformHttpClient { }
-                try {
-                    val response = client.post("$serverUrl/api/v1/tts") {
-                        contentType(io.ktor.http.ContentType.Application.Json)
-                        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}"}""")
+                println("TTS: streaming text=${text.take(50)}")
+
+                val jsonBody = """{"text":"${text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")}"}"""
+
+                postSseStream(
+                    url = "$serverUrl/api/v1/tts/stream",
+                    bodyBytes = jsonBody.encodeToByteArray(),
+                    contentType = "application/json",
+                ) { event ->
+                    when (event.event) {
+                        "tts_audio" -> {
+                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
+                            val audioB64 = json?.get("data")?.jsonPrimitive?.content
+                            if (!audioB64.isNullOrBlank()) {
+                                try {
+                                    AudioPlayer().play(Base64.decode(audioB64))
+                                } catch (e: Exception) {
+                                    println("TTS playback error: ${e.message}")
+                                }
+                            }
+                        }
+                        "error" -> {
+                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
+                            println("TTS stream error: ${json?.get("text")?.jsonPrimitive?.content}")
+                        }
                     }
-                    val bodyBytes = response.bodyAsChannel().readRemaining().readByteArray()
-                    val bodyText = bodyBytes.decodeToString()
-                    val json = try { Json.parseToJsonElement(bodyText).jsonObject } catch (_: Exception) { null }
-                    val audioB64 = json?.get("ttsAudio")?.jsonPrimitive?.content
-                    if (!audioB64.isNullOrBlank()) {
-                        println("TTS: playing audio")
-                        AudioPlayer().play(Base64.decode(audioB64))
-                    }
-                } finally {
-                    client.close()
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 println("TTS play error: ${e::class.simpleName}: ${e.message}")
-                e.printStackTrace()
             } finally {
                 _isTtsPlaying.value = false
                 println("TTS: finished, isTtsPlaying=false")

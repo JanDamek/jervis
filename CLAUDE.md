@@ -89,6 +89,7 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Whisper REST client: `backend/server/.../service/meeting/WhisperRestClient.kt`
 - TTS service: `backend/service-tts/` (Piper TTS FastAPI, CPU-only), deploy: `k8s/build_tts.sh`
 - TTS client: `shared/ui-common/.../audio/TtsClient.kt` (POST /tts, /tts/stream)
+- SSE client (expect/actual): `shared/domain/.../di/SseClient.kt` — platform-specific SSE streaming (iOS = NSURLSession delegate, JVM/Android = Ktor CIO channel)
 - watchOS app: `apps/watchApp/` (SwiftUI, embedded as target in `apps/iosApp/iosApp.xcodeproj`, WatchConnectivity → iPhone WatchRecordingRelay → REST API)
 - Wear OS app: `apps/wearApp/` (Compose for Wear OS, DataLayer API → phone → RecordingUploadService)
 - Siri intents (iOS): `apps/iosApp/iosApp/JervisIntents.swift` (AskJervisIntent, StartRecordingIntent, JervisShortcutsProvider)

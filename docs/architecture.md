@@ -2521,4 +2521,14 @@ Text-to-speech service using **Piper TTS** (fast, CPU-only neural TTS). Deployed
 
 ### Client Integration
 
-`TtsClient` (`shared/ui-common/.../audio/TtsClient.kt`) provides cross-platform TTS playback by calling the service endpoints and piping audio to the platform audio player.
+TTS playback from chat bubbles uses SSE streaming (`POST /api/v1/tts/stream`) via the
+platform-specific `postSseStream()` function (`shared/domain/.../di/SseClient.kt`).
+Each sentence is synthesized and streamed as a separate `tts_audio` SSE event, so
+playback starts immediately without waiting for the full text.
+
+**SSE platform implementations:**
+- **JVM/Android** (`SseClient.jvm.kt`, `SseClient.android.kt`): Ktor CIO engine — `bodyAsChannel().readUTF8Line()` works natively
+- **iOS** (`SseClient.ios.kt`): Native `NSURLSession` with `NSURLSessionDataDelegate` — Darwin Ktor engine buffers the entire response (no SSE streaming), so we bypass it with direct Foundation networking
+
+The same `postSseStream()` is used for voice chat (`POST /api/v1/voice/stream`) providing
+real-time transcription and response streaming on all platforms.
