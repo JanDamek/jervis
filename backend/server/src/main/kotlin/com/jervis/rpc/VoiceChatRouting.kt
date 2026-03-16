@@ -14,7 +14,11 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.readBytes
+import io.ktor.utils.io.readUTF8Line
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
@@ -297,66 +301,85 @@ fun Routing.installVoiceChatApi(
                 logger.info { "VOICE_STREAM_STT | text=${transcription.take(100)}" }
                 sse("transcribed", """{"text":"${transcription.escapeJson()}"}""")
 
-                // Step 2: Orchestrator — stream response tokens
-                sse("responding", """{"text":"Generuji odpověď..."}""")
+                // Step 2: Forward to Python voice pipeline — intent classification + response
+                val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
+                val voicePayload = """{"text":"${transcription.escapeJson()}","source":"$source","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":true}"""
+
+                logger.info { "VOICE_STREAM_FORWARD | url=$orchestratorUrl/voice/process | text=${transcription.take(80)}" }
 
                 val responseBuilder = StringBuilder()
-                var chatComplete = false
 
                 try {
-                    val eventFlow = chatService.sendMessage(
-                        userId = "jan",
-                        text = "$transcription",
-                        activeClientId = DEFAULT_CLIENT_ID,
-                        activeProjectId = DEFAULT_PROJECT_ID,
-                        maxOpenRouterTier = "FREE",
-                    )
+                    val pythonClient = HttpClient(io.ktor.client.engine.cio.CIO) {
+                        install(HttpTimeout) {
+                            requestTimeoutMillis = 60_000
+                            connectTimeoutMillis = 5_000
+                            socketTimeoutMillis = 60_000
+                        }
+                    }
+                    try {
+                        val pythonResp = pythonClient.post("$orchestratorUrl/voice/process") {
+                            contentType(ContentType.Application.Json)
+                            setBody(voicePayload)
+                        }
 
-                    withTimeoutOrNull(45_000) {
-                        eventFlow.collect { event ->
-                            when (event.type) {
-                                "token" -> {
-                                    responseBuilder.append(event.content)
-                                    sse("token", """{"text":"${event.content.escapeJson()}"}""")
-                                }
-                                "done" -> {
-                                    chatComplete = true
-                                    return@collect
-                                }
-                                "error" -> {
-                                    chatComplete = true
-                                    return@collect
+                        // Stream SSE events from Python → client
+                        val channel = pythonResp.bodyAsChannel()
+                        var pyEvent = ""
+                        var pyData = ""
+
+                        while (!channel.isClosedForRead) {
+                            val line = channel.readUTF8Line() ?: break
+                            when {
+                                line.startsWith("event: ") -> pyEvent = line.removePrefix("event: ").trim()
+                                line.startsWith("data: ") -> pyData = line.removePrefix("data: ").trim()
+                                line.isBlank() && pyData.isNotEmpty() -> {
+                                    // Forward most events directly, accumulate response text for TTS
+                                    sse(pyEvent, pyData)
+
+                                    if (pyEvent == "token") {
+                                        try {
+                                            val tokenJson = Json.parseToJsonElement(pyData)
+                                            val text = tokenJson.jsonObject["text"]?.jsonPrimitive?.content ?: ""
+                                            responseBuilder.append(text)
+                                        } catch (_: Exception) {}
+                                    }
+                                    if (pyEvent == "response") {
+                                        try {
+                                            val respJson = Json.parseToJsonElement(pyData)
+                                            val text = respJson.jsonObject["text"]?.jsonPrimitive?.content ?: ""
+                                            if (responseBuilder.isEmpty()) responseBuilder.append(text)
+                                        } catch (_: Exception) {}
+                                    }
+
+                                    pyEvent = ""
+                                    pyData = ""
                                 }
                             }
                         }
+                    } finally {
+                        pythonClient.close()
                     }
                 } catch (e: Exception) {
-                    logger.warn { "VOICE_STREAM_CHAT_ERROR: ${e.message}" }
+                    logger.warn { "VOICE_STREAM_PYTHON_ERROR: ${e.message}" }
+                    sse("error", """{"text":"Chyba zpracování: ${e.message?.take(80)?.escapeJson() ?: ""}"}""")
                 }
 
-                val responseText = responseBuilder.toString().trim().ifBlank {
-                    "Zpracovávám dotaz. Výsledek najdete v aplikaci."
-                }
-
-                logger.info { "VOICE_STREAM_RESPONSE | complete=$chatComplete | text=${responseText.take(100)}" }
-
-                // Send response text first
-                sse("response", """{"text":"${responseText.escapeJson()}","complete":$chatComplete}""")
-
-                // Step 3: TTS streaming — sentence by sentence for low latency
-                logger.info { "VOICE_STREAM_TTS_START | text=${responseText.take(50)}" }
-                try {
-                    // Split into sentences and TTS each one separately
-                    val sentences = responseText.take(500).split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
-                    for (sentence in sentences) {
-                        val ttsAudio = generateTtsAudio(sentence)
-                        if (ttsAudio != null) {
-                            sse("tts_audio", """{"data":"$ttsAudio"}""")
-                            logger.info { "VOICE_STREAM_TTS_CHUNK | sentence=${sentence.take(40)} | audioSize=${ttsAudio.length}" }
+                // Step 3: TTS streaming — sentence by sentence
+                val responseText = responseBuilder.toString().trim()
+                if (responseText.isNotBlank()) {
+                    logger.info { "VOICE_STREAM_TTS_START | text=${responseText.take(50)}" }
+                    try {
+                        val sentences = responseText.take(500).split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
+                        for (sentence in sentences) {
+                            val ttsAudio = generateTtsAudio(sentence)
+                            if (ttsAudio != null) {
+                                sse("tts_audio", """{"data":"$ttsAudio"}""")
+                            }
                         }
+                    } catch (e: Exception) {
+                        logger.warn { "VOICE_STREAM_TTS_FAILED: ${e::class.simpleName}: ${e.message}" }
                     }
-                } catch (e: Exception) {
-                    logger.warn { "VOICE_STREAM_TTS_FAILED: ${e::class.simpleName}: ${e.message}" }
                 }
 
                 sse("done", "{}")

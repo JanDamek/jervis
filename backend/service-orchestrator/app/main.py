@@ -247,6 +247,35 @@ app = FastAPI(
 app.include_router(chat_router)
 
 
+# --- Voice Pipeline Endpoint ---
+
+@app.post("/voice/process")
+async def voice_process(request_body: dict):
+    """Process transcribed voice input — intent classification + quick/full response.
+
+    Called by Kotlin VoiceChatRouting AFTER Whisper STT.
+    Receives text (not audio), classifies intent, and streams SSE events.
+
+    Events: preliminary_answer, responding, token, response, stored, error, done
+    """
+    from app.voice.models import VoiceStreamRequest
+    from app.voice.stream_handler import handle_voice_stream
+
+    voice_request = VoiceStreamRequest(**request_body)
+    logger.info("VOICE_PROCESS | text=%s | source=%s", voice_request.text[:80], voice_request.source)
+
+    async def event_generator():
+        try:
+            async for event in handle_voice_stream(voice_request):
+                yield {"event": event.event, "data": json.dumps(event.data, ensure_ascii=False)}
+        except Exception as e:
+            logger.exception("Voice handler failed: %s", e)
+            yield {"event": "error", "data": json.dumps({"text": str(e)[:100]})}
+            yield {"event": "done", "data": "{}"}
+
+    return EventSourceResponse(event_generator())
+
+
 # --- Foreground Chat Endpoint ---
 
 # Active chat stop events per session (for explicit stop button)
