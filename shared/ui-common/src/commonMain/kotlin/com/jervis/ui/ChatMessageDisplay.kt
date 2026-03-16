@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Stop
@@ -1296,24 +1297,21 @@ private fun ChatMessageItem(
                                         )
                                     }
                                 }
-                                // TTS play button — for assistant messages
+                                // TTS play — for assistant messages
                                 if (!isMe && message.text.length > 5) {
-                                    IconButton(
-                                        onClick = {
-                                            println("TTS ICON CLICKED!")
-                                            onTtsPlay(message.text)
-                                        },
-                                        modifier = Modifier.size(32.dp),
-                                    ) {
-                                        Icon(
-                                            if (isTtsPlaying) Icons.Default.Stop else Icons.Default.VolumeUp,
-                                            contentDescription = if (isTtsPlaying) "Zastavit" else "Přečíst",
-                                            modifier = Modifier.size(18.dp),
-                                            tint = if (isTtsPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        )
-                                    }
+                                    Icon(
+                                        if (isTtsPlaying) Icons.Default.Stop else Icons.Default.VolumeUp,
+                                        contentDescription = if (isTtsPlaying) "Zastavit" else "Přečíst",
+                                        modifier = Modifier.size(32.dp)
+                                            .clickable {
+                                                println("TTS CLICKED via Modifier.clickable")
+                                                onTtsPlay(message.text)
+                                            }
+                                            .padding(7.dp),
+                                        tint = if (isTtsPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    )
                                 }
-                                // Copy button — for both user and assistant
+                                // Copy button
                                 IconButton(
                                     onClick = { copyToClipboard(message.text) },
                                     modifier = Modifier.size(32.dp),
