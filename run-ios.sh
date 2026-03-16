@@ -60,7 +60,10 @@ else
     echo "Building Xcode project..."
     echo "Command line invocation:"
     echo "    xcodebuild -project apps/iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug -destination \"platform=iOS,name=$DEVICE_NAME\" -derivedDataPath build/ios clean build"
-    xcodebuild -project apps/iosApp/iosApp.xcodeproj \
+    # OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED=NO ensures xcodebuild runs
+    # embedAndSignAppleFrameworkForXcode (Gradle build phase) to copy
+    # the freshly-built framework into the app bundle.
+    OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED=NO xcodebuild -project apps/iosApp/iosApp.xcodeproj \
       -scheme iosApp \
       -configuration Debug \
       -destination "platform=iOS,name=$DEVICE_NAME" \
