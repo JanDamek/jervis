@@ -1381,25 +1381,20 @@ class ChatViewModel(
         ttsJob = scope.launch {
             try {
                 val serverUrl = connectionManager.baseUrl.trimEnd('/')
-                println("TTS: playing from $serverUrl/api/v1/tts/stream, text=${text.take(50)}")
+                println("TTS: playing text=${text.take(50)}")
                 val client = com.jervis.di.createPlatformHttpClient { }
                 try {
-                    val response = client.post("$serverUrl/api/v1/tts/stream") {
+                    val response = client.post("$serverUrl/api/v1/tts") {
                         contentType(io.ktor.http.ContentType.Application.Json)
                         setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}"}""")
                     }
-                    println("TTS: response status=${response.status}")
-                    val channel = response.bodyAsChannel()
-                    while (!channel.isClosedForRead) {
-                        val line = channel.readUTF8Line() ?: break
-                        if (line.startsWith("data: ")) {
-                            val data = line.removePrefix("data: ")
-                            val json = try { Json.parseToJsonElement(data).jsonObject } catch (_: Exception) { null }
-                            val audioB64 = json?.get("data")?.jsonPrimitive?.content
-                            if (!audioB64.isNullOrBlank()) {
-                                AudioPlayer().play(Base64.decode(audioB64))
-                            }
-                        }
+                    val bodyBytes = response.bodyAsChannel().readRemaining().readByteArray()
+                    val bodyText = bodyBytes.decodeToString()
+                    val json = try { Json.parseToJsonElement(bodyText).jsonObject } catch (_: Exception) { null }
+                    val audioB64 = json?.get("ttsAudio")?.jsonPrimitive?.content
+                    if (!audioB64.isNullOrBlank()) {
+                        println("TTS: playing audio")
+                        AudioPlayer().play(Base64.decode(audioB64))
                     }
                 } finally {
                     client.close()

@@ -373,6 +373,30 @@ fun Routing.installVoiceChatApi(
 
     // ── TTS Stream endpoint — read any text aloud ─────────────────────────
     // POST /api/v1/tts/stream — accepts JSON {text}, returns SSE with tts_audio chunks per sentence
+    // Simple TTS batch — JSON in, JSON out with base64 WAV audio
+    post("/api/v1/tts") {
+        try {
+            val body = call.receive<TtsStreamRequest>()
+            if (body.text.isBlank()) {
+                call.respondText("""{"error":"empty"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
+                return@post
+            }
+            logger.info { "TTS_BATCH | text=${body.text.take(50)}" }
+            val audio = generateTtsAudio(body.text)
+            call.respondText(
+                Json.encodeToString(VoiceChatResponse.serializer(), VoiceChatResponse(
+                    response = body.text,
+                    ttsAudio = audio,
+                    complete = true,
+                )),
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn { "TTS_BATCH_ERROR: ${e.message}" }
+            call.respondText("""{"error":"${e.message?.take(100)}"}""", ContentType.Application.Json, HttpStatusCode.InternalServerError)
+        }
+    }
+
     post("/api/v1/tts/stream") {
         val body = call.receive<TtsStreamRequest>()
         if (body.text.isBlank()) {
