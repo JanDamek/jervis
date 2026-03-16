@@ -1389,7 +1389,6 @@ class ChatViewModel(
                         setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}"}""")
                     }
                     println("TTS: response status=${response.status}")
-                    }
                     val channel = response.bodyAsChannel()
                     while (!channel.isClosedForRead) {
                         val line = channel.readUTF8Line() ?: break
@@ -1408,9 +1407,11 @@ class ChatViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                println("TTS play error: ${e.message}")
+                println("TTS play error: ${e::class.simpleName}: ${e.message}")
+                e.printStackTrace()
             } finally {
                 _isTtsPlaying.value = false
+                println("TTS: finished, isTtsPlaying=false")
             }
         }
     }

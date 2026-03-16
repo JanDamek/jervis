@@ -1299,7 +1299,10 @@ private fun ChatMessageItem(
                                 // TTS play button — for assistant messages
                                 if (!isMe && message.text.length > 5) {
                                     IconButton(
-                                        onClick = { println("TTS ICON CLICKED: ${message.text.take(30)}"); onTtsPlay(message.text) },
+                                        onClick = {
+                                            println("TTS ICON CLICKED!")
+                                            onTtsPlay(message.text)
+                                        },
                                         modifier = Modifier.size(32.dp),
                                     ) {
                                         Icon(
