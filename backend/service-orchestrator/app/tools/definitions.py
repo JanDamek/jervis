@@ -1386,7 +1386,10 @@ TOOL_CREATE_CLIENT: dict = {
         "name": "create_client",
         "description": (
             "Create a new client (organization / workspace). "
-            "Clients own projects, connections, and KB data."
+            "ONLY use when the user EXPLICITLY requests creation of a new client. "
+            "BEFORE calling this, ALWAYS search existing clients first (get_clients_projects) — "
+            "the name may just be spelled differently (abbreviation, typo, different language). "
+            "99% of the time, the user means an EXISTING client."
         ),
         "parameters": {
             "type": "object",
@@ -1411,7 +1414,10 @@ TOOL_CREATE_PROJECT: dict = {
         "name": "create_project",
         "description": (
             "Create a new project within a client. "
-            "Projects group code repos, KB data, and tasks."
+            "ONLY use when the user EXPLICITLY requests creation of a new project. "
+            "BEFORE calling this, ALWAYS search existing projects first (get_clients_projects) — "
+            "the name may just be spelled differently, abbreviated, or in a different language. "
+            "99% of the time, the user refers to an EXISTING project."
         ),
         "parameters": {
             "type": "object",

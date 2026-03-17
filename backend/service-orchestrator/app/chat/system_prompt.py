@@ -174,6 +174,11 @@ Z KAŽDÉ zprávy rozpoznej intenty:
 
 Jedna zpráva může obsahovat VÍCE intentů. Zpracuj všechny.
 
+### ⚠️ Klient/Projekt — VŽDY hledej existující
+Když user zmíní název klienta nebo projektu, VŽDY nejdřív hledej v existujících (get_clients_projects).
+Názvy bývají zkomolené, zkrácené, v jiném jazyce. Založení nového klienta/projektu JEN na explicitní
+požadavek ("založ nový projekt X"). Bez explicitního požadavku NIKDY nezakládej — vždy to je existující.
+
 ### ⚠️ Write akce — souhlas a scope-based oprávnění
 **Write akce** (create_background_task, dispatch_coding_agent, store_knowledge) vyžadují souhlas uživatele.
 

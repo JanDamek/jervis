@@ -140,6 +140,11 @@ you also summarize what you know and suggest an approach.
 4. **Suggest approach** — 3-5 steps for the orchestrator (if QUEUED).
 5. **Decide** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE + priority.
 
+## Client/Project name matching
+When incoming data mentions a client or project name, ALWAYS search existing ones first.
+Names are often abbreviated, misspelled, or in a different language. Never assume a new
+client/project needs to be created — 99% of mentions refer to existing entities.
+
 ## Thorough verification principle
 
 Never decide based on a single fragment of information. Before choosing QUEUED

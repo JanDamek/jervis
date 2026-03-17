@@ -1998,6 +1998,10 @@ async def get_namespace_status(namespace: str) -> str:
 async def create_client(name: str, description: str = "") -> str:
     """Create a new client (organization / workspace).
 
+    IMPORTANT: Only use when explicitly requested. Before creating, always search
+    existing clients with list_clients — the name is likely just spelled differently
+    (abbreviation, typo, different language). 99% of mentions refer to existing clients.
+
     Args:
         name: Client name (must be unique)
         description: Optional description
@@ -2024,6 +2028,10 @@ async def create_project(
     description: str = "",
 ) -> str:
     """Create a new project within a client.
+
+    IMPORTANT: Only use when explicitly requested. Before creating, always search
+    existing projects with list_projects(client_id) — the name is likely just spelled
+    differently, abbreviated, or in another language. 99% of mentions refer to existing projects.
 
     Args:
         client_id: ID of the client that owns this project
