@@ -230,6 +230,104 @@ class OllamaRouter:
                     max_tier, estimated_tokens)
         return local_result
 
+    # ── Instant cascade routing ────────────────────────────────────────
+
+    async def cascade_route(
+        self,
+        api_path: str,
+        body: dict,
+        http_request=None,
+    ) -> Response:
+        """Instant cascade: try GPU-1 → GPU-2 → OpenRouter FREE → PAID → PREMIUM → queue.
+
+        Used for latency-critical internal calls (voice pipeline, live assist).
+        Does NOT preempt running GPU work. Falls back to queuing if all busy.
+
+        Priority order:
+        1. GPU-1 (p40-1) — if idle, route immediately
+        2. GPU-2 (p40-2) — if idle, route immediately
+        3. OpenRouter FREE — if available model found
+        4. OpenRouter PAID — if available
+        5. OpenRouter PREMIUM — if available
+        6. Queue on first GPU that frees up (NORMAL priority, no preemption)
+        """
+        model = self._extract_model(body)
+        request_id = f"cascade-{str(uuid.uuid4())[:6]}"
+        start = time.monotonic()
+        whisper_busy = self.check_whisper_busy()
+
+        # Step 1-2: Try GPUs immediately (no queuing, no preemption)
+        for backend in self.gpu_pool.all_backends:
+            if not backend.healthy:
+                continue
+            if backend.active_request_count() > 0:
+                continue
+            if backend.loading_in_progress:
+                continue
+            if backend.name == VLM_GPU and whisper_busy:
+                continue
+            # Check if this GPU can run the model
+            gpu_models = GPU_MODEL_SETS.get(backend.name, [])
+            if model and model not in gpu_models:
+                continue
+
+            logger.info("CASCADE: %s → %s (free, immediate dispatch)", request_id, backend.name)
+            return await self._cascade_dispatch_gpu(
+                request_id, api_path, body, model, backend, http_request,
+            )
+
+        # Step 3-5: Try OpenRouter tiers (FREE → PAID → PREMIUM)
+        estimated_tokens = self._estimate_tokens(body)
+        for tier_name, tier_level in [("FREE", 1), ("PAID", 2), ("PREMIUM", 3)]:
+            cloud_model = await find_cloud_model_for_context(
+                estimated_tokens, tier_level, capability="chat",
+            )
+            if cloud_model:
+                api_key = await get_api_key()
+                logger.info("CASCADE: %s → OpenRouter %s (%s) after %.1fms",
+                            request_id, tier_name, cloud_model, (time.monotonic() - start) * 1000)
+                return await self._cascade_dispatch_cloud(
+                    request_id, api_path, body, cloud_model, api_key,
+                )
+
+        # Step 6: All busy — fall back to normal queue (NORMAL priority, will wait)
+        logger.info("CASCADE: %s → queue fallback (all targets busy)", request_id)
+        return await self.route_request(api_path, body, None, http_request)
+
+    async def _cascade_dispatch_gpu(
+        self, request_id: str, api_path: str, body: dict,
+        model: str, backend, http_request,
+    ) -> Response:
+        """Dispatch directly to a specific GPU backend via the queue."""
+        request = TrackedRequest(
+            request_id=request_id,
+            model=model or settings.orchestrator_model,
+            priority=Priority.CRITICAL,
+            api_path=api_path,
+            body=body,
+        )
+        self._last_any_gpu_activity = time.monotonic()
+        self._idle_notified = False
+        return await self._queue.submit(request)
+
+    async def _cascade_dispatch_cloud(
+        self, request_id: str, api_path: str, body: dict,
+        cloud_model: str, api_key: str,
+    ) -> Response:
+        """Proxy request to OpenRouter cloud model."""
+        from app.openrouter_proxy import proxy_to_openrouter
+        return await proxy_to_openrouter(api_path, body, cloud_model, api_key, request_id)
+
+    @staticmethod
+    def _estimate_tokens(body: dict) -> int:
+        """Rough token estimation from request body."""
+        messages = body.get("messages", [])
+        if messages:
+            total_chars = sum(len(str(m.get("content", ""))) for m in messages)
+            return max(total_chars // 4, 100)
+        prompt = body.get("prompt", "")
+        return max(len(prompt) // 4, 100)
+
     @staticmethod
     def _find_local_model_for_capability(capability: str) -> str | None:
         """Find a local model that has the requested capability."""

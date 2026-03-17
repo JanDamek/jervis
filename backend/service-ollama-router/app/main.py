@@ -114,6 +114,24 @@ async def api_chat(request: Request):
     return resp
 
 
+@app.post("/api/generate/cascade")
+async def api_generate_cascade(request: Request):
+    """Instant cascade: GPU-1 → GPU-2 → OpenRouter FREE → PAID → PREMIUM → queue.
+
+    For latency-critical calls (voice pipeline, live assist, merge AI).
+    Does NOT preempt running GPU work.
+    """
+    body = await request.json()
+    return await router.cascade_route("/api/generate", body, http_request=request)
+
+
+@app.post("/api/chat/cascade")
+async def api_chat_cascade(request: Request):
+    """Instant cascade: GPU-1 → GPU-2 → OpenRouter FREE → PAID → PREMIUM → queue."""
+    body = await request.json()
+    return await router.cascade_route("/api/chat", body, http_request=request)
+
+
 @app.post("/api/embeddings")
 async def api_embeddings(request: Request):
     body = await request.json()
