@@ -495,7 +495,7 @@ fun Routing.installVoiceChatApi(
                     streamClient.close()
                 }
             } catch (e: Exception) {
-                logger.warn { "TTS_STREAM_ERROR: ${e.message}" }
+                logger.warn { "TTS_STREAM_ERROR: ${e::class.simpleName}: ${e.message}" }
                 try { sse("error", """{"text":"${e.message?.take(100)?.escapeJson() ?: "Chyba"}"}""") } catch (_: Exception) {}
             }
         }
