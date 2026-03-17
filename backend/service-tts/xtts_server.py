@@ -184,8 +184,12 @@ def _synthesize_text(text: str, speed: float = 1.0, language: str = "") -> bytes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup/shutdown lifecycle."""
+    """Startup/shutdown lifecycle — pre-load model for instant first request."""
     print(f"[TTS] Starting XTTS v2 service on port {TTS_PORT}")
+    # Pre-load model + speaker embedding at startup (not lazy on first request)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _load_tts)
+    print("[TTS] Model ready, accepting requests")
     yield
     print("[TTS] Shutting down")
 
@@ -231,9 +235,9 @@ async def synthesize(request: TtsRequest) -> Response:
     start = time.monotonic()
 
     async with _lock:
-        await asyncio.get_event_loop().run_in_executor(None, _load_tts)
+        await asyncio.get_running_loop().run_in_executor(None, _load_tts)
 
-    wav_data = await asyncio.get_event_loop().run_in_executor(
+    wav_data = await asyncio.get_running_loop().run_in_executor(
         None, _synthesize_text, request.text, request.speed, request.language
     )
     elapsed = time.monotonic() - start
@@ -262,7 +266,7 @@ async def synthesize_stream(request: TtsRequest):
         )
 
     async with _lock:
-        await asyncio.get_event_loop().run_in_executor(None, _load_tts)
+        await asyncio.get_running_loop().run_in_executor(None, _load_tts)
 
     def _generate_chunks():
         """Generate audio sentence by sentence for low-latency streaming."""
@@ -292,7 +296,7 @@ async def set_speaker(wav_path: str):
         raise HTTPException(status_code=404, detail=f"Speaker WAV not found: {wav_path}")
 
     _speaker_wav = wav_path
-    await asyncio.get_event_loop().run_in_executor(None, _precompute_speaker_embedding)
+    await asyncio.get_running_loop().run_in_executor(None, _precompute_speaker_embedding)
     return {"status": "ok", "speaker": wav_path}
 
 
