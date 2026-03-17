@@ -63,12 +63,12 @@ private val activeSessions = ConcurrentHashMap<String, VoiceSession>()
 private const val DEFAULT_CLIENT_ID = "68a332361b04695a243e5ae8"
 private const val DEFAULT_PROJECT_ID = "68a3318f1b04695a243e5adf"
 
-// TTS service — GPU on P40 VM (tiny VRAM footprint, no lock needed)
+// TTS service — XTTS v2 (Coqui) on P40 GPU VM, voice cloning, Czech + English
 private const val TTS_URL = "http://ollama.lan.mazlusek.com:8787/tts"
 
 private val ttsClient = HttpClient(CIO) {
     install(HttpTimeout) {
-        requestTimeoutMillis = 30_000
+        requestTimeoutMillis = 60_000  // XTTS v2 first request loads model (~30s cold start)
         connectTimeoutMillis = 5_000
     }
 }
@@ -768,7 +768,7 @@ private suspend fun collectChatResponse(
 private suspend fun generateTtsAudio(text: String): String? {
     val response = ttsClient.post(TTS_URL) {
         contentType(ContentType.Application.Json)
-        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":1.7}""")
+        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":1.0}""")
     }
 
     val audioBytes = response.readBytes()
