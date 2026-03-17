@@ -92,6 +92,12 @@ actual class AudioPlayer actual constructor() {
         stop()
     }
 
+    // ── PCM Streaming (no-op on Android — TTS streaming is desktop-only) ──
+    actual fun startStream(sampleRate: Int, sampleSizeInBits: Int, channels: Int) {}
+    actual fun streamPcm(pcmData: ByteArray) {}
+    actual fun finishStream() {}
+    actual fun stopStream() {}
+
     private fun cleanupTempFile() {
         tempFile?.delete()
         tempFile = null

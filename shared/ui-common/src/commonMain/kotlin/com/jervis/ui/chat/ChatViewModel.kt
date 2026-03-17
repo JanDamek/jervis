@@ -1591,30 +1591,40 @@ class ChatViewModel(
                     bodyBytes = jsonBody.encodeToByteArray(),
                     contentType = "application/json",
                 ) { event ->
-                    println("TTS: SSE event=${event.event} dataLen=${event.data.length}")
                     when (event.event) {
-                        "tts_audio" -> {
+                        "tts_header" -> {
+                            // Open continuous audio stream with sample rate from server
+                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
+                            val sampleRate = json?.get("sample_rate")?.jsonPrimitive?.content?.toIntOrNull() ?: 24000
+                            println("TTS: opening audio stream, sampleRate=$sampleRate")
+                            withContext(Dispatchers.IO) {
+                                ttsPlayer.startStream(sampleRate)
+                            }
+                        }
+                        "tts_pcm" -> {
+                            // Write raw PCM chunk to continuous audio stream (gapless)
                             val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
                             val audioB64 = json?.get("data")?.jsonPrimitive?.content
-                            println("TTS: audio chunk base64Len=${audioB64?.length ?: 0}")
                             if (!audioB64.isNullOrBlank()) {
-                                try {
-                                    val audioBytes = Base64.decode(audioB64)
-                                    println("TTS: decoded ${audioBytes.size} bytes, playing...")
-                                    // play() blocks until chunk finishes — sequential playback
-                                    withContext(Dispatchers.IO) {
-                                        ttsPlayer.play(audioBytes)
-                                    }
-                                    println("TTS: chunk playback done")
-                                } catch (e: Exception) {
-                                    println("TTS playback error: ${e::class.simpleName}: ${e.message}")
-                                    e.printStackTrace()
+                                val pcmBytes = Base64.decode(audioB64)
+                                // streamPcm blocks if buffer full — natural backpressure
+                                withContext(Dispatchers.IO) {
+                                    ttsPlayer.streamPcm(pcmBytes)
                                 }
+                            }
+                        }
+                        "done" -> {
+                            println("TTS: stream done, draining audio")
+                            withContext(Dispatchers.IO) {
+                                ttsPlayer.finishStream()
                             }
                         }
                         "error" -> {
                             val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
                             println("TTS stream error: ${json?.get("text")?.jsonPrimitive?.content}")
+                            withContext(Dispatchers.IO) {
+                                ttsPlayer.stopStream()
+                            }
                         }
                     }
                 }
@@ -1624,6 +1634,7 @@ class ChatViewModel(
                 println("TTS play error: ${e::class.simpleName}: ${e.message}")
             } finally {
                 _isTtsPlaying.value = false
+                ttsPlayer.stopStream()
                 println("TTS: finished, isTtsPlaying=false")
             }
         }

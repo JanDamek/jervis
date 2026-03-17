@@ -88,4 +88,10 @@ actual class AudioPlayer actual constructor() {
     actual fun release() {
         stop()
     }
+
+    // ── PCM Streaming (no-op on iOS — TTS streaming is desktop-only) ────
+    actual fun startStream(sampleRate: Int, sampleSizeInBits: Int, channels: Int) {}
+    actual fun streamPcm(pcmData: ByteArray) {}
+    actual fun finishStream() {}
+    actual fun stopStream() {}
 }
