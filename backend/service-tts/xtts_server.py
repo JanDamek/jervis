@@ -131,13 +131,67 @@ def _detect_language(text: str) -> str:
     return TTS_LANGUAGE
 
 
-def _synthesize_text(text: str, speed: float = 1.0, language: str = "") -> bytes:
-    """Synthesize text to WAV bytes using XTTS v2."""
-    if not language:
-        language = _detect_language(text)
+XTTS_CHAR_LIMIT = 170  # XTTS v2 limit is 186 for Czech, keep margin
 
+
+def _split_long_text(text: str, max_len: int = XTTS_CHAR_LIMIT) -> list[str]:
+    """Split text into chunks that fit within XTTS character limit.
+
+    First splits on sentence boundaries (.!?), then on clause boundaries (,;:—–)
+    if sentences are still too long, finally hard-splits on word boundaries.
+    """
+    # Step 1: Split into sentences
+    raw_sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    chunks = []
+
+    for sentence in raw_sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+
+        if len(sentence) <= max_len:
+            chunks.append(sentence)
+            continue
+
+        # Step 2: Split long sentence on clause boundaries
+        clauses = re.split(r'(?<=[,;:—–])\s+', sentence)
+        current = ""
+        for clause in clauses:
+            if current and len(current) + 1 + len(clause) > max_len:
+                chunks.append(current.strip())
+                current = clause
+            elif not current:
+                current = clause
+            else:
+                current += " " + clause
+
+        if current.strip():
+            # Step 3: If still too long, hard-split on word boundaries
+            if len(current) > max_len:
+                words = current.split()
+                buf = ""
+                for word in words:
+                    if buf and len(buf) + 1 + len(word) > max_len:
+                        chunks.append(buf.strip())
+                        buf = word
+                    elif not buf:
+                        buf = word
+                    else:
+                        buf += " " + word
+                if buf.strip():
+                    chunks.append(buf.strip())
+            else:
+                chunks.append(current.strip())
+
+    return chunks if chunks else [text]
+
+
+def _synthesize_chunk(text: str, speed: float, language: str) -> bytes:
+    """Synthesize a single text chunk (must be within XTTS char limit) to WAV bytes."""
     # Strip trailing punctuation — XTTS reads "." as "teška" in Czech
     text = text.rstrip(".!?…,;:\"'""„‟»«")
+    if not text:
+        return b""
 
     model = _tts.synthesizer.tts_model
 
@@ -185,6 +239,47 @@ def _synthesize_text(text: str, speed: float = 1.0, language: str = "") -> bytes
         wav.setsampwidth(2)  # 16-bit
         wav.setnchannels(1)  # mono
         wav.writeframes(wav_int16.tobytes())
+
+    return audio_buffer.getvalue()
+
+
+def _synthesize_text(text: str, speed: float = 1.0, language: str = "") -> bytes:
+    """Synthesize text to WAV bytes, auto-splitting if exceeds XTTS char limit."""
+    if not language:
+        language = _detect_language(text)
+
+    # Short text — single chunk
+    if len(text) <= XTTS_CHAR_LIMIT:
+        return _synthesize_chunk(text, speed, language)
+
+    # Long text — split and concatenate raw PCM, wrap in single WAV
+    chunks = _split_long_text(text)
+    all_pcm = []
+    sample_rate = _tts.synthesizer.output_sample_rate
+
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        wav_bytes = _synthesize_chunk(chunk, speed, language)
+        if not wav_bytes:
+            continue
+        # Extract raw PCM from WAV bytes
+        with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
+            sample_rate = wf.getframerate()
+            all_pcm.append(wf.readframes(wf.getnframes()))
+
+    if not all_pcm:
+        return b""
+
+    # Combine all PCM and wrap in single WAV
+    combined_pcm = b"".join(all_pcm)
+    audio_buffer = io.BytesIO()
+    with wave.open(audio_buffer, "wb") as wav:
+        wav.setframerate(sample_rate)
+        wav.setsampwidth(2)
+        wav.setnchannels(1)
+        wav.writeframes(combined_pcm)
 
     return audio_buffer.getvalue()
 
@@ -285,21 +380,22 @@ def _stream_sentences(text: str, speed: float, language: str, chunk_queue: queue
         if not language:
             language = _detect_language(text)
 
-        # Split text into sentences
-        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        # Split text into chunks respecting XTTS character limit
+        chunks = _split_long_text(text)
         sent_idx = 0
 
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
+        for chunk in chunks:
+            chunk = chunk.strip()
+            if not chunk:
                 continue
 
             try:
-                wav_data = _synthesize_text(sentence, speed, language)
-                chunk_queue.put(("chunk", wav_data))
-                sent_idx += 1
+                wav_data = _synthesize_chunk(chunk, speed, language)
+                if wav_data:
+                    chunk_queue.put(("chunk", wav_data))
+                    sent_idx += 1
             except Exception as e:
-                print(f"[TTS] sentence synthesis error on '{sentence[:40]}': {e}", flush=True)
+                print(f"[TTS] chunk synthesis error on '{chunk[:40]}': {e}", flush=True)
 
         chunk_queue.put(("done", None))
     except Exception as e:
