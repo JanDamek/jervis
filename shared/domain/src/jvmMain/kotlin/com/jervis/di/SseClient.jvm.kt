@@ -1,6 +1,7 @@
 package com.jervis.di
 
 import com.jervis.api.SecurityConstants
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -15,7 +16,13 @@ actual suspend fun postSseStream(
     contentType: String,
     onEvent: suspend (SseEvent) -> Unit,
 ) {
-    val client = createPlatformHttpClient { }
+    val client = createPlatformHttpClient {
+        install(HttpTimeout) {
+            requestTimeoutMillis = 120_000   // Total request — TTS can take 60s+ for long text
+            connectTimeoutMillis = 10_000
+            socketTimeoutMillis = 60_000     // Between chunks — XTTS synthesis takes 2-10s per sentence
+        }
+    }
     try {
         val response = client.post(url) {
             header(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
