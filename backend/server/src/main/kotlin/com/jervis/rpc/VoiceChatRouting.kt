@@ -455,8 +455,14 @@ fun Routing.installVoiceChatApi(
 
             try {
                 val sentences = body.text.split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
-                for (sentence in sentences) {
-                    val ttsAudio = generateTtsAudio(sentence)
+                // Generate all sentences in parallel, send in order as they complete
+                val deferreds = sentences.mapIndexed { idx, sentence ->
+                    idx to kotlinx.coroutines.async {
+                        generateTtsAudio(sentence) to sentence
+                    }
+                }
+                for ((_, deferred) in deferreds) {
+                    val (ttsAudio, sentence) = deferred.await()
                     if (ttsAudio != null) {
                         sse("tts_audio", """{"data":"$ttsAudio","sentence":"${sentence.escapeJson()}"}""")
                     }
