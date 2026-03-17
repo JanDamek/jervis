@@ -128,7 +128,7 @@ struct HintCardView: View {
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(.ultraThinMaterial)
+                .fill(Color.black.opacity(0.6))
         )
         .padding(.horizontal, 4)
         .padding(.bottom, 2)
