@@ -33,6 +33,7 @@ import io.ktor.server.routing.post
 import io.ktor.utils.io.readRemaining
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.channels.Channel
 import kotlinx.io.readByteArray
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -40,8 +41,24 @@ import mu.KotlinLogging
 import org.bson.types.ObjectId
 import java.nio.file.Files
 import java.util.Base64
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 private val logger = KotlinLogging.logger {}
+
+// ── Voice Session Management ─────────────────────────────────────────────
+private data class VoiceSession(
+    val id: String,
+    val source: String,
+    val tts: Boolean,
+    val liveAssist: Boolean,
+    val meetingId: String?,
+    val wearableNotify: Boolean,
+    val transcript: StringBuilder = StringBuilder(),
+    val events: Channel<String> = Channel(Channel.UNLIMITED), // raw SSE strings
+)
+
+private val activeSessions = ConcurrentHashMap<String, VoiceSession>()
 
 private const val DEFAULT_CLIENT_ID = "68a332361b04695a243e5ae8"
 private const val DEFAULT_PROJECT_ID = "68a3318f1b04695a243e5adf"
@@ -227,6 +244,7 @@ fun Routing.installVoiceChatApi(
         // Parse multipart audio first (before starting SSE response)
         var audioBytes: ByteArray? = null
         var source = "watch"
+        var tts = true
 
         val multipart = call.receiveMultipart()
         multipart.forEachPart { part ->
@@ -237,7 +255,10 @@ fun Routing.installVoiceChatApi(
                     }
                 }
                 is PartData.FormItem -> {
-                    if (part.name == "source") source = part.value
+                    when (part.name) {
+                        "source" -> source = part.value
+                        "tts" -> tts = part.value.toBooleanStrictOrNull() ?: true
+                    }
                 }
                 else -> {}
             }
@@ -250,7 +271,7 @@ fun Routing.installVoiceChatApi(
             return@post
         }
 
-        logger.info { "VOICE_STREAM | source=$source | audioSize=${audio.size}" }
+        logger.info { "VOICE_STREAM | source=$source | tts=$tts | audioSize=${audio.size}" }
 
         // Stream SSE events back as each pipeline step completes
         call.response.headers.append("Cache-Control", "no-cache, no-store")
@@ -303,7 +324,7 @@ fun Routing.installVoiceChatApi(
 
                 // Step 2: Forward to Python voice pipeline — intent classification + response
                 val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
-                val voicePayload = """{"text":"${transcription.escapeJson()}","source":"$source","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":true}"""
+                val voicePayload = """{"text":"${transcription.escapeJson()}","source":"$source","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":$tts}"""
 
                 logger.info { "VOICE_STREAM_FORWARD | url=$orchestratorUrl/voice/process | text=${transcription.take(80)}" }
 
@@ -365,9 +386,9 @@ fun Routing.installVoiceChatApi(
                     sse("error", """{"text":"Chyba zpracování: ${e.message?.take(80)?.escapeJson() ?: ""}"}""")
                 }
 
-                // Step 3: TTS streaming — sentence by sentence
+                // Step 3: TTS streaming — sentence by sentence (if tts enabled)
                 val responseText = responseBuilder.toString().trim()
-                if (responseText.isNotBlank()) {
+                if (tts && responseText.isNotBlank()) {
                     logger.info { "VOICE_STREAM_TTS_START | text=${responseText.take(50)}" }
                     try {
                         val sentences = responseText.take(500).split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
@@ -447,7 +468,236 @@ fun Routing.installVoiceChatApi(
             }
         }
     }
+
+    // ── Session-based voice streaming (5s chunks during recording) ──────────
+    // POST /api/v1/voice/session — start SSE session, receive events for chunks
+    post("/api/v1/voice/session") {
+        val body = call.receive<VoiceSessionRequest>()
+        val sessionId = UUID.randomUUID().toString().take(12)
+        val session = VoiceSession(
+            id = sessionId,
+            source = body.source ?: "app_chat",
+            tts = body.tts ?: true,
+            liveAssist = body.liveAssist ?: false,
+            meetingId = body.meetingId,
+            wearableNotify = body.wearableNotify ?: false,
+        )
+        activeSessions[sessionId] = session
+        logger.info { "VOICE_SESSION_START | id=$sessionId | source=${session.source} | liveAssist=${session.liveAssist}" }
+
+        // Long-lived SSE connection — receives events from chunk processing
+        call.response.headers.append("Cache-Control", "no-cache, no-store")
+        call.response.headers.append("X-Accel-Buffering", "no")
+        call.response.headers.append("Connection", "keep-alive")
+        call.respondTextWriter(contentType = ContentType.Text.EventStream) {
+            // Send session ID as first event
+            write("event: session_started\ndata: {\"session_id\":\"$sessionId\"}\n\n")
+            flush()
+
+            try {
+                for (rawSse in session.events) {
+                    write(rawSse)
+                    flush()
+                }
+            } finally {
+                activeSessions.remove(sessionId)
+                logger.info { "VOICE_SESSION_CLOSED | id=$sessionId" }
+            }
+        }
+    }
+
+    // POST /api/v1/voice/session/chunk — send audio chunk for transcription
+    post("/api/v1/voice/session/chunk") {
+        val sessionId = call.request.queryParameters["sessionId"]
+        val session = sessionId?.let { activeSessions[it] }
+        if (session == null) {
+            call.respondText("""{"error":"invalid session"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
+            return@post
+        }
+
+        var audioBytes: ByteArray? = null
+        var chunkIndex = 0
+
+        val multipart = call.receiveMultipart()
+        multipart.forEachPart { part ->
+            when (part) {
+                is PartData.FileItem -> {
+                    if (part.name == "file" || part.name == "audio") {
+                        audioBytes = part.provider().readRemaining().readByteArray()
+                    }
+                }
+                is PartData.FormItem -> {
+                    if (part.name == "chunk") chunkIndex = part.value.toIntOrNull() ?: 0
+                }
+                else -> {}
+            }
+            part.dispose()
+        }
+
+        val audio = audioBytes
+        if (audio == null || audio.isEmpty()) {
+            call.respondText("""{"error":"empty chunk"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
+            return@post
+        }
+
+        logger.info { "VOICE_CHUNK | session=$sessionId | chunk=$chunkIndex | bytes=${audio.size}" }
+
+        // Transcribe chunk via CPU Whisper
+        val tempFile = Files.createTempFile("chunk_${sessionId}_", ".wav")
+        Files.write(tempFile, audio)
+
+        try {
+            val cpuWhisperUrl = "http://jervis-whisper-cpu:8786"
+            val opts = """{"model":"small","beam_size":1,"vad_filter":false,"language":"cs"}"""
+            val result = whisperRestClient.transcribe(cpuWhisperUrl, tempFile.toString(), opts)
+            val chunkText = result.text.trim()
+
+            if (chunkText.isNotBlank()) {
+                session.transcript.append(chunkText).append(" ")
+                session.events.trySend("event: chunk_transcribed\ndata: {\"text\":\"${chunkText.escapeJson()}\",\"chunk\":$chunkIndex,\"full_text\":\"${session.transcript.toString().trim().escapeJson()}\"}\n\n")
+
+                // Live assist: search KB for hints
+                if (session.liveAssist) {
+                    try {
+                        val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
+                        val hintPayload = """{"text":"${chunkText.escapeJson()}","source":"${session.source}","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":false,"mode":"hint"}"""
+                        val hintClient = HttpClient(io.ktor.client.engine.cio.CIO) {
+                            install(HttpTimeout) { requestTimeoutMillis = 10_000; connectTimeoutMillis = 3_000 }
+                        }
+                        try {
+                            val hintResp = hintClient.post("$orchestratorUrl/voice/hint") {
+                                contentType(ContentType.Application.Json)
+                                setBody(hintPayload)
+                            }
+                            val hintBody = hintResp.readBytes().decodeToString()
+                            val hintJson = try { Json.parseToJsonElement(hintBody).jsonObject } catch (_: Exception) { null }
+                            val hintText = hintJson?.get("hint")?.jsonPrimitive?.content
+                            if (!hintText.isNullOrBlank()) {
+                                session.events.trySend("event: hint\ndata: {\"text\":\"${hintText.escapeJson()}\",\"push_to_wearable\":${session.wearableNotify}}\n\n")
+                            }
+                        } finally {
+                            hintClient.close()
+                        }
+                    } catch (e: Exception) {
+                        logger.warn { "VOICE_HINT_ERROR: ${e.message}" }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn { "VOICE_CHUNK_STT_ERROR: ${e.message}" }
+            session.events.trySend("event: error\ndata: {\"text\":\"Chunk $chunkIndex: ${e.message?.take(60)?.escapeJson() ?: "STT error"}\"}\n\n")
+        } finally {
+            Files.deleteIfExists(tempFile)
+        }
+
+        call.respondText("""{"ok":true,"chunk":$chunkIndex}""", ContentType.Application.Json)
+    }
+
+    // POST /api/v1/voice/session/stop — finalize session, process full transcript
+    post("/api/v1/voice/session/stop") {
+        val sessionId = call.request.queryParameters["sessionId"]
+        val session = sessionId?.let { activeSessions[it] }
+        if (session == null) {
+            call.respondText("""{"error":"invalid session"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
+            return@post
+        }
+
+        logger.info { "VOICE_SESSION_STOP | id=$sessionId | transcript_len=${session.transcript.length}" }
+
+        val fullTranscript = session.transcript.toString().trim()
+        if (fullTranscript.isBlank()) {
+            session.events.trySend("event: error\ndata: {\"text\":\"Žádný text nebyl rozpoznán.\"}\n\n")
+            session.events.trySend("event: done\ndata: {}\n\n")
+            session.events.close()
+            call.respondText("""{"ok":true}""", ContentType.Application.Json)
+            return@post
+        }
+
+        session.events.trySend("event: transcribed\ndata: {\"text\":\"${fullTranscript.escapeJson()}\",\"is_final\":true}\n\n")
+
+        // Forward full transcript to voice pipeline
+        try {
+            val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
+            val voicePayload = """{"text":"${fullTranscript.escapeJson()}","source":"${session.source}","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":${session.tts},"is_final":true}"""
+
+            val pythonClient = HttpClient(io.ktor.client.engine.cio.CIO) {
+                install(HttpTimeout) { requestTimeoutMillis = 60_000; connectTimeoutMillis = 5_000; socketTimeoutMillis = 60_000 }
+            }
+            try {
+                val pythonResp = pythonClient.post("$orchestratorUrl/voice/process") {
+                    contentType(ContentType.Application.Json)
+                    setBody(voicePayload)
+                }
+
+                val channel = pythonResp.bodyAsChannel()
+                val responseBuilder = StringBuilder()
+                var pyEvent = ""
+                var pyData = ""
+
+                while (!channel.isClosedForRead) {
+                    val line = channel.readUTF8Line() ?: break
+                    when {
+                        line.startsWith("event: ") -> pyEvent = line.removePrefix("event: ").trim()
+                        line.startsWith("data: ") -> pyData = line.removePrefix("data: ").trim()
+                        line.isBlank() && pyData.isNotEmpty() -> {
+                            session.events.trySend("event: $pyEvent\ndata: $pyData\n\n")
+                            if (pyEvent == "token") {
+                                try {
+                                    val tokenJson = Json.parseToJsonElement(pyData)
+                                    responseBuilder.append(tokenJson.jsonObject["text"]?.jsonPrimitive?.content ?: "")
+                                } catch (_: Exception) {}
+                            }
+                            if (pyEvent == "response" && responseBuilder.isEmpty()) {
+                                try {
+                                    val respJson = Json.parseToJsonElement(pyData)
+                                    responseBuilder.append(respJson.jsonObject["text"]?.jsonPrimitive?.content ?: "")
+                                } catch (_: Exception) {}
+                            }
+                            pyEvent = ""
+                            pyData = ""
+                        }
+                    }
+                }
+
+                // TTS for final response
+                if (session.tts) {
+                    val responseText = responseBuilder.toString().trim()
+                    if (responseText.isNotBlank()) {
+                        try {
+                            val sentences = responseText.take(500).split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
+                            for (sentence in sentences) {
+                                val ttsAudio = generateTtsAudio(sentence)
+                                if (ttsAudio != null) {
+                                    session.events.trySend("event: tts_audio\ndata: {\"data\":\"$ttsAudio\"}\n\n")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            logger.warn { "VOICE_SESSION_TTS_ERROR: ${e.message}" }
+                        }
+                    }
+                }
+            } finally {
+                pythonClient.close()
+            }
+        } catch (e: Exception) {
+            logger.warn { "VOICE_SESSION_PROCESS_ERROR: ${e.message}" }
+            session.events.trySend("event: error\ndata: {\"text\":\"${e.message?.take(80)?.escapeJson() ?: "Chyba"}\"}\n\n")
+        }
+
+        session.events.trySend("event: done\ndata: {}\n\n")
+        session.events.close()
+        call.respondText("""{"ok":true}""", ContentType.Application.Json)
+    }
 }
+
+@Serializable
+data class VoiceSessionRequest(
+    val source: String? = null,
+    val tts: Boolean? = null,
+    val liveAssist: Boolean? = null,
+    val meetingId: String? = null,
+    val wearableNotify: Boolean? = null,
+)
 
 @Serializable
 data class TtsStreamRequest(val text: String, val speed: Float = 1.7f)

@@ -61,7 +61,7 @@ fun RecordingSetupDialog(
     selectedProjectId: String?,
     audioDevices: List<AudioDevice>,
     systemAudioCapability: SystemAudioCapability,
-    onStart: (clientId: String, projectId: String?, audioInputType: AudioInputType, selectedDevice: AudioDevice?, title: String?, meetingType: MeetingTypeEnum) -> Unit,
+    onStart: (clientId: String, projectId: String?, audioInputType: AudioInputType, selectedDevice: AudioDevice?, title: String?, meetingType: MeetingTypeEnum, liveAssist: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var clientId by remember { mutableStateOf(selectedClientId?.takeIf { it != "__global__" } ?: clients.firstOrNull()?.id ?: "") }
@@ -70,6 +70,7 @@ fun RecordingSetupDialog(
     var captureSystemAudio by remember { mutableStateOf(false) }
     var title by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(MeetingTypeEnum.MEETING) }
+    var liveAssist by remember { mutableStateOf(false) }
 
     JFormDialog(
         visible = true,
@@ -79,7 +80,7 @@ fun RecordingSetupDialog(
                 captureSystemAudio -> AudioInputType.MIXED
                 else -> AudioInputType.MICROPHONE
             }
-            onStart(clientId, projectId, inputType, selectedDevice, title.ifBlank { null }, selectedType)
+            onStart(clientId, projectId, inputType, selectedDevice, title.ifBlank { null }, selectedType, liveAssist)
         },
         onDismiss = onDismiss,
         confirmEnabled = clientId.isNotBlank(),
@@ -275,6 +276,31 @@ fun RecordingSetupDialog(
             }
             is SystemAudioCapability.NotSupported -> {
                 // Don't show anything
+            }
+        }
+
+        // Live assist toggle
+        Spacer(modifier = Modifier.height(8.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(JervisSpacing.touchTarget),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = liveAssist,
+                onCheckedChange = { liveAssist = it },
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text("Živá asistence", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Jervis vyhledá relevantní info během schůzky",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

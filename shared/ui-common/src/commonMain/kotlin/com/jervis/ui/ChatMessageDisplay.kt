@@ -22,6 +22,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Stop
@@ -41,7 +44,10 @@ import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Watch
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -134,6 +140,7 @@ internal fun ChatArea(
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
 
     // reverseLayout=true: item 0 is at the bottom of the screen.
     val reversedMessages = remember(messages) { messages.asReversed() }
@@ -174,7 +181,18 @@ internal fun ChatArea(
             LazyColumn(
                 state = listState,
                 reverseLayout = true,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize()
+                    .pointerInput(Unit) {
+                        // Dismiss keyboard on tap without consuming events (buttons still work)
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                if (event.changes.any { it.pressed }) {
+                                    focusManager.clearFocus()
+                                }
+                            }
+                        }
+                    },
                 contentPadding = PaddingValues(24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
@@ -780,72 +798,27 @@ private fun ChatMessageItem(
                     }
                 }
 
-                // Inline reply input
+                // Inline reply input — using shared InputArea
                 AnimatedVisibility(visible = showReplyInput && taskId != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.Bottom,
-                    ) {
-                        OutlinedTextField(
-                            value = replyText,
-                            onValueChange = { replyText = it },
-                            placeholder = {
-                                Text(
-                                    "Napište reakci...",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            },
-                            textStyle = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f).heightIn(min = 44.dp, max = 88.dp)
-                                .onPreviewKeyEvent { event ->
-                                    if (event.key == Key.Enter && event.type == KeyEventType.KeyDown && !event.isShiftPressed) {
-                                        if (replyText.isNotBlank() && taskId != null) {
-                                            onSendReply(taskId, replyText)
-                                            replyText = ""
-                                            showReplyInput = false
-                                        }
-                                        true
-                                    } else false
-                                },
-                            maxLines = 3,
-                            singleLine = false,
-                        )
-                        IconButton(
-                            onClick = {
-                                if (replyText.isNotBlank() && taskId != null) {
-                                    onSendReply(taskId, replyText)
-                                    replyText = ""
-                                    showReplyInput = false
-                                }
-                            },
-                            enabled = replyText.isNotBlank(),
-                            modifier = Modifier.size(44.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Send,
-                                contentDescription = "Odeslat",
-                                tint = if (replyText.isNotBlank()) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                                },
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                showReplyInput = false
+                    InputArea(
+                        inputText = replyText,
+                        onInputChanged = { replyText = it },
+                        onSendClick = {
+                            if (replyText.isNotBlank() && taskId != null) {
+                                onSendReply(taskId, replyText)
                                 replyText = ""
-                            },
-                            modifier = Modifier.size(44.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Zrušit",
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
+                                showReplyInput = false
+                            }
+                        },
+                        enabled = true,
+                        showAttach = false,
+                        showMic = false,
+                        showCancel = true,
+                        onCancel = { showReplyInput = false; replyText = "" },
+                        placeholder = "Napište reakci...",
+                        requestFocus = showReplyInput,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    )
                 }
             }
         }
@@ -1299,17 +1272,17 @@ private fun ChatMessageItem(
                                 }
                                 // TTS play — for assistant messages
                                 if (!isMe && message.text.length > 5) {
-                                    Icon(
-                                        if (isTtsPlaying) Icons.Default.Stop else Icons.Default.VolumeUp,
-                                        contentDescription = if (isTtsPlaying) "Zastavit" else "Přečíst",
-                                        modifier = Modifier.size(32.dp)
-                                            .clickable {
-                                                println("TTS CLICKED via Modifier.clickable")
-                                                onTtsPlay(message.text)
-                                            }
-                                            .padding(7.dp),
-                                        tint = if (isTtsPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                    )
+                                    IconButton(
+                                        onClick = { onTtsPlay(message.text) },
+                                        modifier = Modifier.size(32.dp),
+                                    ) {
+                                        Icon(
+                                            if (isTtsPlaying) Icons.Default.Stop else Icons.Default.VolumeUp,
+                                            contentDescription = if (isTtsPlaying) "Zastavit" else "Přečíst",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = if (isTtsPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        )
+                                    }
                                 }
                                 // Copy button
                                 IconButton(
@@ -1332,6 +1305,30 @@ private fun ChatMessageItem(
                         SelectionContainer {
                             if (isMe) {
                                 Column {
+                                    // Voice source icon for voice messages
+                                    if (message.source != null) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            modifier = Modifier.padding(bottom = 2.dp),
+                                        ) {
+                                            Icon(
+                                                when (message.source) {
+                                                    ChatMessage.VoiceSource.WATCH -> Icons.Default.Watch
+                                                    ChatMessage.VoiceSource.MOBILE -> Icons.Default.Smartphone
+                                                    ChatMessage.VoiceSource.DESKTOP -> Icons.Default.Computer
+                                                },
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            )
+                                            Text(
+                                                text = "Hlasová zpráva",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            )
+                                        }
+                                    }
                                     // User messages - plain text
                                     Text(
                                         text = message.text,

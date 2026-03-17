@@ -1,5 +1,6 @@
 import Foundation
 import WatchConnectivity
+import WatchKit
 
 enum WatchCommand: String {
     case startRecording = "start_recording"
@@ -9,6 +10,13 @@ enum WatchCommand: String {
 class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
     @Published var isPhoneReachable = false
     @Published var lastChatResponse: String? = nil
+    @Published var activeHint: HintInfo? = nil
+
+    struct HintInfo: Identifiable {
+        let id = UUID()
+        let text: String
+        let timestamp: Date
+    }
 
     private var session: WCSession?
 
@@ -89,10 +97,42 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        if let type = message["type"] as? String, type == "chat_response",
-           let text = message["text"] as? String {
-            DispatchQueue.main.async {
-                self.lastChatResponse = text
+        guard let type = message["type"] as? String else { return }
+
+        switch type {
+        case "chat_response":
+            if let text = message["text"] as? String {
+                DispatchQueue.main.async {
+                    self.lastChatResponse = text
+                }
+            }
+        case "hint":
+            if let text = message["text"] as? String {
+                DispatchQueue.main.async {
+                    self.activeHint = HintInfo(text: text, timestamp: Date())
+                    // Light haptic notification
+                    WKInterfaceDevice.current().play(.notification)
+                    // Auto-dismiss after 10s
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                        self?.activeHint = nil
+                    }
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    // Handle hints via transferUserInfo (reliable delivery)
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        guard let type = userInfo["type"] as? String, type == "hint",
+              let text = userInfo["text"] as? String else { return }
+
+        DispatchQueue.main.async {
+            self.activeHint = HintInfo(text: text, timestamp: Date())
+            WKInterfaceDevice.current().play(.notification)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                self?.activeHint = nil
             }
         }
     }

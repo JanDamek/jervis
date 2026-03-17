@@ -17,9 +17,14 @@ data class ChatMessage(
     val id: String? = null,
     /** User response to a BACKGROUND_RESULT task (set after "Reagovat" reply). */
     val userResponse: String? = null,
+    /** Source platform for voice messages (desktop, mobile, watch). */
+    val source: VoiceSource? = null,
 ) {
     @Serializable
     enum class Sender { Me, Assistant }
+
+    @Serializable
+    enum class VoiceSource { DESKTOP, MOBILE, WATCH }
 
     @Serializable
     enum class MessageType {

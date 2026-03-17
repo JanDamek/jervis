@@ -84,5 +84,53 @@ struct ContentView: View {
                 autoStart = false
             }
         }
+        .overlay(alignment: .bottom) {
+            // Live assist hint card — compact, auto-dismiss 10s, tap to expand
+            if let hint = connectivity.activeHint {
+                HintCardView(hint: hint) {
+                    connectivity.activeHint = nil
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.easeInOut(duration: 0.3), value: connectivity.activeHint != nil)
+            }
+        }
+    }
+}
+
+/// Compact hint card for live assist — shown over any screen
+struct HintCardView: View {
+    let hint: WatchConnectivityManager.HintInfo
+    let onDismiss: () -> Void
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Image(systemName: "lightbulb.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.yellow)
+                Text("Hint")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            Text(hint.text)
+                .font(.caption)
+                .lineLimit(expanded ? nil : 2)
+                .onTapGesture { expanded.toggle() }
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.ultraThinMaterial)
+        )
+        .padding(.horizontal, 4)
+        .padding(.bottom, 2)
     }
 }

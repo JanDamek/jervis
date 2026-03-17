@@ -73,6 +73,7 @@ internal fun InputArea(
     showAttach: Boolean = true,
     showCancel: Boolean = false,
     onCancel: () -> Unit = {},
+    showMic: Boolean = true,
     placeholder: String = "Napište zprávu...",
     modifier: Modifier = Modifier,
 ) {
@@ -168,8 +169,8 @@ internal fun InputArea(
                         },
                     maxLines = 4,
                     singleLine = false,
-                    // Mic inside text field — visible when text is empty
-                    trailingIcon = if (inputText.isBlank()) {
+                    // Mic inside text field — visible when text is empty and showMic is true
+                    trailingIcon = if (showMic && inputText.isBlank()) {
                         {
                             IconButton(onClick = onMicClick, enabled = enabled) {
                                 Icon(Icons.Default.Mic, "Hlasový vstup", tint = MaterialTheme.colorScheme.primary)

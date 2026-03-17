@@ -117,4 +117,23 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
             }
         )
     }
+
+    /// Push a live assist hint to the watch (triggers haptic + compact card)
+    func sendHint(_ text: String) {
+        guard WCSession.default.isReachable else {
+            // Watch not reachable — use transferUserInfo for delivery when reconnected
+            WCSession.default.transferUserInfo(["type": "hint", "text": text, "timestamp": Date().timeIntervalSince1970])
+            print("[WatchSession] Hint queued via transferUserInfo")
+            return
+        }
+        WCSession.default.sendMessage(
+            ["type": "hint", "text": text],
+            replyHandler: nil,
+            errorHandler: { error in
+                print("[WatchSession] Failed to send hint: \(error)")
+                // Fallback to reliable transfer
+                WCSession.default.transferUserInfo(["type": "hint", "text": text, "timestamp": Date().timeIntervalSince1970])
+            }
+        )
+    }
 }

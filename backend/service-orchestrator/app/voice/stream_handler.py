@@ -120,6 +120,50 @@ async def _handle_dictation(text: str, request: VoiceStreamRequest) -> AsyncIter
     yield VoiceStreamEvent(event="done", data={})
 
 
+async def generate_hint(text: str, client_id: str = "", project_id: str = "") -> str | None:
+    """Generate a KB-based hint for live assist mode.
+
+    Searches KB for relevant info and returns a concise hint.
+    Returns None if nothing relevant found.
+    """
+    from app.voice.quick_responder import kb_search
+
+    try:
+        kb_results = await kb_search(text, client_id, project_id)
+        if not kb_results:
+            return None
+
+        # Build concise hint from KB results (max 2 sentences)
+        from app.llm.router_client import route_request
+        import litellm
+
+        route = await route_request(capability="chat", max_tier="FREE", estimated_tokens=300)
+        model = f"openrouter/{route.model}" if route.target == "openrouter" and route.model else settings.default_local_model
+
+        kb_context = "\n".join(r.get("content", "")[:200] for r in kb_results[:3])
+
+        resp = await litellm.acompletion(
+            model=model,
+            messages=[
+                {"role": "system", "content": "Jsi stručný asistent. Ze znalostní báze vyber nejrelevantnější info k tématu a odpověz MAX 2 věty česky. Pokud nic relevantního, odpověz prázdně."},
+                {"role": "user", "content": f"Téma: {text}\n\nKB:\n{kb_context}"},
+            ],
+            temperature=0.0,
+            max_tokens=150,
+            api_base=route.api_base,
+            api_key=route.api_key,
+        )
+
+        hint = resp.choices[0].message.content.strip()
+        if hint and len(hint) > 5:
+            return hint
+        return None
+
+    except Exception as e:
+        logger.warning("Hint generation failed: %s", e)
+        return None
+
+
 async def _handle_via_orchestrator(text: str, request: VoiceStreamRequest) -> AsyncIterator[VoiceStreamEvent]:
     """Forward to full orchestrator chat pipeline.
 

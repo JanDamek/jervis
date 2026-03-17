@@ -276,6 +276,26 @@ async def voice_process(request_body: dict):
     return EventSourceResponse(event_generator())
 
 
+@app.post("/voice/hint")
+async def voice_hint(request_body: dict):
+    """Generate a KB-based hint for live assist mode.
+
+    Called by Kotlin server during session-based voice streaming.
+    Returns JSON with hint text (or empty if nothing relevant).
+    """
+    from app.voice.stream_handler import generate_hint
+
+    text = request_body.get("text", "").strip()
+    client_id = request_body.get("client_id", "")
+    project_id = request_body.get("project_id", "")
+
+    if not text:
+        return {"hint": None}
+
+    hint = await generate_hint(text, client_id, project_id)
+    return {"hint": hint}
+
+
 # --- Foreground Chat Endpoint ---
 
 # Active chat stop events per session (for explicit stop button)

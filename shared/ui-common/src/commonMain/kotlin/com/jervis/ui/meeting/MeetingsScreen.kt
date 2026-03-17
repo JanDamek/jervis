@@ -462,7 +462,7 @@ fun MeetingsScreen(
             selectedProjectId = selectedProjectId,
             audioDevices = audioRecorder.getAvailableInputDevices(),
             systemAudioCapability = audioRecorder.getSystemAudioCapabilities(),
-            onStart = { clientId, projectId, audioInputType, selectedDevice, title, meetingType ->
+            onStart = { clientId, projectId, audioInputType, selectedDevice, title, meetingType, liveAssist ->
                 showSetupDialog = false
                 viewModel.startRecording(
                     clientId = clientId,
@@ -475,6 +475,7 @@ fun MeetingsScreen(
                         ),
                     title = title,
                     meetingType = meetingType,
+                    liveAssist = liveAssist,
                 )
             },
             onDismiss = { showSetupDialog = false },

@@ -18,6 +18,9 @@ import com.jervis.dto.meeting.SpeakerMappingDto
 import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
 import com.jervis.dto.meeting.VoiceSampleRefDto
 import com.jervis.di.RpcConnectionManager
+import com.jervis.di.postSseStream
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import com.jervis.dto.events.JervisEvent
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.audio.AudioPlayer
@@ -93,6 +96,9 @@ class MeetingViewModel(
 
     private val _playingMeetingId = MutableStateFlow<String?>(null)
     val playingMeetingId: StateFlow<String?> = _playingMeetingId.asStateFlow()
+
+    private val _liveHints = MutableStateFlow<List<String>>(emptyList())
+    val liveHints: StateFlow<List<String>> = _liveHints.asStateFlow()
 
     /** Index of the transcript segment currently being played, or -1 for full playback. */
     private val _playingSegmentIndex = MutableStateFlow(-1)
@@ -368,6 +374,9 @@ class MeetingViewModel(
         )
     }
 
+    private var liveAssistJob: Job? = null
+    private var liveAssistSessionId: String? = null
+
     @OptIn(ExperimentalUuidApi::class)
     fun startRecording(
         clientId: String? = null,
@@ -376,6 +385,7 @@ class MeetingViewModel(
         recordingConfig: AudioRecordingConfig = AudioRecordingConfig(),
         title: String? = null,
         meetingType: MeetingTypeEnum? = null,
+        liveAssist: Boolean = false,
     ) {
         if (clientId != null) lastClientId = clientId
         if (projectId != null) lastProjectId = projectId
@@ -409,11 +419,103 @@ class MeetingViewModel(
             )
             uploadService.registerSession(session)
 
-            println("[Meeting] Recording started: localId=$localId")
+            println("[Meeting] Recording started: localId=$localId, liveAssist=$liveAssist")
             platformRecordingService.startBackgroundRecording(title ?: "Nahravani")
             startDurationUpdate()
             startChunkSaveJob(localId)
+
+            // Start live assist dual pipeline — voice session for KB hints during recording
+            if (liveAssist) {
+                startLiveAssistSession(localId, clientId, projectId)
+            }
         }
+    }
+
+    @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
+    private fun startLiveAssistSession(meetingLocalId: String, clientId: String?, projectId: String?) {
+        liveAssistJob = scope.launch {
+            try {
+                val serverUrl = connectionManager.baseUrl.trimEnd('/')
+                val sessionBody = """{"source":"meeting_assist","tts":false,"liveAssist":true,"meetingId":"$meetingLocalId","wearableNotify":true}"""
+
+                postSseStream(
+                    url = "$serverUrl/api/v1/voice/session",
+                    bodyBytes = sessionBody.encodeToByteArray(),
+                    contentType = "application/json",
+                ) { event ->
+                    when (event.event) {
+                        "session_started" -> {
+                            val json = try { kotlinx.serialization.json.Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
+                            liveAssistSessionId = json?.get("session_id")?.jsonPrimitive?.content
+                            println("[Meeting] Live assist session started: $liveAssistSessionId")
+                            // Chunks forwarded by startChunkSaveJob via forwardChunkToLiveAssist()
+                        }
+                        "hint" -> {
+                            val json = try { kotlinx.serialization.json.Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
+                            val hintText = json?.get("text")?.jsonPrimitive?.content
+                            if (!hintText.isNullOrBlank()) {
+                                _liveHints.value = _liveHints.value + hintText
+                                println("[Meeting] Live hint: ${hintText.take(60)}")
+                            }
+                        }
+                        "chunk_transcribed" -> {
+                            // Partial transcript from live assist — can display in UI
+                        }
+                        "done" -> {
+                            println("[Meeting] Live assist session ended")
+                        }
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                println("[Meeting] Live assist error: ${e.message}")
+            } finally {
+                liveAssistSessionId = null
+            }
+        }
+    }
+
+    /** Called by chunk save job — sends a copy of the audio chunk to live assist session. */
+    private fun forwardChunkToLiveAssist(chunkPcm: ByteArray, chunkIdx: Int) {
+        val sid = liveAssistSessionId ?: return
+        scope.launch {
+            try {
+                val serverUrl = connectionManager.baseUrl.trimEnd('/')
+                val chunkWav = wrapChunkInWav(chunkPcm)
+                val (ct, body) = com.jervis.di.buildMultipartBody(
+                    fileFieldName = "file",
+                    fileName = "assist_$chunkIdx.wav",
+                    fileContentType = "audio/wav",
+                    fileBytes = chunkWav,
+                    fields = mapOf("chunk" to chunkIdx.toString()),
+                )
+                postSseStream(
+                    url = "$serverUrl/api/v1/voice/session/chunk?sessionId=$sid",
+                    bodyBytes = body,
+                    contentType = ct,
+                ) { /* events on session SSE */ }
+            } catch (e: Exception) {
+                println("[Meeting] Assist chunk $chunkIdx error: ${e.message}")
+            }
+        }
+    }
+
+    /** Simple WAV header for 16-bit mono 16kHz PCM. */
+    private fun wrapChunkInWav(pcm: ByteArray, sampleRate: Int = 16000): ByteArray {
+        val dataSize = pcm.size
+        val byteRate = sampleRate * 2
+        val header = ByteArray(44)
+        fun writeInt(offset: Int, value: Int) { for (i in 0..3) header[offset + i] = (value shr (i * 8)).toByte() }
+        fun writeShort(offset: Int, value: Int) { header[offset] = value.toByte(); header[offset + 1] = (value shr 8).toByte() }
+        header[0] = 'R'.code.toByte(); header[1] = 'I'.code.toByte(); header[2] = 'F'.code.toByte(); header[3] = 'F'.code.toByte()
+        writeInt(4, 36 + dataSize)
+        header[8] = 'W'.code.toByte(); header[9] = 'A'.code.toByte(); header[10] = 'V'.code.toByte(); header[11] = 'E'.code.toByte()
+        header[12] = 'f'.code.toByte(); header[13] = 'm'.code.toByte(); header[14] = 't'.code.toByte(); header[15] = ' '.code.toByte()
+        writeInt(16, 16); writeShort(20, 1); writeShort(22, 1); writeInt(24, sampleRate); writeInt(28, byteRate); writeShort(32, 2); writeShort(34, 16)
+        header[36] = 'd'.code.toByte(); header[37] = 'a'.code.toByte(); header[38] = 't'.code.toByte(); header[39] = 'a'.code.toByte()
+        writeInt(40, dataSize)
+        return header + pcm
     }
 
     fun stopRecording() {
@@ -422,6 +524,27 @@ class MeetingViewModel(
         durationUpdateJob?.cancel()
         chunkUploadJob?.cancel()
         platformRecordingService.stopBackgroundRecording()
+
+        // Stop live assist session
+        liveAssistJob?.cancel()
+        liveAssistJob = null
+        val sid = liveAssistSessionId
+        liveAssistSessionId = null
+        if (sid != null) {
+            scope.launch {
+                try {
+                    val serverUrl = connectionManager.baseUrl.trimEnd('/')
+                    postSseStream(
+                        url = "$serverUrl/api/v1/voice/session/stop?sessionId=$sid",
+                        bodyBytes = """{}""".encodeToByteArray(),
+                        contentType = "application/json",
+                    ) { /* session closing events */ }
+                } catch (e: Exception) {
+                    println("[Meeting] Live assist stop error: ${e.message}")
+                }
+            }
+        }
+        _liveHints.value = emptyList()
 
         val recorder = audioRecorder ?: return
         audioRecorder = null
@@ -896,6 +1019,8 @@ class MeetingViewModel(
                 val chunk = recorder.getAndClearBuffer()
                 if (chunk != null && chunk.isNotEmpty()) {
                     AudioChunkQueue.enqueue(localId, chunkIndex, chunk)
+                    // Forward to live assist session (if active)
+                    forwardChunkToLiveAssist(chunk, chunkIndex)
                     chunkIndex++
                     uploadService.updateSession(localId) { it.copy(chunkCount = chunkIndex) }
                 }
