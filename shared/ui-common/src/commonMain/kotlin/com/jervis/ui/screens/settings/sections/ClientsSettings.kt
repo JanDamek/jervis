@@ -510,8 +510,29 @@ private fun MergeProjectDialog(
                                             maxLines = 2,
                                         )
                                     }
-                                    // Both option (if applicable)
-                                    if (conflict.canMergeBoth) {
+                                    // AI merged option (if LLM generated a suggestion)
+                                    if (conflict.aiMergedValue != null) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { resolutions = resolutions + (conflict.key to "AI_MERGE") }
+                                                .padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            androidx.compose.material3.RadioButton(
+                                                selected = currentRes == "AI_MERGE",
+                                                onClick = { resolutions = resolutions + (conflict.key to "AI_MERGE") },
+                                            )
+                                            Text(
+                                                "AI: ${conflict.aiMergedValue!!.take(80)}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                maxLines = 2,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                    }
+                                    // Both option (if applicable and no AI merge)
+                                    if (conflict.canMergeBoth && conflict.aiMergedValue == null) {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -571,7 +592,14 @@ private fun MergeProjectDialog(
                                     sourceProjectId = source.id,
                                     targetProjectId = selectedTarget!!.id,
                                     resolutions = resolutions.map { (k, v) ->
-                                        com.jervis.dto.MergeResolutionDto(key = k, resolution = v)
+                                        val customValue = if (v == "AI_MERGE") {
+                                            preview?.conflicts?.find { it.key == k }?.aiMergedValue
+                                        } else null
+                                        com.jervis.dto.MergeResolutionDto(
+                                            key = k,
+                                            resolution = if (v == "AI_MERGE") "CUSTOM" else v,
+                                            customValue = customValue,
+                                        )
                                     },
                                 )
                                 repository.projects.executeMerge(req)

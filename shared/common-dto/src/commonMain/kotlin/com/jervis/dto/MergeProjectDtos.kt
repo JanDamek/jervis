@@ -36,6 +36,8 @@ data class MergeConflictDto(
     val canMergeBoth: Boolean = false,
     /** Category: SETTING, TEXT, RESOURCE */
     val category: String = "SETTING",
+    /** AI-suggested merged text (for TEXT category, generated via cascade LLM) */
+    val aiMergedValue: String? = null,
 )
 
 /**

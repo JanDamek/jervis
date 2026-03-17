@@ -35,6 +35,7 @@ class ProjectService(
     private val applicationEventPublisher: org.springframework.context.ApplicationEventPublisher,
     private val knowledgeClient: com.jervis.configuration.KnowledgeServiceRestClient,
     private val mongoTemplate: org.springframework.data.mongodb.core.ReactiveMongoTemplate,
+    private val cascadeLlm: com.jervis.configuration.CascadeLlmClient,
 ) {
     private val bgScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     companion object {
@@ -268,11 +269,33 @@ class ProjectService(
             }
         }
 
+        // AI-assisted merge for TEXT conflicts — generate suggested merged value
+        val resolvedConflicts = conflicts.map { conflict ->
+            if (conflict.category == "TEXT" && conflict.sourceValue.isNotBlank() && conflict.targetValue.isNotBlank()) {
+                val aiMerged = try {
+                    cascadeLlm.prompt(
+                        prompt = "Merge these two project texts into one coherent version. " +
+                            "Keep all unique information from both. Remove duplicates. " +
+                            "Output ONLY the merged text, no explanation.\n\n" +
+                            "Text A (${source.name}):\n${conflict.sourceValue}\n\n" +
+                            "Text B (${target.name}):\n${conflict.targetValue}",
+                        system = "You merge project configuration texts. Output only the merged result.",
+                    )
+                } catch (e: Exception) {
+                    logger.debug { "AI merge suggestion failed for ${conflict.key}: ${e.message}" }
+                    null
+                }
+                conflict.copy(aiMergedValue = aiMerged, canMergeBoth = true)
+            } else {
+                conflict
+            }
+        }
+
         return MergePreviewDto(
             sourceProject = source.name,
             targetProject = target.name,
             autoMigrate = autoMigrate,
-            conflicts = conflicts,
+            conflicts = resolvedConflicts,
         )
     }
 
