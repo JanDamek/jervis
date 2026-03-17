@@ -732,7 +732,7 @@ data class VoiceSessionRequest(
 )
 
 @Serializable
-data class TtsStreamRequest(val text: String, val speed: Float = 1.1f)
+data class TtsStreamRequest(val text: String, val speed: Float = 1.2f)
 
 /** Escape JSON special chars for SSE data. */
 private fun String.escapeJson(): String =
@@ -800,7 +800,7 @@ private suspend fun collectChatResponse(
 private suspend fun generateTtsAudio(text: String): String? {
     val response = ttsClient.post(TTS_URL) {
         contentType(ContentType.Application.Json)
-        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":1.1}""")
+        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":1.2}""")
     }
 
     val audioBytes = response.readBytes()

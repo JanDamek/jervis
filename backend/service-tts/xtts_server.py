@@ -136,6 +136,9 @@ def _synthesize_text(text: str, speed: float = 1.0, language: str = "") -> bytes
     if not language:
         language = _detect_language(text)
 
+    # Strip trailing punctuation — XTTS reads "." as "teška" in Czech
+    text = text.rstrip(".!?…,;:\"'""„‟»«")
+
     model = _tts.synthesizer.tts_model
 
     if _gpt_cond_latent is not None and _speaker_embedding is not None:
