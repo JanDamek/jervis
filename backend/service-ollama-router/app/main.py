@@ -118,14 +118,13 @@ async def api_chat(request: Request):
 async def api_cascade(request: Request):
     """Instant cascade: GPU-1 → GPU-2 → OpenRouter FREE → PAID → PREMIUM → queue.
 
-    Server-only endpoint for latency-critical calls (voice, merge AI).
-    Accepts both /api/generate (prompt) and /api/chat (messages) format.
+    SERVER-ONLY. Not for orchestrator or external callers.
+    Used for: merge AI text resolution, voice quick KB lookup.
+    Prompt format only (not chat). Highest priority (CASCADE=-1).
     Does NOT kill running GPU work — jumps to front of queue.
     """
     body = await request.json()
-    # Auto-detect format: messages → chat, prompt → generate
-    api_path = "/api/chat" if "messages" in body else "/api/generate"
-    return await router.cascade_route(api_path, body, http_request=request)
+    return await router.cascade_route("/api/generate", body, http_request=request)
 
 
 @app.post("/api/embeddings")
