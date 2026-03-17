@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 
@@ -1563,11 +1564,13 @@ class ChatViewModel(
     private val _isTtsPlaying = MutableStateFlow(false)
     val isTtsPlaying: StateFlow<Boolean> = _isTtsPlaying.asStateFlow()
     private var ttsJob: Job? = null
+    private val ttsPlayer = AudioPlayer()
 
     @OptIn(ExperimentalEncodingApi::class)
     fun playTts(text: String) {
         if (_isTtsPlaying.value) {
             ttsJob?.cancel()
+            ttsPlayer.stop()
             _isTtsPlaying.value = false
             return
         }
@@ -1591,7 +1594,10 @@ class ChatViewModel(
                             val audioB64 = json?.get("data")?.jsonPrimitive?.content
                             if (!audioB64.isNullOrBlank()) {
                                 try {
-                                    AudioPlayer().play(Base64.decode(audioB64))
+                                    // play() blocks until chunk finishes — sequential playback
+                                    withContext(Dispatchers.IO) {
+                                        ttsPlayer.play(Base64.decode(audioB64))
+                                    }
                                 } catch (e: Exception) {
                                     println("TTS playback error: ${e.message}")
                                 }

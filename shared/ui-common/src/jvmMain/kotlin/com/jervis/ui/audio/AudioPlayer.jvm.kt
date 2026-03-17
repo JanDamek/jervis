@@ -1,6 +1,8 @@
 package com.jervis.ui.audio
 
 import java.io.ByteArrayInputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.Clip
 import javax.sound.sampled.LineEvent
@@ -16,15 +18,21 @@ actual class AudioPlayer actual constructor() {
             val stream = AudioSystem.getAudioInputStream(ByteArrayInputStream(audioData))
             val newClip = AudioSystem.getClip()
             newClip.open(stream)
+            val latch = CountDownLatch(1)
             newClip.addLineListener { event ->
                 if (event.type == LineEvent.Type.STOP) {
                     newClip.close()
                     if (clip === newClip) clip = null
+                    latch.countDown()
                 }
             }
             clip = newClip
             newClip.start()
+            // Block until clip finishes so sequential TTS chunks play in order
+            val durationMs = (newClip.microsecondLength / 1000) + 500
+            latch.await(durationMs, TimeUnit.MILLISECONDS)
         } catch (e: Exception) {
+            println("AudioPlayer.play error: ${e::class.simpleName}: ${e.message}")
             clip = null
         }
     }
