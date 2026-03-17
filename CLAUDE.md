@@ -97,8 +97,14 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Siri API client: `apps/iosApp/iosApp/JervisApiClient.swift`, `apps/watchApp/JervisWatch/WatchJervisApiClient.swift`
 - Watch recording relay: `apps/iosApp/iosApp/WatchRecordingRelay.swift` (iPhone receives watch audio via WatchConnectivity, uploads to server REST)
 - Voice chat endpoint: `backend/server/.../rpc/VoiceChatRouting.kt` (POST /api/v1/chat/voice, /voice/stream — Whisper STT → Python voice pipeline → TTS)
-- Voice pipeline: `backend/service-orchestrator/app/voice/` (intent_classifier, quick_responder, chunk_accumulator, stream_handler — POST /voice/process)
-- Voice v2 plan (KB: `agent://claude-code/voice-input-v2-implementation-plan`): 4 modes — quick (FREE LLM, <3s), dictate (store to KB), listen (live assist), meeting+live (dual pipeline)
+- Voice pipeline: `backend/service-orchestrator/app/voice/` (intent_classifier, quick_responder, chunk_accumulator, stream_handler — POST /voice/process, /voice/hint)
+- Voice session streaming: `VoiceChatRouting.kt` — /voice/session (SSE), /voice/session/chunk, /voice/session/stop (5s chunk upload during recording)
+- Voice session client: `ChatViewModel.kt` — startChunkStreaming(), sendChunksLoop(), stopSessionAndProcess()
+- Live assist: `MeetingViewModel.kt` — startLiveAssistSession(), forwardChunkToLiveAssist() (dual pipeline: recording + KB hints)
+- Platform info: `shared/ui-common/src/{common,ios,jvm,android}Main/.../util/PlatformInfo*.kt` (expect/actual currentVoiceSource)
+- Voice source icons: `ChatMessage.VoiceSource` enum (DESKTOP, MOBILE, WATCH) — Material icons in ChatMessageDisplay
+- watchOS hint cards: `WatchConnectivityManager.swift` (HintInfo, haptic), `ContentView.swift` (HintCardView overlay, 10s auto-dismiss)
+- iOS hint relay: `WatchSessionManager.swift` (sendHint — sendMessage + fallback transferUserInfo)
 - Watch meeting REST: `backend/server/.../rpc/WatchMeetingRouting.kt` (POST /api/v1/meeting/start|chunk|stop — ad-hoc recording from watch)
 - CPU Whisper: `backend/service-whisper/Dockerfile.cpu` (K8s pod, always available, model=small, fallback from GPU)
 - Watch complications: `apps/watchApp/JervisComplication/` (WidgetKit — app launcher, recording, chat shortcuts on watch face)
