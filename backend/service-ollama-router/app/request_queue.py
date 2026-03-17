@@ -108,10 +108,10 @@ class RequestQueue:
         if request.priority <= Priority.CRITICAL:
             self._critical.put_nowait(entry)  # unlimited — never fails
             logger.info(
-                "QUEUE_IN: id=%s priority=CRITICAL model=%s (queue_depth=%d)",
-                request.request_id, request.model, self._critical.qsize(),
+                "QUEUE_IN: id=%s priority=%s model=%s (queue_depth=%d)",
+                request.request_id, request.priority.name, request.model, self._critical.qsize(),
             )
-            # CRITICAL waiting behind NORMAL → preempt
+            # CRITICAL/CASCADE waiting behind NORMAL → preempt NORMAL queue entries
             self._preempt_normal_for_critical()
         else:
             self._normal.put_nowait(entry)  # unlimited queue — never fails

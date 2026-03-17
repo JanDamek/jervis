@@ -17,7 +17,8 @@ from pydantic import BaseModel
 # ── Priority ────────────────────────────────────────────────────────────
 
 class Priority(IntEnum):
-    """Lower number = higher priority. Only 2 effective levels."""
+    """Lower number = higher priority."""
+    CASCADE = -1   # Server-only instant cascade (merge AI, voice quick). Preempts queue, not running GPU.
     CRITICAL = 0   # User waiting (jervis_mcp, orchestrator FOREGROUND)
     NORMAL = 1     # System work (background, correction, KB ingest)
 

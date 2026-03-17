@@ -290,9 +290,9 @@ class OllamaRouter:
                     request_id, api_path, body, cloud_model, api_key,
                 )
 
-        # Step 6: All busy — fall back to normal queue (NORMAL priority, will wait)
-        logger.info("CASCADE: %s → queue fallback (all targets busy)", request_id)
-        return await self.route_request(api_path, body, None, http_request)
+        # Step 6: All busy — CASCADE queue (highest priority, preempts entire queue, waits for running GPU)
+        logger.info("CASCADE: %s → CASCADE queue (all targets busy, front of queue)", request_id)
+        return await self.route_request(api_path, body, Priority.CASCADE.value, http_request)
 
     async def _cascade_dispatch_gpu(
         self, request_id: str, api_path: str, body: dict,
@@ -302,7 +302,7 @@ class OllamaRouter:
         request = TrackedRequest(
             request_id=request_id,
             model=model or settings.orchestrator_model,
-            priority=Priority.CRITICAL,
+            priority=Priority.CASCADE,
             api_path=api_path,
             body=body,
         )
