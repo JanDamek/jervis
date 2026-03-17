@@ -409,6 +409,7 @@ private fun MergeProjectDialog(
     var preview by remember { mutableStateOf<com.jervis.dto.MergePreviewDto?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var resolutions by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var customValues by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
     val step = if (preview != null) "conflicts" else "select"
 
@@ -510,29 +511,55 @@ private fun MergeProjectDialog(
                                             maxLines = 2,
                                         )
                                     }
-                                    // AI merged option (if LLM generated a suggestion)
-                                    if (conflict.aiMergedValue != null) {
+                                    // Custom / AI merged option — editable text field
+                                    if (conflict.category == "TEXT") {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clickable { resolutions = resolutions + (conflict.key to "AI_MERGE") }
+                                                .clickable {
+                                                    resolutions = resolutions + (conflict.key to "CUSTOM")
+                                                    if (conflict.key !in customValues && conflict.aiMergedValue != null) {
+                                                        customValues = customValues + (conflict.key to conflict.aiMergedValue!!)
+                                                    }
+                                                }
                                                 .padding(vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
+                                            verticalAlignment = Alignment.Top,
                                         ) {
                                             androidx.compose.material3.RadioButton(
-                                                selected = currentRes == "AI_MERGE",
-                                                onClick = { resolutions = resolutions + (conflict.key to "AI_MERGE") },
+                                                selected = currentRes == "CUSTOM",
+                                                onClick = {
+                                                    resolutions = resolutions + (conflict.key to "CUSTOM")
+                                                    if (conflict.key !in customValues && conflict.aiMergedValue != null) {
+                                                        customValues = customValues + (conflict.key to conflict.aiMergedValue!!)
+                                                    }
+                                                },
                                             )
-                                            Text(
-                                                "AI: ${conflict.aiMergedValue!!.take(80)}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                maxLines = 2,
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    if (conflict.aiMergedValue != null) "Upravit (AI navrh):" else "Vlastni:",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                                if (currentRes == "CUSTOM") {
+                                                    Spacer(Modifier.height(4.dp))
+                                                    androidx.compose.material3.OutlinedTextField(
+                                                        value = customValues[conflict.key]
+                                                            ?: conflict.aiMergedValue
+                                                            ?: "",
+                                                        onValueChange = {
+                                                            customValues = customValues + (conflict.key to it)
+                                                        },
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        textStyle = MaterialTheme.typography.bodySmall,
+                                                        minLines = 2,
+                                                        maxLines = 6,
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
-                                    // Both option (if applicable and no AI merge)
-                                    if (conflict.canMergeBoth && conflict.aiMergedValue == null) {
+                                    // Both option (for RESOURCE category)
+                                    if (conflict.canMergeBoth && conflict.category != "TEXT") {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -592,13 +619,10 @@ private fun MergeProjectDialog(
                                     sourceProjectId = source.id,
                                     targetProjectId = selectedTarget!!.id,
                                     resolutions = resolutions.map { (k, v) ->
-                                        val customValue = if (v == "AI_MERGE") {
-                                            preview?.conflicts?.find { it.key == k }?.aiMergedValue
-                                        } else null
                                         com.jervis.dto.MergeResolutionDto(
                                             key = k,
-                                            resolution = if (v == "AI_MERGE") "CUSTOM" else v,
-                                            customValue = customValue,
+                                            resolution = v,
+                                            customValue = if (v == "CUSTOM") customValues[k] else null,
                                         )
                                     },
                                 )
