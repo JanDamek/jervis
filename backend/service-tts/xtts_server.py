@@ -272,22 +272,17 @@ def _wav_chunk_to_bytes(wav_chunk, sample_rate: int) -> bytes:
     return audio_buffer.getvalue()
 
 
-def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue.Queue):
-    """Run inference_stream in a thread, accumulate chunks per sentence, put complete WAVs into queue."""
+def _stream_sentences(text: str, speed: float, language: str, chunk_queue: queue.Queue):
+    """Synthesize text sentence-by-sentence using batch inference, put complete WAVs into queue.
+
+    Uses model.inference() (not inference_stream) for clean, high-quality audio per sentence.
+    Each sentence is sent as soon as it's ready — true streaming at sentence level.
+    """
     try:
         if not language:
             language = _detect_language(text)
 
-        model = _tts.synthesizer.tts_model
-        sample_rate = _tts.synthesizer.output_sample_rate
-
-        if _gpt_cond_latent is None or _speaker_embedding is None:
-            wav_data = _synthesize_text(text, speed, language)
-            chunk_queue.put(("chunk", wav_data))
-            chunk_queue.put(("done", None))
-            return
-
-        # Split text into sentences — each sentence becomes one complete WAV
+        # Split text into sentences
         sentences = re.split(r'(?<=[.!?])\s+', text.strip())
         sent_idx = 0
 
@@ -297,41 +292,15 @@ def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue
                 continue
 
             try:
-                # Accumulate all inference_stream chunks for this sentence
-                all_chunks = []
-                for wav_chunk in model.inference_stream(
-                    text=sentence,
-                    language=language,
-                    gpt_cond_latent=_gpt_cond_latent,
-                    speaker_embedding=_speaker_embedding,
-                    speed=speed,
-                    stream_chunk_size=20,
-                    enable_text_splitting=False,
-                ):
-                    if isinstance(wav_chunk, torch.Tensor):
-                        wav_chunk = wav_chunk.cpu().numpy()
-                    all_chunks.append(wav_chunk.squeeze())
-
-                if all_chunks:
-                    # Concatenate all chunks into one continuous audio
-                    full_audio = np.concatenate(all_chunks)
-                    wav_bytes = _wav_chunk_to_bytes(
-                        torch.from_numpy(full_audio), sample_rate
-                    )
-                    chunk_queue.put(("chunk", wav_bytes))
-                    sent_idx += 1
+                wav_data = _synthesize_text(sentence, speed, language)
+                chunk_queue.put(("chunk", wav_data))
+                sent_idx += 1
             except Exception as e:
-                print(f"[TTS] inference_stream error on '{sentence[:40]}': {e}", flush=True)
-                try:
-                    wav_data = _synthesize_text(sentence, speed, language)
-                    chunk_queue.put(("chunk", wav_data))
-                    sent_idx += 1
-                except Exception as e2:
-                    print(f"[TTS] batch fallback also failed: {e2}", flush=True)
+                print(f"[TTS] sentence synthesis error on '{sentence[:40]}': {e}", flush=True)
 
         chunk_queue.put(("done", None))
     except Exception as e:
-        print(f"[TTS] _stream_inference error: {e}", flush=True)
+        print(f"[TTS] _stream_sentences error: {e}", flush=True)
         chunk_queue.put(("error", str(e)))
 
 
@@ -357,9 +326,9 @@ async def synthesize_stream(request: TtsRequest):
     start = time.monotonic()
     chunk_q: queue.Queue = queue.Queue()
 
-    # Run inference in background thread (GPU work)
+    # Run sentence-by-sentence synthesis in background thread
     thread = threading.Thread(
-        target=_stream_inference,
+        target=_stream_sentences,
         args=(request.text, request.speed, request.language, chunk_q),
         daemon=True,
     )
