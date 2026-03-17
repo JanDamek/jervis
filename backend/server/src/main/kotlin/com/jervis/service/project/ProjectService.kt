@@ -201,17 +201,11 @@ class ProjectService(
             ))
         }
 
-        // Detect conflicts: resources (git repos, issue trackers)
-        val sourceResIds = source.resources.map { it.resourceIdentifier }.toSet()
+        // Resources (repos, issue trackers) — auto-merge: add all from source that target doesn't have
         val targetResIds = target.resources.map { it.resourceIdentifier }.toSet()
         val newResources = source.resources.filter { it.resourceIdentifier !in targetResIds }
         if (newResources.isNotEmpty()) {
-            conflicts.add(MergeConflictDto(
-                key = "resources", label = "Zdroje (${newResources.size} novych)",
-                sourceValue = newResources.joinToString(", ") { it.displayName.ifBlank { it.resourceIdentifier } },
-                targetValue = target.resources.joinToString(", ") { it.displayName.ifBlank { it.resourceIdentifier } },
-                canMergeBoth = true, category = "RESOURCE",
-            ))
+            autoMigrate.add(MergeMigrationDto("resources", newResources.size))
         }
 
         // Detect conflicts: guidelines (unique per clientId+projectId)
@@ -239,35 +233,8 @@ class ProjectService(
             }
         }
 
-        // Detect conflicts: agent preferences (unique per clientId+projectId+key)
-        val sourcePrefs = mongoTemplate.find(
-            org.springframework.data.mongodb.core.query.Query(
-                org.springframework.data.mongodb.core.query.Criteria.where("projectId").`is`(sourceId.toString()),
-            ),
-            org.bson.Document::class.java, "agent_preferences",
-        ).collectList().awaitSingle()
-        val targetPrefs = mongoTemplate.find(
-            org.springframework.data.mongodb.core.query.Query(
-                org.springframework.data.mongodb.core.query.Criteria.where("projectId").`is`(targetId.toString()),
-            ),
-            org.bson.Document::class.java, "agent_preferences",
-        ).collectList().awaitSingle()
-        val targetPrefKeys = targetPrefs.mapNotNull { it.getString("key") }.toSet()
-        for (srcPref in sourcePrefs) {
-            val key = srcPref.getString("key") ?: continue
-            if (key in targetPrefKeys) {
-                val tgtPref = targetPrefs.first { it.getString("key") == key }
-                val srcVal = srcPref.getString("value") ?: ""
-                val tgtVal = tgtPref.getString("value") ?: ""
-                if (srcVal != tgtVal) {
-                    conflicts.add(MergeConflictDto(
-                        key = "preference:$key", label = "Preference: $key",
-                        sourceValue = srcVal, targetValue = tgtVal,
-                        canMergeBoth = false, category = "SETTING",
-                    ))
-                }
-            }
-        }
+        // Preferences, filtering rules, learning — auto-merge (no user conflict)
+        // Source values fill gaps in target; duplicates resolved by keeping target's version
 
         // AI-assisted merge for TEXT conflicts — generate suggested merged value
         val resolvedConflicts = conflicts.map { conflict ->
@@ -326,18 +293,14 @@ class ProjectService(
             }
         }
 
-        // Resources — MERGE_BOTH adds source resources to target
-        val resRes = resolutionMap["resources"]
-        if (resRes?.resolution == "MERGE_BOTH" || resRes?.resolution == "KEEP_SOURCE") {
-            val targetResIds = target.resources.map { it.resourceIdentifier }.toSet()
-            val newRes = source.resources.filter { it.resourceIdentifier !in targetResIds }
-            if (newRes.isNotEmpty()) {
-                val merged = target.copy(
-                    resources = target.resources + newRes,
-                    resourceLinks = target.resourceLinks + source.resourceLinks,
-                )
-                projectRepository.save(merged)
-            }
+        // Resources — always merge (add source resources that target doesn't have)
+        val targetResIds = target.resources.map { it.resourceIdentifier }.toSet()
+        val newRes = source.resources.filter { it.resourceIdentifier !in targetResIds }
+        if (newRes.isNotEmpty()) {
+            projectRepository.save(target.copy(
+                resources = target.resources + newRes,
+                resourceLinks = target.resourceLinks + source.resourceLinks,
+            ))
         }
 
         // Guidelines — handle TEXT merge
@@ -376,34 +339,6 @@ class ProjectService(
                         org.springframework.data.mongodb.core.query.Query(
                             org.springframework.data.mongodb.core.query.Criteria.where("projectId").`is`(sourceId.toString()),
                         ), "guidelines",
-                    ).awaitSingle()
-                }
-            }
-        }
-
-        // Preferences — apply per-key resolutions
-        for ((key, res) in resolutionMap) {
-            if (!key.startsWith("preference:")) continue
-            val prefKey = key.removePrefix("preference:")
-            when (res.resolution) {
-                "KEEP_TARGET" -> {
-                    // Delete source preference
-                    mongoTemplate.remove(
-                        org.springframework.data.mongodb.core.query.Query(
-                            org.springframework.data.mongodb.core.query.Criteria
-                                .where("projectId").`is`(sourceId.toString())
-                                .and("key").`is`(prefKey),
-                        ), "agent_preferences",
-                    ).awaitSingle()
-                }
-                "KEEP_SOURCE" -> {
-                    // Delete target preference (source will be migrated)
-                    mongoTemplate.remove(
-                        org.springframework.data.mongodb.core.query.Query(
-                            org.springframework.data.mongodb.core.query.Criteria
-                                .where("projectId").`is`(targetId.toString())
-                                .and("key").`is`(prefKey),
-                        ), "agent_preferences",
                     ).awaitSingle()
                 }
             }

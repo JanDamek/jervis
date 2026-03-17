@@ -511,8 +511,8 @@ private fun MergeProjectDialog(
                                             maxLines = 2,
                                         )
                                     }
-                                    // Custom / AI merged option — editable text field
-                                    if (conflict.category == "TEXT") {
+                                    // Editable merge option — pre-filled with AI suggestion
+                                    if (true) { // All conflicts shown in dialog are TEXT (settings/resources auto-merge)
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -558,22 +558,7 @@ private fun MergeProjectDialog(
                                             }
                                         }
                                     }
-                                    // Both option (for RESOURCE category)
-                                    if (conflict.canMergeBoth && conflict.category != "TEXT") {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable { resolutions = resolutions + (conflict.key to "MERGE_BOTH") }
-                                                .padding(vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            androidx.compose.material3.RadioButton(
-                                                selected = currentRes == "MERGE_BOTH",
-                                                onClick = { resolutions = resolutions + (conflict.key to "MERGE_BOTH") },
-                                            )
-                                            Text("Oboje", style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    }
+                                    // (Resources and settings auto-merge — no UI needed)
                                 }
                             }
                             Spacer(Modifier.height(4.dp))
