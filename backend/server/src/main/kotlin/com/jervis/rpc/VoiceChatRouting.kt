@@ -768,7 +768,7 @@ private suspend fun collectChatResponse(
 private suspend fun generateTtsAudio(text: String): String? {
     val response = ttsClient.post(TTS_URL) {
         contentType(ContentType.Application.Json)
-        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":1.0}""")
+        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":1.5}""")
     }
 
     val audioBytes = response.readBytes()
