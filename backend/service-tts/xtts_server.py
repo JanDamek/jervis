@@ -390,7 +390,7 @@ def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue
                         gpt_cond_latent=_gpt_cond_latent,
                         speaker_embedding=_speaker_embedding,
                         speed=speed,
-                        stream_chunk_size=20,  # tokens per chunk, default balanced latency/quality
+                        stream_chunk_size=30,  # tokens per chunk — larger = better quality, ~2s first chunk on P40
                     )
 
                     for audio_chunk in stream_gen:

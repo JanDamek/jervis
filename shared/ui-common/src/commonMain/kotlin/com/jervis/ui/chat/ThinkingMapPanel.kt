@@ -65,13 +65,13 @@ fun ThinkingMapPanel(
 
     val title = when {
         showDetail -> when (detailGraph?.graphType) {
-            "thinking_map" -> "Myšlenková mapa"
+            "thinking_map" -> "Myšlenkový graf"
             else -> "Detail grafu"
         }
         else -> when (activeMap?.graphType) {
-            "memory_map" -> "Paměťová mapa"
-            "thinking_map" -> "Myšlenková mapa"
-            else -> "Mapa"
+            "memory_map" -> "Paměťový graf"
+            "thinking_map" -> "Myšlenkový graf"
+            else -> "Graf"
         }
     }
 
@@ -202,7 +202,7 @@ fun ThinkingMapPanel(
                     }
                 } else {
                     Text(
-                        text = "Žádná aktivní mapa",
+                        text = "Žádný aktivní graf",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 16.dp),

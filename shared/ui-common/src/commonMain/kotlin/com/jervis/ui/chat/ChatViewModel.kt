@@ -182,7 +182,7 @@ class ChatViewModel(
                 if (graph != null && graph.vertices.isNotEmpty()) {
                     _detailThinkingMap.value = graph
                 } else {
-                    onError("Myšlenková mapa nenalezena (ID: ${subGraphId.take(20)}...)")
+                    onError("Myšlenkový graf nenalezen (ID: ${subGraphId.take(20)}...)")
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e

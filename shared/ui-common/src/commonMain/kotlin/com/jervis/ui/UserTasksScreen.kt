@@ -65,6 +65,7 @@ fun UserTasksScreen(
     onNavigateToProject: ((clientId: String, projectId: String?) -> Unit)? = null,
     onRefreshBadge: (() -> Unit)? = null,
     userTaskCancelled: kotlinx.coroutines.flow.SharedFlow<String>? = null,
+    initialTaskId: String? = null,
 ) {
     var listItems by remember { mutableStateOf<List<UserTaskListItemDto>>(emptyList()) }
     var hasMore by remember { mutableStateOf(false) }
@@ -150,6 +151,28 @@ fun UserTasksScreen(
     LaunchedEffect(Unit) {
         loadTasks()
         onRefreshBadge?.invoke()
+    }
+
+    // Auto-open task detail when navigated from alert card
+    LaunchedEffect(initialTaskId) {
+        if (initialTaskId != null) {
+            try {
+                val task = repository.userTasks.getById(initialTaskId)
+                if (task != null) {
+                    selectedFullTask = task
+                    selectedListItem = UserTaskListItemDto(
+                        id = task.id,
+                        title = task.title,
+                        state = task.state,
+                        projectId = task.projectId,
+                        clientId = task.clientId,
+                        createdAtEpochMillis = task.createdAtEpochMillis,
+                    )
+                }
+            } catch (_: Exception) {
+                // Task may not exist — ignore
+            }
+        }
     }
 
     // Remove cancelled tasks from list reactively (event from global stream)

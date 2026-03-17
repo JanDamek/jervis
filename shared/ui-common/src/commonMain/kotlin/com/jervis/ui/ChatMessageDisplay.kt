@@ -48,6 +48,15 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Watch
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -135,6 +144,7 @@ internal fun ChatArea(
     isTtsPlaying: Boolean = false,
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
     onLoadTaskGraph: (String) -> Unit = {},
+    onNavigateToTask: ((taskId: String) -> Unit)? = null,
     jobLogsService: IJobLogsService? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -216,6 +226,7 @@ internal fun ChatArea(
                         isTtsPlaying = isTtsPlaying,
                         taskGraphs = taskGraphs,
                         onLoadTaskGraph = onLoadTaskGraph,
+                        onNavigateToTask = onNavigateToTask,
                         jobLogsService = jobLogsService,
                     )
 
@@ -380,6 +391,7 @@ private fun ChatMessageItem(
     isTtsPlaying: Boolean = false,
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
     onLoadTaskGraph: (String) -> Unit = {},
+    onNavigateToTask: ((taskId: String) -> Unit)? = null,
     jobLogsService: IJobLogsService? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -673,7 +685,7 @@ private fun ChatMessageItem(
                     }
                 }
 
-                // Task graph section — lazy-loaded on demand, only when graph exists (server-side check)
+                // Task graph section — auto-loaded when graph exists
                 val graphTaskId = message.metadata["taskId"] ?: message.metadata["contextTaskId"]
                 val hasGraph = message.metadata["hasGraph"] == "true"
                 if (graphTaskId != null && hasGraph) {
@@ -682,22 +694,9 @@ private fun ChatMessageItem(
                         // Graph loaded — show it
                         TaskGraphSection(graph = graphEntry)
                     } else if (graphTaskId !in taskGraphs) {
-                        // Not loaded yet — show "load graph" button
-                        TextButton(
-                            onClick = { onLoadTaskGraph(graphTaskId) },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.AccountTree,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                "Zobrazit graf",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
+                        // Not loaded yet — auto-load on first composition
+                        LaunchedEffect(graphTaskId) {
+                            onLoadTaskGraph(graphTaskId)
                         }
                     } else if (graphEntry != null && graphEntry.vertices.isEmpty()) {
                         // Graph exists but load returned empty — rare edge case
@@ -823,77 +822,103 @@ private fun ChatMessageItem(
             }
         }
     } else if (message.messageType == ChatMessage.MessageType.URGENT_ALERT) {
-        // Urgent alert — always expanded, errorContainer border
+        // Urgent alert — source icon, summary, clickable to task detail
+        val alertSourceUrn = message.metadata["sourceUrn"]
+        val alertTaskId = message.metadata["taskId"]
+        val alertTaskName = message.metadata["taskName"]
+        val sourceInfo = remember(alertSourceUrn) { parseSourceUrn(alertSourceUrn) }
+
         Card(
             colors =
                 CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
                 ),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
-            modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
+            modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
+                .then(
+                    if (alertTaskId != null && onNavigateToTask != null) {
+                        Modifier.clickable { onNavigateToTask(alertTaskId) }
+                    } else Modifier
+                ),
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
+                // Header: source icon + source label + warning icon
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(
-                        Icons.Default.Warning,
+                        sourceInfo.icon,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.error,
                     )
                     Text(
-                        text = "Upozornění",
-                        style = MaterialTheme.typography.titleSmall,
+                        text = sourceInfo.label,
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
+                    Spacer(modifier = Modifier.weight(1f))
+                    if (alertTaskId != null && onNavigateToTask != null) {
+                        TextButton(
+                            onClick = { onNavigateToTask(alertTaskId) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.OpenInNew,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Detail", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                SelectionContainer {
-                    SafeMarkdown(
-                        content = message.text,
-                        colors = markdownColor(
-                            text = MaterialTheme.colorScheme.onErrorContainer,
-                            codeBackground = MaterialTheme.colorScheme.errorContainer,
-                        ),
-                        typography = MaterialTheme.typography.bodyMedium.let { base ->
-                            markdownTypography(
-                                text = base,
-                                code = MaterialTheme.typography.bodySmall,
-                                paragraph = base,
-                                h1 = base.copy(fontWeight = FontWeight.Bold),
-                                h2 = base.copy(fontWeight = FontWeight.SemiBold),
-                                h3 = base.copy(fontWeight = FontWeight.SemiBold),
-                                h4 = base.copy(fontWeight = FontWeight.SemiBold),
-                                h5 = base.copy(fontWeight = FontWeight.Medium),
-                                h6 = base.copy(fontWeight = FontWeight.Medium),
-                                list = base,
-                                ordered = base,
-                                bullet = base,
-                            )
-                        },
-                        fallbackStyle = MaterialTheme.typography.bodyMedium,
+                // Task name (bold title)
+                if (!alertTaskName.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = alertTaskName,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
+
+                // Summary (compact — max 3 lines, rest in expandable content)
+                Spacer(modifier = Modifier.height(4.dp))
+                // Extract summary without bold task name (already shown above)
+                val summaryText = remember(message.text, alertTaskName) {
+                    if (!alertTaskName.isNullOrBlank()) {
+                        message.text.removePrefix("**$alertTaskName**").trimStart('\n', ' ')
+                    } else message.text
+                }
+                Text(
+                    text = summaryText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
 
                 // Suggested action
                 message.metadata["suggestedAction"]?.let { action ->
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Doporučení: $action",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
                     )
                 }
 
                 // Task content (email body, issue details, etc.)
                 message.metadata["taskContent"]?.let { content ->
                     var showContent by remember { mutableStateOf(false) }
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.error.copy(alpha = 0.2f))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -902,12 +927,12 @@ private fun ChatMessageItem(
                         TextButton(
                             onClick = { showContent = !showContent },
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                            modifier = Modifier.height(32.dp),
+                            modifier = Modifier.height(28.dp),
                         ) {
                             Icon(
                                 if (showContent) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(14.dp),
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
@@ -946,11 +971,11 @@ private fun ChatMessageItem(
                     }
                 }
 
-                // User response (shown inline after reply, same as BACKGROUND_RESULT)
+                // User response (shown inline after reply)
                 val alertHasResponse = message.userResponse != null
                 if (alertHasResponse) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.Top,
                     ) {
@@ -969,8 +994,6 @@ private fun ChatMessageItem(
                 }
 
                 // Timestamp + action buttons
-                val alertSourceUrn = message.metadata["sourceUrn"]
-                val alertTaskId = message.metadata["taskId"]
                 var showAlertReply by remember { mutableStateOf(false) }
                 var alertReplyText by remember { mutableStateOf("") }
 
@@ -1044,8 +1067,6 @@ private fun ChatMessageItem(
                         IconButton(
                             onClick = {
                                 if (alertReplyText.isNotBlank()) {
-                                    // Send reply as context-aware chat message
-                                    val context = alertSourceUrn?.let { "Re: alert ($it): " } ?: "Re: alert: "
                                     onSendReply(alertTaskId ?: alertSourceUrn ?: "alert", alertReplyText)
                                     alertReplyText = ""
                                     showAlertReply = false
@@ -1698,6 +1719,34 @@ private fun ConfidenceBadge(
  * Falls back to plain Text if the markdown parser produces
  * out-of-bounds source positions (StringIndexOutOfBoundsException).
  */
+/** Parsed source URN info for display in alert cards. */
+private data class SourceInfo(val icon: ImageVector, val label: String)
+
+/** Parse sourceUrn prefix to determine source type icon and Czech label. */
+private fun parseSourceUrn(sourceUrn: String?): SourceInfo {
+    if (sourceUrn == null) return SourceInfo(Icons.Default.Warning, "Upozornění")
+    // Extract prefix: supports both "prefix::..." and "prefix://..." and "prefix:..." formats
+    val prefix = sourceUrn.substringBefore("::").substringBefore("://").substringBefore(":")
+    return when (prefix) {
+        "email", "email-attachment" -> SourceInfo(Icons.Default.Email, "E-mail")
+        "jira", "jira-attachment" -> SourceInfo(Icons.Default.BugReport, "JIRA")
+        "github-issue" -> SourceInfo(Icons.Default.BugReport, "GitHub Issue")
+        "gitlab-issue" -> SourceInfo(Icons.Default.BugReport, "GitLab Issue")
+        "slack" -> SourceInfo(Icons.Default.Chat, "Slack")
+        "teams" -> SourceInfo(Icons.Default.Groups, "Teams")
+        "discord" -> SourceInfo(Icons.Default.Chat, "Discord")
+        "confluence", "confluence-attachment" -> SourceInfo(Icons.Default.Description, "Confluence")
+        "scheduled", "system" -> SourceInfo(Icons.Default.Schedule, "Plánovaná úloha")
+        "meeting" -> SourceInfo(Icons.Default.Groups, "Schůzka")
+        "git" -> SourceInfo(Icons.Default.Code, "Git")
+        "merge-request" -> SourceInfo(Icons.Default.Code, "Merge Request")
+        "doc" -> SourceInfo(Icons.Default.Description, "Dokument")
+        "chat" -> SourceInfo(Icons.Default.Chat, "Chat")
+        "agent" -> SourceInfo(Icons.Default.AccountTree, "Agent")
+        else -> SourceInfo(Icons.Default.Warning, sourceUrn.substringBefore("::").substringBefore("://").take(20))
+    }
+}
+
 @Composable
 internal fun SafeMarkdown(
     content: String,

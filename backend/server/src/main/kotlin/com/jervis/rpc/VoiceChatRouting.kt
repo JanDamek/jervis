@@ -12,6 +12,7 @@ import com.jervis.configuration.properties.WhisperProperties
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
@@ -462,32 +463,34 @@ fun Routing.installVoiceChatApi(
                 val ttsStreamUrl = TTS_URL.replace("/tts", "/tts/stream")
                 val streamClient = HttpClient(io.ktor.client.engine.cio.CIO) {
                     install(HttpTimeout) {
-                        requestTimeoutMillis = 120_000
+                        requestTimeoutMillis = 300_000   // 5 min total for long texts
                         connectTimeoutMillis = 5_000
-                        socketTimeoutMillis = 120_000
+                        socketTimeoutMillis = 120_000    // 2 min between chunks
                     }
                 }
                 try {
-                    val ttsResp = streamClient.post(ttsStreamUrl) {
+                    // Use preparePost + execute to enable true streaming (don't buffer full response)
+                    val statement = streamClient.preparePost(ttsStreamUrl) {
                         contentType(ContentType.Application.Json)
                         setBody("""{"text":"${body.text.replace("\"", "\\\"").replace("\n", " ")}","speed":${body.speed}}""")
                     }
+                    statement.execute { ttsResp ->
+                        // Forward SSE events from XTTS → client
+                        val channel = ttsResp.bodyAsChannel()
+                        var ttsEvent = ""
+                        var ttsData = ""
 
-                    // Forward SSE events from XTTS → client
-                    val channel = ttsResp.bodyAsChannel()
-                    var ttsEvent = ""
-                    var ttsData = ""
-
-                    while (!channel.isClosedForRead) {
-                        val line = channel.readUTF8Line(1_000_000) ?: break
-                        when {
-                            line.startsWith("event: ") -> ttsEvent = line.removePrefix("event: ").trim()
-                            line.startsWith("data: ") -> ttsData = line.removePrefix("data: ").trim()
-                            line.isBlank() && ttsData.isNotEmpty() -> {
-                                // Forward directly — XTTS already sends tts_audio/done/error events
-                                sse(ttsEvent, ttsData)
-                                ttsEvent = ""
-                                ttsData = ""
+                        while (!channel.isClosedForRead) {
+                            val line = channel.readUTF8Line(1_000_000) ?: break
+                            when {
+                                line.startsWith("event: ") -> ttsEvent = line.removePrefix("event: ").trim()
+                                line.startsWith("data: ") -> ttsData = line.removePrefix("data: ").trim()
+                                line.isBlank() && ttsData.isNotEmpty() -> {
+                                    // Forward directly — XTTS sends tts_header/tts_pcm/done/error events
+                                    sse(ttsEvent, ttsData)
+                                    ttsEvent = ""
+                                    ttsData = ""
+                                }
                             }
                         }
                     }

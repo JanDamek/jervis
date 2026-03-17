@@ -1,24 +1,20 @@
-"""LangGraph-based runner for Graph Agent.
+"""LangGraph-based runner for Graph Agent (reactive/lazy progressive decomposition).
 
-Uses LangGraph (proven framework) for execution, with AgentGraph as the
-planning structure. Each vertex type maps to a LangGraph node handler
-that performs a specific responsibility:
-
-  PLANNER      → decomposes / plans approach
-  INVESTIGATOR → researches context (KB, web, code)
-  EXECUTOR     → performs concrete work (coding, tracker)
-  VALIDATOR    → verifies results (tests, lint, checks)
-  REVIEWER     → reviews quality (code review, output review)
-  SYNTHESIS    → combines results from upstream vertices
-  GATE         → decision / approval point
-  SETUP        → project scaffolding + environment provisioning
+Execution model:
+  1. Root vertex = the original request, type TASK, status READY
+  2. Each vertex tries to solve directly (LLM + tools agentic loop)
+  3. If too complex → vertex calls decompose_task tool → creates children → WAITING_CHILDREN
+  4. Children execute recursively (same pattern)
+  5. When ALL children complete → parent resumes with their summaries → evaluates → done
+  6. Simple questions = 1 vertex, direct answer, no decomposition at all
 
 The graph is a loop:
-  decompose → select_next → dispatch_vertex → complete_vertex → [loop back to select_next]
-                                                              → synthesize (when all done)
+  init_root → select_next → dispatch_vertex → [loop back to select_next]
+                                             → synthesize (when all done)
 
+No upfront decomposition — the graph grows dynamically from actual needs.
 AgentGraph is carried in LangGraph state — LangGraph handles checkpointing,
-interrupt/resume, and execution flow. We just teach it HOW to think.
+interrupt/resume, and execution flow.
 """
 
 from __future__ import annotations
@@ -41,12 +37,13 @@ from app.graph.nodes._helpers import (
     llm_with_cloud_fallback,
     parse_json_response,
 )
-from app.agent.decomposer import decompose_root, decompose_vertex
+from app.agent.decomposer import create_child_vertices, _format_evidence
 from app.agent.graph import (
     block_vertex,
     complete_vertex,
     fail_vertex,
     find_blocked_vertices,
+    get_children,
     get_ready_vertices,
     resume_vertex,
     start_vertex,
@@ -77,6 +74,15 @@ from app.tools.executor import AskUserInterrupt, execute_tool
 from app.tools.ollama_parsing import extract_tool_calls
 
 logger = logging.getLogger(__name__)
+
+
+class DecomposeInterrupt(Exception):
+    """Raised when a vertex decides to decompose via the decompose_task tool.
+
+    This interrupts the agentic tool loop — the vertex transitions to
+    WAITING_CHILDREN and will be resumed after all children complete.
+    """
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -110,32 +116,32 @@ class GraphAgentState(TypedDict, total=False):
 
 
 async def node_decompose(state: GraphAgentState) -> dict:
-    """Decompose the user request into a AgentGraph (vertices + edges).
+    """Initialize the graph with a root TASK vertex (no upfront LLM decomposition).
 
-    ALWAYS goes through LLM decomposition — even simple questions like
-    "kolik je hodin?" because complexity can't be judged from text length.
-    ("jaký je stav projektu?" is short but needs deep analysis.)
+    Reactive model: the root vertex will try to solve directly. If it needs
+    sub-tasks, it calls decompose_task during its agentic tool loop.
 
-    The decomposer LLM decides: simple → 1 vertex, complex → multiple vertices.
+    Pre-built thinking maps (from chat dispatch or pod restart) are handled
+    as before — skip initialization, reuse existing graph.
     """
-    # Pre-built thinking map — skip decomposition, graph already has vertices
+    # Pre-built thinking map — skip initialization, graph already has vertices
     if state.get("task_graph"):
         graph = AgentGraph(**state["task_graph"])
         agent_store.cache_subgraph(graph)
         agent_store.mark_dirty(graph.task_id)
         logger.info(
-            "Skipping decomposition — pre-built thinking map with %d vertices",
+            "Skipping init — pre-built thinking map with %d vertices",
             len(graph.vertices),
         )
         await report_graph_status(graph, f"Pre-built map with {len(graph.vertices) - 1} vertices")
         return {"current_vertex_id": None, "graph_error": None}
 
     if "task" not in state:
-        return {"graph_error": "Missing task context — cannot decompose (stale checkpoint?)"}
+        return {"graph_error": "Missing task context — cannot initialize (stale checkpoint?)"}
     task = CodingTask(**state["task"])
-    evidence = state.get("evidence_pack")
 
-    # Create graph with root vertex
+    # Create graph with root vertex (type=TASK, status=READY)
+    # Root vertex IS the task — it will try direct resolution first
     graph = create_task_graph(
         task_id=task.id,
         client_id=task.client_id,
@@ -144,15 +150,17 @@ async def node_decompose(state: GraphAgentState) -> dict:
         root_description=task.query,
     )
 
-    # Fetch existing resources context for the decomposer
+    # Override root vertex type: TASK instead of ROOT (it will execute, not just decompose)
+    root = graph.vertices[graph.root_vertex_id]
+    root.vertex_type = VertexType.TASK
+
+    # Build evidence context for the root vertex description
+    evidence = state.get("evidence_pack") or {}
     resource_context = await _fetch_resource_context(task.client_id, task.project_id)
-    if evidence is None:
-        evidence = {}
     if resource_context:
         evidence["existing_resources"] = resource_context
 
-    # Include chat history for iterative requirement building
-    # (user may have described requirements across multiple messages)
+    # Include chat history
     chat_history_data = state.get("chat_history")
     if chat_history_data:
         chat_payload = ChatHistoryPayload(**chat_history_data) if isinstance(chat_history_data, dict) else chat_history_data
@@ -164,21 +172,15 @@ async def node_decompose(state: GraphAgentState) -> dict:
         if summary_parts:
             evidence["chat_history_summary"] = "\n".join(summary_parts)
 
-    # LLM-driven decomposition — LLM decides complexity, not heuristics
-    try:
-        graph = await decompose_root(
-            graph=graph,
-            state=state,
-            evidence=evidence,
-            guidelines="",
-        )
-    except Exception as e:
-        logger.error("Decomposition failed: %s", e, exc_info=True)
-        return {
-            "task_graph": None,
-            "graph_error": f"Decomposition failed: {e}",
-            "final_result": f"Error: decomposition failed — {e}",
-        }
+    # Enrich root vertex description with evidence (so the LLM has context)
+    if evidence:
+        evidence_text = _format_evidence(evidence)
+        if evidence_text and evidence_text != "(no evidence available)":
+            root.description = f"{root.description}\n\n## Context\n{evidence_text}"
+            root.input_request = root.description
+
+    # Graph is immediately READY — root vertex will execute directly
+    graph.status = GraphStatus.READY
 
     # Validate
     validation = validate_graph(graph)
@@ -194,7 +196,7 @@ async def node_decompose(state: GraphAgentState) -> dict:
     # Cache in RAM + mark dirty for async DB flush
     agent_store.cache_subgraph(graph)
     agent_store.mark_dirty(graph.task_id)
-    await report_graph_status(graph, f"Decomposed into {len(graph.vertices) - 1} vertices")
+    await report_graph_status(graph, "Root vertex ready — trying direct resolution")
 
     return {
         "task_graph": graph.model_dump(),
@@ -370,10 +372,28 @@ async def _execute_single_vertex(
     vertex_id: str,
     state: dict,
 ) -> AgentGraph:
-    """Execute a single vertex (shared logic for serial and parallel paths)."""
-    vertex = start_vertex(graph, vertex_id)
+    """Execute a single vertex (shared logic for serial and parallel paths).
+
+    Handles two cases:
+    1. Normal execution: vertex tries direct resolution via agentic tool loop
+    2. Resumed from WAITING_CHILDREN: children done, parent evaluates results
+    """
+    vertex = graph.vertices.get(vertex_id)
     if not vertex:
         return graph
+
+    is_resumed = vertex.status == VertexStatus.WAITING_CHILDREN
+
+    if is_resumed:
+        # Resumed — children are done, their summaries are in incoming_context
+        # (set by resume_parent_after_children in get_ready_vertices)
+        vertex.status = VertexStatus.RUNNING
+        vertex.started_at = vertex.started_at  # Keep original start time
+        graph.status = GraphStatus.EXECUTING
+    else:
+        vertex = start_vertex(graph, vertex_id)
+        if not vertex:
+            return graph
 
     # Immediately flush RUNNING status to DB so UI sees "Probíhá" right away
     agent_store.cache_subgraph(graph)
@@ -382,21 +402,33 @@ async def _execute_single_vertex(
     await report_vertex_started(graph, vertex_id)
 
     try:
-        # PLANNER/DECOMPOSE → recursive decomposition (creates sub-graph)
-        if vertex.vertex_type in (VertexType.PLANNER, VertexType.DECOMPOSE):
-            graph = await _handle_decompose_vertex(graph, vertex, state)
-        else:
-            # All other types → agentic tool loop (NO timeout — GPU can be busy for hours)
-            context = _build_context(vertex)
-            result, summary = await _dispatch_vertex_handler(vertex, context, state, graph=graph)
+        # ALL vertex types go through the same agentic tool loop
+        # (no special PLANNER/DECOMPOSE handling — decompose_task tool is available to all)
+        context = _build_context(vertex)
 
-            # Complete vertex — fills outgoing edge payloads
-            complete_vertex(
-                graph, vertex_id,
-                result=result,
-                result_summary=summary,
-                local_context=result,
-            )
+        if is_resumed:
+            # Build context with children results for evaluation
+            context = _build_context_with_children_results(vertex, context)
+
+        result, summary = await _dispatch_vertex_handler(vertex, context, state, graph=graph)
+
+        # Complete vertex — fills outgoing edge payloads
+        complete_vertex(
+            graph, vertex_id,
+            result=result,
+            result_summary=summary,
+            local_context=result,
+        )
+
+    except DecomposeInterrupt:
+        # Vertex decided to decompose — children already created by the tool handler
+        logger.info(
+            "Vertex %s decomposed into children — WAITING_CHILDREN", vertex_id,
+        )
+        vertex.status = VertexStatus.WAITING_CHILDREN
+        # Don't complete — wait for children to finish
+        agent_store.cache_subgraph(graph)
+        await agent_store.save(graph)
 
     except GraphInterrupt:
         # ASK_USER interrupt — mark vertex BLOCKED (not FAILED)
@@ -415,7 +447,6 @@ async def _execute_single_vertex(
     if (
         completed_vertex
         and completed_vertex.status == VertexStatus.COMPLETED
-        and completed_vertex.vertex_type not in (VertexType.PLANNER, VertexType.DECOMPOSE)
     ):
         try:
             new_ids = await analyze_impact(graph, completed_vertex, state)
@@ -440,7 +471,16 @@ async def _execute_single_vertex(
 
 
 async def node_synthesize(state: GraphAgentState) -> dict:
-    """Compose the final result from completed vertices using LLM synthesis."""
+    """Compose the final result from the graph.
+
+    In the reactive model, the root vertex IS the evaluator — its result
+    is the final answer (it synthesizes children results as part of its
+    resumed agentic loop). No separate synthesis LLM call needed for
+    simple cases.
+
+    For complex graphs with multiple terminal vertices, falls back to
+    LLM synthesis.
+    """
     graph_data = state.get("task_graph")
     if not graph_data:
         return {"final_result": state.get("graph_error", "No graph available")}
@@ -456,44 +496,50 @@ async def node_synthesize(state: GraphAgentState) -> dict:
         graph.status = GraphStatus.COMPLETED
     graph.completed_at = str(int(time.time()))
 
-    raw_result = get_final_result(graph)
-    stats = get_stats(graph)
-
-    # LLM synthesis — combine vertex results intelligently
-    if raw_result and len(graph.vertices) > 2:
-        try:
-            task_data = state.get("task", {})
-            original_request = task_data.get("message", "")
-            response = await llm_with_cloud_fallback(
-                state=state,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a synthesis agent. Combine the results from multiple "
-                            "sub-tasks into a coherent, well-structured final answer. "
-                            "Remove redundancy, resolve conflicts, and present a unified response. "
-                            "Use the user's language."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"## Original request\n{original_request}\n\n"
-                            f"## Sub-task results\n{raw_result}\n\n"
-                            "Synthesize these results into a coherent final answer."
-                        ),
-                    },
-                ],
-                task_type="graph_synthesis",
-                max_tokens=settings.default_output_tokens,
-            )
-            result = response.choices[0].message.content or raw_result
-        except Exception as e:
-            logger.warning("LLM synthesis failed, using concatenation: %s", e)
-            result = raw_result
+    # In reactive model, prefer root vertex result (it's the evaluator)
+    root = graph.vertices.get(graph.root_vertex_id)
+    if root and root.status == VertexStatus.COMPLETED and root.result:
+        result = root.result
     else:
-        result = raw_result
+        # Fallback: collect from terminal vertices
+        raw_result = get_final_result(graph)
+        stats = get_stats(graph)
+
+        # LLM synthesis for complex graphs with multiple terminals
+        if raw_result and len(graph.vertices) > 2:
+            try:
+                task_data = state.get("task", {})
+                original_request = task_data.get("message", "")
+                response = await llm_with_cloud_fallback(
+                    state=state,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a synthesis agent. Combine the results from multiple "
+                                "sub-tasks into a coherent, well-structured final answer. "
+                                "Remove redundancy, resolve conflicts, and present a unified response. "
+                                "Use the user's language."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"## Original request\n{original_request}\n\n"
+                                f"## Sub-task results\n{raw_result}\n\n"
+                                "Synthesize these results into a coherent final answer."
+                            ),
+                        },
+                    ],
+                    task_type="graph_synthesis",
+                    max_tokens=settings.default_output_tokens,
+                )
+                result = response.choices[0].message.content or raw_result
+            except Exception as e:
+                logger.warning("LLM synthesis failed, using concatenation: %s", e)
+                result = raw_result
+        else:
+            result = raw_result
 
     # Compact completed vertices — keep result_summary, drop heavy fields
     # This reduces MongoDB document size significantly for large thinking maps
@@ -784,6 +830,7 @@ async def run_graph_agent(
         )
 
         # Reset stale RUNNING vertices back to READY (pod restart killed their execution)
+        # WAITING_CHILDREN vertices are preserved — their children may still be running
         for v in existing_graph.vertices.values():
             if v.status == VertexStatus.RUNNING:
                 logger.info(
@@ -807,9 +854,10 @@ async def run_graph_agent(
                     )
                     resume_vertex(existing_graph, bv.id, user_answer)
 
-        # Mark root vertex as COMPLETED if not already (decomposition already done)
+        # For pre-built thinking maps (old model): mark root as COMPLETED
+        # For reactive model: root is a TASK vertex — don't force-complete it
         root = existing_graph.vertices.get(existing_graph.root_vertex_id)
-        if root and root.status != VertexStatus.COMPLETED:
+        if root and root.vertex_type == VertexType.ROOT and root.status != VertexStatus.COMPLETED:
             complete_vertex(
                 existing_graph, root.id,
                 result="Pre-built thinking map (decomposed by chat)",
@@ -851,14 +899,23 @@ async def run_graph_agent(
 # ---------------------------------------------------------------------------
 
 # System prompts per vertex type
+_DECOMPOSE_HINT = (
+    "\n\nIMPORTANT: Try to solve this task DIRECTLY first using available tools. "
+    "Only use `decompose_task` if the task is genuinely too complex for a single agent pass "
+    "(e.g., requires multiple independent investigations, parallel code changes, etc.). "
+    "Simple questions should NEVER be decomposed."
+)
+
 _SYSTEM_PROMPTS: dict[VertexType, str] = {
     VertexType.PLANNER: (
         "You are the Planner. Analyze the task and create a structured plan. "
         "Break it into clear, actionable steps. Use tools to gather information as needed."
+        + _DECOMPOSE_HINT
     ),
     VertexType.DECOMPOSE: (
         "You are the Planner. Analyze the task and create a structured plan. "
         "Break it into clear, actionable steps. Use tools to gather information as needed."
+        + _DECOMPOSE_HINT
     ),
     VertexType.INVESTIGATOR: (
         "You are the Investigator. Research the topic using the provided tools. "
@@ -868,6 +925,7 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use `extend_thinking_map` sparingly when you discover genuinely separate sub-topics.\n\n"
         "For code-level work (reading files, analyzing code, git history), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead."
+        + _DECOMPOSE_HINT
     ),
     VertexType.EXECUTOR: (
         "You are the Executor. Complete the assigned task using the provided context and tools. "
@@ -878,6 +936,7 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use `extend_thinking_map` sparingly when your task reveals genuinely separate work.\n\n"
         "For code-level work (reading/writing files, running tests), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead."
+        + _DECOMPOSE_HINT
     ),
     VertexType.TASK: (
         "You are the Executor. Complete the assigned task using the provided context and tools. "
@@ -888,18 +947,21 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use `extend_thinking_map` sparingly when your task reveals genuinely separate work.\n\n"
         "For code-level work (reading/writing files, running tests), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead."
+        + _DECOMPOSE_HINT
     ),
     VertexType.VALIDATOR: (
         "You are the Validator. Verify upstream results for correctness and completeness. "
         "Use tools to check claims and artifacts. "
         "Conclude with: PASS (all good) or FAIL (with specific issues).\n\n"
         "For code verification, use `dispatch_coding_agent`."
+        + _DECOMPOSE_HINT
     ),
     VertexType.REVIEWER: (
         "You are the Reviewer. Review upstream work for quality and potential improvements. "
         "Use tools to verify claims. Provide constructive feedback. "
         "Conclude with: APPROVED, NEEDS_CHANGES, or REJECTED.\n\n"
         "For code review, use `dispatch_coding_agent`."
+        + _DECOMPOSE_HINT
     ),
     VertexType.SYNTHESIS: (
         "You are the Synthesizer. Combine upstream results into a coherent, unified response. "
@@ -919,6 +981,7 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Confirm key decisions with the user via `ask_user` before creating infrastructure. "
         "Use `dispatch_coding_agent` for code generation (not inline code). "
         "Use environment tools for provisioning."
+        + _DECOMPOSE_HINT
     ),
 }
 
@@ -1088,7 +1151,7 @@ async def _agentic_vertex(
             available_names = {t.get("function", {}).get("name") for t in tools}
             # Always allow meta-tools (unless tools is explicitly empty = force-finish mode)
             if tools:
-                available_names.update({"request_tools", "extend_thinking_map"})
+                available_names.update({"request_tools", "extend_thinking_map", "decompose_task"})
             else:
                 # Force-finish mode: only allow _finish noop
                 available_names = {"_finish"}
@@ -1131,6 +1194,13 @@ async def _agentic_vertex(
                     "content": tool_result,
                 })
                 continue
+
+            # Handle the decompose_task meta-tool — creates children, interrupts loop
+            if tool_name == "decompose_task":
+                _handle_decompose_task(arguments, vertex, graph)
+                # Raise DecomposeInterrupt to stop the agentic loop
+                # Children are created, vertex will transition to WAITING_CHILDREN
+                raise DecomposeInterrupt()
 
             # Handle the extend_thinking_map meta-tool
             if tool_name == "extend_thinking_map":
@@ -1558,6 +1628,74 @@ def _handle_extend_thinking_map(
     return ". ".join(parts) + ". Continue with your current analysis."
 
 
+def _handle_decompose_task(
+    arguments: dict,
+    vertex: GraphVertex,
+    graph: AgentGraph | None,
+) -> None:
+    """Handle the `decompose_task` meta-tool call.
+
+    Creates child TASK vertices under the current vertex. The vertex will
+    transition to WAITING_CHILDREN and resume when all children complete.
+
+    Raises ValueError if limits are exceeded (caught by agentic loop as failure).
+    """
+    if graph is None:
+        raise ValueError("decompose_task is not available in this context (no graph reference)")
+
+    subtasks = arguments.get("subtasks", [])
+    if not subtasks:
+        raise ValueError("No subtasks provided to decompose_task")
+
+    # Validate subtask format
+    children_specs = []
+    for st in subtasks[:10]:  # Max 10 subtasks
+        title = st.get("title", "").strip()
+        description = st.get("description", "").strip()
+        if not title:
+            continue
+        children_specs.append({"title": title, "description": description or title})
+
+    if not children_specs:
+        raise ValueError("No valid subtasks provided (all missing titles)")
+
+    # Create children via decomposer
+    created = create_child_vertices(graph, vertex, children_specs)
+
+    logger.info(
+        "DECOMPOSE_TASK | vertex=%s | title='%s' | created=%d children",
+        vertex.id, vertex.title, len(created),
+    )
+
+
+def _build_context_with_children_results(
+    vertex: GraphVertex,
+    base_context: str,
+) -> str:
+    """Build context for a resumed parent vertex with children results.
+
+    When a vertex is resumed from WAITING_CHILDREN, its incoming_context
+    contains EdgePayloads from children. Combine with original task context.
+    """
+    parts = [f"## Original Task\n{vertex.input_request}"]
+
+    if vertex.incoming_context:
+        parts.append("\n## Results from sub-tasks")
+        for payload in vertex.incoming_context:
+            parts.append(
+                f"\n### {payload.source_vertex_title}\n{payload.summary}"
+            )
+
+    parts.append(
+        "\n## Instructions\n"
+        "Review the sub-task results above. Combine them into a coherent, "
+        "complete answer to the original task. If any sub-task failed, "
+        "note the failure and work around it if possible."
+    )
+
+    return "\n".join(parts)
+
+
 def _append_assistant_message(
     messages: list[dict],
     message,
@@ -1591,74 +1729,6 @@ async def _dispatch_vertex_handler(
 ) -> tuple[str, str]:
     """Unified dispatch — all vertex types go through the agentic loop."""
     return await _agentic_vertex(vertex, context, state, graph=graph)
-
-
-async def _handle_decompose_vertex(
-    graph: AgentGraph,
-    vertex: GraphVertex,
-    state: dict,
-) -> AgentGraph:
-    """Handle PLANNER/DECOMPOSE vertex — recursive decomposition.
-
-    Instead of executing the vertex via LLM tool loop, calls decompose_vertex()
-    to create sub-vertices + edges in the graph. The vertex itself is marked
-    COMPLETED and its children will be picked up by subsequent select_next cycles.
-
-    If decomposition fails or hits depth/count limits, the vertex is converted
-    to EXECUTOR and falls through to the agentic tool loop on next dispatch.
-    """
-    from app.agent.decomposer import MAX_DECOMPOSE_DEPTH, MAX_TOTAL_VERTICES
-
-    vertex_id = vertex.id
-
-    # Check limits — if exceeded, convert to EXECUTOR and let agentic loop handle it
-    if vertex.depth >= MAX_DECOMPOSE_DEPTH:
-        logger.info(
-            "Vertex %s at depth %d — max depth reached, converting to EXECUTOR",
-            vertex_id, vertex.depth,
-        )
-        vertex.vertex_type = VertexType.EXECUTOR
-        context = _build_context(vertex)
-        result, summary = await _agentic_vertex(vertex, context, state, graph=graph)
-        complete_vertex(graph, vertex_id, result=result, result_summary=summary, local_context=result)
-        return graph
-
-    if len(graph.vertices) >= MAX_TOTAL_VERTICES:
-        logger.info(
-            "Graph has %d vertices — max reached, converting %s to EXECUTOR",
-            len(graph.vertices), vertex_id,
-        )
-        vertex.vertex_type = VertexType.EXECUTOR
-        context = _build_context(vertex)
-        result, summary = await _agentic_vertex(vertex, context, state, graph=graph)
-        complete_vertex(graph, vertex_id, result=result, result_summary=summary, local_context=result)
-        return graph
-
-    # Recursive decomposition — creates sub-vertices + edges
-    try:
-        guidelines = state.get("rules", {}).get("guidelines_text", "")
-        graph = await decompose_vertex(
-            graph=graph,
-            vertex_id=vertex_id,
-            state=state,
-            guidelines=guidelines,
-        )
-        logger.info(
-            "Decomposed vertex %s (depth=%d) — graph now has %d vertices",
-            vertex_id, vertex.depth, len(graph.vertices),
-        )
-    except Exception as e:
-        # Decomposition failed — convert to EXECUTOR as fallback
-        logger.warning(
-            "Decomposition failed for vertex %s, falling back to EXECUTOR: %s",
-            vertex_id, e,
-        )
-        vertex.vertex_type = VertexType.EXECUTOR
-        context = _build_context(vertex)
-        result, summary = await _agentic_vertex(vertex, context, state)
-        complete_vertex(graph, vertex_id, result=result, result_summary=summary, local_context=result)
-
-    return graph
 
 
 # ---------------------------------------------------------------------------

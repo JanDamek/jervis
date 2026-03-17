@@ -88,7 +88,7 @@ private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val 
 }
 
 private fun TopBarMenuItem.toScreen(): Screen = when (this) {
-    TopBarMenuItem.USER_TASKS -> Screen.UserTasks
+    TopBarMenuItem.USER_TASKS -> Screen.UserTasks()
     TopBarMenuItem.MEETINGS -> Screen.Meetings
     TopBarMenuItem.PENDING_TASKS -> Screen.PendingTasks
     TopBarMenuItem.SCHEDULER -> Screen.Scheduler

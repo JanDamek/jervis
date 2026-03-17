@@ -17,6 +17,50 @@ from app.agent.models import VertexType
 logger = logging.getLogger(__name__)
 
 
+TOOL_DECOMPOSE_TASK: dict = {
+    "type": "function",
+    "function": {
+        "name": "decompose_task",
+        "description": (
+            "Break this task into smaller sub-tasks when it's too complex to solve directly. "
+            "Each sub-task will be executed independently and their results returned to you for evaluation.\n\n"
+            "IMPORTANT: Always try to solve the task DIRECTLY first using other tools. "
+            "Only decompose when the task genuinely requires multiple independent investigations "
+            "or parallel work streams. Simple questions should NEVER be decomposed.\n\n"
+            "After decomposition, you will be paused. When all sub-tasks complete, you will be "
+            "resumed with their results and must produce a final answer."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "subtasks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "description": "Short descriptive title for this sub-task",
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": (
+                                    "Full, self-contained description of what this sub-task must accomplish. "
+                                    "Include all relevant context — sub-tasks only see their own description."
+                                ),
+                            },
+                        },
+                        "required": ["title", "description"],
+                    },
+                    "description": "List of sub-tasks to create (max 10)",
+                },
+            },
+            "required": ["subtasks"],
+        },
+    },
+}
+
+
 TOOL_EXTEND_THINKING_MAP: dict = {
     "type": "function",
     "function": {
@@ -141,6 +185,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_TASK_QUEUE_INSPECT,
             TOOL_TASK_QUEUE_SET_PRIORITY,
             TOOL_GET_GUIDELINES,
+            TOOL_DECOMPOSE_TASK,
             _request_tools,
         ]
 
@@ -164,6 +209,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_GET_MEETING_TRANSCRIPT,
             TOOL_LIST_UNCLASSIFIED_MEETINGS,
             TOOL_EXTEND_THINKING_MAP,
+            TOOL_DECOMPOSE_TASK,
             _request_tools,
         ]
 
@@ -186,6 +232,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_LIST_MEETINGS,
             TOOL_GET_MEETING_TRANSCRIPT,
             TOOL_EXTEND_THINKING_MAP,
+            TOOL_DECOMPOSE_TASK,
             _request_tools,
         ]
 
@@ -198,6 +245,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_GIT_BRANCH_LIST,
             TOOL_GET_RECENT_COMMITS,
             TOOL_DISPATCH_CODING_AGENT,
+            TOOL_DECOMPOSE_TASK,
             _request_tools,
         ]
 
@@ -212,6 +260,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_GET_TECHNOLOGY_STACK,
             TOOL_DISPATCH_CODING_AGENT,
             TOOL_GET_GUIDELINES,
+            TOOL_DECOMPOSE_TASK,
             _request_tools,
         ]
 
@@ -237,6 +286,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_MEMORY_STORE,
             TOOL_GET_GUIDELINES,
             TOOL_UPDATE_GUIDELINE,
+            TOOL_DECOMPOSE_TASK,
             _request_tools,
         ]
 

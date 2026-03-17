@@ -79,7 +79,7 @@ fun main() {
                 Separator()
                 Item("User Tasks", onClick = {
                     showMainWindow = true
-                    navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks)
+                    navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks())
                 })
                 Item("Error Logs", onClick = {
                     showMainWindow = true
@@ -126,7 +126,7 @@ fun main() {
                         Separator()
                         Item(
                             "User Tasks",
-                            onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks) },
+                            onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks()) },
                         )
                         Item(
                             "Error Logs",

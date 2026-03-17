@@ -12,6 +12,7 @@ import com.jervis.ui.MainScreenView as MainScreenViewInternal
 fun MainScreen(
     viewModel: MainViewModel,
     onOpenEnvironmentManager: (String) -> Unit = {},
+    onNavigateToTask: ((taskId: String) -> Unit)? = null,
 ) {
     val isOffline by viewModel.connection.isOffline.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
@@ -165,5 +166,6 @@ fun MainScreen(
             )
         },
         jobLogsService = viewModel.chat.jobLogsService,
+        onNavigateToTask = onNavigateToTask,
     )
 }

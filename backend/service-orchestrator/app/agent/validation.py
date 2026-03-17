@@ -185,30 +185,23 @@ def _check_depth_limits(graph: AgentGraph, result: ValidationResult) -> None:
 
 
 def _check_convergence(graph: AgentGraph, result: ValidationResult) -> None:
-    """Check that graph has a root synthesis and all leaf vertices converge to it.
+    """Check graph convergence.
 
-    Convergence means every non-root, non-synthesis leaf vertex has a path
-    (via outgoing DEPENDENCY edges) to the synthesis vertex.
+    In the reactive model, synthesis is optional — the root vertex evaluates
+    children results directly. Only warn for old-style graphs with explicit
+    synthesis vertices that have disconnected leaves.
     """
     # Only check thinking maps (memory maps have different structure)
     if graph.graph_type != GraphType.THINKING_MAP:
         return
 
-    # Find synthesis vertex
+    # In reactive model, no synthesis is fine — root is the evaluator
     synth_id = graph.synthesis_vertex_id
     if not synth_id or synth_id not in graph.vertices:
-        # Check if there's at least one synthesis vertex
-        synth_vertices = [
-            v for v in graph.vertices.values()
-            if v.vertex_type == VertexType.SYNTHESIS
-        ]
-        if not synth_vertices and len(graph.vertices) > 2:
-            result.add_warning(
-                "No synthesis vertex — graph results will be unstructured terminal collection"
-            )
+        # No synthesis vertex — that's fine in the reactive model
         return
 
-    # Check that leaf vertices (no outgoing DEPENDENCY edges) converge
+    # If there IS a synthesis vertex, check leaf convergence (legacy/extend_thinking_map)
     for vid, vertex in graph.vertices.items():
         if vid == graph.root_vertex_id or vid == synth_id:
             continue

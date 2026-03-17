@@ -157,6 +157,9 @@ fun App(
                             Screen.EnvironmentManager(initialEnvironmentId = envId.ifEmpty { null }),
                         )
                     },
+                    onNavigateToTask = { taskId ->
+                        appNavigator.navigateTo(Screen.UserTasks(initialTaskId = taskId))
+                    },
                 )
             }
 
@@ -168,7 +171,7 @@ fun App(
                 )
             }
 
-            Screen.UserTasks -> {
+            is Screen.UserTasks -> {
                 UserTasksScreen(
                     repository = repository,
                     onBack = { appNavigator.goBack() },
@@ -181,6 +184,7 @@ fun App(
                     },
                     onRefreshBadge = { viewModel.notification.refreshUserTaskCount() },
                     userTaskCancelled = viewModel.userTaskCancelled,
+                    initialTaskId = screen.initialTaskId,
                 )
             }
 

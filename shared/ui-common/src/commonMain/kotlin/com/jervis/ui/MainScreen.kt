@@ -106,6 +106,7 @@ fun MainScreenView(
     onPanelWidthChange: (Float) -> Unit = {},
     environmentPanelContent: @Composable (isCompact: Boolean) -> Unit = {},
     jobLogsService: IJobLogsService? = null,
+    onNavigateToTask: ((taskId: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
@@ -170,6 +171,7 @@ fun MainScreenView(
                             onMicClick = onMicClick,
                             onTtsPlay = onTtsPlay,
                             isTtsPlaying = isTtsPlaying,
+                            onNavigateToTask = onNavigateToTask,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -237,6 +239,7 @@ fun MainScreenView(
                             onMicClick = onMicClick,
                             onTtsPlay = onTtsPlay,
                             isTtsPlaying = isTtsPlaying,
+                            onNavigateToTask = onNavigateToTask,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -294,6 +297,7 @@ fun MainScreenView(
                     onCancelVoice = onCancelVoice,
                     onTtsPlay = onTtsPlay,
                     isTtsPlaying = isTtsPlaying,
+                    onNavigateToTask = onNavigateToTask,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -353,6 +357,7 @@ private fun ChatContent(
     onCancelVoice: () -> Unit = {},
     onTtsPlay: (String) -> Unit = {},
     isTtsPlaying: Boolean = false,
+    onNavigateToTask: ((taskId: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -416,6 +421,7 @@ private fun ChatContent(
             isTtsPlaying = isTtsPlaying,
             taskGraphs = taskGraphs,
             onLoadTaskGraph = onLoadTaskGraph,
+            onNavigateToTask = onNavigateToTask,
             jobLogsService = jobLogsService,
             modifier = Modifier
                 .weight(1f)

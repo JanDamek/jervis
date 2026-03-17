@@ -22,7 +22,7 @@ actual class AudioPlayer actual constructor() {
      * Open a continuous audio stream for PCM playback.
      * Call [streamPcm] to write chunks, [finishStream] when done.
      */
-    fun startStream(sampleRate: Int, sampleSizeInBits: Int = 16, channels: Int = 1) {
+    actual fun startStream(sampleRate: Int, sampleSizeInBits: Int, channels: Int) {
         stopStream()
         val format = AudioFormat(
             sampleRate.toFloat(),
@@ -45,7 +45,7 @@ actual class AudioPlayer actual constructor() {
      * Write raw PCM data to the audio stream. Blocks until data is written to the buffer.
      * This provides gapless playback — SourceDataLine handles continuous output.
      */
-    fun streamPcm(pcmData: ByteArray) {
+    actual fun streamPcm(pcmData: ByteArray) {
         val line = streamLine ?: return
         // write() blocks if the internal buffer is full — natural backpressure
         line.write(pcmData, 0, pcmData.size)
@@ -54,7 +54,7 @@ actual class AudioPlayer actual constructor() {
     /**
      * Finish streaming — drain remaining audio and close.
      */
-    fun finishStream() {
+    actual fun finishStream() {
         streamLine?.let { line ->
             line.drain() // play remaining buffered audio
             line.stop()
@@ -64,7 +64,7 @@ actual class AudioPlayer actual constructor() {
         println("AudioPlayer: stream finished")
     }
 
-    fun stopStream() {
+    actual fun stopStream() {
         streamLine?.let { line ->
             line.stop()
             line.close()

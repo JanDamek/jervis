@@ -1,10 +1,16 @@
 """Data models for the unified agent graph engine.
 
 Core concepts:
-- GraphVertex: a processing unit (decompose, execute, synthesize)
-- GraphEdge: connection carrying summary + full context between vertices
+- GraphVertex: a processing unit — tries direct resolution, decomposes if needed
+- GraphEdge: connection carrying summary between vertices (lightweight)
 - EdgePayload: the data that flows through an edge after source completes
 - AgentGraph: the complete DAG (Paměťová mapa or Myšlenková mapa)
+
+Execution model (reactive/lazy progressive decomposition):
+- Each vertex tries to solve its task directly first (LLM + tools)
+- If too complex → vertex calls decompose_task tool → creates children → WAITING_CHILDREN
+- When all children complete → parent resumes with children summaries → evaluates → done
+- No upfront decomposition — graph grows dynamically from actual needs
 
 Graph types:
 - MEMORY_MAP: one global Paměťová mapa per user — all interactions are vertices
@@ -68,14 +74,15 @@ class VertexType(str, Enum):
 class VertexStatus(str, Enum):
     """Lifecycle status of a vertex."""
 
-    PENDING = "pending"         # Waiting for incoming edges (not all satisfied)
-    READY = "ready"             # All incoming edges satisfied, can execute
-    RUNNING = "running"         # Currently being processed
-    COMPLETED = "completed"     # Done, result available
-    FAILED = "failed"           # Execution failed
-    SKIPPED = "skipped"         # Skipped (e.g. conditional branch not taken)
-    CANCELLED = "cancelled"     # Cancelled by user or parent graph cancellation
-    BLOCKED = "blocked"         # Waiting for external input (ASK_USER)
+    PENDING = "pending"             # Waiting for incoming edges (not all satisfied)
+    READY = "ready"                 # All incoming edges satisfied, can execute
+    RUNNING = "running"             # Currently being processed
+    COMPLETED = "completed"         # Done, result available
+    FAILED = "failed"               # Execution failed
+    SKIPPED = "skipped"             # Skipped (e.g. conditional branch not taken)
+    CANCELLED = "cancelled"         # Cancelled by user or parent graph cancellation
+    BLOCKED = "blocked"             # Waiting for external input (ASK_USER)
+    WAITING_CHILDREN = "waiting_children"  # Decomposed — waiting for child vertices to complete
 
 
 class EdgeType(str, Enum):
@@ -106,15 +113,13 @@ class GraphStatus(str, Enum):
 class EdgePayload(BaseModel):
     """Data that flows through an edge after the source vertex completes.
 
-    Each edge carries:
-    - summary: concise summary of source vertex result
-    - context: full context of source vertex (searchable at target)
+    Each edge carries ONLY a summary (10-100 tokens) — lightweight.
+    Vertices must use tools (kb_search, etc.) for detailed data.
     """
 
     source_vertex_id: str
     source_vertex_title: str
-    summary: str                        # Concise result summary
-    context: str                        # Full context (searchable)
+    summary: str                        # Concise result summary (10-100 tokens)
 
 
 # ---------------------------------------------------------------------------
@@ -200,8 +205,9 @@ class GraphVertex(BaseModel):
 class AgentGraph(BaseModel):
     """Complete execution DAG — Paměťová mapa or Myšlenková mapa.
 
-    Contains all vertices and edges. Provides methods for graph traversal,
-    topological ordering, context accumulation, and readiness detection.
+    Contains all vertices and edges. The graph grows dynamically:
+    the root vertex tries to solve directly, and only decomposes
+    into children if needed (reactive/lazy progressive decomposition).
 
     graph_type:
     - MEMORY_MAP: global singleton, all chat interactions + task refs

@@ -15,7 +15,7 @@ sealed class Screen {
     object Settings : Screen()
 
     // Tasks & Scheduling
-    object UserTasks : Screen()
+    data class UserTasks(val initialTaskId: String? = null) : Screen()
 
     object Scheduler : Screen()
 

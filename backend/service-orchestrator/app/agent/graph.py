@@ -242,11 +242,27 @@ def get_ready_vertices(graph: AgentGraph) -> list[GraphVertex]:
     AND
     - Its current status is PENDING or READY
 
+    Additionally, WAITING_CHILDREN vertices whose children are ALL done
+    are resumed (set back to READY with children summaries as context).
+
     Note: DECOMPOSITION edges (parent→child structural) do NOT gate readiness.
     They are for traceability only. Only DEPENDENCY edges carry data flow
     constraints.
     """
     ready = []
+
+    # First: check WAITING_CHILDREN vertices — resume parents whose children are all done
+    terminal_states = {VertexStatus.COMPLETED, VertexStatus.FAILED, VertexStatus.SKIPPED, VertexStatus.CANCELLED}
+    for vertex in graph.vertices.values():
+        if vertex.status != VertexStatus.WAITING_CHILDREN:
+            continue
+        children = get_children(graph, vertex.id)
+        if children and all(c.status in terminal_states for c in children):
+            # All children done — resume parent with their summaries
+            resume_parent_after_children(graph, vertex.id)
+            ready.append(vertex)
+
+    # Then: check normal PENDING/READY vertices
     for vertex in graph.vertices.values():
         if vertex.status not in (VertexStatus.PENDING, VertexStatus.READY):
             continue
@@ -269,11 +285,55 @@ def accumulate_context(graph: AgentGraph, vertex_id: str) -> list[EdgePayload]:
     """Gather all incoming edge payloads for a vertex.
 
     Returns the list of EdgePayloads from all incoming edges.
-    If 10 edges converge here, returns 10 payloads (each with
-    summary + full context from its source vertex).
+    Each payload carries only a summary (lightweight).
     """
     incoming = get_incoming_edges(graph, vertex_id)
     return [e.payload for e in incoming if e.payload is not None]
+
+
+def resume_parent_after_children(graph: AgentGraph, parent_id: str) -> None:
+    """Resume a WAITING_CHILDREN vertex after all its children complete.
+
+    Collects children summaries as EdgePayload objects and sets them
+    as incoming_context on the parent vertex, then sets parent to READY
+    so it can continue its agentic tool loop to evaluate children results.
+    """
+    parent = graph.vertices.get(parent_id)
+    if not parent:
+        return
+    if parent.status != VertexStatus.WAITING_CHILDREN:
+        return
+
+    children = get_children(graph, parent_id)
+    # Build incoming_context from children results
+    children_payloads: list[EdgePayload] = []
+    for child in children:
+        if child.status == VertexStatus.COMPLETED:
+            children_payloads.append(EdgePayload(
+                source_vertex_id=child.id,
+                source_vertex_title=child.title,
+                summary=child.result_summary or child.result[:200],
+            ))
+        elif child.status == VertexStatus.FAILED:
+            children_payloads.append(EdgePayload(
+                source_vertex_id=child.id,
+                source_vertex_title=child.title,
+                summary=f"FAILED: {child.error or 'unknown error'}",
+            ))
+
+    parent.incoming_context = children_payloads
+    parent.status = VertexStatus.READY
+    # Clear previous agent state so it starts fresh with children context
+    parent.agent_messages = []
+    parent.agent_iteration = 0
+
+    logger.info(
+        "PARENT_RESUMED | graph=%s | parent=%s | title='%s' | children=%d | "
+        "completed=%d | failed=%d",
+        graph.id, parent_id, parent.title, len(children),
+        sum(1 for c in children if c.status == VertexStatus.COMPLETED),
+        sum(1 for c in children if c.status == VertexStatus.FAILED),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -344,12 +404,11 @@ def complete_vertex(
     graph.total_token_count += token_count
     graph.total_llm_calls += llm_calls
 
-    # Fill outgoing edge payloads
+    # Fill outgoing edge payloads (summary only — lightweight)
     payload = EdgePayload(
         source_vertex_id=vertex.id,
         source_vertex_title=vertex.title,
         summary=result_summary,
-        context=vertex.local_context,
     )
     outgoing = get_outgoing_edges(graph, vertex_id)
     for edge in outgoing:
@@ -400,12 +459,11 @@ def fail_vertex(
         graph.id, vertex_id, vertex.title, error[:200],
     )
 
-    # Fill outgoing edge payloads with error context (unblock downstream)
+    # Fill outgoing edge payloads with error summary (unblock downstream)
     error_payload = EdgePayload(
         source_vertex_id=vertex.id,
         source_vertex_title=vertex.title,
         summary=f"FAILED: {error}",
-        context=f"Vertex '{vertex.title}' failed: {error}",
     )
     for edge in get_outgoing_edges(graph, vertex_id):
         edge.payload = error_payload
@@ -560,7 +618,11 @@ def _update_vertex_readiness(graph: AgentGraph, vertex_id: str) -> None:
     (via extend_thinking_map) have finished.
     """
     vertex = graph.vertices.get(vertex_id)
-    if not vertex or vertex.status not in (VertexStatus.PENDING, VertexStatus.READY):
+    if not vertex or vertex.status not in (VertexStatus.PENDING, VertexStatus.READY, VertexStatus.WAITING_CHILDREN):
+        return
+    # Don't change WAITING_CHILDREN status via edge-based readiness —
+    # it's handled by resume_parent_after_children
+    if vertex.status == VertexStatus.WAITING_CHILDREN:
         return
 
     dep_edges = [

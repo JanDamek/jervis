@@ -1,11 +1,13 @@
-"""Graph decomposition engine — LLM-driven vertex/edge creation.
+"""Graph decomposition engine — reactive/lazy progressive decomposition.
 
-Takes a request (via root vertex or any DECOMPOSE vertex) and breaks it down
-into sub-vertices connected by edges. Supports recursive decomposition:
-a vertex can itself be decomposed into a sub-graph.
+Instead of upfront LLM-driven decomposition, vertices decompose themselves
+at runtime via the `decompose_task` tool. This module provides:
+- create_child_vertices(): creates children from a parent when it decides to decompose
+- _format_evidence(): evidence formatting (kept from original)
 
-Uses the same LLM call patterns as plan_delegations (llm_with_cloud_fallback
-+ parse_json_response) to maintain consistency.
+The old decompose_root() / _llm_decompose() / _build_subgraph() are removed.
+Decomposition now happens inside the agentic tool loop when a vertex calls
+the `decompose_task` tool.
 """
 
 from __future__ import annotations
@@ -13,37 +15,30 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from app.config import settings
-from app.graph.nodes._helpers import llm_with_cloud_fallback, parse_json_response
 from app.agent.graph import (
     add_edge,
     add_vertex,
-    complete_vertex,
     get_children,
     has_cycle,
-    topological_order,
 )
 from app.agent.models import (
     EdgeType,
-    GraphStatus,
     GraphVertex,
     AgentGraph,
     VertexStatus,
     VertexType,
 )
-from app.agent.progress import report_decomposition_progress
 
 if TYPE_CHECKING:
     from app.models import EvidencePack
 
 logger = logging.getLogger(__name__)
 
-# Max vertices per single decomposition call
+# Max vertices per single decompose_task call
 MAX_VERTICES_PER_DECOMPOSE = 10
-# Max total vertices in a graph — prevents runaway growth when vertices fail/timeout
-# Raised from 50 to 150 to support dynamic thinking map growth via extend_thinking_map
+# Max total vertices in a graph — prevents runaway growth
 MAX_TOTAL_VERTICES = 150
-# Max decomposition depth (root → modules → sub-modules → tasks)
+# Max decomposition depth (root → children → grandchildren → ...)
 MAX_DECOMPOSE_DEPTH = 5
 
 
@@ -52,425 +47,102 @@ MAX_DECOMPOSE_DEPTH = 5
 # ---------------------------------------------------------------------------
 
 
-async def decompose_root(
+def create_child_vertices(
     graph: AgentGraph,
-    state: dict,
-    evidence: dict | None = None,
-    guidelines: str = "",
-) -> AgentGraph:
-    """Decompose the root vertex into sub-vertices.
-
-    This is the entry point for graph construction. Takes the root vertex's
-    description (the user's request) and creates the initial graph structure.
-
-    Returns the modified graph with new vertices and edges.
-    """
-    root = graph.vertices.get(graph.root_vertex_id)
-    if not root:
-        raise ValueError(f"Root vertex {graph.root_vertex_id} not found")
-
-    await report_decomposition_progress(
-        graph, "Analysing request structure…", depth=0,
-    )
-
-    # Build context from evidence
-    evidence_text = _format_evidence(evidence) if evidence else ""
-
-    # Check for large context → Gemini decomposition
-    full_context = f"{root.description}\n{evidence_text}\n{guidelines}"
-    from app.agent.gemini_decomposer import should_use_gemini_decomposition, decompose_large_context
-    if should_use_gemini_decomposition(full_context, state):
-        await report_decomposition_progress(
-            graph, "Large context detected — using Gemini for decomposition…", depth=0,
-        )
-        result = await decompose_large_context(
-            graph=graph,
-            parent_id=root.id,
-            content=full_context,
-            objective=root.description,
-            state=state,
-        )
-        if len(result.vertices) > 1:
-            graph.status = GraphStatus.READY
-            return result
-        logger.info("Gemini decomposition returned no vertices, falling through to standard decomposition")
-
-    # Decompose root
-    vertices_data = await _llm_decompose(
-        vertex=root,
-        state=state,
-        evidence_text=evidence_text,
-        guidelines=guidelines,
-        is_root=True,
-    )
-
-    if not vertices_data:
-        logger.warning("Root decomposition returned no vertices, using single-vertex plan")
-        return _single_vertex_fallback(graph, root)
-
-    # Build sub-graph from LLM output
-    _build_subgraph(graph, root, vertices_data)
-
-    # Mark root as completed via complete_vertex() — fills outgoing edge payloads
-    # and propagates readiness to downstream vertices
-    complete_vertex(
-        graph, root.id,
-        result=f"Decomposed into {len(vertices_data)} vertices",
-        result_summary=f"Decomposed into {len(vertices_data)} vertices",
-    )
-
-    # Update graph status
-    graph.status = GraphStatus.READY
-
-    # Validate
-    if has_cycle(graph):
-        logger.error("Decomposition produced a cycle — falling back to single vertex")
-        return _single_vertex_fallback(graph, root)
-
-    await report_decomposition_progress(
-        graph,
-        f"Decomposed into {len(graph.vertices) - 1} vertices",
-        depth=0,
-    )
-
-    return graph
-
-
-async def decompose_vertex(
-    graph: AgentGraph,
-    vertex_id: str,
-    state: dict,
-    guidelines: str = "",
-) -> AgentGraph:
-    """Recursively decompose a DECOMPOSE-type vertex into sub-vertices.
-
-    Called during execution when a vertex is marked as DECOMPOSE type
-    and needs further breakdown before its children can execute.
-
-    Returns the modified graph with new vertices and edges.
-    """
-    vertex = graph.vertices.get(vertex_id)
-    if not vertex:
-        raise ValueError(f"Vertex {vertex_id} not found")
-    if vertex.depth >= MAX_DECOMPOSE_DEPTH:
-        logger.warning(
-            "Max decomposition depth (%d) reached for vertex %s",
-            MAX_DECOMPOSE_DEPTH, vertex_id,
-        )
-        # Convert to TASK so it executes directly
-        vertex.vertex_type = VertexType.TASK
-        return graph
-    if len(graph.vertices) >= MAX_TOTAL_VERTICES:
-        logger.warning("Max total vertices (%d) reached", MAX_TOTAL_VERTICES)
-        vertex.vertex_type = VertexType.TASK
-        return graph
-
-    await report_decomposition_progress(
-        graph,
-        f"Decomposing: {vertex.title}",
-        depth=vertex.depth,
-    )
-
-    # Build context from incoming edges
-    context_parts = []
-    for payload in vertex.incoming_context:
-        context_parts.append(
-            f"[{payload.source_vertex_title}] {payload.summary}"
-        )
-    upstream_context = "\n".join(context_parts)
-
-    vertices_data = await _llm_decompose(
-        vertex=vertex,
-        state=state,
-        evidence_text=upstream_context,
-        guidelines=guidelines,
-        is_root=False,
-    )
-
-    if not vertices_data:
-        # No sub-decomposition — convert to TASK
-        vertex.vertex_type = VertexType.TASK
-        return graph
-
-    _build_subgraph(graph, vertex, vertices_data)
-
-    # Mark the DECOMPOSE vertex as completed via complete_vertex() — fills outgoing
-    # edge payloads and propagates readiness to downstream vertices
-    complete_vertex(
-        graph, vertex_id,
-        result=f"Decomposed into {len(vertices_data)} sub-vertices",
-        result_summary=f"Decomposed into {len(vertices_data)} sub-vertices",
-    )
-
-    return graph
-
-
-# ---------------------------------------------------------------------------
-# LLM decomposition call
-# ---------------------------------------------------------------------------
-
-
-_DECOMPOSE_SYSTEM_PROMPT = """You are the Task Decomposition Engine. Break a request into discrete vertices (sub-tasks) with dependencies.
-
-## Vertex responsibility types
-
-Each type determines which tools the vertex receives:
-- "investigator" — research, search KB, web, codebase, gather information
-- "planner" — analyze, plan approach, break down further
-- "executor" — perform concrete work (coding, writes, dispatch agents, communication)
-- "task" — alias for executor
-- "validator" — verify results, check correctness
-- "reviewer" — review quality, provide feedback
-- "gate" — decision point (proceed or stop)
-- "setup" — infrastructure scaffolding, environment provisioning
-- "decompose" — needs further breakdown before execution
-
-## Response format
-
-```json
-{
-  "vertices": [
-    {
-      "title": "<short title>",
-      "description": "<what this vertex must accomplish — self-contained>",
-      "type": "<investigator|planner|executor|task|validator|reviewer|gate|setup|decompose>",
-      "agent": "<agent name or null for auto>",
-      "depends_on": [0, 1]
-    }
-  ],
-  "synthesis": {
-    "title": "<synthesis title>",
-    "description": "<how to combine results>"
-  }
-}
-```
-
-## Rules
-
-- Choose the CORRECT vertex type — it determines which tools are available
-- "depends_on": indices of vertices that must complete first
-- Synthesis vertex (if any) automatically depends on all others
-- Maximum %d vertices per decomposition
-- Use MINIMUM vertices needed — prefer fewer, focused vertices over many shallow ones
-- Each vertex description must be self-contained (include all relevant context)
-- Simple requests → single vertex, no synthesis needed
-- Vague requests → single executor vertex that asks clarifying questions via `ask_user`
-- Clear requests → full decomposition with appropriate types
-- Vertices with `ask_user` tool can interact with the user when they need clarification
-- Important findings and decisions should be stored via `store_knowledge` for persistence"""
-
-_DECOMPOSE_USER_TEMPLATE = """## Request
-{request}
-
-## Evidence / Context
-{evidence}
-
-{guidelines_section}
-{agent_section}
-
-Decompose this request into vertices (sub-tasks) with dependencies.
-If it's simple enough for a single vertex, just return one vertex."""
-
-
-async def _llm_decompose(
-    vertex: GraphVertex,
-    state: dict,
-    evidence_text: str,
-    guidelines: str,
-    is_root: bool,
-) -> list[dict]:
-    """Call LLM to decompose a vertex into sub-vertices.
-
-    Returns list of vertex dicts from LLM response, or empty list on failure.
-    """
-    system_prompt = _DECOMPOSE_SYSTEM_PROMPT % MAX_VERTICES_PER_DECOMPOSE
-
-    guidelines_section = ""
-    if guidelines:
-        guidelines_section = f"## Guidelines\n{guidelines}"
-
-    # Include agent_preference from request context
-    request_ctx = state.get("request_context", {})
-    agent_pref = request_ctx.get("agent_preference", "auto") if isinstance(request_ctx, dict) else "auto"
-    agent_section = ""
-    if agent_pref and agent_pref != "auto":
-        agent_section = f"\n## Agent Preference\nUser configured: {agent_pref} (use this for dispatch_coding_agent calls)"
-
-    user_prompt = _DECOMPOSE_USER_TEMPLATE.format(
-        request=vertex.description,
-        evidence=evidence_text or "(no additional context)",
-        guidelines_section=guidelines_section,
-        agent_section=agent_section,
-    )
-
-    # Add incoming context for non-root vertices
-    if not is_root and vertex.incoming_context:
-        context_lines = ["\n## Upstream Context"]
-        for payload in vertex.incoming_context:
-            context_lines.append(
-                f"### From: {payload.source_vertex_title}\n"
-                f"Summary: {payload.summary}\n"
-                f"Details: {payload.context}"
-            )
-        user_prompt += "\n".join(context_lines)
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    try:
-        response = await llm_with_cloud_fallback(
-            state=state,
-            messages=messages,
-            task_type="decomposition",
-            max_tokens=settings.default_output_tokens,
-        )
-        content = response.choices[0].message.content or ""
-        data = parse_json_response(content)
-
-        if not data or "vertices" not in data:
-            logger.warning("Decomposition LLM returned no valid vertices")
-            return []
-
-        vertices = data["vertices"]
-        if not isinstance(vertices, list):
-            return []
-
-        # Enforce limit
-        vertices = vertices[:MAX_VERTICES_PER_DECOMPOSE]
-
-        # MANDATORY synthesis vertex — guarantees graph convergence.
-        # All leaf vertices must eventually converge to this synthesis.
-        synthesis = data.get("synthesis", {})
-        if len(vertices) >= 1:
-            vertices.append({
-                "title": synthesis.get("title", "Syntéza výsledků"),
-                "description": synthesis.get("description", "Combine all vertex results into a coherent, complete answer to the original request."),
-                "type": "synthesis",
-                "agent": None,
-                "depends_on": list(range(len(vertices))),
-                "_is_synthesis": True,
-            })
-
-        return vertices
-
-    except Exception as e:
-        logger.error("Decomposition LLM call failed: %s", e, exc_info=True)
-        return []
-
-
-# ---------------------------------------------------------------------------
-# Graph construction from LLM output
-# ---------------------------------------------------------------------------
-
-
-def _build_subgraph(
-    graph: AgentGraph,
-    parent: GraphVertex,
-    vertices_data: list[dict],
+    parent_vertex: GraphVertex,
+    children_specs: list[dict],
 ) -> list[GraphVertex]:
-    """Create vertices and edges from LLM decomposition output.
+    """Create child vertices from a parent vertex when it decides to decompose.
 
-    Each vertex in vertices_data can specify depends_on indices.
-    Edges are created for dependencies (DEPENDENCY) and parent→child (DECOMPOSITION).
+    Called by the decompose_task tool handler in the agentic loop.
+    Each child is a TASK vertex that will try direct resolution first.
+
+    Args:
+        graph: The agent graph
+        parent_vertex: The vertex that decided to decompose
+        children_specs: List of dicts with 'title' and 'description'
+
+    Returns:
+        List of created child vertices
+
+    Raises:
+        ValueError: If depth or vertex limits exceeded
     """
+    if parent_vertex.depth >= MAX_DECOMPOSE_DEPTH:
+        raise ValueError(
+            f"Max decomposition depth ({MAX_DECOMPOSE_DEPTH}) reached for "
+            f"vertex '{parent_vertex.title}' at depth {parent_vertex.depth}"
+        )
+
+    if len(graph.vertices) >= MAX_TOTAL_VERTICES:
+        raise ValueError(
+            f"Max total vertices ({MAX_TOTAL_VERTICES}) reached — "
+            f"graph has {len(graph.vertices)} vertices"
+        )
+
+    # Enforce per-call limit
+    specs = children_specs[:MAX_VERTICES_PER_DECOMPOSE]
+
+    # Enforce remaining capacity
+    remaining = MAX_TOTAL_VERTICES - len(graph.vertices)
+    if remaining < len(specs):
+        specs = specs[:remaining]
+
     created: list[GraphVertex] = []
 
-    # 1. Create all vertices
-    for vd in vertices_data:
-        vtype_str = vd.get("type", "task")
-        try:
-            vtype = VertexType(vtype_str)
-        except ValueError:
-            vtype = VertexType.TASK
+    for spec in specs:
+        title = (spec.get("title") or "Untitled").strip()
+        description = (spec.get("description") or "").strip()
 
-        v = add_vertex(
+        child = add_vertex(
             graph=graph,
-            title=vd.get("title", "Untitled"),
-            description=vd.get("description", ""),
-            vertex_type=vtype,
-            agent_name=vd.get("agent"),
-            parent_id=parent.id,
-            input_request=vd.get("description", ""),
-            client_id=parent.client_id,
-            project_id=parent.project_id,
+            title=title,
+            description=description,
+            vertex_type=VertexType.TASK,
+            parent_id=parent_vertex.id,
+            input_request=description,
+            client_id=parent_vertex.client_id,
+            project_id=parent_vertex.project_id,
         )
-        created.append(v)
 
-    # 2. Create edges for dependencies (depends_on indices)
-    for i, vd in enumerate(vertices_data):
-        deps = vd.get("depends_on", [])
-        if not deps:
-            # No explicit dependencies → depends on parent
-            # (parent already completed during decomposition, so add
-            # decomposition edge for traceability)
-            add_edge(graph, parent.id, created[i].id, EdgeType.DECOMPOSITION)
-        else:
-            for dep_idx in deps:
-                if isinstance(dep_idx, int) and 0 <= dep_idx < len(created):
-                    if dep_idx != i:  # No self-loops
-                        add_edge(
-                            graph,
-                            created[dep_idx].id,
-                            created[i].id,
-                            EdgeType.DEPENDENCY,
-                        )
-                else:
-                    logger.warning(
-                        "Invalid depends_on index %s for vertex %s",
-                        dep_idx, created[i].id,
-                    )
+        # DECOMPOSITION edge for traceability (doesn't gate readiness)
+        add_edge(graph, parent_vertex.id, child.id, EdgeType.DECOMPOSITION)
 
-    # 3. Vertices with no incoming edges (except decomposition from parent)
-    #    are immediately READY
-    for v in created:
-        incoming_deps = [
+        # Child has no DEPENDENCY edges → immediately READY
+        child.status = VertexStatus.READY
+        created.append(child)
+
+    # Verify no cycles introduced
+    if has_cycle(graph):
+        # Shouldn't happen with simple parent→child edges, but safety check
+        logger.error(
+            "Cycle detected after creating children for vertex %s — "
+            "removing children",
+            parent_vertex.id,
+        )
+        for child in created:
+            if child.id in graph.vertices:
+                del graph.vertices[child.id]
+        graph.edges = [
             e for e in graph.edges
-            if e.target_id == v.id and e.edge_type == EdgeType.DEPENDENCY
+            if e.source_id != parent_vertex.id
+            or e.target_id not in {c.id for c in created}
         ]
-        if not incoming_deps:
-            v.status = VertexStatus.READY
+        raise ValueError("Decomposition would create a cycle")
 
-    # 4. Track the root synthesis vertex for convergence
-    for v in created:
-        if v.vertex_type == VertexType.SYNTHESIS and graph.synthesis_vertex_id is None:
-            graph.synthesis_vertex_id = v.id
+    logger.info(
+        "DECOMPOSE_TASK | graph=%s | parent=%s | title='%s' | "
+        "children=%d | depth=%d→%d | total_vertices=%d",
+        graph.id, parent_vertex.id, parent_vertex.title,
+        len(created), parent_vertex.depth, parent_vertex.depth + 1,
+        len(graph.vertices),
+    )
 
     return created
 
 
 # ---------------------------------------------------------------------------
-# Fallback
-# ---------------------------------------------------------------------------
-
-
-def _single_vertex_fallback(graph: AgentGraph, root: GraphVertex) -> AgentGraph:
-    """Create a minimal single-vertex graph when decomposition fails."""
-    v = add_vertex(
-        graph=graph,
-        title="Process request",
-        description=root.description,
-        vertex_type=VertexType.TASK,
-        parent_id=root.id,
-        input_request=root.description,
-        client_id=root.client_id,
-        project_id=root.project_id,
-    )
-    add_edge(graph, root.id, v.id, EdgeType.DECOMPOSITION)
-    v.status = VertexStatus.READY
-    # Use complete_vertex() — fills outgoing edge payloads properly
-    complete_vertex(
-        graph, root.id,
-        result="Single-vertex fallback",
-        result_summary="Single-vertex fallback",
-    )
-    graph.status = GraphStatus.READY
-    return graph
-
-
-# ---------------------------------------------------------------------------
-# Evidence formatting
+# Evidence formatting (kept from original)
 # ---------------------------------------------------------------------------
 
 
