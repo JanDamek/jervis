@@ -63,9 +63,8 @@ private val activeSessions = ConcurrentHashMap<String, VoiceSession>()
 private const val DEFAULT_CLIENT_ID = "68a332361b04695a243e5ae8"
 private const val DEFAULT_PROJECT_ID = "68a3318f1b04695a243e5adf"
 
-// TTS service — GPU primary (direct on GPU VM), CPU fallback (K8s pod)
-private const val TTS_GPU_URL = "http://ollama.lan.mazlusek.com:8787/tts"
-private const val TTS_CPU_URL = "http://jervis-tts:8787/tts"
+// TTS service — GPU on P40 VM (tiny VRAM footprint, no lock needed)
+private const val TTS_URL = "http://ollama.lan.mazlusek.com:8787/tts"
 
 private val ttsClient = HttpClient(CIO) {
     install(HttpTimeout) {
@@ -767,24 +766,12 @@ private suspend fun collectChatResponse(
  * Generate TTS audio (WAV) from text, return Base64 encoded.
  */
 private suspend fun generateTtsAudio(text: String): String? {
-    val body = """{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":1.7}"""
-
-    // Try GPU TTS first (fast, <0.5s), fallback to CPU TTS (~4.5s)
-    val audioBytes = try {
-        val response = ttsClient.post(TTS_GPU_URL) {
-            contentType(ContentType.Application.Json)
-            setBody(body)
-        }
-        response.readBytes()
-    } catch (e: Exception) {
-        logger.debug { "TTS_GPU_FALLBACK: GPU TTS unavailable (${e.message}), using CPU" }
-        val response = ttsClient.post(TTS_CPU_URL) {
-            contentType(ContentType.Application.Json)
-            setBody(body)
-        }
-        response.readBytes()
+    val response = ttsClient.post(TTS_URL) {
+        contentType(ContentType.Application.Json)
+        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":1.7}""")
     }
 
+    val audioBytes = response.readBytes()
     if (audioBytes.isEmpty()) return null
     return Base64.getEncoder().encodeToString(audioBytes)
 }
