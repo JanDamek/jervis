@@ -1,12 +1,13 @@
 """
 Jervis TTS Service — Text-to-Speech using Piper TTS.
 Male, deep voice (JARVIS/Iron Man style).
+
+Supports piper-tts 1.2.x (old API) and 1.4.x (new SynthesisConfig API).
 """
 import asyncio
 import io
 import os
 import struct
-import tempfile
 import time
 import wave
 from contextlib import asynccontextmanager
@@ -29,19 +30,23 @@ TTS_MAX_TEXT_LENGTH = int(os.getenv("TTS_MAX_TEXT_LENGTH", "5000"))
 # Global Piper voice reference
 _voice = None
 _lock = asyncio.Lock()
+_piper_new_api = False  # True for piper-tts >= 1.4 (SynthesisConfig + AudioChunk)
 
 
 def _load_voice():
     """Lazy-load Piper voice model."""
-    global _voice
+    global _voice, _piper_new_api
     if _voice is not None:
         return _voice
 
     import piper
 
+    # Detect API version
+    _piper_new_api = hasattr(piper, 'SynthesisConfig')
+    print(f"[TTS] Piper API: {'new (1.4+)' if _piper_new_api else 'legacy (1.2)'}")
+
     TTS_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Download model if not present
     model_dir = TTS_DATA_DIR / "models"
     model_dir.mkdir(parents=True, exist_ok=True)
 
@@ -49,12 +54,17 @@ def _load_voice():
     config_path = model_dir / f"{TTS_MODEL}.onnx.json"
 
     if not model_path.exists():
-        print(f"[TTS] Downloading model {TTS_MODEL}...")
-        from piper.download import ensure_voice_exists, get_voices
-
-        data_dirs = [str(model_dir)]
-        voices_info = get_voices(model_dir, update_voices=True)
-        ensure_voice_exists(TTS_MODEL, data_dirs, model_dir, voices_info)
+        # Try legacy download API (piper-tts 1.2.x)
+        try:
+            from piper.download import ensure_voice_exists, get_voices
+            print(f"[TTS] Downloading model {TTS_MODEL}...")
+            voices_info = get_voices(model_dir, update_voices=True)
+            ensure_voice_exists(TTS_MODEL, [str(model_dir)], model_dir, voices_info)
+        except ImportError:
+            raise RuntimeError(
+                f"TTS model not found: {model_path}. "
+                f"Download manually from https://huggingface.co/rhasspy/piper-voices"
+            )
 
     if not model_path.exists():
         raise RuntimeError(f"TTS model not found after download: {model_path}")
@@ -63,6 +73,44 @@ def _load_voice():
     _voice = piper.PiperVoice.load(str(model_path), config_path=str(config_path))
     print(f"[TTS] Voice loaded: {TTS_MODEL}, sample_rate={_voice.config.sample_rate}")
     return _voice
+
+
+def _synthesize_text(voice, text: str, speed: float = 1.0) -> bytes:
+    """Synthesize text to WAV bytes. Works with both old and new piper API."""
+    import piper
+
+    if _piper_new_api:
+        # piper-tts >= 1.4: synthesize() returns Iterable[AudioChunk]
+        syn_config = piper.SynthesisConfig(
+            length_scale=1.0 / max(0.1, speed),
+            speaker_id=TTS_SPEAKER_ID if getattr(voice.config, 'num_speakers', 1) > 1 else None,
+        )
+        chunks = voice.synthesize(text, syn_config=syn_config)
+        # Collect all audio samples
+        all_samples = b""
+        sample_rate = voice.config.sample_rate
+        for chunk in chunks:
+            all_samples += chunk.audio_int16_bytes
+        # Wrap in WAV
+        audio_buffer = io.BytesIO()
+        with wave.open(audio_buffer, "wb") as wav:
+            wav.setframerate(sample_rate)
+            wav.setsampwidth(2)  # 16-bit
+            wav.setnchannels(1)  # mono
+            wav.writeframes(all_samples)
+        return audio_buffer.getvalue()
+    else:
+        # piper-tts 1.2.x: synthesize() writes to wave file directly
+        audio_buffer = io.BytesIO()
+        with wave.open(audio_buffer, "wb") as wav:
+            wav.setframerate(voice.config.sample_rate)
+            wav.setsampwidth(2)
+            wav.setnchannels(1)
+            synth_kwargs = dict(length_scale=1.0 / max(0.1, speed))
+            if hasattr(voice.config, 'num_speakers') and voice.config.num_speakers > 1:
+                synth_kwargs['speaker_id'] = TTS_SPEAKER_ID
+            voice.synthesize(text, wav, **synth_kwargs)
+        return audio_buffer.getvalue()
 
 
 @asynccontextmanager
@@ -112,27 +160,9 @@ async def synthesize(request: TtsRequest) -> Response:
     async with _lock:
         voice = await asyncio.get_event_loop().run_in_executor(None, _load_voice)
 
-    # Synthesize in thread pool (CPU-bound)
-    def _synthesize():
-        audio_buffer = io.BytesIO()
-        with wave.open(audio_buffer, "wb") as wav:
-            wav.setframerate(voice.config.sample_rate)
-            wav.setsampwidth(2)  # 16-bit
-            wav.setnchannels(1)  # mono
-            # Only pass speaker_id for multi-speaker models (num_speakers > 1)
-            synth_kwargs = dict(
-                length_scale=1.0 / max(0.1, request.speed),
-            )
-            if hasattr(voice.config, 'num_speakers') and voice.config.num_speakers > 1:
-                synth_kwargs['speaker_id'] = TTS_SPEAKER_ID
-            voice.synthesize(
-                request.text,
-                wav,
-                **synth_kwargs,
-            )
-        return audio_buffer.getvalue()
-
-    wav_data = await asyncio.get_event_loop().run_in_executor(None, _synthesize)
+    wav_data = await asyncio.get_event_loop().run_in_executor(
+        None, _synthesize_text, voice, request.text, request.speed
+    )
     elapsed = time.monotonic() - start
     print(f"[TTS] Synthesized {len(request.text)} chars → {len(wav_data)} bytes in {elapsed:.2f}s")
 
@@ -169,22 +199,7 @@ async def synthesize_stream(request: TtsRequest):
         for sentence in sentences:
             if not sentence.strip():
                 continue
-            buf = io.BytesIO()
-            with wave.open(buf, "wb") as wav:
-                wav.setframerate(voice.config.sample_rate)
-                wav.setsampwidth(2)
-                wav.setnchannels(1)
-                synth_kwargs = dict(
-                    length_scale=1.0 / max(0.1, request.speed),
-                )
-                if hasattr(voice.config, 'num_speakers') and voice.config.num_speakers > 1:
-                    synth_kwargs['speaker_id'] = TTS_SPEAKER_ID
-                voice.synthesize(
-                    sentence,
-                    wav,
-                    **synth_kwargs,
-                )
-            yield buf.getvalue()
+            yield _synthesize_text(voice, sentence, request.speed)
 
     async def _stream():
         loop = asyncio.get_event_loop()
