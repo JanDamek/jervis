@@ -292,6 +292,8 @@ fun MainScreenView(
                     voiceStatus = voiceStatus,
                     onMicClick = onMicClick,
                     onCancelVoice = onCancelVoice,
+                    onTtsPlay = onTtsPlay,
+                    isTtsPlaying = isTtsPlaying,
                     modifier = Modifier.fillMaxSize(),
                 )
             }

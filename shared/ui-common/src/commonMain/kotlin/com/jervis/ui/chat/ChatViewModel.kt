@@ -1568,6 +1568,7 @@ class ChatViewModel(
 
     @OptIn(ExperimentalEncodingApi::class)
     fun playTts(text: String) {
+        println("TTS: playTts called, textLen=${text.length}, isTtsPlaying=${_isTtsPlaying.value}")
         if (_isTtsPlaying.value) {
             ttsJob?.cancel()
             ttsPlayer.stop()
@@ -1582,24 +1583,32 @@ class ChatViewModel(
                 println("TTS: streaming text=${text.take(50)}")
 
                 val jsonBody = """{"text":"${text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")}"}"""
+                val ttsUrl = "$serverUrl/api/v1/tts/stream"
+                println("TTS: POST $ttsUrl body=${jsonBody.take(80)}")
 
                 postSseStream(
-                    url = "$serverUrl/api/v1/tts/stream",
+                    url = ttsUrl,
                     bodyBytes = jsonBody.encodeToByteArray(),
                     contentType = "application/json",
                 ) { event ->
+                    println("TTS: SSE event=${event.event} dataLen=${event.data.length}")
                     when (event.event) {
                         "tts_audio" -> {
                             val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
                             val audioB64 = json?.get("data")?.jsonPrimitive?.content
+                            println("TTS: audio chunk base64Len=${audioB64?.length ?: 0}")
                             if (!audioB64.isNullOrBlank()) {
                                 try {
+                                    val audioBytes = Base64.decode(audioB64)
+                                    println("TTS: decoded ${audioBytes.size} bytes, playing...")
                                     // play() blocks until chunk finishes — sequential playback
                                     withContext(Dispatchers.IO) {
-                                        ttsPlayer.play(Base64.decode(audioB64))
+                                        ttsPlayer.play(audioBytes)
                                     }
+                                    println("TTS: chunk playback done")
                                 } catch (e: Exception) {
-                                    println("TTS playback error: ${e.message}")
+                                    println("TTS playback error: ${e::class.simpleName}: ${e.message}")
+                                    e.printStackTrace()
                                 }
                             }
                         }
