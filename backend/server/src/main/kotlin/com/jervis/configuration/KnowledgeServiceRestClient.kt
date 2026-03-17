@@ -755,6 +755,29 @@ class KnowledgeServiceRestClient(
     }
 
     /**
+     * Retag all KB entries from one project to another (for project merge).
+     * Calls the same /retag-group endpoint but with projectId migration.
+     */
+    suspend fun retagProjectId(sourceProjectId: String, targetProjectId: String): Boolean {
+        logger.info { "KB retag-project: source=$sourceProjectId target=$targetProjectId" }
+        try {
+            val response = client.post("$apiBaseUrl/retag-project") {
+                contentType(ContentType.Application.Json)
+                setBody(mapOf("sourceProjectId" to sourceProjectId, "targetProjectId" to targetProjectId))
+            }
+            if (response.status.isSuccess()) {
+                logger.info { "KB retag-project succeeded: $sourceProjectId → $targetProjectId" }
+                return true
+            }
+            val errorBody = response.bodyAsText()
+            logger.warn { "KB retag-project failed: ${response.status} $errorBody" }
+        } catch (e: Exception) {
+            logger.warn(e) { "KB retag-project failed: ${e.message}" }
+        }
+        return false
+    }
+
+    /**
      * Extract text from a file without RAG indexing.
      *
      * Uses the KB service's extraction pipeline (Tika for documents, VLM for images/PDFs)

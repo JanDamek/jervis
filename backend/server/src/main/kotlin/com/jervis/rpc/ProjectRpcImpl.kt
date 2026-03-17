@@ -2,6 +2,8 @@ package com.jervis.rpc
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
+import com.jervis.dto.MergeExecuteDto
+import com.jervis.dto.MergePreviewDto
 import com.jervis.dto.ProjectDto
 import com.jervis.entity.WorkspaceStatus
 import com.jervis.mapper.toDocument
@@ -67,6 +69,20 @@ class ProjectRpcImpl(
                     lastWorkspaceError = null,
                 ),
             )
+            true
+        }
+
+    override suspend fun previewMerge(sourceProjectId: String, targetProjectId: String): MergePreviewDto =
+        executeWithErrorHandling("previewMerge") {
+            projectService.previewMerge(
+                sourceId = ProjectId(ObjectId(sourceProjectId)),
+                targetId = ProjectId(ObjectId(targetProjectId)),
+            )
+        }
+
+    override suspend fun executeMerge(request: MergeExecuteDto): Boolean =
+        executeWithErrorHandling("executeMerge") {
+            projectService.executeMerge(request)
             true
         }
 }

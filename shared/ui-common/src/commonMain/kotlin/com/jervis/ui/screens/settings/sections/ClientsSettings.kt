@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CallMerge
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -52,6 +53,7 @@ fun ClientsSettings(repository: JervisRepository) {
     var editingProject by remember { mutableStateOf<ProjectDto?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var showArchivedSection by remember { mutableStateOf(false) }
+    var mergeSource by remember { mutableStateOf<ProjectDto?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -110,6 +112,29 @@ fun ClientsSettings(repository: JervisRepository) {
         return
     }
 
+    // Merge project dialog (top-level)
+    if (mergeSource != null) {
+        MergeProjectDialog(
+            source = mergeSource!!,
+            otherProjects = allProjects.filter {
+                it.clientId == mergeSource!!.clientId && it.id != mergeSource!!.id
+            },
+            repository = repository,
+            onDismiss = { mergeSource = null },
+            onMerged = { src, tgt ->
+                mergeSource = null
+                scope.launch {
+                    snackbarHostState.showSnackbar("Projekt ${src.name} spojen do ${tgt.name}")
+                    loadData()
+                }
+            },
+            onError = { msg ->
+                mergeSource = null
+                scope.launch { snackbarHostState.showSnackbar(msg) }
+            },
+        )
+    }
+
     val activeClients = clients.filter { !it.archived }
     val archivedClients = clients.filter { it.archived }
 
@@ -156,6 +181,7 @@ fun ClientsSettings(repository: JervisRepository) {
                                         }
                                     }
                                 },
+                                onMergeProject = { source -> mergeSource = source },
                             )
                         }
 
@@ -271,6 +297,7 @@ private fun ClientExpandableCard(
     onEditClient: () -> Unit,
     onEditProject: (ProjectDto) -> Unit,
     onCreateProject: (String) -> Unit,
+    onMergeProject: (source: ProjectDto) -> Unit = { },
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -338,6 +365,13 @@ private fun ClientExpandableCard(
                                     )
                                 }
                             }
+                            if (projects.size > 1) {
+                                JIconButton(
+                                    onClick = { onMergeProject(project) },
+                                    icon = Icons.Default.CallMerge,
+                                    contentDescription = "Spojit projekt",
+                                )
+                            }
                             JIconButton(
                                 onClick = { onEditProject(project) },
                                 icon = Icons.Default.Edit,
@@ -356,4 +390,212 @@ private fun ClientExpandableCard(
             }
         }
     }
+}
+
+/**
+ * 2-step merge dialog: select target → preview conflicts → resolve → execute.
+ */
+@Composable
+private fun MergeProjectDialog(
+    source: ProjectDto,
+    otherProjects: List<ProjectDto>,
+    repository: JervisRepository,
+    onDismiss: () -> Unit,
+    onMerged: (source: ProjectDto, target: ProjectDto) -> Unit,
+    onError: (String) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var selectedTarget by remember { mutableStateOf<ProjectDto?>(null) }
+    var preview by remember { mutableStateOf<com.jervis.dto.MergePreviewDto?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+    var resolutions by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+
+    val step = if (preview != null) "conflicts" else "select"
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(if (step == "select") "Spojit projekt" else "Konflikty ke spojeni")
+        },
+        text = {
+            Column(modifier = Modifier.heightIn(max = 400.dp)) {
+                if (step == "select") {
+                    Text(
+                        "Presunout data z ${source.name} do jineho projektu a smazat puvodni.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
+                    Text("Cilovy projekt:", style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.height(8.dp))
+                    otherProjects.forEach { target ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedTarget = target }
+                                .heightIn(min = JervisSpacing.touchTarget)
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = selectedTarget?.id == target.id,
+                                onClick = { selectedTarget = target },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(target.name, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                } else if (preview != null) {
+                    // Show auto-migrate summary
+                    if (preview!!.autoMigrate.isNotEmpty()) {
+                        val totalDocs = preview!!.autoMigrate.sumOf { it.count }
+                        Text(
+                            "Automaticky presunuto: $totalDocs dokumentu",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                    }
+
+                    if (preview!!.conflicts.isEmpty()) {
+                        Text(
+                            "Zadne konflikty. Vse bude presunuto automaticky.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    } else {
+                        Text(
+                            "${preview!!.conflicts.size} konfliktu k vyreseni:",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                        preview!!.conflicts.forEach { conflict ->
+                            JCard {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text(conflict.label, style = MaterialTheme.typography.labelMedium)
+                                    Spacer(Modifier.height(4.dp))
+                                    val currentRes = resolutions[conflict.key] ?: "KEEP_TARGET"
+                                    // Source option
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { resolutions = resolutions + (conflict.key to "KEEP_SOURCE") }
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        androidx.compose.material3.RadioButton(
+                                            selected = currentRes == "KEEP_SOURCE",
+                                            onClick = { resolutions = resolutions + (conflict.key to "KEEP_SOURCE") },
+                                        )
+                                        Text(
+                                            "A: ${conflict.sourceValue.take(80)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 2,
+                                        )
+                                    }
+                                    // Target option
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { resolutions = resolutions + (conflict.key to "KEEP_TARGET") }
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        androidx.compose.material3.RadioButton(
+                                            selected = currentRes == "KEEP_TARGET",
+                                            onClick = { resolutions = resolutions + (conflict.key to "KEEP_TARGET") },
+                                        )
+                                        Text(
+                                            "B: ${conflict.targetValue.take(80)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 2,
+                                        )
+                                    }
+                                    // Both option (if applicable)
+                                    if (conflict.canMergeBoth) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { resolutions = resolutions + (conflict.key to "MERGE_BOTH") }
+                                                .padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            androidx.compose.material3.RadioButton(
+                                                selected = currentRes == "MERGE_BOTH",
+                                                onClick = { resolutions = resolutions + (conflict.key to "MERGE_BOTH") },
+                                            )
+                                            Text("Oboje", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                        }
+                    }
+                }
+
+                if (isLoading) {
+                    Spacer(Modifier.height(8.dp))
+                    androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        },
+        confirmButton = {
+            if (step == "select") {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        val tgt = selectedTarget ?: return@TextButton
+                        isLoading = true
+                        scope.launch {
+                            try {
+                                preview = repository.projects.previewMerge(source.id, tgt.id)
+                                // Default all resolutions to KEEP_TARGET
+                                resolutions = preview!!.conflicts.associate { it.key to "KEEP_TARGET" }
+                            } catch (e: Exception) {
+                                onError("Chyba: ${e.message}")
+                            } finally {
+                                isLoading = false
+                            }
+                        }
+                    },
+                    enabled = selectedTarget != null && !isLoading,
+                ) {
+                    Text("Dalsi")
+                }
+            } else {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        isLoading = true
+                        scope.launch {
+                            try {
+                                val req = com.jervis.dto.MergeExecuteDto(
+                                    sourceProjectId = source.id,
+                                    targetProjectId = selectedTarget!!.id,
+                                    resolutions = resolutions.map { (k, v) ->
+                                        com.jervis.dto.MergeResolutionDto(key = k, resolution = v)
+                                    },
+                                )
+                                repository.projects.executeMerge(req)
+                                onMerged(source, selectedTarget!!)
+                            } catch (e: Exception) {
+                                onError("Chyba pri spojovani: ${e.message}")
+                            } finally {
+                                isLoading = false
+                            }
+                        }
+                    },
+                    enabled = !isLoading,
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Text("Spojit a smazat")
+                }
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Zrusit")
+            }
+        },
+    )
 }
