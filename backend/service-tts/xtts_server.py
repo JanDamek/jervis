@@ -5,14 +5,18 @@ Replaces Piper TTS with much higher quality neural TTS.
 Supports Czech + English (and 15 other languages) from a single cloned voice.
 Requires GPU (CUDA) for acceptable latency.
 
-API is backward-compatible with the Piper tts_server.py:
-  POST /tts  {"text": "...", "speed": 1.0}  → audio/wav
-  POST /tts/stream  {"text": "...", "speed": 1.0}  → streaming audio/wav
+API:
+  POST /tts         {"text": "...", "speed": 1.0}  → audio/wav (batch)
+  POST /tts/stream  {"text": "...", "speed": 1.0}  → SSE with base64 WAV chunks (~0.5s first chunk)
 """
 import asyncio
+import base64
 import io
+import json
 import os
+import queue
 import re
+import threading
 import time
 import wave
 from contextlib import asynccontextmanager
@@ -253,9 +257,82 @@ async def synthesize(request: TtsRequest) -> Response:
     )
 
 
+def _wav_chunk_to_bytes(wav_chunk, sample_rate: int) -> bytes:
+    """Convert a float32 tensor/numpy chunk to WAV bytes."""
+    if isinstance(wav_chunk, torch.Tensor):
+        wav_chunk = wav_chunk.cpu().numpy()
+    wav_chunk = wav_chunk.squeeze()
+    wav_int16 = np.clip(wav_chunk * 32767, -32768, 32767).astype(np.int16)
+    audio_buffer = io.BytesIO()
+    with wave.open(audio_buffer, "wb") as wf:
+        wf.setframerate(sample_rate)
+        wf.setsampwidth(2)
+        wf.setnchannels(1)
+        wf.writeframes(wav_int16.tobytes())
+    return audio_buffer.getvalue()
+
+
+def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue.Queue):
+    """Run inference_stream in a thread, put WAV chunks into queue."""
+    try:
+        if not language:
+            language = _detect_language(text)
+
+        model = _tts.synthesizer.tts_model
+        sample_rate = _tts.synthesizer.output_sample_rate
+
+        if _gpt_cond_latent is None or _speaker_embedding is None:
+            # Fallback to batch if no speaker embedding
+            wav_data = _synthesize_text(text, speed, language)
+            chunk_queue.put(("chunk", wav_data))
+            chunk_queue.put(("done", None))
+            return
+
+        # Split text into sentences for natural pauses
+        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        chunk_idx = 0
+
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+
+            try:
+                for wav_chunk in model.inference_stream(
+                    text=sentence,
+                    language=language,
+                    gpt_cond_latent=_gpt_cond_latent,
+                    speaker_embedding=_speaker_embedding,
+                    speed=speed,
+                    stream_chunk_size=12,  # smaller = faster first chunk (~0.3-0.5s)
+                    enable_text_splitting=False,
+                ):
+                    wav_bytes = _wav_chunk_to_bytes(wav_chunk, sample_rate)
+                    chunk_queue.put(("chunk", wav_bytes))
+                    chunk_idx += 1
+            except Exception as e:
+                print(f"[TTS] inference_stream error on sentence '{sentence[:40]}': {e}")
+                # Fallback to batch for this sentence
+                try:
+                    wav_data = _synthesize_text(sentence, speed, language)
+                    chunk_queue.put(("chunk", wav_data))
+                    chunk_idx += 1
+                except Exception as e2:
+                    print(f"[TTS] batch fallback also failed: {e2}")
+
+        chunk_queue.put(("done", None))
+    except Exception as e:
+        print(f"[TTS] _stream_inference error: {e}")
+        chunk_queue.put(("error", str(e)))
+
+
 @app.post("/tts/stream")
 async def synthesize_stream(request: TtsRequest):
-    """Synthesize speech from text, stream WAV audio chunks (for low-latency playback)."""
+    """Synthesize speech, stream WAV chunks via SSE using inference_stream().
+
+    Each SSE event contains a base64-encoded WAV chunk (~0.5s of audio).
+    First chunk arrives in ~0.5s instead of waiting for full sentence.
+    """
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Empty text")
 
@@ -268,23 +345,55 @@ async def synthesize_stream(request: TtsRequest):
     async with _lock:
         await asyncio.get_running_loop().run_in_executor(None, _load_tts)
 
-    def _generate_chunks():
-        """Generate audio sentence by sentence for low-latency streaming."""
-        sentences = re.split(r'(?<=[.!?])\s+', request.text.strip())
-        for sentence in sentences:
-            if not sentence.strip():
-                continue
-            yield _synthesize_text(sentence, request.speed, request.language)
+    start = time.monotonic()
+    chunk_q: queue.Queue = queue.Queue()
 
-    async def _stream():
-        loop = asyncio.get_event_loop()
-        chunks = await loop.run_in_executor(None, lambda: list(_generate_chunks()))
-        for chunk in chunks:
-            yield chunk
+    # Run inference in background thread (GPU work)
+    thread = threading.Thread(
+        target=_stream_inference,
+        args=(request.text, request.speed, request.language, chunk_q),
+        daemon=True,
+    )
+    thread.start()
+
+    async def _sse_stream():
+        chunk_idx = 0
+        loop = asyncio.get_running_loop()
+        first_chunk_time = None
+
+        while True:
+            # Non-blocking poll from queue
+            try:
+                msg_type, data = await loop.run_in_executor(None, chunk_q.get, True, 30.0)
+            except Exception:
+                yield f"event: error\ndata: {{\"text\":\"Timeout waiting for audio chunk\"}}\n\n"
+                break
+
+            if msg_type == "done":
+                elapsed = time.monotonic() - start
+                lang = request.language or _detect_language(request.text)
+                print(f"[TTS] Streamed {chunk_idx} chunks for {len(request.text)} chars in {elapsed:.2f}s "
+                      f"(first_chunk={first_chunk_time:.2f}s, lang={lang})", flush=True)
+                yield f"event: done\ndata: {{\"chunks\":{chunk_idx}}}\n\n"
+                break
+            elif msg_type == "error":
+                yield f"event: error\ndata: {{\"text\":\"{data}\"}}\n\n"
+                break
+            elif msg_type == "chunk":
+                if first_chunk_time is None:
+                    first_chunk_time = time.monotonic() - start
+                audio_b64 = base64.b64encode(data).decode("ascii")
+                yield f"event: tts_audio\ndata: {{\"data\":\"{audio_b64}\",\"chunk\":{chunk_idx}}}\n\n"
+                chunk_idx += 1
 
     return StreamingResponse(
-        _stream(),
-        media_type="audio/wav",
+        _sse_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
     )
 
 

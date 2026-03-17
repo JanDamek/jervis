@@ -441,6 +441,7 @@ fun Routing.installVoiceChatApi(
         }
     }
 
+    // TTS Stream — forwards SSE chunks from XTTS inference_stream() to client
     post("/api/v1/tts/stream") {
         val body = call.receive<TtsStreamRequest>()
         if (body.text.isBlank()) {
@@ -448,20 +449,51 @@ fun Routing.installVoiceChatApi(
             return@post
         }
 
+        logger.info { "TTS_STREAM | text=${body.text.take(50)} | speed=${body.speed}" }
+
         call.response.headers.append("Cache-Control", "no-cache, no-store")
         call.response.headers.append("X-Accel-Buffering", "no")
+        call.response.headers.append("Connection", "keep-alive")
         call.respondTextWriter(contentType = ContentType.Text.EventStream) {
             suspend fun sse(event: String, data: String) { write("event: $event\ndata: $data\n\n"); flush() }
 
             try {
-                val sentences = body.text.split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
-                for (sentence in sentences) {
-                    val ttsAudio = generateTtsAudio(sentence)
-                    if (ttsAudio != null) {
-                        sse("tts_audio", """{"data":"$ttsAudio","sentence":"${sentence.escapeJson()}"}""")
+                // Connect to XTTS streaming endpoint (SSE)
+                val ttsStreamUrl = TTS_URL.replace("/tts", "/tts/stream")
+                val streamClient = HttpClient(io.ktor.client.engine.cio.CIO) {
+                    install(HttpTimeout) {
+                        requestTimeoutMillis = 120_000
+                        connectTimeoutMillis = 5_000
+                        socketTimeoutMillis = 120_000
                     }
                 }
-                sse("done", "{}")
+                try {
+                    val ttsResp = streamClient.post(ttsStreamUrl) {
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"text":"${body.text.replace("\"", "\\\"").replace("\n", " ")}","speed":${body.speed}}""")
+                    }
+
+                    // Forward SSE events from XTTS → client
+                    val channel = ttsResp.bodyAsChannel()
+                    var ttsEvent = ""
+                    var ttsData = ""
+
+                    while (!channel.isClosedForRead) {
+                        val line = channel.readUTF8Line(1_000_000) ?: break
+                        when {
+                            line.startsWith("event: ") -> ttsEvent = line.removePrefix("event: ").trim()
+                            line.startsWith("data: ") -> ttsData = line.removePrefix("data: ").trim()
+                            line.isBlank() && ttsData.isNotEmpty() -> {
+                                // Forward directly — XTTS already sends tts_audio/done/error events
+                                sse(ttsEvent, ttsData)
+                                ttsEvent = ""
+                                ttsData = ""
+                            }
+                        }
+                    }
+                } finally {
+                    streamClient.close()
+                }
             } catch (e: Exception) {
                 logger.warn { "TTS_STREAM_ERROR: ${e.message}" }
                 try { sse("error", """{"text":"${e.message?.take(100)?.escapeJson() ?: "Chyba"}"}""") } catch (_: Exception) {}
