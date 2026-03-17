@@ -29,8 +29,8 @@ actual suspend fun postSseStream(
         var currentData = ""
 
         while (!channel.isClosedForRead) {
-            // Use large limit for readUTF8Line — TTS audio base64 can be 100K+ chars per line
-            val line = channel.readUTF8Line(limit = 1_000_000) ?: break
+            // Use large limit — TTS audio base64 can be 100K+ chars per line
+            val line = channel.readUTF8Line(1_000_000) ?: break
             when {
                 line.startsWith("event: ") -> currentEvent = line.removePrefix("event: ").trim()
                 line.startsWith("data: ") -> currentData = line.removePrefix("data: ").trim()
