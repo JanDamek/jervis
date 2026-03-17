@@ -1313,7 +1313,7 @@ private fun ChatMessageItem(
                                             modifier = Modifier.padding(bottom = 2.dp),
                                         ) {
                                             Icon(
-                                                when (message.source) {
+                                                when (message.source!!) {
                                                     ChatMessage.VoiceSource.WATCH -> Icons.Default.Watch
                                                     ChatMessage.VoiceSource.MOBILE -> Icons.Default.Smartphone
                                                     ChatMessage.VoiceSource.DESKTOP -> Icons.Default.Computer
