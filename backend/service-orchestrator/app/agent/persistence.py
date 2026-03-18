@@ -1088,7 +1088,7 @@ class AgentStore:
                     "client_id": client_id,
                     "task_type": task_type,
                     "last_run_at": datetime.now(timezone.utc).isoformat(),
-                    "result_summary": result_summary[:500],
+                    "result_summary": result_summary,
                 },
                 "$inc": {"run_count": 1},
             },

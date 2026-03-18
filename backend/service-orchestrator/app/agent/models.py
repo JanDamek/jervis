@@ -113,13 +113,15 @@ class GraphStatus(str, Enum):
 class EdgePayload(BaseModel):
     """Data that flows through an edge after the source vertex completes.
 
-    Each edge carries ONLY a summary (10-100 tokens) — lightweight.
-    Vertices must use tools (kb_search, etc.) for detailed data.
+    Edges carry a summary — typically concise (10-100 tokens) but can be
+    longer when the result genuinely requires it (e.g. detailed analysis,
+    multi-step findings). No hard truncation — the LLM decides summary length.
+    Vertices should use tools (kb_search, etc.) for very large datasets.
     """
 
     source_vertex_id: str
     source_vertex_title: str
-    summary: str                        # Concise result summary (10-100 tokens)
+    summary: str                        # Result summary (typically concise, no hard limit)
 
 
 # ---------------------------------------------------------------------------

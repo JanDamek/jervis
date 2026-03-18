@@ -312,7 +312,7 @@ def resume_parent_after_children(graph: AgentGraph, parent_id: str) -> None:
             children_payloads.append(EdgePayload(
                 source_vertex_id=child.id,
                 source_vertex_title=child.title,
-                summary=child.result_summary or child.result[:200],
+                summary=child.result_summary or child.result,
             ))
         elif child.status == VertexStatus.FAILED:
             children_payloads.append(EdgePayload(
@@ -930,7 +930,7 @@ def add_request_vertex(
         client_id=client_id,
         project_id=project_id or "",
         result=response,
-        result_summary=response_summary or response[:200],
+        result_summary=response_summary or response,
         started_at=now,
         completed_at=now if status == VertexStatus.COMPLETED else "",
         parent_id=parent_id,
@@ -1078,7 +1078,7 @@ def add_incoming_vertex(
     vertex = GraphVertex(
         id=f"v-incoming-{uuid.uuid4().hex[:12]}",
         title=title[:80],
-        description=prepared_context[:500] if prepared_context else title,
+        description=prepared_context or title,
         vertex_type=VertexType.INCOMING,
         status=VertexStatus.READY,
         client_id=client_id,
@@ -1170,7 +1170,7 @@ def resume_vertex(
     return complete_vertex(
         graph, vertex_id,
         result=answer,
-        result_summary=answer[:200],
+        result_summary=answer,
     )
 
 

@@ -1400,11 +1400,11 @@ def _extract_accumulated_result(messages: list[dict]) -> str:
         if msg.get("role") == "tool":
             content = msg.get("content", "")
             if content and not content.startswith("ERROR:") and len(content) > 20:
-                parts.append(content[:500])
+                parts.append(content)
         elif msg.get("role") == "assistant":
             content = msg.get("content", "")
             if content and len(content) > 10:
-                parts.append(content[:500])
+                parts.append(content)
     if parts:
         return "\n---\n".join(parts[-5:])  # Last 5 meaningful pieces
     return "(vertex completed without producing explicit result)"
