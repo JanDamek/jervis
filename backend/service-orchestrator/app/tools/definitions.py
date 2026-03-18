@@ -31,6 +31,35 @@ TOOL_WEB_SEARCH: dict = {
     },
 }
 
+TOOL_WEB_FETCH: dict = {
+    "type": "function",
+    "function": {
+        "name": "web_fetch",
+        "description": (
+            "Fetch the content of a web page (URL) and return its text. "
+            "Use after web_search to read the actual page content, or directly "
+            "when you know the URL. Returns cleaned text (HTML tags stripped). "
+            "Useful for: reading existing websites, checking if a URL is live, "
+            "scraping page content for analysis or comparison."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL to fetch (must start with http:// or https://).",
+                },
+                "max_length": {
+                    "type": "integer",
+                    "description": "Maximum text length to return in characters (default 10000).",
+                    "default": 10000,
+                },
+            },
+            "required": ["url"],
+        },
+    },
+}
+
 TOOL_KB_SEARCH: dict = {
     "type": "function",
     "function": {
@@ -456,8 +485,44 @@ TOOL_CREATE_SCHEDULED_TASK: dict = {
         },
     },
 }
+TOOL_WEB_CRAWL: dict = {
+    "type": "function",
+    "function": {
+        "name": "web_crawl",
+        "description": (
+            "Crawl a website and ingest its content into the Knowledge Base. "
+            "Follows links up to specified depth. Use for indexing client websites, "
+            "project documentation, wikis, or any web content the project needs to know about. "
+            "NOT for general documentation (Spring, React, etc.) — only project-specific content. "
+            "Content is scoped to the current client/project in KB."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The starting URL to crawl (must start with http:// or https://).",
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "description": "How deep to follow links (default 2). 1 = only the given page, 2 = page + linked pages.",
+                    "default": 2,
+                },
+                "allow_external": {
+                    "type": "boolean",
+                    "description": "Whether to follow links to other domains (default false).",
+                    "default": False,
+                },
+            },
+            "required": ["url"],
+        },
+    },
+}
+
 ALL_RESPOND_TOOLS: list[dict] = [
     TOOL_WEB_SEARCH,
+    TOOL_WEB_FETCH,
+    TOOL_WEB_CRAWL,
     TOOL_KB_SEARCH,
     TOOL_KB_DELETE,
     TOOL_STORE_KNOWLEDGE,

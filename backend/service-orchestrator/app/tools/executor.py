@@ -165,6 +165,19 @@ async def execute_tool(
                 query=arguments.get("query", ""),
                 max_results=arguments.get("max_results", 5),
             )
+        elif tool_name == "web_fetch":
+            result = await _execute_web_fetch(
+                url=arguments.get("url", ""),
+                max_length=arguments.get("max_length", 10000),
+            )
+        elif tool_name == "web_crawl":
+            result = await _execute_web_crawl(
+                url=arguments.get("url", ""),
+                max_depth=arguments.get("max_depth", 2),
+                allow_external=arguments.get("allow_external", False),
+                client_id=client_id,
+                project_id=project_id,
+            )
         elif tool_name == "kb_search":
             result = await _execute_kb_search(
                 query=arguments.get("query", ""),
@@ -778,6 +791,113 @@ async def _execute_web_search(query: str, max_results: int = 5) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+async def _execute_web_fetch(url: str, max_length: int = 10000) -> str:
+    """Fetch a web page and return its text content (HTML stripped).
+
+    Uses httpx to GET the URL, then strips HTML tags to extract readable text.
+    Useful for reading existing websites, checking if URLs are live, etc.
+    """
+    import re as _re
+
+    if not url.strip():
+        return "Error: Empty URL."
+
+    if not url.startswith(("http://", "https://")):
+        return f"Error: Invalid URL (must start with http:// or https://): {url}"
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=15.0,
+            follow_redirects=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; JervisBot/1.0)",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+        ) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+    except httpx.TimeoutException:
+        return f"Error: Timeout fetching {url}"
+    except httpx.HTTPStatusError as e:
+        return f"Error: HTTP {e.response.status_code} fetching {url}"
+    except Exception as e:
+        return f"Error: Failed to fetch {url}: {str(e)[:200]}"
+
+    content_type = resp.headers.get("content-type", "")
+    raw = resp.text
+
+    # Strip HTML tags to get readable text
+    if "html" in content_type or raw.strip().startswith("<"):
+        # Remove script/style blocks
+        text = _re.sub(r"<(script|style|noscript)[^>]*>.*?</\1>", "", raw, flags=_re.DOTALL | _re.IGNORECASE)
+        # Remove HTML tags
+        text = _re.sub(r"<[^>]+>", " ", text)
+        # Decode common HTML entities
+        text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        text = text.replace("&nbsp;", " ").replace("&quot;", '"').replace("&#39;", "'")
+        # Collapse whitespace
+        text = _re.sub(r"\s+", " ", text).strip()
+    else:
+        text = raw.strip()
+
+    if not text:
+        return f"Page at {url} returned empty content."
+
+    # Truncate to max_length
+    if len(text) > max_length:
+        text = text[:max_length] + f"\n\n[... truncated at {max_length} chars, total {len(text)}]"
+
+    return f"Content of {url}:\n\n{text}"
+
+
+async def _execute_web_crawl(
+    url: str,
+    max_depth: int = 2,
+    allow_external: bool = False,
+    client_id: str = "",
+    project_id: str | None = None,
+) -> str:
+    """Crawl a website and ingest content into KB via KB service /crawl endpoint."""
+    if not url.strip():
+        return "Error: Empty URL."
+    if not url.startswith(("http://", "https://")):
+        return f"Error: Invalid URL: {url}"
+
+    kb_url = f"{settings.kb_service_url}/crawl"
+    payload = {
+        "url": url,
+        "maxDepth": max_depth,
+        "allowExternalDomains": allow_external,
+        "clientId": client_id or "",
+        "projectId": project_id or "",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(kb_url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.TimeoutException:
+        return f"Error: Web crawl timed out after 120s for {url}"
+    except httpx.HTTPStatusError as e:
+        return f"Error: KB crawl returned HTTP {e.response.status_code}: {e.response.text[:200]}"
+    except Exception as e:
+        return f"Error: Web crawl failed: {str(e)[:200]}"
+
+    pages = data.get("pages_indexed", data.get("pagesIndexed", 0))
+    chunks = data.get("chunks_created", data.get("chunksCreated", 0))
+    skipped = data.get("pages_skipped", data.get("pagesSkipped", 0))
+
+    return (
+        f"Web crawl complete for {url}:\n"
+        f"- Pages indexed: {pages}\n"
+        f"- Chunks created: {chunks}\n"
+        f"- Pages skipped (already indexed): {skipped}\n"
+        f"- Depth: {max_depth}\n"
+        f"Content is now searchable via kb_search."
+    )
 
 
 async def _execute_kb_search(

@@ -66,7 +66,8 @@ async def build_system_prompt(
 {clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}{active_map_section}
 ## Práce s tools
 Máš k dispozici sadu tools (viz tool schemas). Pravidla:
-- Hledej znalosti: **kb_search** (interní znalosti, kód, architektura) → web_search (internet) → zeptej se
+- Hledej znalosti: **kb_search** (interní znalosti, kód, architektura) → web_search (internet) → web_fetch (stáhni obsah stránky) → zeptej se
+- Ověřuj realitu: Když se user ptá "existuje X?", "podívej se na Y" → PROAKTIVNĚ použij web_search + web_fetch. Neptej se "mám hledat?" — HLEDEJ.
 - Oprav KB: kb_delete (smaž špatné/zastaralé KB záznamy podle sourceUrn z kb_search výsledků)
 - Zapamatuj: memory_store (fakt), store_knowledge (do KB)
 - Úkoly: create_background_task (zásobárna práce na pozadí), respond_to_user_task (čekající task)
@@ -137,7 +138,7 @@ Každý tool call stojí 20-30 sekund. Zbytečné tool calls = uživatel čeká 
 - User: "Ahoj" → Pozdrav a zmíň čekající úkoly. Nevolej switch_context ani kb_search.
 - User: "Co víš o BMS?" → Pokud máš BMS v seznamu klientů, ODPOVĚZ. kb_search jen pokud potřebuješ DETAILY.
 
-- Maximálně 2-3 tool calls na odpověď. Nebloudí — zaměř se na otázku.
+- Maximálně 5 tool calls na odpověď. Nebloudí — zaměř se na otázku, ale buď PROAKTIVNÍ (hledej, ověřuj, neptej se zbytečně).
 - **NIKDY neukládej celou zprávu uživatele do KB/memory.** Pokud user pošle dlouhou analýzu, reaguj na ni — neukládej ji. Zapamatuj si max klíčové fakty (1-2 věty).
 - **NIKDY neukládej runtime stav** (aktivní projekt, přepnutý klient) do memory_store — to NENÍ fakt k zapamatování.
 
@@ -181,7 +182,8 @@ požadavek ("založ nový projekt X"). Bez explicitního požadavku NIKDY nezakl
 
 **Pravidla:**
 - Neříkej "nemám přístup" — máš tools, POUŽIJ JE.
-- Když nevíš, hledej (KB → web → zeptej se).
+- Když nevíš, hledej (KB → web_search → web_fetch → zeptej se).
+- NIKDY se neptej "Chceš abych hledal/ověřil/zkontroloval?" — prostě to UDĚLEJ. User se ptá = chce odpověď, ne nabídku.
 - Stručné odpovědi. Žádné seznamy s odrážkami když stačí věta.
 
 ## Práce s kontextem
