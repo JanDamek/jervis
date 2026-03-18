@@ -49,4 +49,19 @@ interface ProjectRepository : CoroutineCrudRepository<ProjectDocument, ProjectId
      * Find projects with pending KB retag-group operations (crash recovery).
      */
     fun findByPendingRetagGroupIdIsNotNull(): Flow<ProjectDocument>
+
+    // --- Active-only queries for background processing ---
+
+    /** Active projects for a client (excludes closed/completed projects). */
+    fun findByClientIdAndActiveTrue(clientId: ClientId): Flow<ProjectDocument>
+
+    /** Active projects referencing a connection (for polling). */
+    @Query("{ 'resources.connectionId': ?0, 'active': true }")
+    fun findByResourcesConnectionIdAndActiveTrue(connectionId: ObjectId): Flow<ProjectDocument>
+
+    /** All active projects (for background indexing, git sync, etc.). */
+    fun findByActiveTrue(): Flow<ProjectDocument>
+
+    /** Active projects in a group (for KB cross-project visibility). */
+    fun findByGroupIdAndActiveTrue(groupId: ProjectGroupId): Flow<ProjectDocument>
 }

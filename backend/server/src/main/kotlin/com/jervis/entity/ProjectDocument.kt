@@ -58,6 +58,13 @@ data class ProjectDocument(
     val lastWorkspaceError: String? = null,
     /** Non-null when a KB retag-group operation is pending (crash recovery). */
     val pendingRetagGroupId: String? = null,
+    /**
+     * Whether this project is actively worked on.
+     * Inactive projects are excluded from indexing, qualification, vulnerability scans,
+     * code review, and other background processing. They remain visible in UI but marked
+     * as "Uzavřeno" (closed/completed).
+     */
+    val active: Boolean = true,
 )
 
 /**

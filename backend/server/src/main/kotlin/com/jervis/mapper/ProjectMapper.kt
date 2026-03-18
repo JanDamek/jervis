@@ -40,6 +40,7 @@ fun ProjectDocument.toDto(): ProjectDto =
         maxOpenRouterTier = this.cloudModelPolicy?.maxOpenRouterTier?.name,
         reviewLanguage = this.reviewLanguage,
         isJervisInternal = this.isJervisInternal,
+        active = this.active,
         workspaceStatus = this.workspaceStatus?.name,
         workspaceError = this.lastWorkspaceError,
         workspaceRetryCount = this.workspaceRetryCount,
@@ -93,6 +94,7 @@ fun ProjectDto.toDocument(): ProjectDocument {
         connectionCapabilities = this.connectionCapabilities.map { it.toEntity() },
         resources = this.resources.map { it.toEntity() },
         resourceLinks = this.resourceLinks.map { it.toEntity() },
+        active = this.active,
     )
 }
 

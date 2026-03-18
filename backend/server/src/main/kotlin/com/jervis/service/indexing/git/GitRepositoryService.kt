@@ -131,7 +131,7 @@ class GitRepositoryService(
      * Called on startup and can be triggered manually.
      */
     suspend fun syncAllProjects() {
-        val projects = projectRepository.findAll().toList()
+        val projects = projectRepository.findByActiveTrue().toList()
         for (project in projects) {
             val repoResources = project.resources.filter { it.capability == ConnectionCapability.REPOSITORY }
             for (resource in repoResources) {
@@ -167,7 +167,7 @@ class GitRepositoryService(
      * Called on startup to prepare workspaces for orchestrator/agent operations.
      */
     suspend fun syncAllAgentWorkspaces() {
-        val projects = projectRepository.findAll().toList()
+        val projects = projectRepository.findByActiveTrue().toList()
         var successCount = 0
         var failCount = 0
 

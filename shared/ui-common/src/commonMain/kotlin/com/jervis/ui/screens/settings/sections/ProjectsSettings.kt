@@ -70,7 +70,12 @@ fun ProjectsSettings(repository: JervisRepository) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(project.name, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (project.active) project.name else "${project.name} (uzavřeno)",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (project.active) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Text(
                             project.description ?: "Bez popisu",
                             style = MaterialTheme.typography.bodySmall,

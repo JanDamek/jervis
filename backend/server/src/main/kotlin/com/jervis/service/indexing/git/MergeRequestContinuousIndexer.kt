@@ -99,7 +99,7 @@ class MergeRequestContinuousIndexer(
     // -- Polling: discover new MRs from providers ---------------------
 
     private suspend fun pollAllProjects() {
-        val projects = projectRepository.findAll().toList()
+        val projects = projectRepository.findByActiveTrue().toList()
 
         for (project in projects) {
             val repoResources = project.resources.filter { it.capability == ConnectionCapability.REPOSITORY }

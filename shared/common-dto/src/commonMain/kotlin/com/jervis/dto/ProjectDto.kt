@@ -42,6 +42,8 @@ data class ProjectDto(
     val nextWorkspaceRetryAt: String? = null,  // ISO timestamp of next retry
     // Internal project flag (hidden from UI lists)
     val isJervisInternal: Boolean = false,
+    // Whether project is actively worked on (false = closed/completed, skips background processing)
+    val active: Boolean = true,
 )
 
 /**

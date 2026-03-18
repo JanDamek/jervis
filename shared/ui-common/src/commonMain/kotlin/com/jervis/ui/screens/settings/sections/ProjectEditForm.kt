@@ -101,6 +101,9 @@ internal fun ProjectEditForm(
     var autoUseGemini by remember { mutableStateOf(project.autoUseGemini ?: false) }
     var maxOpenRouterTier by remember { mutableStateOf(project.maxOpenRouterTier ?: "NONE") }
 
+    // Active status
+    var active by remember { mutableStateOf(project.active) }
+
     // Review language override
     var overrideReviewLanguage by remember { mutableStateOf(project.reviewLanguage != null) }
     var reviewLanguage by remember { mutableStateOf(project.reviewLanguage ?: "English") }
@@ -210,6 +213,7 @@ internal fun ProjectEditForm(
                     autoUseGemini = if (overrideCloudPolicy) autoUseGemini else null,
                     maxOpenRouterTier = if (overrideCloudPolicy) maxOpenRouterTier else null,
                     reviewLanguage = if (overrideReviewLanguage) reviewLanguage else null,
+                    active = active,
                 ),
             )
         },
@@ -247,6 +251,20 @@ internal fun ProjectEditForm(
                             onItemSelected = { selectedGroupId = it?.id },
                             label = "Skupina projektů",
                             itemLabel = { it?.name ?: "(Žádná skupina)" },
+                        )
+                    }
+
+                    Spacer(Modifier.height(JervisSpacing.itemGap))
+                    JCheckboxRow(
+                        label = "Aktivní projekt",
+                        checked = active,
+                        onCheckedChange = { active = it },
+                    )
+                    if (!active) {
+                        Text(
+                            "Neaktivní projekt je vyloučen z indexace, pollingu, code review a dalšího pozadí zpracování.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }

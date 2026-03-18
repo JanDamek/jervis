@@ -1189,7 +1189,7 @@ class BackgroundEngine(
         // Build client/project overview for global scope
         val activeClientIds = allClients.mapNotNull { it.id }.toSet()
         val allProjects = try {
-            projectRepository.findAll().toList()
+            projectRepository.findByActiveTrue().toList()
                 .filter { it.clientId in activeClientIds }
         } catch (_: Exception) {
             emptyList()
@@ -1389,7 +1389,7 @@ class BackgroundEngine(
      * For projects without workspaceStatus, trigger background clone.
      */
     private suspend fun initializeAllProjectWorkspaces() {
-        val allProjects = projectService.getAllProjects()
+        val allProjects = projectService.getActiveProjects()
         val gitProjects = allProjects.filter { project ->
             project.resources.any { it.capability == com.jervis.dto.connection.ConnectionCapability.REPOSITORY }
         }

@@ -71,6 +71,9 @@ class ProjectService(
 
     suspend fun getAllProjects(): List<ProjectDocument> = projectRepository.findAll().toList()
 
+    /** Only active projects — for background processing (indexing, polling, etc.). */
+    suspend fun getActiveProjects(): List<ProjectDocument> = projectRepository.findByActiveTrue().toList()
+
     suspend fun listProjectsForClient(clientId: ClientId): List<ProjectDocument> = projectRepository.findByClientId(clientId).toList()
 
     suspend fun saveProject(project: ProjectDocument): ProjectDto {
@@ -89,6 +92,7 @@ class ProjectService(
                 connectionCapabilities = project.connectionCapabilities,
                 resources = project.resources,
                 resourceLinks = project.resourceLinks,
+                active = project.active,
             )
                 ?: project
 
