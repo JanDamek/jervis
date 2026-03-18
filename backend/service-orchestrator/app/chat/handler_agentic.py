@@ -496,34 +496,9 @@ async def run_agentic_loop(
                             },
                         )
 
-                # Track scope from tool arguments
-                tool_client = arguments.get("client_id")
-                tool_project = arguments.get("project_id")
-                if tool_client and tool_client != effective_client_id:
-                    effective_client_id = tool_client
-                    effective_project_id = tool_project
-                    yield ChatStreamEvent(
-                        type="scope_change",
-                        metadata={
-                            "clientId": tool_client,
-                            "clientName": resolve_client_name(tool_client, runtime_ctx) or "",
-                            "projectId": tool_project or "",
-                            "projectName": resolve_project_name(tool_client, tool_project, runtime_ctx) or "",
-                            "projects": resolve_client_projects_json(tool_client, runtime_ctx),
-                        },
-                    )
-                elif tool_project and tool_project != effective_project_id:
-                    effective_project_id = tool_project
-                    yield ChatStreamEvent(
-                        type="scope_change",
-                        metadata={
-                            "clientId": effective_client_id or "",
-                            "clientName": resolve_client_name(effective_client_id, runtime_ctx) or "",
-                            "projectId": tool_project,
-                            "projectName": resolve_project_name(effective_client_id, tool_project, runtime_ctx) or "",
-                            "projects": resolve_client_projects_json(effective_client_id, runtime_ctx),
-                        },
-                    )
+                # Scope is tracked ONLY via explicit switch_context tool —
+                # do NOT infer scope changes from tool arguments (client_id/project_id)
+                # as LLM may pass wrong IDs causing unwanted UI scope switches.
 
             yield ChatStreamEvent(type="tool_result", content=result, metadata={"tool": tool_name})
             messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
