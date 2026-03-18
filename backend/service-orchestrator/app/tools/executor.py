@@ -55,7 +55,7 @@ class ApprovalRequiredInterrupt(Exception):
 # EPIC 4/5: Write tools that require approval gate evaluation
 _WRITE_TOOLS_TO_APPROVAL_ACTION: dict[str, str] = {
     "kb_delete": "KB_DELETE",
-    "dispatch_coding_agent": "CODING_DISPATCH",
+    # dispatch_coding_agent does NOT require approval — user gave the task, agent executes
     "store_knowledge": "KB_STORE",
 }
 
