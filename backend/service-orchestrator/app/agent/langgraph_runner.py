@@ -988,7 +988,9 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
 }
 
 # Max agentic loop iterations per vertex (tool call rounds)
-_MAX_VERTEX_TOOL_ITERATIONS = 15
+# This is a safety limit — not a target. Complex research vertices
+# (e.g., hotel search across booking/airbnb/direct) may need 15+ rounds.
+_MAX_VERTEX_TOOL_ITERATIONS = 25
 # Max extend_thinking_map calls per single vertex (prevent runaway growth)
 _MAX_EXTEND_MAP_PER_VERTEX = 1
 # Timeout for a single tool execution within vertex loop
@@ -1100,8 +1102,8 @@ async def _agentic_vertex(
                 vertex.status = VertexStatus.CANCELLED
                 return ("Cancelled by user.", "Cancelled")
 
-        # --- Force finish: at 50% iterations, strip all tools to get a text answer ---
-        force_finish_at = int(_MAX_VERTEX_TOOL_ITERATIONS * 0.50)
+        # --- Force finish: at 80% iterations, strip all tools to get a text answer ---
+        force_finish_at = int(_MAX_VERTEX_TOOL_ITERATIONS * 0.80)
         if iteration == force_finish_at and tools:
             logger.info(
                 "Vertex %s: forcing finish at iteration %d/%d — removing all tools",
