@@ -496,6 +496,9 @@ async def node_synthesize(state: GraphAgentState) -> dict:
         graph.status = GraphStatus.COMPLETED
     graph.completed_at = str(int(time.time()))
 
+    # Always compute stats (needed for final logging)
+    stats = get_stats(graph)
+
     # In reactive model, prefer root vertex result (it's the evaluator)
     root = graph.vertices.get(graph.root_vertex_id)
     if root and root.status == VertexStatus.COMPLETED and root.result:
@@ -503,7 +506,6 @@ async def node_synthesize(state: GraphAgentState) -> dict:
     else:
         # Fallback: collect from terminal vertices
         raw_result = get_final_result(graph)
-        stats = get_stats(graph)
 
         # LLM synthesis for complex graphs with multiple terminals
         if raw_result and len(graph.vertices) > 2:
