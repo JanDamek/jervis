@@ -132,10 +132,11 @@ async def run_agentic_loop(
         max_iterations_override: Override max iterations (from intent router).
         use_case_override: Override use_case for model routing (e.g., "chat_cloud").
     """
+    # Safety limit — NOT a target. Actual termination is by stagnation/loop detection.
     if max_iterations_override is not None:
         effective_max_iterations = max_iterations_override
     else:
-        effective_max_iterations = settings.chat_max_iterations_long if msg_len > settings.decompose_threshold else settings.chat_max_iterations
+        effective_max_iterations = settings.chat_max_iterations  # safety ceiling only
 
     created_tasks: list[dict] = []
     responded_tasks: list[str] = []
@@ -150,6 +151,8 @@ async def run_agentic_loop(
     source_tracker = SourceTracker()  # EPIC 14-S2: Track KB sources for attribution
     effective_client_id = request.active_client_id
     effective_project_id = request.active_project_id
+    stagnation_counter = 0  # Consecutive iterations without new unique tool calls
+    last_unique_tool_count = 0
 
     for iteration in range(effective_max_iterations):
         # Check disconnect between iterations
@@ -508,14 +511,42 @@ async def run_agentic_loop(
             if result_preview:
                 yield ChatStreamEvent(type="thinking", content=f"{tool_name} → {result_preview}")
 
-        # Focus reminder (only when getting close to limit)
+        # --- Stagnation tracking ---
+        current_unique = len(set(tool_call_history))
+        if current_unique > last_unique_tool_count:
+            stagnation_counter = 0
+            last_unique_tool_count = current_unique
+        else:
+            stagnation_counter += 1
+
+        # Focus reminder — only on stagnation or near safety limit
         remaining_iters = effective_max_iterations - iteration - 1
-        if remaining_iters <= 3:
+        if stagnation_counter >= 3:
             messages.append({
                 "role": "system",
                 "content": (
                     f'[FOCUS] Původní otázka: "{request.message[:200]}"\n'
-                    f"Zbývá {remaining_iters} iterací. Shrň co víš a ODPOVĚZ."
+                    "Tvé poslední tool calls nepřinesly nové informace. "
+                    "Pokud máš dost dat, ODPOVĚZ. Pokud ne, použij JINÝ tool nebo jiné argumenty."
+                ),
+            })
+        elif stagnation_counter >= 5:
+            # Hard stagnation — strip tools
+            logger.warning("Chat: stagnation detected (%d iterations without progress), forcing response", stagnation_counter)
+            selected_tools = []
+            messages.append({
+                "role": "system",
+                "content": (
+                    f'[FOCUS] Původní otázka: "{request.message[:200]}"\n'
+                    "Shrň vše co jsi zjistil a ODPOVĚZ. Nevolej další tools."
+                ),
+            })
+        elif remaining_iters <= 3:
+            messages.append({
+                "role": "system",
+                "content": (
+                    f'[FOCUS] Původní otázka: "{request.message[:200]}"\n'
+                    f"Blížíš se k bezpečnostnímu limitu. Shrň co víš a ODPOVĚZ."
                 ),
             })
         else:

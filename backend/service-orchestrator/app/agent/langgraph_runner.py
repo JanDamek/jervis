@@ -987,10 +987,12 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
     ),
 }
 
-# Max agentic loop iterations per vertex (tool call rounds)
-# This is a safety limit — not a target. Complex research vertices
-# (e.g., hotel search across booking/airbnb/direct) may need 15+ rounds.
-_MAX_VERTEX_TOOL_ITERATIONS = 25
+# Safety limit for vertex iterations — NOT a target or expected count.
+# Actual termination is driven by loop/stagnation detection.
+# This only prevents infinite loops if detection fails.
+_MAX_VERTEX_TOOL_ITERATIONS = 100
+# Consecutive iterations with no new meaningful content → force finish
+_STAGNATION_THRESHOLD = 5
 # Max extend_thinking_map calls per single vertex (prevent runaway growth)
 _MAX_EXTEND_MAP_PER_VERTEX = 1
 # Timeout for a single tool execution within vertex loop
@@ -1089,6 +1091,8 @@ async def _agentic_vertex(
     extend_thinking_map_calls = 0  # Track how many times this vertex spawned children
     iteration = 0
     result = ""
+    stagnation_counter = 0  # Consecutive iterations without new meaningful results
+    last_unique_tool_count = 0  # Track unique tool calls to detect stagnation
 
     while iteration < _MAX_VERTEX_TOOL_ITERATIONS:
         iteration += 1
@@ -1102,19 +1106,18 @@ async def _agentic_vertex(
                 vertex.status = VertexStatus.CANCELLED
                 return ("Cancelled by user.", "Cancelled")
 
-        # --- Force finish: at 80% iterations, strip all tools to get a text answer ---
-        force_finish_at = int(_MAX_VERTEX_TOOL_ITERATIONS * 0.80)
-        if iteration == force_finish_at and tools:
+        # --- Stagnation detection: force finish if no progress ---
+        if stagnation_counter >= _STAGNATION_THRESHOLD and tools:
             logger.info(
-                "Vertex %s: forcing finish at iteration %d/%d — removing all tools",
-                vertex.id, iteration, _MAX_VERTEX_TOOL_ITERATIONS,
+                "Vertex %s: stagnation detected (%d iterations without progress) at iteration %d — forcing finish",
+                vertex.id, stagnation_counter, iteration,
             )
             tools = []
             messages.append({
                 "role": "user",
                 "content": (
-                    "You are running out of iterations. Produce your FINAL ANSWER now. "
-                    "Summarize everything you have found so far. Do NOT call any more tools."
+                    "Tvé poslední tool calls nepřinesly nové informace. "
+                    "Shrň vše co jsi zjistil a ODPOVĚZ. Nevolej další tools."
                 ),
             })
 
@@ -1315,14 +1318,24 @@ async def _agentic_vertex(
                 "name": tool_name,
                 "content": str(tool_result),
             })
+
+        # --- Stagnation tracking: count unique tool calls ---
+        current_unique = len(set(tool_call_history))
+        if current_unique > last_unique_tool_count:
+            # New unique tool call → progress, reset stagnation
+            stagnation_counter = 0
+            last_unique_tool_count = current_unique
+        else:
+            # No new unique tool calls → stagnation
+            stagnation_counter += 1
     else:
-        # Max iterations reached — use whatever we have
+        # Safety max iterations reached — use whatever we have
         logger.warning(
-            "Vertex %s hit max tool iterations (%d)",
+            "Vertex %s hit safety max iterations (%d)",
             vertex.id, _MAX_VERTEX_TOOL_ITERATIONS,
         )
         if not result:
-            result = remaining_text or "(max tool iterations reached)"
+            result = remaining_text or "(safety limit reached)"
 
     summary = result
     return result, summary
