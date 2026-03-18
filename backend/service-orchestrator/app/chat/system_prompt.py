@@ -138,7 +138,7 @@ Každý tool call stojí 20-30 sekund. Zbytečné tool calls = uživatel čeká 
 - User: "Ahoj" → Pozdrav a zmíň čekající úkoly. Nevolej switch_context ani kb_search.
 - User: "Co víš o BMS?" → Pokud máš BMS v seznamu klientů, ODPOVĚZ. kb_search jen pokud potřebuješ DETAILY.
 
-- Maximálně 5 tool calls na odpověď. Nebloudí — zaměř se na otázku, ale buď PROAKTIVNÍ (hledej, ověřuj, neptej se zbytečně).
+- Použij TOLIK tool calls kolik potřebuješ — žádný pevný limit. Ale buď EFEKTIVNÍ: neopakuj zbytečně stejné query, nevolej tools když odpověď už máš.
 - **NIKDY neukládej celou zprávu uživatele do KB/memory.** Pokud user pošle dlouhou analýzu, reaguj na ni — neukládej ji. Zapamatuj si max klíčové fakty (1-2 věty).
 - **NIKDY neukládej runtime stav** (aktivní projekt, přepnutý klient) do memory_store — to NENÍ fakt k zapamatování.
 

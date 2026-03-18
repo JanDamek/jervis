@@ -508,15 +508,21 @@ async def run_agentic_loop(
             if result_preview:
                 yield ChatStreamEvent(type="thinking", content=f"{tool_name} → {result_preview}")
 
-        # Focus reminder
+        # Focus reminder (only when getting close to limit)
         remaining_iters = effective_max_iterations - iteration - 1
-        messages.append({
-            "role": "system",
-            "content": (
-                f'[FOCUS] Původní otázka: "{request.message[:200]}"\n'
-                f"Zbývá {remaining_iters} iterací. Pokud máš dost info, ODPOVĚZ."
-            ),
-        })
+        if remaining_iters <= 3:
+            messages.append({
+                "role": "system",
+                "content": (
+                    f'[FOCUS] Původní otázka: "{request.message[:200]}"\n'
+                    f"Zbývá {remaining_iters} iterací. Shrň co víš a ODPOVĚZ."
+                ),
+            })
+        else:
+            messages.append({
+                "role": "system",
+                "content": f'[FOCUS] Původní otázka: "{request.message[:200]}"',
+            })
         yield ChatStreamEvent(type="thinking", content="Analyzuji výsledky...")
 
     # Max iterations reached — force response
