@@ -98,7 +98,8 @@ class BackgroundEngine(
     /** Track preemption retry counts per task to avoid infinite loops. */
     private val preemptRetries = ConcurrentHashMap<TaskId, Int>()
     private val schedulerAdvance = Duration.ofMinutes(10)
-    private var lastDeadlineScan: java.time.Instant = java.time.Instant.EPOCH
+    // Periodic LLM deadline scan REMOVED — deadlines are tracked by server scheduler
+    // (DeadlineTrackerService), not by repeated LLM orchestrator tasks.
 
     // Atomic flag to ensure @PostConstruct is called only once
     private val isInitialized =
@@ -829,16 +830,8 @@ class BackgroundEngine(
                     logger.info { "SCHEDULER_LOOP: dispatched $dispatched scheduled task(s)" }
                 }
 
-                // EPIC 8: Periodic deadline scan (every 5 minutes)
-                val now = java.time.Instant.now()
-                if (Duration.between(lastDeadlineScan, now) >= DEADLINE_SCAN_INTERVAL) {
-                    try {
-                        dispatchDeadlineScan()
-                        lastDeadlineScan = now
-                    } catch (e: Exception) {
-                        logger.error(e) { "Error in deadline scan" }
-                    }
-                }
+                // Deadline tracking is handled by DeadlineTrackerService (server-side scheduler),
+                // NOT by periodic LLM orchestrator tasks. See KB decision: scheduler-architecture.
 
                 delay(60_000) // Check every 60s
             } catch (e: CancellationException) {
@@ -1668,59 +1661,9 @@ class BackgroundEngine(
     @Deprecated("Use isGpuReservedForChat()", ReplaceWith("isGpuReservedForChat()"))
     fun isForegroundChatActive(): Boolean = isGpuReservedForChat()
 
-    /**
-     * EPIC 8: Dispatch a deadline scan task to the Python orchestrator.
-     * Creates a SCHEDULED_TASK that scans KB and JIRA for approaching deadlines.
-     * Only creates if no pending deadline scan task exists.
-     */
-    private suspend fun dispatchDeadlineScan() {
-        // Check if a deadline scan task is already pending (by sourceUrn, not generic type)
-        val pendingScans = taskRepository.findBySourceUrnAndStateIn(
-            sourceUrn = com.jervis.common.types.SourceUrn("system:deadline-scan"),
-            states = listOf(
-                TaskStateEnum.NEW,
-                TaskStateEnum.INDEXING,
-                TaskStateEnum.QUEUED,
-                TaskStateEnum.PROCESSING,
-            ),
-        )
-        if (pendingScans.isNotEmpty()) {
-            // Cleanup: if multiple scans queued (from accumulation bug), keep only the newest
-            if (pendingScans.size > 1) {
-                val sorted = pendingScans.sortedByDescending { it.createdAt }
-                for (old in sorted.drop(1)) {
-                    old.state = TaskStateEnum.DONE
-                    taskRepository.save(old)
-                }
-                logger.info { "DEADLINE_SCAN: Cleaned up ${pendingScans.size - 1} stale queued scans" }
-            }
-            logger.debug { "DEADLINE_SCAN: Already pending, skipping" }
-            return
-        }
-
-        val defaultClientId = try {
-            val projects = projectRepository.findAll().toList()
-            val jervisProject = projects.firstOrNull { it.name.contains("JERVIS", ignoreCase = true) }
-                ?: projects.firstOrNull()
-            jervisProject?.clientId
-        } catch (_: Exception) {
-            null
-        } ?: return
-
-        val scanTask = TaskDocument(
-            type = com.jervis.dto.TaskTypeEnum.SCHEDULED_TASK,
-            taskName = "Deadline Scan",
-            content = DEADLINE_SCAN_PROMPT,
-            clientId = defaultClientId,
-            state = TaskStateEnum.QUEUED,
-            processingMode = com.jervis.entity.ProcessingMode.IDLE,
-            sourceUrn = com.jervis.common.types.SourceUrn("system:deadline-scan"),
-        )
-        taskRepository.save(scanTask)
-        taskNotifier.notifyNewTask()
-
-        logger.info { "DEADLINE_SCAN: Created deadline scan task ${scanTask.id} (mode=IDLE)" }
-    }
+    // dispatchDeadlineScan() REMOVED — deadlines tracked by DeadlineTrackerService (server scheduler).
+    // Indexation writes deadlines to DB. Server timer triggers alerts by due date.
+    // GPU idle trigger runs deep analysis, not simple deadline checks.
 
     companion object {
         private val currentTaskJob = AtomicReference<Job?>(null)
@@ -1732,44 +1675,9 @@ class BackgroundEngine(
         /** Scheduled tasks overdue by more than this are escalated as urgent USER_TASKs. */
         val OVERDUE_ESCALATION_THRESHOLD: Duration = Duration.ofHours(24)
 
-        /** EPIC 8: Interval between deadline scans. */
-        val DEADLINE_SCAN_INTERVAL: Duration = Duration.ofMinutes(5)
-
-        /** EPIC 8: Prompt for the deadline scanning orchestrator task. */
-        private val DEADLINE_SCAN_PROMPT = """
-            |You are performing a periodic deadline scan across all projects.
-            |
-            |## Step 1: Check what is already tracked or resolved
-            |BEFORE creating any USER_TASK for a found item:
-            |1. Use list_recent_tasks — if a USER_TASK already exists for this item (any state), SKIP.
-            |2. Use kb_search with the item's identifier — if KB indicates the item is resolved, paid,
-            |   closed, or otherwise handled, SKIP. User responses and resolutions are stored in KB.
-            |3. Only create a USER_TASK for genuinely NEW, UNTRACKED items that need attention.
-            |
-            |## Step 2: Search for deadlines
-            |Using kb_search, find:
-            |1. Issues/tasks with due dates in the next 7 days
-            |2. Documents mentioning deadlines or milestones
-            |3. Overdue items that are still open
-            |
-            |## Step 3: Take action (only for NEW findings not already tracked)
-            |- If < 1 day: Create USER_TASK with urgency=URGENT
-            |- If 1-3 days: Add a comment on the JIRA issue as reminder
-            |- If 3-7 days: Log the finding (no action needed)
-            |- If overdue: Create USER_TASK flagging the overdue item
-            |
-            |## CRITICAL: USER_TASK content must include ALL details
-            |When creating a USER_TASK, the taskName and content MUST include:
-            |- Specific item identifier (ID, key, number)
-            |- What the item is (summary, description)
-            |- Which client/project it belongs to
-            |- Due date and how many days overdue or remaining
-            |- What specific action is needed from the user
-            |The user sees ONLY the taskName and content — if details are missing, the task is USELESS.
-            |
-            |## Step 4: Summarize
-            |Count items per urgency level. If nothing found, just report "No deadlines approaching."
-        """.trimMargin()
+        // Periodic LLM deadline scan REMOVED — deadlines tracked by DeadlineTrackerService.
+        // Indexation writes deadlines to scheduler DB. Server timer triggers alerts by due date.
+        // GPU idle trigger runs deep analysis, not simple deadline checks.
     }
 
     // ── Work Plan Executor ─────────────────────────────────────────────────
