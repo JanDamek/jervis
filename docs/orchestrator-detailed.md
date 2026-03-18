@@ -3213,7 +3213,47 @@ The system prompt is assembled dynamically at each chat turn:
 | `classify_meeting` | Classify an unclassified meeting | POST /internal/meetings/{id}/classify |
 | `list_unclassified_meetings` | List meetings awaiting classification | GET /internal/unclassified-meetings |
 
-**Total tool count:** 37 base tools (from `ALL_RESPOND_TOOLS_FULL`) + 8 chat-specific = **45 tools**
+Additionally, 6 thinking map tools for coordination/planning tasks:
+
+| Tool | Description | Implementation |
+|------|-------------|----------------|
+| `create_thinking_map` | Create a new thinking map (visual DAG in chat panel) | `app/chat/thinking_map.py` |
+| `add_map_vertex` | Add a vertex to the active thinking map | `thinking_map.add_vertex()` |
+| `update_map_vertex` | Update an existing vertex | `thinking_map.update_vertex()` |
+| `remove_map_vertex` | Remove a vertex and its edges | `thinking_map.remove_vertex()` |
+| `dispatch_thinking_map` | Finalize map and dispatch as background task | `thinking_map.dispatch_map()` |
+| `run_map_vertex` | Dispatch a single vertex as background task | `thinking_map.run_vertex()` |
+
+**Total tool count:** 37 base tools (from `ALL_RESPOND_TOOLS_FULL`) + 8 chat-specific + 6 thinking map = **51 tools**
+
+### 31.6a Chat Workflow: Direct Coding vs Thinking Maps
+
+Two distinct workflows in foreground chat:
+
+**Direct coding tasks** (simple, single-scope implementation):
+```
+User: "Přidej active field do ProjectDocument"
+  → LLM understands the request
+  → LLM produces a text plan (Czech summary of what will be done)
+  → User approves the plan in chat
+  → dispatch_coding_agent (no approval gate, no thinking map)
+  → K8s Job runs asynchronously
+  → Result notification in chat
+```
+Direct coding tasks do NOT use thinking maps. The LLM generates a plain text plan, the user confirms, and `dispatch_coding_agent` is called directly. `dispatch_coding_agent` is no longer gated by the approval flow — it dispatches immediately after user confirmation in chat.
+
+**Thinking maps** (coordination, planning, multi-system analysis):
+```
+User: "Naplánuj dovolenou pro tým — koordinace s kalendáři, úkoly, notifikace"
+  → LLM creates thinking map (create_thinking_map)
+  → LLM adds vertices (add_map_vertex) — investigation, coordination, execution steps
+  → Map displayed visually in chat panel
+  → User reviews and approves
+  → dispatch_thinking_map → background task with full graph execution
+```
+Thinking maps are used for complex coordination tasks: vacation planning, cross-project work, multi-system analysis — anything requiring structured decomposition with dependencies. The map is built interactively in chat and dispatched only after explicit user approval.
+
+**Source:** `app/chat/thinking_map.py`, `app/chat/tools.py`
 
 ### 31.7 Background Handler (`app/background/handler.py`)
 

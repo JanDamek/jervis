@@ -126,7 +126,7 @@ The Jervis system is built on several key architectural patterns:
 
 1. **DirectoryStructureService** creates directory structure
 2. **BackgroundEngine.initializeAllProjectWorkspaces()** (background, async):
-   - For each project with REPOSITORY resources:
+   - For each **active** project with REPOSITORY resources (`findByActiveTrue()`):
      - `null` status → trigger clone to `git/{resourceId}/`
      - `READY` → **verify `.git` exists on disk** (files may be gone after pod restart/PVC loss); if missing → reset status to null and re-clone
      - `CLONING` → skip (in progress)
@@ -309,7 +309,7 @@ This ensures e.g. `JanDamek/jervis` issues are indexed under the correct project
 
 Separate polling loop (120s interval) for merge request / pull request discovery:
 
-1. **Discovery:** Iterates all projects with REPOSITORY resources → calls GitLab `listOpenMergeRequests` / GitHub `listOpenPullRequests` → deduplicates against `merge_requests` MongoDB collection → saves NEW documents
+1. **Discovery:** Iterates all **active** projects with REPOSITORY resources (`findByActiveTrue()`) → calls GitLab `listOpenMergeRequests` / GitHub `listOpenPullRequests` → deduplicates against `merge_requests` MongoDB collection → saves NEW documents
    - **Filters:** Skips draft MRs/PRs (not ready for review), skips `jervis/*` branches (handled by AgentTaskWatcher to avoid review loops)
    - **Author extraction:** Extracts author name/username from API response (GitLab `author.name`, GitHub `user.login`)
 2. **Task creation (15s):** Picks up NEW MR documents → creates SCHEDULED_TASK in QUEUED state (bypasses KB indexation — MR content IS the task) → marks REVIEW_DISPATCHED
@@ -1623,7 +1623,21 @@ ProjectGroupDocument (MongoDB: project_groups)
 └── resourceLinks: List<ResourceLink>
 
 ProjectDocument.groupId: ProjectGroupId?  ← null = ungrouped
+ProjectDocument.active: Boolean = true    ← false = closed project
 ```
+
+### Project Active/Closed Status
+
+Projects can be marked as active or closed via `ProjectDocument.active` (default `true`). Closed projects (`active = false`) are excluded from all background processing:
+
+- **BackgroundEngine**: `findByActiveTrue()` — idle task generation skips closed projects
+- **GitRepositoryService**: `findByActiveTrue()` — git sync skips closed projects
+- **MergeRequestContinuousIndexer**: `findByActiveTrue()` — MR/PR polling skips closed projects
+- **CentralPoller**: `findByResourcesConnectionIdAndActiveTrue()` — resource polling skips closed projects
+
+**UI**: `ProjectEditForm.kt` shows "Aktivní projekt" checkbox. `ProjectsSettings.kt` displays "(uzavřeno)" label next to closed projects.
+
+**DTO**: `ProjectDto.active: Boolean = true` — propagated across KMP platforms.
 
 ### Key Files
 
