@@ -1,7 +1,7 @@
-"""SSE handler — foreground chat entry point via Paměťová mapa.
+"""SSE handler — foreground chat entry point via Paměťový graf.
 
-Thin entry-point that routes chat messages through the memory map:
-1. Load context + Paměťová mapa
+Thin entry-point that routes chat messages through the memory graph:
+1. Load context + Paměťový graf
 2. Route via chat_router → ChatRoute
 3. Execute: direct_response / new_vertex / resume_vertex / answer_ask_user
 4. Record REQUEST vertex + cleanup
@@ -35,12 +35,12 @@ async def handle_chat_sse(
     request: ChatRequest,
     disconnect_event: asyncio.Event | None = None,
 ) -> AsyncIterator[ChatStreamEvent]:
-    """Route a chat message through Paměťová mapa and stream response.
+    """Route a chat message through Paměťový graf and stream response.
 
     Replaces the old chat/handler.py with simpler routing:
     - No intent classification (all tools always available)
     - No long message decomposition (agent handles itself)
-    - Vertex recorded in memory map for every interaction
+    - Vertex recorded in memory graph for every interaction
     """
     _response_chunks: list[str] = []
     _trace_parts: list[str] = []
@@ -52,28 +52,28 @@ async def handle_chat_sse(
         )
         runtime_ctx = await load_runtime_context()
 
-        # ── 2. Load Paměťová mapa ───────────────────────────────────
+        # ── 2. Load Paměťový graf ────────────────────────────────────
         map_ctx = ""
-        memory_map = None
+        memory_graph = None
         try:
             from app.agent.persistence import agent_store
-            from app.agent.graph import memory_map_summary
-            memory_map = await agent_store.get_or_create_memory_map()
+            from app.agent.graph import memory_graph_summary
+            memory_graph = await agent_store.get_or_create_memory_graph()
             active_cid = request.active_client_id or ""
             if not active_cid:
-                logger.warning("SSE: no active_client_id — memory map summary will be empty")
-            map_ctx = memory_map_summary(
-                memory_map, max_tokens=2000,
+                logger.warning("SSE: no active_client_id — memory graph summary will be empty")
+            map_ctx = memory_graph_summary(
+                memory_graph, max_tokens=2000,
                 client_id=active_cid,
                 project_id=request.active_project_id or "",
             )
         except Exception as e:
-            logger.warning("SSE: failed to load memory map: %s", e)
+            logger.warning("SSE: failed to load memory graph: %s", e)
 
         # ── 3. Route ────────────────────────────────────────────────
         route = route_chat_message(
             message=request.message,
-            memory_map=memory_map,
+            memory_graph=memory_graph,
             context_task_id=request.context_task_id,
             client_id=request.active_client_id,
             project_id=request.active_project_id,
@@ -124,12 +124,12 @@ async def handle_chat_sse(
         messages = build_messages(system_prompt, context, task_context_msg, request.message,
                                   attachments=request.attachments or None)
 
-        # Inject memory map summary
+        # Inject memory graph summary
         if map_ctx:
             messages.insert(1, {
                 "role": "system",
                 "content": (
-                    "## Paměťová mapa (current state)\n"
+                    "## Paměťový graf (current state)\n"
                     f"{map_ctx}\n\n"
                     "Use check_task_graph to inspect task details. "
                     "Use answer_blocked_vertex to respond to blocked questions."
@@ -173,13 +173,13 @@ async def handle_chat_sse(
 
         yield ChatStreamEvent(type="thinking", content="Připravuji odpověď...")
 
-        # ── 4b'. Create RUNNING vertex in memory map immediately ───
-        if memory_map and request.active_client_id:
+        # ── 4b'. Create RUNNING vertex in memory graph immediately ──
+        if memory_graph and request.active_client_id:
             try:
                 from app.agent.graph import add_request_vertex
                 from app.agent.models import VertexStatus
                 _live_vertex = add_request_vertex(
-                    memory_map,
+                    memory_graph,
                     message=request.message[:200],
                     response="",
                     response_summary="Zpracovávám…",
@@ -192,14 +192,14 @@ async def handle_chat_sse(
                     status=VertexStatus.RUNNING,
                 )
                 _live_vertex_id = _live_vertex.id
-                agent_store.mark_dirty(memory_map.task_id)
+                agent_store.mark_dirty(memory_graph.task_id)
                 from app.tools.kotlin_client import kotlin_client
-                await kotlin_client.notify_memory_map_changed()
+                await kotlin_client.notify_memory_graph_changed()
             except Exception as e:
                 logger.debug("SSE: failed to create live vertex: %s", e)
 
         # ── 4c. Agentic loop (all tools) ────────────────────────────
-        _memory_map_id = memory_map.task_id if memory_map else None
+        _memory_graph_id = memory_graph.task_id if memory_graph else None
         async for event in run_agentic_loop(
             request=request,
             messages=messages,
@@ -219,12 +219,12 @@ async def handle_chat_sse(
             elif event.type == "tool_result" and event.content:
                 tool = event.metadata.get("tool", "?")
                 _trace_parts.append(f"[result:{tool}] {event.content[:150]}")
-            # Inject memory map + vertex IDs into done event for UI
+            # Inject memory graph + vertex IDs into done event for UI
             if event.type == "done":
-                if _memory_map_id:
-                    event.metadata["memory_map_id"] = _memory_map_id
+                if _memory_graph_id:
+                    event.metadata["memory_graph_id"] = _memory_graph_id
                 if _live_vertex_id:
-                    event.metadata["memory_map_vertex_id"] = _live_vertex_id
+                    event.metadata["memory_graph_vertex_id"] = _live_vertex_id
                 # Signal to UI: only show inline map if background tasks were dispatched
                 _bg_tools_check = {"create_background_task", "dispatch_coding_agent"}
                 if any(any(t in p for t in _bg_tools_check) for p in _trace_parts if p.startswith("[tool]")):
@@ -246,12 +246,12 @@ async def handle_chat_sse(
         )
 
     finally:
-        # Update REQUEST vertex in Paměťová mapa with final state
+        # Update REQUEST vertex in Paměťový graf with final state
         try:
             from app.agent.persistence import agent_store
             from app.agent.models import VertexStatus
             from datetime import datetime, timezone
-            master = agent_store.get_memory_map_cached()
+            master = agent_store.get_memory_graph_cached()
             if master:
                 _full_response = "".join(_response_chunks) if _response_chunks else ""
                 _trace_str = "\n".join(_trace_parts) if _trace_parts else ""
@@ -303,11 +303,11 @@ async def handle_chat_sse(
                 agent_store.mark_dirty(master.task_id)
                 from app.tools.kotlin_client import kotlin_client
                 try:
-                    await kotlin_client.notify_memory_map_changed()
+                    await kotlin_client.notify_memory_graph_changed()
                 except Exception:
                     pass
         except Exception as e:
-            logger.debug("Failed to record vertex in memory map: %s", e)
+            logger.debug("Failed to record vertex in memory graph: %s", e)
 
         # Cleanup session auto-approvals
         try:

@@ -225,7 +225,7 @@ class AgentTaskWatcher:
                 if mr_url:
                     logger.info("MR ready for review: task=%s url=%s", task_id, mr_url)
 
-                # Update memory map TASK_REF vertex → completed
+                # Update memory graph TASK_REF vertex → completed
                 try:
                     from app.agent.persistence import agent_store
                     job_success = result.get("success", False)
@@ -234,7 +234,7 @@ class AgentTaskWatcher:
                         or (task_data.get("content", "") or "")[:80]
                         or f"Coding: {task_id[:12]}"
                     )
-                    await agent_store.link_thinking_map(
+                    await agent_store.link_thinking_graph(
                         task_id=task_id,
                         sub_graph_id="",
                         title=task_title,
@@ -483,11 +483,11 @@ class AgentTaskWatcher:
             except Exception:
                 pass  # Non-fatal
 
-        # Record code review result in memory map
+        # Record code review result in memory graph
         try:
             from app.agent.persistence import agent_store
             review_title = f"Code Review: {verdict} (score {score}/100, round {review_round})"
-            await agent_store.link_thinking_map(
+            await agent_store.link_thinking_graph(
                 task_id=task_id,
                 sub_graph_id="",
                 title=review_title,

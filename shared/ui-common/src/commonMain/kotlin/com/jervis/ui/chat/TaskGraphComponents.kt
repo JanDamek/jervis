@@ -213,8 +213,8 @@ private fun graphSummaryLine(graph: TaskGraphDto): String {
     val vCount = graph.vertices.size
     val statusLabel = statusLabel(graph.status)
     val typeName = when (graph.graphType) {
-        "memory_map" -> "Paměťový graf"
-        "thinking_map" -> "Myšlenkový graf"
+        "memory_graph" -> "Paměťový graf"
+        "thinking_graph" -> "Myšlenkový graf"
         else -> "Graf"
     }
     return "$typeName: $statusLabel — $vCount vrcholů, ${graph.totalLlmCalls} LLM volání, ${formatTokens(graph.totalTokenCount)} tokenů"
@@ -454,7 +454,7 @@ private fun VertexCard(
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                             Text(
-                                "Zobrazit myšlenkovou mapu",
+                                "Zobrazit myšlenkový graf",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                             )

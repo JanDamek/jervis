@@ -1293,7 +1293,7 @@ The parent agent (or orchestrator aggregator node) parses this format and uses t
 
 ## Agent — Task Decomposition via Vertex/Edge DAG
 
-> **SSOT:** [graph-agent-architecture.md](graph-agent-architecture.md) — full architecture including Paměťová/Myšlenková mapa, unified agent, Phase 4.
+> **SSOT:** [graph-agent-architecture.md](graph-agent-architecture.md) — full architecture including Paměťový/Myšlenkový graf, unified agent, Phase 4.
 
 ### Overview
 
@@ -1326,7 +1326,7 @@ class VertexType(str, Enum):
     SETUP = "setup"             # Project scaffolding, repo creation
     ASK_USER = "ask_user"       # Blocked — needs user input
     REQUEST = "request"         # Chat message → agent execution → response
-    TASK_REF = "task_ref"       # Reference to Myšlenková mapa
+    TASK_REF = "task_ref"       # Reference to Myšlenkový graf
     INCOMING = "incoming"       # Qualified item from indexation
     CLIENT = "client"           # Client hierarchy node
     PROJECT = "project"         # Project hierarchy node
@@ -1390,15 +1390,15 @@ class GraphVertex(BaseModel):
 
 ```python
 class GraphType(str, Enum):
-    MEMORY_MAP = "memory_map"       # Global Paměťová mapa (one per user)
-    THINKING_MAP = "thinking_map"   # Myšlenková mapa (per-task decomposition)
+    MEMORY_GRAPH = "memory_graph"       # Global Paměťový graf (one per user)
+    THINKING_GRAPH = "thinking_graph"   # Myšlenkový graf (per-task decomposition)
 
 class AgentGraph(BaseModel):
     id: str
     task_id: str
     client_id: str
     project_id: str | None
-    graph_type: GraphType           # MEMORY_MAP or THINKING_MAP
+    graph_type: GraphType           # MEMORY_GRAPH or THINKING_GRAPH
 
     root_vertex_id: str
     vertices: dict[str, GraphVertex]

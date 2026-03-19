@@ -23,7 +23,7 @@ from app.chat.source_attribution import SourceTracker
 from app.chat.topic_tracker import detect_topics, update_conversation_topics, topic_metadata
 from app.llm.router_client import route_request
 from app.chat.handler_tools import (
-    _MAP_TOOLS,
+    _GRAPH_TOOLS,
     extract_tool_calls,
     describe_tool_call,
     execute_chat_tool,
@@ -342,7 +342,7 @@ async def run_agentic_loop(
 
             # Tool result cache — return cached result for duplicate read-only calls
             cache_key = f"{tool_name}:{tool_call.function.arguments}"
-            _WRITE_TOOLS = {"create_background_task", "dispatch_thinking_map", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "switch_context", *_MAP_TOOLS}
+            _WRITE_TOOLS = {"create_background_task", "dispatch_thinking_graph", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "switch_context", *_GRAPH_TOOLS}
             cached_result = tool_result_cache.get(cache_key) if tool_name not in _WRITE_TOOLS else None
             if cached_result is not None:
                 logger.info("Chat: cache hit for %s (skipping execution)", tool_name)
@@ -385,7 +385,7 @@ async def run_agentic_loop(
                         "content": (
                             f"Scope se změnil na: {resolved.get('client_name', '')} / {resolved.get('project_name', '')}. "
                             "Všechna dříve udělená oprávnění pro write akce "
-                            "(create_background_task, dispatch_thinking_map, dispatch_coding_agent, store_knowledge) "
+                            "(create_background_task, dispatch_thinking_graph, dispatch_coding_agent, store_knowledge) "
                             "jsou RESETOVÁNA. Při dalším použití write akce se znovu zeptej na souhlas. "
                             "DŮLEŽITÉ: Informace z předchozího projektu NEPOUŽÍVEJ pro aktuální projekt."
                         ),
@@ -473,7 +473,7 @@ async def run_agentic_loop(
                 if tool_name not in _WRITE_TOOLS:
                     tool_result_cache[cache_key] = result
 
-                if tool_name in ("create_background_task", "dispatch_thinking_map"):
+                if tool_name in ("create_background_task", "dispatch_thinking_graph"):
                     created_tasks.append(arguments)
                 if tool_name == "dispatch_coding_agent" and "taskId" in result:
                     # Extract taskId from result string for inline log streaming
@@ -484,13 +484,13 @@ async def run_agentic_loop(
                 if tool_name == "respond_to_user_task":
                     responded_tasks.append(arguments.get("task_id", ""))
 
-                # Emit thinking map update for UI panel
-                if tool_name in _MAP_TOOLS:
-                    from app.chat.thinking_map import get_active_map
-                    graph = await get_active_map(request.session_id)
+                # Emit thinking graph update for UI panel
+                if tool_name in _GRAPH_TOOLS:
+                    from app.chat.thinking_graph import get_active_graph
+                    graph = await get_active_graph(request.session_id)
                     if graph:
                         yield ChatStreamEvent(
-                            type="thinking_map_update",
+                            type="thinking_graph_update",
                             content=graph.model_dump_json(),
                             metadata={
                                 "graph_id": graph.id,

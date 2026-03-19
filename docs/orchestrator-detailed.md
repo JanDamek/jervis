@@ -2297,12 +2297,12 @@ POST /internal/correction-progress
   → Update stateChangedAt on meeting document (timestamp-based stuck detection)
   → Emit notification to UI
 
-POST /internal/memory-map-changed
+POST /internal/memory-graph-changed
   Body: (empty)
-  → NotificationRpcImpl.emitMemoryMapChanged() [broadcast to ALL connected clients]
-  → UI re-fetches Paměťová mapa via getGraph("master") [500ms debounce]
+  → NotificationRpcImpl.emitMemoryGraphChanged() [broadcast to ALL connected clients]
+  → UI re-fetches Paměťový graf via getGraph("master") [500ms debounce]
   Triggered by: vertex status changes (PENDING→RUNNING→COMPLETED), TASK_REF linking
-  Only fires for MEMORY_MAP graphs (not TASK_SUBGRAPH thinking maps)
+  Only fires for MEMORY_GRAPH graphs (not THINKING_GRAPH thinking graphs)
 ```
 
 ### 26.3 AgentOrchestratorService
@@ -3213,20 +3213,20 @@ The system prompt is assembled dynamically at each chat turn:
 | `classify_meeting` | Classify an unclassified meeting | POST /internal/meetings/{id}/classify |
 | `list_unclassified_meetings` | List meetings awaiting classification | GET /internal/unclassified-meetings |
 
-Additionally, 6 thinking map tools for coordination/planning tasks:
+Additionally, 6 thinking graph tools for coordination/planning tasks:
 
 | Tool | Description | Implementation |
 |------|-------------|----------------|
-| `create_thinking_map` | Create a new thinking map (visual DAG in chat panel) | `app/chat/thinking_map.py` |
-| `add_map_vertex` | Add a vertex to the active thinking map | `thinking_map.add_vertex()` |
-| `update_map_vertex` | Update an existing vertex | `thinking_map.update_vertex()` |
-| `remove_map_vertex` | Remove a vertex and its edges | `thinking_map.remove_vertex()` |
-| `dispatch_thinking_map` | Finalize map and dispatch as background task | `thinking_map.dispatch_map()` |
-| `run_map_vertex` | Dispatch a single vertex as background task | `thinking_map.run_vertex()` |
+| `create_thinking_graph` | Create a new thinking graph (visual DAG in chat panel) | `app/chat/thinking_graph.py` |
+| `add_graph_vertex` | Add a vertex to the active thinking graph | `thinking_graph.add_vertex()` |
+| `update_graph_vertex` | Update an existing vertex | `thinking_graph.update_vertex()` |
+| `remove_graph_vertex` | Remove a vertex and its edges | `thinking_graph.remove_vertex()` |
+| `dispatch_thinking_graph` | Finalize graph and dispatch as background task | `thinking_graph.dispatch_graph()` |
+| `run_graph_vertex` | Dispatch a single vertex as background task | `thinking_graph.run_vertex()` |
 
-**Total tool count:** 37 base tools (from `ALL_RESPOND_TOOLS_FULL`) + 8 chat-specific + 6 thinking map = **51 tools**
+**Total tool count:** 37 base tools (from `ALL_RESPOND_TOOLS_FULL`) + 8 chat-specific + 6 thinking graph = **51 tools**
 
-### 31.6a Chat Workflow: Direct Coding vs Thinking Maps
+### 31.6a Chat Workflow: Direct Coding vs Thinking Graphs
 
 Two distinct workflows in foreground chat:
 
@@ -3236,24 +3236,24 @@ User: "Přidej active field do ProjectDocument"
   → LLM understands the request
   → LLM produces a text plan (Czech summary of what will be done)
   → User approves the plan in chat
-  → dispatch_coding_agent (no approval gate, no thinking map)
+  → dispatch_coding_agent (no approval gate, no thinking graph)
   → K8s Job runs asynchronously
   → Result notification in chat
 ```
-Direct coding tasks do NOT use thinking maps. The LLM generates a plain text plan, the user confirms, and `dispatch_coding_agent` is called directly. `dispatch_coding_agent` is no longer gated by the approval flow — it dispatches immediately after user confirmation in chat.
+Direct coding tasks do NOT use thinking graphs. The LLM generates a plain text plan, the user confirms, and `dispatch_coding_agent` is called directly. `dispatch_coding_agent` is no longer gated by the approval flow — it dispatches immediately after user confirmation in chat.
 
-**Thinking maps** (coordination, planning, multi-system analysis):
+**Thinking graphs** (coordination, planning, multi-system analysis):
 ```
 User: "Naplánuj dovolenou pro tým — koordinace s kalendáři, úkoly, notifikace"
-  → LLM creates thinking map (create_thinking_map)
-  → LLM adds vertices (add_map_vertex) — investigation, coordination, execution steps
-  → Map displayed visually in chat panel
+  → LLM creates thinking graph (create_thinking_graph)
+  → LLM adds vertices (add_graph_vertex) — investigation, coordination, execution steps
+  → Graph displayed visually in chat panel
   → User reviews and approves
-  → dispatch_thinking_map → background task with full graph execution
+  → dispatch_thinking_graph → background task with full graph execution
 ```
-Thinking maps are used for complex coordination tasks: vacation planning, cross-project work, multi-system analysis — anything requiring structured decomposition with dependencies. The map is built interactively in chat and dispatched only after explicit user approval.
+Thinking graphs are used for complex coordination tasks: vacation planning, cross-project work, multi-system analysis — anything requiring structured decomposition with dependencies. The graph is built interactively in chat and dispatched only after explicit user approval.
 
-**Source:** `app/chat/thinking_map.py`, `app/chat/tools.py`
+**Source:** `app/chat/thinking_graph.py`, `app/chat/tools.py`
 
 ### 31.7 Background Handler (`app/background/handler.py`)
 

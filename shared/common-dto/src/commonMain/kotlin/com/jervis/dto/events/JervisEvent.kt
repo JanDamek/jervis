@@ -120,11 +120,11 @@ sealed class JervisEvent {
     ) : JervisEvent()
 
     /**
-     * Memory map changed — triggers UI refresh of the Paměťová mapa panel.
+     * Memory graph changed — triggers UI refresh of the Paměťový graf panel.
      * Emitted when vertex status changes during background task execution.
      */
     @Serializable
-    data class MemoryMapChanged(
+    data class MemoryGraphChanged(
         override val timestamp: String,
     ) : JervisEvent()
 

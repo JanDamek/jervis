@@ -49,13 +49,13 @@ async def report_vertex_started(
         delegation_depth=vertex.depth,
     )
 
-    # Notify UI about memory map change (only for memory_map graphs)
-    if graph.graph_type == GraphType.MEMORY_MAP:
-        await kotlin_client.notify_memory_map_changed()
+    # Notify UI about memory graph change (only for memory_graph graphs)
+    if graph.graph_type == GraphType.MEMORY_GRAPH:
+        await kotlin_client.notify_memory_graph_changed()
 
-    # Push thinking map update to chat (for thinking_map graphs)
-    if graph.graph_type == GraphType.THINKING_MAP:
-        await _push_thinking_map_update(graph, "vertex_completed", f"⟳ {vertex.title}")
+    # Push thinking graph update to chat (for thinking_graph graphs)
+    if graph.graph_type == GraphType.THINKING_GRAPH:
+        await _push_thinking_graph_update(graph, "vertex_completed", f"⟳ {vertex.title}")
 
 
 async def report_vertex_completed(
@@ -87,13 +87,13 @@ async def report_vertex_completed(
         delegation_depth=vertex.depth,
     )
 
-    # Notify UI about memory map change (only for memory_map graphs)
-    if graph.graph_type == GraphType.MEMORY_MAP:
-        await kotlin_client.notify_memory_map_changed()
+    # Notify UI about memory graph change (only for memory_graph graphs)
+    if graph.graph_type == GraphType.MEMORY_GRAPH:
+        await kotlin_client.notify_memory_graph_changed()
 
-    # Push thinking map update to chat (for thinking_map graphs)
-    if graph.graph_type == GraphType.THINKING_MAP:
-        await _push_thinking_map_update(
+    # Push thinking graph update to chat (for thinking_graph graphs)
+    if graph.graph_type == GraphType.THINKING_GRAPH:
+        await _push_thinking_graph_update(
             graph, "vertex_completed",
             f"{status_icon} {vertex.title} ({completed}/{total})",
         )
@@ -125,9 +125,9 @@ async def report_graph_status(
         percent=percent,
     )
 
-    # Notify UI about memory map change (only for memory_map graphs)
-    if graph.graph_type == GraphType.MEMORY_MAP:
-        await kotlin_client.notify_memory_map_changed()
+    # Notify UI about memory graph change (only for memory_graph graphs)
+    if graph.graph_type == GraphType.MEMORY_GRAPH:
+        await kotlin_client.notify_memory_graph_changed()
 
 
 async def report_decomposition_progress(
@@ -183,21 +183,21 @@ async def _report(
 
 
 # ---------------------------------------------------------------------------
-# Thinking map push to chat (throttled)
+# Thinking graph push to chat (throttled)
 # ---------------------------------------------------------------------------
 
 import time as _time
 
-_thinking_map_last_push: dict[str, float] = {}
-_THINKING_MAP_THROTTLE_S = 5.0  # max 1 push per 5s per graph (except terminal)
+_thinking_graph_last_push: dict[str, float] = {}
+_THINKING_GRAPH_THROTTLE_S = 5.0  # max 1 push per 5s per graph (except terminal)
 
 
-async def _push_thinking_map_update(
+async def _push_thinking_graph_update(
     graph: AgentGraph,
     status: str,
     message: str,
 ) -> None:
-    """Push thinking map update to chat via Kotlin.
+    """Push thinking graph update to chat via Kotlin.
 
     Terminal states (started/completed/failed) are always pushed.
     Intermediate updates are throttled to max 1 per 5s per graph.
@@ -206,17 +206,17 @@ async def _push_thinking_map_update(
     now = _time.monotonic()
 
     if not is_terminal:
-        last = _thinking_map_last_push.get(graph.id, 0.0)
-        if now - last < _THINKING_MAP_THROTTLE_S:
+        last = _thinking_graph_last_push.get(graph.id, 0.0)
+        if now - last < _THINKING_GRAPH_THROTTLE_S:
             return
-    _thinking_map_last_push[graph.id] = now
+    _thinking_graph_last_push[graph.id] = now
 
     # Get title from root vertex
     root = graph.vertices.get(graph.root_vertex_id)
     title = root.title if root else graph.task_id
 
     try:
-        await kotlin_client.notify_thinking_map_update(
+        await kotlin_client.notify_thinking_graph_update(
             task_id=graph.task_id,
             task_title=title,
             graph_id=graph.id,
@@ -224,4 +224,4 @@ async def _push_thinking_map_update(
             message=message,
         )
     except Exception as e:
-        logger.debug("Thinking map push failed: %s", e)
+        logger.debug("Thinking graph push failed: %s", e)

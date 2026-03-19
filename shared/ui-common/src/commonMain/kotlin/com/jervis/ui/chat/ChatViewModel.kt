@@ -114,16 +114,16 @@ class ChatViewModel(
     private val _taskGraphs = MutableStateFlow<Map<String, TaskGraphDto?>>(emptyMap())
     val taskGraphs: StateFlow<Map<String, TaskGraphDto?>> = _taskGraphs.asStateFlow()
 
-    /** Active map shown in the side panel (always = Paměťová mapa). */
-    private val _activeThinkingMap = MutableStateFlow<TaskGraphDto?>(null)
-    val activeThinkingMap: StateFlow<TaskGraphDto?> = _activeThinkingMap.asStateFlow()
+    /** Active graph shown in the side panel (always = Paměťový graf). */
+    private val _activeThinkingGraph = MutableStateFlow<TaskGraphDto?>(null)
+    val activeThinkingGraph: StateFlow<TaskGraphDto?> = _activeThinkingGraph.asStateFlow()
 
-    /** Debounce job for memory map refresh — prevents rapid repeated requests. */
-    private var memoryMapLoadJob: Job? = null
+    /** Debounce job for memory graph refresh — prevents rapid repeated requests. */
+    private var memoryGraphLoadJob: Job? = null
 
-    /** Detail sub-graph shown when user clicks on TASK_REF → thinking map link. */
-    private val _detailThinkingMap = MutableStateFlow<TaskGraphDto?>(null)
-    val detailThinkingMap: StateFlow<TaskGraphDto?> = _detailThinkingMap.asStateFlow()
+    /** Detail sub-graph shown when user clicks on TASK_REF → thinking graph link. */
+    private val _detailThinkingGraph = MutableStateFlow<TaskGraphDto?>(null)
+    val detailThinkingGraph: StateFlow<TaskGraphDto?> = _detailThinkingGraph.asStateFlow()
 
     /** Loading state for sub-graph fetch. */
     private val _subGraphLoading = MutableStateFlow(false)
@@ -133,35 +133,35 @@ class ChatViewModel(
     private val _liveLogTaskId = MutableStateFlow<String?>(null)
     val liveLogTaskId: StateFlow<String?> = _liveLogTaskId.asStateFlow()
 
-    /** Job logs service for live SSE streaming in ThinkingMapPanel. */
+    /** Job logs service for live SSE streaming in thinking graph panel. */
     val jobLogsService: IJobLogsService? get() = try { repository.jobLogs } catch (_: Exception) { null }
 
     /** Whether the map side panel is visible (user toggle). */
-    private val _thinkingMapPanelVisible = MutableStateFlow(false)
-    val thinkingMapPanelVisible: StateFlow<Boolean> = _thinkingMapPanelVisible.asStateFlow()
+    private val _thinkingGraphPanelVisible = MutableStateFlow(false)
+    val thinkingGraphPanelVisible: StateFlow<Boolean> = _thinkingGraphPanelVisible.asStateFlow()
 
-    private val _thinkingMapPanelWidthFraction = MutableStateFlow(0.35f)
-    val thinkingMapPanelWidthFraction: StateFlow<Float> = _thinkingMapPanelWidthFraction.asStateFlow()
+    private val _thinkingGraphPanelWidthFraction = MutableStateFlow(0.35f)
+    val thinkingGraphPanelWidthFraction: StateFlow<Float> = _thinkingGraphPanelWidthFraction.asStateFlow()
 
-    fun toggleThinkingMapPanel() {
-        val newVisible = !_thinkingMapPanelVisible.value
-        _thinkingMapPanelVisible.value = newVisible
-        if (newVisible && _activeThinkingMap.value == null) {
-            loadMemoryMap()
+    fun toggleThinkingGraphPanel() {
+        val newVisible = !_thinkingGraphPanelVisible.value
+        _thinkingGraphPanelVisible.value = newVisible
+        if (newVisible && _activeThinkingGraph.value == null) {
+            loadMemoryGraph()
         }
     }
 
-    fun closeThinkingMapPanel() {
-        _thinkingMapPanelVisible.value = false
-        _detailThinkingMap.value = null
+    fun closeThinkingGraphPanel() {
+        _thinkingGraphPanelVisible.value = false
+        _detailThinkingGraph.value = null
         _liveLogTaskId.value = null
     }
 
-    fun updateThinkingMapPanelWidthFraction(fraction: Float) {
-        _thinkingMapPanelWidthFraction.value = fraction.coerceIn(0.2f, 0.6f)
+    fun updateThinkingGraphPanelWidthFraction(fraction: Float) {
+        _thinkingGraphPanelWidthFraction.value = fraction.coerceIn(0.2f, 0.6f)
     }
 
-    /** Navigate into a sub-graph (thinking map) from a TASK_REF vertex. */
+    /** Navigate into a sub-graph (thinking graph) from a TASK_REF vertex. */
     fun openSubGraph(subGraphId: String) {
         scope.launch {
             _subGraphLoading.value = true
@@ -180,7 +180,7 @@ class ChatViewModel(
                 }
 
                 if (graph != null && graph.vertices.isNotEmpty()) {
-                    _detailThinkingMap.value = graph
+                    _detailThinkingGraph.value = graph
                 } else {
                     onError("Myšlenkový graf nenalezen (ID: ${subGraphId.take(20)}...)")
                 }
@@ -193,9 +193,9 @@ class ChatViewModel(
         }
     }
 
-    /** Return from sub-graph detail to memory map. */
+    /** Return from sub-graph detail to memory graph. */
     fun closeSubGraph() {
-        _detailThinkingMap.value = null
+        _detailThinkingGraph.value = null
     }
 
     /** Open live log streaming for a coding agent task. */
@@ -280,8 +280,8 @@ class ChatViewModel(
                         onStatusDetail("history err")
                         println("ChatViewModel: history load failed: ${e.message}")
                     }
-                    // Load master map on connection ready
-                    loadMemoryMap()
+                    // Load master graph on connection ready
+                    loadMemoryGraph()
                 }
             }.collect { response ->
                 handleChatResponse(response)
@@ -414,7 +414,7 @@ class ChatViewModel(
         _taskGraphs.update { it + (taskId to null) } // mark loading
         scope.launch {
             try {
-                // For master map, pass clientId for per-client filtering
+                // For master graph, pass clientId for per-client filtering
                 val clientId = if (taskId == "master") selectedClientId.value else null
                 val graph = repository.taskGraphs.getGraph(taskId, clientId)
                 if (graph != null && graph.vertices.isNotEmpty()) {
@@ -433,24 +433,24 @@ class ChatViewModel(
     }
 
     /**
-     * Load or refresh the Paměťová mapa (memory map) from orchestrator.
+     * Load or refresh the Paměťový graf (memory graph) from orchestrator.
      * Called on connection ready, after FINAL/BACKGROUND_RESULT, and on toggle.
      */
-    internal fun loadMemoryMap() {
-        memoryMapLoadJob?.cancel()
-        memoryMapLoadJob = scope.launch {
+    internal fun loadMemoryGraph() {
+        memoryGraphLoadJob?.cancel()
+        memoryGraphLoadJob = scope.launch {
             delay(500)
             try {
                 val clientId = selectedClientId.value
                 val graph = repository.taskGraphs.getGraph("master", clientId)
                 if (graph != null && graph.vertices.isNotEmpty()) {
-                    println("ChatViewModel: memory map refreshed — ${graph.vertices.size} vertices (client=$clientId)")
-                    _activeThinkingMap.value = graph
+                    println("ChatViewModel: memory graph refreshed — ${graph.vertices.size} vertices (client=$clientId)")
+                    _activeThinkingGraph.value = graph
                 } else {
-                    println("ChatViewModel: memory map not found or empty")
+                    println("ChatViewModel: memory graph not found or empty")
                 }
             } catch (e: Exception) {
-                println("ChatViewModel: memory map refresh failed: ${e.message}")
+                println("ChatViewModel: memory graph refresh failed: ${e.message}")
             }
         }
     }
@@ -746,8 +746,8 @@ class ChatViewModel(
                     val msgType = when (msg.role) {
                         com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
                         com.jervis.dto.ChatRole.BACKGROUND -> {
-                            if (msg.metadata["sender"] == "thinking_map") {
-                                ChatMessage.MessageType.THINKING_MAP_UPDATE
+                            if (msg.metadata["sender"] == "thinking_graph") {
+                                ChatMessage.MessageType.THINKING_GRAPH_UPDATE
                             } else {
                                 ChatMessage.MessageType.BACKGROUND_RESULT
                             }
@@ -849,7 +849,7 @@ class ChatViewModel(
 
             ChatResponseType.BACKGROUND_RESULT -> ChatMessage.MessageType.BACKGROUND_RESULT
             ChatResponseType.URGENT_ALERT -> ChatMessage.MessageType.URGENT_ALERT
-            ChatResponseType.THINKING_MAP_UPDATE -> ChatMessage.MessageType.THINKING_MAP_UPDATE
+            ChatResponseType.THINKING_GRAPH_UPDATE -> ChatMessage.MessageType.THINKING_GRAPH_UPDATE
 
             else -> null
         }
@@ -941,23 +941,23 @@ class ChatViewModel(
                 streamingBuffer.clear()
                 thinkingHistory.clear()
 
-                // Enrich last user message with memory map info (user bubble shows memory map)
-                val memoryMapId = response.metadata["memory_map_id"]
-                val memoryMapVertexId = response.metadata["memory_map_vertex_id"]
-                if (!memoryMapId.isNullOrBlank()) {
+                // Enrich last user message with memory graph info (user bubble shows memory graph)
+                val memoryGraphId = response.metadata["memory_graph_id"]
+                val memoryGraphVertexId = response.metadata["memory_graph_vertex_id"]
+                if (!memoryGraphId.isNullOrBlank()) {
                     val lastUserIdx = messages.indexOfLast { it.from == ChatMessage.Sender.Me }
                     if (lastUserIdx >= 0) {
                         val userMsg = messages[lastUserIdx]
                         messages[lastUserIdx] = userMsg.copy(
                             metadata = userMsg.metadata + buildMap {
-                                put("memory_map_id", memoryMapId)
-                                if (!memoryMapVertexId.isNullOrBlank()) put("memory_map_vertex_id", memoryMapVertexId)
+                                put("memory_graph_id", memoryGraphId)
+                                if (!memoryGraphVertexId.isNullOrBlank()) put("memory_graph_vertex_id", memoryGraphVertexId)
                             },
                         )
                     }
-                    // Proactively load memory map graph for user bubble
-                    if (memoryMapId !in _taskGraphs.value) {
-                        loadTaskGraph(memoryMapId)
+                    // Proactively load memory graph for user bubble
+                    if (memoryGraphId !in _taskGraphs.value) {
+                        loadTaskGraph(memoryGraphId)
                     }
                 }
 
@@ -971,8 +971,8 @@ class ChatViewModel(
                         workflowSteps = parseWorkflowSteps(response.metadata),
                     ),
                 )
-                // Refresh master map after chat completion
-                loadMemoryMap()
+                // Refresh master graph after chat completion
+                loadMemoryGraph()
             }
 
             ChatMessage.MessageType.ERROR -> {
@@ -1036,20 +1036,20 @@ class ChatViewModel(
                         )
                     }
                 }
-                // Refresh master map after background task completion
-                loadMemoryMap()
+                // Refresh master graph after background task completion
+                loadMemoryGraph()
             }
 
-            ChatMessage.MessageType.THINKING_MAP_UPDATE -> {
-                val isBackgroundPush = response.metadata["sender"] == "thinking_map"
+            ChatMessage.MessageType.THINKING_GRAPH_UPDATE -> {
+                val isBackgroundPush = response.metadata["sender"] == "thinking_graph"
                 val taskId = response.metadata["taskId"]
                 val graphId = response.metadata["graph_id"]
                 val status = response.metadata["status"]
 
                 if (isBackgroundPush && taskId != null && (_showTasks.value || _showNeedReaction.value)) {
-                    // Background thinking map push — show/update chat bubble (only when tasks/reaction filter active)
+                    // Background thinking graph push — show/update chat bubble (only when tasks/reaction filter active)
                     val existingIdx = messages.indexOfLast {
-                        it.messageType == ChatMessage.MessageType.THINKING_MAP_UPDATE
+                        it.messageType == ChatMessage.MessageType.THINKING_GRAPH_UPDATE
                                 && it.metadata["taskId"] == taskId
                     }
                     val bubble = ChatMessage(
@@ -1068,10 +1068,10 @@ class ChatViewModel(
                 }
 
                 // Update sub-graph data if panel is already open (never auto-open — user controls panel visibility)
-                if (!graphId.isNullOrBlank() && _thinkingMapPanelVisible.value) {
+                if (!graphId.isNullOrBlank() && _thinkingGraphPanelVisible.value) {
                     openSubGraph(graphId)
                 }
-                loadMemoryMap()
+                loadMemoryGraph()
 
                 // Reload task graph for inline display on completion
                 if (status in listOf("completed", "failed") && taskId != null) {
@@ -1122,9 +1122,9 @@ class ChatViewModel(
             val msgType = when (msg.role) {
                 com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
                 com.jervis.dto.ChatRole.BACKGROUND -> {
-                    // Distinguish thinking map updates from regular background results
-                    if (msg.metadata["sender"] == "thinking_map") {
-                        ChatMessage.MessageType.THINKING_MAP_UPDATE
+                    // Distinguish thinking graph updates from regular background results
+                    if (msg.metadata["sender"] == "thinking_graph") {
+                        ChatMessage.MessageType.THINKING_GRAPH_UPDATE
                     } else {
                         ChatMessage.MessageType.BACKGROUND_RESULT
                     }

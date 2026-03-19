@@ -582,7 +582,7 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
 
 
 async def _record_incoming_vertex(request: QualifyRequest, decision: dict) -> None:
-    """Record an INCOMING vertex in Paměťová mapa for qualified items."""
+    """Record an INCOMING vertex in Paměťový graf for qualified items."""
     if decision.get("decision") == "DONE":
         return  # No vertex for items that don't need processing
 
@@ -590,9 +590,9 @@ async def _record_incoming_vertex(request: QualifyRequest, decision: dict) -> No
         from app.agent.persistence import agent_store
         from app.agent.graph import add_incoming_vertex
 
-        memory_map = await agent_store.get_or_create_memory_map()
+        memory_graph = await agent_store.get_or_create_memory_graph()
         add_incoming_vertex(
-            memory_map,
+            memory_graph,
             task_id=request.task_id,
             title=decision.get("context_summary", request.summary)[:80] or request.task_id,
             prepared_context=decision.get("suggested_approach", ""),
@@ -602,6 +602,6 @@ async def _record_incoming_vertex(request: QualifyRequest, decision: dict) -> No
             project_name=request.project_name or "",
             urgency=request.urgency or "normal",
         )
-        agent_store.mark_dirty(memory_map.task_id)
+        agent_store.mark_dirty(memory_graph.task_id)
     except Exception as e:
         logger.warning("Failed to record INCOMING vertex for task %s: %s", request.task_id, e)

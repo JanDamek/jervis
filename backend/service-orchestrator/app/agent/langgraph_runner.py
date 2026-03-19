@@ -121,16 +121,16 @@ async def node_decompose(state: GraphAgentState) -> dict:
     Reactive model: the root vertex will try to solve directly. If it needs
     sub-tasks, it calls decompose_task during its agentic tool loop.
 
-    Pre-built thinking maps (from chat dispatch or pod restart) are handled
+    Pre-built thinking graphs (from chat dispatch or pod restart) are handled
     as before — skip initialization, reuse existing graph.
     """
-    # Pre-built thinking map — skip initialization, graph already has vertices
+    # Pre-built thinking graph — skip initialization, graph already has vertices
     if state.get("task_graph"):
         graph = AgentGraph(**state["task_graph"])
         agent_store.cache_subgraph(graph)
         agent_store.mark_dirty(graph.task_id)
         logger.info(
-            "Skipping init — pre-built thinking map with %d vertices",
+            "Skipping init — pre-built thinking graph with %d vertices",
             len(graph.vertices),
         )
         await report_graph_status(graph, f"Pre-built map with {len(graph.vertices) - 1} vertices")
@@ -544,13 +544,13 @@ async def node_synthesize(state: GraphAgentState) -> dict:
             result = raw_result
 
     # Compact completed vertices — keep result_summary, drop heavy fields
-    # This reduces MongoDB document size significantly for large thinking maps
+    # This reduces MongoDB document size significantly for large thinking graphs
     _compact_completed_graph(graph)
 
     # Final save — synchronous (graph is complete, flush immediately)
     await agent_store.save(graph)
     # Don't remove from RAM cache immediately — keep for 1h (debug visibility)
-    # cleanup_thinking_maps() in persistence.py handles RAM eviction
+    # cleanup_thinking_graphs() in persistence.py handles RAM eviction
     await report_graph_status(graph, "Graph execution completed")
 
     vs = stats.get("vertex_statuses", {})
@@ -567,7 +567,7 @@ async def node_synthesize(state: GraphAgentState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Graph compaction — reduce memory footprint of completed thinking maps
+# Graph compaction — reduce memory footprint of completed thinking graphs
 # ---------------------------------------------------------------------------
 
 
@@ -815,7 +815,7 @@ async def run_graph_agent(
     compiled = _get_compiled_graph()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
 
-    # Check for pre-existing thinking map (created by dispatch_map in chat,
+    # Check for pre-existing thinking graph (created by dispatch_map in chat,
     # OR previously EXECUTING graph that was interrupted by pod restart)
     existing_graph = await agent_store.load(request.task_id)
     pre_built_graph = None
@@ -856,14 +856,14 @@ async def run_graph_agent(
                     )
                     resume_vertex(existing_graph, bv.id, user_answer)
 
-        # For pre-built thinking maps (old model): mark root as COMPLETED
+        # For pre-built thinking graphs (old model): mark root as COMPLETED
         # For reactive model: root is a TASK vertex — don't force-complete it
         root = existing_graph.vertices.get(existing_graph.root_vertex_id)
         if root and root.vertex_type == VertexType.ROOT and root.status != VertexStatus.COMPLETED:
             complete_vertex(
                 existing_graph, root.id,
-                result="Pre-built thinking map (decomposed by chat)",
-                result_summary="Pre-built thinking map",
+                result="Pre-built thinking graph (decomposed by chat)",
+                result_summary="Pre-built thinking graph",
             )
         existing_graph.status = GraphStatus.EXECUTING
         agent_store.cache_subgraph(existing_graph)
@@ -931,7 +931,7 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Compile findings, identify gaps, and cite sources. "
         "Keep output concise — downstream vertices only see a brief summary.\n\n"
         "Store important findings via store_knowledge for persistence. "
-        "Use `extend_thinking_map` sparingly when you discover genuinely separate sub-topics.\n\n"
+        "Use `extend_thinking_graph` sparingly when you discover genuinely separate sub-topics.\n\n"
         "For code-level work (reading files, analyzing code, git history), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead."
         + _DECOMPOSE_HINT + _LANGUAGE_HINT
@@ -942,7 +942,7 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use tools (kb_search, etc.) to fetch detailed information you need. "
         "Use `ask_user` only when critical information is truly missing. "
         "Use `store_knowledge` to persist important findings.\n\n"
-        "Use `extend_thinking_map` sparingly when your task reveals genuinely separate work.\n\n"
+        "Use `extend_thinking_graph` sparingly when your task reveals genuinely separate work.\n\n"
         "For code-level work (reading/writing files, running tests), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead."
         + _DECOMPOSE_HINT + _LANGUAGE_HINT
@@ -953,7 +953,7 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use tools (kb_search, etc.) to fetch detailed information you need. "
         "Use `ask_user` only when critical information is truly missing. "
         "Use `store_knowledge` to persist important findings.\n\n"
-        "Use `extend_thinking_map` sparingly when your task reveals genuinely separate work.\n\n"
+        "Use `extend_thinking_graph` sparingly when your task reveals genuinely separate work.\n\n"
         "For code-level work (reading/writing files, running tests), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead."
         + _DECOMPOSE_HINT + _LANGUAGE_HINT
@@ -976,7 +976,7 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "You are the Synthesizer. Combine upstream results into a coherent, unified response. "
         "Preserve key details, resolve contradictions, and note any failures. "
         "Always respond in Czech.\n\n"
-        "If the combined result is too large or complex for a single pass, use `extend_thinking_map` "
+        "If the combined result is too large or complex for a single pass, use `extend_thinking_graph` "
         "to create follow-up vertices that each write a section of the final document. "
         "Then create a final synthesis vertex to combine those sections."
         + _LANGUAGE_HINT
@@ -1001,8 +1001,8 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
 _MAX_VERTEX_TOOL_ITERATIONS = 100
 # Consecutive iterations with no new meaningful content → force finish
 _STAGNATION_THRESHOLD = 5
-# Max extend_thinking_map calls per single vertex (prevent runaway growth)
-_MAX_EXTEND_MAP_PER_VERTEX = 1
+# Max extend_thinking_graph calls per single vertex (prevent runaway growth)
+_MAX_EXTEND_GRAPH_PER_VERTEX = 1
 # Timeout for a single tool execution within vertex loop
 _VERTEX_TOOL_TIMEOUT_S = 90  # KB graph traversals can take 30s+
 # NO overall vertex timeout — vertices can take hours when GPU is busy
@@ -1039,7 +1039,7 @@ async def _agentic_vertex(
     3. If LLM returns tool calls → execute them → append results → repeat
     4. If LLM returns text (no tool calls) → that's the final result
     5. Handle `request_tools` meta-tool by adding requested categories
-    6. Handle `extend_thinking_map` by adding new vertices to the graph
+    6. Handle `extend_thinking_graph` by adding new vertices to the graph
 
     Returns (result, summary).
     """
@@ -1096,7 +1096,7 @@ async def _agentic_vertex(
 
     # --- Agentic loop ---
     tool_call_history: list[tuple[str, str]] = []
-    extend_thinking_map_calls = 0  # Track how many times this vertex spawned children
+    extend_thinking_graph_calls = 0  # Track how many times this vertex spawned children
     iteration = 0
     result = ""
     stagnation_counter = 0  # Consecutive iterations without new meaningful results
@@ -1166,7 +1166,7 @@ async def _agentic_vertex(
             available_names = {t.get("function", {}).get("name") for t in tools}
             # Always allow meta-tools (unless tools is explicitly empty = force-finish mode)
             if tools:
-                available_names.update({"request_tools", "extend_thinking_map", "decompose_task"})
+                available_names.update({"request_tools", "extend_thinking_graph", "decompose_task"})
             else:
                 # Force-finish mode: only allow _finish noop
                 available_names = {"_finish"}
@@ -1217,27 +1217,27 @@ async def _agentic_vertex(
                 # Children are created, vertex will transition to WAITING_CHILDREN
                 raise DecomposeInterrupt()
 
-            # Handle the extend_thinking_map meta-tool
-            if tool_name == "extend_thinking_map":
-                # Hard limit: max N extend_thinking_map calls per vertex
-                if extend_thinking_map_calls >= _MAX_EXTEND_MAP_PER_VERTEX:
+            # Handle the extend_thinking_graph meta-tool
+            if tool_name == "extend_thinking_graph":
+                # Hard limit: max N extend_thinking_graph calls per vertex
+                if extend_thinking_graph_calls >= _MAX_EXTEND_GRAPH_PER_VERTEX:
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "name": tool_name,
                         "content": (
-                            f"ERROR: Maximum extend_thinking_map calls ({_MAX_EXTEND_MAP_PER_VERTEX}) "
+                            f"ERROR: Maximum extend_thinking_graph calls ({_MAX_EXTEND_GRAPH_PER_VERTEX}) "
                             "reached for this vertex. Focus on YOUR task and produce a result. "
-                            "Do NOT try to extend the thinking map again."
+                            "Do NOT try to extend the thinking graph again."
                         ),
                     })
                     # Remove the tool to prevent further attempts
                     if tools:
                         tools = [t for t in tools if t.get("function", {}).get("name") != tool_name]
-                        logger.warning("Removed extend_thinking_map after %d calls (hard limit)", extend_thinking_map_calls)
+                        logger.warning("Removed extend_thinking_graph after %d calls (hard limit)", extend_thinking_graph_calls)
                     continue
 
-                # Loop detection for extend_thinking_map — prevent repeated calls with same args
+                # Loop detection for extend_thinking_graph — prevent repeated calls with same args
                 loop_reason, loop_count = detect_tool_loop(
                     tool_call_history, tool_name, arguments,
                 )
@@ -1249,15 +1249,15 @@ async def _agentic_vertex(
                         "content": (
                             f"ERROR: {loop_reason} "
                             "The vertices were already created. Continue with your current analysis — "
-                            "do NOT call extend_thinking_map again with the same vertices."
+                            "do NOT call extend_thinking_graph again with the same vertices."
                         ),
                     })
                     if loop_count >= 2 and tools:
                         tools = [t for t in tools if t.get("function", {}).get("name") != tool_name]
-                        logger.warning("Removed extend_thinking_map from tools after %d repeats", loop_count)
+                        logger.warning("Removed extend_thinking_graph from tools after %d repeats", loop_count)
                     continue
-                extend_thinking_map_calls += 1
-                tool_result = _handle_extend_thinking_map(arguments, vertex, graph)
+                extend_thinking_graph_calls += 1
+                tool_result = _handle_extend_thinking_graph(arguments, vertex, graph)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
@@ -1435,14 +1435,14 @@ def _extract_accumulated_result(messages: list[dict]) -> str:
     return "(vertex completed without producing explicit result)"
 
 
-def _handle_extend_thinking_map(
+def _handle_extend_thinking_graph(
     arguments: dict,
     vertex: GraphVertex,
     graph: AgentGraph | None,
 ) -> str:
-    """Handle the `extend_thinking_map` meta-tool call.
+    """Handle the `extend_thinking_graph` meta-tool call.
 
-    Dynamically adds new vertices to the thinking map during execution.
+    Dynamically adds new vertices to the thinking graph during execution.
     New vertices depend on the CURRENT vertex — they will be picked up
     by select_next after the current vertex completes.
 
@@ -1453,7 +1453,7 @@ def _handle_extend_thinking_map(
     from app.agent.decomposer import MAX_TOTAL_VERTICES
 
     if graph is None:
-        return "ERROR: extend_thinking_map is not available in this context (no graph reference)."
+        return "ERROR: extend_thinking_graph is not available in this context (no graph reference)."
 
     vertices_data = arguments.get("vertices", [])
     reason = arguments.get("reason", "")
@@ -1565,7 +1565,7 @@ def _handle_extend_thinking_map(
 
     # --- CONVERGENCE GUARANTEE ---
     # Always connect new vertices to the root synthesis so the graph converges.
-    # New vertices added via extend_thinking_map must feed into the final synthesis,
+    # New vertices added via extend_thinking_graph must feed into the final synthesis,
     # otherwise their results become orphaned terminal vertices.
     root_synth_id = graph.synthesis_vertex_id
     if root_synth_id and root_synth_id in graph.vertices:
@@ -1629,14 +1629,14 @@ def _handle_extend_thinking_map(
 
     dedup_count = len(vertices_data) - len(created)
     logger.info(
-        "Vertex %s extended thinking map: +%d new, %d deduped, %d reused, total_extends=%d/%d, reason=%s",
+        "Vertex %s extended thinking graph: +%d new, %d deduped, %d reused, total_extends=%d/%d, reason=%s",
         vertex.id, len(created), dedup_count, len(reused),
         graph.extend_count, _MAX_EXTEND_TOTAL, reason,
     )
 
     if not created and not reused:
         return (
-            "All requested vertices already exist in the thinking map (deduplicated). "
+            "All requested vertices already exist in the thinking graph (deduplicated). "
             "Use the existing results — search with kb_search or check your incoming context."
         )
 

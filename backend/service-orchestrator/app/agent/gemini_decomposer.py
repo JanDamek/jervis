@@ -1,8 +1,8 @@
-"""Gemini decomposer — large context breakdown into thinking map vertices.
+"""Gemini decomposer — large context breakdown into thinking graph vertices.
 
 When the total context exceeds GPU/OpenRouter limits (>100k tokens), uses Gemini's
 1M context window to decompose it into smaller self-contained sub-tasks.
-Each sub-task becomes a vertex in the thinking map, processed independently
+Each sub-task becomes a vertex in the thinking graph, processed independently
 within normal context limits. A SYNTHESIS vertex combines results.
 
 Flow:
@@ -102,10 +102,10 @@ async def decompose_large_context(
     objective: str,
     state: dict,
 ) -> AgentGraph:
-    """Use Gemini to decompose large context into sub-vertices in the thinking map.
+    """Use Gemini to decompose large context into sub-vertices in the thinking graph.
 
     Args:
-        graph: The thinking map graph
+        graph: The thinking graph
         parent_id: Parent vertex ID (root or decompose vertex)
         content: The large context to decompose
         objective: What the user wants to achieve with this context

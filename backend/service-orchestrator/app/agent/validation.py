@@ -191,8 +191,8 @@ def _check_convergence(graph: AgentGraph, result: ValidationResult) -> None:
     children results directly. Only warn for old-style graphs with explicit
     synthesis vertices that have disconnected leaves.
     """
-    # Only check thinking maps (memory maps have different structure)
-    if graph.graph_type != GraphType.THINKING_MAP:
+    # Only check thinking graphs (memory graphs have different structure)
+    if graph.graph_type != GraphType.THINKING_GRAPH:
         return
 
     # In reactive model, no synthesis is fine — root is the evaluator
@@ -201,7 +201,7 @@ def _check_convergence(graph: AgentGraph, result: ValidationResult) -> None:
         # No synthesis vertex — that's fine in the reactive model
         return
 
-    # If there IS a synthesis vertex, check leaf convergence (legacy/extend_thinking_map)
+    # If there IS a synthesis vertex, check leaf convergence (legacy/extend_thinking_graph)
     for vid, vertex in graph.vertices.items():
         if vid == graph.root_vertex_id or vid == synth_id:
             continue

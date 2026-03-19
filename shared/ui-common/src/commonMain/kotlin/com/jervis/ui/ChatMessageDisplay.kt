@@ -1127,10 +1127,10 @@ private fun ChatMessageItem(
                 }
             }
         }
-    } else if (message.messageType == ChatMessage.MessageType.THINKING_MAP_UPDATE
-        && message.metadata["sender"] == "thinking_map"
+    } else if (message.messageType == ChatMessage.MessageType.THINKING_GRAPH_UPDATE
+        && message.metadata["sender"] == "thinking_graph"
     ) {
-        // Background thinking map bubble — shows task processing status
+        // Background thinking graph bubble — shows task processing status
         val status = message.metadata["status"] ?: "started"
         val taskTitle = message.metadata["taskTitle"] ?: ""
         val taskId = message.metadata["taskId"]
@@ -1401,22 +1401,22 @@ private fun ChatMessageItem(
                                             )
                                         }
                                     }
-                                    // Inline memory map — only show if this message dispatched background tasks.
-                                    // Simple chat responses (time, greeting, Q&A) don't need a map view —
-                                    // the side panel (ThinkingMapPanel) always shows the full memory map.
+                                    // Inline memory graph — only show if this message dispatched background tasks.
+                                    // Simple chat responses (time, greeting, Q&A) don't need a graph view —
+                                    // the side panel (ThinkingGraphPanel) always shows the full memory graph.
                                     // "dispatched_tasks" metadata is set by sse_handler when background work starts.
-                                    val memoryMapId = message.metadata["memory_map_id"]
+                                    val memoryGraphId = message.metadata["memory_graph_id"]
                                     val hasBackgroundWork = message.metadata["dispatched_tasks"] != null
-                                    if (memoryMapId != null && hasBackgroundWork) {
-                                        var mapExpanded by remember { mutableStateOf(false) }
-                                        val graphEntry = taskGraphs[memoryMapId]
+                                    if (memoryGraphId != null && hasBackgroundWork) {
+                                        var graphExpanded by remember { mutableStateOf(false) }
+                                        val graphEntry = taskGraphs[memoryGraphId]
 
                                         Spacer(modifier = Modifier.height(6.dp))
                                         TextButton(
                                             onClick = {
-                                                mapExpanded = !mapExpanded
-                                                if (graphEntry == null && memoryMapId !in taskGraphs) {
-                                                    onLoadTaskGraph(memoryMapId)
+                                                graphExpanded = !graphExpanded
+                                                if (graphEntry == null && memoryGraphId !in taskGraphs) {
+                                                    onLoadTaskGraph(memoryGraphId)
                                                 }
                                             },
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
@@ -1429,14 +1429,14 @@ private fun ChatMessageItem(
                                             )
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text(
-                                                if (mapExpanded) "Skrýt mapu" else "Paměťová mapa",
+                                                if (graphExpanded) "Skrýt graf" else "Paměťový graf",
                                                 style = MaterialTheme.typography.labelSmall,
                                             )
                                         }
-                                        AnimatedVisibility(visible = mapExpanded) {
+                                        AnimatedVisibility(visible = graphExpanded) {
                                             if (graphEntry != null && graphEntry.vertices.isNotEmpty()) {
                                                 TaskGraphSection(graph = graphEntry)
-                                            } else if (memoryMapId in taskGraphs && taskGraphs[memoryMapId] == null) {
+                                            } else if (memoryGraphId in taskGraphs && taskGraphs[memoryGraphId] == null) {
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1543,18 +1543,18 @@ private fun ChatMessageItem(
                             }
                         }
 
-                        // Inline thinking map for assistant messages (per-task graph, not memory map)
+                        // Inline thinking graph for assistant messages (per-task graph, not memory graph)
                         if (!isMe) {
-                            // thinking_map_task_id set by THINKING_MAP_UPDATE events
-                            val thinkingMapId = message.metadata["thinking_map_task_id"]
-                            if (thinkingMapId != null) {
-                                val graphEntry = taskGraphs[thinkingMapId]
+                            // thinking_graph_task_id set by THINKING_GRAPH_UPDATE events
+                            val thinkingGraphId = message.metadata["thinking_graph_task_id"]
+                            if (thinkingGraphId != null) {
+                                val graphEntry = taskGraphs[thinkingGraphId]
                                 if (graphEntry != null && graphEntry.vertices.isNotEmpty()) {
                                     Spacer(modifier = Modifier.height(8.dp))
                                     TaskGraphSection(graph = graphEntry)
-                                } else if (graphEntry == null && thinkingMapId !in taskGraphs) {
+                                } else if (graphEntry == null && thinkingGraphId !in taskGraphs) {
                                     TextButton(
-                                        onClick = { onLoadTaskGraph(thinkingMapId) },
+                                        onClick = { onLoadTaskGraph(thinkingGraphId) },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                                         modifier = Modifier.height(28.dp),
                                     ) {
@@ -1565,11 +1565,11 @@ private fun ChatMessageItem(
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
-                                            "Myšlenková mapa",
+                                            "Myšlenkový graf",
                                             style = MaterialTheme.typography.labelSmall,
                                         )
                                     }
-                                } else if (thinkingMapId in taskGraphs && taskGraphs[thinkingMapId] == null) {
+                                } else if (thinkingGraphId in taskGraphs && taskGraphs[thinkingGraphId] == null) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),

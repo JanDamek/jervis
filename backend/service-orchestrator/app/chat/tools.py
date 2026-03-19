@@ -482,14 +482,14 @@ TOOL_REMOVE_FILTER_RULE: dict = {
 # Action memory tools (EPIC 9-S4)
 # ---------------------------------------------------------------------------
 
-TOOL_CREATE_THINKING_MAP: dict = {
+TOOL_CREATE_THINKING_GRAPH: dict = {
     "type": "function",
     "function": {
-        "name": "create_thinking_map",
+        "name": "create_thinking_graph",
         "description": (
-            "Vytvoř novou myšlenkovou mapu pro plánování složitějšího úkolu (>2 kroky). "
-            "Mapa se zobrazí vizuálně v panelu vedle chatu. "
-            "Po vytvoření přidávej kroky přes add_map_vertex."
+            "Vytvoř nový myšlenkový graf pro plánování složitějšího úkolu (>2 kroky). "
+            "Graf se zobrazí vizuálně v panelu vedle chatu. "
+            "Po vytvoření přidávej kroky přes add_graph_vertex."
         ),
         "parameters": {
             "type": "object",
@@ -512,12 +512,12 @@ TOOL_CREATE_THINKING_MAP: dict = {
     },
 }
 
-TOOL_ADD_MAP_VERTEX: dict = {
+TOOL_ADD_GRAPH_VERTEX: dict = {
     "type": "function",
     "function": {
-        "name": "add_map_vertex",
+        "name": "add_graph_vertex",
         "description": (
-            "Přidej krok do myšlenkové mapy. Každý krok má typ — "
+            "Přidej krok do myšlenkového grafu. Každý krok má typ — "
             "investigator (průzkum), executor (realizace), validator (testy/ověření), "
             "reviewer (review), planner (dekompozice), setup (příprava), synthesis (spojení výsledků)."
         ),
@@ -548,11 +548,11 @@ TOOL_ADD_MAP_VERTEX: dict = {
     },
 }
 
-TOOL_UPDATE_MAP_VERTEX: dict = {
+TOOL_UPDATE_GRAPH_VERTEX: dict = {
     "type": "function",
     "function": {
-        "name": "update_map_vertex",
-        "description": "Uprav existující krok v myšlenkové mapě.",
+        "name": "update_graph_vertex",
+        "description": "Uprav existující krok v myšlenkovém grafu.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -573,11 +573,11 @@ TOOL_UPDATE_MAP_VERTEX: dict = {
     },
 }
 
-TOOL_REMOVE_MAP_VERTEX: dict = {
+TOOL_REMOVE_GRAPH_VERTEX: dict = {
     "type": "function",
     "function": {
-        "name": "remove_map_vertex",
-        "description": "Odeber krok z myšlenkové mapy.",
+        "name": "remove_graph_vertex",
+        "description": "Odeber krok z myšlenkového grafu.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -591,13 +591,13 @@ TOOL_REMOVE_MAP_VERTEX: dict = {
     },
 }
 
-TOOL_DISPATCH_THINKING_MAP: dict = {
+TOOL_DISPATCH_THINKING_GRAPH: dict = {
     "type": "function",
     "function": {
-        "name": "dispatch_thinking_map",
+        "name": "dispatch_thinking_graph",
         "description": (
-            "Finalizuj myšlenkovou mapu a spusť její realizaci na pozadí. "
-            "Volej POUZE po explicitním souhlasu uživatele s mapou."
+            "Finalizuj myšlenkový graf a spusť jeho realizaci na pozadí. "
+            "Volej POUZE po explicitním souhlasu uživatele s grafem."
         ),
         "parameters": {
             "type": "object",
@@ -615,13 +615,13 @@ TOOL_DISPATCH_THINKING_MAP: dict = {
     },
 }
 
-TOOL_RUN_MAP_VERTEX: dict = {
+TOOL_RUN_GRAPH_VERTEX: dict = {
     "type": "function",
     "function": {
-        "name": "run_map_vertex",
+        "name": "run_graph_vertex",
         "description": (
-            "Spusť jeden krok myšlenkové mapy na pozadí (paralelně s chatem). "
-            "Výsledek se vrátí do mapy automaticky. Použij pro investigátory, "
+            "Spusť jeden krok myšlenkového grafu na pozadí (paralelně s chatem). "
+            "Výsledek se vrátí do grafu automaticky. Použij pro investigátory, "
             "výzkum, analýzy — cokoliv co trvá déle a uživatel na to nečeká."
         ),
         "parameters": {
@@ -678,7 +678,7 @@ TOOL_QUERY_ACTION_LOG: dict = {
 
 
 # ---------------------------------------------------------------------------
-# Graph interaction tools (master map / task sub-graphs)
+# Graph interaction tools (master graph / task sub-graphs)
 # ---------------------------------------------------------------------------
 
 TOOL_CHECK_TASK_GRAPH: dict = {
@@ -686,7 +686,7 @@ TOOL_CHECK_TASK_GRAPH: dict = {
     "function": {
         "name": "check_task_graph",
         "description": (
-            "Zjisti stav myšlenkové mapy (task grafu) — vertexy, hrany, stav zpracování. "
+            "Zjisti stav myšlenkového grafu (task graph) — vertexy, hrany, stav zpracování. "
             "Použij pro 'jak je na tom ten úkol', 'stav background tasku', 'co se děje s X'."
         ),
         "parameters": {
@@ -707,7 +707,7 @@ TOOL_ANSWER_BLOCKED_VERTEX: dict = {
     "function": {
         "name": "answer_blocked_vertex",
         "description": (
-            "Odpověz na čekající otázku v myšlenkové mapě (ASK_USER vertex). "
+            "Odpověz na čekající otázku v myšlenkovém grafu (ASK_USER vertex). "
             "Graf pokračuje tam kde přestal poté co dostane odpověď. "
             "Použij když uživatel odpovídá na otázku z background tasku."
         ),
@@ -716,7 +716,7 @@ TOOL_ANSWER_BLOCKED_VERTEX: dict = {
             "properties": {
                 "task_id": {
                     "type": "string",
-                    "description": "Task ID nebo 'master' pro master mapu.",
+                    "description": "Task ID nebo 'master' pro master graf.",
                 },
                 "vertex_id": {
                     "type": "string",
@@ -814,12 +814,12 @@ TOOL_UPDATE_GUIDELINE: dict = {
 
 CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_CREATE_BACKGROUND_TASK,
-    TOOL_CREATE_THINKING_MAP,
-    TOOL_ADD_MAP_VERTEX,
-    TOOL_UPDATE_MAP_VERTEX,
-    TOOL_REMOVE_MAP_VERTEX,
-    TOOL_DISPATCH_THINKING_MAP,
-    TOOL_RUN_MAP_VERTEX,
+    TOOL_CREATE_THINKING_GRAPH,
+    TOOL_ADD_GRAPH_VERTEX,
+    TOOL_UPDATE_GRAPH_VERTEX,
+    TOOL_REMOVE_GRAPH_VERTEX,
+    TOOL_DISPATCH_THINKING_GRAPH,
+    TOOL_RUN_GRAPH_VERTEX,
     TOOL_DISPATCH_CODING_AGENT,
     TOOL_SEARCH_TASKS,
     TOOL_GET_TASK_STATUS,
@@ -878,7 +878,7 @@ class ToolCategory(str, Enum):
 TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
     # CORE: always available — search, dispatch, graph interaction, knowledge storage.
     # Model must ALWAYS be able to dispatch coding agents, create tasks, store knowledge,
-    # interact with thinking maps, and answer blocked vertices.
+    # interact with thinking graphs, and answer blocked vertices.
     ToolCategory.CORE: [
         TOOL_KB_SEARCH,
         TOOL_KB_DELETE,
@@ -898,12 +898,12 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_LIST_AFFAIRS,
     ],
     ToolCategory.TASK_MGMT: [
-        TOOL_CREATE_THINKING_MAP,
-        TOOL_ADD_MAP_VERTEX,
-        TOOL_UPDATE_MAP_VERTEX,
-        TOOL_REMOVE_MAP_VERTEX,
-        TOOL_DISPATCH_THINKING_MAP,
-        TOOL_RUN_MAP_VERTEX,
+        TOOL_CREATE_THINKING_GRAPH,
+        TOOL_ADD_GRAPH_VERTEX,
+        TOOL_UPDATE_GRAPH_VERTEX,
+        TOOL_REMOVE_GRAPH_VERTEX,
+        TOOL_DISPATCH_THINKING_GRAPH,
+        TOOL_RUN_GRAPH_VERTEX,
         TOOL_SEARCH_TASKS,
         TOOL_GET_TASK_STATUS,
         TOOL_LIST_RECENT_TASKS,
@@ -931,9 +931,9 @@ TOOL_DOMAINS: dict[str, str] = {
     "memory_recall": "search", "get_kb_stats": "search", "get_indexed_items": "search",
     "memory_store": "memory", "store_knowledge": "memory", "list_affairs": "memory",
     "create_background_task": "task",
-    "create_thinking_map": "task", "add_map_vertex": "task",
-    "update_map_vertex": "task", "remove_map_vertex": "task",
-    "dispatch_thinking_map": "task", "run_map_vertex": "task",
+    "create_thinking_graph": "task", "add_graph_vertex": "task",
+    "update_graph_vertex": "task", "remove_graph_vertex": "task",
+    "dispatch_thinking_graph": "task", "run_graph_vertex": "task",
     "dispatch_coding_agent": "task",
     "search_tasks": "task", "get_task_status": "task",
     "list_recent_tasks": "task", "respond_to_user_task": "task",

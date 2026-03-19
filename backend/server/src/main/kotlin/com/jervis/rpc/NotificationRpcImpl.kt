@@ -250,8 +250,8 @@ class NotificationRpcImpl : INotificationService {
         }
     }
 
-    suspend fun emitMemoryMapChanged() {
-        val event = JervisEvent.MemoryMapChanged(
+    suspend fun emitMemoryGraphChanged() {
+        val event = JervisEvent.MemoryGraphChanged(
             timestamp = Instant.now().toString(),
         )
         eventStreams.keys().asSequence().forEach { id ->

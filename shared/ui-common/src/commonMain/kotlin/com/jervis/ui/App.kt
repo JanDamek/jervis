@@ -94,8 +94,8 @@ fun App(
         // Environment
         val environments by viewModel.environment.environments.collectAsState()
 
-        // Paměťová mapa
-        val activeMemoryMap by viewModel.chat.activeThinkingMap.collectAsState()
+        // Paměťový graf
+        val activeMemoryGraph by viewModel.chat.activeThinkingGraph.collectAsState()
 
         // User task count for badge
         val userTaskCount by viewModel.notification.userTaskCount.collectAsState()
@@ -129,8 +129,8 @@ fun App(
             onNavigateToMeetings = { appNavigator.navigateTo(Screen.Meetings) },
             onQuickRecord = { meetingViewModel.startQuickRecording() },
             onStopRecording = { meetingViewModel.stopRecording() },
-            hasMemoryMap = activeMemoryMap != null,
-            onToggleThinkingMapPanel = viewModel.chat::toggleThinkingMapPanel,
+            hasMemoryGraph = activeMemoryGraph != null,
+            onToggleThinkingGraphPanel = viewModel.chat::toggleThinkingGraphPanel,
             hasEnvironment = environments.isNotEmpty(),
             onToggleEnvironmentPanel = viewModel.environment::togglePanel,
             userTaskCount = userTaskCount,

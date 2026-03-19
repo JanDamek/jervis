@@ -1,4 +1,4 @@
-"""MongoDB persistence for AgentGraph + in-memory Paměťová mapa cache.
+"""MongoDB persistence for AgentGraph + in-memory Paměťový graf cache.
 
 Stores the complete graph (vertices, edges) as a single document.
 Supports:
@@ -6,8 +6,8 @@ Supports:
 - atomic vertex status updates (without rewriting entire document)
 - edge payload updates
 - TTL-based auto-cleanup (30 days)
-- In-memory Paměťová mapa singleton (DB = restart recovery only)
-- RAM cache for active Myšlenkové mapy
+- In-memory Paměťový graf singleton (DB = restart recovery only)
+- RAM cache for active Myšlenkové grafy
 """
 
 from __future__ import annotations
@@ -35,20 +35,20 @@ logger = logging.getLogger(__name__)
 _COLLECTION_NAME = "task_graphs"
 _TTL_DAYS = 30
 _FLUSH_INTERVAL_S = 30  # Periodic DB flush interval
-_CLEANUP_INTERVAL_S = 600  # Memory map cleanup every 10 min
+_CLEANUP_INTERVAL_S = 600  # Memory graph cleanup every 10 min
 _KEEP_CHAT_PER_CLIENT = 5  # Keep last N chat exchanges PER CLIENT
 _KEEP_TASK_PER_CLIENT = 5  # Keep last N completed/failed task refs PER CLIENT
 _MAX_COMPLETED_AGE_S = 86400  # 24 hours — Tier 1 retention in RAM
 _MIN_KEEP_PER_CLIENT = 2  # Always keep at least N newest per category per client
-_THINKING_MAP_TTL_S = 3600  # Thinking maps: keep 1h in RAM after completion
-_THINKING_MAP_HIDE_S = 600  # 10min → hidden in UI (debug visibility)
+_THINKING_GRAPH_TTL_S = 3600  # Thinking graphs: keep 1h in RAM after completion
+_THINKING_GRAPH_HIDE_S = 600  # 10min → hidden in UI (debug visibility)
 _ARCHIVE_TTL_DAYS = 7  # Tier 2: MongoDB archive retention
 
 
 class AgentStore:
     """MongoDB-backed persistence for task graphs with RAM cache.
 
-    Memory map is held in RAM as a singleton. Task sub-graphs are cached
+    Memory graph is held in RAM as a singleton. Task sub-graphs are cached
     in RAM while active. DB is used for restart recovery only.
     """
 
@@ -60,7 +60,7 @@ class AgentStore:
         self._maintenance_coll: AsyncIOMotorCollection | None = None
 
         # RAM cache
-        self._memory_map: AgentGraph | None = None
+        self._memory_graph: AgentGraph | None = None
         self._subgraphs: dict[str, AgentGraph] = {}  # task_id → AgentGraph
         self._dirty: set[str] = set()  # task_ids that need DB flush
         self._flush_task: asyncio.Task | None = None
@@ -68,7 +68,7 @@ class AgentStore:
         self._pending_archive: list[dict] = []
 
         # Task parent tracking: child_task_id → parent_task_id
-        # Used to nest sub-tasks under their parent TASK_REF in memory map
+        # Used to nest sub-tasks under their parent TASK_REF in memory graph
         self._task_parent_map: dict[str, str] = {}
 
     async def init(self) -> None:
@@ -97,8 +97,8 @@ class AgentStore:
             expireAfterSeconds=7 * 86400,
         )
 
-        # Tier 2: Memory map archive — per-vertex docs with 7d TTL
-        self._archive_coll = db["master_map_archive"]
+        # Tier 2: Memory graph archive — per-vertex docs with 7d TTL
+        self._archive_coll = db["master_graph_archive"]
         await self._archive_coll.create_index(
             [("archived_at", 1)],
             expireAfterSeconds=_ARCHIVE_TTL_DAYS * 86400,
@@ -133,13 +133,14 @@ class AgentStore:
     async def _migrate_old_enum_values(self) -> None:
         """One-time migration: rename old GraphType and VertexType values in DB.
 
-        Converts: master → memory_map, task_subgraph → thinking_map,
+        Converts: master → memory_graph, task_subgraph → thinking_graph,
+        memory_map → memory_graph, thinking_map → thinking_graph,
         chat_exchange → request (inside vertices).
         """
         coll = await self._ensure_collection()
 
         # Migrate graph_type
-        for old, new in [("master", "memory_map"), ("task_subgraph", "thinking_map")]:
+        for old, new in [("master", "memory_graph"), ("task_subgraph", "thinking_graph"), ("memory_map", "memory_graph"), ("thinking_map", "thinking_graph")]:
             result = await coll.update_many(
                 {"graph_type": old},
                 {"$set": {"graph_type": new}},
@@ -334,47 +335,47 @@ class AgentStore:
         )
         return result_op.modified_count > 0
 
-    # --- Master Map (RAM singleton) ---
+    # --- Master Graph (RAM singleton) ---
 
-    async def get_or_create_memory_map(self, client_id: str = "") -> AgentGraph:
-        """Get or create the global memory map (one per orchestrator instance).
+    async def get_or_create_memory_graph(self, client_id: str = "") -> AgentGraph:
+        """Get or create the global memory graph (one per orchestrator instance).
 
         RAM-first: returns cached graph if available. Falls back to DB on
-        cold start. Creates new memory map if none exists.
+        cold start. Creates new memory graph if none exists.
         """
-        if self._memory_map is not None:
-            return self._memory_map
+        if self._memory_graph is not None:
+            return self._memory_graph
 
         # Try loading from DB
         coll = await self._ensure_collection()
-        doc = await coll.find_one({"graph_type": GraphType.MEMORY_MAP.value})
+        doc = await coll.find_one({"graph_type": GraphType.MEMORY_GRAPH.value})
         if doc:
             doc.pop("_id", None)
             doc.pop("updated_at", None)
-            self._memory_map = AgentGraph(**doc)
-            logger.info("Memory map loaded from DB (id=%s, vertices=%d)",
-                        self._memory_map.id, len(self._memory_map.vertices))
+            self._memory_graph = AgentGraph(**doc)
+            logger.info("Memory graph loaded from DB (id=%s, vertices=%d)",
+                        self._memory_graph.id, len(self._memory_graph.vertices))
             # Immediate cleanup on load — persist to KB + archive removed vertices
-            removed = self.cleanup_memory_map()
+            removed = self.cleanup_memory_graph()
             if removed > 0:
                 if hasattr(self, "_pending_archive") and self._pending_archive:
                     await self._persist_to_kb(self._pending_archive)
                     await self._archive_vertices(self._pending_archive)
                     self._pending_archive = []
-                self._dirty.add(self._memory_map.task_id)
-                logger.info("Memory map after cleanup: %d vertices", len(self._memory_map.vertices))
-            return self._memory_map
+                self._dirty.add(self._memory_graph.task_id)
+                logger.info("Memory graph after cleanup: %d vertices", len(self._memory_graph.vertices))
+            return self._memory_graph
 
-        # Create new memory map
-        from app.agent.graph import create_memory_map
-        self._memory_map = create_memory_map(client_id)
-        self._dirty.add(self._memory_map.task_id)
-        logger.info("New memory map created (id=%s)", self._memory_map.id)
-        return self._memory_map
+        # Create new memory graph
+        from app.agent.graph import create_memory_graph
+        self._memory_graph = create_memory_graph(client_id)
+        self._dirty.add(self._memory_graph.task_id)
+        logger.info("New memory graph created (id=%s)", self._memory_graph.id)
+        return self._memory_graph
 
-    def get_memory_map_cached(self) -> AgentGraph | None:
-        """Get memory map from RAM only (no DB fallback). For sync callers."""
-        return self._memory_map
+    def get_memory_graph_cached(self) -> AgentGraph | None:
+        """Get memory graph from RAM only (no DB fallback). For sync callers."""
+        return self._memory_graph
 
     # --- Sub-graph RAM cache ---
 
@@ -390,10 +391,10 @@ class AgentStore:
         """Remove a completed sub-graph from RAM cache."""
         self._subgraphs.pop(task_id, None)
 
-    # --- Task parent tracking (child → parent nesting in memory map) ---
+    # --- Task parent tracking (child → parent nesting in memory graph) ---
 
     def register_task_parent(self, child_task_id: str, parent_task_id: str) -> None:
-        """Register a child task's parent for memory map nesting."""
+        """Register a child task's parent for memory graph nesting."""
         self._task_parent_map[child_task_id] = parent_task_id
         logger.debug("Task parent registered: %s → %s", child_task_id, parent_task_id)
 
@@ -402,17 +403,17 @@ class AgentStore:
         return self._task_parent_map.get(child_task_id)
 
     def _find_parent_vertex_id(self, parent_task_id: str) -> str | None:
-        """Find the memory map vertex ID for a parent task_id."""
-        if not self._memory_map:
+        """Find the memory graph vertex ID for a parent task_id."""
+        if not self._memory_graph:
             return None
-        for v in self._memory_map.vertices.values():
+        for v in self._memory_graph.vertices.values():
             if v.vertex_type == VertexType.TASK_REF and v.input_request == parent_task_id:
                 return v.id
         return None
 
-    # --- Link master ↔ sub-graph ---
+    # --- Link master graph ↔ sub-graph ---
 
-    async def link_thinking_map(
+    async def link_thinking_graph(
         self,
         task_id: str,
         sub_graph_id: str,
@@ -428,13 +429,13 @@ class AgentStore:
         project_name: str = "",
         agent_type: str | None = None,
     ) -> None:
-        """Link a task sub-graph to the memory map via a TASK_REF vertex.
+        """Link a task sub-graph to the memory graph via a TASK_REF vertex.
 
         Parent resolution order:
         1. Task parent (sub-task nesting via _task_parent_map)
         2. Client/group/project hierarchy (auto-creates CLIENT/GROUP/PROJECT vertices)
         """
-        master = await self.get_or_create_memory_map()
+        master = await self.get_or_create_memory_graph()
         from app.agent.graph import add_task_ref_vertex
 
         # Find parent vertex for nesting (sub-task → parent task)
@@ -454,17 +455,17 @@ class AgentStore:
         )
         self._dirty.add(master.task_id)
 
-        # Notify UI about memory map change
+        # Notify UI about memory graph change
         from app.tools.kotlin_client import kotlin_client
         try:
-            await kotlin_client.notify_memory_map_changed()
+            await kotlin_client.notify_memory_graph_changed()
         except Exception:
             pass  # Non-fatal
 
     # --- ASK_USER helpers ---
 
     async def find_ask_user_vertices(self, client_id: str = "") -> list[tuple[str, GraphVertex]]:
-        """Find all BLOCKED ASK_USER vertices across master + cached sub-graphs.
+        """Find all BLOCKED ASK_USER vertices across master graph + cached sub-graphs.
 
         CLIENT ISOLATION (STRICT): client_id is required. Without it, returns
         empty list — never leak cross-client questions.
@@ -476,12 +477,12 @@ class AgentStore:
 
         results: list[tuple[str, GraphVertex]] = []
 
-        # Check memory map
-        if self._memory_map:
-            for v in self._memory_map.vertices.values():
+        # Check memory graph
+        if self._memory_graph:
+            for v in self._memory_graph.vertices.values():
                 if v.status == VertexStatus.BLOCKED:
                     if v.client_id == client_id or self._vertex_in_client(v, client_id):
-                        results.append((self._memory_map.task_id, v))
+                        results.append((self._memory_graph.task_id, v))
 
         # Check cached sub-graphs
         for task_id, graph in self._subgraphs.items():
@@ -493,14 +494,14 @@ class AgentStore:
         return results
 
     def _vertex_in_client(self, vertex: GraphVertex, client_id: str) -> bool:
-        """Walk parent chain in memory_map to check client ownership (legacy fallback)."""
-        if not self._memory_map:
+        """Walk parent chain in memory_graph to check client ownership (legacy fallback)."""
+        if not self._memory_graph:
             return False
         current = vertex
         for _ in range(5):
             if not current.parent_id:
                 return False
-            parent = self._memory_map.vertices.get(current.parent_id)
+            parent = self._memory_graph.vertices.get(current.parent_id)
             if not parent:
                 return False
             if parent.vertex_type == VertexType.CLIENT:
@@ -522,8 +523,8 @@ class AgentStore:
         from app.agent.graph import resume_vertex
 
         graph: AgentGraph | None = None
-        if self._memory_map and self._memory_map.task_id == task_id:
-            graph = self._memory_map
+        if self._memory_graph and self._memory_graph.task_id == task_id:
+            graph = self._memory_graph
         elif task_id in self._subgraphs:
             graph = self._subgraphs[task_id]
         else:
@@ -542,7 +543,7 @@ class AgentStore:
             return True
         return False
 
-    # --- Memory map cleanup ---
+    # --- Memory graph cleanup ---
 
     _ACTIVE_STATUSES = {
         VertexStatus.PENDING, VertexStatus.READY,
@@ -563,9 +564,9 @@ class AgentStore:
         forever unless we detect and fail them. The result_summary is preserved
         (if any partial response was saved), and the error explains what happened.
         """
-        if not self._memory_map:
+        if not self._memory_graph:
             return 0
-        graph = self._memory_map
+        graph = self._memory_graph
         now = datetime.now(timezone.utc)
         task_cutoff = (now - timedelta(seconds=self._STALE_RUNNING_AGE_S)).isoformat()
         request_cutoff = (now - timedelta(seconds=self._STALE_REQUEST_AGE_S)).isoformat()
@@ -594,8 +595,8 @@ class AgentStore:
             logger.info("Marked %d stale RUNNING vertices as FAILED", count)
         return count
 
-    def cleanup_memory_map(self) -> int:
-        """Remove old completed/failed vertices from memory map (per-client).
+    def cleanup_memory_graph(self) -> int:
+        """Remove old completed/failed vertices from memory graph (per-client).
 
         3-tier lifecycle:
         - Tier 1 (RAM): active vertices + last N per client, max 24h after completion
@@ -613,12 +614,12 @@ class AgentStore:
 
         Returns number of removed vertices.
         """
-        if not self._memory_map:
+        if not self._memory_graph:
             return 0
 
         self._mark_stale_running_vertices()
 
-        graph = self._memory_map
+        graph = self._memory_graph
         keep_ids: set[str] = set()
         hierarchy_types = {VertexType.CLIENT, VertexType.GROUP, VertexType.PROJECT}
 
@@ -723,7 +724,7 @@ class AgentStore:
 
         self._dirty.add(graph.task_id)
         logger.info(
-            "Memory map cleanup: removed %d vertices (kept %d, clients=%d)",
+            "Memory graph cleanup: removed %d vertices (kept %d, clients=%d)",
             len(to_remove), len(keep_ids),
             len(set(v.client_id for v in graph.vertices.values() if v.client_id)),
         )
@@ -731,13 +732,13 @@ class AgentStore:
 
     def _resolve_client_id(self, vertex: GraphVertex) -> str:
         """Resolve client_id for a vertex by walking parent chain (legacy fallback)."""
-        if not self._memory_map:
+        if not self._memory_graph:
             return ""
         current = vertex
         for _ in range(5):
             if not current.parent_id:
                 return ""
-            parent = self._memory_map.vertices.get(current.parent_id)
+            parent = self._memory_graph.vertices.get(current.parent_id)
             if not parent:
                 return ""
             if parent.vertex_type == VertexType.CLIENT:
@@ -745,8 +746,8 @@ class AgentStore:
             current = parent
         return ""
 
-    def cleanup_thinking_maps(self) -> int:
-        """Remove completed thinking maps from RAM after _THINKING_MAP_TTL_S.
+    def cleanup_thinking_graphs(self) -> int:
+        """Remove completed thinking graphs from RAM after _THINKING_GRAPH_TTL_S.
 
         Does NOT delete from MongoDB (30d TTL handles that).
         Returns number of evicted sub-graphs.
@@ -755,7 +756,7 @@ class AgentStore:
             return 0
 
         now = datetime.now(timezone.utc)
-        cutoff = (now - timedelta(seconds=_THINKING_MAP_TTL_S)).isoformat()
+        cutoff = (now - timedelta(seconds=_THINKING_GRAPH_TTL_S)).isoformat()
         to_evict: list[str] = []
 
         for task_id, graph in self._subgraphs.items():
@@ -769,7 +770,7 @@ class AgentStore:
             del self._subgraphs[task_id]
 
         if to_evict:
-            logger.info("Evicted %d completed thinking maps from RAM", len(to_evict))
+            logger.info("Evicted %d completed thinking graphs from RAM", len(to_evict))
         return len(to_evict)
 
     async def _persist_to_kb(self, vertices: list[dict]) -> None:
@@ -837,12 +838,12 @@ class AgentStore:
             payload = {
                 "clientId": client_id,
                 "projectId": project_id or None,
-                "sourceUrn": f"agent://memory-map/{v.get('id')}",
+                "sourceUrn": f"agent://memory-graph/{v.get('id')}",
                 "kind": "task_summary",
                 "content": content,
                 "metadata": {
                     "vertex_type": vtype,
-                    "archived_from": "memory_map",
+                    "archived_from": "memory_graph",
                 },
             }
             try:
@@ -872,7 +873,7 @@ class AgentStore:
         try:
             if self._archive_coll is None:
                 coll = await self._ensure_collection()
-                self._archive_coll = coll.database["master_map_archive"]
+                self._archive_coll = coll.database["master_graph_archive"]
 
             now = datetime.now(timezone.utc)
             docs = []
@@ -900,18 +901,18 @@ class AgentStore:
 
             if docs:
                 await self._archive_coll.insert_many(docs)
-                logger.info("Archived %d vertices to master_map_archive (Tier 2)", len(docs))
+                logger.info("Archived %d vertices to master_graph_archive (Tier 2)", len(docs))
         except Exception as e:
             logger.warning("Failed to archive vertices: %s", e)
 
     async def _periodic_cleanup(self) -> None:
-        """Background task: cleanup memory map + thinking maps every N seconds."""
+        """Background task: cleanup memory graph + thinking graphs every N seconds."""
         while True:
             try:
                 await asyncio.sleep(_CLEANUP_INTERVAL_S)
 
-                # 1. Memory map cleanup (per-client, 24h lifecycle)
-                removed = self.cleanup_memory_map()
+                # 1. Memory graph cleanup (per-client, 24h lifecycle)
+                removed = self.cleanup_memory_graph()
                 if removed > 0:
                     if self._pending_archive:
                         await self._persist_to_kb(self._pending_archive)
@@ -919,13 +920,13 @@ class AgentStore:
                         self._pending_archive = []
                     await self.flush_dirty()
 
-                # 2. Thinking map RAM eviction (1h after completion)
-                self.cleanup_thinking_maps()
+                # 2. Thinking graph RAM eviction (1h after completion)
+                self.cleanup_thinking_graphs()
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error("Memory map cleanup error: %s", e)
+                logger.error("Memory graph cleanup error: %s", e)
 
     # --- Dirty flush ---
 
@@ -943,8 +944,8 @@ class AgentStore:
 
         for task_id in dirty_ids:
             graph: AgentGraph | None = None
-            if self._memory_map and self._memory_map.task_id == task_id:
-                graph = self._memory_map
+            if self._memory_graph and self._memory_graph.task_id == task_id:
+                graph = self._memory_graph
             elif task_id in self._subgraphs:
                 graph = self._subgraphs[task_id]
 
@@ -1024,7 +1025,7 @@ class AgentStore:
             return []
         if self._archive_coll is None:
             coll = await self._ensure_collection()
-            self._archive_coll = coll.database["master_map_archive"]
+            self._archive_coll = coll.database["master_graph_archive"]
 
         try:
             cursor = self._archive_coll.find(

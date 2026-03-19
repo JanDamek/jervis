@@ -117,7 +117,7 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
     suspend fun countByConversationIdAndRoleNot(conversationId: ObjectId, role: MessageRole): Long
 
     // ── Chat mode: exclude BACKGROUND but keep BACKGROUND with hasGraph=true ──
-    // Important background results (with thinking maps) must remain visible in chat mode.
+    // Important background results (with thinking graphs) must remain visible in chat mode.
 
     /**
      * Load chat messages: exclude BACKGROUND, but keep BACKGROUND with hasGraph=true (newest first).

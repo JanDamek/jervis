@@ -40,10 +40,10 @@ fun MainScreen(
     val orchestratorHealthy by viewModel.queue.orchestratorHealthy.collectAsState()
     val orchestratorProgress by viewModel.queue.orchestratorProgress.collectAsState()
     val taskGraphs by viewModel.chat.taskGraphs.collectAsState()
-    val activeThinkingMap by viewModel.chat.activeThinkingMap.collectAsState()
-    val detailThinkingMap by viewModel.chat.detailThinkingMap.collectAsState()
-    val thinkingMapPanelVisible by viewModel.chat.thinkingMapPanelVisible.collectAsState()
-    val thinkingMapPanelWidthFraction by viewModel.chat.thinkingMapPanelWidthFraction.collectAsState()
+    val activeThinkingGraph by viewModel.chat.activeThinkingGraph.collectAsState()
+    val detailThinkingGraph by viewModel.chat.detailThinkingGraph.collectAsState()
+    val thinkingGraphPanelVisible by viewModel.chat.thinkingGraphPanelVisible.collectAsState()
+    val thinkingGraphPanelWidthFraction by viewModel.chat.thinkingGraphPanelWidthFraction.collectAsState()
     val liveLogTaskId by viewModel.chat.liveLogTaskId.collectAsState()
     val isRecordingVoice by viewModel.chat.isRecordingVoice.collectAsState()
     val voiceStatus by viewModel.chat.voiceStatus.collectAsState()
@@ -121,16 +121,16 @@ fun MainScreen(
         onCancelVoice = viewModel.chat::cancelVoiceRecording,
         onTtsPlay = viewModel.chat::playTts,
         isTtsPlaying = isTtsPlaying,
-        activeThinkingMap = activeThinkingMap,
-        thinkingMapPanelVisible = thinkingMapPanelVisible,
-        thinkingMapPanelWidthFraction = thinkingMapPanelWidthFraction,
-        onThinkingMapPanelWidthChange = viewModel.chat::updateThinkingMapPanelWidthFraction,
-        thinkingMapPanelContent = { isCompact ->
-            com.jervis.ui.chat.ThinkingMapPanel(
-                activeMap = activeThinkingMap,
+        activeThinkingGraph = activeThinkingGraph,
+        thinkingGraphPanelVisible = thinkingGraphPanelVisible,
+        thinkingGraphPanelWidthFraction = thinkingGraphPanelWidthFraction,
+        onThinkingGraphPanelWidthChange = viewModel.chat::updateThinkingGraphPanelWidthFraction,
+        thinkingGraphPanelContent = { isCompact ->
+            com.jervis.ui.chat.ThinkingGraphPanel(
+                activeMap = activeThinkingGraph,
                 isCompact = isCompact,
-                onClose = viewModel.chat::closeThinkingMapPanel,
-                detailGraph = detailThinkingMap,
+                onClose = viewModel.chat::closeThinkingGraphPanel,
+                detailGraph = detailThinkingGraph,
                 liveLogTaskId = liveLogTaskId,
                 jobLogsService = viewModel.chat.jobLogsService,
                 onOpenSubGraph = viewModel.chat::openSubGraph,

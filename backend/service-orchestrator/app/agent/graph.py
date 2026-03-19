@@ -615,7 +615,7 @@ def _update_vertex_readiness(graph: AgentGraph, vertex_id: str) -> None:
     ROOT SYNTHESIS GUARD: The root synthesis vertex must NOT become READY
     while there are still non-terminal, non-synthesis vertices in the graph.
     This prevents synthesis from completing before late-added vertices
-    (via extend_thinking_map) have finished.
+    (via extend_thinking_graph) have finished.
     """
     vertex = graph.vertices.get(vertex_id)
     if not vertex or vertex.status not in (VertexStatus.PENDING, VertexStatus.READY, VertexStatus.WAITING_CHILDREN):
@@ -701,13 +701,13 @@ def _is_graph_complete(graph: AgentGraph) -> bool:
 def _check_graph_completion(graph: AgentGraph) -> None:
     """Update graph status if all vertices are done.
 
-    Master maps are never "completed" — they grow with each interaction.
+    Master graphs are never "completed" — they grow with each interaction.
 
     Also handles root synthesis readiness: when all non-synthesis work is done
     but root synthesis is still PENDING (held back by the guard), release it.
     """
-    if graph.graph_type == GraphType.MEMORY_MAP:
-        return  # Master map never completes
+    if graph.graph_type == GraphType.MEMORY_GRAPH:
+        return  # Master graph never completes
 
     # Check if root synthesis should be released (all non-synthesis work done)
     if graph.synthesis_vertex_id and graph.synthesis_vertex_id in graph.vertices:
@@ -749,22 +749,22 @@ def _check_graph_completion(graph: AgentGraph) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Paměťová mapa (Memory Map) operations
+# Paměťový graf (Memory Graph) operations
 # ---------------------------------------------------------------------------
 
 
-def create_memory_map(client_id: str = "") -> AgentGraph:
-    """Create a new Paměťová mapa (global singleton).
+def create_memory_graph(client_id: str = "") -> AgentGraph:
+    """Create a new Paměťový graf (global singleton).
 
-    The memory map is a persistent graph that holds all chat interactions
-    and references to Myšlenkové mapy (task sub-graphs). It never completes.
+    The memory graph is a persistent graph that holds all chat interactions
+    and references to Myšlenkové grafy (task sub-graphs). It never completes.
     """
     graph_id = f"master-{uuid.uuid4().hex[:8]}"
     root_id = f"v-master-root-{uuid.uuid4().hex[:8]}"
 
     root = GraphVertex(
         id=root_id,
-        title="Paměťová mapa",
+        title="Paměťový graf",
         description="Globální paměťový kontext — všechny interakce a odkazy na úlohy",
         vertex_type=VertexType.ROOT,
         status=VertexStatus.COMPLETED,  # Root is always done
@@ -776,10 +776,10 @@ def create_memory_map(client_id: str = "") -> AgentGraph:
         id=graph_id,
         task_id="master",
         client_id=GLOBAL_CLIENT_ID,
-        graph_type=GraphType.MEMORY_MAP,
+        graph_type=GraphType.MEMORY_GRAPH,
         root_vertex_id=root_id,
         vertices={root_id: root},
-        status=GraphStatus.EXECUTING,  # Memory map is always "executing"
+        status=GraphStatus.EXECUTING,  # Memory graph is always "executing"
         created_at=datetime.now(timezone.utc).isoformat(),
     )
 
@@ -904,7 +904,7 @@ def add_request_vertex(
     project_name: str = "",
     status: VertexStatus = VertexStatus.COMPLETED,
 ) -> GraphVertex:
-    """Add a REQUEST vertex to the master map.
+    """Add a REQUEST vertex to the master graph.
 
     Records a chat message→response pair. Nested under client/group/project if known.
     Status is determined by the caller:
@@ -1182,13 +1182,13 @@ def find_blocked_vertices(graph: AgentGraph) -> list[GraphVertex]:
     ]
 
 
-def memory_map_summary(
+def memory_graph_summary(
     graph: AgentGraph,
     max_tokens: int = 2000,
     client_id: str = "",
     project_id: str = "",
 ) -> str:
-    """Generate a compact summary of the master map for LLM context injection.
+    """Generate a compact summary of the master graph for LLM context injection.
 
     Priority order:
     1. BLOCKED vertices (user needs to act)
@@ -1209,7 +1209,7 @@ def memory_map_summary(
     - When project_id is empty ("all"): any project of the client passes
     """
     if not client_id:
-        logger.warning("memory_map_summary called without client_id — returning empty")
+        logger.warning("memory_graph_summary called without client_id — returning empty")
         return ""
 
     parts: list[str] = []

@@ -98,11 +98,11 @@ fun MainScreenView(
     onCancelVoice: () -> Unit = {},
     onTtsPlay: (String) -> Unit = {},
     isTtsPlaying: Boolean = false,
-    activeThinkingMap: TaskGraphDto? = null,
-    thinkingMapPanelVisible: Boolean = false,
-    thinkingMapPanelWidthFraction: Float = 0.35f,
-    onThinkingMapPanelWidthChange: (Float) -> Unit = {},
-    thinkingMapPanelContent: @Composable (isCompact: Boolean) -> Unit = {},
+    activeThinkingGraph: TaskGraphDto? = null,
+    thinkingGraphPanelVisible: Boolean = false,
+    thinkingGraphPanelWidthFraction: Float = 0.35f,
+    onThinkingGraphPanelWidthChange: (Float) -> Unit = {},
+    thinkingGraphPanelContent: @Composable (isCompact: Boolean) -> Unit = {},
     hasEnvironment: Boolean = false,
     environmentPanelVisible: Boolean = false,
     onToggleEnvironmentPanel: () -> Unit = {},
@@ -186,15 +186,15 @@ fun MainScreenView(
                     },
                 )
             }
-            // Compact + thinking map panel -> full-screen
-            isCompact && thinkingMapPanelVisible && activeThinkingMap != null -> {
-                thinkingMapPanelContent(true)
+            // Compact + thinking graph panel -> full-screen
+            isCompact && thinkingGraphPanelVisible && activeThinkingGraph != null -> {
+                thinkingGraphPanelContent(true)
             }
-            // Expanded + thinking map panel -> split layout (draggable)
-            !isCompact && thinkingMapPanelVisible && activeThinkingMap != null -> {
+            // Expanded + thinking graph panel -> split layout (draggable)
+            !isCompact && thinkingGraphPanelVisible && activeThinkingGraph != null -> {
                 JHorizontalSplitLayout(
-                    splitFraction = 1f - thinkingMapPanelWidthFraction,
-                    onSplitChange = { onThinkingMapPanelWidthChange(1f - it) },
+                    splitFraction = 1f - thinkingGraphPanelWidthFraction,
+                    onSplitChange = { onThinkingGraphPanelWidthChange(1f - it) },
                     minFraction = 0.5f,
                     maxFraction = 0.8f,
                     leftContent = { _ ->
@@ -252,7 +252,7 @@ fun MainScreenView(
                         )
                     },
                     rightContent = { _ ->
-                        thinkingMapPanelContent(false)
+                        thinkingGraphPanelContent(false)
                     },
                 )
             }

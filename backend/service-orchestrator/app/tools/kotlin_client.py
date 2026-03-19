@@ -276,21 +276,21 @@ class KotlinServerClient:
             return False
 
     # ------------------------------------------------------------------
-    # Memory map change notification
+    # Memory graph change notification
     # ------------------------------------------------------------------
 
-    async def notify_memory_map_changed(self) -> bool:
-        """Notify Kotlin server that the memory map changed — triggers UI refresh.
+    async def notify_memory_graph_changed(self) -> bool:
+        """Notify Kotlin server that the memory graph changed — triggers UI refresh.
 
         Called after vertex status changes during graph execution.
-        Kotlin broadcasts MemoryMapChanged event to all connected UI clients.
+        Kotlin broadcasts MemoryGraphChanged event to all connected UI clients.
         """
         try:
             client = await self._get_client()
-            await client.post("/internal/memory-map-changed")
+            await client.post("/internal/memory-graph-changed")
             return True
         except Exception as e:
-            logger.debug("Failed to notify memory map changed: %s", e)
+            logger.debug("Failed to notify memory graph changed: %s", e)
             return False
 
     # ------------------------------------------------------------------
@@ -972,10 +972,10 @@ class KotlinServerClient:
             return f"Error: {e}"
 
     # ------------------------------------------------------------------
-    # Thinking map push to chat
+    # Thinking graph push to chat
     # ------------------------------------------------------------------
 
-    async def notify_thinking_map_update(
+    async def notify_thinking_graph_update(
         self,
         task_id: str,
         task_title: str,
@@ -984,7 +984,7 @@ class KotlinServerClient:
         message: str = "",
         metadata: dict[str, str] | None = None,
     ) -> bool:
-        """Push thinking map update to Kotlin → chat stream.
+        """Push thinking graph update to Kotlin → chat stream.
 
         Status values: "started", "vertex_completed", "completed", "failed"
         Terminal states (started/completed/failed) are persisted to chat history.
@@ -1000,10 +1000,10 @@ class KotlinServerClient:
             }
             if metadata:
                 payload["metadata"] = metadata
-            await client.post("/internal/thinking-map-update", json=payload)
+            await client.post("/internal/thinking-graph-update", json=payload)
             return True
         except Exception as e:
-            logger.debug("Failed to push thinking map update: %s", e)
+            logger.debug("Failed to push thinking graph update: %s", e)
             return False
 
     async def invalidate_cache(self, collection: str) -> None:

@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
  * Mirrors the Python agent models (snake_case in MongoDB)
  * with Kotlin naming conventions.
  *
- * GraphType values: "memory_map" (Paměťová mapa), "thinking_map" (Myšlenková mapa)
+ * GraphType values: "memory_graph" (Paměťový graf), "thinking_graph" (Myšlenkový graf)
  */
 
 @Serializable
@@ -28,7 +28,7 @@ data class TaskGraphDto(
     @SerialName("completed_at") val completedAt: String? = null,
     @SerialName("total_token_count") val totalTokenCount: Int = 0,
     @SerialName("total_llm_calls") val totalLlmCalls: Int = 0,
-    /** True if this thinking map is older than 10min — UI should dim/collapse (debug). */
+    /** True if this thinking graph is older than 10min — UI should dim/collapse (debug). */
     val hidden: Boolean = false,
 )
 

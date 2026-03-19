@@ -4,7 +4,7 @@ Core concepts:
 - GraphVertex: a processing unit — tries direct resolution, decomposes if needed
 - GraphEdge: connection carrying summary between vertices (lightweight)
 - EdgePayload: the data that flows through an edge after source completes
-- AgentGraph: the complete DAG (Paměťová mapa or Myšlenková mapa)
+- AgentGraph: the complete DAG (Paměťový graf or Myšlenkový graf)
 
 Execution model (reactive/lazy progressive decomposition):
 - Each vertex tries to solve its task directly first (LLM + tools)
@@ -13,8 +13,8 @@ Execution model (reactive/lazy progressive decomposition):
 - No upfront decomposition — graph grows dynamically from actual needs
 
 Graph types:
-- MEMORY_MAP: one global Paměťová mapa per user — all interactions are vertices
-- THINKING_MAP: Myšlenková mapa for a specific background task, linked to memory map
+- MEMORY_GRAPH: one global Paměťový graf per user — all interactions are vertices
+- THINKING_GRAPH: Myšlenkový graf for a specific background task, linked to memory graph
 """
 
 from __future__ import annotations
@@ -34,10 +34,10 @@ GLOBAL_CLIENT_ID = "__global__"
 
 
 class GraphType(str, Enum):
-    """Whether this graph is the Paměťová mapa or Myšlenková mapa."""
+    """Whether this graph is the Paměťový graf or Myšlenkový graf."""
 
-    MEMORY_MAP = "memory_map"           # Global Paměťová mapa (one per user)
-    THINKING_MAP = "thinking_map"       # Myšlenková mapa for a background task
+    MEMORY_GRAPH = "memory_graph"           # Global Paměťový graf (one per user)
+    THINKING_GRAPH = "thinking_graph"       # Myšlenkový graf for a background task
 
 
 class VertexType(str, Enum):
@@ -57,13 +57,13 @@ class VertexType(str, Enum):
     GATE = "gate"               # Decision / approval point
     SETUP = "setup"             # Project scaffolding + environment provisioning
 
-    # Paměťová mapa vertex types
+    # Paměťový graf vertex types
     CLIENT = "client"           # Client organization in hierarchy
     GROUP = "group"             # Project group within client
     PROJECT = "project"         # Project within client (or group)
     ASK_USER = "ask_user"       # Blocked — needs user input via chat
     REQUEST = "request"         # Chat message → agent execution → response
-    TASK_REF = "task_ref"       # Reference to a Myšlenková mapa
+    TASK_REF = "task_ref"       # Reference to a Myšlenkový graf
     INCOMING = "incoming"       # Qualified item from indexation
 
     # Decomposer vertex types
@@ -205,15 +205,15 @@ class GraphVertex(BaseModel):
 
 
 class AgentGraph(BaseModel):
-    """Complete execution DAG — Paměťová mapa or Myšlenková mapa.
+    """Complete execution DAG — Paměťový graf or Myšlenkový graf.
 
     Contains all vertices and edges. The graph grows dynamically:
     the root vertex tries to solve directly, and only decomposes
     into children if needed (reactive/lazy progressive decomposition).
 
     graph_type:
-    - MEMORY_MAP: global singleton, all chat interactions + task refs
-    - THINKING_MAP: per-task sub-graph, linked to Paměťová mapa
+    - MEMORY_GRAPH: global singleton, all chat interactions + task refs
+    - THINKING_GRAPH: per-task sub-graph, linked to Paměťový graf
     """
 
     id: str
@@ -221,7 +221,7 @@ class AgentGraph(BaseModel):
     client_id: str
     project_id: str | None = None
 
-    graph_type: GraphType = GraphType.THINKING_MAP
+    graph_type: GraphType = GraphType.THINKING_GRAPH
     parent_graph_id: str | None = None  # Memory map ID (for Myšlenkové mapy)
 
     root_vertex_id: str
@@ -236,7 +236,7 @@ class AgentGraph(BaseModel):
     completed_at: str | None = None
     total_token_count: int = 0
     total_llm_calls: int = 0
-    extend_count: int = 0  # Total extend_thinking_map vertices added (global cap)
+    extend_count: int = 0  # Total extend_thinking_graph vertices added (global cap)
 
 
 # Backward compatibility alias

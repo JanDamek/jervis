@@ -256,7 +256,7 @@ class MainViewModel(
             is JervisEvent.OrchestratorTaskStatusChange -> queue.handleOrchestratorStatusChange(event)
             is JervisEvent.QualificationProgress -> queue.handleQualificationProgress(event)
             is JervisEvent.PendingTaskCreated -> { /* Handled elsewhere if needed */ }
-            is JervisEvent.MemoryMapChanged -> chat.loadMemoryMap()
+            is JervisEvent.MemoryGraphChanged -> chat.loadMemoryGraph()
             is JervisEvent.ApprovalRequired -> {
                 notification.handleUserTaskCreated(
                     JervisEvent.UserTaskCreated(

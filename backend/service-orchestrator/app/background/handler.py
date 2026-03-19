@@ -73,8 +73,8 @@ async def _run_graph_agent_background(
 ) -> dict:
     """Run graph agent for a background task and adapt its return to handle_background format.
 
-    Links the task sub-graph to the master map so all work is visible
-    in the global thinking map.
+    Links the task sub-graph to the master graph so all work is visible
+    in the global thinking graph.
 
     Args:
         request: Orchestration request from Kotlin.
@@ -93,9 +93,9 @@ async def _run_graph_agent_background(
 
     task_title = request.task_name or request.query[:80] or f"Task {request.task_id}"
 
-    # Link to memory map immediately (RUNNING state) so UI shows active task
+    # Link to memory graph immediately (RUNNING state) so UI shows active task
     try:
-        await agent_store.link_thinking_map(
+        await agent_store.link_thinking_graph(
             task_id=request.task_id,
             sub_graph_id="",
             title=task_title,
@@ -111,11 +111,11 @@ async def _run_graph_agent_background(
             agent_type="graph",
         )
     except Exception as e:
-        logger.warning("Failed to link running task to master map: %s", e)
+        logger.warning("Failed to link running task to master graph: %s", e)
 
     # Push "started" to chat
     try:
-        await kotlin_client.notify_thinking_map_update(
+        await kotlin_client.notify_thinking_graph_update(
             task_id=request.task_id,
             task_title=task_title,
             status="started",
@@ -124,7 +124,7 @@ async def _run_graph_agent_background(
     except Exception:
         pass
 
-    # Run graph agent — always update memory map on completion (even on crash)
+    # Run graph agent — always update memory graph on completion (even on crash)
     state: dict = {}
     agent_failed = False
     try:
@@ -139,12 +139,12 @@ async def _run_graph_agent_background(
     graph_id = graph_data.get("id", "") if isinstance(graph_data, dict) else ""
     graph_status = graph_data.get("status", "") if isinstance(graph_data, dict) else ""
 
-    # Link sub-graph to master map (with final status)
+    # Link sub-graph to master graph (with final status)
     is_blocked = graph_status == "blocked"
     success = not agent_failed and graph_status not in ("failed", "cancelled", "blocked")
     summary = state.get("final_result", "")
     try:
-        await agent_store.link_thinking_map(
+        await agent_store.link_thinking_graph(
             task_id=request.task_id,
             sub_graph_id=graph_id,
             title=task_title,
@@ -159,11 +159,11 @@ async def _run_graph_agent_background(
             project_name=request.project_name or "",
         )
     except Exception as e:
-        logger.warning("Failed to link sub-graph to master map: %s", e)
+        logger.warning("Failed to link sub-graph to master graph: %s", e)
 
     # Push completion/failure to chat
     try:
-        await kotlin_client.notify_thinking_map_update(
+        await kotlin_client.notify_thinking_graph_update(
             task_id=request.task_id,
             task_title=task_title,
             graph_id=graph_id,
@@ -375,9 +375,9 @@ async def _run_coding_agent_background(
         except Exception as db_err:
             logger.error("Failed to set CODING state via DB for task %s: %s", request.task_id, db_err)
 
-    # 6. Link to master map (not completed yet — watcher will update)
+    # 6. Link to master graph (not completed yet — watcher will update)
     try:
-        await agent_store.link_thinking_map(
+        await agent_store.link_thinking_graph(
             task_id=request.task_id,
             sub_graph_id="",
             title=request.task_name or request.query[:80] or f"Coding {request.task_id}",
@@ -392,7 +392,7 @@ async def _run_coding_agent_background(
             agent_type="coding",
         )
     except Exception as e:
-        logger.warning("Failed to link coding task to master map: %s", e)
+        logger.warning("Failed to link coding task to master graph: %s", e)
 
     logger.info(
         "CODING_DISPATCHED | task_id=%s | job=%s | agent=%s",

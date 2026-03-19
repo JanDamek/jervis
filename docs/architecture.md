@@ -36,7 +36,7 @@
 
 The Jervis system is built on several key architectural patterns:
 
-- **Unified Agent (LangGraph)**: ONE agent for all interactions — chat (foreground) and background tasks. Paměťová mapa (Memory Map) + Myšlenková mapa (Thinking Map). See [graph-agent-architecture.md](graph-agent-architecture.md)
+- **Unified Agent (LangGraph)**: ONE agent for all interactions — chat (foreground) and background tasks. Paměťový graf (Memory Graph) + Myšlenkový graf (Thinking Graph). See [graph-agent-architecture.md](graph-agent-architecture.md)
 - **TaskQualificationService**: Dispatches tasks to KB microservice for indexing. After KB callback, saves kbSummary/kbEntities/kbActionable to TaskDocument and routes directly to QUEUED or DONE.
 - **Kotlin RPC (kRPC)**: Type-safe, cross-platform messaging framework for client-server communication
 - **3-Stage Polling Pipeline**: Polling → Indexing → KB Processing → QUEUED/DONE
@@ -1113,7 +1113,7 @@ AgentTaskWatcher._poll_once():
   4. If success + result.branch:
      a. Create MR/PR via kotlin_client.create_merge_request()
      b. asyncio.create_task(run_code_review(...))  # non-blocking — dispatches review K8s Job
-  5. Update memory map TASK_REF vertex → COMPLETED
+  5. Update memory graph TASK_REF vertex → COMPLETED
 ```
 
 Review tasks (`sourceUrn="code-review:{originalTaskId}"`):
@@ -1175,7 +1175,7 @@ that handles ALL interactions — foreground chat AND background tasks. Runs as 
 K8s Deployment, communicates with Kotlin server via REST + SSE.
 
 **Key principle**: ONE agent for everything. Chat messages create REQUEST vertices in the
-Paměťová mapa (Memory Map). Background tasks create Myšlenkové mapy (Thinking Maps).
+Paměťový graf (Memory Graph). Background tasks create Myšlenkové grafy (Thinking Graphs).
 Qualifier creates INCOMING vertices. All share the same agentic loop (`vertex_executor.py`).
 
 ### Architecture
@@ -1194,7 +1194,7 @@ Qualifier creates INCOMING vertices. All share the same agentic loop (`vertex_ex
 │  Kotlin Server  │ REST   │    ├── vertex_executor.py (shared)       │
 │  (Spring Boot)  │◄──────►│    └── callback to Kotlin                │
 │                 │        │                                          │
-│  ChatService    │        │  Paměťová mapa (RAM singleton)           │
+│  ChatService    │        │  Paměťový graf (RAM singleton)            │
 │  PythonChat-    │        │  AgentStore (persistence.py)             │
 │  Client (SSE)   │        └──────────────────────────────────────────┘
 │  BackgroundEng. │
@@ -1211,8 +1211,8 @@ Qualifier creates INCOMING vertices. All share the same agentic loop (`vertex_ex
 
 - **TaskDocument** (Kotlin/MongoDB): SSOT for task lifecycle, USER_TASK state
 - **AgentGraph** (Python/MongoDB `task_graphs`): Graph structure — vertices, edges, status
-- **AgentStore** (Python RAM): In-memory singleton for Paměťová mapa, periodic DB flush (30s), 3-tier lifecycle (RAM 24h → MongoDB archive 7d → KB permanent), per-client cleanup + hierarchy GC
-- **master_map_archive** (MongoDB): Tier 2 archive — per-vertex documents with 7d TTL, text-searchable
+- **AgentStore** (Python RAM): In-memory singleton for Paměťový graf, periodic DB flush (30s), 3-tier lifecycle (RAM 24h → MongoDB archive 7d → KB permanent), per-client cleanup + hierarchy GC
+- **master_graph_archive** (MongoDB): Tier 2 archive — per-vertex documents with 7d TTL, text-searchable
 - **Per-vertex state**: `agent_messages` + `agent_iteration` on GraphVertex for resume
 
 ### Chat Context Persistence
@@ -1223,13 +1223,13 @@ Messages keyed by `conversationId` (= `ChatSessionDocument._id`).
 **Three layers:**
 1. **Recent messages** (verbatim): Last 20 `ChatMessageDocument` records
 2. **Rolling summaries** (compressed): `ChatSummaryDocument` collection
-3. **Paměťová mapa summary**: Injected into every system prompt (~2000 tokens)
+3. **Paměťový graf summary**: Injected into every system prompt (~2000 tokens)
 
 **MongoDB collections:**
 - `chat_messages` — individual messages (`conversationId` field)
 - `chat_summaries` — compressed summary blocks
 - `chat_sessions` — session lifecycle (one active per user)
-- `task_graphs` — AgentGraph persistence (Paměťová mapa + Myšlenkové mapy)
+- `task_graphs` — AgentGraph persistence (Paměťový graf + Myšlenkové grafy)
 
 ### Task State Machine
 
@@ -1675,7 +1675,7 @@ Hybrid push/local notification architecture for real-time user alerts.
 | **Transcription Progress** | `MeetingTranscriptionProgress` | NORMAL | UI shows Whisper progress % + last segment text |
 | **Orchestrator Progress** | `OrchestratorTaskProgress` | NORMAL | UI shows node/goal/step progress |
 | **Orchestrator Status** | `OrchestratorTaskStatusChange` | NORMAL | UI shows done/error/interrupted |
-| **Memory Map Changed** | `MemoryMapChanged` | NORMAL | UI refreshes Paměťová mapa panel (500ms debounce) |
+| **Memory Graph Changed** | `MemoryGraphChanged` | NORMAL | UI refreshes Paměťový graf panel (500ms debounce) |
 | **Qualification Progress** | `QualificationProgress` | NORMAL | UI shows qualification step progress |
 
 ### Event Flow
@@ -1693,10 +1693,10 @@ Python Orchestrator → completion/error/interrupt
     → NotificationRpcImpl.emitOrchestratorTaskStatusChange() [kRPC stream]
     → MainViewModel.handleGlobalEvent() → QueueViewModel.handleOrchestratorStatusChange()
 
-Python Orchestrator → vertex status change (memory map)
-  → POST /internal/memory-map-changed
-    → KtorRpcServer → NotificationRpcImpl.emitMemoryMapChanged() [broadcast ALL clients]
-    → MainViewModel.handleGlobalEvent() → ChatViewModel.loadMemoryMap() [500ms debounce]
+Python Orchestrator → vertex status change (memory graph)
+  → POST /internal/memory-graph-changed
+    → KtorRpcServer → NotificationRpcImpl.emitMemoryGraphChanged() [broadcast ALL clients]
+    → MainViewModel.handleGlobalEvent() → ChatViewModel.loadMemoryGraph() [500ms debounce]
 
 Python Orchestrator → interrupt (approval required)
   → OrchestratorStatusHandler → UserTaskService.failAndEscalateToUserTask()
@@ -1811,7 +1811,7 @@ The orchestrator then classifies the task type as its first step when picking up
 
 Foreground chat uses the **unified agent** — same `vertex_executor.py` agentic loop as background tasks.
 The user chats with Jervis like iMessage/WhatsApp — one global conversation (not per client/project).
-Jervis acts as a personal assistant. Each chat message creates a REQUEST vertex in the Paměťová mapa.
+Jervis acts as a personal assistant. Each chat message creates a REQUEST vertex in the Paměťový graf.
 
 **Both foreground and background use the same agentic loop** (`vertex_executor.py`):
 - Foreground: SSE streaming via `sse_handler.py`, `chat_router.py` routes to correct vertex
@@ -2106,7 +2106,7 @@ The old foreground chat flow (`IAgentOrchestratorService.subscribeToChat/sendMes
 
 **Status:** Replaces old Intent Router (deleted).
 
-Chat messages are routed to vertices in the Paměťová mapa via `agent/chat_router.py`:
+Chat messages are routed to vertices in the Paměťový graf via `agent/chat_router.py`:
 
 1. `context_task_id` set → `answer_ask_user` (resume blocked vertex)
 2. Greeting pattern → `direct_response` (fast LLM, no tools)

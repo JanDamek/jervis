@@ -47,9 +47,9 @@ class ChatRequest(BaseModel):
     active_client_id: str | None = None          # Currently selected client in UI
     active_project_id: str | None = None         # Currently selected project in UI
     active_group_id: str | None = None           # Group ID of active project (for cross-project KB)
-    active_client_name: str | None = None        # Client name for master map hierarchy
-    active_project_name: str | None = None       # Project name for master map hierarchy
-    active_group_name: str | None = None         # Group name for master map hierarchy
+    active_client_name: str | None = None        # Client name for master graph hierarchy
+    active_project_name: str | None = None       # Project name for master graph hierarchy
+    active_group_name: str | None = None         # Group name for master graph hierarchy
 
     # Context — when user clicks on a specific user_task
     context_task_id: str | None = None           # TaskDocument._id if responding to user_task

@@ -1,4 +1,4 @@
-"""Chat message routing — determines where in Paměťová mapa the message goes.
+"""Chat message routing — determines where in Paměťový graf the message goes.
 
 Routes chat messages to the correct action:
 - new_vertex: create a new REQUEST vertex and execute
@@ -55,12 +55,12 @@ def _vertex_belongs_to_client(graph: AgentGraph, vertex: "GraphVertex", client_i
 
 def route_chat_message(
     message: str,
-    memory_map: AgentGraph | None,
+    memory_graph: AgentGraph | None,
     context_task_id: str | None = None,
     client_id: str | None = None,
     project_id: str | None = None,
 ) -> ChatRoute:
-    """Route a chat message to the correct action in Paměťová mapa.
+    """Route a chat message to the correct action in Paměťový graf.
 
     Routing priority:
     1. context_task_id → find ASK_USER vertex → answer_ask_user
@@ -70,8 +70,8 @@ def route_chat_message(
     """
 
     # 1. Answer a specific task's ASK_USER vertex
-    if context_task_id and memory_map:
-        for vid, v in memory_map.vertices.items():
+    if context_task_id and memory_graph:
+        for vid, v in memory_graph.vertices.items():
             if (
                 v.vertex_type == VertexType.ASK_USER
                 and v.status == VertexStatus.BLOCKED
@@ -92,12 +92,12 @@ def route_chat_message(
 
     # 3. Resume existing RUNNING/BLOCKED REQUEST vertex for this scope
     # CLIENT ISOLATION: Only resume vertices belonging to the current client
-    if memory_map and client_id:
-        for vid, v in memory_map.vertices.items():
+    if memory_graph and client_id:
+        for vid, v in memory_graph.vertices.items():
             if (
                 v.vertex_type == VertexType.REQUEST
                 and v.status in (VertexStatus.RUNNING, VertexStatus.BLOCKED)
-                and (v.client_id == client_id or (not v.client_id and _vertex_belongs_to_client(memory_map, v, client_id)))
+                and (v.client_id == client_id or (not v.client_id and _vertex_belongs_to_client(memory_graph, v, client_id)))
             ):
                 return ChatRoute(
                     action="resume_vertex",

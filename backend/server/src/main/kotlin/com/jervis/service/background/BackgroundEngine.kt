@@ -268,7 +268,7 @@ class BackgroundEngine(
      * Called by the Ollama Router when all GPUs have been idle for >= gpu_idle_notify_after_s
      * (default 5 min). Runs 3-phase idle maintenance pipeline:
      *
-     * Phase 1 (CPU-only): memory map cleanup, thinking map eviction, LQM drain, affair archival.
+     * Phase 1 (CPU-only): memory graph cleanup, thinking graph eviction, LQM drain, affair archival.
      * Phase 2 (GPU-light): KB dedup for ONE client (NORMAL priority, auto-preempted by CRITICAL).
      * Phase 3 (deep analysis): existing IDLE task mechanism for code quality, vuln scans etc.
      *

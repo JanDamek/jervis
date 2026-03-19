@@ -35,7 +35,7 @@ data class ChatMessage(
         APPROVAL_REQUEST,   // Approval dialog (approve/deny/always)
         BACKGROUND_RESULT,  // Background task result pushed to chat
         URGENT_ALERT,       // Urgent notification pushed to chat
-        THINKING_MAP_UPDATE,  // Thinking map (TaskGraph) update from chat planning
+        THINKING_GRAPH_UPDATE,  // Thinking graph (TaskGraph) update from chat planning
     }
 
     @Serializable

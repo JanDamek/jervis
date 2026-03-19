@@ -309,15 +309,15 @@ class KtorRpcServer(
                                 }
                             }
 
-                            // Internal endpoint: memory map changed — triggers UI refresh
-                            post("/internal/memory-map-changed") {
+                            // Internal endpoint: memory graph changed — triggers UI refresh
+                            post("/internal/memory-graph-changed") {
                                 try {
                                     launch {
-                                        notificationRpcImpl.emitMemoryMapChanged()
+                                        notificationRpcImpl.emitMemoryGraphChanged()
                                     }
                                     call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
                                 } catch (e: Exception) {
-                                    logger.debug(e) { "Failed to process memory-map-changed" }
+                                    logger.debug(e) { "Failed to process memory-graph-changed" }
                                     call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json)
                                 }
                             }
@@ -365,12 +365,12 @@ class KtorRpcServer(
                                 }
                             }
 
-                            // Internal endpoint: thinking map update push from background orchestrator
-                            post("/internal/thinking-map-update") {
+                            // Internal endpoint: thinking graph update push from background orchestrator
+                            post("/internal/thinking-graph-update") {
                                 try {
-                                    val body = call.receive<ThinkingMapUpdateCallback>()
+                                    val body = call.receive<ThinkingGraphUpdateCallback>()
                                     launch {
-                                        chatRpcImpl.pushThinkingMapUpdate(
+                                        chatRpcImpl.pushThinkingGraphUpdate(
                                             taskId = body.taskId,
                                             taskTitle = body.taskTitle,
                                             graphId = body.graphId,
@@ -381,7 +381,7 @@ class KtorRpcServer(
                                     }
                                     call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
                                 } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to process thinking map update callback" }
+                                    logger.warn(e) { "Failed to process thinking graph update callback" }
                                     call.respondText(
                                         "{\"ok\":false}",
                                         io.ktor.http.ContentType.Application.Json,
@@ -1394,7 +1394,7 @@ data class KbCompletionResult(
 )
 
 @kotlinx.serialization.Serializable
-data class ThinkingMapUpdateCallback(
+data class ThinkingGraphUpdateCallback(
     val taskId: String,
     val taskTitle: String = "",
     val graphId: String = "",

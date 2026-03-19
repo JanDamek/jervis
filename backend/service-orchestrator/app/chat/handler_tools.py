@@ -36,12 +36,12 @@ _TOOL_DESCRIPTIONS = {
     "get_kb_stats": lambda _: "Zjišťuji statistiky KB",
     "get_indexed_items": lambda _: "Kontroluji indexovaný obsah",
     "create_background_task": lambda a: f"Vytvářím úkol: {a.get('title', '')}",
-    "create_thinking_map": lambda a: f"Vytvářím myšlenkovou mapu: {a.get('title', '')}",
-    "add_map_vertex": lambda a: f"Přidávám krok: {a.get('title', '')}",
-    "update_map_vertex": lambda a: f"Upravuji krok: {a.get('vertex_id', '')}",
-    "remove_map_vertex": lambda a: f"Odebírám krok: {a.get('vertex_id', '')}",
-    "dispatch_thinking_map": lambda _: "Spouštím realizaci mapy na pozadí",
-    "run_map_vertex": lambda a: f"Spouštím krok na pozadí: {a.get('vertex_id', '')}",
+    "create_thinking_graph": lambda a: f"Vytvářím myšlenkový graf: {a.get('title', '')}",
+    "add_graph_vertex": lambda a: f"Přidávám krok: {a.get('title', '')}",
+    "update_graph_vertex": lambda a: f"Upravuji krok: {a.get('vertex_id', '')}",
+    "remove_graph_vertex": lambda a: f"Odebírám krok: {a.get('vertex_id', '')}",
+    "dispatch_thinking_graph": lambda _: "Spouštím realizaci grafu na pozadí",
+    "run_graph_vertex": lambda a: f"Spouštím krok na pozadí: {a.get('vertex_id', '')}",
     "dispatch_coding_agent": lambda _: "Odesílám coding task na agenta",
     "search_user_tasks": lambda a: f"Hledám úkoly: {a.get('query', '')}",
     "search_tasks": lambda a: f"Hledám úkoly: {a.get('query', '')}",
@@ -80,12 +80,12 @@ def describe_tool_call(name: str, args: dict) -> str:
 # Chat-specific tools dispatched via Kotlin internal API
 _CHAT_SPECIFIC_TOOLS = {
     "create_background_task",
-    "create_thinking_map",
-    "add_map_vertex",
-    "update_map_vertex",
-    "remove_map_vertex",
-    "dispatch_thinking_map",
-    "run_map_vertex",
+    "create_thinking_graph",
+    "add_graph_vertex",
+    "update_graph_vertex",
+    "remove_graph_vertex",
+    "dispatch_thinking_graph",
+    "run_graph_vertex",
     "dispatch_coding_agent",
     "search_user_tasks",
     "search_tasks",
@@ -108,9 +108,9 @@ _CHAT_SPECIFIC_TOOLS = {
 }
 
 
-_MAP_TOOLS = {
-    "create_thinking_map", "add_map_vertex", "update_map_vertex",
-    "remove_map_vertex", "dispatch_thinking_map", "run_map_vertex",
+_GRAPH_TOOLS = {
+    "create_thinking_graph", "add_graph_vertex", "update_graph_vertex",
+    "remove_graph_vertex", "dispatch_thinking_graph", "run_graph_vertex",
 }
 
 
@@ -171,41 +171,41 @@ async def _handle_create_background_task(args, client_id, project_id, kotlin_cli
     return f"Background task created: {result}"
 
 
-async def _handle_create_thinking_map(args, client_id, project_id, _kotlin_client):
-    """Create a new thinking map (AgentGraph) for the chat session."""
-    from app.chat.thinking_map import create_map, get_active_map
+async def _handle_create_thinking_graph(args, client_id, project_id, _kotlin_client):
+    """Create a new thinking graph (AgentGraph) for the chat session."""
+    from app.chat.thinking_graph import create_graph, get_active_graph
     # session_id is injected by _execute_chat_specific_tool
     session_id = args.pop("__session_id__", None)
     if not session_id:
         return "Chyba: interní chyba — chybí session_id."
 
-    # Guard: if session already has an active map, refuse and point to add_map_vertex
-    existing = await get_active_map(session_id)
+    # Guard: if session already has an active graph, refuse and point to add_graph_vertex
+    existing = await get_active_graph(session_id)
     if existing:
         root = existing.vertices.get(existing.root_vertex_id)
         existing_title = root.title if root else existing.id
         vertex_count = len(existing.vertices)
         return (
-            f"CHYBA: Už existuje aktivní mapa '{existing_title}' ({vertex_count} kroků). "
-            f"NEVYTVÁŘEJ novou — přidej kroky přes add_map_vertex nebo uprav existující přes update_map_vertex. "
-            f"Jeden problém = jedna mapa."
+            f"CHYBA: Už existuje aktivní graf '{existing_title}' ({vertex_count} kroků). "
+            f"NEVYTVÁŘEJ nový — přidej kroky přes add_graph_vertex nebo uprav existující přes update_graph_vertex. "
+            f"Jeden problém = jeden graf."
         )
 
     effective_client_id = client_id or args.get("client_id")
     effective_project_id = project_id or args.get("project_id")
-    graph = await create_map(
+    graph = await create_graph(
         title=args["title"],
         session_id=session_id,
         client_id=effective_client_id,
         project_id=effective_project_id,
     )
     vertex_count = len(graph.vertices)
-    return f"Myšlenková mapa '{args['title']}' vytvořena ({vertex_count} vrcholů). Přidávej kroky přes add_map_vertex."
+    return f"Myšlenkový graf '{args['title']}' vytvořen ({vertex_count} vrcholů). Přidávej kroky přes add_graph_vertex."
 
 
-async def _handle_add_map_vertex(args, _client_id, _project_id, _kotlin_client):
-    """Add a vertex to the active thinking map."""
-    from app.chat.thinking_map import add_vertex
+async def _handle_add_graph_vertex(args, _client_id, _project_id, _kotlin_client):
+    """Add a vertex to the active thinking graph."""
+    from app.chat.thinking_graph import add_vertex
     session_id = args.pop("__session_id__", None)
     if not session_id:
         return "Chyba: interní chyba — chybí session_id."
@@ -219,7 +219,7 @@ async def _handle_add_map_vertex(args, _client_id, _project_id, _kotlin_client):
         )
         deps = ", ".join(args.get("depends_on", [])) or "root"
         return (
-            f"Krok '{vertex.title}' ({vertex.id}) přidán do mapy. "
+            f"Krok '{vertex.title}' ({vertex.id}) přidán do grafu. "
             f"Typ: {vertex.vertex_type.value}, závisí na: {deps}. "
             f"Celkem {len(graph.vertices)} kroků."
         )
@@ -227,9 +227,9 @@ async def _handle_add_map_vertex(args, _client_id, _project_id, _kotlin_client):
         return f"Chyba: {e}"
 
 
-async def _handle_update_map_vertex(args, _client_id, _project_id, _kotlin_client):
-    """Update an existing vertex in the active thinking map."""
-    from app.chat.thinking_map import update_vertex
+async def _handle_update_graph_vertex(args, _client_id, _project_id, _kotlin_client):
+    """Update an existing vertex in the active thinking graph."""
+    from app.chat.thinking_graph import update_vertex
     session_id = args.pop("__session_id__", None)
     if not session_id:
         return "Chyba: interní chyba — chybí session_id."
@@ -246,9 +246,9 @@ async def _handle_update_map_vertex(args, _client_id, _project_id, _kotlin_clien
         return f"Chyba: {e}"
 
 
-async def _handle_remove_map_vertex(args, _client_id, _project_id, _kotlin_client):
-    """Remove a vertex from the active thinking map."""
-    from app.chat.thinking_map import remove_vertex
+async def _handle_remove_graph_vertex(args, _client_id, _project_id, _kotlin_client):
+    """Remove a vertex from the active thinking graph."""
+    from app.chat.thinking_graph import remove_vertex
     session_id = args.pop("__session_id__", None)
     if not session_id:
         return "Chyba: interní chyba — chybí session_id."
@@ -262,27 +262,27 @@ async def _handle_remove_map_vertex(args, _client_id, _project_id, _kotlin_clien
         return f"Chyba: {e}"
 
 
-async def _handle_dispatch_thinking_map(args, client_id, project_id, kotlin_client):
-    """Finalize the thinking map and dispatch as a background task."""
-    from app.chat.thinking_map import dispatch_map
+async def _handle_dispatch_thinking_graph(args, client_id, project_id, kotlin_client):
+    """Finalize the thinking graph and dispatch as a background task."""
+    from app.chat.thinking_graph import dispatch_graph
     session_id = args.pop("__session_id__", None)
     if not session_id:
         return "Chyba: interní chyba — chybí session_id."
     try:
-        task_id = await dispatch_map(
+        task_id = await dispatch_graph(
             session_id=session_id,
             kotlin_client=kotlin_client,
             client_id=client_id or args.get("client_id"),
             project_id=project_id or args.get("project_id"),
         )
-        return f"Myšlenková mapa odeslána k realizaci. Task ID: {task_id}"
+        return f"Myšlenkový graf odeslán k realizaci. Task ID: {task_id}"
     except ValueError as e:
         return f"Chyba: {e}"
 
 
-async def _handle_run_map_vertex(args, client_id, project_id, kotlin_client):
-    """Dispatch a single vertex to run in background, results flow back into the map."""
-    from app.chat.thinking_map import run_vertex
+async def _handle_run_graph_vertex(args, client_id, project_id, kotlin_client):
+    """Dispatch a single vertex to run in background, results flow back into the graph."""
+    from app.chat.thinking_graph import run_vertex
     session_id = args.pop("__session_id__", None)
     if not session_id:
         return "Chyba: interní chyba — chybí session_id."
@@ -294,7 +294,7 @@ async def _handle_run_map_vertex(args, client_id, project_id, kotlin_client):
             client_id=client_id or args.get("client_id"),
             project_id=project_id or args.get("project_id"),
         )
-        return f"Krok '{args['vertex_id']}' spuštěn na pozadí. Task ID: {task_id}. Výsledek se vrátí do mapy."
+        return f"Krok '{args['vertex_id']}' spuštěn na pozadí. Task ID: {task_id}. Výsledek se vrátí do grafu."
     except ValueError as e:
         return f"Chyba: {e}"
 
@@ -320,12 +320,12 @@ async def _handle_dispatch_coding_agent(args, client_id, project_id, kotlin_clie
         agent_preference=args.get("agent_preference", "auto"),
     )
 
-    # Link to memory map immediately so the task appears in UI right away
+    # Link to memory graph immediately so the task appears in UI right away
     # (orchestrator also links when it picks up the task, but there can be a delay)
     try:
         if isinstance(result, dict) and result.get("taskId"):
             from app.agent.persistence import agent_store
-            await agent_store.link_thinking_map(
+            await agent_store.link_thinking_graph(
                 task_id=result["taskId"],
                 sub_graph_id="",
                 title=args.get("task_description", "")[:80] or "Coding task",
@@ -336,7 +336,7 @@ async def _handle_dispatch_coding_agent(args, client_id, project_id, kotlin_clie
                 project_id=effective_project_id,
             )
     except Exception as e:
-        logger.warning("Failed to link dispatched coding task to memory map: %s", e)
+        logger.warning("Failed to link dispatched coding task to memory graph: %s", e)
 
     return f"Coding agent dispatched: {result}"
 
@@ -502,7 +502,7 @@ async def _handle_query_action_log(args, client_id, _project_id, _kotlin_client)
 
 
 async def _handle_check_task_graph(args, _client_id, _project_id, _kotlin_client):
-    """Check state of a task's thinking map (graph)."""
+    """Check state of a task's thinking graph."""
     from app.agent.persistence import agent_store
     from app.agent.graph import get_stats, find_blocked_vertices
 
@@ -553,12 +553,12 @@ async def _handle_answer_blocked_vertex(args, _client_id, _project_id, _kotlin_c
 
 _TOOL_HANDLER_MAP = {
     "create_background_task": _handle_create_background_task,
-    "create_thinking_map": _handle_create_thinking_map,
-    "add_map_vertex": _handle_add_map_vertex,
-    "update_map_vertex": _handle_update_map_vertex,
-    "remove_map_vertex": _handle_remove_map_vertex,
-    "dispatch_thinking_map": _handle_dispatch_thinking_map,
-    "run_map_vertex": _handle_run_map_vertex,
+    "create_thinking_graph": _handle_create_thinking_graph,
+    "add_graph_vertex": _handle_add_graph_vertex,
+    "update_graph_vertex": _handle_update_graph_vertex,
+    "remove_graph_vertex": _handle_remove_graph_vertex,
+    "dispatch_thinking_graph": _handle_dispatch_thinking_graph,
+    "run_graph_vertex": _handle_run_graph_vertex,
     "dispatch_coding_agent": _handle_dispatch_coding_agent,
     "search_user_tasks": _handle_search_tasks,
     "search_tasks": _handle_search_tasks,
@@ -595,7 +595,7 @@ async def _execute_chat_specific_tool(
         from app.tools.kotlin_client import kotlin_client
 
         # Inject session_id for map tools (they need it to find active graph)
-        if tool_name in _MAP_TOOLS and session_id:
+        if tool_name in _GRAPH_TOOLS and session_id:
             arguments["__session_id__"] = session_id
 
         handler = _TOOL_HANDLER_MAP.get(tool_name)

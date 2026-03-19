@@ -141,7 +141,7 @@ class ChatRpcImpl(
                 // Use explicitly provided groupId, or derive from project
                 val resolvedGroupId = safeGroupId ?: project?.groupId?.toString()
 
-                // Resolve group name for memory map hierarchy
+                // Resolve group name for memory graph hierarchy
                 val groupName = resolvedGroupId?.let { gid ->
                     try {
                         val groupRepo = projectGroupRepository
@@ -524,10 +524,10 @@ class ChatRpcImpl(
     }
 
     /**
-     * Push a thinking map update from background orchestrator into the chat stream.
+     * Push a thinking graph update from background orchestrator into the chat stream.
      * "started"/"completed"/"failed" are persisted to DB; intermediate updates are live-only.
      */
-    suspend fun pushThinkingMapUpdate(
+    suspend fun pushThinkingGraphUpdate(
         taskId: String,
         taskTitle: String,
         graphId: String,
@@ -546,7 +546,7 @@ class ChatRpcImpl(
         val hasGraph = taskGraphExistsService.findExistingGraphTaskIds(listOf(taskId)).isNotEmpty()
 
         val allMetadata = buildMap {
-            put("sender", "thinking_map")
+            put("sender", "thinking_graph")
             put("taskId", taskId)
             put("taskTitle", taskTitle)
             put("status", status)
@@ -571,11 +571,11 @@ class ChatRpcImpl(
         chatEventStream.emit(
             ChatResponseDto(
                 message = content,
-                type = ChatResponseType.THINKING_MAP_UPDATE,
+                type = ChatResponseType.THINKING_GRAPH_UPDATE,
                 metadata = allMetadata,
             ),
         )
-        logger.info { "CHAT_PUSH_THINKING_MAP | taskId=$taskId | status=$status | title=$taskTitle" }
+        logger.info { "CHAT_PUSH_THINKING_GRAPH | taskId=$taskId | status=$status | title=$taskTitle" }
     }
 
     private fun mapStreamEventToResponse(event: ChatStreamEvent): Pair<ChatResponseType, Map<String, String>> {
@@ -587,7 +587,7 @@ class ChatRpcImpl(
             "error" -> ChatResponseType.ERROR
             "thinking" -> ChatResponseType.PLANNING
             "scope_change" -> ChatResponseType.SCOPE_CHANGE
-            "thinking_map_update" -> ChatResponseType.THINKING_MAP_UPDATE
+            "thinking_graph_update" -> ChatResponseType.THINKING_GRAPH_UPDATE
             else -> ChatResponseType.EXECUTING
         }
 

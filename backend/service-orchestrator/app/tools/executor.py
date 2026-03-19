@@ -134,7 +134,7 @@ async def execute_tool(
         project_id: Tenant project ID for KB scoping.
         skip_approval: If True, skip approval gate (already approved by user).
         group_id: Group ID for cross-project KB visibility.
-        task_id: Parent task ID (for sub-task nesting in master map).
+        task_id: Parent task ID (for sub-task nesting in master graph).
 
     Returns:
         Formatted result string (never raises).
@@ -3390,7 +3390,7 @@ async def _execute_dispatch_coding_agent(
         agent_preference=agent_preference,
     )
 
-    # Register parent→child relationship for master map nesting
+    # Register parent→child relationship for master graph nesting
     if parent_task_id and result and not str(result).startswith("Error"):
         try:
             import re

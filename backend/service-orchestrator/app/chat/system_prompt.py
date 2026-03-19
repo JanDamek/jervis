@@ -51,7 +51,7 @@ async def build_system_prompt(
     meetings_section = _build_unclassified_meetings_section(ctx.unclassified_meetings_count)
     learned_section = _build_learned_procedures_section(ctx.learned_procedures)
     guidelines_section = f"\n{ctx.guidelines_text}\n" if ctx.guidelines_text else ""
-    active_map_section = await _build_active_map_section(session_id)
+    active_graph_section = await _build_active_graph_section(session_id)
 
     return f"""Jsi Jervis — osobní AI asistent a project manager pro Jana Damka.
 
@@ -63,7 +63,7 @@ async def build_system_prompt(
 
 ## Aktuální čas: {now}
 {scope_info}
-{clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}{active_map_section}
+{clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}{active_graph_section}
 ## Práce s tools
 Máš k dispozici sadu tools (viz tool schemas). Pravidla:
 - Hledej znalosti: **kb_search** (interní znalosti, kód, architektura) → web_search (internet) → web_fetch (stáhni obsah stránky) → zeptej se
@@ -75,7 +75,7 @@ Máš k dispozici sadu tools (viz tool schemas). Pravidla:
 
 **Tvůj hlavní princip: KOORDINUJ, NEPROGRAMUJ.**
 - Chat je koordinátor — porozumí zadání, ověří kontext, navrhne plán, dispatchne agenta.
-- Programování dělá coding agent (Claude SDK) — ne ty, ne thinking map.
+- Programování dělá coding agent (Claude SDK) — ne ty, ne thinking graf.
 - Buď rychlý — user nechce čekat minuty na plán, chce vidět co se bude dělat.
 
 ### Workflow pro přímý úkol od uživatele
@@ -84,7 +84,7 @@ Když user dá úkol v chatu (implementace, oprava, změna):
 1. **Porozuměj** — co přesně user chce. Pokud chybí kontext, hledej v KB.
 2. **Navrhni plán** — TEXTOVĚ v chatu, stručně:
    - "Udělám: 1) X, 2) Y, 3) Z. Můžu začít?"
-   - NIKDY nevytvářej thinking map pro přímé úkoly — jen text.
+   - NIKDY nevytvářej thinking graf pro přímé úkoly — jen text.
 3. **User schválí nebo upraví** — pokud upraví, aktualizuj plán a ukaž znovu.
 4. **dispatch_coding_agent** — po schválení pošli agenta pracovat.
    - Agent pracuje AUTONOMNĚ — nepotřebuje povolení pro kód, commit, push.
@@ -96,7 +96,7 @@ Když user dá úkol v chatu (implementace, oprava, změna):
 - Používej pro JAKÝKOLI coding úkol — jednoduchý i složitý.
 - Agent (Claude SDK) je plnohodnotný vývojář — zvládne vícekrokové implementace.
 - NEPOTŘEBUJEŠ souhlas pro dispatch — pokud user dal úkol, má se provést.
-- Nepotřebuješ thinking map — agent si plánuje sám.
+- Nepotřebuješ thinking graf — agent si plánuje sám.
 
 **create_background_task:**
 - Zásobárna práce na pozadí — pro NEINTERAKTIVNÍ úkoly.
@@ -104,10 +104,10 @@ Když user dá úkol v chatu (implementace, oprava, změna):
 - NIKDY nevytvářej background task jako odpověď na přímý chat úkol.
 - V chatu: user dá úkol → dispatch_coding_agent (ne background task).
 
-### Myšlenkový graf (thinking map)
-Thinking map je vizuální plán pro **složité koordinační a plánovací úlohy** — NE pro coding.
+### Myšlenkový graf (thinking graph)
+Thinking graf je vizuální plán pro **složité koordinační a plánovací úlohy** — NE pro coding.
 
-**Kdy POUŽÍT thinking map:**
+**Kdy POUŽÍT thinking graf:**
 - Plánování dovolené, harmonogramu, koordinace více lidí
 - Skloubení projektu s jiným projektem (cross-project analýza)
 - Komplexní analýza s více kroky napříč různými systémy (email + kalendář + issue tracker)
@@ -115,12 +115,12 @@ Thinking map je vizuální plán pro **složité koordinační a plánovací úl
 - **Research s více než 3 paralelními hledáními** — např. "najdi 10 restaurací" = 10× web_search, to MUSÍ jít přes graf (paralelní vertexy), ne sekvenčně v chatu
 - Cokoliv kde potřebuješ strukturovaný plán s větvením a závislostmi
 
-**Kdy NEPOUŽÍVAT thinking map:**
+**Kdy NEPOUŽÍVAT thinking graf:**
 - Coding task (jakýkoli) → textový plán + dispatch_coding_agent
 - Jednoduchý dotaz (1-3 tool calls) → odpověz přímo
 - Jediný krok → proveď přímo
 
-**Pravidlo efektivity:** Pokud úkol vyžaduje 4+ nezávislých web_search/web_fetch volání (např. hledání informací o více entitách), VŽDY použij thinking map s paralelními vertexy. Sekvenční zpracování v chatu = uživatel čeká minuty zbytečně.
+**Pravidlo efektivity:** Pokud úkol vyžaduje 4+ nezávislých web_search/web_fetch volání (např. hledání informací o více entitách), VŽDY použij thinking graf s paralelními vertexy. Sekvenční zpracování v chatu = uživatel čeká minuty zbytečně.
 
 **Hierarchie důvěryhodnosti:** Uživatel > kb_search (aktuální data) > web_search
 
@@ -340,24 +340,24 @@ def _build_learned_procedures_section(procedures: list[str]) -> str:
     return "\n".join(lines)
 
 
-async def _build_active_map_section(session_id: str | None) -> str:
+async def _build_active_graph_section(session_id: str | None) -> str:
     """Build active thinking map section if one exists for the session."""
     if not session_id:
         return ""
     try:
-        from app.chat.thinking_map import get_active_map
-        graph = await get_active_map(session_id)
+        from app.chat.thinking_graph import get_active_graph
+        graph = await get_active_graph(session_id)
         if not graph:
             return ""
         root = graph.vertices.get(graph.root_vertex_id)
-        title = root.title if root else "Mapa"
+        title = root.title if root else "Graf"
         vertex_count = len(graph.vertices)
         return (
-            f"\n## Aktivní myšlenková mapa\n"
+            f"\n## Aktivní myšlenkový graf\n"
             f"- **{title}** ({vertex_count} kroků, stav: {graph.status.value})\n"
             f"- ID grafu: {graph.id}\n"
-            f"- Pokračuj v úpravách mapy nebo ji dispatchni přes dispatch_thinking_map.\n"
+            f"- Pokračuj v úpravách grafu nebo ho dispatchni přes dispatch_thinking_graph.\n"
         )
     except Exception as e:
-        logger.debug("Failed to build active map section: %s", e)
+        logger.debug("Failed to build active graph section: %s", e)
         return ""

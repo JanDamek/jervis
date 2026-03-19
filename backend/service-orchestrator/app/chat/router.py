@@ -194,7 +194,7 @@ async def orchestrate(request: dict):
 
             # Update thinking map vertex if this was a dispatched vertex
             try:
-                from app.chat.thinking_map import handle_vertex_result
+                from app.chat.thinking_graph import handle_vertex_result
                 await handle_vertex_result(
                     orchestrate_request.task_id,
                     result.get("summary", ""),

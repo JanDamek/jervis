@@ -39,15 +39,15 @@ import com.jervis.ui.design.JIconButton
 import com.jervis.ui.design.JTopBar
 
 /**
- * Panel showing the Paměťová mapa (Memory Map) graph alongside chat.
+ * Panel showing the Paměťový graf (Memory Graph) graph alongside chat.
  *
  * Supports navigation stack:
- * - Memory map (default) → click TASK_REF → detail thinking map (with back)
+ * - Memory graph (default) → click TASK_REF → detail thinking graph (with back)
  * - Task history dropdown from header
  * - Live log overlay for running coding agent tasks
  */
 @Composable
-fun ThinkingMapPanel(
+fun ThinkingGraphPanel(
     activeMap: TaskGraphDto?,
     isCompact: Boolean = false,
     onClose: () -> Unit = {},
@@ -65,12 +65,12 @@ fun ThinkingMapPanel(
 
     val title = when {
         showDetail -> when (detailGraph?.graphType) {
-            "thinking_map" -> "Myšlenkový graf"
+            "thinking_graph" -> "Myšlenkový graf"
             else -> "Detail grafu"
         }
         else -> when (activeMap?.graphType) {
-            "memory_map" -> "Paměťový graf"
-            "thinking_map" -> "Myšlenkový graf"
+            "memory_graph" -> "Paměťový graf"
+            "thinking_graph" -> "Myšlenkový graf"
             else -> "Graf"
         }
     }
@@ -121,7 +121,7 @@ fun ThinkingMapPanel(
                         modifier = Modifier.weight(1f),
                     )
 
-                    // Task history dropdown (only in memory map view)
+                    // Task history dropdown (only in memory graph view)
                     if (!showDetail && activeMap != null) {
                         TaskHistoryDropdown(
                             activeMap = activeMap,
@@ -152,7 +152,7 @@ fun ThinkingMapPanel(
                                 graph = graphToShow,
                                 modifier = Modifier.fillMaxWidth(),
                                 alwaysExpanded = true,
-                                showOnlyActiveClients = !showDetail && graphToShow.graphType == "memory_map",
+                                showOnlyActiveClients = !showDetail && graphToShow.graphType == "memory_graph",
                                 onOpenSubGraph = onOpenSubGraph,
                                 onOpenLiveLog = onOpenLiveLog,
                             )
@@ -214,8 +214,8 @@ fun ThinkingMapPanel(
 }
 
 /**
- * Dropdown button showing recent TASK_REF vertices from the memory map.
- * Click on a task opens its thinking map sub-graph.
+ * Dropdown button showing recent TASK_REF vertices from the memory graph.
+ * Click on a task opens its thinking graph sub-graph.
  */
 @Composable
 private fun TaskHistoryDropdown(

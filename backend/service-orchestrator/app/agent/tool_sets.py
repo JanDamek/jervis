@@ -61,12 +61,12 @@ TOOL_DECOMPOSE_TASK: dict = {
 }
 
 
-TOOL_EXTEND_THINKING_MAP: dict = {
+TOOL_EXTEND_THINKING_GRAPH: dict = {
     "type": "function",
     "function": {
-        "name": "extend_thinking_map",
+        "name": "extend_thinking_graph",
         "description": (
-            "Dynamically add new vertices to the current thinking map. "
+            "Dynamically add new vertices to the current thinking graph. "
             "Use ONLY when you discover NEW aspects that need SEPARATE investigation.\n\n"
             "DEDUPLICATION: The system automatically checks for existing vertices with the same title. "
             "If a matching vertex exists, it will be REUSED (connected via edge) instead of duplicated. "
@@ -208,7 +208,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_LIST_MEETINGS,
             TOOL_GET_MEETING_TRANSCRIPT,
             TOOL_LIST_UNCLASSIFIED_MEETINGS,
-            TOOL_EXTEND_THINKING_MAP,
+            TOOL_EXTEND_THINKING_GRAPH,
             TOOL_DECOMPOSE_TASK,
             _request_tools,
         ]
@@ -231,7 +231,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_LIST_UNCLASSIFIED_MEETINGS,
             TOOL_LIST_MEETINGS,
             TOOL_GET_MEETING_TRANSCRIPT,
-            TOOL_EXTEND_THINKING_MAP,
+            TOOL_EXTEND_THINKING_GRAPH,
             TOOL_DECOMPOSE_TASK,
             _request_tools,
         ]
@@ -265,9 +265,9 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
         ]
 
     # SYNTHESIS: combines results (minimal tools — works from context)
-    # extend_thinking_map lets synthesis spawn follow-up vertices (e.g. document writing phases)
+    # extend_thinking_graph lets synthesis spawn follow-up vertices (e.g. document writing phases)
     if vertex_type == VertexType.SYNTHESIS:
-        return _base + [TOOL_STORE_KNOWLEDGE, TOOL_MEMORY_STORE, TOOL_EXTEND_THINKING_MAP]
+        return _base + [TOOL_STORE_KNOWLEDGE, TOOL_MEMORY_STORE, TOOL_EXTEND_THINKING_GRAPH]
 
     # GATE: decision point (can ask user for approval/clarification)
     if vertex_type == VertexType.GATE:

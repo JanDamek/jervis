@@ -1,17 +1,17 @@
-# Agent Architecture — Paměťová mapa + Myšlenková mapa
+# Agent Architecture — Paměťový graf + Myšlenkový graf
 
-> SSOT for how the unified Agent and the Memory/Thinking Maps work in Jervis.
+> SSOT for how the unified Agent and the Memory/Thinking Graphs work in Jervis.
 > All interactions (chat AND background) run through this architecture.
 
 ---
 
 ## Core Concept
 
-**Paměťová mapa (Memory Map)** = global persistent DAG — everything Jervis knows and has worked on.
+**Paměťový graf (Memory Graph)** = global persistent DAG — everything Jervis knows and has worked on.
 One per orchestrator instance, lives in RAM with periodic DB flush.
 Client isolation: server-side filtering via `?client_id=` on `/graph/master` endpoint.
 
-**Myšlenková mapa (Thinking Map)** = per-task decomposition sub-graph linked to the Memory Map.
+**Myšlenkový graf (Thinking Graph)** = per-task decomposition sub-graph linked to the Memory Graph.
 Each vertex solves a focused part of a problem with limited context (48k GPU).
 Edges carry processed results (summaries), not raw data.
 RAM lifecycle: 1h after completion → evicted from RAM (stays in DB 30d). Hidden in UI after 10min.
@@ -20,8 +20,8 @@ RAM lifecycle: 1h after completion → evicted from RAM (stays in DB 30d). Hidde
 
 | Tier | Storage | Retention | Search | Use Case |
 |------|---------|-----------|--------|----------|
-| 1 (Hot) | RAM — Paměťová mapa | Active + 24h after completion | Instant, per-client filtered | Active work, topic continuation |
-| 2 (Warm) | MongoDB `master_map_archive` | 7 days (TTL index) | Text search | Recent history recall |
+| 1 (Hot) | RAM — Paměťový graf | Active + 24h after completion | Instant, per-client filtered | Active work, topic continuation |
+| 2 (Warm) | MongoDB `master_graph_archive` | 7 days (TTL index) | Text search | Recent history recall |
 | 3 (Cold) | KB (permanent) | Forever | RAG semantic search | Long-term knowledge |
 
 **Cleanup (per-client):** Last 5 chats + 5 task_refs per client. Hierarchy vertices (CLIENT/GROUP/PROJECT)
@@ -35,7 +35,7 @@ Triggered by Ollama Router when GPU idle ≥5min → `POST /internal/gpu-idle` �
 
 | Phase | Type | Duration | What |
 |-------|------|----------|------|
-| 1 | CPU-only | <5s | Memory map cleanup, thinking map eviction, LQM drain, affair archival |
+| 1 | CPU-only | <5s | Memory graph cleanup, thinking graph eviction, LQM drain, affair archival |
 | 2 | GPU-light | 30s-2min | KB dedup for ONE client (NORMAL priority, auto-preempted) |
 | 3 | Deep analysis | 10-30min | Existing IDLE task (code quality, vuln scan, daily report) |
 
@@ -52,19 +52,19 @@ Outgoing error payloads are cleared so downstream vertices get fresh results.
 
 ### Graph Convergence Guarantee
 
-Every thinking map has a **mandatory root synthesis vertex** (`graph.synthesis_vertex_id`).
+Every thinking graph has a **mandatory root synthesis vertex** (`graph.synthesis_vertex_id`).
 All leaf vertices MUST have a DEPENDENCY edge path to this synthesis.
 
 **Decomposer:** Always creates a synthesis vertex, even for single-vertex decompositions.
-**extend_thinking_map:** Automatically connects new vertices to root synthesis — LLM doesn't
+**extend_thinking_graph:** Automatically connects new vertices to root synthesis — LLM doesn't
 manage convergence manually. `create_final_synthesis=true` creates a local sub-synthesis
 that itself feeds into the root synthesis.
 
 **Validation:** `_check_convergence()` warns about leaf vertices without path to synthesis.
 
-### Thinking Map Compaction
+### Thinking Graph Compaction
 
-When a thinking map completes (`node_synthesize`), heavy fields are stripped from completed
+When a thinking graph completes (`node_synthesize`), heavy fields are stripped from completed
 vertices: `result` (full text), `agent_messages` (LLM history), `incoming_context`, `local_context`.
 Only `result_summary`, `error`, `tools_used`, and metadata remain. This reduces MongoDB
 document size from MB to KB for large graphs (100+ vertices).
@@ -74,21 +74,21 @@ document size from MB to KB for large graphs (100+ vertices).
 ### Key Principles
 
 1. **Chat = assistant** — continues seamlessly where we left off
-2. **One global Paměťová mapa** (one per user, never changes) — everything is part of it
-3. **Tasks are solved by moving through the map** (vertex by vertex), not as a whole
-4. **Complete graph persisted to DB** per task — task can be BLOCKED, info stays in the map
-5. **After resolution, returns to where it was** in the map
+2. **One global Paměťový graf** (one per user, never changes) — everything is part of it
+3. **Tasks are solved by moving through the graph** (vertex by vertex), not as a whole
+4. **Complete graph persisted to DB** per task — task can be BLOCKED, info stays in the graph
+5. **After resolution, returns to where it was** in the graph
 6. **Small context per vertex + summaries on edges** = consistent solutions to large problems
 7. **With 128k or 256k context**, we reach extremely complex solutions that remain consistent
 
 ### Context Management (CRITICAL)
 
 - **Background = ALWAYS GPU = 48k context max**
-- Start in the map MUST fit into 48k (memory map summary + vertex context)
+- Start in the graph MUST fit into 48k (memory graph summary + vertex context)
 - By decomposing into sub-vertices, context per vertex DECREASES (focus)
 - **Edge = SUMMARY** — reduced result, not raw data
 - Large contexts → coding agents (Claude CLI, future Kilo Code)
-- Coding agent gets a focused task from vertex, not the entire map
+- Coding agent gets a focused task from vertex, not the entire graph
 - **Persistence is for restart only** — agent holds graph in RAM
 - Loads from DB only the individual TaskDocuments that edges reference
 
@@ -97,12 +97,12 @@ document size from MB to KB for large graphs (100+ vertices).
 ## Architecture Overview
 
 ```
-PAMĚŤOVÁ MAPA (Memory Map — global singleton, in RAM, DB = backup)
+PAMĚŤOVÝ GRAF (Memory Graph — global singleton, in RAM, DB = backup)
 │
 ├─ [REQUEST] "How does auth work?" → response summary (COMPLETED)
 │
 ├─ [REQUEST] "Add logout button" → dispatch coding agent
-│   └─ [TASK_REF] → Myšlenková mapa: task-69a98... (PROCESSING)
+│   └─ [TASK_REF] → Myšlenkový graf: task-69a98... (PROCESSING)
 │       ├─ [PLANNER] decompose → 3 steps
 │       ├─ [EXECUTOR] implementation → code
 │       ├─ [ASK_USER] "Where to add button?" → BLOCKED
@@ -121,15 +121,15 @@ PAMĚŤOVÁ MAPA (Memory Map — global singleton, in RAM, DB = backup)
 
 | Type | Code | Description |
 |------|------|-------------|
-| Paměťová mapa | `GraphType.MEMORY_MAP` | One global map per user — all interactions are vertices |
-| Myšlenková mapa | `GraphType.THINKING_MAP` | Sub-graph for a specific background task, linked to Paměťová mapa |
+| Paměťový graf | `GraphType.MEMORY_GRAPH` | One global graph per user — all interactions are vertices |
+| Myšlenkový graf | `GraphType.THINKING_GRAPH` | Sub-graph for a specific background task, linked to Paměťový graf |
 
 ## Vertex Types
 
 | Type | Purpose | Context |
 |------|---------|---------|
 | `ROOT` | Entry point, task description | Minimal |
-| `PLANNER` | Decompose into sub-vertices | Memory map summary + task context |
+| `PLANNER` | Decompose into sub-vertices | Memory graph summary + task context |
 | `INVESTIGATOR` | Research, KB search, web search | Focused research tools |
 | `EXECUTOR` | Implementation via coding agent | Focused task from vertex |
 | `VALIDATOR` | Verify results, tests | Validator tools |
@@ -139,10 +139,10 @@ PAMĚŤOVÁ MAPA (Memory Map — global singleton, in RAM, DB = backup)
 | `SETUP` | Project scaffolding, repo creation, environment | Setup tools |
 | `ASK_USER` | Blocked — needs user input via chat | Question + context |
 | `REQUEST` | Chat message → agent execution → response (dynamic status from trace) | Message + tools + streaming |
-| `TASK_REF` | Reference to a Myšlenková mapa | task_id + sub_graph_id |
+| `TASK_REF` | Reference to a Myšlenkový graf | task_id + sub_graph_id |
 | `INCOMING` | Qualified item from indexation | Prepared context from qualifier |
-| `CLIENT` | Client hierarchy node in Memory Map | Client metadata |
-| `PROJECT` | Project hierarchy node in Memory Map | Project metadata |
+| `CLIENT` | Client hierarchy node in Memory Graph | Client metadata |
+| `PROJECT` | Project hierarchy node in Memory Graph | Project metadata |
 
 ## Vertex Statuses
 
@@ -162,7 +162,7 @@ not from the default PENDING→COMPLETED lifecycle. After the agentic loop finis
 | `RUNNING` | `create_background_task` or `dispatch_coding_agent` was called (no errors) | User asked to implement a feature |
 | `COMPLETED` | Tool calls succeeded without background dispatch, or simple Q&A with no tool calls | Simple question, KB lookup |
 
-This allows the memory map to accurately reflect which chat interactions spawned ongoing work
+This allows the memory graph to accurately reflect which chat interactions spawned ongoing work
 (RUNNING), which had problems (FAILED), and which were fully resolved (COMPLETED).
 `add_request_vertex()` accepts the status parameter — default is COMPLETED.
 
@@ -178,18 +178,18 @@ Legacy epoch timestamps (e.g. "1772969660") are auto-migrated to ISO on graph lo
 
 ## Real-time Push Updates
 
-Vertex status changes in Paměťová mapa trigger real-time UI refresh:
+Vertex status changes in Paměťový graf trigger real-time UI refresh:
 
 ```
 Python: vertex_started/completed (progress.py)
-  → if graph.graph_type == MEMORY_MAP:
-    → kotlin_client.notify_memory_map_changed()
-      → POST /internal/memory-map-changed
-        → Kotlin broadcasts MemoryMapChanged event to ALL clients
-          → MainViewModel → ChatViewModel.loadMemoryMap() (500ms debounce)
+  → if graph.graph_type == MEMORY_GRAPH:
+    → kotlin_client.notify_memory_graph_changed()
+      → POST /internal/memory-graph-changed
+        → Kotlin broadcasts MemoryGraphChanged event to ALL clients
+          → MainViewModel → ChatViewModel.loadMemoryGraph() (500ms debounce)
 ```
 
-Also fires after `link_thinking_map()` (persistence.py) — when TASK_REF vertices are added/updated.
+Also fires after `link_thinking_graph()` (persistence.py) — when TASK_REF vertices are added/updated.
 
 ---
 
@@ -253,7 +253,7 @@ class GraphVertex(BaseModel):
 
 ---
 
-## Chat Routing — message → vertex in Paměťová mapa
+## Chat Routing — message → vertex in Paměťový graf
 
 ### chat_router.py
 
@@ -264,7 +264,7 @@ class ChatRoute:
     vertex_id: str | None = None
     parent_id: str | None = None
 
-async def route_chat_message(message, memory_map, context_task_id, client_id, project_id) -> ChatRoute:
+async def route_chat_message(message, memory_graph, context_task_id, client_id, project_id) -> ChatRoute:
 ```
 
 Routing (regex/heuristic):
@@ -276,7 +276,7 @@ Routing (regex/heuristic):
 ### sse_handler.py (~100 lines)
 
 ```
-1. Load Paměťová mapa
+1. Load Paměťový graf
 2. route_chat_message() → ChatRoute
 3. match route.action:
    "direct_response" → fast LLM, stream, done
@@ -341,7 +341,7 @@ Calendar, Gmail, Slack tools are proxied through Kotlin:
 
 ---
 
-## Qualifier → Paměťová mapa
+## Qualifier → Paměťový graf
 
 After qualification, if escalated to user:
 
@@ -349,9 +349,9 @@ After qualification, if escalated to user:
 from app.agent.persistence import agent_store
 from app.agent.graph import add_incoming_vertex
 
-memory_map = await agent_store.get_or_create_memory_map()
+memory_graph = await agent_store.get_or_create_memory_graph()
 add_incoming_vertex(
-    memory_map,
+    memory_graph,
     task_id=task_id,
     title=qualifier_result.title,
     prepared_context=qualifier_result.context,
@@ -359,21 +359,21 @@ add_incoming_vertex(
     project_id=project_id,
     urgency=qualifier_result.urgency,
 )
-agent_store.mark_dirty(memory_map.task_id)
+agent_store.mark_dirty(memory_graph.task_id)
 ```
 
 INCOMING vertex:
 - Status = READY
 - `local_context` = qualifier prepared context
-- Under client/project hierarchy in Paměťová mapa
+- Under client/project hierarchy in Paměťový graf
 - Agent can process it when user asks or automatically in background
 
 ---
 
 ## Client Isolation (Security)
 
-- **Paměťová mapa is global** — one per orchestrator instance, no client_id restriction
-- **Myšlenková mapy have client_id** — set from request, enforced in KB access
+- **Paměťový graf is global** — one per orchestrator instance, no client_id restriction
+- **Myšlenkové grafy have client_id** — set from request, enforced in KB access
 - **Cross-client edges impossible** — all vertices in a sub-graph share client_id
 - **KB access scoped by client_id** — vertex execution passes client_id to all KB calls
 - **Sub-graphs reference by TASK_REF** — no data leaks between client contexts
@@ -407,18 +407,18 @@ User sees question in UI / chat
 - `background/handler.py`: Legacy handler deleted, delegates to graph agent
 - No fallback — PoC, correct implementation from start
 
-### Phase 2: Paměťová mapa — Persistent Conversational Graph in RAM [DONE]
+### Phase 2: Paměťový graf — Persistent Conversational Graph in RAM [DONE]
 
-- `agent/models.py`: `GraphType` enum (MEMORY_MAP, THINKING_MAP), vertex types
+- `agent/models.py`: `GraphType` enum (MEMORY_GRAPH, THINKING_GRAPH), vertex types
   (ASK_USER, REQUEST, TASK_REF, INCOMING)
-- `agent/persistence.py`: In-memory singleton, `get_or_create_memory_map()`,
-  `link_thinking_map()`, `find_ask_user_vertices()`, `resume_vertex()`, periodic DB flush
+- `agent/persistence.py`: In-memory singleton, `get_or_create_memory_graph()`,
+  `link_thinking_graph()`, `find_ask_user_vertices()`, `resume_vertex()`, periodic DB flush
 - `agent/graph.py`: `add_request_vertex()`, `add_task_ref_vertex()`,
-  `add_incoming_vertex()`, `memory_map_summary()` (max 2000 tokens)
+  `add_incoming_vertex()`, `memory_graph_summary()` (max 2000 tokens)
 
-**Context budget:** Memory map summary must be SMALL (max 2000 tokens):
+**Context budget:** Memory graph summary must be SMALL (max 2000 tokens):
 - Last N REQUEST vertices (title + status)
-- Active Myšlenkové mapy (task_id + status + current vertex)
+- Active Myšlenkové grafy (task_id + status + current vertex)
 - BLOCKED vertices (what's waiting for answer)
 - INCOMING vertices (pending qualified items)
 - Fits into 48k GPU context with room for actual vertex work
@@ -427,7 +427,7 @@ User sees question in UI / chat
 
 - `agent/sse_handler.py`: Every chat request creates/resumes vertex via chat_router
 - `agent/tool_sets.py`: All tools available via REQUEST vertex + request_tools
-- `background/handler.py`: Link Myšlenková mapa to Paměťová mapa, ASK_USER → BLOCKED
+- `background/handler.py`: Link Myšlenkový graf to Paměťový graf, ASK_USER → BLOCKED
 - UI: `TaskGraphComponents.kt` — graph visualization, ASK_USER highlighting
 
 ### Phase 4: Unified Agent [DONE]

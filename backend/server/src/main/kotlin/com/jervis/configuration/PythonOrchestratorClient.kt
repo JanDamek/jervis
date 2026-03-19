@@ -173,7 +173,7 @@ class PythonOrchestratorClient(baseUrl: String) {
      * Returns the raw JSON string (Python snake_case format).
      * Caller is responsible for deserialization with @SerialName mappings.
      *
-     * For master map (taskId="master"), pass clientId to get client-filtered view.
+     * For master graph (taskId="master"), pass clientId to get client-filtered view.
      */
     suspend fun getTaskGraph(taskId: String, clientId: String? = null): String? {
         return try {
@@ -197,7 +197,7 @@ class PythonOrchestratorClient(baseUrl: String) {
     /**
      * Run idle maintenance on Python orchestrator.
      *
-     * Phase 1 (CPU-only): memory map cleanup, thinking map eviction, LQM drain, affair archival.
+     * Phase 1 (CPU-only): memory graph cleanup, thinking graph eviction, LQM drain, affair archival.
      * Phase 2 (GPU-light): KB dedup for one client (NORMAL priority, auto-preempted by CRITICAL).
      */
     suspend fun runMaintenance(phase: Int = 1, clientId: String? = null): com.jervis.dto.maintenance.MaintenanceResultDto? {

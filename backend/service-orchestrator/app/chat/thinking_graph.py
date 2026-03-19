@@ -1,8 +1,8 @@
-"""Thinking Map — graph-based planning in chat.
+"""Thinking Graph — graph-based planning in chat.
 
 Creates and manages AgentGraph instances during chat conversation.
 The LLM calls create/add/update/remove tools, and when ready,
-dispatch_map converts it into a background task for execution.
+dispatch_graph converts it into a background task for execution.
 
 Replaces the old DraftPlan (work_plan_draft.py) system.
 """
@@ -27,7 +27,7 @@ from app.agent.persistence import agent_store
 logger = logging.getLogger(__name__)
 
 # Session → graph_id mapping (in-memory, per orchestrator pod)
-_active_maps: dict[str, str] = {}
+_active_graphs: dict[str, str] = {}
 
 # Vertex type mapping from tool args
 _VERTEX_TYPE_MAP: dict[str, VertexType] = {
@@ -42,20 +42,20 @@ _VERTEX_TYPE_MAP: dict[str, VertexType] = {
 }
 
 
-async def create_map(
+async def create_graph(
     title: str,
     session_id: str,
     client_id: str | None = None,
     project_id: str | None = None,
 ) -> AgentGraph:
-    """Create a new thinking map with a root vertex."""
+    """Create a new thinking graph with a root vertex."""
     graph_id = str(uuid.uuid4())
     root_id = "root"
     now = datetime.now(timezone.utc).isoformat()
 
     effective_client_id = client_id or ""
     if not effective_client_id:
-        logger.warning("create_map: no client_id for thinking map '%s'", title)
+        logger.warning("create_graph: no client_id for thinking graph '%s'", title)
 
     root_vertex = GraphVertex(
         id=root_id,
@@ -82,8 +82,8 @@ async def create_map(
 
     await agent_store.save(graph)
     agent_store.cache_subgraph(graph)
-    _active_maps[session_id] = graph_id
-    logger.info("Created thinking map: %s (%s) for session %s", title, graph_id, session_id)
+    _active_graphs[session_id] = graph_id
+    logger.info("Created thinking graph: %s (%s) for session %s", title, graph_id, session_id)
     return graph
 
 
@@ -94,14 +94,14 @@ async def add_vertex(
     vertex_type: str = "executor",
     depends_on: list[str] | None = None,
 ) -> tuple[AgentGraph, GraphVertex]:
-    """Add a vertex to the active thinking map.
+    """Add a vertex to the active thinking graph.
 
     depends_on: list of vertex titles (matched by title, not ID).
     Returns updated graph and the new vertex.
     """
-    graph = await get_active_map(session_id)
+    graph = await get_active_graph(session_id)
     if not graph:
-        raise ValueError("No active thinking map. Call create_thinking_map first.")
+        raise ValueError("No active thinking graph. Call create_thinking_graph first.")
 
     vertex_id = str(uuid.uuid4())[:8]
     vtype = _VERTEX_TYPE_MAP.get(vertex_type, VertexType.EXECUTOR)
@@ -152,7 +152,7 @@ async def add_vertex(
 
     await agent_store.save(graph)
     agent_store.cache_subgraph(graph)
-    logger.info("Added vertex '%s' (%s) to map %s", title, vertex_id, graph.id)
+    logger.info("Added vertex '%s' (%s) to graph %s", title, vertex_id, graph.id)
     return graph, vertex
 
 
@@ -163,10 +163,10 @@ async def update_vertex(
     description: str | None = None,
     vertex_type: str | None = None,
 ) -> tuple[AgentGraph, GraphVertex]:
-    """Update an existing vertex in the active map."""
-    graph = await get_active_map(session_id)
+    """Update an existing vertex in the active graph."""
+    graph = await get_active_graph(session_id)
     if not graph:
-        raise ValueError("No active thinking map.")
+        raise ValueError("No active thinking graph.")
 
     vertex = graph.vertices.get(vertex_id)
     if not vertex:
@@ -181,7 +181,7 @@ async def update_vertex(
 
     await agent_store.save(graph)
     agent_store.cache_subgraph(graph)
-    logger.info("Updated vertex '%s' in map %s", vertex_id, graph.id)
+    logger.info("Updated vertex '%s' in graph %s", vertex_id, graph.id)
     return graph, vertex
 
 
@@ -189,10 +189,10 @@ async def remove_vertex(
     session_id: str,
     vertex_id: str,
 ) -> AgentGraph:
-    """Remove a vertex and its edges from the active map."""
-    graph = await get_active_map(session_id)
+    """Remove a vertex and its edges from the active graph."""
+    graph = await get_active_graph(session_id)
     if not graph:
-        raise ValueError("No active thinking map.")
+        raise ValueError("No active thinking graph.")
 
     if vertex_id == "root":
         raise ValueError("Cannot remove root vertex.")
@@ -205,23 +205,23 @@ async def remove_vertex(
 
     await agent_store.save(graph)
     agent_store.cache_subgraph(graph)
-    logger.info("Removed vertex '%s' from map %s", vertex_id, graph.id)
+    logger.info("Removed vertex '%s' from graph %s", vertex_id, graph.id)
     return graph
 
 
-async def dispatch_map(
+async def dispatch_graph(
     session_id: str,
     kotlin_client,
     client_id: str | None = None,
     project_id: str | None = None,
 ) -> str:
-    """Finalize the thinking map and dispatch as a background task.
+    """Finalize the thinking graph and dispatch as a background task.
 
     Returns the created task ID.
     """
-    graph = await get_active_map(session_id)
+    graph = await get_active_graph(session_id)
     if not graph:
-        raise ValueError("No active thinking map to dispatch.")
+        raise ValueError("No active thinking graph to dispatch.")
 
     # Update graph status
     graph.status = GraphStatus.READY
@@ -232,8 +232,8 @@ async def dispatch_map(
 
     # Get root title for task
     root = graph.vertices.get(graph.root_vertex_id)
-    title = root.title if root else "Thinking Map"
-    description = f"Myšlenková mapa: {title} ({len(graph.vertices)} kroků)"
+    title = root.title if root else "Thinking Graph"
+    description = f"Myšlenkový graf: {title} ({len(graph.vertices)} kroků)"
 
     # Create background task via Kotlin
     task_id = await kotlin_client.create_background_task(
@@ -249,20 +249,20 @@ async def dispatch_map(
     agent_store.cache_subgraph(graph)
 
     # Clear session mapping
-    _active_maps.pop(session_id, None)
+    _active_graphs.pop(session_id, None)
 
-    logger.info("Dispatched thinking map %s as task %s", graph.id, task_id)
+    logger.info("Dispatched thinking graph %s as task %s", graph.id, task_id)
     return task_id
 
 
-async def get_active_map(session_id: str) -> AgentGraph | None:
-    """Get the active thinking map for a session."""
-    graph_id = _active_maps.get(session_id)
+async def get_active_graph(session_id: str) -> AgentGraph | None:
+    """Get the active thinking graph for a session."""
+    graph_id = _active_graphs.get(session_id)
     if not graph_id:
         return None
     graph = await agent_store.load(graph_id)
     if not graph:
-        _active_maps.pop(session_id, None)
+        _active_graphs.pop(session_id, None)
         return None
     return graph
 
@@ -274,15 +274,15 @@ async def run_vertex(
     client_id: str | None = None,
     project_id: str | None = None,
 ) -> str:
-    """Dispatch a single vertex as a background task while keeping the map active.
+    """Dispatch a single vertex as a background task while keeping the graph active.
 
     The vertex is marked as READY (executing), and a background task is created
     with correlation metadata so results can flow back into the graph.
     Returns the created task ID.
     """
-    graph = await get_active_map(session_id)
+    graph = await get_active_graph(session_id)
     if not graph:
-        raise ValueError("No active thinking map.")
+        raise ValueError("No active thinking graph.")
 
     vertex = graph.vertices.get(vertex_id)
     if not vertex:
@@ -295,7 +295,7 @@ async def run_vertex(
 
     # Create background task with vertex correlation
     result = await kotlin_client.create_background_task(
-        title=f"[Mapa] {vertex.title}",
+        title=f"[Graf] {vertex.title}",
         description=vertex.description,
         client_id=effective_client_id,
         project_id=effective_project_id,
@@ -311,7 +311,7 @@ async def run_vertex(
 
     await agent_store.save(graph)
     logger.info(
-        "Dispatched vertex '%s' (%s) from map %s as task %s",
+        "Dispatched vertex '%s' (%s) from graph %s as task %s",
         vertex.title, vertex_id, graph.id, task_id,
     )
     return task_id
@@ -346,6 +346,6 @@ async def handle_vertex_result(
     return graph, session_id
 
 
-def get_active_map_id(session_id: str) -> str | None:
-    """Get the active map ID without loading from DB."""
-    return _active_maps.get(session_id)
+def get_active_graph_id(session_id: str) -> str | None:
+    """Get the active graph ID without loading from DB."""
+    return _active_graphs.get(session_id)

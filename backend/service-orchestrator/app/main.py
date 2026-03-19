@@ -618,18 +618,18 @@ async def get_task_graph(task_id: str, client_id: str | None = None):
     """Return the full AgentGraph for a given task_id.
 
     Called by Kotlin to serve graph data to the UI.
-    For master map, returns the live RAM version (always fresh).
-    When client_id is provided for master map, returns client-filtered copy.
+    For master graph, returns the live RAM version (always fresh).
+    When client_id is provided for master graph, returns client-filtered copy.
     """
     from app.agent.persistence import agent_store
 
     if task_id == "master":
         # Return live RAM version — always up-to-date
-        graph = agent_store.get_memory_map_cached()
+        graph = agent_store.get_memory_graph_cached()
         if not graph:
-            graph = await agent_store.get_or_create_memory_map()
+            graph = await agent_store.get_or_create_memory_graph()
         if not graph:
-            raise HTTPException(status_code=404, detail="Memory map not found")
+            raise HTTPException(status_code=404, detail="Memory graph not found")
         # Client isolation: filter to show only this client's vertices
         if client_id:
             return _filter_graph_for_client(graph, client_id)
@@ -648,18 +648,18 @@ async def get_task_graph(task_id: str, client_id: str | None = None):
         raise HTTPException(status_code=404, detail=f"No graph for task {task_id}")
 
     result = graph.model_dump()
-    # Add hidden flag for completed thinking maps older than 10min (debug visibility)
-    if graph.graph_type == GraphType.THINKING_MAP:
-        from app.agent.persistence import _THINKING_MAP_HIDE_S
+    # Add hidden flag for completed thinking graphs older than 10min (debug visibility)
+    if graph.graph_type == GraphType.THINKING_GRAPH:
+        from app.agent.persistence import _THINKING_GRAPH_HIDE_S
         if graph.status in (GraphStatus.COMPLETED, GraphStatus.FAILED) and graph.completed_at:
-            hide_cutoff = (datetime.now(timezone.utc) - timedelta(seconds=_THINKING_MAP_HIDE_S)).isoformat()
+            hide_cutoff = (datetime.now(timezone.utc) - timedelta(seconds=_THINKING_GRAPH_HIDE_S)).isoformat()
             if graph.completed_at < hide_cutoff:
                 result["hidden"] = True
     return result
 
 
 def _filter_graph_for_client(graph: "AgentGraph", client_id: str) -> dict:
-    """Return a filtered copy of the memory map for a specific client.
+    """Return a filtered copy of the memory graph for a specific client.
 
     Keeps: root, hierarchy ancestors, and all vertices belonging to client_id.
     Never mutates the singleton graph.
@@ -696,17 +696,17 @@ def _filter_graph_for_client(graph: "AgentGraph", client_id: str) -> dict:
     return result
 
 
-# --- Memory Map Admin Endpoints ---
+# --- Memory Graph Admin Endpoints ---
 
 
 @app.delete("/graph/master/vertex/{vertex_id}")
-async def delete_memory_map_vertex(vertex_id: str):
-    """Delete a vertex from the memory map (RAM + DB flush)."""
+async def delete_memory_graph_vertex(vertex_id: str):
+    """Delete a vertex from the memory graph (RAM + DB flush)."""
     from app.agent.persistence import agent_store
 
-    graph = agent_store.get_memory_map_cached()
+    graph = agent_store.get_memory_graph_cached()
     if not graph:
-        raise HTTPException(status_code=404, detail="Memory map not loaded")
+        raise HTTPException(status_code=404, detail="Memory graph not loaded")
 
     if vertex_id == graph.root_vertex_id:
         raise HTTPException(status_code=400, detail="Cannot delete root vertex")
@@ -719,15 +719,15 @@ async def delete_memory_map_vertex(vertex_id: str):
     agent_store._dirty.add(graph.task_id)
     await agent_store.flush_dirty()
     try:
-        await kotlin_client.notify_memory_map_changed()
+        await kotlin_client.notify_memory_graph_changed()
     except Exception:
         pass
     return {"deleted": vertex_id, "remaining_vertices": len(graph.vertices)}
 
 
 @app.patch("/graph/master/vertex/{vertex_id}")
-async def update_memory_map_vertex(vertex_id: str, request: Request):
-    """Update a vertex in the memory map (title, status, description).
+async def update_memory_graph_vertex(vertex_id: str, request: Request):
+    """Update a vertex in the memory graph (title, status, description).
 
     Body: { "title": "...", "status": "completed", "description": "..." }
     All fields optional.
@@ -735,9 +735,9 @@ async def update_memory_map_vertex(vertex_id: str, request: Request):
     from app.agent.persistence import agent_store
     from app.agent.models import VertexStatus
 
-    graph = agent_store.get_memory_map_cached()
+    graph = agent_store.get_memory_graph_cached()
     if not graph:
-        raise HTTPException(status_code=404, detail="Memory map not loaded")
+        raise HTTPException(status_code=404, detail="Memory graph not loaded")
 
     vertex = graph.vertices.get(vertex_id)
     if not vertex:
@@ -761,15 +761,15 @@ async def update_memory_map_vertex(vertex_id: str, request: Request):
     agent_store._dirty.add(graph.task_id)
     await agent_store.flush_dirty()
     try:
-        await kotlin_client.notify_memory_map_changed()
+        await kotlin_client.notify_memory_graph_changed()
     except Exception:
         pass
     return {"updated": vertex_id, "vertex": vertex.model_dump()}
 
 
 @app.post("/graph/master/vertex")
-async def create_memory_map_vertex(request: Request):
-    """Create a new vertex in the memory map.
+async def create_memory_graph_vertex(request: Request):
+    """Create a new vertex in the memory graph.
 
     Body: { "id": "v-...", "title": "...", "vertex_type": "group", "status": "completed",
             "parent_id": "v-client-...", "input_request": "...", "client_id": "..." }
@@ -777,9 +777,9 @@ async def create_memory_map_vertex(request: Request):
     from app.agent.persistence import agent_store
     from app.agent.models import GraphVertex, VertexType, VertexStatus
 
-    graph = agent_store.get_memory_map_cached()
+    graph = agent_store.get_memory_graph_cached()
     if not graph:
-        raise HTTPException(status_code=404, detail="Memory map not loaded")
+        raise HTTPException(status_code=404, detail="Memory graph not loaded")
 
     body = await request.json()
     vertex_id = body.get("id")
@@ -804,22 +804,22 @@ async def create_memory_map_vertex(request: Request):
     agent_store._dirty.add(graph.task_id)
     await agent_store.flush_dirty()
     try:
-        await kotlin_client.notify_memory_map_changed()
+        await kotlin_client.notify_memory_graph_changed()
     except Exception:
         pass
     return {"created": vertex_id, "total_vertices": len(graph.vertices)}
 
 
 @app.post("/graph/master/cleanup")
-async def force_cleanup_memory_map():
-    """Force cleanup of the memory map — removes stale vertices."""
+async def force_cleanup_memory_graph():
+    """Force cleanup of the memory graph — removes stale vertices."""
     from app.agent.persistence import agent_store
 
-    graph = agent_store.get_memory_map_cached()
+    graph = agent_store.get_memory_graph_cached()
     if not graph:
-        raise HTTPException(status_code=404, detail="Memory map not loaded")
+        raise HTTPException(status_code=404, detail="Memory graph not loaded")
 
-    removed = agent_store.cleanup_memory_map()
+    removed = agent_store.cleanup_memory_graph()
     if removed > 0:
         if hasattr(agent_store, "_pending_archive") and agent_store._pending_archive:
             await agent_store._archive_vertices(agent_store._pending_archive)
@@ -827,7 +827,7 @@ async def force_cleanup_memory_map():
         await agent_store.flush_dirty()
 
     try:
-        await kotlin_client.notify_memory_map_changed()
+        await kotlin_client.notify_memory_graph_changed()
     except Exception:
         pass
     return {
@@ -840,7 +840,7 @@ async def force_cleanup_memory_map():
 async def search_memory(query: str, client_id: str):
     """3-tier memory search cascade.
 
-    Tier 1: RAM (Paměťová mapa) — instant
+    Tier 1: RAM (Paměťový graf) — instant
     Tier 2: MongoDB archive (7d) — fast
     Tier 3: KB — slower
 
@@ -855,8 +855,8 @@ async def search_memory(query: str, client_id: str):
     results: dict[str, list] = {"tier1_ram": [], "tier2_archive": [], "tier3_kb": []}
     query_lower = query.lower()
 
-    # Tier 1: RAM search in memory map
-    graph = agent_store.get_memory_map_cached()
+    # Tier 1: RAM search in memory graph
+    graph = agent_store.get_memory_graph_cached()
     if graph:
         for v in graph.vertices.values():
             if v.client_id != client_id:
@@ -904,7 +904,7 @@ async def search_memory(query: str, client_id: str):
 async def run_maintenance(phase: int = 1, client_id: str | None = None):
     """3-phase idle GPU maintenance pipeline.
 
-    Phase 1 (CPU-only, <5s): memory map cleanup, thinking map eviction,
+    Phase 1 (CPU-only, <5s): memory graph cleanup, thinking graph eviction,
     LQM drain, affair archival. Returns next client for Phase 2.
 
     Phase 2 (GPU-light, 30s-2min): KB dedup for ONE client.
@@ -924,16 +924,16 @@ async def run_maintenance(phase: int = 1, client_id: str | None = None):
 
 async def _maintenance_phase1(agent_store) -> dict:
     """Phase 1: CPU-only maintenance — idempotent, killable."""
-    # 1. Memory map cleanup (per-client, 24h lifecycle)
-    mem_removed = agent_store.cleanup_memory_map()
+    # 1. Memory graph cleanup (per-client, 24h lifecycle)
+    mem_removed = agent_store.cleanup_memory_graph()
     if mem_removed > 0 and agent_store._pending_archive:
         await agent_store._persist_to_kb(agent_store._pending_archive)
         await agent_store._archive_vertices(agent_store._pending_archive)
         agent_store._pending_archive = []
     await agent_store.flush_dirty()
 
-    # 2. Thinking map RAM eviction
-    thinking_evicted = agent_store.cleanup_thinking_maps()
+    # 2. Thinking graph RAM eviction
+    thinking_evicted = agent_store.cleanup_thinking_graphs()
 
     # 3. Drain LQM write buffer → KB
     lqm_drained = await _drain_global_lqm()
@@ -1033,11 +1033,11 @@ async def _archive_old_affairs() -> int:
 
 
 async def _get_all_client_ids() -> list[str]:
-    """Get all client IDs from memory map hierarchy vertices."""
+    """Get all client IDs from memory graph hierarchy vertices."""
     from app.agent.persistence import agent_store
     from app.agent.models import VertexType
 
-    graph = agent_store.get_memory_map_cached()
+    graph = agent_store.get_memory_graph_cached()
     if not graph:
         return []
     return [
@@ -1113,7 +1113,7 @@ def _similarity(a: str, b: str) -> float:
 
 @app.post("/graph/master/purge-stale")
 async def purge_stale_vertices():
-    """Purge stale RUNNING vertices and duplicates from memory map.
+    """Purge stale RUNNING vertices and duplicates from memory graph.
 
     Targets:
     - Duplicate vertices with same title (keeps most recent)
@@ -1123,9 +1123,9 @@ async def purge_stale_vertices():
     from app.agent.models import VertexStatus
     from datetime import datetime, timezone, timedelta
 
-    graph = agent_store.get_memory_map_cached()
+    graph = agent_store.get_memory_graph_cached()
     if not graph:
-        raise HTTPException(status_code=404, detail="Memory map not loaded")
+        raise HTTPException(status_code=404, detail="Memory graph not loaded")
 
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=1)
@@ -1172,7 +1172,7 @@ async def purge_stale_vertices():
         await agent_store.flush_dirty()
 
     try:
-        await kotlin_client.notify_memory_map_changed()
+        await kotlin_client.notify_memory_graph_changed()
     except Exception:
         pass
     return {

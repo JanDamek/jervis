@@ -135,8 +135,8 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Text extraction endpoint: `backend/service-knowledgebase/app/services/knowledge_service.py` (extract_text_only — DocumentExtractor/VLM without RAG)
 - Agent (unified): `backend/service-orchestrator/app/agent/` (models.py, graph.py, decomposer.py, gemini_decomposer.py, validation.py, langgraph_runner.py, tool_sets.py, persistence.py, progress.py, artifact_graph.py, impact.py, vertex_executor.py, chat_router.py, sse_handler.py)
 - Memory lifecycle: 3-tier (RAM 24h → MongoDB archive 7d → KB permanent), per-client cleanup, hierarchy GC. See `docs/graph-agent-architecture.md`
-- Memory search cascade: `GET /memory/search?query=...&client_id=...` — Tier 1 RAM, Tier 2 MongoDB `master_map_archive`, Tier 3 KB
-- Memory map client filtering: `GET /graph/master?client_id=...` — returns only vertices for the given client
+- Memory search cascade: `GET /memory/search?query=...&client_id=...` — Tier 1 RAM, Tier 2 MongoDB `master_graph_archive`, Tier 3 KB
+- Memory graph client filtering: `GET /graph/master?client_id=...` — returns only vertices for the given client
 - MongoDB tools + cache invalidation: `backend/service-orchestrator/app/tools/definitions.py` (MONGO_TOOLS), `backend/service-orchestrator/app/tools/executor.py` (handlers + auto cache invalidation), `backend/service-orchestrator/app/tools/kotlin_client.py` (invalidate_cache)
 - Graph UI visualization: `shared/ui-common/.../chat/TaskGraphComponents.kt` (TaskGraphSection, VertexCard, EdgeRow)
 - Graph DTOs: `shared/common-dto/.../graph/TaskGraphDtos.kt`, `shared/common-api/.../ITaskGraphService.kt`, `backend/server/.../rpc/TaskGraphRpcImpl.kt`
@@ -158,7 +158,7 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Claude SDK runner: `backend/service-claude/claude_sdk_runner.py` (K8s Job entrypoint, result.json with branch field, kubectl binary available)
 - Coding agent RBAC: `k8s/orchestrator-rbac.yaml` (ServiceAccount jervis-coding-agent + ClusterRole jervis-environment-manager)
 - Coding agent job: `backend/service-orchestrator/app/agents/job_runner.py` (dispatch_coding_agent — SA, KUBE_NAMESPACES env var)
-- Qualifier handler: `backend/service-orchestrator/app/unified/qualification_handler.py` (_record_incoming_vertex — creates INCOMING vertex in memory map after QUEUED qualification)
+- Qualifier handler: `backend/service-orchestrator/app/unified/qualification_handler.py` (_record_incoming_vertex — creates INCOMING vertex in memory graph after QUEUED qualification)
 - Task queue API: `backend/server/.../rpc/internal/InternalTaskApiRouting.kt` (GET /internal/tasks/queue, POST /internal/tasks/{id}/priority)
 - Queue tools: `backend/service-orchestrator/app/tools/definitions.py` (TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY, QUEUE_TOOLS)
 - Project management internal API: `backend/server/.../rpc/internal/InternalProjectManagementRouting.kt` (create client/project/connection REST)
