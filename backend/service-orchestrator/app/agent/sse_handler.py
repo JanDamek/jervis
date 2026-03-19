@@ -387,6 +387,9 @@ async def _run_foreground_graph(
     agent_store.cache_subgraph(graph)
     agent_store.mark_dirty(graph.task_id)
 
+    # Build rules with max_openrouter_tier from request
+    max_tier = getattr(request, "max_openrouter_tier", "NONE") or "NONE"
+
     # Simple loop: select_next → dispatch → repeat → synthesize
     # We don't use the full LangGraph compiled graph here to avoid
     # checkpointer overhead for ephemeral foreground graphs.
@@ -398,6 +401,9 @@ async def _run_foreground_graph(
             "project_id": request.active_project_id or "",
             "message": request.message,
         },
+        "rules": {
+            "max_openrouter_tier": max_tier,
+        },
         "task_graph": graph.model_dump(),
         "current_vertex_id": None,
         "ready_vertex_ids": [],
@@ -405,6 +411,7 @@ async def _run_foreground_graph(
         "final_result": None,
         "response_language": "cs",
         "allow_cloud_prompt": False,
+        "processing_mode": "FOREGROUND",
     }
 
     max_rounds = 20  # Safety ceiling
