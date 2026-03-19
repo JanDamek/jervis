@@ -195,11 +195,12 @@ internal fun ChatArea(
                 reverseLayout = true,
                 modifier = Modifier.fillMaxSize()
                     .pointerInput(Unit) {
-                        // Dismiss keyboard on tap without consuming events (buttons still work)
+                        // Dismiss keyboard on tap outside input field.
+                        // Use Main pass (not Initial) so SelectionContainer handles selection first.
                         awaitPointerEventScope {
                             while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                if (event.changes.any { it.pressed }) {
+                                val event = awaitPointerEvent(PointerEventPass.Main)
+                                if (event.changes.any { it.pressed && !it.isConsumed }) {
                                     focusManager.clearFocus()
                                 }
                             }
