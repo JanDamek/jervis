@@ -399,7 +399,10 @@ async def _run_foreground_graph(
             "query": graph.vertices[graph.root_vertex_id].input_request,
             "client_id": request.active_client_id or "",
             "project_id": request.active_project_id or "",
+            "client_name": request.active_client_name or "",
+            "project_name": request.active_project_name or "",
             "message": request.message,
+            "workspace_path": "",
         },
         "rules": {
             "max_openrouter_tier": max_tier,
