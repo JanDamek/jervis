@@ -131,8 +131,8 @@ class Settings(BaseSettings):
     total_context_window: int = 48_000        # Model context window (fixed 48k on GPU1)
     system_prompt_reserve: int = 2_000       # Tokens reserved for system prompt + tools
     response_reserve: int = 4_000            # Tokens reserved for LLM response
-    recent_message_count: int = 100          # Max recent verbatim messages to load (budget limits actual inclusion)
-    max_summary_blocks: int = 15             # Max compressed summary blocks to load
+    recent_message_count: int = 40            # Max recent verbatim messages to load (budget limits actual inclusion)
+    max_summary_blocks: int = 8              # Max compressed summary blocks to load
     compress_threshold: int = 20             # Compress when >=N unsummarized messages
     compress_max_retries: int = 2            # Max compression retries on LLM failure
     max_tool_result_in_msg: int = 2_000      # Max chars for tool results in stored messages
