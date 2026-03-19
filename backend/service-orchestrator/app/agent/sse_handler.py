@@ -198,38 +198,68 @@ async def handle_chat_sse(
             except Exception as e:
                 logger.debug("SSE: failed to create live vertex: %s", e)
 
-        # ── 4c. Agentic loop (all tools) ────────────────────────────
+        # ── 4c. Try foreground graph decomposition ────────────────
         _memory_graph_id = memory_graph.task_id if memory_graph else None
-        async for event in run_agentic_loop(
-            request=request,
-            messages=messages,
-            selected_tools=list(CHAT_INITIAL_TOOLS),
-            runtime_ctx=runtime_ctx,
-            disconnect_event=disconnect_event,
-            is_summarized=False,
-            msg_len=len(request.message),
-        ):
-            if event.type in ("content", "token") and event.content:
-                _response_chunks.append(event.content)
-            elif event.type == "thinking" and event.content:
-                _trace_parts.append(f"[thinking] {event.content}")
-            elif event.type == "tool_call" and event.content:
-                args_str = event.metadata.get("args", "")
-                _trace_parts.append(f"[tool] {event.content}({str(args_str)[:100]})")
-            elif event.type == "tool_result" and event.content:
-                tool = event.metadata.get("tool", "?")
-                _trace_parts.append(f"[result:{tool}] {event.content[:150]}")
-            # Inject memory graph + vertex IDs into done event for UI
-            if event.type == "done":
-                if _memory_graph_id:
-                    event.metadata["memory_graph_id"] = _memory_graph_id
-                if _live_vertex_id:
-                    event.metadata["memory_graph_vertex_id"] = _live_vertex_id
-                # Signal to UI: only show inline map if background tasks were dispatched
-                _bg_tools_check = {"create_background_task", "dispatch_coding_agent"}
-                if any(any(t in p for t in _bg_tools_check) for p in _trace_parts if p.startswith("[tool]")):
-                    event.metadata["dispatched_tasks"] = "true"
-            yield event
+        _used_graph_decomposition = False
+
+        try:
+            from app.chat.chat_decomposer import detect_and_decompose
+            decomp = await detect_and_decompose(
+                user_message=request.message,
+                client_id=request.active_client_id or "",
+                project_id=request.active_project_id or "",
+            )
+            if decomp.should_decompose and decomp.graph:
+                _used_graph_decomposition = True
+                logger.info(
+                    "SSE: using graph decomposition (%d subtasks): %s",
+                    len(decomp.subtasks or []), decomp.reason,
+                )
+                yield ChatStreamEvent(
+                    type="thinking",
+                    content=f"Rozděluji na {len(decomp.subtasks or [])} paralelních úkolů...",
+                )
+                async for event in _run_foreground_graph(
+                    decomp.graph, request, _response_chunks, _trace_parts,
+                    _memory_graph_id, _live_vertex_id,
+                ):
+                    yield event
+        except Exception as e:
+            logger.warning("SSE: graph decomposition failed (%s), falling through to agentic loop", e)
+            _used_graph_decomposition = False
+
+        # ── 4d. Agentic loop (fallback or default) ────────────────
+        if not _used_graph_decomposition:
+            async for event in run_agentic_loop(
+                request=request,
+                messages=messages,
+                selected_tools=list(CHAT_INITIAL_TOOLS),
+                runtime_ctx=runtime_ctx,
+                disconnect_event=disconnect_event,
+                is_summarized=False,
+                msg_len=len(request.message),
+            ):
+                if event.type in ("content", "token") and event.content:
+                    _response_chunks.append(event.content)
+                elif event.type == "thinking" and event.content:
+                    _trace_parts.append(f"[thinking] {event.content}")
+                elif event.type == "tool_call" and event.content:
+                    args_str = event.metadata.get("args", "")
+                    _trace_parts.append(f"[tool] {event.content}({str(args_str)[:100]})")
+                elif event.type == "tool_result" and event.content:
+                    tool = event.metadata.get("tool", "?")
+                    _trace_parts.append(f"[result:{tool}] {event.content[:150]}")
+                # Inject memory graph + vertex IDs into done event for UI
+                if event.type == "done":
+                    if _memory_graph_id:
+                        event.metadata["memory_graph_id"] = _memory_graph_id
+                    if _live_vertex_id:
+                        event.metadata["memory_graph_vertex_id"] = _live_vertex_id
+                    # Signal to UI: only show inline map if background tasks were dispatched
+                    _bg_tools_check = {"create_background_task", "dispatch_coding_agent"}
+                    if any(any(t in p for t in _bg_tools_check) for p in _trace_parts if p.startswith("[tool]")):
+                        event.metadata["dispatched_tasks"] = "true"
+                yield event
 
     except Exception as e:
         logger.exception("SSE handler error: %s", e)
@@ -320,3 +350,137 @@ async def handle_chat_sse(
             await kotlin_client.register_foreground_end()
         except Exception as e:
             logger.warning("Failed to register foreground end: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Foreground graph execution — runs decomposed graph and streams results
+# ---------------------------------------------------------------------------
+
+
+async def _run_foreground_graph(
+    graph: "AgentGraph",
+    request: ChatRequest,
+    response_chunks: list[str],
+    trace_parts: list[str],
+    memory_graph_id: str | None,
+    live_vertex_id: str | None,
+) -> AsyncIterator[ChatStreamEvent]:
+    """Execute a decomposed graph in foreground and stream the final result.
+
+    Runs the LangGraph agent runner with the pre-built graph, then streams
+    the synthesized result back to the user via SSE events.
+
+    Each vertex runs with minimal context (~5k tokens) instead of the full
+    conversation history (54k+ tokens), making GPU inference much faster.
+    """
+    from app.agent.langgraph_runner import (
+        _get_compiled_graph,
+        node_dispatch_vertex,
+        node_select_next,
+        node_synthesize,
+        GraphAgentState,
+    )
+    from app.agent.models import AgentGraph, GraphStatus, VertexStatus
+    from app.agent.persistence import agent_store
+
+    # Cache graph in store for vertex executor access
+    agent_store.cache_subgraph(graph)
+    agent_store.mark_dirty(graph.task_id)
+
+    # Simple loop: select_next → dispatch → repeat → synthesize
+    # We don't use the full LangGraph compiled graph here to avoid
+    # checkpointer overhead for ephemeral foreground graphs.
+    state: GraphAgentState = {
+        "task": {
+            "id": graph.task_id,
+            "query": graph.vertices[graph.root_vertex_id].input_request,
+            "client_id": request.active_client_id or "",
+            "project_id": request.active_project_id or "",
+            "message": request.message,
+        },
+        "task_graph": graph.model_dump(),
+        "current_vertex_id": None,
+        "ready_vertex_ids": [],
+        "graph_error": None,
+        "final_result": None,
+        "response_language": "cs",
+        "allow_cloud_prompt": False,
+    }
+
+    max_rounds = 20  # Safety ceiling
+    for round_num in range(max_rounds):
+        # Select next ready vertices
+        select_result = await node_select_next(state)
+        state.update(select_result)
+
+        ready_ids = state.get("ready_vertex_ids", [])
+        if not ready_ids:
+            break
+
+        # Report progress
+        ready_titles = []
+        g = AgentGraph(**state["task_graph"])
+        for vid in ready_ids:
+            v = g.vertices.get(vid)
+            if v:
+                ready_titles.append(v.title)
+
+        yield ChatStreamEvent(
+            type="thinking",
+            content=f"Zpracovávám: {', '.join(ready_titles[:5])}{'...' if len(ready_titles) > 5 else ''}",
+        )
+        trace_parts.append(f"[graph] round {round_num + 1}: {len(ready_ids)} vertices: {', '.join(ready_titles[:5])}")
+
+        # Dispatch all ready vertices (parallel execution)
+        dispatch_result = await node_dispatch_vertex(state)
+        state.update(dispatch_result)
+
+        # Report completed vertices
+        g = AgentGraph(**state["task_graph"])
+        for vid in ready_ids:
+            v = g.vertices.get(vid)
+            if v and v.status == VertexStatus.COMPLETED:
+                summary = (v.result_summary or "")[:100]
+                trace_parts.append(f"[graph:done] {v.title}: {summary}")
+            elif v and v.status == VertexStatus.FAILED:
+                trace_parts.append(f"[graph:fail] {v.title}: {v.error or 'unknown'}")
+
+    # Synthesize final result
+    synth_result = await node_synthesize(state)
+    state.update(synth_result)
+
+    final_text = state.get("final_result", "")
+    if final_text:
+        response_chunks.append(final_text)
+        # Save to conversation history
+        from app.chat.handler_streaming import save_assistant_message
+        await save_assistant_message(
+            request.session_id, final_text,
+            {"graph_decomposed": "true", "vertices": str(len(graph.vertices))},
+        )
+        # Stream the result
+        from app.chat.handler_streaming import stream_text
+        async for event in stream_text(final_text):
+            yield event
+
+    # Stats
+    g = AgentGraph(**state["task_graph"])
+    completed = sum(1 for v in g.vertices.values() if v.status == VertexStatus.COMPLETED)
+    failed = sum(1 for v in g.vertices.values() if v.status == VertexStatus.FAILED)
+    logger.info(
+        "FOREGROUND_GRAPH_DONE | task=%s | vertices=%d | completed=%d | failed=%d | result_len=%d",
+        graph.task_id, len(g.vertices), completed, failed, len(final_text),
+    )
+    trace_parts.append(f"[graph] done: {completed}/{len(g.vertices)} completed, {failed} failed")
+
+    yield ChatStreamEvent(
+        type="done",
+        metadata={
+            "graph_decomposed": True,
+            "vertices": len(g.vertices),
+            "completed": completed,
+            "failed": failed,
+            **({"memory_graph_id": memory_graph_id} if memory_graph_id else {}),
+            **({"memory_graph_vertex_id": live_vertex_id} if live_vertex_id else {}),
+        },
+    )
