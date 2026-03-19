@@ -221,6 +221,25 @@ class ChatService(
     }
 
     /**
+     * Dismiss all actionable BACKGROUND messages in current session.
+     * Sets metadata.needsReaction=false and metadata.success=true so they no longer count.
+     * Returns number of dismissed messages.
+     */
+    suspend fun dismissAllActionableBackground(userId: String = "jan"): Int {
+        val session = chatSessionRepository.findFirstByUserIdAndArchivedOrderByLastMessageAtDesc(userId, false)
+            ?: return 0
+        val messages = chatMessageService.findActionableBackground(session.id).toList()
+        for (msg in messages) {
+            val updatedMetadata = msg.metadata.toMutableMap()
+            updatedMetadata["needsReaction"] = "false"
+            updatedMetadata["success"] = "true"
+            updatedMetadata["dismissed"] = "true"
+            chatMessageService.save(msg.copy(metadata = updatedMetadata))
+        }
+        return messages.size
+    }
+
+    /**
      * Update session scope when Python emits scope_change.
      * Called by ChatRpcImpl when it sees a SCOPE_CHANGE event.
      */

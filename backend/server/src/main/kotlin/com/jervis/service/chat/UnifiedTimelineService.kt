@@ -51,7 +51,7 @@ class UnifiedTimelineService(
             // ALL background messages
             orConditions.add(Document("role", "BACKGROUND"))
         } else if (includeNeedReaction) {
-            // Only actionable background results (failed or explicitly marked)
+            // Only actionable background results (failed or explicitly marked, NOT dismissed)
             orConditions.add(
                 Document("\$and", listOf(
                     Document("role", "BACKGROUND"),
@@ -59,6 +59,7 @@ class UnifiedTimelineService(
                         Document("metadata.needsReaction", "true"),
                         Document("metadata.success", "false"),
                     )),
+                    Document("metadata.dismissed", Document("\$ne", "true")),
                 )),
             )
         }
@@ -97,11 +98,7 @@ class UnifiedTimelineService(
             val tasksPipeline = listOf(
                 Document(
                     "\$match", Document("type", "USER_TASK")
-                        .append("state", "USER_TASK")
-                        .append(
-                            "pendingUserQuestion", Document("\$exists", true)
-                                .append("\$ne", null),
-                        ),
+                        .append("state", "USER_TASK"),
                 ),
                 Document(
                     "\$project", Document()
@@ -111,7 +108,7 @@ class UnifiedTimelineService(
                         .append(
                             "content", Document(
                                 "\$concat", listOf(
-                                    Document("\$ifNull", listOf("\$pendingUserQuestion", "")),
+                                    Document("\$ifNull", listOf("\$pendingUserQuestion", Document("\$ifNull", listOf("\$taskName", "")))),
                                 ),
                             ),
                         )

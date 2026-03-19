@@ -172,14 +172,28 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
     ): Flow<ChatMessageDocument>
 
     /**
-     * Count actionable BACKGROUND messages (needsReaction=true OR success=false).
+     * Count actionable BACKGROUND messages (needsReaction=true OR success=false, NOT dismissed).
      * Used for "K reakci" badge count — combined with USER_TASK count.
      */
     @Query(
-        value = "{ 'conversationId': ?0, 'role': 'BACKGROUND', '\$or': [ { 'metadata.needsReaction': 'true' }, { 'metadata.success': 'false' } ] }",
+        value = "{ 'conversationId': ?0, 'role': 'BACKGROUND', '\$or': [ { 'metadata.needsReaction': 'true' }, { 'metadata.success': 'false' } ], 'metadata.dismissed': { '\$ne': 'true' } }",
         count = true,
     )
     suspend fun countActionableBackground(conversationId: ObjectId): Long
+
+    /**
+     * Find actionable BACKGROUND messages (needsReaction=true OR success=false, NOT dismissed).
+     * Used by dismissAll to mark them as dismissed.
+     */
+    @Query("{ 'conversationId': ?0, 'role': 'BACKGROUND', '\$or': [ { 'metadata.needsReaction': 'true' }, { 'metadata.success': 'false' } ], 'metadata.dismissed': { '\$ne': 'true' } }")
+    fun findActionableBackground(conversationId: ObjectId): Flow<ChatMessageDocument>
+
+    /**
+     * Find chat messages by taskId in metadata.
+     * Used by dismiss to mark BACKGROUND messages as dismissed when user clicks "Ignorovat".
+     */
+    @Query("{ 'metadata.taskId': ?0 }")
+    fun findByMetadataTaskId(taskId: String): Flow<ChatMessageDocument>
 
     /**
      * Check if a message with the given client-generated ID already exists.

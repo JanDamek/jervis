@@ -17,6 +17,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
@@ -65,11 +66,41 @@ fun Routing.installInternalTaskApi(
                 else -> TaskStateEnum.INDEXING
             }
 
+            // Dedup: for SCHEDULED_TASK from orchestrator, limit to max 3 per client per day.
+            // The orchestrator tends to create many follow-up tasks with varying titles
+            // for the same topic (e.g., invoice follow-ups with different wording).
+            if (isScheduled && body.createdBy == "orchestrator_agent") {
+                val recentCutoff = java.time.Instant.now().minus(java.time.Duration.ofHours(24))
+                val recentScheduled = taskRepository.findByClientIdAndType(clientId, TaskTypeEnum.SCHEDULED_TASK)
+                    .toList()
+                    .filter { it.createdAt?.isAfter(recentCutoff) == true && it.state != TaskStateEnum.ERROR }
+                if (recentScheduled.size >= 3) {
+                    logger.warn {
+                        "TASK_RATE_LIMIT | clientId=${body.clientId} | recentCount=${recentScheduled.size} " +
+                            "| title=$taskName — too many scheduled tasks in 24h, rejecting"
+                    }
+                    call.respondText(
+                        Json.encodeToString(mapOf(
+                            "taskId" to recentScheduled.first().id.toString(),
+                            "state" to recentScheduled.first().state.name,
+                            "name" to recentScheduled.first().taskName,
+                            "deduplicated" to "true",
+                            "reason" to "Rate limited: max 3 scheduled tasks per client per 24h",
+                        )),
+                        ContentType.Application.Json,
+                    )
+                    return@post
+                }
+            }
+
+            val normalizedTitle = taskName.lowercase().replace(Regex("[^a-z0-9]"), "").take(60)
+            val dedupCorrelationId = "sched:${body.clientId.takeLast(8)}:$normalizedTitle"
+
             val task = taskService.createTask(
                 taskType = taskType,
                 content = content,
                 clientId = clientId,
-                correlationId = "chat-tool-${java.util.UUID.randomUUID().toString().take(8)}",
+                correlationId = dedupCorrelationId,
                 sourceUrn = SourceUrn(body.createdBy?.let { "agent://$it" } ?: "chat://foreground"),
                 projectId = projectId,
                 state = taskState,
@@ -522,6 +553,42 @@ fun Routing.installInternalTaskApi(
             )
         } catch (e: Exception) {
             logger.warn(e) { "INTERNAL_API_ERROR | endpoint=tasks/retry | taskId=${call.parameters["taskId"]}" }
+            call.respondText(
+                """{"ok":false,"error":"${e.message?.replace("\"", "\\\"")}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
+    // Cancel a task — force state to DONE regardless of current state
+    post("/internal/tasks/{taskId}/cancel") {
+        try {
+            val taskIdStr = call.parameters["taskId"] ?: ""
+            val taskId = TaskId(ObjectId(taskIdStr))
+            val task = taskRepository.getById(taskId)
+                ?: return@post call.respondText(
+                    """{"ok":false,"error":"Task not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+
+            if (task.state == TaskStateEnum.DONE) {
+                return@post call.respondText(
+                    """{"ok":true,"taskId":"$taskIdStr","state":"DONE","message":"Already done"}""",
+                    ContentType.Application.Json,
+                )
+            }
+
+            val updated = task.copy(state = TaskStateEnum.DONE)
+            taskRepository.save(updated)
+            logger.info("TASK_CANCELLED | taskId=$taskIdStr | previousState=${task.state} | title=${task.taskName}")
+            call.respondText(
+                """{"ok":true,"taskId":"$taskIdStr","state":"DONE","previousState":"${task.state}"}""",
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=tasks/cancel | taskId=${call.parameters["taskId"]}" }
             call.respondText(
                 """{"ok":false,"error":"${e.message?.replace("\"", "\\\"")}"}""",
                 ContentType.Application.Json,

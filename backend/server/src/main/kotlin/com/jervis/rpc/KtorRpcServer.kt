@@ -1181,6 +1181,36 @@ class KtorRpcServer(
                                 }
                             }
 
+                            // Dismiss user task(s) — move to DONE without processing
+                            post("/internal/dismiss-user-tasks") {
+                                try {
+                                    val body = call.receive<DismissUserTasksRequest>()
+                                    var dismissed = 0
+                                    for (taskId in body.taskIds) {
+                                        try {
+                                            val task = taskRepository.getById(com.jervis.common.types.TaskId(org.bson.types.ObjectId(taskId)))
+                                            if (task != null && task.state == com.jervis.dto.TaskStateEnum.USER_TASK) {
+                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
+                                                dismissed++
+                                            }
+                                        } catch (e: Exception) {
+                                            logger.warn { "Failed to dismiss task $taskId: ${e.message}" }
+                                        }
+                                    }
+                                    call.respondText(
+                                        """{"ok":true,"dismissed":$dismissed}""",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to dismiss user tasks" }
+                                    call.respondText(
+                                        """{"error":"${e.message}"}""",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
                             // Classify meeting
                             post("/internal/classify-meeting") {
                                 try {
@@ -1448,6 +1478,11 @@ data class DispatchCodingAgentRequest(
 data class RespondToUserTaskRequest(
     val taskId: String,
     val response: String,
+)
+
+@kotlinx.serialization.Serializable
+data class DismissUserTasksRequest(
+    val taskIds: List<String>,
 )
 
 @kotlinx.serialization.Serializable

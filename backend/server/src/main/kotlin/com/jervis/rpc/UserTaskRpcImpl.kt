@@ -32,6 +32,7 @@ class UserTaskRpcImpl(
     private val notificationRpc: NotificationRpcImpl,
     private val chatMessageRepository: com.jervis.repository.ChatMessageRepository,
     private val taskRepository: com.jervis.repository.TaskRepository,
+    private val chatService: com.jervis.service.chat.ChatService,
 ) : IUserTaskService {
     private val logger = KotlinLogging.logger {}
 
@@ -199,6 +200,80 @@ class UserTaskRpcImpl(
         }
 
         return task.toUserTaskDto()
+    }
+
+    override suspend fun dismiss(taskId: String) {
+        var dismissed = false
+
+        // 1. Try to dismiss as TaskDocument (any active state → DONE)
+        try {
+            val task = taskRepository.getById(TaskId.fromString(taskId))
+            if (task != null && task.state != TaskStateEnum.DONE && task.state != TaskStateEnum.ERROR) {
+                val updated = task.copy(state = TaskStateEnum.DONE)
+                taskRepository.save(updated)
+                logger.info { "USER_TASK_DISMISSED | taskId=$taskId | previousState=${task.state} | title=${task.taskName}" }
+                notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
+                dismissed = true
+            }
+        } catch (_: Exception) {
+            // ID might not be a valid TaskId — continue to chat message lookup
+        }
+
+        // 2. Dismiss BACKGROUND chat messages referencing this taskId in metadata
+        val chatMessages = chatMessageRepository.findByMetadataTaskId(taskId).toList()
+        for (msg in chatMessages) {
+            if (msg.metadata["needsReaction"] == "true" || msg.metadata["success"] == "false") {
+                val updatedMetadata = msg.metadata.toMutableMap()
+                updatedMetadata["needsReaction"] = "false"
+                updatedMetadata["success"] = "true"
+                updatedMetadata["dismissed"] = "true"
+                chatMessageRepository.save(msg.copy(metadata = updatedMetadata))
+                logger.info { "CHAT_MESSAGE_DISMISSED | messageId=${msg.id} | taskId=$taskId" }
+                dismissed = true
+            }
+        }
+
+        // 3. Try to dismiss as a chat message directly by its ObjectId (messageId fallback)
+        if (!dismissed) {
+            try {
+                val msg = chatMessageRepository.findById(ObjectId(taskId))
+                if (msg != null && (msg.metadata["needsReaction"] == "true" || msg.metadata["success"] == "false")) {
+                    val updatedMetadata = msg.metadata.toMutableMap()
+                    updatedMetadata["needsReaction"] = "false"
+                    updatedMetadata["success"] = "true"
+                    updatedMetadata["dismissed"] = "true"
+                    chatMessageRepository.save(msg.copy(metadata = updatedMetadata))
+                    logger.info { "CHAT_MESSAGE_DISMISSED_BY_ID | messageId=$taskId" }
+                    dismissed = true
+                }
+            } catch (_: Exception) {
+                // Not a valid ObjectId — skip
+            }
+        }
+
+        if (!dismissed) {
+            logger.warn { "DISMISS_SKIP | id=$taskId — no task or chat message found" }
+        }
+    }
+
+    override suspend fun dismissAll(): Int {
+        var count = 0
+
+        // 1. Dismiss all USER_TASK tasks (type=USER_TASK, state=USER_TASK → DONE)
+        val tasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toList()
+        for (task in tasks) {
+            val updated = task.copy(state = TaskStateEnum.DONE)
+            taskRepository.save(updated)
+            notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
+            count++
+        }
+
+        // 2. Dismiss actionable BACKGROUND chat messages (needsReaction=true or success=false)
+        val bgCount = chatService.dismissAllActionableBackground()
+        count += bgCount
+
+        logger.info { "USER_TASK_DISMISS_ALL | tasks=${tasks.size} | backgroundMessages=$bgCount | total=$count" }
+        return count
     }
 
     override suspend fun respondToTask(taskId: String, response: String) {

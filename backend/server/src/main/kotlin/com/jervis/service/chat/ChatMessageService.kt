@@ -3,6 +3,7 @@ package com.jervis.service.chat
 import com.jervis.entity.ChatMessageDocument
 import com.jervis.entity.MessageRole
 import com.jervis.repository.ChatMessageRepository
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.reactive.awaitSingle
@@ -208,6 +209,19 @@ class ChatMessageService(
      */
     suspend fun countActionableBackground(conversationId: ObjectId): Long =
         chatMessageRepository.countActionableBackground(conversationId)
+
+    /**
+     * Find actionable BACKGROUND messages (needsReaction=true OR success=false).
+     * Used by dismissAll to mark them as dismissed.
+     */
+    fun findActionableBackground(conversationId: ObjectId): Flow<ChatMessageDocument> =
+        chatMessageRepository.findActionableBackground(conversationId)
+
+    /**
+     * Save a chat message (update existing or insert new).
+     */
+    suspend fun save(message: ChatMessageDocument): ChatMessageDocument =
+        chatMessageRepository.save(message)
 
     /**
      * Load messages filtered to a specific role only (newest first, chronological order).

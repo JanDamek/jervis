@@ -75,14 +75,6 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
     var monthlyBudgetUsd by remember { mutableStateOf("0") }
     var fallbackStrategy by remember { mutableStateOf(OpenRouterFallbackStrategy.NEXT_IN_LIST) }
 
-    // Filters
-    var modelNameFilter by remember { mutableStateOf("") }
-    var minContextLength by remember { mutableStateOf("0") }
-    var maxInputPrice by remember { mutableStateOf("0") }
-    var maxOutputPrice by remember { mutableStateOf("0") }
-    var requireToolSupport by remember { mutableStateOf(false) }
-    var requireStreaming by remember { mutableStateOf(true) }
-
     // Model list (legacy flat list)
     var models by remember { mutableStateOf<List<OpenRouterModelEntryDto>>(emptyList()) }
 
@@ -112,12 +104,6 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
         enabled = dto.enabled
         monthlyBudgetUsd = if (dto.monthlyBudgetUsd > 0) dto.monthlyBudgetUsd.toString() else "0"
         fallbackStrategy = dto.fallbackStrategy
-        modelNameFilter = dto.filters.modelNameFilter
-        minContextLength = dto.filters.minContextLength.toString()
-        maxInputPrice = if (dto.filters.maxInputPricePerMillion > 0) dto.filters.maxInputPricePerMillion.toString() else "0"
-        maxOutputPrice = if (dto.filters.maxOutputPricePerMillion > 0) dto.filters.maxOutputPricePerMillion.toString() else "0"
-        requireToolSupport = dto.filters.requireToolSupport
-        requireStreaming = dto.filters.requireStreaming
         models = dto.models
         modelQueues = dto.modelQueues.associate { it.name to it.models }
     }
@@ -277,57 +263,6 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                         }
                     }
 
-                    // --- Filters ---
-                    JSection(title = "Filtry modelů") {
-                        Column(verticalArrangement = Arrangement.spacedBy(JervisSpacing.fieldGap)) {
-                            Text(
-                                "Filtry omezují, které modely se zobrazí v katalogu a mohou být přidány do seznamu.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-
-                            JTextField(
-                                value = modelNameFilter,
-                                onValueChange = { modelNameFilter = it },
-                                label = "Filtr názvu modelu",
-                                placeholder = "např. gpt-4, claude, llama",
-                            )
-
-                            JTextField(
-                                value = minContextLength,
-                                onValueChange = { minContextLength = it.filter { c -> c.isDigit() } },
-                                label = "Minimální kontext (tokeny, 0 = bez omezení)",
-                                placeholder = "0",
-                            )
-
-                            JTextField(
-                                value = maxInputPrice,
-                                onValueChange = { maxInputPrice = it.filter { c -> c.isDigit() || c == '.' } },
-                                label = "Max. cena vstup (USD/1M tokenů, 0 = bez omezení)",
-                                placeholder = "0",
-                            )
-
-                            JTextField(
-                                value = maxOutputPrice,
-                                onValueChange = { maxOutputPrice = it.filter { c -> c.isDigit() || c == '.' } },
-                                label = "Max. cena výstup (USD/1M tokenů, 0 = bez omezení)",
-                                placeholder = "0",
-                            )
-
-                            JCheckboxRow(
-                                label = "Vyžadovat podporu tools/function calling",
-                                checked = requireToolSupport,
-                                onCheckedChange = { requireToolSupport = it },
-                            )
-
-                            JCheckboxRow(
-                                label = "Vyžadovat podporu streamování",
-                                checked = requireStreaming,
-                                onCheckedChange = { requireStreaming = it },
-                            )
-                        }
-                    }
-
                     // --- Model Queues (4-tier routing) ---
                     JSection(title = "Fronty modelů") {
                         Column(verticalArrangement = Arrangement.spacedBy(JervisSpacing.fieldGap)) {
@@ -421,15 +356,8 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                     scope.launch {
                                         loadingCatalog = true
                                         try {
-                                            val currentFilters = OpenRouterFiltersDto(
-                                                modelNameFilter = modelNameFilter,
-                                                minContextLength = minContextLength.toIntOrNull() ?: 0,
-                                                maxInputPricePerMillion = maxInputPrice.toDoubleOrNull() ?: 0.0,
-                                                maxOutputPricePerMillion = maxOutputPrice.toDoubleOrNull() ?: 0.0,
-                                                requireToolSupport = requireToolSupport,
-                                                requireStreaming = requireStreaming,
-                                            )
-                                            catalogModels = repository.openRouterSettings.fetchCatalogModels(currentFilters)
+                                            // Fetch ALL models — filtering is done client-side in the dialog
+                                            catalogModels = repository.openRouterSettings.fetchCatalogModels(OpenRouterFiltersDto())
                                             addModelTargetQueue = currentQueueName
                                             showAddModelDialog = true
                                         } catch (e: Exception) {
@@ -529,14 +457,6 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                             apiKey = apiKey,
                                             apiBaseUrl = apiBaseUrl,
                                             enabled = enabled,
-                                            filters = OpenRouterFiltersDto(
-                                                modelNameFilter = modelNameFilter,
-                                                minContextLength = minContextLength.toIntOrNull() ?: 0,
-                                                maxInputPricePerMillion = maxInputPrice.toDoubleOrNull() ?: 0.0,
-                                                maxOutputPricePerMillion = maxOutputPrice.toDoubleOrNull() ?: 0.0,
-                                                requireToolSupport = requireToolSupport,
-                                                requireStreaming = requireStreaming,
-                                            ),
                                             models = models,
                                             monthlyBudgetUsd = monthlyBudgetUsd.toDoubleOrNull() ?: 0.0,
                                             fallbackStrategy = fallbackStrategy,
@@ -799,8 +719,19 @@ private fun AddModelFromCatalogDialog(
     onDismiss: () -> Unit,
 ) {
     var searchFilter by remember { mutableStateOf("") }
+    var minContextLength by remember { mutableStateOf("") }
+    var maxInputPrice by remember { mutableStateOf("") }
+    var maxOutputPrice by remember { mutableStateOf("") }
+    var requireToolSupport by remember { mutableStateOf(false) }
+    var showFilters by remember { mutableStateOf(false) }
 
-    val filtered = remember(catalogModels, searchFilter, existingModelIds) {
+    val filtered = remember(
+        catalogModels, searchFilter, existingModelIds,
+        minContextLength, maxInputPrice, maxOutputPrice, requireToolSupport,
+    ) {
+        val minCtx = minContextLength.toIntOrNull() ?: 0
+        val maxIn = maxInputPrice.toDoubleOrNull() ?: 0.0
+        val maxOut = maxOutputPrice.toDoubleOrNull() ?: 0.0
         catalogModels
             .filter { it.id !in existingModelIds }
             .filter {
@@ -809,13 +740,17 @@ private fun AddModelFromCatalogDialog(
                     q in it.id.lowercase() || q in it.name.lowercase()
                 }
             }
+            .filter { if (minCtx > 0) it.contextLength >= minCtx else true }
+            .filter { if (maxIn > 0) it.inputPricePerMillion <= maxIn else true }
+            .filter { if (maxOut > 0) it.outputPricePerMillion <= maxOut else true }
+            .filter { if (requireToolSupport) it.supportsTools else true }
     }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         androidx.compose.material3.Surface(
             shape = MaterialTheme.shapes.large,
             tonalElevation = 6.dp,
-            modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 700.dp),
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(24.dp),
@@ -827,7 +762,7 @@ private fun AddModelFromCatalogDialog(
                 )
 
                 Text(
-                    "${catalogModels.size} modelů k dispozici, ${existingModelIds.size} již přidáno",
+                    "${catalogModels.size} modelů celkem, ${filtered.size} po filtraci, ${existingModelIds.size} již přidáno",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -838,6 +773,44 @@ private fun AddModelFromCatalogDialog(
                     label = "Hledat model",
                     placeholder = "gpt-4, claude, llama...",
                 )
+
+                // Expandable filters section
+                JSecondaryButton(
+                    onClick = { showFilters = !showFilters },
+                ) {
+                    Text(if (showFilters) "Skrýt filtry" else "Zobrazit filtry")
+                }
+
+                if (showFilters) {
+                    Column(verticalArrangement = Arrangement.spacedBy(JervisSpacing.fieldGap)) {
+                        JTextField(
+                            value = minContextLength,
+                            onValueChange = { minContextLength = it.filter { c -> c.isDigit() } },
+                            label = "Minimální kontext (tokeny)",
+                            placeholder = "0 = bez omezení",
+                        )
+
+                        JTextField(
+                            value = maxInputPrice,
+                            onValueChange = { maxInputPrice = it.filter { c -> c.isDigit() || c == '.' } },
+                            label = "Max. cena vstup (USD/1M tokenů)",
+                            placeholder = "0 = bez omezení",
+                        )
+
+                        JTextField(
+                            value = maxOutputPrice,
+                            onValueChange = { maxOutputPrice = it.filter { c -> c.isDigit() || c == '.' } },
+                            label = "Max. cena výstup (USD/1M tokenů)",
+                            placeholder = "0 = bez omezení",
+                        )
+
+                        JCheckboxRow(
+                            label = "Vyžadovat podporu tools/function calling",
+                            checked = requireToolSupport,
+                            onCheckedChange = { requireToolSupport = it },
+                        )
+                    }
+                }
 
                 HorizontalDivider()
 
@@ -854,7 +827,7 @@ private fun AddModelFromCatalogDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
-                        filtered.take(50).forEach { model ->
+                        filtered.take(100).forEach { model ->
                             JCard(
                                 onClick = {
                                     onAdd(model)
@@ -876,6 +849,7 @@ private fun AddModelFromCatalogDialog(
                                                 if (model.inputPricePerMillion > 0) {
                                                     append(" · \$${formatPrice(model.inputPricePerMillion)}/\$${formatPrice(model.outputPricePerMillion)} /1M")
                                                 }
+                                                if (model.supportsTools) append(" · tools")
                                             },
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -890,9 +864,9 @@ private fun AddModelFromCatalogDialog(
                                 }
                             }
                         }
-                        if (filtered.size > 50) {
+                        if (filtered.size > 100) {
                             Text(
-                                "... a dalších ${filtered.size - 50} modelů (upřesněte filtr)",
+                                "... a dalších ${filtered.size - 100} modelů (upřesněte filtr)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

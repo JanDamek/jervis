@@ -543,10 +543,22 @@ private fun ExpandableTextSection(
                     text = MaterialTheme.colorScheme.onSurfaceVariant,
                     codeBackground = MaterialTheme.colorScheme.surface,
                 ),
-                typography = markdownTypography(
-                    text = MaterialTheme.typography.bodySmall,
-                    code = MaterialTheme.typography.bodySmall,
-                ),
+                typography = MaterialTheme.typography.bodySmall.let { base ->
+                    markdownTypography(
+                        text = base,
+                        code = base,
+                        paragraph = base,
+                        h1 = base.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                        h2 = base.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                        h3 = base.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                        h4 = base.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                        h5 = base.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                        h6 = base.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                        list = base,
+                        ordered = base,
+                        bullet = base,
+                    )
+                },
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
