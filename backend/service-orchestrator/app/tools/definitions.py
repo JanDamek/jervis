@@ -435,10 +435,13 @@ TOOL_CREATE_SCHEDULED_TASK: dict = {
     "function": {
         "name": "create_scheduled_task",
         "description": (
-            "Create a scheduled task or reminder for future work. "
-            "Use this when you need to do something later: verify information when code becomes available, "
-            "check back on incomplete data, follow up on user requests, or schedule future analysis. "
-            "Examples: 'Ověřit BMS kód proti definici', 'Zkontrolovat architekturu za týden'. "
+            "Create a scheduled task for TIME-BOUND deadlines or reminders that MUST fire at a specific time. "
+            "ONLY use this when there is a concrete deadline, due date, or time-specific trigger "
+            "(e.g., 'faktura splatná 15.4.', 'schůzka za týden', 'ověřit stav deploymentu zítra ráno'). "
+            "NEVER use this for regular work — regular tasks go through the normal task queue with priority. "
+            "NEVER use this to defer work you could do NOW — solve tasks directly using available tools. "
+            "Examples of CORRECT use: 'Připomenout splatnost faktury 15.4.', 'Zkontrolovat MR status zítra'. "
+            "Examples of WRONG use: 'Analyzovat dokumentaci' (do it now), 'Ověřit kód' (do it now). "
             "IMPORTANT: Title and description MUST be in Czech. "
             "NEVER use internal system IDs (MongoDB ObjectIds like 698778e6e5e2160711bcdd83) as document/invoice numbers — "
             "describe items by their real content (sender name, email subject, filename)."

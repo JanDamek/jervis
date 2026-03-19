@@ -170,14 +170,9 @@ async def verify_claims(
                     claim.claim, client_id, project_id,
                 )
             elif claim.claim_type == ClaimType.URL:
-                # Basic URL format validation
-                if re.match(r'https?://[\w.-]+\.\w{2,}', claim.claim):
-                    claim.status = VerificationStatus.UNVERIFIED
-                    claim.confidence = 0.6
-                    claim.source = "URL format valid"
-                else:
-                    claim.status = VerificationStatus.UNVERIFIED
-                    claim.confidence = 0.3
+                claim.status, claim.confidence, claim.source = await _verify_url(
+                    claim.claim,
+                )
             elif claim.claim_type == ClaimType.CODE_REFERENCE:
                 claim.status, claim.confidence = await _verify_code_ref(
                     claim.claim, client_id, project_id,
@@ -222,6 +217,88 @@ def _verify_against_web_evidence(
         return VerificationStatus.VERIFIED, 0.85
 
     return VerificationStatus.UNVERIFIED, 0.2
+
+
+# Patterns that indicate a soft-404 or error page in HTML body content.
+# Checked case-insensitively against the first ~4KB of response body.
+_SOFT_404_BODY_PATTERNS = re.compile(
+    r'(?:stránka\s+(?:nebyla\s+)?nalezena'  # Czech: "stránka nenalezena"
+    r'|page\s+not\s+found'                   # English
+    r'|404\s+(?:error|not\s+found)'           # "404 error", "404 not found"
+    r'|nenalezeno'                            # Czech short
+    r'|nicht\s+gefunden'                      # German
+    r'|no\s+se\s+encontr[óo]'                # Spanish
+    r'|the\s+page\s+you\s+(?:are\s+)?looking\s+for'  # "the page you're looking for"
+    r'|tato\s+stránka\s+neexistuje'           # Czech: "tato stránka neexistuje"
+    r'|this\s+page\s+(?:does\s+not|doesn.t)\s+exist'
+    r')',
+    re.IGNORECASE,
+)
+
+# URL path patterns indicating 404/error pages
+_SOFT_404_URL_PATTERNS = ["/404", "/not-found", "/page-not-found", "/error"]
+
+
+async def _verify_url(
+    url: str,
+) -> tuple[VerificationStatus, float, str | None]:
+    """Verify a URL is reachable and returns real content (not a 404 page).
+
+    Uses HTTP GET to fetch the page, then checks:
+    1. HTTP status code (4xx/5xx → CONTRADICTED)
+    2. URL path after redirects (contains /404, /not-found → CONTRADICTED)
+    3. Body content regex (soft 404: "page not found", "stránka nenalezena" → CONTRADICTED)
+
+    Only reads first ~4KB of body to keep it fast.
+    """
+    if not re.match(r'https?://[\w.-]+\.\w{2,}', url):
+        return VerificationStatus.UNVERIFIED, 0.3, None
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
+            follow_redirects=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                              "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml",
+                "Accept-Language": "cs,en;q=0.9",
+            },
+        ) as http_client:
+            resp = await http_client.get(url)
+            final_url = str(resp.url)
+
+            # Check 1: HTTP status code
+            if resp.status_code >= 400:
+                reason = f"HTTP {resp.status_code}"
+                logger.warning("URL_CHECK_FAILED | url=%s | %s", url, reason)
+                return VerificationStatus.CONTRADICTED, 0.1, reason
+
+            # Check 2: URL path after redirects
+            is_soft_404_url = any(p in final_url.lower() for p in _SOFT_404_URL_PATTERNS)
+            if is_soft_404_url:
+                reason = f"Soft 404 (redirected to {final_url})"
+                logger.warning("URL_CHECK_FAILED | url=%s | %s", url, reason)
+                return VerificationStatus.CONTRADICTED, 0.1, reason
+
+            # Check 3: Body content — look for "page not found" patterns
+            # Only check HTML responses, first 4KB is enough
+            content_type = resp.headers.get("content-type", "")
+            if "text/html" in content_type:
+                body_snippet = resp.text[:4096]
+                match = _SOFT_404_BODY_PATTERNS.search(body_snippet)
+                if match:
+                    reason = f"Soft 404 (body contains: '{match.group(0).strip()}')"
+                    logger.warning("URL_CHECK_FAILED | url=%s | %s", url, reason)
+                    return VerificationStatus.CONTRADICTED, 0.1, reason
+
+            return VerificationStatus.VERIFIED, 0.9, f"HTTP {resp.status_code}"
+
+    except Exception as e:
+        logger.debug("URL verification failed for %s: %s", url, e)
+        return VerificationStatus.UNVERIFIED, 0.3, None
 
 
 async def _verify_file_path(

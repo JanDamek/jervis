@@ -944,7 +944,10 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use `store_knowledge` to persist important findings.\n\n"
         "Use `extend_thinking_graph` sparingly when your task reveals genuinely separate work.\n\n"
         "For code-level work (reading/writing files, running tests), use `dispatch_coding_agent` "
-        "(async — returns immediately). For multiple code tasks, create separate vertices instead."
+        "(async — returns immediately). For multiple code tasks, create separate vertices instead.\n\n"
+        "SCHEDULED TASKS: `create_scheduled_task` is ONLY for time-bound deadlines (due dates, "
+        "specific calendar triggers). NEVER use it to defer work you can do NOW. Regular work "
+        "goes through the normal task queue — do the work directly using available tools."
         + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
     VertexType.TASK: (
@@ -955,7 +958,10 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use `store_knowledge` to persist important findings.\n\n"
         "Use `extend_thinking_graph` sparingly when your task reveals genuinely separate work.\n\n"
         "For code-level work (reading/writing files, running tests), use `dispatch_coding_agent` "
-        "(async — returns immediately). For multiple code tasks, create separate vertices instead."
+        "(async — returns immediately). For multiple code tasks, create separate vertices instead.\n\n"
+        "SCHEDULED TASKS: `create_scheduled_task` is ONLY for time-bound deadlines (due dates, "
+        "specific calendar triggers). NEVER use it to defer work you can do NOW. Regular work "
+        "goes through the normal task queue — do the work directly using available tools."
         + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
     VertexType.VALIDATOR: (

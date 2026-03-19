@@ -17,6 +17,7 @@ from typing import AsyncIterator
 from bson import ObjectId
 
 from app.chat.drift import detect_drift
+from app.chat.hallucination_guard import needs_verification_retry
 from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, confidence_badge
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.source_attribution import SourceTracker
@@ -203,6 +204,27 @@ async def run_agentic_loop(
         if not tool_calls:
             final_text = remaining_text or choice.message.content or ""
             logger.info("Chat: final answer after %d iterations (%d chars)", iteration + 1, len(final_text))
+
+            # Pre-processing hallucination guard: if model answered without ANY tool calls
+            # and the response contains URLs or real-world entities, force a retry
+            # so the model actually verifies claims via web_search/web_fetch.
+            if not used_tools and iteration == 0:
+                retry_reason = needs_verification_retry(final_text)
+                if retry_reason:
+                    logger.warning("HALLUCINATION_GUARD | forcing retry: %s", retry_reason)
+                    messages.append(choice.message.model_dump())
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            f"STOP — tvá odpověď obsahuje {retry_reason} bez ověření nástrojem.\n"
+                            "PRAVIDLA:\n"
+                            "• KAŽDÁ URL musí pocházet z web_search/web_fetch výsledku\n"
+                            "• KAŽDÝ údaj o reálné entitě (restaurace, firma, místo) musí být ověřen\n"
+                            "• NIKDY neuvádej URL z trénovacích dat — VŽDY ověř přes web_search\n\n"
+                            "Použij web_search k ověření a pak odpověz znovu. Pokud nemůžeš ověřit, řekni to."
+                        ),
+                    })
+                    continue  # retry the agentic loop
 
             # Fact-check + topic tracking — parallel
             fc_result, topics = await asyncio.gather(
