@@ -193,19 +193,31 @@ class LocalQuickMemory:
         await self._write_buffer.put(write)
         self._stats["buffer_writes"] += 1
 
-    def search_write_buffer(self, query: str, client_id: str = "") -> list[dict]:
+    def search_write_buffer(
+        self, query: str,
+        client_id: str = "", project_id: str = "", group_id: str = "",
+    ) -> list[dict]:
         """Keyword match on buffered writes not yet flushed to KB.
 
         Simple case-insensitive substring match — not semantic,
         but catches exact matches on recently stored data.
-        Filters by client_id to prevent cross-client data leakage.
+        Filters by client/project/group scope to prevent cross-boundary leakage.
+
+        Scope hierarchy:
+        - project_id set → only items from that project
+        - group_id set → items from that group (any project)
+        - client_id set → items from that client (any project/group)
         """
         results = []
         query_lower = query.lower()
         # Peek at queue items without consuming them
         items = list(self._write_buffer._queue)
         for item in items:
-            # Client isolation: skip items from other clients
+            # Scope isolation: strictest match first
+            if project_id and item.project_id and item.project_id != project_id:
+                continue
+            if group_id and item.group_id and item.group_id != group_id:
+                continue
             if client_id and item.client_id and item.client_id != client_id:
                 continue
             searchable = f"{item.source_urn} {item.content}".lower()
@@ -240,14 +252,37 @@ class LocalQuickMemory:
 
     # ----- Layer 3: Search cache (Warm) -----
 
-    def cache_search(self, query: str, results: list[dict], client_id: str = "") -> None:
-        """Cache KB search results for a query, scoped by client_id."""
-        cache_key = f"{client_id}:{query}" if client_id else query
+    @staticmethod
+    def _scope_key(query: str, client_id: str = "", project_id: str = "", group_id: str = "") -> str:
+        """Build cache key scoped by client/group/project hierarchy.
+
+        Scope hierarchy:
+        - project selected → scope to that project only
+        - group selected → scope to group (all projects in group)
+        - client only → scope to entire client
+        """
+        if project_id:
+            return f"{client_id}:{project_id}:{query}"
+        if group_id:
+            return f"{client_id}:g:{group_id}:{query}"
+        if client_id:
+            return f"{client_id}:{query}"
+        return query
+
+    def cache_search(
+        self, query: str, results: list[dict],
+        client_id: str = "", project_id: str = "", group_id: str = "",
+    ) -> None:
+        """Cache KB search results for a query, scoped by client/project/group."""
+        cache_key = self._scope_key(query, client_id, project_id, group_id)
         self._search_cache.put(cache_key, results)
 
-    def get_cached_search(self, query: str, client_id: str = "") -> list[dict] | None:
-        """Return cached search results, or None on miss. Scoped by client_id."""
-        cache_key = f"{client_id}:{query}" if client_id else query
+    def get_cached_search(
+        self, query: str,
+        client_id: str = "", project_id: str = "", group_id: str = "",
+    ) -> list[dict] | None:
+        """Return cached search results, or None on miss. Scoped by client/project/group."""
+        cache_key = self._scope_key(query, client_id, project_id, group_id)
         result = self._search_cache.get(cache_key)
         if result is not None:
             self._stats["cache_hits"] += 1
@@ -255,8 +290,8 @@ class LocalQuickMemory:
             self._stats["cache_misses"] += 1
         return result
 
-    def invalidate_search(self, query: str, client_id: str = "") -> None:
-        cache_key = f"{client_id}:{query}" if client_id else query
+    def invalidate_search(self, query: str, client_id: str = "", project_id: str = "", group_id: str = "") -> None:
+        cache_key = self._scope_key(query, client_id, project_id, group_id)
         self._search_cache.invalidate(cache_key)
 
     # ----- Lifecycle -----

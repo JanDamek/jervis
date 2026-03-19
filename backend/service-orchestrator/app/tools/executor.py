@@ -2400,6 +2400,7 @@ async def _execute_memory_store(
             content=f"# {subject}\n\n{content}",
             kind=kind_map.get(category, "user_knowledge_fact"),
             client_id=client_id,
+            project_id=project_id or "",
             metadata={
                 "category": category,
                 "subject": subject,
@@ -2445,7 +2446,8 @@ async def _execute_memory_recall(
 
         # Search write buffer (recent unsync'd writes)
         if scope in ("current", "all"):
-            buffer_hits = lqm.search_write_buffer(query, client_id=client_id)
+            pid = project_id or ""
+            buffer_hits = lqm.search_write_buffer(query, client_id=client_id, project_id=pid)
             for hit in buffer_hits[:3]:
                 results.append(
                     f"[Memory Buffer] {hit.get('source_urn', '?')}\n{hit.get('content', '')}"
@@ -2474,8 +2476,9 @@ async def _execute_memory_recall(
                     )
 
         # Search cache / KB
+        pid = project_id or ""
         if scope in ("all", "kb_only"):
-            cached = lqm.get_cached_search(query, client_id=client_id)
+            cached = lqm.get_cached_search(query, client_id=client_id, project_id=pid)
             if cached is not None:
                 for item in cached[:3]:
                     content = item.get("content", "")
@@ -2496,7 +2499,7 @@ async def _execute_memory_recall(
                         )
                         if resp.status_code == 200:
                             kb_items = resp.json().get("items", [])
-                            lqm.cache_search(query, kb_items, client_id=client_id)
+                            lqm.cache_search(query, kb_items, client_id=client_id, project_id=pid)
                             for item in kb_items[:3]:
                                 content = item.get("content", "")
                                 source = item.get("sourceUrn", "?")

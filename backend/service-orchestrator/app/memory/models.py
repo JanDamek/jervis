@@ -117,7 +117,9 @@ class PendingWrite(BaseModel):
     source_urn: str
     content: str
     kind: str = "affair"
-    client_id: str = ""  # Client isolation for write buffer search
+    client_id: str = ""     # Client isolation for write buffer search
+    project_id: str = ""    # Project-level isolation
+    group_id: str = ""      # Group-level isolation
     metadata: dict = Field(default_factory=dict)
     priority: WritePriority = WritePriority.NORMAL
     created_at: str = ""  # ISO 8601

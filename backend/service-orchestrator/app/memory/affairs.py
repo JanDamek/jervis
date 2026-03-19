@@ -94,6 +94,7 @@ async def park_affair(
         content=affair.to_kb_document(),
         kind="affair",
         client_id=affair.client_id,
+        project_id=affair.project_id or "",
         metadata={
             "affair_id": affair.id,
             "title": affair.title,
@@ -168,6 +169,7 @@ async def resolve_affair(
         content=affair.to_kb_document(),
         kind="affair",
         client_id=affair.client_id,
+        project_id=affair.project_id or "",
         metadata={
             "affair_id": affair.id,
             "title": affair.title,
