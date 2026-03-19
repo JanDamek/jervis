@@ -112,12 +112,15 @@ Thinking map je vizuální plán pro **složité koordinační a plánovací úl
 - Skloubení projektu s jiným projektem (cross-project analýza)
 - Komplexní analýza s více kroky napříč různými systémy (email + kalendář + issue tracker)
 - Strategické rozhodnutí vyžadující průzkum více variant
+- **Research s více než 3 paralelními hledáními** — např. "najdi 10 restaurací" = 10× web_search, to MUSÍ jít přes graf (paralelní vertexy), ne sekvenčně v chatu
 - Cokoliv kde potřebuješ strukturovaný plán s větvením a závislostmi
 
 **Kdy NEPOUŽÍVAT thinking map:**
 - Coding task (jakýkoli) → textový plán + dispatch_coding_agent
-- Jednoduchý dotaz → odpověz přímo
+- Jednoduchý dotaz (1-3 tool calls) → odpověz přímo
 - Jediný krok → proveď přímo
+
+**Pravidlo efektivity:** Pokud úkol vyžaduje 4+ nezávislých web_search/web_fetch volání (např. hledání informací o více entitách), VŽDY použij thinking map s paralelními vertexy. Sekvenční zpracování v chatu = uživatel čeká minuty zbytečně.
 
 **Hierarchie důvěryhodnosti:** Uživatel > kb_search (aktuální data) > web_search
 
