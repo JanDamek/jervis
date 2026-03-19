@@ -468,7 +468,7 @@ async def test_model_endpoint(request: Request):
 
     start = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=30, write=10)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)) as client:
             resp = await client.post(
                 "https://openrouter.ai/api/v1/chat/completions",
                 json=openai_body, headers=headers,
@@ -484,7 +484,10 @@ async def test_model_endpoint(request: Request):
                 })
 
             data = resp.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            choices = data.get("choices") or []
+            first_choice = choices[0] if choices else {}
+            message = first_choice.get("message") or {}
+            content = message.get("content") or ""
             logger.info("TEST_MODEL: %s OK in %dms — response: %s", model_id, elapsed_ms, content[:50])
             return JSONResponse(content={
                 "ok": True, "model_id": model_id, "response_ms": elapsed_ms,

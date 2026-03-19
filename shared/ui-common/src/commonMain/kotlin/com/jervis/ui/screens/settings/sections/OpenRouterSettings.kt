@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.openrouter.ModelErrorDto
+import com.jervis.dto.openrouter.ModelTestResultDto
 import com.jervis.dto.openrouter.ModelQueueDto
 import com.jervis.dto.openrouter.OpenRouterCatalogModelDto
 import com.jervis.dto.openrouter.OpenRouterFallbackStrategy
@@ -347,25 +348,7 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                             modelQueues = modelQueues + (currentQueueName to currentModels.filterIndexed { i, _ -> i != index })
                                         },
                                         onTest = {
-                                            scope.launch {
-                                                snackbarHostState.showSnackbar("Testuji ${entry.label.ifEmpty { entry.modelId }}...")
-                                                try {
-                                                    val result = repository.openRouterSettings.testModel(entry.modelId)
-                                                    if (result.ok) {
-                                                        snackbarHostState.showSnackbar(
-                                                            "✓ ${entry.label.ifEmpty { entry.modelId }} — OK (${result.responseMs}ms): ${result.responsePreview}",
-                                                        )
-                                                    } else {
-                                                        snackbarHostState.showSnackbar(
-                                                            "✗ ${entry.label.ifEmpty { entry.modelId }} — CHYBA: ${result.error}",
-                                                        )
-                                                    }
-                                                } catch (e: Exception) {
-                                                    snackbarHostState.showSnackbar(
-                                                        "✗ Test selhal: ${e.message}",
-                                                    )
-                                                }
-                                            }
+                                            repository.openRouterSettings.testModel(entry.modelId)
                                         },
                                     )
                                 }
@@ -543,80 +526,104 @@ private fun QueueModelCard(
     onMoveDown: () -> Unit,
     onToggle: () -> Unit,
     onRemove: () -> Unit,
-    onTest: () -> Unit = {},
+    onTest: suspend () -> ModelTestResultDto? = { null },
 ) {
+    var testing by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<ModelTestResultDto?>(null) }
+    val scope = rememberCoroutineScope()
+
     JCard {
-        Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = JervisSpacing.touchTarget),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "${index + 1}.",
-                style = MaterialTheme.typography.titleMedium,
-                color = if (entry.enabled) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-
-            Spacer(Modifier.width(12.dp))
-
-            if (errorInfo != null) {
-                Icon(
-                    Icons.Default.Warning,
-                    contentDescription = "Model má chyby",
-                    tint = if (errorInfo.disabled) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
-                    },
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = JervisSpacing.touchTarget),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    entry.label.ifEmpty { entry.modelId },
-                    style = MaterialTheme.typography.bodyMedium,
+                    "${index + 1}.",
+                    style = MaterialTheme.typography.titleMedium,
                     color = if (entry.enabled) {
-                        MaterialTheme.colorScheme.onSurface
+                        MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
                 )
-                Text(
-                    buildString {
-                        append(entry.modelId)
-                        if (entry.isLocal) append(" (lokální GPU)")
-                        if (entry.maxContextTokens > 0) {
-                            append(" · ${entry.maxContextTokens / 1000}k ctx")
-                        }
-                        if (errorInfo != null) {
-                            if (errorInfo.disabled) {
-                                append(" · DISABLED")
-                            } else {
-                                append(" · ${errorInfo.errorCount}/3 chyb")
-                            }
-                        }
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (errorInfo?.disabled == true) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
 
-            if (!entry.isLocal) {
-                JIconButton(
-                    onClick = onTest,
-                    icon = Icons.Default.PlayArrow,
-                    contentDescription = "Otestovat model",
-                )
-            }
+                Spacer(Modifier.width(12.dp))
+
+                if (errorInfo != null) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = "Model má chyby",
+                        tint = if (errorInfo.disabled) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                        },
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        entry.label.ifEmpty { entry.modelId },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (entry.enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                    Text(
+                        buildString {
+                            append(entry.modelId)
+                            if (entry.isLocal) append(" (lokální GPU)")
+                            if (entry.maxContextTokens > 0) {
+                                append(" · ${entry.maxContextTokens / 1000}k ctx")
+                            }
+                            if (errorInfo != null) {
+                                if (errorInfo.disabled) {
+                                    append(" · DISABLED")
+                                } else {
+                                    append(" · ${errorInfo.errorCount}/3 chyb")
+                                }
+                            }
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (errorInfo?.disabled == true) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+
+                if (!entry.isLocal) {
+                    if (testing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        JIconButton(
+                            onClick = {
+                                scope.launch {
+                                    testing = true
+                                    testResult = null
+                                    try {
+                                        testResult = onTest()
+                                    } catch (_: Exception) {
+                                        testResult = ModelTestResultDto(ok = false, modelId = entry.modelId, error = "Připojení selhalo")
+                                    } finally {
+                                        testing = false
+                                    }
+                                }
+                            },
+                            icon = Icons.Default.PlayArrow,
+                            contentDescription = "Otestovat model",
+                        )
+                    }
+                }
             JIconButton(
                 onClick = onMoveUp,
                 icon = Icons.Default.ArrowUpward,
@@ -639,6 +646,32 @@ private fun QueueModelCard(
                 title = "Odebrat model?",
                 message = "Model \"${entry.label.ifEmpty { entry.modelId }}\" bude odebrán z fronty.",
             )
+            }
+
+            // Test result row
+            testResult?.let { result ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 28.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = if (result.ok) Icons.Default.Check else Icons.Default.Close,
+                        contentDescription = null,
+                        tint = if (result.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text(
+                        text = if (result.ok) {
+                            "OK (${result.responseMs}ms): ${result.responsePreview}"
+                        } else {
+                            "CHYBA: ${result.error}"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (result.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
         }
     }
 }
