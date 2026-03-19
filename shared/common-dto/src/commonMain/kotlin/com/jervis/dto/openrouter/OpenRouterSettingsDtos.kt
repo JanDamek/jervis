@@ -260,3 +260,21 @@ data class ModelErrorEntryDto(
     val message: String = "",
     val timestamp: Double = 0.0,
 )
+
+/**
+ * Result of testing a model via a tiny completion request.
+ * Used to verify a model actually responds before using it in production.
+ */
+@Serializable
+data class ModelTestResultDto(
+    /** Whether the model responded successfully */
+    val ok: Boolean,
+    /** Model ID that was tested */
+    val modelId: String = "",
+    /** Response time in milliseconds */
+    val responseMs: Int = 0,
+    /** Preview of the model's response (first 100 chars) */
+    val responsePreview: String = "",
+    /** Error message if test failed */
+    val error: String = "",
+)

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
@@ -345,6 +346,27 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                         onRemove = {
                                             modelQueues = modelQueues + (currentQueueName to currentModels.filterIndexed { i, _ -> i != index })
                                         },
+                                        onTest = {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("Testuji ${entry.label.ifEmpty { entry.modelId }}...")
+                                                try {
+                                                    val result = repository.openRouterSettings.testModel(entry.modelId)
+                                                    if (result.ok) {
+                                                        snackbarHostState.showSnackbar(
+                                                            "✓ ${entry.label.ifEmpty { entry.modelId }} — OK (${result.responseMs}ms): ${result.responsePreview}",
+                                                        )
+                                                    } else {
+                                                        snackbarHostState.showSnackbar(
+                                                            "✗ ${entry.label.ifEmpty { entry.modelId }} — CHYBA: ${result.error}",
+                                                        )
+                                                    }
+                                                } catch (e: Exception) {
+                                                    snackbarHostState.showSnackbar(
+                                                        "✗ Test selhal: ${e.message}",
+                                                    )
+                                                }
+                                            }
+                                        },
                                     )
                                 }
                             }
@@ -521,6 +543,7 @@ private fun QueueModelCard(
     onMoveDown: () -> Unit,
     onToggle: () -> Unit,
     onRemove: () -> Unit,
+    onTest: () -> Unit = {},
 ) {
     JCard {
         Row(
@@ -587,6 +610,13 @@ private fun QueueModelCard(
                 )
             }
 
+            if (!entry.isLocal) {
+                JIconButton(
+                    onClick = onTest,
+                    icon = Icons.Default.PlayArrow,
+                    contentDescription = "Otestovat model",
+                )
+            }
             JIconButton(
                 onClick = onMoveUp,
                 icon = Icons.Default.ArrowUpward,

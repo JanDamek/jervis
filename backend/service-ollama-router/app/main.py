@@ -434,6 +434,71 @@ async def reset_model_error_endpoint(request: Request):
     return JSONResponse(content={"model_id": model_id, "re_enabled": was_disabled})
 
 
+@app.post("/route-decision/test-model")
+async def test_model_endpoint(request: Request):
+    """Send a tiny completion to an OpenRouter model to verify it responds.
+
+    Input: {"model_id": "qwen/qwen3-next-80b-a3b-instruct:free"}
+    Output: {"ok": true/false, "model_id": "...", "response_ms": N, "response_preview": "...", "error": "..."}
+    """
+    body = await request.json()
+    model_id = body.get("model_id", "")
+    if not model_id:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "model_id required"})
+
+    from .openrouter_catalog import get_api_key
+
+    api_key = await get_api_key()
+    if not api_key:
+        return JSONResponse(content={"ok": False, "model_id": model_id, "error": "No OpenRouter API key configured"})
+
+    openai_body = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": "Reply with exactly: OK"}],
+        "stream": False,
+        "max_tokens": 10,
+        "temperature": 0.0,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://jervis.damek-soft.eu",
+        "X-Title": "Jervis AI Assistant",
+    }
+
+    start = time.monotonic()
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=30, write=10)) as client:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                json=openai_body, headers=headers,
+            )
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+
+            if resp.status_code != 200:
+                error_text = resp.text[:300]
+                logger.warning("TEST_MODEL: %s returned %d: %s", model_id, resp.status_code, error_text)
+                return JSONResponse(content={
+                    "ok": False, "model_id": model_id, "response_ms": elapsed_ms,
+                    "error": f"HTTP {resp.status_code}: {error_text}",
+                })
+
+            data = resp.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            logger.info("TEST_MODEL: %s OK in %dms — response: %s", model_id, elapsed_ms, content[:50])
+            return JSONResponse(content={
+                "ok": True, "model_id": model_id, "response_ms": elapsed_ms,
+                "response_preview": content[:100],
+            })
+    except Exception as e:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        logger.warning("TEST_MODEL: %s error: %s", model_id, e)
+        return JSONResponse(content={
+            "ok": False, "model_id": model_id, "response_ms": elapsed_ms,
+            "error": str(e)[:300],
+        })
+
+
 # ── Whisper GPU coordination (p40-2) ──────────────────────────────────
 
 @app.post("/router/whisper-notify")

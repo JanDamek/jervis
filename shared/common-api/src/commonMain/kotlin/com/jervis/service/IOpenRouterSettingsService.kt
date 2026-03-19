@@ -1,6 +1,7 @@
 package com.jervis.service
 
 import com.jervis.dto.openrouter.ModelErrorDto
+import com.jervis.dto.openrouter.ModelTestResultDto
 import com.jervis.dto.openrouter.OpenRouterCatalogModelDto
 import com.jervis.dto.openrouter.OpenRouterFiltersDto
 import com.jervis.dto.openrouter.OpenRouterSettingsDto
@@ -26,4 +27,7 @@ interface IOpenRouterSettingsService {
 
     /** Reset error state for a model in the router (re-enables it). Returns true if it was disabled. */
     suspend fun resetModelError(modelId: String): Boolean
+
+    /** Test a specific model by sending a tiny completion request. Verifies model actually responds. */
+    suspend fun testModel(modelId: String): ModelTestResultDto
 }

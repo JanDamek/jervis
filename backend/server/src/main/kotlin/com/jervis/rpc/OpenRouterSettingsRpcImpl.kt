@@ -1,6 +1,17 @@
 package com.jervis.rpc
 
-import com.jervis.dto.openrouter.*
+import com.jervis.dto.openrouter.ModelErrorDto
+import com.jervis.dto.openrouter.ModelErrorEntryDto
+import com.jervis.dto.openrouter.ModelTestResultDto
+import com.jervis.dto.openrouter.OpenRouterCatalogModelDto
+import com.jervis.dto.openrouter.OpenRouterFallbackStrategy
+import com.jervis.dto.openrouter.OpenRouterFiltersDto
+import com.jervis.dto.openrouter.OpenRouterModelEntryDto
+import com.jervis.dto.openrouter.OpenRouterModelUseCase
+import com.jervis.dto.openrouter.OpenRouterSettingsDto
+import com.jervis.dto.openrouter.OpenRouterSettingsUpdateDto
+import com.jervis.dto.openrouter.ModelQueueDto
+import com.jervis.dto.openrouter.QueueModelEntryDto
 import com.jervis.entity.ModelQueue
 import com.jervis.entity.OpenRouterFilters
 import com.jervis.entity.OpenRouterModelEntry
@@ -184,6 +195,30 @@ class OpenRouterSettingsRpcImpl(
         } catch (e: Exception) {
             logger.warn { "Failed to reset model error via router: ${e.message}" }
             false
+        }
+    }
+
+    override suspend fun testModel(modelId: String): ModelTestResultDto {
+        return try {
+            val baseUrl = routerUrl.trimEnd('/')
+            val response: JsonObject = httpClient.post("$baseUrl/route-decision/test-model") {
+                contentType(ContentType.Application.Json)
+                setBody(mapOf("model_id" to modelId))
+            }.body()
+            ModelTestResultDto(
+                ok = response["ok"]?.jsonPrimitive?.boolean ?: false,
+                modelId = response["model_id"]?.jsonPrimitive?.content ?: modelId,
+                responseMs = response["response_ms"]?.jsonPrimitive?.int ?: 0,
+                responsePreview = response["response_preview"]?.jsonPrimitive?.content ?: "",
+                error = response["error"]?.jsonPrimitive?.content ?: "",
+            )
+        } catch (e: Exception) {
+            logger.warn { "Failed to test model $modelId via router: ${e.message}" }
+            ModelTestResultDto(
+                ok = false,
+                modelId = modelId,
+                error = e.message ?: "Connection to router failed",
+            )
         }
     }
 
