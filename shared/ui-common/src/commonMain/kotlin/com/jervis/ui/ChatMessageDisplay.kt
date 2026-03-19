@@ -22,9 +22,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Stop
@@ -152,8 +149,6 @@ internal fun ChatArea(
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    val focusManager = LocalFocusManager.current
-
     // reverseLayout=true: item 0 is at the bottom of the screen.
     val reversedMessages = remember(messages) { messages.asReversed() }
 
@@ -193,19 +188,7 @@ internal fun ChatArea(
             LazyColumn(
                 state = listState,
                 reverseLayout = true,
-                modifier = Modifier.fillMaxSize()
-                    .pointerInput(Unit) {
-                        // Dismiss keyboard on tap outside input field.
-                        // Use Main pass (not Initial) so SelectionContainer handles selection first.
-                        awaitPointerEventScope {
-                            while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Main)
-                                if (event.changes.any { it.pressed && !it.isConsumed }) {
-                                    focusManager.clearFocus()
-                                }
-                            }
-                        }
-                    },
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
