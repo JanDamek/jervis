@@ -66,30 +66,44 @@ def _classify_source_type(source_urn: str) -> str:
 
 
 class SourceTracker:
-    """Tracks KB sources used during an agentic loop execution.
+    """Tracks KB sources and web evidence used during an agentic loop execution.
 
     Create one per chat request. Call add_tool_result() after each
-    kb_search execution. Call build_metadata() at finalization.
+    tool execution. Call build_metadata() at finalization.
+
+    Tracks two kinds of evidence:
+    - KB sources (sourceUrns from kb_search results)
+    - Web evidence (URLs, snippets, page content from web_search/web_fetch)
     """
 
     def __init__(self) -> None:
         self._sources: list[dict] = []
         self._seen_urns: set[str] = set()
+        # Web evidence: collected text from web_search snippets and web_fetch content.
+        # Used by fact-checker to verify claims against actual tool results.
+        self._web_evidence: list[str] = []
 
     def add_tool_result(self, tool_name: str, result: str) -> None:
         """Process a tool result and extract source attributions.
 
-        Only processes kb_search results (code_search kept for backward compat).
+        Processes kb_search for source URNs, and web_search/web_fetch
+        for web evidence used in fact-checking.
         """
-        if tool_name not in ("kb_search", "code_search"):
-            return
+        if tool_name in ("kb_search", "code_search"):
+            sources = extract_sources(result)
+            for source in sources:
+                urn = source["sourceUrn"]
+                if urn not in self._seen_urns:
+                    self._seen_urns.add(urn)
+                    self._sources.append(source)
 
-        sources = extract_sources(result)
-        for source in sources:
-            urn = source["sourceUrn"]
-            if urn not in self._seen_urns:
-                self._seen_urns.add(urn)
-                self._sources.append(source)
+        if tool_name in ("web_search", "web_fetch"):
+            self._web_evidence.append(result)
+
+    @property
+    def web_evidence_text(self) -> str:
+        """Combined text from all web_search and web_fetch results."""
+        return "\n".join(self._web_evidence)
 
     @property
     def sources(self) -> list[dict]:

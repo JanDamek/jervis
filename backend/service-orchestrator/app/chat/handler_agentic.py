@@ -206,7 +206,8 @@ async def run_agentic_loop(
 
             # Fact-check + topic tracking — parallel
             fc_result, topics = await asyncio.gather(
-                run_fact_check(final_text, effective_client_id, effective_project_id),
+                run_fact_check(final_text, effective_client_id, effective_project_id,
+                               web_evidence=source_tracker.web_evidence_text),
                 detect_topics(request.message, final_text, used_tools),
             )
             await update_conversation_topics(request.session_id, topics)
@@ -267,7 +268,16 @@ async def run_agentic_loop(
             logger.warning("Chat: drift detected (%s), forcing response", drift_reason)
             messages.append({
                 "role": "system",
-                "content": f"STOP — {drift_reason}. Odpověz uživateli s tím co víš. Nevolej žádné další tools.",
+                "content": (
+                    f"STOP — {drift_reason}.\n\n"
+                    "PRAVIDLA PRO ODPOVĚĎ:\n"
+                    "1. Odpověz POUZE na základě dat z tool výsledků výše (web_search, web_fetch, kb_search).\n"
+                    "2. NIKDY nedoplňuj chybějící údaje (adresy, ceny, hodnocení, telefonní čísla) z vlastních znalostí.\n"
+                    "3. Pokud pro některou entitu nemáš ověřená data z tool výsledků → napiš 'nenalezeno' nebo entitu vynech.\n"
+                    "4. U každého tvrzení uveď zdroj (URL z web_search výsledku).\n"
+                    "5. Raději uveď 3 ověřené výsledky než 10 neověřených.\n"
+                    "Nevolej žádné další tools."
+                ),
             })
             break_response = await call_llm(messages=messages, tier=tier, route=route,
                                               max_tier=max_tier, estimated_tokens=estimated)
@@ -275,7 +285,8 @@ async def run_agentic_loop(
 
             # Fact-check + topic tracking — parallel
             fc_result, drift_topics = await asyncio.gather(
-                run_fact_check(final_text, effective_client_id, effective_project_id),
+                run_fact_check(final_text, effective_client_id, effective_project_id,
+                               web_evidence=source_tracker.web_evidence_text),
                 detect_topics(request.message, final_text, used_tools),
             )
             await update_conversation_topics(request.session_id, drift_topics)

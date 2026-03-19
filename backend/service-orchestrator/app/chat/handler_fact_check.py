@@ -5,6 +5,8 @@ metadata formatting. Called from handler_agentic.py and handler.py
 at every response finalization point.
 
 EPIC 14-S1: Wires the existing fact-checker into the agentic loop.
+EPIC 14-S3: Active fact-checking — verifies real-world claims against
+            actual web_search/web_fetch tool results.
 """
 from __future__ import annotations
 
@@ -19,8 +21,15 @@ async def run_fact_check(
     response_text: str,
     client_id: str | None,
     project_id: str | None,
+    web_evidence: str = "",
 ) -> FactCheckResult | None:
-    """Run fact-check with error handling. Returns None on failure."""
+    """Run fact-check with error handling. Returns None on failure.
+
+    Args:
+        web_evidence: Combined text from web_search/web_fetch results
+                      collected during this loop. Passed to fact-checker
+                      for real-world entity verification.
+    """
     if not client_id:
         return None
     try:
@@ -28,6 +37,7 @@ async def run_fact_check(
             response_text=response_text,
             client_id=client_id,
             project_id=project_id,
+            web_evidence=web_evidence,
         )
     except Exception as e:
         logger.warning("Fact-check failed (non-fatal): %s", e)

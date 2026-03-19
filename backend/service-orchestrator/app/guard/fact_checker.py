@@ -3,12 +3,10 @@
 Post-processing step that verifies factual claims in LLM responses.
 Runs after each assistant response in the agentic loop.
 
-Checks:
-1. File paths → verify against git workspace / KB
-2. URLs → verify format and known domains
-3. Code references → verify against KB code chunks
-4. Numeric values → cross-reference with KB
-5. Attribution → ensure claims have sources
+Two modes:
+1. Code claims (file paths, code refs, URLs) → verify against KB
+2. Real-world entity claims (names, addresses, ratings) → verify against
+   actual web_search/web_fetch tool results collected during the loop.
 
 Output: annotated response with verification status per claim.
 """
@@ -36,6 +34,7 @@ class ClaimType(str, Enum):
     CODE_REFERENCE = "CODE_REFERENCE"
     NUMERIC_VALUE = "NUMERIC_VALUE"
     GENERAL_FACT = "GENERAL_FACT"
+    REAL_WORLD_ENTITY = "REAL_WORLD_ENTITY"
 
 
 @dataclass
@@ -70,6 +69,16 @@ _API_ENDPOINT_PATTERN = re.compile(
 _CODE_REF_PATTERN = re.compile(
     r'`([A-Z][a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)*)`',
 )
+
+# Patterns for real-world entity claims (restaurants, businesses, places)
+# Phone numbers (Czech format)
+_PHONE_PATTERN = re.compile(r'\+?\d{3}[\s-]?\d{3}[\s-]?\d{3,4}')
+# Ratings like "4.5/5", "4.8 z 5", "4.6/5 (Google, 150)"
+_RATING_PATTERN = re.compile(r'(\d\.\d)\s*/\s*5\s*(?:\([^)]*\))?')
+# Email addresses
+_EMAIL_PATTERN = re.compile(r'[\w.-]+@[\w.-]+\.\w{2,}')
+# Price ranges (Czech crowns)
+_PRICE_PATTERN = re.compile(r'\d{2,5}\s*(?:Kč|CZK|korun)')
 
 
 def extract_claims(text: str) -> list[FactClaim]:
@@ -108,6 +117,28 @@ def extract_claims(text: str) -> list[FactClaim]:
                 claim_type=ClaimType.CODE_REFERENCE,
             ))
 
+    # Real-world entity claims: phone numbers, ratings, emails, prices
+    for match in _PHONE_PATTERN.finditer(text):
+        claims.append(FactClaim(
+            claim=match.group(0),
+            claim_type=ClaimType.REAL_WORLD_ENTITY,
+        ))
+    for match in _RATING_PATTERN.finditer(text):
+        claims.append(FactClaim(
+            claim=match.group(0),
+            claim_type=ClaimType.REAL_WORLD_ENTITY,
+        ))
+    for match in _EMAIL_PATTERN.finditer(text):
+        claims.append(FactClaim(
+            claim=match.group(0),
+            claim_type=ClaimType.REAL_WORLD_ENTITY,
+        ))
+    for match in _PRICE_PATTERN.finditer(text):
+        claims.append(FactClaim(
+            claim=match.group(0),
+            claim_type=ClaimType.REAL_WORLD_ENTITY,
+        ))
+
     return claims
 
 
@@ -115,17 +146,22 @@ async def verify_claims(
     claims: list[FactClaim],
     client_id: str,
     project_id: str | None,
+    web_evidence: str = "",
 ) -> list[FactClaim]:
-    """Verify extracted claims against KB and workspace.
+    """Verify extracted claims against KB, workspace, and web evidence.
 
     For each claim:
     - FILE_PATH → check via KB code_search or workspace file listing
     - URL → basic format validation (no external fetch)
     - CODE_REFERENCE → search KB for matching class/function
     - API_ENDPOINT → search KB for matching routes
+    - REAL_WORLD_ENTITY → verify against collected web_search/web_fetch results
     """
     if not claims:
         return claims
+
+    # Normalize web evidence for substring matching
+    web_evidence_lower = web_evidence.lower() if web_evidence else ""
 
     for claim in claims:
         try:
@@ -146,6 +182,11 @@ async def verify_claims(
                 claim.status, claim.confidence = await _verify_code_ref(
                     claim.claim, client_id, project_id,
                 )
+            elif claim.claim_type == ClaimType.REAL_WORLD_ENTITY:
+                # Verify against actual web tool results
+                claim.status, claim.confidence = _verify_against_web_evidence(
+                    claim.claim, web_evidence_lower,
+                )
             elif claim.claim_type == ClaimType.API_ENDPOINT:
                 claim.status = VerificationStatus.UNVERIFIED
                 claim.confidence = 0.5
@@ -155,6 +196,32 @@ async def verify_claims(
             claim.confidence = 0.3
 
     return claims
+
+
+def _verify_against_web_evidence(
+    claim: str,
+    web_evidence_lower: str,
+) -> tuple[VerificationStatus, float]:
+    """Verify a real-world claim against collected web evidence.
+
+    Checks if the claim value (phone number, rating, email, price)
+    appears in actual web_search/web_fetch results from this session.
+    """
+    if not web_evidence_lower:
+        return VerificationStatus.UNVERIFIED, 0.2
+
+    # Normalize the claim for matching
+    claim_normalized = claim.strip().lower()
+    # For phone numbers, also try without spaces/dashes
+    claim_compact = re.sub(r'[\s-]', '', claim_normalized)
+
+    if claim_normalized in web_evidence_lower:
+        return VerificationStatus.VERIFIED, 0.9
+
+    if claim_compact and claim_compact in web_evidence_lower.replace(' ', '').replace('-', ''):
+        return VerificationStatus.VERIFIED, 0.85
+
+    return VerificationStatus.UNVERIFIED, 0.2
 
 
 async def _verify_file_path(
@@ -221,17 +288,22 @@ async def fact_check_response(
     response_text: str,
     client_id: str,
     project_id: str | None,
+    web_evidence: str = "",
 ) -> FactCheckResult:
     """Run the full fact-checking pipeline on an LLM response.
 
     This is the main entry point, called as a post-processing step
     after each assistant response in the agentic loop.
+
+    Args:
+        web_evidence: Combined text from web_search/web_fetch tool results
+                      collected during this agentic loop session.
     """
     claims = extract_claims(response_text)
     if not claims:
         return FactCheckResult(overall_confidence=0.8)  # No claims to verify
 
-    verified_claims = await verify_claims(claims, client_id, project_id)
+    verified_claims = await verify_claims(claims, client_id, project_id, web_evidence)
 
     verified = sum(1 for c in verified_claims if c.status == VerificationStatus.VERIFIED)
     unverified = sum(1 for c in verified_claims if c.status == VerificationStatus.UNVERIFIED)
@@ -252,8 +324,8 @@ async def fact_check_response(
     )
 
     logger.info(
-        "FACT_CHECK | claims=%d | verified=%d | unverified=%d | contradicted=%d | confidence=%.2f",
-        total, verified, unverified, contradicted, overall,
+        "FACT_CHECK | claims=%d | verified=%d | unverified=%d | contradicted=%d | confidence=%.2f | web_evidence_len=%d",
+        total, verified, unverified, contradicted, overall, len(web_evidence),
     )
 
     return result

@@ -18,6 +18,7 @@ from enum import Enum
 
 from app.tools.definitions import (
     TOOL_WEB_SEARCH,
+    TOOL_WEB_FETCH,
     TOOL_KB_SEARCH,
     TOOL_KB_DELETE,
     TOOL_STORE_KNOWLEDGE,
@@ -849,6 +850,7 @@ CHAT_TOOLS: list[dict] = [
     TOOL_KB_SEARCH,
     TOOL_KB_DELETE,
     TOOL_WEB_SEARCH,
+    TOOL_WEB_FETCH,
     TOOL_STORE_KNOWLEDGE,
     TOOL_MEMORY_STORE,
     TOOL_MEMORY_RECALL,
@@ -883,6 +885,7 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_KB_SEARCH,
         TOOL_KB_DELETE,
         TOOL_WEB_SEARCH,
+        TOOL_WEB_FETCH,
         TOOL_MEMORY_RECALL,
         TOOL_STORE_KNOWLEDGE,
         TOOL_DISPATCH_CODING_AGENT,
