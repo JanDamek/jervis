@@ -139,8 +139,8 @@ class Settings(BaseSettings):
     token_estimate_ratio: int = 4            # Chars-per-token ratio (rough, for cs/en)
 
     # Chat handler constants
-    chat_max_iterations: int = 100           # Safety ceiling only — actual stop by stagnation/loop detection
-    chat_max_iterations_long: int = 100      # Same — no artificial restriction
+    chat_max_iterations: int = 200           # Safety ceiling only — actual stop by stagnation/loop detection
+    chat_max_iterations_long: int = 200      # Same — no artificial restriction
     decompose_threshold: int = 8000          # Chars to trigger decomposition (~2k tokens)
     summarize_threshold: int = 16000         # Chars to trigger pre-summarization
     subtopic_max_iterations: int = 3         # Max iterations per sub-topic

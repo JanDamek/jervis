@@ -269,7 +269,8 @@ async def run_agentic_loop(
                 "role": "system",
                 "content": f"STOP — {drift_reason}. Odpověz uživateli s tím co víš. Nevolej žádné další tools.",
             })
-            break_response = await call_llm(messages=messages, tier=tier)
+            break_response = await call_llm(messages=messages, tier=tier, route=route,
+                                              max_tier=max_tier, estimated_tokens=estimated)
             final_text = break_response.choices[0].message.content or "Nemám dostatek informací pro odpověď."
 
             # Fact-check + topic tracking — parallel
@@ -563,7 +564,8 @@ async def run_agentic_loop(
         "content": "Dosáhl jsi maximálního počtu iterací. Odpověz uživateli s tím co víš. Nevolej žádné tools.",
     })
     try:
-        final_resp = await call_llm(messages=messages, tier=tier)
+        final_resp = await call_llm(messages=messages, tier=tier, route=route,
+                                       max_tier=max_tier, estimated_tokens=estimated)
         final_text = final_resp.choices[0].message.content or "Omlouvám se, vyčerpal jsem limit operací."
 
         # EPIC 14-S1 + EPIC 9-S1: Fact-check + topic detection in parallel

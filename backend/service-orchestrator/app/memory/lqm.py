@@ -193,17 +193,21 @@ class LocalQuickMemory:
         await self._write_buffer.put(write)
         self._stats["buffer_writes"] += 1
 
-    def search_write_buffer(self, query: str) -> list[dict]:
+    def search_write_buffer(self, query: str, client_id: str = "") -> list[dict]:
         """Keyword match on buffered writes not yet flushed to KB.
 
         Simple case-insensitive substring match — not semantic,
         but catches exact matches on recently stored data.
+        Filters by client_id to prevent cross-client data leakage.
         """
         results = []
         query_lower = query.lower()
         # Peek at queue items without consuming them
         items = list(self._write_buffer._queue)
         for item in items:
+            # Client isolation: skip items from other clients
+            if client_id and item.client_id and item.client_id != client_id:
+                continue
             searchable = f"{item.source_urn} {item.content}".lower()
             if query_lower in searchable:
                 results.append({
@@ -236,21 +240,24 @@ class LocalQuickMemory:
 
     # ----- Layer 3: Search cache (Warm) -----
 
-    def cache_search(self, query: str, results: list[dict]) -> None:
-        """Cache KB search results for a query."""
-        self._search_cache.put(query, results)
+    def cache_search(self, query: str, results: list[dict], client_id: str = "") -> None:
+        """Cache KB search results for a query, scoped by client_id."""
+        cache_key = f"{client_id}:{query}" if client_id else query
+        self._search_cache.put(cache_key, results)
 
-    def get_cached_search(self, query: str) -> list[dict] | None:
-        """Return cached search results, or None on miss."""
-        result = self._search_cache.get(query)
+    def get_cached_search(self, query: str, client_id: str = "") -> list[dict] | None:
+        """Return cached search results, or None on miss. Scoped by client_id."""
+        cache_key = f"{client_id}:{query}" if client_id else query
+        result = self._search_cache.get(cache_key)
         if result is not None:
             self._stats["cache_hits"] += 1
         else:
             self._stats["cache_misses"] += 1
         return result
 
-    def invalidate_search(self, query: str) -> None:
-        self._search_cache.invalidate(query)
+    def invalidate_search(self, query: str, client_id: str = "") -> None:
+        cache_key = f"{client_id}:{query}" if client_id else query
+        self._search_cache.invalidate(cache_key)
 
     # ----- Lifecycle -----
 

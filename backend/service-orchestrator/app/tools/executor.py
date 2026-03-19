@@ -784,7 +784,7 @@ async def _execute_web_search(query: str, max_results: int = 5) -> str:
         title = _sanitize_text(r.get("title", "Untitled"))
         url_str = r.get("url", "")
         content = _sanitize_text(r.get("content", ""))[:400]
-        lines.append(f"## Result {i}: {title}")
+        lines.append(f"**Result {i}: {title}**")
         lines.append(f"URL: {url_str}")
         if content:
             lines.append(content)
@@ -963,7 +963,7 @@ async def _execute_kb_search(
         content = item.get("content", "")  # Full chunk content — already chunked by RAG (1000 chars)
         score = item.get("score", 0)
         kind = item.get("kind", "")
-        lines.append(f"## Result {i} (score: {score:.2f}, kind: {kind})")
+        lines.append(f"**Result {i}** (score: {score:.2f}, kind: {kind})")
         lines.append(f"Source: {source}")
         if content:
             lines.append(content)
@@ -1252,6 +1252,14 @@ async def _execute_create_scheduled_task(
             resp.raise_for_status()
             data = resp.json()
             task_id = data.get("taskId", "unknown")
+            # Server-side dedup: task already existed
+            if data.get("deduplicated") == "true":
+                return (
+                    f"⚠ Scheduled task already exists (deduplicated).\n"
+                    f"Existing task ID: {task_id} (state: {data.get('state', '?')})\n"
+                    f"Title: {data.get('name', title)}\n"
+                    f"No new task created — avoid duplicate follow-ups."
+                )
     except httpx.TimeoutException:
         return f"Error: Task creation timed out after 5s for: {title}"
     except httpx.HTTPStatusError as e:
@@ -1811,7 +1819,7 @@ async def _execute_code_search(
         content = item.get("content", "")  # Full chunk content — already chunked by RAG (1000 chars)
         score = item.get("score", 0)
         kind = item.get("kind", "")
-        lines.append(f"### Result {i} (score: {score:.2f}, kind: {kind})")
+        lines.append(f"**Result {i}** (score: {score:.2f}, kind: {kind})")
         lines.append(f"Source: {source}")
         if content:
             lines.append(f"```\n{content}\n```")
@@ -2391,6 +2399,7 @@ async def _execute_memory_store(
             source_urn=f"memory:{client_id}:{subject[:50]}",
             content=f"# {subject}\n\n{content}",
             kind=kind_map.get(category, "user_knowledge_fact"),
+            client_id=client_id,
             metadata={
                 "category": category,
                 "subject": subject,
@@ -2436,7 +2445,7 @@ async def _execute_memory_recall(
 
         # Search write buffer (recent unsync'd writes)
         if scope in ("current", "all"):
-            buffer_hits = lqm.search_write_buffer(query)
+            buffer_hits = lqm.search_write_buffer(query, client_id=client_id)
             for hit in buffer_hits[:3]:
                 results.append(
                     f"[Memory Buffer] {hit.get('source_urn', '?')}\n{hit.get('content', '')}"
@@ -2466,7 +2475,7 @@ async def _execute_memory_recall(
 
         # Search cache / KB
         if scope in ("all", "kb_only"):
-            cached = lqm.get_cached_search(query)
+            cached = lqm.get_cached_search(query, client_id=client_id)
             if cached is not None:
                 for item in cached[:3]:
                     content = item.get("content", "")
@@ -2487,7 +2496,7 @@ async def _execute_memory_recall(
                         )
                         if resp.status_code == 200:
                             kb_items = resp.json().get("items", [])
-                            lqm.cache_search(query, kb_items)
+                            lqm.cache_search(query, kb_items, client_id=client_id)
                             for item in kb_items[:3]:
                                 content = item.get("content", "")
                                 source = item.get("sourceUrn", "?")

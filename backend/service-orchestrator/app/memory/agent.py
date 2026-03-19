@@ -251,12 +251,12 @@ class MemoryAgent:
 
         # Check LQM write buffer
         if scope in ("current", "all"):
-            buffer_hits = self.lqm.search_write_buffer(query)
+            buffer_hits = self.lqm.search_write_buffer(query, client_id=self.client_id)
             results.extend(buffer_hits[:3])
 
         # Check search cache
         if scope in ("all", "kb_only"):
-            cached = self.lqm.get_cached_search(query)
+            cached = self.lqm.get_cached_search(query, client_id=self.client_id)
             if cached is not None:
                 results.extend(cached)
                 return results
@@ -278,7 +278,7 @@ class MemoryAgent:
                     if resp.status_code == 200:
                         kb_results = resp.json().get("chunks", [])
                         # Cache results
-                        self.lqm.cache_search(query, kb_results)
+                        self.lqm.cache_search(query, kb_results, client_id=self.client_id)
                         results.extend(kb_results)
             except Exception as e:
                 logger.warning("KB search failed: %s", e)
@@ -319,6 +319,7 @@ class MemoryAgent:
             source_urn=f"memory:{self.client_id}:{subject[:50]}",
             content=f"# {subject}\n\n{content}",
             kind=kind_map.get(category, "user_knowledge_fact"),
+            client_id=self.client_id,
             metadata={
                 "category": category,
                 "subject": subject,
@@ -332,7 +333,7 @@ class MemoryAgent:
         await self.lqm.buffer_write(write)
 
         # Invalidate relevant search cache
-        self.lqm.invalidate_search(subject)
+        self.lqm.invalidate_search(subject, client_id=self.client_id)
 
         return f"Stored: '{subject}' ({category})"
 
