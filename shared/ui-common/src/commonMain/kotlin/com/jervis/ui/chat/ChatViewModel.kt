@@ -358,6 +358,52 @@ class ChatViewModel(
     }
 
     /**
+     * Dismiss (ignore) a user task — moves to DONE without processing.
+     * Optimistically removes the alert from chat and decrements badge.
+     */
+    fun dismissTask(taskId: String) {
+        // Optimistically remove the alert/background result bubble from chat
+        _chatMessages.value = _chatMessages.value.filter { msg ->
+            !((msg.messageType == ChatMessage.MessageType.URGENT_ALERT ||
+                    msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT) &&
+                msg.metadata["taskId"] == taskId)
+        }
+        _userTaskCount.update { (it - 1).coerceAtLeast(0) }
+
+        scope.launch {
+            try {
+                repository.userTasks.dismiss(taskId)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("ChatViewModel: dismissTask failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Dismiss ALL pending user tasks — bulk move to DONE.
+     * Clears all URGENT_ALERT and actionable BACKGROUND_RESULT from chat.
+     */
+    fun dismissAllTasks() {
+        scope.launch {
+            try {
+                val count = repository.userTasks.dismissAll()
+                // Remove all urgent alerts and actionable background results from chat
+                _chatMessages.value = _chatMessages.value.filter { msg ->
+                    msg.messageType != ChatMessage.MessageType.URGENT_ALERT &&
+                        !(msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT &&
+                            msg.metadata["needsReaction"] == "true")
+                }
+                _userTaskCount.value = 0
+                println("ChatViewModel: dismissAll — $count tasks dismissed")
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("ChatViewModel: dismissAll failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
      * Load task graph on demand. Caches result so subsequent calls are no-ops.
      * null value in the map means "loading in progress".
      */

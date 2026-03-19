@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Warning
@@ -140,6 +141,7 @@ internal fun ChatArea(
     onEditMessage: (String) -> Unit = {},
     onReplyToTask: (taskId: String) -> Unit = {},
     onSendReply: (taskId: String, text: String) -> Unit = { _, _ -> },
+    onDismissTask: (taskId: String) -> Unit = {},
     onTtsPlay: (String) -> Unit = {},
     isTtsPlaying: Boolean = false,
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
@@ -222,6 +224,7 @@ internal fun ChatArea(
                         onEditMessage = onEditMessage,
                         onReplyToTask = onReplyToTask,
                         onSendReply = onSendReply,
+                        onDismissTask = onDismissTask,
                         onTtsPlay = onTtsPlay,
                         isTtsPlaying = isTtsPlaying,
                         taskGraphs = taskGraphs,
@@ -387,6 +390,7 @@ private fun ChatMessageItem(
     onEditMessage: (String) -> Unit = {},
     onReplyToTask: (taskId: String) -> Unit = {},
     onSendReply: (taskId: String, text: String) -> Unit = { _, _ -> },
+    onDismissTask: (taskId: String) -> Unit = {},
     onTtsPlay: (String) -> Unit = {},
     isTtsPlaying: Boolean = false,
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
@@ -777,22 +781,41 @@ private fun ChatMessageItem(
                             )
                         }
                     }
-                    if (taskId != null && !showReplyInput && !hasResponse) {
-                        TextButton(
-                            onClick = { showReplyInput = true },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                "Reagovat",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
+                    val dismissId = taskId ?: message.id
+                    if (dismissId != null && !showReplyInput && !hasResponse) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(
+                                onClick = { onDismissTask(dismissId) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.height(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.VisibilityOff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    "Ignorovat",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                            TextButton(
+                                onClick = { showReplyInput = true },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.height(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    "Reagovat",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
                         }
                     }
                 }
@@ -1013,6 +1036,24 @@ private fun ChatMessageItem(
                     }
                     if (!showAlertReply && !alertHasResponse) {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (alertTaskId != null) {
+                                TextButton(
+                                    onClick = { onDismissTask(alertTaskId) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(28.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.VisibilityOff,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        "Ignorovat",
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                }
+                            }
                             TextButton(
                                 onClick = { showAlertReply = true },
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),

@@ -36,4 +36,10 @@ interface IUserTaskService {
 
     /** Respond to a task inline (from chat "Reagovat" button). Bypasses chat pipeline. */
     suspend fun respondToTask(taskId: String, response: String)
+
+    /** Dismiss (ignore) a user task — moves to DONE without processing. Data preserved. */
+    suspend fun dismiss(taskId: String)
+
+    /** Dismiss ALL pending user tasks — bulk move to DONE. Returns count of dismissed tasks. */
+    suspend fun dismissAll(): Int
 }

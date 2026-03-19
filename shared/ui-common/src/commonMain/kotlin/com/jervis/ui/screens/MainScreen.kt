@@ -89,6 +89,8 @@ fun MainScreen(
         onEditMessage = viewModel.chat::editMessage,
         onReplyToTask = viewModel.chat::replyToTask,
         onSendReply = viewModel.chat::sendReplyToTask,
+        onDismissTask = viewModel.chat::dismissTask,
+        onDismissAllTasks = viewModel.chat::dismissAllTasks,
         onLoadMore = viewModel.chat::loadMoreHistory,
         onAttachFile = viewModel.chat::attachFile,
         onRemoveAttachment = viewModel.chat::removeAttachment,

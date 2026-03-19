@@ -12,8 +12,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -82,6 +85,7 @@ fun UserTasksScreen(
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var taskToDelete by remember { mutableStateOf<UserTaskListItemDto?>(null) }
+    var isDismissing by remember { mutableStateOf<String?>(null) }
 
     val scope = rememberCoroutineScope()
 
@@ -144,6 +148,28 @@ fun UserTasksScreen(
                 throw e
             } catch (e: Exception) {
                 errorMessage = "Chyba mazání úlohy: ${e.message}"
+            }
+        }
+    }
+
+    fun handleDismiss(item: UserTaskListItemDto) {
+        isDismissing = item.id
+        scope.launch {
+            try {
+                repository.userTasks.dismiss(item.id)
+                // Optimistic removal
+                if (selectedListItem?.id == item.id) {
+                    selectedListItem = null
+                    selectedFullTask = null
+                }
+                listItems = listItems.filter { it.id != item.id }
+                totalCount = (totalCount - 1).coerceAtLeast(0)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                errorMessage = "Chyba ignorování úlohy: ${e.message}"
+            } finally {
+                isDismissing = null
             }
         }
     }
@@ -243,6 +269,7 @@ fun UserTasksScreen(
                 UserTaskListRow(
                     item = item,
                     onClick = { selectTask(item) },
+                    onDismiss = { handleDismiss(item) },
                     onDelete = {
                         taskToDelete = item
                         showDeleteConfirm = true
@@ -271,6 +298,9 @@ fun UserTasksScreen(
                             }
                         },
                         onError = { errorMessage = it },
+                        onDismiss = {
+                            selectedListItem?.let { handleDismiss(it) }
+                        },
                         onDelete = {
                             selectedListItem?.let {
                                 taskToDelete = it
@@ -298,6 +328,7 @@ fun UserTasksScreen(
 private fun UserTaskListRow(
     item: UserTaskListItemDto,
     onClick: () -> Unit,
+    onDismiss: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val (stateLabel, stateColor) = userTaskStateBadge(item.state)
@@ -345,6 +376,18 @@ private fun UserTaskListRow(
                     )
                 }
             }
+            if (item.state == "USER_TASK") {
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(JervisSpacing.touchTarget),
+                ) {
+                    Icon(
+                        Icons.Default.VisibilityOff,
+                        contentDescription = "Ignorovat",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             DeleteIconButton(onClick = onDelete)
             Spacer(Modifier.width(4.dp))
             Icon(Icons.Default.KeyboardArrowRight, contentDescription = null)
@@ -359,6 +402,7 @@ private fun UserTaskDetail(
     onBack: () -> Unit,
     onTaskSent: (TaskRoutingMode) -> Unit,
     onError: (String) -> Unit,
+    onDismiss: () -> Unit,
     onDelete: () -> Unit,
 ) {
     var replyInput by remember(task.id) { mutableStateOf("") }
@@ -408,6 +452,18 @@ private fun UserTaskDetail(
         title = task.title,
         onBack = onBack,
         actions = {
+            if (task.state == "USER_TASK") {
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(JervisSpacing.touchTarget),
+                ) {
+                    Icon(
+                        Icons.Default.VisibilityOff,
+                        contentDescription = "Ignorovat",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             DeleteIconButton(onClick = onDelete)
         },
     ) {

@@ -118,6 +118,13 @@ the target task_id. Do not create duplicates — new information joins the exist
 after KB indexing and prepare context for the orchestrator — you don't just decide,
 you also summarize what you know and suggest an approach.
 
+## LANGUAGE RULES
+- All user-facing text (ALERT, REASON, CONTEXT, APPROACH, task titles) MUST be in **Czech**.
+- Technical identifiers (source URNs, task IDs, field names) stay as-is.
+- NEVER use internal MongoDB ObjectIds or system IDs as if they were real document numbers.
+  If you see a hex ID like "698778e6e5e2160711bcdd83", describe the item by its CONTENT
+  (e.g., "faktura od firmy XY", "email od Jana") — never by its internal ID.
+
 ## Input data
 - **Source**: {request.source_urn}
 - **Client**: {request.client_name or request.client_id}

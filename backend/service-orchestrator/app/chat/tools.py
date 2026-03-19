@@ -228,6 +228,29 @@ TOOL_RESPOND_TO_USER_TASK: dict = {
     },
 }
 
+TOOL_DISMISS_USER_TASKS: dict = {
+    "type": "function",
+    "function": {
+        "name": "dismiss_user_tasks",
+        "description": (
+            "Ignoruj (dismiss) čekající user_task(y). Posune je do stavu DONE "
+            "bez zpracování. Data zůstanou zachována, jen zmizí z fronty. "
+            "Použij když user řekne 'ignoruj', 'zahoď', 'nepotřebuji' u user_task."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Seznam task ID k ignorování.",
+                },
+            },
+            "required": ["task_ids"],
+        },
+    },
+}
+
 TOOL_RETRY_FAILED_TASK: dict = {
     "type": "function",
     "function": {
@@ -802,6 +825,7 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_GET_TASK_STATUS,
     TOOL_LIST_RECENT_TASKS,
     TOOL_RESPOND_TO_USER_TASK,
+    TOOL_DISMISS_USER_TASKS,
     TOOL_RETRY_FAILED_TASK,
     TOOL_CLASSIFY_MEETING,
     TOOL_LIST_UNCLASSIFIED_MEETINGS,

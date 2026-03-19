@@ -908,16 +908,23 @@ _DECOMPOSE_HINT = (
     "Simple questions should NEVER be decomposed."
 )
 
+_LANGUAGE_HINT = (
+    "\n\nLANGUAGE: All user-facing output (summaries, reports, task titles, alerts) MUST be in Czech. "
+    "Technical identifiers and code stay as-is. "
+    "NEVER expose internal MongoDB ObjectIds as document/invoice numbers — "
+    "describe items by their real content (sender, subject, filename)."
+)
+
 _SYSTEM_PROMPTS: dict[VertexType, str] = {
     VertexType.PLANNER: (
         "You are the Planner. Analyze the task and create a structured plan. "
         "Break it into clear, actionable steps. Use tools to gather information as needed."
-        + _DECOMPOSE_HINT
+        + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
     VertexType.DECOMPOSE: (
         "You are the Planner. Analyze the task and create a structured plan. "
         "Break it into clear, actionable steps. Use tools to gather information as needed."
-        + _DECOMPOSE_HINT
+        + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
     VertexType.INVESTIGATOR: (
         "You are the Investigator. Research the topic using the provided tools. "
@@ -927,7 +934,7 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use `extend_thinking_map` sparingly when you discover genuinely separate sub-topics.\n\n"
         "For code-level work (reading files, analyzing code, git history), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead."
-        + _DECOMPOSE_HINT
+        + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
     VertexType.EXECUTOR: (
         "You are the Executor. Complete the assigned task using the provided context and tools. "
@@ -938,7 +945,7 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use `extend_thinking_map` sparingly when your task reveals genuinely separate work.\n\n"
         "For code-level work (reading/writing files, running tests), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead."
-        + _DECOMPOSE_HINT
+        + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
     VertexType.TASK: (
         "You are the Executor. Complete the assigned task using the provided context and tools. "
@@ -949,29 +956,30 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use `extend_thinking_map` sparingly when your task reveals genuinely separate work.\n\n"
         "For code-level work (reading/writing files, running tests), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead."
-        + _DECOMPOSE_HINT
+        + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
     VertexType.VALIDATOR: (
         "You are the Validator. Verify upstream results for correctness and completeness. "
         "Use tools to check claims and artifacts. "
         "Conclude with: PASS (all good) or FAIL (with specific issues).\n\n"
         "For code verification, use `dispatch_coding_agent`."
-        + _DECOMPOSE_HINT
+        + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
     VertexType.REVIEWER: (
         "You are the Reviewer. Review upstream work for quality and potential improvements. "
         "Use tools to verify claims. Provide constructive feedback. "
         "Conclude with: APPROVED, NEEDS_CHANGES, or REJECTED.\n\n"
         "For code review, use `dispatch_coding_agent`."
-        + _DECOMPOSE_HINT
+        + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
     VertexType.SYNTHESIS: (
         "You are the Synthesizer. Combine upstream results into a coherent, unified response. "
         "Preserve key details, resolve contradictions, and note any failures. "
-        "Use the user's language.\n\n"
+        "Always respond in Czech.\n\n"
         "If the combined result is too large or complex for a single pass, use `extend_thinking_map` "
         "to create follow-up vertices that each write a section of the final document. "
         "Then create a final synthesis vertex to combine those sections."
+        + _LANGUAGE_HINT
     ),
     VertexType.GATE: (
         "You are the Gate. Evaluate upstream results and decide whether to proceed. "

@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
@@ -64,6 +66,8 @@ fun MainScreenView(
     onEditMessage: (String) -> Unit = {},
     onReplyToTask: (taskId: String) -> Unit = {},
     onSendReply: (taskId: String, text: String) -> Unit = { _, _ -> },
+    onDismissTask: (taskId: String) -> Unit = {},
+    onDismissAllTasks: () -> Unit = {},
     onLoadMore: () -> Unit = {},
     onAttachFile: () -> Unit = {},
     onRemoveAttachment: (Int) -> Unit = {},
@@ -142,6 +146,8 @@ fun MainScreenView(
                             onEditMessage = onEditMessage,
                             onReplyToTask = onReplyToTask,
                             onSendReply = onSendReply,
+                            onDismissTask = onDismissTask,
+                            onDismissAllTasks = onDismissAllTasks,
                             onLoadMore = onLoadMore,
                             onAttachFile = onAttachFile,
                             onRemoveAttachment = onRemoveAttachment,
@@ -209,6 +215,8 @@ fun MainScreenView(
                             onEditMessage = onEditMessage,
                             onReplyToTask = onReplyToTask,
                             onSendReply = onSendReply,
+                            onDismissTask = onDismissTask,
+                            onDismissAllTasks = onDismissAllTasks,
                             onLoadMore = onLoadMore,
                             onAttachFile = onAttachFile,
                             onRemoveAttachment = onRemoveAttachment,
@@ -266,6 +274,8 @@ fun MainScreenView(
                     onEditMessage = onEditMessage,
                     onReplyToTask = onReplyToTask,
                     onSendReply = onSendReply,
+                    onDismissTask = onDismissTask,
+                    onDismissAllTasks = onDismissAllTasks,
                     onLoadMore = onLoadMore,
                     onAttachFile = onAttachFile,
                     onRemoveAttachment = onRemoveAttachment,
@@ -326,6 +336,8 @@ private fun ChatContent(
     onEditMessage: (String) -> Unit,
     onReplyToTask: (taskId: String) -> Unit = {},
     onSendReply: (taskId: String, text: String) -> Unit = { _, _ -> },
+    onDismissTask: (taskId: String) -> Unit = {},
+    onDismissAllTasks: () -> Unit = {},
     onLoadMore: () -> Unit,
     onAttachFile: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
@@ -404,6 +416,22 @@ private fun ChatContent(
                     )
                 },
             )
+            if (showNeedReaction && userTaskCount > 0) {
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    onClick = onDismissAllTasks,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp),
+                ) {
+                    Icon(
+                        Icons.Default.VisibilityOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Ignorovat vše", style = MaterialTheme.typography.labelSmall)
+                }
+            }
         }
 
         // Chat area
@@ -417,6 +445,7 @@ private fun ChatContent(
             onEditMessage = onEditMessage,
             onReplyToTask = onReplyToTask,
             onSendReply = onSendReply,
+            onDismissTask = onDismissTask,
             onTtsPlay = onTtsPlay,
             isTtsPlaying = isTtsPlaying,
             taskGraphs = taskGraphs,

@@ -438,23 +438,25 @@ TOOL_CREATE_SCHEDULED_TASK: dict = {
             "Create a scheduled task or reminder for future work. "
             "Use this when you need to do something later: verify information when code becomes available, "
             "check back on incomplete data, follow up on user requests, or schedule future analysis. "
-            "Examples: 'Check BMS code when available', 'Verify architecture matches documentation in 1 week', "
-            "'Follow up on incomplete feature request'."
+            "Examples: 'Ověřit BMS kód proti definici', 'Zkontrolovat architekturu za týden'. "
+            "IMPORTANT: Title and description MUST be in Czech. "
+            "NEVER use internal system IDs (MongoDB ObjectIds like 698778e6e5e2160711bcdd83) as document/invoice numbers — "
+            "describe items by their real content (sender name, email subject, filename)."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "title": {
                     "type": "string",
-                    "description": "Brief title for the task (e.g., 'Verify BMS code against definition').",
+                    "description": "Brief title in CZECH (e.g., 'Ověřit BMS kód proti definici'). Never use internal IDs.",
                 },
                 "description": {
                     "type": "string",
-                    "description": "Detailed description of what needs to be done in the future.",
+                    "description": "Detailed description in CZECH of what needs to be done in the future.",
                 },
                 "reason": {
                     "type": "string",
-                    "description": "Why this task is needed (e.g., 'User provided definition but code not yet indexed').",
+                    "description": "Why this task is needed, in CZECH (e.g., 'Uživatel definoval ale kód zatím neindexován').",
                 },
                 "schedule": {
                     "type": "string",

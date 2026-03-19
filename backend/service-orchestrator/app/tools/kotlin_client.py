@@ -476,6 +476,19 @@ class KotlinServerClient:
             logger.warning("Failed to respond to user task: %s", e)
             return f"Error: {e}"
 
+    async def dismiss_user_tasks(self, task_ids: list[str]) -> str:
+        """Dismiss user_tasks — move to DONE without processing."""
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                "/internal/dismiss-user-tasks",
+                json={"taskIds": task_ids},
+            )
+            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to dismiss user tasks: %s", e)
+            return f"Error: {e}"
+
     async def get_user_task(self, task_id: str) -> dict | None:
         """Get a user_task by ID for context loading."""
         try:
