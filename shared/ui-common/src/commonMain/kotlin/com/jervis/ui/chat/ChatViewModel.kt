@@ -239,6 +239,7 @@ class ChatViewModel(
     private var pendingState: PendingMessageState? = null
     private var retryJob: Job? = null
     private var chatJob: Job? = null
+    private var progressTimeoutJob: Job? = null
 
     companion object {
         private val BACKOFF_DELAYS_MS = listOf(0L, 5_000L, 30_000L, 300_000L)
@@ -584,6 +585,27 @@ class ChatViewModel(
                     messageType = ChatMessage.MessageType.PROGRESS,
                 )
                 _chatMessages.value = _chatMessages.value + progressMsg
+
+                // Safety timeout: if orchestrator doesn't respond within 120s,
+                // replace PROGRESS with error so UI doesn't hang forever
+                progressTimeoutJob?.cancel()
+                progressTimeoutJob = scope.launch {
+                    kotlinx.coroutines.delay(120_000L)
+                    val msgs = _chatMessages.value.toMutableList()
+                    val hasProgress = msgs.any { it.messageType == ChatMessage.MessageType.PROGRESS }
+                    if (hasProgress) {
+                        msgs.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+                        msgs.add(
+                            ChatMessage(
+                                from = ChatMessage.Sender.Assistant,
+                                text = "Orchestrátor neodpověděl (timeout). Zkus poslat zprávu znovu.",
+                                contextId = projectId,
+                                messageType = ChatMessage.MessageType.ERROR,
+                            ),
+                        )
+                        _chatMessages.value = msgs
+                    }
+                }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 println("Error sending message: ${e.message}")
@@ -885,6 +907,8 @@ class ChatViewModel(
             }
 
             ChatMessage.MessageType.PROGRESS -> {
+                // Reset timeout — orchestrator is still alive
+                progressTimeoutJob?.cancel()
                 // Accumulate thinking steps (skip duplicates)
                 val step = response.message
                 if (step.isNotBlank() && (thinkingHistory.isEmpty() || thinkingHistory.last() != step)) {
@@ -909,6 +933,7 @@ class ChatViewModel(
             }
 
             ChatMessage.MessageType.FINAL -> {
+                progressTimeoutJob?.cancel()
                 messages.removeAll {
                     it.messageType == ChatMessage.MessageType.PROGRESS ||
                         it.metadata["streaming"] == "true"
@@ -951,6 +976,7 @@ class ChatViewModel(
             }
 
             ChatMessage.MessageType.ERROR -> {
+                progressTimeoutJob?.cancel()
                 messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
                 thinkingHistory.clear()
                 messages.add(
