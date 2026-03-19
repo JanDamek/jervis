@@ -136,6 +136,23 @@ async def handle_chat_sse(
                 ),
             })
 
+        # Inject multi-context hints (detect mentions of multiple clients/projects)
+        try:
+            from app.chat.multi_context import detect_multi_context
+            mc_result = detect_multi_context(
+                message=request.message,
+                clients_projects=runtime_ctx.clients_projects,
+                active_client_id=request.active_client_id,
+                active_project_id=request.active_project_id,
+            )
+            if mc_result.has_multiple_contexts and mc_result.hint_message:
+                messages.append({
+                    "role": "system",
+                    "content": mc_result.hint_message,
+                })
+        except Exception as e:
+            logger.debug("SSE: multi-context detection failed (non-blocking): %s", e)
+
         # Inject route-specific hints
         if route.action == "answer_ask_user" and route.vertex_id:
             messages.append({
