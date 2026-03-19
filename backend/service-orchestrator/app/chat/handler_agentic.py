@@ -208,23 +208,31 @@ async def run_agentic_loop(
             # Pre-processing hallucination guard: if model answered without ANY tool calls
             # and the response contains URLs or real-world entities, force a retry
             # so the model actually verifies claims via web_search/web_fetch.
-            if not used_tools and iteration == 0:
+            # Phase 1 (iteration 0): gentle hint to use tools
+            # Phase 2 (iteration 1): if still no tools, strip unverified claims
+            if not used_tools:
                 retry_reason = needs_verification_retry(final_text)
-                if retry_reason:
-                    logger.warning("HALLUCINATION_GUARD | forcing retry: %s", retry_reason)
+                if retry_reason and iteration == 0:
+                    logger.warning("HALLUCINATION_GUARD | forcing retry (phase 1): %s", retry_reason)
                     messages.append(choice.message.model_dump())
                     messages.append({
                         "role": "system",
                         "content": (
-                            f"STOP — tvá odpověď obsahuje {retry_reason} bez ověření nástrojem.\n"
-                            "PRAVIDLA:\n"
-                            "• KAŽDÁ URL musí pocházet z web_search/web_fetch výsledku\n"
-                            "• KAŽDÝ údaj o reálné entitě (restaurace, firma, místo) musí být ověřen\n"
-                            "• NIKDY neuvádej URL z trénovacích dat — VŽDY ověř přes web_search\n\n"
-                            "Použij web_search k ověření a pak odpověz znovu. Pokud nemůžeš ověřit, řekni to."
+                            f"STOP — your response contains {retry_reason} without tool verification.\n"
+                            "You MUST call the web_search tool NOW. Do NOT just say what you will do — CALL the tool.\n"
+                            "If you cannot verify, respond WITHOUT URLs, WITHOUT prices, WITHOUT ratings — "
+                            "only state what you know from KB and admit you lack verified web data.\n"
+                            "Respond in the same language as the user's message."
                         ),
                     })
                     continue  # retry the agentic loop
+                elif retry_reason and iteration == 1:
+                    # Phase 2: model still didn't use tools — strip claims from response
+                    logger.warning("HALLUCINATION_GUARD | phase 2: model ignored tools, cleaning response")
+                    final_text = (
+                        "Omlouvám se, nemám aktuálně ověřené informace z webu. "
+                        "Zkus se zeptat znovu — použiji vyhledávání pro ověření."
+                    )
 
             # Fact-check + topic tracking — parallel
             fc_result, topics = await asyncio.gather(
