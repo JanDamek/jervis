@@ -862,75 +862,129 @@ CHAT_TOOLS: list[dict] = [
 
 
 # ---------------------------------------------------------------------------
-# Tool categories for intent-based filtering (see intent.py)
+# Two-tier tool system: INITIAL (small) + request_tools (expand on demand)
 # ---------------------------------------------------------------------------
 
 class ToolCategory(str, Enum):
-    """Tool category for intent-based filtering.
+    """Tool category for on-demand expansion via request_tools.
 
-    CORE is always included. Other categories are added based on
-    lightweight intent classification of the user message.
+    CORE is always included. Other categories are loaded on demand
+    when the model calls request_tools(category).
     """
-    CORE = "core"
-    RESEARCH = "research"
+    PLANNING = "planning"
     TASK_MGMT = "task_mgmt"
+    MEETINGS = "meetings"
+    MEMORY = "memory"
     FILTERING = "filtering"
+    ADMIN = "admin"
 
 
+# Meta-tool: model calls this to get additional tools
+TOOL_REQUEST_TOOLS: dict = {
+    "type": "function",
+    "function": {
+        "name": "request_tools",
+        "description": (
+            "Zažádej o další sadu nástrojů. Máš k dispozici základní nástroje "
+            "(kb_search, web_search, web_fetch, store_knowledge, dispatch_coding_agent, "
+            "create_background_task, respond_to_user_task). "
+            "Pro pokročilé operace zavolej tento tool s kategorií:\n"
+            "- planning: myšlenkový graf (create_thinking_graph, add/update/remove vertex, dispatch)\n"
+            "- task_mgmt: správa úkolů (search_tasks, get_task_status, list_recent_tasks, retry_failed_task)\n"
+            "- meetings: nahrávky a meetingy (classify_meeting, list_meetings, get_meeting_transcript)\n"
+            "- memory: paměť a znalosti (memory_store, memory_recall, list_affairs, get_kb_stats, kb_delete)\n"
+            "- filtering: filtrační pravidla (set_filter_rule, list_filter_rules, remove_filter_rule)\n"
+            "- admin: pravidla a konfigurace (get_guidelines, update_guideline, switch_context, query_action_log)"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["planning", "task_mgmt", "meetings", "memory", "filtering", "admin"],
+                    "description": "Kategorie nástrojů k načtení.",
+                },
+            },
+            "required": ["category"],
+        },
+    },
+}
+
+
+# Initial tools: small core set + request_tools meta-tool (10 tools total)
+CHAT_INITIAL_TOOLS: list[dict] = [
+    TOOL_KB_SEARCH,
+    TOOL_WEB_SEARCH,
+    TOOL_WEB_FETCH,
+    TOOL_STORE_KNOWLEDGE,
+    TOOL_DISPATCH_CODING_AGENT,
+    TOOL_CREATE_BACKGROUND_TASK,
+    TOOL_RESPOND_TO_USER_TASK,
+    TOOL_CHECK_TASK_GRAPH,
+    TOOL_ANSWER_BLOCKED_VERTEX,
+    TOOL_REQUEST_TOOLS,
+]
+
+
+# Expandable categories: loaded on demand via request_tools
 TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
-    # CORE: always available — search, dispatch, graph interaction, knowledge storage.
-    # Model must ALWAYS be able to dispatch coding agents, create tasks, store knowledge,
-    # interact with thinking graphs, and answer blocked vertices.
-    ToolCategory.CORE: [
-        TOOL_KB_SEARCH,
-        TOOL_KB_DELETE,
-        TOOL_WEB_SEARCH,
-        TOOL_WEB_FETCH,
-        TOOL_MEMORY_RECALL,
-        TOOL_STORE_KNOWLEDGE,
-        TOOL_DISPATCH_CODING_AGENT,
-        TOOL_CREATE_BACKGROUND_TASK,
-        TOOL_RESPOND_TO_USER_TASK,
-        TOOL_RETRY_FAILED_TASK,
-        TOOL_CHECK_TASK_GRAPH,
-        TOOL_ANSWER_BLOCKED_VERTEX,
-    ],
-    ToolCategory.RESEARCH: [
-        TOOL_GET_KB_STATS,
-        TOOL_GET_INDEXED_ITEMS,
-        TOOL_LIST_AFFAIRS,
-    ],
-    ToolCategory.TASK_MGMT: [
+    ToolCategory.PLANNING: [
         TOOL_CREATE_THINKING_GRAPH,
         TOOL_ADD_GRAPH_VERTEX,
         TOOL_UPDATE_GRAPH_VERTEX,
         TOOL_REMOVE_GRAPH_VERTEX,
         TOOL_DISPATCH_THINKING_GRAPH,
         TOOL_RUN_GRAPH_VERTEX,
+    ],
+    ToolCategory.TASK_MGMT: [
         TOOL_SEARCH_TASKS,
         TOOL_GET_TASK_STATUS,
         TOOL_LIST_RECENT_TASKS,
         TOOL_RETRY_FAILED_TASK,
+        TOOL_DISMISS_USER_TASKS,
+    ],
+    ToolCategory.MEETINGS: [
         TOOL_CLASSIFY_MEETING,
         TOOL_LIST_UNCLASSIFIED_MEETINGS,
         TOOL_GET_MEETING_TRANSCRIPT,
         TOOL_LIST_MEETINGS,
-        TOOL_SWITCH_CONTEXT,
+    ],
+    ToolCategory.MEMORY: [
         TOOL_MEMORY_STORE,
-        TOOL_GET_GUIDELINES,
-        TOOL_UPDATE_GUIDELINE,
-        TOOL_QUERY_ACTION_LOG,
+        TOOL_MEMORY_RECALL,
+        TOOL_LIST_AFFAIRS,
+        TOOL_GET_KB_STATS,
+        TOOL_GET_INDEXED_ITEMS,
+        TOOL_KB_DELETE,
     ],
     ToolCategory.FILTERING: [
         TOOL_SET_FILTER_RULE,
         TOOL_LIST_FILTER_RULES,
         TOOL_REMOVE_FILTER_RULE,
     ],
+    ToolCategory.ADMIN: [
+        TOOL_SWITCH_CONTEXT,
+        TOOL_GET_GUIDELINES,
+        TOOL_UPDATE_GUIDELINE,
+        TOOL_QUERY_ACTION_LOG,
+    ],
+}
+
+
+# Human-readable category descriptions for tool result
+TOOL_CATEGORY_DESCRIPTIONS: dict[ToolCategory, str] = {
+    ToolCategory.PLANNING: "Myšlenkový graf — plánování a dekompozice složitých úkolů",
+    ToolCategory.TASK_MGMT: "Správa úkolů — hledání, stav, retry",
+    ToolCategory.MEETINGS: "Meetingy a nahrávky — klasifikace, přepisy, seznam",
+    ToolCategory.MEMORY: "Paměť a znalosti — ukládání, vyhledávání, statistiky KB",
+    ToolCategory.FILTERING: "Filtrační pravidla — nastavení automatického zpracování",
+    ToolCategory.ADMIN: "Administrace — pravidla, přepínání kontextu, akční log",
 }
 
 # Domain mapping for drift detection (tool name → semantic domain)
 TOOL_DOMAINS: dict[str, str] = {
-    "kb_search": "search", "kb_delete": "memory", "web_search": "search",
+    "kb_search": "search", "kb_delete": "memory", "web_search": "search", "web_fetch": "search",
+    "request_tools": "search",
     "memory_recall": "search", "get_kb_stats": "search", "get_indexed_items": "search",
     "memory_store": "memory", "store_knowledge": "memory", "list_affairs": "memory",
     "create_background_task": "task",

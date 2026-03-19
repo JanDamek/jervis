@@ -25,7 +25,7 @@ from app.chat.handler_context import load_runtime_context, build_messages, load_
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.models import ChatRequest, ChatStreamEvent
 from app.chat.system_prompt import build_system_prompt
-from app.chat.tools import CHAT_TOOLS
+from app.chat.tools import CHAT_INITIAL_TOOLS
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
@@ -203,7 +203,7 @@ async def handle_chat_sse(
         async for event in run_agentic_loop(
             request=request,
             messages=messages,
-            selected_tools=CHAT_TOOLS,
+            selected_tools=list(CHAT_INITIAL_TOOLS),
             runtime_ctx=runtime_ctx,
             disconnect_event=disconnect_event,
             is_summarized=False,

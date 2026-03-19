@@ -30,6 +30,7 @@ _TOOL_DESCRIPTIONS = {
     "kb_search": lambda a: f"Hledám v KB: {a.get('query', '')}",
     "web_search": lambda a: f"Hledám na webu: {a.get('query', '')}",
     "web_fetch": lambda a: f"Čtu stránku: {a.get('url', '')[:80]}",
+    "request_tools": lambda a: f"Načítám nástroje: {a.get('category', '')}",
     "store_knowledge": lambda a: f"Ukládám znalost: {a.get('subject', '')}",
     "memory_store": lambda a: f"Zapamatuji si: {a.get('subject', '')}",
     "memory_recall": lambda a: f"Vzpomínám: {a.get('query', '')}",

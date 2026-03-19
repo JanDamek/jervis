@@ -367,6 +367,46 @@ async def run_agentic_loop(
             yield ChatStreamEvent(type="thinking", content=describe_tool_call(tool_name, arguments))
             yield ChatStreamEvent(type="tool_call", content=tool_name, metadata={"tool": tool_name, "args": arguments})
 
+            # request_tools: dynamically expand tool set
+            if tool_name == "request_tools":
+                from app.chat.tools import ToolCategory, TOOL_CATEGORIES, TOOL_CATEGORY_DESCRIPTIONS
+                category_str = arguments.get("category", "")
+                try:
+                    category = ToolCategory(category_str)
+                except ValueError:
+                    result = f"Neznámá kategorie '{category_str}'. Dostupné: {', '.join(c.value for c in ToolCategory)}"
+                    messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
+                    used_tools.append(tool_name)
+                    continue
+
+                new_tools = TOOL_CATEGORIES[category]
+                # Add new tools to selected_tools (avoid duplicates)
+                existing_names = {t["function"]["name"] for t in selected_tools}
+                added_names = []
+                for tool_def in new_tools:
+                    tname = tool_def["function"]["name"]
+                    if tname not in existing_names:
+                        selected_tools.append(tool_def)
+                        existing_names.add(tname)
+                        added_names.append(tname)
+
+                desc = TOOL_CATEGORY_DESCRIPTIONS.get(category, category_str)
+                if added_names:
+                    result = (
+                        f"Kategorie '{desc}' načtena. Nové nástroje: {', '.join(added_names)}. "
+                        "Můžeš je teď používat."
+                    )
+                    logger.info("Chat: request_tools(%s) → added %d tools: %s",
+                                category_str, len(added_names), ", ".join(added_names))
+                else:
+                    result = f"Kategorie '{desc}' — všechny nástroje už jsou načtené."
+
+                used_tools.append(tool_name)
+                tool_summaries.append(f"request_tools: {category_str} → +{len(added_names)} tools")
+                yield ChatStreamEvent(type="tool_result", content=result, metadata={"tool": tool_name})
+                messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
+                continue
+
             # switch_context: resolve names → IDs, emit scope_change
             if tool_name == "switch_context":
                 resolved = resolve_switch_context(arguments, runtime_ctx)
