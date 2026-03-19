@@ -2079,6 +2079,27 @@ Installed in `KtorRpcServer` routing block via extension functions on `Routing`.
 | `backend/service-orchestrator/app/tools/kotlin_client.py` | Python HTTP client for Kotlin internal API |
 | `backend/service-orchestrator/app/main.py` | FastAPI endpoints incl. /chat, /chat/stop |
 
+### Two-Tier Tool Management
+
+Free OpenRouter models handle fewer tools reliably. Chat uses a two-tier system:
+
+- **10 initial core tools** always sent: `kb_search`, `web_search`, `web_fetch`, `store_knowledge`, `dispatch_coding_agent`, `create_background_task`, `respond_to_user_task`, `check_task_graph`, `answer_blocked_vertex`, and `request_tools` (meta-tool)
+- **`request_tools(category)` meta-tool** expands the tool set on demand across 6 categories: `planning` (6 tools), `task_mgmt` (5), `meetings` (4), `memory` (6), `filtering` (3), `admin` (4)
+
+Handler intercepts `request_tools` calls, appends category tools to `selected_tools` (deduplicates), and returns confirmation. Source: `app/chat/tools.py` (`CHAT_INITIAL_TOOLS`, `ToolCategory`, `TOOL_CATEGORIES`).
+
+### Anti-Hallucination Guard
+
+Three-layer defense against hallucinated facts:
+
+1. **Drift guard** (`app/chat/drift.py`): Multi-signal detection (duplicate calls, tool spam, alternating pairs, domain drift, excessive tools). On trigger, injects system message forcing evidence-only response with source URLs. Workflow chains (e.g., `{search, memory, task}`) are exempt from domain drift detection.
+
+2. **Active fact-checking** (`app/guard/fact_checker.py`): Post-response extraction of verifiable claims (file paths, URLs, code refs, phone numbers, ratings, prices) and verification against KB (code_search) and collected web evidence. Produces `FactCheckResult` with overall confidence score and per-claim `VERIFIED`/`UNVERIFIED`/`CONTRADICTED` status. Confidence badge (`high`/`medium`/`low`) sent in SSE `done` metadata.
+
+3. **Source attribution** (`app/chat/source_attribution.py`): `SourceTracker` per request collects KB sources (from `kb_search` results) and web evidence (from `web_search`/`web_fetch` results). Top 5 sources attached to message metadata. Web evidence text passed to fact-checker for real-world entity verification.
+
+**System prompt** enforces per-entity verification workflow: for each real-world entity, require separate `web_search` → `web_fetch` → include only facts from `web_fetch` with source URL.
+
 ### Background Message Filtering
 
 Background task results (BACKGROUND_RESULT) are hidden from chat by default to prevent flooding (can be 400+ messages). Three FilterChips in the chat UI control visibility:

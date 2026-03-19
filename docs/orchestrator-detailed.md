@@ -65,6 +65,12 @@ Agent type is always `claude` unless user explicitly selects otherwise.
 28. [Datové modely — kompletní referenční seznam](#28-datové-modely--kompletní-referenční-seznam)
 29. [Souborová mapa](#29-souborová-mapa)
 
+### Chat Quality & Reliability
+
+35. [Two-Tier Tool System for Chat](#35-two-tier-tool-system-for-chat)
+36. [Anti-Hallucination Pipeline](#36-anti-hallucination-pipeline)
+37. [OpenRouter FREE Queue — Model Error Tracking](#37-openrouter-free-queue--model-error-tracking)
+
 ---
 
 ## 1. Přehled systému
@@ -4215,3 +4221,197 @@ Python GET /graph/{task_id} → JSON
 | `shared/common-api/.../ITaskGraphService.kt` | kRPC interface: `getGraph(taskId)` |
 | `backend/server/.../rpc/TaskGraphRpcImpl.kt` | Kotlin RPC impl — calls Python, deserializes with lenient JSON |
 | `shared/ui-common/.../chat/TaskGraphComponents.kt` | Compose UI: TaskGraphSection, VertexCard, EdgeRow, StatChip |
+
+---
+
+## 35. Two-Tier Tool System for Chat
+
+> **Status:** Implemented | **Source:** `app/chat/tools.py`, `app/chat/handler_agentic.py`
+
+### 35.1 Problem
+
+Free OpenRouter models have limited tool-calling reliability. Sending 30+ tool definitions increases hallucinated tool calls and argument errors. Context budget is wasted on tool schemas the model never needs.
+
+### 35.2 Design
+
+**Two tiers: 10 initial core tools + on-demand expansion via `request_tools(category)` meta-tool.**
+
+**Initial tools (always available, 10 total):**
+
+| Tool | Purpose |
+|------|---------|
+| `kb_search` | Internal knowledge, code, architecture |
+| `web_search` | Internet search |
+| `web_fetch` | Read web page content |
+| `store_knowledge` | Save to KB |
+| `dispatch_coding_agent` | Send coding task to agent |
+| `create_background_task` | Create background work item |
+| `respond_to_user_task` | Answer pending user task |
+| `check_task_graph` | Check thinking graph status |
+| `answer_blocked_vertex` | Answer blocked graph vertex |
+| `request_tools` | Meta-tool: load additional tool categories |
+
+**Expandable categories (6 categories, loaded on demand):**
+
+| Category | Tools | Count |
+|----------|-------|-------|
+| `planning` | create/add/update/remove/dispatch/run thinking graph | 6 |
+| `task_mgmt` | search_tasks, get_task_status, list_recent_tasks, retry_failed_task, dismiss_user_tasks | 5 |
+| `meetings` | classify_meeting, list_unclassified_meetings, get_meeting_transcript, list_meetings | 4 |
+| `memory` | memory_store, memory_recall, list_affairs, get_kb_stats, get_indexed_items, kb_delete | 6 |
+| `filtering` | set_filter_rule, list_filter_rules, remove_filter_rule | 3 |
+| `admin` | switch_context, get_guidelines, update_guideline, query_action_log | 4 |
+
+### 35.3 Handler Mechanics
+
+When the model calls `request_tools(category)`:
+
+1. `handler_agentic.py` intercepts the tool call (before general tool execution)
+2. Looks up `TOOL_CATEGORIES[category]` for tool definitions
+3. Appends new tools to `selected_tools` (deduplicates by function name)
+4. Returns human-readable confirmation with list of newly added tool names
+5. Next LLM iteration sees the expanded tool set in its schema
+
+**Domain mapping** (`TOOL_DOMAINS`): Each tool maps to a semantic domain (`search`, `memory`, `task`, `meeting`, `scope`, `guidelines`, `filtering`). Used by drift detection to identify cross-domain ping-ponging.
+
+### 35.4 Files
+
+| File | Purpose |
+|------|---------|
+| `app/chat/tools.py` | `CHAT_INITIAL_TOOLS`, `TOOL_REQUEST_TOOLS`, `ToolCategory`, `TOOL_CATEGORIES`, `TOOL_DOMAINS` |
+| `app/chat/handler_agentic.py` | `request_tools` handler (lines 371-408) |
+| `app/chat/system_prompt.py` | Prompt section documenting available categories for the LLM |
+
+---
+
+## 36. Anti-Hallucination Pipeline
+
+> **Status:** Implemented (EPIC 14) | **Source:** `app/guard/fact_checker.py`, `app/chat/source_attribution.py`, `app/chat/drift.py`, `app/chat/system_prompt.py`
+
+### 36.1 Overview
+
+Three-layer defense against hallucinated facts in chat responses:
+
+1. **Drift guard** — prevents runaway tool loops, forces evidence-only responses
+2. **Active fact-checking** — post-response verification of claims against collected evidence
+3. **Source attribution** — tracks KB and web sources used during the loop
+
+### 36.2 Drift Guard (`app/chat/drift.py`)
+
+Multi-signal detection running after every tool iteration:
+
+| Signal | Condition | Action |
+|--------|-----------|--------|
+| Consecutive same | 2x identical tool+args | Force response |
+| Exact duplicate | Same tool+args called 2+ times anywhere | Force response |
+| Tool spam | Same tool called 8+ times (any args) | Force response |
+| Alternating pair | A→B→A→B pattern | Force response |
+| Domain drift | 4+ iterations, 3+ unrelated domains outside workflow chains | Force response |
+| Excessive tools | 8+ distinct tools after 4+ iterations | Force response |
+
+**Workflow chains** (exempt from domain drift): `{search, memory, task}`, `{search, memory}`, `{search, task}`, `{memory, task}`, `{search, memory, scope}`, `{search, guidelines}`, `{memory, task, scope}`.
+
+When drift is detected, the handler injects a system message enforcing **evidence-only response rules**:
+- Answer ONLY from tool results (web_search, web_fetch, kb_search)
+- NEVER fill in missing data from training knowledge
+- Cite source URL for every claim
+- Prefer 3 verified results over 10 unverified
+
+### 36.3 Active Fact-Checking (`app/guard/fact_checker.py`)
+
+Post-processing step after every final response:
+
+1. **Claim extraction** — regex-based extraction of verifiable claims:
+   - `FILE_PATH` — project file paths
+   - `URL` — http/https URLs
+   - `API_ENDPOINT` — REST endpoints (GET/POST/PUT/DELETE)
+   - `CODE_REFERENCE` — class/function names in backticks
+   - `REAL_WORLD_ENTITY` — phone numbers, ratings, emails, prices
+
+2. **Verification** — each claim verified against its source:
+   - File paths → KB code_search
+   - Code references → KB search for matching class/function
+   - Real-world entities → substring match against collected `web_evidence` (from SourceTracker)
+
+3. **Result** — `FactCheckResult` with overall confidence score:
+   - `VERIFIED` (0.9 weight) — claim found in evidence
+   - `UNVERIFIED` (0.5 weight) — claim not found but not contradicted
+   - `CONTRADICTED` (0.1 weight) — claim contradicts evidence
+
+**Confidence badge** in SSE `done` metadata: `high` (>=0.8), `medium` (>=0.5), `low` (<0.5).
+
+### 36.4 Source Attribution (`app/chat/source_attribution.py`)
+
+`SourceTracker` instance created per chat request, collects evidence throughout the agentic loop:
+
+- **KB sources**: Extracted from `kb_search` results (sourceUrn, score, kind, sourceType)
+- **Web evidence**: Raw text from `web_search` and `web_fetch` results
+
+Source types: `GIT_FILE`, `WEB_SEARCH`, `CHAT_HISTORY`, `KB_CHUNK`.
+
+Top 5 sources attached to assistant message metadata (`source_count`, `sources`, `source_types`).
+Structured `source_attributions` array in SSE `done` event for UI display.
+
+### 36.5 Per-Entity Verification Workflow (System Prompt)
+
+The system prompt enforces a strict workflow for real-world entity lookups:
+
+1. For EACH entity: `web_search` → get URL
+2. For EACH entity: `web_fetch` on best URL → read actual page content
+3. Include ONLY facts from `web_fetch` results with `[source: URL]`
+4. If no `web_fetch` result for entity → write "unverified, no data"
+5. NEVER combine web_search snippets with training knowledge
+6. Prefer 3 verified results over 10 unverified
+7. For 2+ entities → 2+ separate `web_search` calls (one per entity)
+
+### 36.6 Files
+
+| File | Purpose |
+|------|---------|
+| `app/guard/fact_checker.py` | Claim extraction + verification + FactCheckResult |
+| `app/chat/handler_fact_check.py` | Wrapper: error handling, metadata formatting, confidence badge |
+| `app/chat/source_attribution.py` | SourceTracker: KB source + web evidence collection |
+| `app/chat/drift.py` | Multi-signal drift detection (shared with handler_decompose) |
+| `app/chat/handler_agentic.py` | Integration: SourceTracker lifecycle, drift injection, fact-check call |
+| `app/chat/system_prompt.py` | Anti-hallucination rules + per-entity verification workflow |
+
+---
+
+## 37. OpenRouter FREE Queue — Model Error Tracking
+
+> **Status:** Implemented | **Source:** `backend/service-ollama-router/app/openrouter_catalog.py`
+
+### 37.1 Model Selection Cascade
+
+The router iterates queues in order: **FREE → PAID → PREMIUM**, respecting the client's `maxOpenRouterTier`. Within each queue, models are ordered by tool-calling reliability (configured in Kotlin `OpenRouterSettingsDocument.modelQueues`). The first model whose `maxContextTokens` fits the estimated context is selected.
+
+Models with `capabilities` restrictions are filtered by requested capability (e.g., `chat`, `thinking`, `coding`). Models with empty capabilities list are compatible with all capabilities.
+
+### 37.2 Error Tracking & Auto-Disable
+
+Per-model error state tracked in-memory (`_model_errors` dict):
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `_MAX_CONSECUTIVE_ERRORS` | 3 | Disable model after N consecutive failures |
+| `_RATE_LIMIT_PAUSE_S` | 60s | Pause model on 429/rate limit (no error count increment) |
+| `_AUTO_RECOVERY_S` | 300s (5 min) | Auto re-enable disabled model after cooldown |
+| `_MAX_ERROR_HISTORY` | 10 | Keep last N error messages per model for debugging |
+
+**Error types:**
+- **Rate limit** (429 / "rate limit" / "too many"): Pause for 60s, do NOT increment error counter
+- **Regular error** (empty response, provider error, timeout): Increment counter, disable at 3
+
+**Lifecycle:**
+1. Model error reported → `report_model_error(model_id, error_message)`
+2. Rate limit → `disabled_until = now + 60s` (temporary pause, counter unchanged)
+3. Regular error → `count += 1`, at count >= 3 → `disabled = True`, `disabled_until = now + 300s`
+4. Auto-recovery: when `disabled_until` expires, model re-enabled on next selection attempt
+5. Success reported → `report_model_success(model_id)` resets entire error state
+
+**Orchestrator integration** (`app/llm/provider.py`):
+- On blocking call error with `CLOUD_OPENROUTER` tier → fire-and-forget `_report_error_bg(model, error)`
+- On successful response with content or tool_calls → fire-and-forget `_report_success_bg(model)`
+- Chat handler passes `skip_models` to route decision for per-request retry with different model
+
+**Skip models** (`router_client.py`): The orchestrator can pass `skip_models` list to `route_request()`, telling the router to skip specific model IDs that already failed in the current request. The router's `_first_cloud_model()` filters these out before the error-tracking check.
