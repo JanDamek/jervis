@@ -17,7 +17,7 @@ from typing import AsyncIterator
 from bson import ObjectId
 
 from app.chat.drift import detect_drift
-from app.chat.hallucination_guard import needs_verification_retry
+from app.chat.hallucination_guard import needs_verification_retry, is_empty_promise
 from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, confidence_badge
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.source_attribution import SourceTracker
@@ -212,6 +212,8 @@ async def run_agentic_loop(
             # Phase 2 (iteration 1): if still no tools, strip unverified claims
             if not used_tools:
                 retry_reason = needs_verification_retry(final_text)
+                promise_detected = is_empty_promise(final_text)
+
                 if retry_reason and iteration == 0:
                     logger.warning("HALLUCINATION_GUARD | forcing retry (phase 1): %s", retry_reason)
                     messages.append(choice.message.model_dump())
@@ -226,9 +228,13 @@ async def run_agentic_loop(
                         ),
                     })
                     continue  # retry the agentic loop
-                elif retry_reason and iteration == 1:
-                    # Phase 2: model still didn't use tools — strip claims from response
-                    logger.warning("HALLUCINATION_GUARD | phase 2: model ignored tools, cleaning response")
+                elif (retry_reason or promise_detected) and iteration <= 2:
+                    # Phase 2: model still didn't use tools or just promises action
+                    # Replace with honest fallback — don't deliver empty promises
+                    if promise_detected:
+                        logger.warning("HALLUCINATION_GUARD | empty promise detected, replacing response")
+                    else:
+                        logger.warning("HALLUCINATION_GUARD | phase 2: model ignored tools, cleaning response")
                     final_text = (
                         "Omlouvám se, nemám aktuálně ověřené informace z webu. "
                         "Zkus se zeptat znovu — použiji vyhledávání pro ověření."

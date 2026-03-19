@@ -26,6 +26,15 @@ _ADDRESS_PATTERN = re.compile(
 )
 
 
+# Patterns detecting "I will do X" promises without actually doing it
+_PROMISE_PATTERN = re.compile(
+    r'(?:začínám|prověřuji|ověřuji|hledám|vyhledávám|udělám|provedu|zkontroluju'
+    r'|I will|I\'ll|let me|starting|beginning|searching|verifying'
+    r'|web_search|web_fetch)',
+    re.IGNORECASE,
+)
+
+
 def needs_verification_retry(response_text: str) -> str | None:
     """Check if a response contains unverified real-world claims.
 
@@ -53,19 +62,19 @@ def needs_verification_retry(response_text: str) -> str | None:
 
     # Check for phone numbers
     if _PHONE_PATTERN.search(response_text):
-        issues.append("telefonní čísla")
+        issues.append("phone numbers")
 
     # Check for ratings
     if _RATING_PATTERN.search(response_text):
-        issues.append("hodnocení")
+        issues.append("ratings")
 
     # Check for prices
     if _PRICE_PATTERN.search(response_text):
-        issues.append("ceny")
+        issues.append("prices")
 
     # Check for addresses
     if _ADDRESS_PATTERN.search(response_text):
-        issues.append("adresy")
+        issues.append("addresses")
 
     if not issues:
         return None
@@ -73,3 +82,16 @@ def needs_verification_retry(response_text: str) -> str | None:
     result = ", ".join(issues)
     logger.info("HALLUCINATION_GUARD | detected unverified claims: %s", result)
     return result
+
+
+def is_empty_promise(response_text: str) -> bool:
+    """Detect when model promises to do something but didn't actually call any tools.
+
+    Catches responses like "I'll search now", "Starting verification",
+    "Začínám s ověřením" — where the model describes future actions
+    instead of performing them via tool calls.
+    """
+    if not response_text or len(response_text) > 500:
+        return False  # Long responses are likely real answers
+
+    return bool(_PROMISE_PATTERN.search(response_text))
