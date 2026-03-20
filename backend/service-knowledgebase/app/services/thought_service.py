@@ -578,8 +578,9 @@ class ThoughtService:
 
         # Step 2: LLM clustering
         entities_text = "\n".join(
-            f"- {n['label']} (type={n['type']}, degree={n['degree']}): {n.get('description', '')[:100]}"
+            f"- {n.get('label') or n.get('key', '?')} (type={n.get('type', '?')}, degree={n.get('degree', 0)}): {(n.get('description') or '')[:100]}"
             for n in top_nodes[:100]
+            if n  # skip None results
         )
 
         prompt = f"""You are a knowledge organizer. Group these entities into 10-20 thematic clusters.
@@ -613,7 +614,7 @@ Return JSON:
 
         # Step 3: Create ThoughtNodes + anchors
         created_keys = []
-        label_to_key_map = {n["label"].lower(): n["key"] for n in top_nodes}
+        label_to_key_map = {n.get("label", "").lower(): n["key"] for n in top_nodes if n and n.get("label")}
 
         for cluster in data.get("clusters", []):
             # Find matching entity keys
