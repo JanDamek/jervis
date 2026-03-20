@@ -888,13 +888,27 @@ async def thought_create(request: ThoughtCreateRequest, req: Request):
 @write_router.post("/thoughts/bootstrap")
 async def thought_bootstrap(request: ThoughtBootstrapRequest, req: Request):
     """Cold start: seed Thought Map from existing KnowledgeNodes."""
+    from app.services.llm_router import llm_generate
+    from app.core.config import settings
+
     thought_service = req.app.state.thought_service
-    graph_service = req.app.state.graph_service
+
+    # Bootstrap needs non-json-format LLM call (qwen3 returns {} with format_json=True on clustering)
+    async def _bootstrap_llm(prompt: str, priority: int = 2) -> str:
+        return await llm_generate(
+            prompt=prompt,
+            model=settings.LLM_MODEL,
+            num_ctx=8192,
+            priority=priority,
+            temperature=0,
+            format_json=False,  # Let model think freely, we parse JSON ourselves
+        )
+
     result = await thought_service.bootstrap(
         client_id=request.clientId,
         project_id=request.projectId or "",
         group_id=request.groupId or "",
-        llm_call_fn=graph_service._llm_call,
+        llm_call_fn=_bootstrap_llm,
     )
     return result
 
