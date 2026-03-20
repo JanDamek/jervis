@@ -102,10 +102,7 @@ class ThoughtService:
         """Create index if it doesn't exist (idempotent)."""
         existing = {idx.get("name") for idx in collection.indexes()}
         if name not in existing:
-            if index_type == "hash":
-                collection.add_hash_index(fields=fields, name=name)
-            elif index_type == "persistent":
-                collection.add_persistent_index(fields=fields, name=name)
+            collection.add_index({"type": index_type, "fields": fields, "name": name})
 
     # ── Embedding ─────────────────────────────────────────────────────────
 
