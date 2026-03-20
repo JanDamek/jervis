@@ -543,7 +543,7 @@ class ThoughtService:
 
         Returns: stats dict with counts
         """
-        # Step 1: Top nodes by degree
+        # Step 1: Top nodes by degree (with fallback to 0-degree nodes)
         aql = """
             FOR n IN KnowledgeNodes
                 FILTER (n.clientId == '' OR n.clientId == null OR n.clientId == @clientId)
@@ -551,9 +551,9 @@ class ThoughtService:
                 LET degree = LENGTH(
                     FOR e IN KnowledgeEdges
                         FILTER e._from == n._id OR e._to == n._id
+                        LIMIT 50
                         RETURN 1
                 )
-                FILTER degree > 0
                 SORT degree DESC
                 LIMIT 100
                 RETURN { key: n._key, label: n.label, type: n.type, description: n.description, degree: degree }
@@ -568,8 +568,8 @@ class ThoughtService:
         )
         top_nodes = list(top_nodes)
 
+        logger.info("THOUGHT_BOOTSTRAP: found %d KB nodes for client=%s", len(top_nodes), client_id)
         if not top_nodes:
-            logger.info("THOUGHT_BOOTSTRAP: no KB nodes found for client=%s", client_id)
             return {"status": "empty", "thoughts_created": 0}
 
         if not llm_call_fn:
