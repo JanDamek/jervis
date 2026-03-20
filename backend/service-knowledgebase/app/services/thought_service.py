@@ -577,29 +577,20 @@ class ThoughtService:
             return {"status": "no_llm", "thoughts_created": 0}
 
         # Step 2: LLM clustering
+        # Limit to top 50 to fit in LLM context
+        use_nodes = [n for n in top_nodes[:50] if n]
         entities_text = "\n".join(
-            f"- {n.get('label') or n.get('key', '?')} (type={n.get('type', '?')}, degree={n.get('degree', 0)}): {(n.get('description') or '')[:100]}"
-            for n in top_nodes[:100]
-            if n  # skip None results
+            f"- {n.get('label') or n.get('key', '?')} ({n.get('type', '?')}): {(n.get('description') or '')[:80]}"
+            for n in use_nodes
         )
 
-        prompt = f"""You are a knowledge organizer. Group these entities into 10-20 thematic clusters.
-Each cluster represents a high-level topic, problem, decision, or area of work.
+        prompt = f"""Group these {len(use_nodes)} entities into 5-15 thematic clusters. Each cluster is a topic, decision, problem, or insight.
 
 Entities:
 {entities_text}
 
-Return JSON:
-{{
-  "clusters": [
-    {{
-      "type": "topic|decision|problem|insight",
-      "label": "short identifier",
-      "summary": "1-2 sentence description of what this cluster is about",
-      "entity_labels": ["entity1", "entity2", ...]
-    }}
-  ]
-}}"""
+Return JSON with this exact structure:
+{{"clusters": [{{"type": "topic", "label": "short name", "summary": "1-2 sentences", "entity_labels": ["entity1"]}}]}}"""
 
         try:
             response = await llm_call_fn(prompt, priority=2)
