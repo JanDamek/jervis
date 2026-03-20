@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # TOKEN_ESTIMATE_RATIO=4, _truncate_messages_to_budget().
     # Indexing must do the same to prevent silent truncation / model hangs.
     INGEST_CONTEXT_CAP: int = 32_768         # Max num_ctx (GPU-2: 3 models loaded, limited KV cache budget)
-    INGEST_RESPONSE_RESERVE: int = 2_000    # Reserve tokens for JSON response generation
+    INGEST_RESPONSE_RESERVE: int = 3_000    # Reserve tokens for JSON response (nodes + edges + thoughts)
     INGEST_PROMPT_RESERVE: int = 1_500      # Reserve tokens for instruction/system part of prompt
     TOKEN_ESTIMATE_RATIO: float = 2.5       # chars / 2.5 ≈ tokens (Czech text heuristic)
     MAX_EXTRACTION_CHUNKS: int = 30         # Max chunks for LLM graph extraction per document
@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     # Write operations: limited to prevent resource exhaustion (won't block reads)
     MAX_CONCURRENT_READS: int = 1000  # Effectively unlimited (pod capacity limit)
     MAX_CONCURRENT_WRITES: int = 10   # Max parallel write requests (queue others)
+
+    # -- Thought Map maintenance -------------------------------------------------
+    THOUGHT_DECAY_FACTOR: float = 0.995
+    THOUGHT_MERGE_THRESHOLD: float = 0.92
+    THOUGHT_ARCHIVE_THRESHOLD: float = 0.05
+    THOUGHT_ARCHIVE_DAYS: int = 30
 
     # -- Embedding concurrency --------------------------------------------------
     # GPU-2 benchmark (2026-03-04): sweet spot = 4-5 concurrent requests

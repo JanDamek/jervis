@@ -22,6 +22,9 @@ from app.api.models import (
     JoernScanRequest, JoernScanResult,
     KbDocumentUploadRequest, KbDocumentDto, KbDocumentUpdateRequest,
     KbDocumentCategoryEnum,
+    ThoughtTraversalRequest, ThoughtReinforcementRequest,
+    ThoughtCreateRequest, ThoughtBootstrapRequest,
+    ThoughtMaintenanceRequest, ThoughtTraversalResult,
 )
 from app.services.knowledge_service import KnowledgeService
 from app.services.clients.joern_client import JoernResultDto
@@ -816,6 +819,99 @@ async def reindex_kb_document(doc_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Thought Map endpoints
+# ---------------------------------------------------------------------------
+
+@read_router.post("/thoughts/traverse", response_model=ThoughtTraversalResult)
+async def thought_traverse(request: ThoughtTraversalRequest, req: Request):
+    """Spreading activation: embed query → find entry thoughts → AQL traversal."""
+    thought_service = req.app.state.thought_service
+    result = await thought_service.traverse(
+        query=request.query,
+        client_id=request.clientId,
+        project_id=request.projectId or "",
+        group_id=request.groupId or "",
+        max_results=request.maxResults,
+        floor=request.floor,
+        max_depth=request.maxDepth,
+        entry_top_k=request.entryTopK,
+    )
+    return ThoughtTraversalResult(
+        thoughts=result["thoughts"],
+        knowledge=result["knowledge"],
+        activatedThoughtIds=result["activated_thought_ids"],
+        activatedEdgeIds=result["activated_edge_ids"],
+    )
+
+
+@read_router.get("/thoughts/stats")
+async def thought_stats(clientId: str, req: Request):
+    """Get Thought Map statistics for a client."""
+    thought_service = req.app.state.thought_service
+    return await thought_service.get_stats(clientId)
+
+
+@write_router.post("/thoughts/reinforce")
+async def thought_reinforce(request: ThoughtReinforcementRequest, req: Request):
+    """Hebbian reinforcement of activated thoughts and edges."""
+    thought_service = req.app.state.thought_service
+    await thought_service.reinforce(
+        thought_keys=request.thoughtKeys,
+        edge_keys=request.edgeKeys,
+    )
+    return {"ok": True}
+
+
+@write_router.post("/thoughts/create")
+async def thought_create(request: ThoughtCreateRequest, req: Request):
+    """Create or reinforce thoughts from LLM response (match-first)."""
+    thought_service = req.app.state.thought_service
+    created_keys = []
+    for thought in request.thoughts:
+        key = await thought_service.upsert_thought(
+            label=thought.get("label", ""),
+            summary=thought.get("summary", ""),
+            thought_type=thought.get("type", "topic"),
+            client_id=request.clientId,
+            project_id=request.projectId or "",
+            group_id=request.groupId or "",
+            related_entity_keys=thought.get("related_entities", []),
+            embedding_priority=2,
+        )
+        created_keys.append(key)
+    return {"ok": True, "keys": created_keys}
+
+
+@write_router.post("/thoughts/bootstrap")
+async def thought_bootstrap(request: ThoughtBootstrapRequest, req: Request):
+    """Cold start: seed Thought Map from existing KnowledgeNodes."""
+    thought_service = req.app.state.thought_service
+    graph_service = req.app.state.graph_service
+    result = await thought_service.bootstrap(
+        client_id=request.clientId,
+        project_id=request.projectId or "",
+        group_id=request.groupId or "",
+        llm_call_fn=graph_service._llm_call,
+    )
+    return result
+
+
+@write_router.post("/thoughts/maintain")
+async def thought_maintain(request: ThoughtMaintenanceRequest, req: Request):
+    """Trigger Thought Map maintenance (light or heavy)."""
+    thought_service = req.app.state.thought_service
+    # Maintenance scheduler handles the actual work
+    # This endpoint is for manual trigger
+    if request.mode == "heavy":
+        from app.services.thought_maintenance import run_heavy_maintenance
+        result = await run_heavy_maintenance(thought_service, request.clientId)
+    else:
+        from app.services.thought_maintenance import run_light_maintenance
+        result = await run_light_maintenance(thought_service, request.clientId)
+    return result
 
 
 # ---------------------------------------------------------------------------

@@ -603,3 +603,48 @@ class KbDocumentDto(BaseModel):
     uploadedAt: str = ""
     indexedAt: Optional[str] = None
 
+
+# ---------------------------------------------------------------------------
+# Thought Map models
+# ---------------------------------------------------------------------------
+
+class ThoughtTraversalRequest(BaseModel):
+    """Request for Thought Map spreading activation traversal."""
+    query: str
+    clientId: str
+    projectId: Optional[str] = None
+    groupId: Optional[str] = None
+    maxResults: int = 20
+    floor: float = 0.1
+    maxDepth: int = 3
+    entryTopK: int = 5
+
+class ThoughtReinforcementRequest(BaseModel):
+    """Request to reinforce activated thoughts (Hebbian)."""
+    thoughtKeys: List[str] = []
+    edgeKeys: List[str] = []
+
+class ThoughtCreateRequest(BaseModel):
+    """Request to create/reinforce thoughts from LLM response."""
+    clientId: str
+    projectId: Optional[str] = None
+    groupId: Optional[str] = None
+    thoughts: List[Dict[str, Any]]  # [{label, summary, type, related_entities[]}]
+
+class ThoughtBootstrapRequest(BaseModel):
+    """Request to bootstrap Thought Map from existing KB."""
+    clientId: str
+    projectId: Optional[str] = None
+    groupId: Optional[str] = None
+
+class ThoughtMaintenanceRequest(BaseModel):
+    """Request to trigger Thought Map maintenance."""
+    clientId: str
+    mode: str = "light"  # "light" or "heavy"
+
+class ThoughtTraversalResult(BaseModel):
+    """Result of Thought Map traversal."""
+    thoughts: List[Dict[str, Any]]
+    knowledge: List[Dict[str, Any]]
+    activatedThoughtIds: List[str]
+    activatedEdgeIds: List[str]

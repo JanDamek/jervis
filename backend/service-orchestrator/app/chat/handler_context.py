@@ -26,10 +26,16 @@ _procedures_cache: list[str] = []
 _procedures_cache_at: float = 0
 
 
-async def load_runtime_context() -> RuntimeContext:
+async def load_runtime_context(
+    query: str = "",
+    client_id: str = "",
+    project_id: str | None = None,
+    group_id: str | None = None,
+) -> RuntimeContext:
     """Load runtime data for system prompt enrichment.
 
     Clients/projects are cached (TTL 5min), pending tasks and meetings are always fresh.
+    If query/client_id provided, also loads proactive Thought Map context.
     """
     from app.tools.kotlin_client import kotlin_client
 
@@ -73,12 +79,34 @@ async def load_runtime_context() -> RuntimeContext:
     except Exception as e:
         logger.warning("Failed to load guidelines: %s", e)
 
+    # Thought Map — proactive traversal (spreading activation)
+    thought_context = ""
+    activated_thought_ids: list[str] = []
+    activated_edge_ids: list[str] = []
+    if query and client_id:
+        try:
+            from app.kb.thought_prefetch import prefetch_thought_context
+            tc = await prefetch_thought_context(
+                query=query,
+                client_id=client_id,
+                project_id=project_id,
+                group_id=group_id,
+            )
+            thought_context = tc.formatted_context
+            activated_thought_ids = tc.activated_thought_ids
+            activated_edge_ids = tc.activated_edge_ids
+        except Exception as e:
+            logger.warning("Failed to load thought context: %s", e)
+
     return RuntimeContext(
         clients_projects=_clients_cache,
         pending_user_tasks=pending,
         unclassified_meetings_count=unclassified,
         learned_procedures=learned_procedures,
         guidelines_text=guidelines_text,
+        thought_context=thought_context,
+        activated_thought_ids=activated_thought_ids,
+        activated_edge_ids=activated_edge_ids,
     )
 
 

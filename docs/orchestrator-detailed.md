@@ -884,6 +884,29 @@ Coding agenti mají runtime přístup přes unified HTTP MCP server (`service-mc
 
 Agents connect via HTTP (`.claude/mcp.json` → `type: "http"`, `url: "http://jervis-mcp:8100/mcp"`).
 
+### 9.4 Proaktivní Thought Map traversal
+
+> Spec: [thought-map-spec.md](thought-map-spec.md)
+
+Místo reaktivního `kb_search` (LLM musí zavolat tool) se kontext z Thought Map **předloží automaticky před LLM callem**.
+
+**Flow:**
+1. `handler_context.py: load_runtime_context()` volá `prefetch_thought_context(query, client_id)`
+2. `thought_prefetch.py` → `POST /thoughts/traverse` (spreading activation v ArangoDB)
+3. KB vrátí aktivované ThoughtNodes + anchored KnowledgeNodes
+4. Formátovaný kontext se injektuje do system promptu (~5000 tokenů)
+5. Po odpovědi LLM → fire-and-forget:
+   - `reinforce_activated_thoughts()` → Hebbian reinforcement
+   - `extract_and_store_response_thoughts()` → pattern-based extraction nových thoughts
+
+**Klíčové soubory:**
+- `app/kb/thought_prefetch.py` — proaktivní traversal
+- `app/kb/thought_update.py` — post-response reinforcement + extraction
+- `app/chat/handler_context.py` — integrace do `load_runtime_context()`
+- `app/agent/sse_handler.py` — fire-and-forget post-response update
+
+`kb_search` tool zůstává jako fallback pro explicitní dotazy.
+
 ---
 
 ## 10. K8s Job Runner — spouštění coding agentů

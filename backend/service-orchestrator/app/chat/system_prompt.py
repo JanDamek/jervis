@@ -18,6 +18,9 @@ class RuntimeContext:
     unclassified_meetings_count: int = 0
     learned_procedures: list[str] = field(default_factory=list)  # Dynamic: loaded from KB at chat start
     guidelines_text: str = ""  # Formatted guidelines from GuidelinesResolver
+    thought_context: str = ""  # Proactive Thought Map context (spreading activation)
+    activated_thought_ids: list[str] = field(default_factory=list)  # For post-response reinforcement
+    activated_edge_ids: list[str] = field(default_factory=list)  # For post-response reinforcement
 
 
 async def build_system_prompt(
@@ -51,6 +54,7 @@ async def build_system_prompt(
     meetings_section = _build_unclassified_meetings_section(ctx.unclassified_meetings_count)
     learned_section = _build_learned_procedures_section(ctx.learned_procedures)
     guidelines_section = f"\n{ctx.guidelines_text}\n" if ctx.guidelines_text else ""
+    thought_section = f"\n## Aktivní kontext (Thought Map)\n{ctx.thought_context}\n" if ctx.thought_context else ""
     active_graph_section = await _build_active_graph_section(session_id)
 
     return f"""Jsi Jervis — osobní AI asistent a project manager pro Jana Damka.
@@ -63,7 +67,7 @@ async def build_system_prompt(
 
 ## Aktuální čas: {now}
 {scope_info}
-{clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}{active_graph_section}
+{clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}{thought_section}{active_graph_section}
 ## Práce s tools
 Máš základní sadu nástrojů (viz tool schemas). Pro pokročilé operace si řekni o další přes **request_tools(category)**.
 

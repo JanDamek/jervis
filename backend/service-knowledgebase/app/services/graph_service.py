@@ -28,7 +28,12 @@ class GraphService:
             chunk_overlap=200
         )
         self._tokenizer = tiktoken.get_encoding("cl100k_base")
+        self._thought_service = None  # Set after ThoughtService init in main.py
         self._ensure_schema()
+
+    def set_thought_service(self, thought_service):
+        """Inject ThoughtService after initialization (avoids circular dependency)."""
+        self._thought_service = thought_service
 
     def _ensure_schema(self):
         if not self.db.has_collection("KnowledgeNodes"):
@@ -197,8 +202,8 @@ class GraphService:
 
         Returns: (nodes_created, edges_created, entity_keys)
         """
-        prompt = f"""You are a knowledge graph extractor. Extract entities and relationships from the text.
-Return a JSON object with two keys: "nodes" and "edges".
+        prompt = f"""You are a knowledge graph extractor. Extract entities, relationships, and high-level insights from the text.
+Return a JSON object with three keys: "nodes", "edges", and "thoughts".
 "nodes": list of objects with:
   - "label": name/identifier of the entity
   - "type": category (e.g., person, file, jira_issue, class, method, concept)
@@ -209,12 +214,20 @@ Return a JSON object with two keys: "nodes" and "edges".
   - "target": label of target node (must match a node label)
   - "relation": type of relationship (e.g., mentions, contains, calls, assigned_to)
 
+"thoughts": list of high-level insights extracted from the text:
+  - "type": category (problem, decision, insight, topic, dependency, state)
+  - "label": short identifier (e.g., "Auth fails after upgrade")
+  - "summary": 1-2 sentence explanation of the thought
+  - "related_entities": list of node labels this thought references (must match node labels)
+
 Guidelines:
 - Extract ALL mentioned entities: people, systems, files, tickets, code elements, concepts
 - Use specific types: person, jira_issue, confluence_page, file, class, method, commit, etc.
 - For people, use their full name or identifier
 - For tickets, include the key (e.g., "TASK-123")
 - Keep labels concise but specific
+- For thoughts: extract problems being discussed, decisions made, key insights, dependencies identified
+- Only extract thoughts when the text contains meaningful high-level information (skip for purely structural content)
 
 Text: {text}
 """
@@ -375,6 +388,58 @@ Text: {text}
             return local_nodes, local_edges
 
         local_nodes, local_edges = await asyncio.to_thread(_arango_upsert)
+
+        # Phase 4: Process thoughts (Thought Map)
+        if self._thought_service and data.get("thoughts"):
+            try:
+                thought_keys = []
+                for thought in data["thoughts"]:
+                    t_label = thought.get("label", "").strip()
+                    t_summary = thought.get("summary", "").strip()
+                    t_type = thought.get("type", "topic").strip()
+                    if not t_label:
+                        continue
+
+                    # Map related_entities labels to canonical keys
+                    related_keys = []
+                    for rel_label in thought.get("related_entities", []):
+                        canonical = label_to_key.get(rel_label.lower())
+                        if canonical:
+                            related_keys.append(canonical)
+
+                    key = await self._thought_service.upsert_thought(
+                        label=t_label,
+                        summary=t_summary,
+                        thought_type=t_type,
+                        client_id=request.clientId,
+                        project_id=request.projectId or "",
+                        group_id=request.groupId or "",
+                        source_type=request.kind or "",
+                        source_ref=request.sourceUrn,
+                        related_entity_keys=related_keys,
+                        embedding_priority=embedding_priority or 3,
+                    )
+                    thought_keys.append(key)
+
+                # Create edges between co-extracted thoughts (same chunk = same_domain)
+                for i, key_a in enumerate(thought_keys):
+                    for key_b in thought_keys[i + 1:]:
+                        await self._thought_service.create_thought_edge(
+                            from_key=key_a,
+                            to_key=key_b,
+                            edge_type="same_domain",
+                            client_id=request.clientId,
+                            weight=0.7,
+                        )
+
+                logger.info(
+                    "GRAPH_WRITE: THOUGHTS sourceUrn=%s thoughts=%d",
+                    request.sourceUrn, len(thought_keys),
+                )
+            except Exception as e:
+                logger.warning("GRAPH_WRITE: THOUGHT_EXTRACTION_FAILED sourceUrn=%s error=%s",
+                               request.sourceUrn, e)
+
         return local_nodes, local_edges, entity_keys
 
     async def purge_chunk_refs(self, deleted_chunk_ids: list[str]) -> tuple[int, int, int, int]:

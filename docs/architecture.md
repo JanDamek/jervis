@@ -29,6 +29,7 @@
 20. [Unified Chat Stream](#unified-chat-stream)
 21. [Watch Apps (watchOS + Wear OS)](#watch-apps-watchos--wear-os)
 22. [TTS Service (Piper)](#tts-service-piper)
+23. [Thought Map (Navigation Layer)](#thought-map-navigation-layer)
 
 ---
 
@@ -2567,3 +2568,44 @@ playback starts immediately without waiting for the full text.
 
 The same `postSseStream()` is used for voice chat (`POST /api/v1/voice/stream`) providing
 real-time transcription and response streaming on all platforms.
+
+---
+
+## Thought Map (Navigation Layer)
+
+> Full spec: [thought-map-spec.md](thought-map-spec.md). KB integration: [knowledge-base.md](knowledge-base.md#thought-map-navigation-layer).
+
+Thought Map adds a navigation layer over the KB graph using **spreading activation** — replaces flat `kb_search` with proactive context traversal.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              ThoughtNodes + ThoughtEdges                     │
+│  [Auth problem]──causes──[Deploy blocked]                   │
+│       │                        │                            │
+│  ThoughtAnchors           ThoughtAnchors                    │
+│       │                        │                            │
+│  ─────┼────────────────────────┼────────────────────────────│
+│       ▼                        ▼                            │
+│  KnowledgeNodes + KnowledgeEdges + Joern CPG                │
+│  [AuthService.kt]──calls──[OAuth2Client.kt]                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Collections
+
+3 global collections with multi-tenant `clientId` filtering (same pattern as `KnowledgeNodes`):
+
+- **ThoughtNodes** — high-level insights/decisions/problems with 384-dim embeddings
+- **ThoughtEdges** — relationships between thoughts (causes, blocks, same_domain)
+- **ThoughtAnchors** — edges from ThoughtNodes → KnowledgeNodes
+
+### Chat Flow Integration
+
+1. User message arrives → `load_runtime_context()` calls `prefetch_thought_context()`
+2. KB service: embed query → top-5 entry points → AQL 1..3 hops spreading activation → top-20 results
+3. Formatted context (~5000 tokens) injected into system prompt before LLM call
+4. Post-response (fire-and-forget): Hebbian reinforcement + pattern-based thought extraction
+
+### Maintenance
+
+Background scheduler in KB service — light maintenance (decay + merge) on GPU idle, heavy (archive + Louvain hierarchy) during quiet hours (01:00–06:00).

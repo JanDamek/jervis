@@ -45,10 +45,13 @@ async def lifespan(app: FastAPI):
     from app.services.graph_service import GraphService
     from app.api import routes
     from app.services.rag_service import RagService
+    from app.services.thought_service import ThoughtService
 
     # Create base services
     rag_service = RagService()
     graph_service = GraphService()
+    thought_service = ThoughtService(graph_service.db, rag_service)
+    graph_service.set_thought_service(thought_service)
 
     # Initialize extraction queue and worker ONLY for write mode
     extraction_queue = None
@@ -72,6 +75,8 @@ async def lifespan(app: FastAPI):
     app.state.extraction_queue = extraction_queue
     app.state.knowledge_service = knowledge_service
     app.state.extraction_worker = worker
+    app.state.thought_service = thought_service
+    app.state.graph_service = graph_service
 
     logger.info("Knowledge Service ready (mode=%s, read_limit=%d, write_limit=%d, embedding_concurrency=%d)",
                 settings.KB_MODE, settings.MAX_CONCURRENT_READS, settings.MAX_CONCURRENT_WRITES,

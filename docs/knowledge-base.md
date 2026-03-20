@@ -18,6 +18,7 @@
 9. [Session Memory (Multi-Agent System)](#session-memory-multi-agent-system)
 10. [Knowledge Base Best Practices](#knowledge-base-best-practices)
 11. [Monitoring & Metrics](#monitoring--metrics)
+12. [Thought Map (Navigation Layer)](#thought-map-navigation-layer)
 
 ---
 
@@ -1378,3 +1379,50 @@ The KB is complemented by an internal Jira+Confluence instance ("Brain") configu
 | `backend/server/.../service/brain/BrainWriteServiceImpl.kt` | Implementation (resolves SystemConfig, delegates to BugTrackerService/WikiService) |
 | `backend/server/.../service/background/TaskQualificationService.kt` | KB dispatch and cross-project write |
 | `backend/service-orchestrator/app/tools/brain_client.py` | Python HTTP client for brain endpoints |
+
+---
+
+## Thought Map (Navigation Layer)
+
+> Full spec: [thought-map-spec.md](thought-map-spec.md)
+
+Thought Map adds a **navigation layer** over the KB graph — spreading activation replaces flat search for proactive context retrieval.
+
+### Collections (Global, Multi-Tenant)
+
+| Collection | Type | Purpose |
+|---|---|---|
+| `ThoughtNodes` | document | High-level insights, decisions, problems (with 384-dim embeddings) |
+| `ThoughtEdges` | edge | Relationships between thoughts (causes, blocks, same_domain) |
+| `ThoughtAnchors` | edge | Connections from ThoughtNodes → KnowledgeNodes |
+
+Named graph: `thought_graph`. Client isolation via `clientId` field filtering in AQL.
+
+### Ingest Integration
+
+Extended extraction prompt in `graph_service.py` adds `thoughts[]` to LLM JSON output. Match-first strategy (cosine ≥ 0.85) prevents duplicate thoughts — existing nodes are reinforced instead.
+
+### API Endpoints
+
+| Endpoint | Method | Router | Purpose |
+|---|---|---|---|
+| `/thoughts/traverse` | POST | read | Spreading activation from entry points |
+| `/thoughts/reinforce` | POST | write | Hebbian reinforcement of activated nodes/edges |
+| `/thoughts/create` | POST | write | Store new thoughts (match-first) |
+| `/thoughts/bootstrap` | POST | write | Cold start — seed from top-100 KB nodes |
+| `/thoughts/maintain` | POST | write | Trigger maintenance (light/heavy) |
+| `/thoughts/stats` | GET | read | Graph statistics per client |
+
+### Maintenance
+
+- **Light** (GPU idle + 1h cooldown): decay (×0.995) + merge (cosine > 0.92)
+- **Heavy** (01:00–06:00 nightly): + archive (score < 0.05, 30d) + Louvain hierarchy
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/service-knowledgebase/app/services/thought_service.py` | ThoughtService — schema, upsert, traverse, reinforce, bootstrap |
+| `backend/service-knowledgebase/app/services/thought_maintenance.py` | Maintenance scheduler — decay, merge, archive, Louvain |
+| `backend/service-orchestrator/app/kb/thought_prefetch.py` | Proactive thought traversal before LLM call |
+| `backend/service-orchestrator/app/kb/thought_update.py` | Post-response reinforcement + thought extraction |
