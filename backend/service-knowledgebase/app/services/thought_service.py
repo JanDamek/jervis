@@ -603,13 +603,15 @@ Return JSON:
 
         try:
             response = await llm_call_fn(prompt, priority=2)
+            logger.info("THOUGHT_BOOTSTRAP: LLM response length=%d, first 200 chars: %s", len(response), response[:200])
             if "```json" in response:
                 response = response.split("```json")[1].split("```")[0]
             elif "```" in response:
                 response = response.split("```")[1].split("```")[0]
             data = json.loads(response)
+            logger.info("THOUGHT_BOOTSTRAP: parsed %d clusters from LLM", len(data.get("clusters", [])))
         except Exception as e:
-            logger.error("THOUGHT_BOOTSTRAP: LLM clustering failed: %s", e)
+            logger.error("THOUGHT_BOOTSTRAP: LLM clustering failed: %s (response: %s)", e, response[:300] if response else "empty")
             return {"status": "llm_error", "thoughts_created": 0, "error": str(e)}
 
         # Step 3: Create ThoughtNodes + anchors
