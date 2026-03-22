@@ -62,6 +62,7 @@ class RecordingUploadService(
 
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+    private val uploadMutex = kotlinx.coroutines.sync.Mutex()
 
     companion object {
         private const val CHUNK_SIZE_BYTES = 4 * 1024 * 1024
@@ -154,7 +155,7 @@ class RecordingUploadService(
 
     @OptIn(ExperimentalEncodingApi::class)
     private suspend fun runUploadCycle() {
-        if (_isSyncing.value) return
+        if (!uploadMutex.tryLock()) return // Another cycle running — skip
         _isSyncing.value = true
 
         try {
@@ -171,10 +172,34 @@ class RecordingUploadService(
                     break
                 }
 
-                // Skip sessions that are still recording and have no pending chunks
+                // Check pending chunks on disk
                 val pendingCount = AudioChunkQueue.getAllPending().count { it.meetingId == session.localId }
+
+                // Skip sessions that are still recording and have no pending chunks
                 if (session.stoppedAtMs == null && pendingCount == 0) {
-                    // Still recording, no chunks ready yet — skip
+                    continue
+                }
+
+                // Detect orphaned sessions: chunks claimed but no files on disk
+                if (pendingCount == 0 && session.chunkCount > 0 && session.uploadedChunkCount < session.chunkCount) {
+                    println("[Upload] Session ${session.localId}: orphaned — claims ${session.chunkCount} chunks " +
+                        "but 0 on disk (files lost after reinstall?). Finalizing with what server has.")
+                    if (session.serverMeetingId != null && session.stoppedAtMs != null) {
+                        try {
+                            val meetingType = session.meetingType?.let {
+                                try { MeetingTypeEnum.valueOf(it) } catch (_: Exception) { null }
+                            }
+                            repository.meetings.finalizeRecording(
+                                MeetingFinalizeDto(
+                                    meetingId = session.serverMeetingId,
+                                    title = session.title,
+                                    meetingType = meetingType ?: MeetingTypeEnum.MEETING,
+                                    durationSeconds = session.durationSeconds,
+                                ),
+                            )
+                        } catch (_: Exception) { /* server may not have this meeting */ }
+                    }
+                    updateSession(session.localId) { it.copy(finalized = true) }
                     continue
                 }
 
@@ -204,6 +229,7 @@ class RecordingUploadService(
             }
         } finally {
             _isSyncing.value = false
+            uploadMutex.unlock()
             _sessions.value = RecordingSessionStorage.load().filter { !it.finalized }
         }
     }
