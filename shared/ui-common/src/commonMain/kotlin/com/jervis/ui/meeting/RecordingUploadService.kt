@@ -87,7 +87,9 @@ class RecordingUploadService(
                 .collect { connected ->
                     if (connected) {
                         platformLog("Upload", "Connection restored — starting upload cycle")
-                        runUploadCycle()
+                        try { runUploadCycle() } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                            platformLog("Upload", "Cycle failed: ${e::class.simpleName}: ${e.message}")
+                        }
                     }
                 }
         }
@@ -96,7 +98,9 @@ class RecordingUploadService(
             while (true) {
                 delay(POLL_INTERVAL_MS)
                 if (connectionManager.state.value is RpcConnectionState.Connected) {
-                    runUploadCycle()
+                    try { runUploadCycle() } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                        platformLog("Upload", "Cycle failed: ${e::class.simpleName}: ${e.message}")
+                    }
                 }
             }
         }
@@ -221,12 +225,13 @@ class RecordingUploadService(
                     throw e
                 } catch (e: Exception) {
                     val msg = e.message ?: ""
-                    // Server says meeting is already processed — mark as done
+                    // Server says meeting is gone or already processed — mark as done
                     if (msg.contains("not in recording") || msg.contains("INDEXED") ||
                         msg.contains("TRANSCRIBING") || msg.contains("DONE") ||
-                        msg.contains("FAILED")
+                        msg.contains("FAILED") || msg.contains("not found") ||
+                        msg.contains("Not found")
                     ) {
-                        platformLog("Upload", "Session ${session.localId} already processed on server: $msg")
+                        platformLog("Upload", "Session ${session.localId} server rejected: $msg — clearing")
                         AudioChunkQueue.clearMeeting(session.localId)
                         updateSession(session.localId) { it.copy(finalized = true, error = null) }
                     } else {
