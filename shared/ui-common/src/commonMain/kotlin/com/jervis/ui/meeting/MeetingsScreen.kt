@@ -394,6 +394,11 @@ fun MeetingsScreen(
                                         session = session,
                                         onRetry = { uploadService?.retrySession(session.localId) },
                                         onCancel = { uploadService?.cancelSession(session.localId, session.serverMeetingId) },
+                                        onStop = {
+                                            uploadService?.updateSession(session.localId) {
+                                                it.copy(stoppedAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds())
+                                            }
+                                        },
                                     )
                                 }
                                 item(key = "upload_divider") {
@@ -771,6 +776,7 @@ private fun PendingSessionListItem(
     session: RecordingSession,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
+    onStop: () -> Unit = {},
 ) {
     val statusText = when {
         session.error != null -> "Selhalo: ${session.error}"
@@ -818,6 +824,9 @@ private fun PendingSessionListItem(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (session.error != null) {
                         androidx.compose.material3.TextButton(onClick = onRetry) { Text("Zkusit znovu") }
+                    }
+                    if (session.stoppedAtMs == null) {
+                        androidx.compose.material3.TextButton(onClick = onStop) { Text("Zastavit") }
                     }
                     androidx.compose.material3.TextButton(onClick = onCancel) { Text("Zrušit") }
                 }

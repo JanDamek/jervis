@@ -158,46 +158,47 @@ class RecordingUploadService(
         _isSyncing.value = true
 
         try {
-            // Re-read sessions each iteration — first session may finalize during upload
-            while (true) {
-                val allSessions = RecordingSessionStorage.load()
-                val activeSessions = allSessions.filter { !it.finalized }
-                if (activeSessions.isEmpty()) break
+            val allSessions = RecordingSessionStorage.load()
+            val activeSessions = allSessions.filter { !it.finalized }
+            if (activeSessions.isEmpty()) return
 
-                // Pick first active session — one at a time, sequential
-                val session = activeSessions.first()
+            println("[Upload] Cycle: ${activeSessions.size} active sessions")
 
+            // Process each session sequentially
+            for (session in activeSessions) {
                 if (connectionManager.state.value !is RpcConnectionState.Connected) {
                     println("[Upload] Connection lost — stopping cycle")
                     break
                 }
 
+                // Skip sessions that are still recording and have no pending chunks
+                val pendingCount = AudioChunkQueue.getAllPending().count { it.meetingId == session.localId }
+                if (session.stoppedAtMs == null && pendingCount == 0) {
+                    // Still recording, no chunks ready yet — skip
+                    continue
+                }
+
                 println("[Upload] Processing session ${session.localId}: " +
                     "server=${session.serverMeetingId}, chunks=${session.uploadedChunkCount}/${session.chunkCount}, " +
-                    "stopped=${session.stoppedAtMs != null}")
+                    "pending=$pendingCount, stopped=${session.stoppedAtMs != null}")
 
                 try {
                     uploadSession(session)
-                    // After uploadSession completes, either:
-                    // - session was finalized → next iteration picks next session
-                    // - session still has chunks → next poll cycle continues it
-                    break // Let poll cycle re-trigger for next session
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     val msg = e.message ?: ""
                     // Server says meeting is already processed — mark as done
                     if (msg.contains("not in recording") || msg.contains("INDEXED") ||
-                        msg.contains("TRANSCRIBING") || msg.contains("DONE")
+                        msg.contains("TRANSCRIBING") || msg.contains("DONE") ||
+                        msg.contains("FAILED")
                     ) {
                         println("[Upload] Session ${session.localId} already processed on server: $msg")
                         AudioChunkQueue.clearMeeting(session.localId)
                         updateSession(session.localId) { it.copy(finalized = true, error = null) }
-                        // Continue while loop — pick next session
                     } else {
-                        // Session-level error (e.g., can't create meeting) — skip for this cycle
+                        // Session-level error — log and continue to next session
                         println("[Upload] Session ${session.localId} error: ${e::class.simpleName}: $msg")
-                        break
                     }
                 }
             }
