@@ -339,11 +339,13 @@ class RecordingUploadService(
                     offset = end
                 } catch (e: Throwable) {
                     if (e is CancellationException && e::class.simpleName == "CancellationException") throw e
+                    val errMsg = e.message ?: ""
+                    // Server meeting gone — propagate to per-session handler to re-create
+                    if (errMsg.contains("not found", ignoreCase = true)) throw e
                     consecutiveErrors++
                     platformLog("Upload", "${session.localId}: chunk ${chunk.chunkIndex} sub-chunk failed " +
-                        "(error $consecutiveErrors/$MAX_CONSECUTIVE_ERRORS): ${e::class.simpleName}: ${e.message}")
+                        "(error $consecutiveErrors/$MAX_CONSECUTIVE_ERRORS): ${e::class.simpleName}: $errMsg")
                     subChunkFailed = true
-                    // Wait before retrying next chunk (not this sub-chunk — move on)
                     delay(CHUNK_ERROR_DELAY_MS)
                     break
                 }
