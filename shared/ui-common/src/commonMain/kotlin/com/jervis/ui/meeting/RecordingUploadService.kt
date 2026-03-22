@@ -158,20 +158,30 @@ class RecordingUploadService(
         _isSyncing.value = true
 
         try {
-            val allSessions = RecordingSessionStorage.load()
-            val activeSessions = allSessions.filter { !it.finalized }
-            if (activeSessions.isEmpty()) return
+            // Re-read sessions each iteration — first session may finalize during upload
+            while (true) {
+                val allSessions = RecordingSessionStorage.load()
+                val activeSessions = allSessions.filter { !it.finalized }
+                if (activeSessions.isEmpty()) break
 
-            println("[Upload] Cycle: ${activeSessions.size} active sessions")
+                // Pick first active session — one at a time, sequential
+                val session = activeSessions.first()
 
-            // Process sessions SEQUENTIALLY — no WebSocket contention
-            for (session in activeSessions) {
                 if (connectionManager.state.value !is RpcConnectionState.Connected) {
                     println("[Upload] Connection lost — stopping cycle")
                     break
                 }
+
+                println("[Upload] Processing session ${session.localId}: " +
+                    "server=${session.serverMeetingId}, chunks=${session.uploadedChunkCount}/${session.chunkCount}, " +
+                    "stopped=${session.stoppedAtMs != null}")
+
                 try {
                     uploadSession(session)
+                    // After uploadSession completes, either:
+                    // - session was finalized → next iteration picks next session
+                    // - session still has chunks → next poll cycle continues it
+                    break // Let poll cycle re-trigger for next session
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -183,9 +193,11 @@ class RecordingUploadService(
                         println("[Upload] Session ${session.localId} already processed on server: $msg")
                         AudioChunkQueue.clearMeeting(session.localId)
                         updateSession(session.localId) { it.copy(finalized = true, error = null) }
+                        // Continue while loop — pick next session
                     } else {
-                        // Session-level error (e.g., can't create meeting) — log but don't kill
+                        // Session-level error (e.g., can't create meeting) — skip for this cycle
                         println("[Upload] Session ${session.localId} error: ${e::class.simpleName}: $msg")
+                        break
                     }
                 }
             }
