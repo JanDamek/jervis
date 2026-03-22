@@ -1918,6 +1918,33 @@ The system prompt is enriched with live runtime data on each chat request:
 
 Data fetched from Kotlin internal API (`/internal/clients-projects`, `/internal/pending-user-tasks/summary`, `/internal/unclassified-meetings/count`).
 
+### Foreground Graph Decomposition
+
+Complex multi-entity queries (e.g. "compare Rust, Go and TypeScript") are automatically decomposed into parallel graph vertices for faster, focused processing.
+
+**Detection** (`chat_decomposer.py`):
+- Quick LLM classification call (LOCAL_COMPACT) decides if query needs decomposition
+- Triggers for: named entities to compare, discovery+research, multi-aspect queries
+- Conversation context included to detect follow-ups (which are NOT decomposed)
+
+**Graph structure:**
+```
+ROOT (COMPLETED placeholder — never executes)
+├── INVESTIGATOR "Rust" (READY) ──┐
+├── INVESTIGATOR "Go" (READY)   ──┤── DEPENDENCY ──► SYNTHESIS (PENDING → READY → COMPLETED)
+└── INVESTIGATOR "TypeScript" (READY) ──┘
+```
+
+**Execution optimizations vs. background graphs:**
+- **Minimal tools**: Investigators get only `kb_search`, `web_search`, `web_fetch` (3 tools vs 36+ in background). No persistence tools to prevent infinite store loops.
+- **Focused prompt**: Research-only system prompt, instructs model to produce TEXT after 2-3 tool calls
+- **Tight iteration limits**: Max 10 iterations (vs 100 background), stagnation threshold 3 (vs 5)
+- **Summary truncation**: Vertex results capped at 3000 chars for edge payloads to prevent context explosion in synthesis
+- **Synthesis vertex**: Type SYNTHESIS with NO tools — just combines upstream text (streaming mode)
+- **Root placeholder**: Set to COMPLETED immediately, never resumes (prevents double processing)
+
+**Result flow**: `node_synthesize()` prioritizes SYNTHESIS vertex result over root vertex, avoiding redundant LLM synthesis calls.
+
 ### Stop & Disconnect Handling
 
 Two mechanisms for stopping an active chat:

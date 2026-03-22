@@ -223,17 +223,23 @@ async def llm_with_cloud_fallback(
                 skip_models=[route.model],
             )
             if fallback.target == "openrouter" and fallback.model:
-                return await llm_provider.completion(
-                    messages=messages,
-                    tier=ModelTier.CLOUD_OPENROUTER,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    tools=tools,
-                    model_override=fallback.model,
-                    api_key_override=fallback.api_key,
-                )
-            # No more cloud models — fall through to local GPU
-            logger.warning("No cloud fallback available, trying local GPU")
+                try:
+                    response = await llm_provider.completion(
+                        messages=messages,
+                        tier=ModelTier.CLOUD_OPENROUTER,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        tools=tools,
+                        model_override=fallback.model,
+                        api_key_override=fallback.api_key,
+                    )
+                    await report_model_success(fallback.model)
+                    return response
+                except Exception as e2:
+                    await report_model_error(fallback.model, str(e2)[:500])
+                    logger.warning("Cloud fallback %s also failed: %s — trying local GPU", fallback.model, e2)
+            else:
+                logger.warning("No cloud fallback available, trying local GPU")
 
     # Route decision: local GPU (GPU is free + context ≤48k, or NONE tier)
     headers = priority_headers(state)

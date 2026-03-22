@@ -592,6 +592,7 @@ Entities:
 Return JSON with this exact structure:
 {{"clusters": [{{"type": "topic", "label": "short name", "summary": "1-2 sentences", "entity_labels": ["entity1"]}}]}}"""
 
+        response = None
         try:
             response = await llm_call_fn(prompt, priority=2)
             logger.info("THOUGHT_BOOTSTRAP: LLM response length=%d, first 200 chars: %s", len(response), response[:200])
@@ -602,7 +603,7 @@ Return JSON with this exact structure:
             data = json.loads(response)
             logger.info("THOUGHT_BOOTSTRAP: parsed %d clusters from LLM", len(data.get("clusters", [])))
         except Exception as e:
-            logger.error("THOUGHT_BOOTSTRAP: LLM clustering failed: %s (response: %s)", e, response[:300] if response else "empty")
+            logger.error("THOUGHT_BOOTSTRAP: LLM clustering failed: %s (response: %s)", e, (response[:300] if response else "empty"))
             return {"status": "llm_error", "thoughts_created": 0, "error": str(e)}
 
         # Step 3: Create ThoughtNodes + anchors

@@ -97,7 +97,19 @@ async def handle_chat_sse(
             messages = build_messages(system_prompt, context, None, request.message,
                                      attachments=request.attachments or None)
             try:
-                resp = await call_llm(messages=messages, tier=ModelTier.LOCAL_COMPACT)
+                # Route greeting via OpenRouter when client has cloud tier
+                greeting_max_tier = getattr(request, "max_openrouter_tier", "NONE") or "NONE"
+                greeting_route = None
+                greeting_tier = ModelTier.LOCAL_COMPACT
+                if greeting_max_tier != "NONE":
+                    from app.llm.router_client import route_request as _route_req
+                    greeting_route = await _route_req(
+                        capability="chat", max_tier=greeting_max_tier, estimated_tokens=2000,
+                    )
+                resp = await call_llm(
+                    messages=messages, tier=greeting_tier,
+                    route=greeting_route, max_tier=greeting_max_tier,
+                )
                 text = resp.choices[0].message.content or ""
                 if text.strip():
                     _response_chunks.append(text)
@@ -176,6 +188,17 @@ async def handle_chat_sse(
                 ),
             })
 
+        # ── Emit Thought Map context to UI ──────────────────────────
+        if runtime_ctx.thought_context and runtime_ctx.activated_thought_ids:
+            yield ChatStreamEvent(
+                type="thought_context",
+                content=runtime_ctx.thought_context,
+                metadata={
+                    "activated_thought_ids": ",".join(runtime_ctx.activated_thought_ids),
+                    "activated_edge_ids": ",".join(runtime_ctx.activated_edge_ids),
+                },
+            )
+
         yield ChatStreamEvent(type="thinking", content="Připravuji odpověď...")
 
         # ── 4b'. Create RUNNING vertex in memory graph immediately ──
@@ -209,10 +232,21 @@ async def handle_chat_sse(
 
         try:
             from app.chat.chat_decomposer import detect_and_decompose
+            # Build brief conversation summary for decomposer context
+            _conv_summary = ""
+            if context.messages:
+                # Take last 3 messages as brief context (assistant + user messages)
+                _recent = [m for m in context.messages[-6:] if m.get("role") in ("user", "assistant")]
+                _conv_summary = "\n".join(
+                    f"[{m['role']}]: {str(m.get('content', ''))[:300]}"
+                    for m in _recent[-4:]
+                )
             decomp = await detect_and_decompose(
                 user_message=request.message,
+                conversation_summary=_conv_summary,
                 client_id=request.active_client_id or "",
                 project_id=request.active_project_id or "",
+                max_openrouter_tier=getattr(request, "max_openrouter_tier", "NONE") or "NONE",
             )
             if decomp.should_decompose and decomp.graph:
                 _used_graph_decomposition = True

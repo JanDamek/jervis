@@ -1,5 +1,6 @@
 package com.jervis.ui.screens.settings.sections
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -508,6 +509,11 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                     maxContextTokens = catalogModel.contextLength,
                     enabled = true,
                     label = catalogModel.name,
+                    capabilities = catalogModel.capabilities,
+                    inputPricePerMillion = catalogModel.inputPricePerMillion,
+                    outputPricePerMillion = catalogModel.outputPricePerMillion,
+                    supportsTools = catalogModel.supportsTools,
+                    provider = catalogModel.provider,
                 ))
             },
             onDismiss = { showAddModelDialog = false },
@@ -581,6 +587,11 @@ private fun QueueModelCard(
                             if (entry.maxContextTokens > 0) {
                                 append(" · ${entry.maxContextTokens / 1000}k ctx")
                             }
+                            if (entry.inputPricePerMillion > 0 || entry.outputPricePerMillion > 0) {
+                                append(" · \$${formatPrice(entry.inputPricePerMillion)}/\$${formatPrice(entry.outputPricePerMillion)} /1M")
+                            } else if (!entry.isLocal) {
+                                append(" · FREE")
+                            }
                             if (errorInfo != null) {
                                 if (errorInfo.disabled) {
                                     append(" · DISABLED")
@@ -596,6 +607,48 @@ private fun QueueModelCard(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
+                    // Capability badges
+                    if (entry.capabilities.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(top = 2.dp),
+                        ) {
+                            entry.capabilities.forEach { cap ->
+                                val (badgeLabel, badgeColor) = when (cap) {
+                                    "visual" -> "VL" to MaterialTheme.colorScheme.tertiary
+                                    "chat" -> "Chat" to MaterialTheme.colorScheme.primary
+                                    "thinking" -> "Think" to MaterialTheme.colorScheme.secondary
+                                    "coding" -> "Code" to MaterialTheme.colorScheme.secondary
+                                    "extraction" -> "Extract" to MaterialTheme.colorScheme.onSurfaceVariant
+                                    else -> cap to MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                                Text(
+                                    badgeLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = badgeColor,
+                                    modifier = Modifier
+                                        .background(
+                                            badgeColor.copy(alpha = 0.12f),
+                                            shape = MaterialTheme.shapes.extraSmall,
+                                        )
+                                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                                )
+                            }
+                            if (!entry.supportsTools && !entry.isLocal) {
+                                Text(
+                                    "No Tools",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier
+                                        .background(
+                                            MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                                            shape = MaterialTheme.shapes.extraSmall,
+                                        )
+                                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                                )
+                            }
+                        }
+                    }
                 }
 
                 if (!entry.isLocal) {

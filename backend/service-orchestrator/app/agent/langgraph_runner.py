@@ -31,7 +31,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.errors import GraphInterrupt
 from langgraph.types import interrupt
 
-from app.config import settings
+from app.config import settings, estimate_tokens
 from app.graph.nodes._helpers import (
     detect_tool_loop,
     llm_with_cloud_fallback,
@@ -499,49 +499,64 @@ async def node_synthesize(state: GraphAgentState) -> dict:
     # Always compute stats (needed for final logging)
     stats = get_stats(graph)
 
-    # In reactive model, prefer root vertex result (it's the evaluator)
-    root = graph.vertices.get(graph.root_vertex_id)
-    if root and root.status == VertexStatus.COMPLETED and root.result:
-        result = root.result
+    # Check for a SYNTHESIS vertex first (foreground decomposed graphs).
+    # This takes priority over root vertex, which may be a placeholder.
+    _synth_vertex = next(
+        (v for v in graph.vertices.values()
+         if v.vertex_type == VertexType.SYNTHESIS
+         and v.status == VertexStatus.COMPLETED
+         and v.result),
+        None,
+    )
+    if _synth_vertex:
+        result = _synth_vertex.result
+        logger.info("SYNTHESIZE | using SYNTHESIS vertex result (len=%d)", len(result))
     else:
-        # Fallback: collect from terminal vertices
-        raw_result = get_final_result(graph)
-
-        # LLM synthesis for complex graphs with multiple terminals
-        if raw_result and len(graph.vertices) > 2:
-            try:
-                task_data = state.get("task", {})
-                original_request = task_data.get("message", "")
-                response = await llm_with_cloud_fallback(
-                    state=state,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a synthesis agent. Combine the results from multiple "
-                                "sub-tasks into a coherent, well-structured final answer. "
-                                "Remove redundancy, resolve conflicts, and present a unified response. "
-                                "Use the user's language."
-                            ),
-                        },
-                        {
-                            "role": "user",
-                            "content": (
-                                f"## Original request\n{original_request}\n\n"
-                                f"## Sub-task results\n{raw_result}\n\n"
-                                "Synthesize these results into a coherent final answer."
-                            ),
-                        },
-                    ],
-                    task_type="graph_synthesis",
-                    max_tokens=settings.default_output_tokens,
-                )
-                result = response.choices[0].message.content or raw_result
-            except Exception as e:
-                logger.warning("LLM synthesis failed, using concatenation: %s", e)
-                result = raw_result
+        # In reactive model, prefer root vertex result (it's the evaluator)
+        root = graph.vertices.get(graph.root_vertex_id)
+        if root and root.status == VertexStatus.COMPLETED and root.result:
+            result = root.result
         else:
-            result = raw_result
+            # Fallback: collect from terminal vertices
+            raw_result = get_final_result(graph)
+
+            # LLM synthesis for complex graphs with multiple terminals
+            if raw_result and len(graph.vertices) > 2:
+                try:
+                    task_data = state.get("task", {})
+                    original_request = task_data.get("message", "")
+                    _synth_content = (
+                        f"## Original request\n{original_request}\n\n"
+                        f"## Sub-task results\n{raw_result}\n\n"
+                        "Synthesize these results into a coherent final answer."
+                    )
+                    response = await llm_with_cloud_fallback(
+                        state=state,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a synthesis agent. Combine the results from multiple "
+                                    "sub-tasks into a coherent, well-structured final answer. "
+                                    "Remove redundancy, resolve conflicts, and present a unified response. "
+                                    "Use the user's language."
+                                ),
+                            },
+                            {
+                                "role": "user",
+                                "content": _synth_content,
+                            },
+                        ],
+                        context_tokens=estimate_tokens(_synth_content),
+                        task_type="graph_synthesis",
+                        max_tokens=settings.default_output_tokens,
+                    )
+                    result = response.choices[0].message.content or raw_result
+                except Exception as e:
+                    logger.warning("LLM synthesis failed, using concatenation: %s", e)
+                    result = raw_result
+            else:
+                result = raw_result
 
     # Compact completed vertices — keep result_summary, drop heavy fields
     # This reduces MongoDB document size significantly for large thinking graphs
@@ -1060,10 +1075,28 @@ async def _agentic_vertex(
             return agent_result
 
     # --- Build system prompt with task scope ---
-    system_prompt = _SYSTEM_PROMPTS.get(
-        vertex.vertex_type,
-        _SYSTEM_PROMPTS[VertexType.EXECUTOR],
-    )
+    # Foreground decomposed vertices get focused prompts
+    if state.get("processing_mode") == "FOREGROUND" and vertex.vertex_type != VertexType.SYNTHESIS:
+        system_prompt = (
+            "You are a focused research agent. Your ONLY job is to research ONE specific topic "
+            "and produce a concise, factual summary as your TEXT RESPONSE.\n\n"
+            "WORKFLOW:\n"
+            "1. Use kb_search to check if information already exists in the knowledge base\n"
+            "2. Use web_search to find current information online\n"
+            "3. Use web_fetch to read specific pages for details\n"
+            "4. STOP calling tools and produce your final structured summary as TEXT\n\n"
+            "IMPORTANT RULES:\n"
+            "- After 2-3 tool calls, you MUST produce your final answer as TEXT (no more tool calls)\n"
+            "- Do NOT try to store or save your findings — just RETURN them as text\n"
+            "- Keep your response CONCISE (max 500 words). Focus on facts, not filler.\n"
+            "- Always respond in the same language as the task description."
+            + _LANGUAGE_HINT
+        )
+    else:
+        system_prompt = _SYSTEM_PROMPTS.get(
+            vertex.vertex_type,
+            _SYSTEM_PROMPTS[VertexType.EXECUTOR],
+        )
 
     # Inject task scope — agent must know client/project context
     task_data = state.get("task", {})
@@ -1080,7 +1113,17 @@ async def _agentic_vertex(
         )
 
     # --- Load default tools ---
-    tools = get_default_tools(vertex.vertex_type)
+    # Foreground decomposed vertices get a minimal tool set:
+    # - Research vertices: only kb_search, web_search, web_fetch
+    # - Synthesis vertices: NO tools — just combine text from upstream results
+    if state.get("processing_mode") == "FOREGROUND":
+        if vertex.vertex_type == VertexType.SYNTHESIS:
+            tools = None  # Synthesis just combines text, no tools needed
+        else:
+            from app.agent.tool_sets import get_foreground_research_tools
+            tools = get_foreground_research_tools()
+    else:
+        tools = get_default_tools(vertex.vertex_type)
 
     # --- Build initial messages ---
     # Context from edges = summaries only (keep vertex context minimal)
@@ -1108,7 +1151,12 @@ async def _agentic_vertex(
     stagnation_counter = 0  # Consecutive iterations without new meaningful results
     last_unique_tool_count = 0  # Track unique tool calls to detect stagnation
 
-    while iteration < _MAX_VERTEX_TOOL_ITERATIONS:
+    # Foreground research vertices get tighter limits (user is waiting)
+    _is_foreground = state.get("processing_mode") == "FOREGROUND"
+    _max_iterations = 10 if _is_foreground else _MAX_VERTEX_TOOL_ITERATIONS
+    _stagnation_limit = 3 if _is_foreground else _STAGNATION_THRESHOLD
+
+    while iteration < _max_iterations:
         iteration += 1
 
         # --- Cancellation check: bail out if graph was cancelled externally ---
@@ -1121,7 +1169,7 @@ async def _agentic_vertex(
                 return ("Cancelled by user.", "Cancelled")
 
         # --- Stagnation detection: force finish if no progress ---
-        if stagnation_counter >= _STAGNATION_THRESHOLD and tools:
+        if stagnation_counter >= _stagnation_limit and tools:
             logger.info(
                 "Vertex %s: stagnation detected (%d iterations without progress) at iteration %d — forcing finish",
                 vertex.id, stagnation_counter, iteration,
@@ -1143,9 +1191,15 @@ async def _agentic_vertex(
             # Force-finish: tools=[] — use a no-op tool to force blocking mode
             effective_tools = [_NOOP_FINISH_TOOL]
 
+        # Estimate context tokens for router routing decisions
+        _ctx_tokens = estimate_tokens(
+            " ".join(str(m.get("content", "")) for m in messages)
+        )
+
         response = await llm_with_cloud_fallback(
             state=state,
             messages=messages,
+            context_tokens=_ctx_tokens,
             task_type="graph_vertex",
             max_tokens=settings.default_output_tokens,
             tools=effective_tools,
@@ -1312,17 +1366,16 @@ async def _agentic_vertex(
             except asyncio.TimeoutError:
                 tool_result = f"Error: Tool '{tool_name}' timed out after {_VERTEX_TOOL_TIMEOUT_S}s"
             except AskUserInterrupt as e:
-                # Agent wants to ask user — interrupt graph execution
-                logger.info("VERTEX %s: ask_user interrupt: %s", vertex.id, e.question)
-                user_response = interrupt({
-                    "type": "clarification_request",
-                    "action": "clarify",
-                    "description": e.question,
-                })
-                if isinstance(user_response, dict):
-                    tool_result = f"User answered: {user_response.get('reason', str(user_response))}"
-                else:
-                    tool_result = f"User answered: {user_response}"
+                # Agent wants to ask user — in decomposed graph context,
+                # we can't interrupt (no LangGraph runnable context).
+                # Tell the LLM to work with what it has.
+                logger.info("VERTEX %s: ask_user blocked (decomposed context): %s", vertex.id, e.question)
+                tool_result = (
+                    "Cannot ask user in this context — you are running as a "
+                    "parallel research subtask. Work with available information "
+                    "and provide the best answer you can. If critical info is "
+                    "missing, note it in your response."
+                )
             except Exception as e:
                 tool_result = f"Error executing {tool_name}: {e}"
 
@@ -1346,12 +1399,18 @@ async def _agentic_vertex(
         # Safety max iterations reached — use whatever we have
         logger.warning(
             "Vertex %s hit safety max iterations (%d)",
-            vertex.id, _MAX_VERTEX_TOOL_ITERATIONS,
+            vertex.id, _max_iterations,
         )
         if not result:
-            result = remaining_text or "(safety limit reached)"
+            result = remaining_text or _extract_accumulated_result(messages) or "(safety limit reached)"
 
-    summary = result
+    # For foreground vertices, cap summary length to prevent context explosion
+    # in downstream synthesis. The full result is kept, but the summary
+    # (which flows through edges to synthesis) is truncated.
+    if _is_foreground and len(result) > 3000:
+        summary = result[:3000] + "\n\n[... truncated for synthesis ...]"
+    else:
+        summary = result
     return result, summary
 
 

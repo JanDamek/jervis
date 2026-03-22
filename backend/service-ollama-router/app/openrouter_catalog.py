@@ -27,8 +27,14 @@ _OPENROUTER_SETTINGS_TTL = 60.0  # 1 minute
 _model_errors: dict[str, dict] = {}
 _MAX_CONSECUTIVE_ERRORS = 3   # Disable after N consecutive failures
 _MAX_ERROR_HISTORY = 10       # Keep last N error messages per model
-_RATE_LIMIT_PAUSE_S = 60.0   # Pause model for 60s on rate limit (429)
+_RATE_LIMIT_PAUSE_S = 30.0    # Initial pause on first 429 (short — proactive limiter should prevent most)
+_RATE_LIMIT_MAX_PAUSE_S = 300.0  # Max pause: 5 min (proactive limiter handles the rest)
 _AUTO_RECOVERY_S = 300.0      # Auto re-enable disabled model after 5 min
+
+# ── Round-robin state for FREE queue ─────────────────────────────────
+# Tracks which model was used last per queue, so we rotate evenly
+# queue_name → index of last used model in the filtered candidate list
+_round_robin_index: dict[str, int] = {}
 
 
 async def _fetch_openrouter_settings() -> dict | None:
@@ -122,7 +128,10 @@ async def _first_cloud_model(
     queue_name: str, estimated_tokens: int, skip_models: list[str] | None = None,
     capability: str | None = None,
 ) -> str | None:
-    """Get first available cloud model from a queue that can handle the context.
+    """Get next available cloud model from a queue using round-robin rotation.
+
+    For FREE queue: rotates through models evenly to distribute load and avoid
+    hitting per-model rate limits. For PAID/PREMIUM: uses first-fit (priority order).
 
     Skips models marked as error (3+ consecutive failures) and skip_models list.
     capability: if set, model must have matching capability in its capabilities list.
@@ -130,16 +139,16 @@ async def _first_cloud_model(
     """
     skip_set = set(skip_models) if skip_models else set()
     queue_models = await get_queue(queue_name)
+
+    # Build candidate list (all eligible models)
+    candidates: list[str] = []
     for entry in queue_models:
         if entry.get("isLocal", False):
             continue
         model_id = entry.get("modelId", "")
-        # Skip explicitly excluded models (failed in this request)
         if model_id in skip_set:
             logger.debug("Skipping model %s (explicitly excluded)", model_id)
             continue
-        # Capability filter: if capability requested and model has capabilities defined,
-        # the model must include the requested capability
         if capability:
             model_caps = entry.get("capabilities", [])
             if model_caps and capability not in model_caps:
@@ -150,12 +159,10 @@ async def _first_cloud_model(
         if error_info:
             now = time.monotonic()
             disabled_until = error_info.get("disabled_until", 0.0)
-            # Time-based pause (rate limit or auto-recovery)
             if disabled_until > now:
                 remaining = int(disabled_until - now)
                 logger.debug("Skipping model %s (paused for %ds)", model_id, remaining)
                 continue
-            # Auto-recovery: if disabled but enough time passed, re-enable
             if error_info.get("disabled") and disabled_until <= now and disabled_until > 0:
                 logger.info("Model %s auto-recovered after cooldown", model_id)
                 del _model_errors[model_id]
@@ -165,8 +172,24 @@ async def _first_cloud_model(
                 continue
         max_ctx = entry.get("maxContextTokens", 32_000)
         if estimated_tokens <= max_ctx:
-            return model_id
-    return None
+            candidates.append(model_id)
+        else:
+            logger.debug("Skipping model %s (context %d > max %d — not an error)", model_id, estimated_tokens, max_ctx)
+
+    if not candidates:
+        return None
+
+    # PAID/PREMIUM: always use first-fit (priority order matters for cost)
+    if queue_name != "FREE":
+        return candidates[0]
+
+    # FREE: round-robin rotation to distribute load evenly
+    last_idx = _round_robin_index.get(queue_name, -1)
+    next_idx = (last_idx + 1) % len(candidates)
+    selected = candidates[next_idx]
+    _round_robin_index[queue_name] = next_idx
+    logger.info("FREE round-robin: selected %s (index %d/%d)", selected, next_idx, len(candidates))
+    return selected
 
 
 def report_model_error(model_id: str, error_message: str = "") -> bool:
@@ -194,11 +217,33 @@ def report_model_error(model_id: str, error_message: str = "") -> bool:
         if len(errors) > _MAX_ERROR_HISTORY:
             info["errors"] = errors[-_MAX_ERROR_HISTORY:]
 
-    # Rate limit detection — pause but don't count as error
+    # Rate limit detection — exponential backoff, don't count as regular error.
+    # First 429: pause 60s. Each consecutive 429 doubles the pause.
+    # Sequence: 60s → 2min → 4min → 8min → 16min → 32min → 1h → 2h → 4h → 8h → 12h (cap)
     is_rate_limit = "429" in msg_lower or "rate limit" in msg_lower or "too many" in msg_lower
     if is_rate_limit:
-        info["disabled_until"] = now + _RATE_LIMIT_PAUSE_S
-        logger.warning("Model %s RATE LIMITED — paused for %ds", model_id, int(_RATE_LIMIT_PAUSE_S))
+        consecutive_429 = info.get("consecutive_429", 0) + 1
+        info["consecutive_429"] = consecutive_429
+        pause = min(_RATE_LIMIT_PAUSE_S * (2 ** (consecutive_429 - 1)), _RATE_LIMIT_MAX_PAUSE_S)
+        info["disabled_until"] = now + pause
+        if pause >= 3600:
+            logger.warning("Model %s RATE LIMITED (429 #%d) — paused for %.1fh",
+                            model_id, consecutive_429, pause / 3600)
+        else:
+            logger.warning("Model %s RATE LIMITED (429 #%d) — paused for %ds",
+                            model_id, consecutive_429, int(pause))
+        return False
+
+    # Context overflow — skip for this request but don't disable the model.
+    # Model works fine for smaller contexts, disabling it would be wrong.
+    is_context_overflow = any(kw in msg_lower for kw in [
+        "context length", "context_length", "too long", "maximum context",
+        "token limit", "exceeds", "max_tokens", "prompt is too long",
+        "input too long", "request too large",
+    ])
+    if is_context_overflow:
+        logger.warning("Model %s CONTEXT OVERFLOW — not counting as error (model works for smaller requests)",
+                        model_id)
         return False
 
     # Regular error — increment counter

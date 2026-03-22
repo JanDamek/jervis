@@ -55,8 +55,10 @@ fun ClientDto.toDocument(): ClientDocument {
             null
         }
 
+    val parsedId = try { ClientId(ObjectId(this.id)) } catch (_: Exception) { ClientId(ObjectId.get()) }
+
     return ClientDocument(
-        id = ClientId(ObjectId(this.id)),
+        id = parsedId,
         name = this.name,
         description = this.description,
         archived = this.archived,

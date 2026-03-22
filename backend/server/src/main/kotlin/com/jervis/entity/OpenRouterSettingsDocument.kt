@@ -62,4 +62,12 @@ data class QueueModelEntry(
     val enabled: Boolean = true,
     val label: String = "",
     val capabilities: List<String> = emptyList(),
+    /** Price per 1M input tokens in USD (0 = free) */
+    val inputPricePerMillion: Double = 0.0,
+    /** Price per 1M output tokens in USD (0 = free) */
+    val outputPricePerMillion: Double = 0.0,
+    /** Whether the model supports tool/function calling */
+    val supportsTools: Boolean = false,
+    /** Provider name (e.g. "nvidia", "stepfun", "openrouter") */
+    val provider: String = "",
 )

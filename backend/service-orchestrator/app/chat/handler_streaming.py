@@ -118,7 +118,7 @@ async def call_llm(
                            model_override, finish)
             from app.llm.router_client import report_model_error
             await report_model_error(
-                model_override.removeprefix("openrouter/"),
+                model_override,
                 f"Empty response (finish_reason={finish})",
             )
             return await _retry_with_next_model(
@@ -191,7 +191,7 @@ async def _retry_with_next_model(
                 logger.warning("Fallback model %s also returned empty (finish_reason=%s)",
                                fallback.model, finish)
                 await report_model_error(
-                    fallback.model.removeprefix("openrouter/"),
+                    fallback.model,
                     f"Empty response (finish_reason={finish})",
                 )
                 skip_models.append(fallback.model)
@@ -200,7 +200,7 @@ async def _retry_with_next_model(
         except Exception as retry_err:
             logger.warning("Fallback model %s also failed: %s", fallback.model, retry_err)
             await report_model_error(
-                fallback.model.removeprefix("openrouter/"),
+                fallback.model,
                 str(retry_err)[:500],
             )
             skip_models.append(fallback.model)

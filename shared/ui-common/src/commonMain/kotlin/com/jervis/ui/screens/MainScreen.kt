@@ -45,6 +45,7 @@ fun MainScreen(
     val thinkingGraphPanelVisible by viewModel.chat.thinkingGraphPanelVisible.collectAsState()
     val thinkingGraphPanelWidthFraction by viewModel.chat.thinkingGraphPanelWidthFraction.collectAsState()
     val liveLogTaskId by viewModel.chat.liveLogTaskId.collectAsState()
+    val activeThoughtContext by viewModel.chat.activeThoughtContext.collectAsState()
     val isRecordingVoice by viewModel.chat.isRecordingVoice.collectAsState()
     val voiceStatus by viewModel.chat.voiceStatus.collectAsState()
     val isTtsPlaying by viewModel.chat.isTtsPlaying.collectAsState()
@@ -133,6 +134,12 @@ fun MainScreen(
                 detailGraph = detailThinkingGraph,
                 liveLogTaskId = liveLogTaskId,
                 jobLogsService = viewModel.chat.jobLogsService,
+                thoughtContext = activeThoughtContext?.let {
+                    com.jervis.ui.chat.ThoughtContextDisplay(
+                        formattedContext = it.formattedContext,
+                        thoughtCount = it.thoughtCount,
+                    )
+                },
                 onOpenSubGraph = viewModel.chat::openSubGraph,
                 onCloseSubGraph = viewModel.chat::closeSubGraph,
                 onOpenLiveLog = viewModel.chat::openLiveLog,

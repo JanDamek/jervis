@@ -95,3 +95,32 @@ def is_empty_promise(response_text: str) -> bool:
         return False  # Long responses are likely real answers
 
     return bool(_PROMISE_PATTERN.search(response_text))
+
+
+# Patterns detecting model claiming it can't access the web (but it CAN via tools)
+_NO_ACCESS_PATTERN = re.compile(
+    r'(?:nemám\s+(?:přístup|možnost|k\s+dispozici)|'
+    r'nemohu\s+(?:ověřit|vyhled|prohled|přistup)|'
+    r'nemůžu\s+(?:ověřit|vyhled|prohled|přistup)|'
+    r'nemám\s+přímý\s+přístup|'
+    r'aktuálně\s+nemám|'
+    r'bez\s+zaručených\s+odkazů|'
+    r'I\s+(?:don.t|cannot|can.t)\s+(?:access|browse|search)|'
+    r'I\s+do\s+not\s+have\s+access)',
+    re.IGNORECASE,
+)
+
+
+def claims_no_web_access(response_text: str) -> bool:
+    """Detect when model falsely claims it cannot access the web.
+
+    The model HAS web_search and web_fetch tools but some models
+    (especially free/cheap ones) ignore tools and claim they can't
+    access the internet. This is a tool-use failure, not a real limitation.
+    """
+    if not response_text:
+        return False
+    if _NO_ACCESS_PATTERN.search(response_text):
+        logger.info("HALLUCINATION_GUARD | model falsely claims no web access")
+        return True
+    return False

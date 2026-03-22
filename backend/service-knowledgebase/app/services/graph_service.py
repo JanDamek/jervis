@@ -159,7 +159,7 @@ class GraphService:
             nonlocal _completed
             async with _extract_sem:
                 logger.info("GRAPH_WRITE: LLM_EXTRACT chunk %d/%d sourceUrn=%s", idx, len(chunks), request.sourceUrn)
-                n, e, keys = await self._process_chunk(chunk_text, request, chunk_ids, embedding_priority=embedding_priority)
+                n, e, keys = await self._process_chunk(chunk_text, request, chunk_ids, embedding_priority=embedding_priority, max_tier=max_tier)
                 _completed += 1
                 logger.info(
                     "GRAPH_WRITE: CHUNK_DONE %d/%d nodes=%d edges=%d entities=%d",
@@ -194,6 +194,7 @@ class GraphService:
         request: IngestRequest,
         chunk_ids: list[str] = None,
         embedding_priority: int | None = None,
+        max_tier: str = "NONE",
     ) -> tuple[int, int, list[str]]:
         """
         Process a single chunk: extract entities and relationships.

@@ -294,6 +294,30 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
     return _base
 
 
+def get_foreground_research_tools() -> list[dict]:
+    """Minimal tool set for foreground decomposed research vertices.
+
+    Foreground decomposition runs parallel vertices to research entities.
+    Each vertex needs ONLY read tools — no persistence (store_knowledge,
+    memory_store) because these are ephemeral research vertices that return
+    their findings via the vertex result. Keeping the tool list small means:
+    - Less context for the GPU to process (faster inference)
+    - Model focuses on research instead of storing/organizing data
+    - Lower token usage per vertex
+    - No infinite store loops (model kept calling memory_store with different subjects)
+    """
+    from app.tools.definitions import (
+        TOOL_KB_SEARCH,
+        TOOL_WEB_SEARCH,
+        TOOL_WEB_FETCH,
+    )
+    return [
+        TOOL_KB_SEARCH,
+        TOOL_WEB_SEARCH,
+        TOOL_WEB_FETCH,
+    ]
+
+
 def get_all_tools() -> list[dict]:
     """Get ALL available tools (for when a vertex requests 'all')."""
     from app.background.tools import ALL_BACKGROUND_TOOLS

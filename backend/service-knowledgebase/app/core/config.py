@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     KOTLIN_SERVER_URL: str = ""                              # Kotlin server for progress callbacks (e.g. http://jervis-server:5500)
 
     # -- Model configuration ----------------------------------------------------
-    EMBEDDING_MODEL: str = "qwen3-embedding:8b"             # Vector embedding model (GPU-2, permanent)
+    EMBEDDING_MODEL: str = "bge-m3"                          # Vector embedding model (568M, 1024d, multilingual)
     LLM_MODEL: str = "qwen3:14b"                             # Graph extraction — complex reasoning, GPU-2 (permanent)
     VISION_MODEL: str = "qwen3-vl-tool:latest"               # VLM for image description (GPU-2, on-demand swap)
 

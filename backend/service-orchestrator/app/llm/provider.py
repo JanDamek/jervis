@@ -306,11 +306,17 @@ class LLMProvider:
 
     @staticmethod
     async def _call_with_retry(fn, kwargs: dict, model: str, max_retries: int = 2) -> object:
-        """Call LLM function with retry for transient Ollama errors.
+        """Call LLM function with retry for transient errors.
 
-        Retries on: connection errors, "Operation not allowed", 503/429 status.
+        Retries on: connection errors, "Operation not allowed", 503 status.
         Uses exponential backoff: 2s, 4s.
+
+        429 (rate limit) from OpenRouter cloud models is NOT retried here —
+        _retry_with_next_model handles it by switching to a different model,
+        which is faster than waiting and retrying the same rate-limited model.
+        Local models (Ollama) still retry on 429 since there's no alternative.
         """
+        is_cloud = model.startswith("openrouter/") or ":" in model  # OpenRouter models have provider/name or :free suffix
         last_exc: Exception | None = None
         for attempt in range(1 + max_retries):
             try:
@@ -321,12 +327,16 @@ class LLMProvider:
                                attempt + 1, 1 + max_retries, model, e)
             except Exception as e:
                 err_str = str(e).lower()
+                is_rate_limit = "rate limit" in err_str or "429" in err_str
+                # Cloud 429: don't retry — let _retry_with_next_model switch models
+                if is_rate_limit and is_cloud:
+                    logger.warning("LLM cloud rate limit (model=%s) — not retrying, escalating to model fallback", model)
+                    raise
                 retryable = (
                     "operation not allowed" in err_str
                     or "service unavailable" in err_str
-                    or "rate limit" in err_str
                     or "503" in err_str
-                    or "429" in err_str
+                    or (is_rate_limit and not is_cloud)  # Local 429 still retried
                 )
                 if not retryable or attempt >= max_retries:
                     raise
@@ -432,8 +442,9 @@ class LLMProvider:
             kwargs["extra_body"] = {"reasoning": {"effort": "low"}}
 
         timeout = TIER_TIMEOUT_SECONDS.get(tier, TOKEN_TIMEOUT_SECONDS)
-        logger.info("LLM blocking call (tools): model=%s tier=%s timeout=%ds",
-                     config["model"], tier.value, timeout)
+        tool_names = [t.get("function", {}).get("name", "?") for t in (tools or [])]
+        logger.info("LLM blocking call (tools): model=%s tier=%s timeout=%ds tools=%s",
+                     config["model"], tier.value, timeout, tool_names)
         logger.debug("LLM request kwargs: %s", {k: v for k, v in kwargs.items() if k not in ["messages"]})
         try:
             response = await asyncio.wait_for(

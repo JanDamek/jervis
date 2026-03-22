@@ -588,6 +588,7 @@ class ChatRpcImpl(
             "thinking" -> ChatResponseType.PLANNING
             "scope_change" -> ChatResponseType.SCOPE_CHANGE
             "thinking_graph_update" -> ChatResponseType.THINKING_GRAPH_UPDATE
+            "thought_context" -> ChatResponseType.THOUGHT_CONTEXT
             else -> ChatResponseType.EXECUTING
         }
 

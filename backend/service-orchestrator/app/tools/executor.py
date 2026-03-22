@@ -7,6 +7,7 @@ the LLM can decide how to proceed.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import subprocess
@@ -908,9 +909,13 @@ async def _execute_kb_search(
     processing_mode: str = "FOREGROUND",
     group_id: str | None = None,
 ) -> str:
-    """Search the Knowledge Base via POST /api/v1/retrieve.
+    """Search the Knowledge Base via RAG + Thought Map traversal.
 
-    Reuses the same pattern as app/kb/prefetch.py.
+    Runs both in parallel:
+    1. RAG flat search (POST /api/v1/retrieve) — cosine similarity
+    2. Thought Map traverse (POST /thoughts/traverse) — spreading activation
+
+    Results are merged: Thought Map anchored knowledge boosts or supplements RAG.
     When group_id is provided, KB returns results from all projects in the group.
     """
     if not query.strip():
@@ -919,6 +924,62 @@ async def _execute_kb_search(
     logger.info("kb_search: query=%r clientId=%s projectId=%s groupId=%s maxResults=%d",
                 query[:120], client_id, project_id, group_id, max_results)
 
+    headers = foreground_headers(processing_mode)
+
+    # Run RAG search and Thought Map traverse in parallel
+    rag_task = asyncio.create_task(_kb_rag_search(query, max_results, client_id, project_id, group_id, headers))
+    thought_task = asyncio.create_task(_kb_thought_search(query, client_id, project_id, group_id, headers))
+
+    rag_items = await rag_task
+    thought_items = await thought_task
+
+    # Merge: RAG items first, then unique Thought Map items not already in RAG
+    seen_sources = {item.get("sourceUrn", "") for item in rag_items}
+    merged = list(rag_items)
+    thought_added = 0
+    for item in thought_items:
+        source = item.get("sourceUrn", "")
+        if source and source not in seen_sources:
+            merged.append(item)
+            seen_sources.add(source)
+            thought_added += 1
+
+    if merged:
+        # Sort by score descending, take top max_results
+        merged.sort(key=lambda x: x.get("score", 0), reverse=True)
+        merged = merged[:max_results]
+        result_summary = "; ".join(
+            f"[{it.get('score', 0):.2f}] {it.get('sourceUrn', '?')[:80]}"
+            for it in merged
+        )
+        logger.info("kb_search: query=%r → %d results (rag=%d, thought_added=%d): %s",
+                     query[:80], len(merged), len(rag_items), thought_added, result_summary)
+    else:
+        logger.info("kb_search: query=%r → 0 results", query[:80])
+        return f"No Knowledge Base results found for: {query}"
+
+    lines = [f"Knowledge Base results for: {query}\n"]
+    for i, item in enumerate(merged, 1):
+        source = item.get("sourceUrn", "unknown")
+        content = item.get("content", "")
+        score = item.get("score", 0)
+        kind = item.get("kind", "")
+        origin = item.get("origin", "rag")
+        origin_tag = " [thought-map]" if origin == "thought" else ""
+        lines.append(f"**Result {i}** (score: {score:.2f}, kind: {kind}{origin_tag})")
+        lines.append(f"Source: {source}")
+        if content:
+            lines.append(content)
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+async def _kb_rag_search(
+    query: str, max_results: int, client_id: str,
+    project_id: str | None, group_id: str | None, headers: dict,
+) -> list[dict]:
+    """Flat RAG search via POST /api/v1/retrieve."""
     url = f"{settings.knowledgebase_url}/api/v1/retrieve"
     payload = {
         "query": query,
@@ -931,45 +992,76 @@ async def _execute_kb_search(
     if group_id:
         payload["groupId"] = group_id
 
-    headers = foreground_headers(processing_mode)
-
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_KB_SEARCH) as client:
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
-    except httpx.TimeoutException:
-        return f"Error: KB search timed out after {_TIMEOUT_KB_SEARCH}s for query: {query}"
-    except httpx.HTTPStatusError as e:
-        return f"Error: Knowledge Base returned HTTP {e.response.status_code} for query: {query}"
+        items = data.get("items", [])
+        for item in items:
+            item["origin"] = "rag"
+        return items
     except Exception as e:
-        return f"Error: KB search failed: {str(e)[:200]}"
+        logger.warning("kb_search: RAG failed: %s", e)
+        return []
 
-    items = data.get("items", [])
-    if items:
-        result_summary = "; ".join(
-            f"[{it.get('score', 0):.2f}] {it.get('sourceUrn', '?')[:80]}"
-            for it in items[:max_results]
-        )
-        logger.info("kb_search: query=%r → %d results: %s", query[:80], len(items), result_summary)
-    else:
-        logger.info("kb_search: query=%r → 0 results", query[:80])
-    if not items:
-        return f"No Knowledge Base results found for: {query}"
 
-    lines = [f"Knowledge Base results for: {query}\n"]
-    for i, item in enumerate(items[:max_results], 1):
-        source = item.get("sourceUrn", "unknown")
-        content = item.get("content", "")  # Full chunk content — already chunked by RAG (1000 chars)
-        score = item.get("score", 0)
-        kind = item.get("kind", "")
-        lines.append(f"**Result {i}** (score: {score:.2f}, kind: {kind})")
-        lines.append(f"Source: {source}")
-        if content:
-            lines.append(content)
-        lines.append("")
+async def _kb_thought_search(
+    query: str, client_id: str,
+    project_id: str | None, group_id: str | None, headers: dict,
+) -> list[dict]:
+    """Thought Map traverse via POST /thoughts/traverse — returns anchored knowledge."""
+    if not client_id:
+        return []
 
-    return "\n".join(lines)
+    url = f"{settings.knowledgebase_url}/api/v1/thoughts/traverse"
+    payload = {
+        "query": query,
+        "clientId": client_id,
+        "projectId": project_id or "",
+        "groupId": group_id or "",
+        "maxResults": 10,
+        "floor": 0.1,
+        "maxDepth": 2,
+        "entryTopK": 3,
+    }
+
+    try:
+        timeout = httpx.Timeout(8.0, connect=3.0)  # Short — don't slow down kb_search
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        logger.debug("kb_search: Thought Map traverse failed (non-critical): %s", e)
+        return []
+
+    # Convert anchored knowledge nodes to items matching RAG format
+    items = []
+    for k in data.get("knowledge", []):
+        node = k.get("node", {})
+        items.append({
+            "content": node.get("description", ""),
+            "score": k.get("pathWeight", 0.5),
+            "sourceUrn": node.get("sourceUrn", f"thought-anchor:{node.get('_key', '?')}"),
+            "kind": node.get("type", ""),
+            "origin": "thought",
+        })
+
+    # Also include thought summaries as results
+    for t in data.get("thoughts", []):
+        node = t.get("node", {})
+        summary = node.get("summary", "")
+        if summary:
+            items.append({
+                "content": f"[Thought: {node.get('label', '?')}] {summary}",
+                "score": t.get("pathWeight", 0.3),
+                "sourceUrn": f"thought:{node.get('_key', '?')}",
+                "kind": node.get("type", "concept"),
+                "origin": "thought",
+            })
+
+    return items
 
 
 async def _execute_kb_delete(

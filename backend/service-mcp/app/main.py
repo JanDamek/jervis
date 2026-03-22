@@ -151,7 +151,7 @@ async def kb_search(
         data = resp.json()
         results = []
         for item in data.get("items", []):
-            conf = item.get("confidence", 0)
+            conf = item.get("score", 0)
             source = item.get("sourceUrn", "?")
             content = item.get("content", "")[:500]
             results.append(f"[{conf:.2f}] {source}: {content}")

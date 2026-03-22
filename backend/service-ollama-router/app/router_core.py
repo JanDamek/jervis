@@ -35,6 +35,7 @@ from .openrouter_catalog import (
     get_api_key,
     normalize_tier,
 )
+from .rate_limiter import acquire_openrouter_slot
 from .request_queue import RequestQueue
 
 logger = logging.getLogger("ollama-router.core")
@@ -188,10 +189,17 @@ class OllamaRouter:
             logger.info("Route decision: max_tier=NONE → local (tokens=%d)", estimated_tokens)
             return local_result
 
-        # Rule 2: FOREGROUND + FREE+ → always OpenRouter
+        # Rule 2: FOREGROUND + FREE+ → always OpenRouter (with rate limiting)
         if not is_background:
             cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level, skip_models, capability=capability)
             if cloud_model:
+                # Determine queue for rate limiting (free models end with :free)
+                queue = "FREE" if cloud_model.endswith(":free") else "PAID"
+                # Proactive rate limiting — wait for slot instead of hitting 429
+                slot_ok = await acquire_openrouter_slot(queue, timeout=120.0)
+                if not slot_ok:
+                    logger.warning("Route decision: FG rate limit timeout for %s queue → local fallback", queue)
+                    return local_result
                 logger.info("Route decision: FG tier=%s → cloud %s (tokens=%d, skip=%s)",
                             max_tier, cloud_model, estimated_tokens, skip_models or [])
                 api_key = await get_api_key()
@@ -216,9 +224,14 @@ class OllamaRouter:
                         max_tier, estimated_tokens)
             return local_result
 
-        # Rule 4: BG >48k OR GPU busy → OpenRouter
+        # Rule 4: BG >48k OR GPU busy → OpenRouter (with rate limiting)
         cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level, skip_models, capability=capability)
         if cloud_model:
+            queue = "FREE" if cloud_model.endswith(":free") else "PAID"
+            slot_ok = await acquire_openrouter_slot(queue, timeout=120.0)
+            if not slot_ok:
+                logger.warning("Route decision: BG rate limit timeout for %s queue → local fallback", queue)
+                return local_result
             reason = ">48k" if estimated_tokens > 48_000 else "GPU busy"
             logger.info("Route decision: BG %s tier=%s → cloud %s (tokens=%d, skip=%s)",
                         reason, max_tier, cloud_model, estimated_tokens, skip_models or [])

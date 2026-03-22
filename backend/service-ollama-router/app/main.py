@@ -337,6 +337,9 @@ async def router_status():
     # Whisper state (flag-based, no HTTP call)
     whisper_busy = router.check_whisper_busy()
 
+    from .rate_limiter import get_rate_limit_status
+    from .openrouter_catalog import get_model_errors
+
     return {
         "gpu_backends": gpu_backends,
         "orchestrator": {
@@ -350,6 +353,10 @@ async def router_status():
             "note": "See /router/metrics for Prometheus format",
         },
         "whisper": {"busy": whisper_busy},
+        "openrouter": {
+            "rate_limits": get_rate_limit_status(),
+            "model_errors": get_model_errors(),
+        },
     }
 
 
@@ -432,6 +439,13 @@ async def reset_model_error_endpoint(request: Request):
     from .openrouter_catalog import reset_model_error
     was_disabled = reset_model_error(model_id)
     return JSONResponse(content={"model_id": model_id, "re_enabled": was_disabled})
+
+
+@app.get("/route-decision/rate-limits")
+async def get_rate_limits_endpoint():
+    """Get current rate limit status for OpenRouter queues."""
+    from .rate_limiter import get_rate_limit_status
+    return JSONResponse(content=get_rate_limit_status())
 
 
 @app.post("/route-decision/test-model")

@@ -136,6 +136,16 @@ class ChatViewModel(
     /** Job logs service for live SSE streaming in thinking graph panel. */
     val jobLogsService: IJobLogsService? get() = try { repository.jobLogs } catch (_: Exception) { null }
 
+    /** Active Thought Map context from spreading activation. */
+    data class ActiveThoughtContext(
+        val formattedContext: String = "",
+        val activatedThoughtIds: List<String> = emptyList(),
+        val thoughtCount: Int = 0,
+    )
+
+    private val _activeThoughtContext = MutableStateFlow<ActiveThoughtContext?>(null)
+    val activeThoughtContext: StateFlow<ActiveThoughtContext?> = _activeThoughtContext.asStateFlow()
+
     /** Whether the map side panel is visible (user toggle). */
     private val _thinkingGraphPanelVisible = MutableStateFlow(false)
     val thinkingGraphPanelVisible: StateFlow<Boolean> = _thinkingGraphPanelVisible.asStateFlow()
@@ -851,6 +861,17 @@ class ChatViewModel(
             ChatResponseType.URGENT_ALERT -> ChatMessage.MessageType.URGENT_ALERT
             ChatResponseType.THINKING_GRAPH_UPDATE -> ChatMessage.MessageType.THINKING_GRAPH_UPDATE
 
+            ChatResponseType.THOUGHT_CONTEXT -> {
+                // Update Thought Map context state for side panel display
+                val thoughtIds = response.metadata["activated_thought_ids"]?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+                _activeThoughtContext.value = ActiveThoughtContext(
+                    formattedContext = response.message,
+                    activatedThoughtIds = thoughtIds,
+                    thoughtCount = thoughtIds.size,
+                )
+                null  // Don't add as chat message — shown in side panel
+            }
+
             else -> null
         }
 
@@ -1077,6 +1098,10 @@ class ChatViewModel(
                 if (status in listOf("completed", "failed") && taskId != null) {
                     loadTaskGraph(taskId)
                 }
+            }
+
+            ChatMessage.MessageType.THOUGHT_CONTEXT -> {
+                // Handled above (set _activeThoughtContext, not added to chat)
             }
         }
         _chatMessages.value = messages

@@ -46,6 +46,7 @@ async def detect_and_decompose(
     conversation_summary: str = "",
     client_id: str = "",
     project_id: str = "",
+    max_openrouter_tier: str = "NONE",
 ) -> DecompositionResult:
     """Detect if a chat message should be decomposed into parallel graph vertices.
 
@@ -67,48 +68,82 @@ async def detect_and_decompose(
         return DecompositionResult(should_decompose=False, reason="too_short")
 
     try:
+        # Route decomposition via OpenRouter when client has cloud tier
+        route = None
+        tier = ModelTier.LOCAL_COMPACT
+        if max_openrouter_tier and max_openrouter_tier != "NONE":
+            from app.llm.router_client import route_request
+            route = await route_request(
+                capability="chat",
+                max_tier=max_openrouter_tier,
+                estimated_tokens=2000,  # Small classification prompt
+            )
+
+        # Build messages with optional conversation context
+        decompose_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a task decomposition classifier. Analyze the user message and decide "
+                    "if it requires PARALLEL RESEARCH on multiple entities.\n\n"
+                    "DECOMPOSE when ANY of these applies:\n"
+                    "1. NAMED ENTITIES: User mentions multiple specific entities to research "
+                    "(e.g. 'compare restaurants Miura, Zappas, Lorková Vila')\n"
+                    "2. DISCOVERY + RESEARCH: User wants to find/compare TOP N items in a category "
+                    "where each item needs independent detailed research "
+                    "(e.g. 'top 10 restaurants near X with ratings and menus', "
+                    "'best 5 hotels in Prague with reviews', "
+                    "'find coworking spaces in Brno with pricing').\n"
+                    "   For discovery: first create a DISCOVERY subtask that finds the list, "
+                    "   then create one subtask per entity mentioned as example in the message.\n"
+                    "   The discovery subtask MUST be named 'Discovery: <topic>'.\n"
+                    "3. MULTI-ASPECT: User wants multiple independent aspects researched "
+                    "(e.g. 'check weather, restaurants and hotels in X')\n\n"
+                    "Each entity MUST be researchable INDEPENDENTLY and in PARALLEL.\n"
+                    "The message must be a NEW REQUEST (not a follow-up).\n\n"
+                    "DO NOT decompose:\n"
+                    "- Follow-up messages ('seřaď to', 'výsledky jsou chaotické', 'jsou ověřené?')\n"
+                    "- Simple single-entity questions\n"
+                    "- Conversational messages (greeting, confirmation)\n"
+                    "- References to 'výsledky', 'odpověď', 'data' from earlier conversation\n\n"
+                    "Respond in JSON:\n"
+                    '{"decompose": true/false, "subtasks": [{"title": "...", "description": "..."}], '
+                    '"reason": "brief explanation"}\n\n'
+                    "If decompose=false, subtasks should be empty [].\n"
+                    "Each subtask title MUST be a specific entity or 'Discovery: <topic>'.\n"
+                    "NEVER use placeholders like 'Restaurant A'.\n"
+                    "Keep descriptions concise — each vertex will use web_search and web_fetch tools."
+                ),
+            },
+        ]
+        # Add conversation context so decomposer understands follow-ups
+        if conversation_summary:
+            decompose_messages.append({
+                "role": "system",
+                "content": f"Recent conversation context:\n{conversation_summary}",
+            })
+        decompose_messages.append({
+            "role": "user",
+            "content": user_message,
+        })
+
         response = await call_llm(
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a task decomposition classifier. Analyze the user message and decide "
-                        "if it requires PARALLEL RESEARCH on multiple independent entities.\n\n"
-                        "DECOMPOSE when (threshold: 2+ independent sub-tasks):\n"
-                        "- User asks about MULTIPLE entities that each need web search/verification "
-                        "(e.g. '10 restaurants', 'compare 5 hotels', 'check prices at 3 stores')\n"
-                        "- User asks a question that needs 2+ independent web lookups\n"
-                        "- Each entity/topic can be researched INDEPENDENTLY and in PARALLEL\n\n"
-                        "DO NOT decompose when:\n"
-                        "- Simple question (single entity, single lookup)\n"
-                        "- Conversational message (greeting, follow-up, confirmation)\n"
-                        "- Task that requires sequential steps (not parallel)\n"
-                        "- The answer can be found with 1 web search\n\n"
-                        "Respond in JSON:\n"
-                        '{"decompose": true/false, "subtasks": [{"title": "...", "description": "..."}], '
-                        '"reason": "brief explanation"}\n\n'
-                        "If decompose=false, subtasks should be empty [].\n"
-                        "Each subtask title should be the entity name, description should be "
-                        "the specific research task for that entity.\n"
-                        "Keep descriptions concise — each vertex will use web_search and web_fetch tools."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": user_message,
-                },
-            ],
-            tier=ModelTier.LOCAL_COMPACT,
+            messages=decompose_messages,
+            tier=tier,
             max_tokens=1024,
+            route=route,
+            max_tier=max_openrouter_tier,
         )
 
         text = response.choices[0].message.content or ""
         parsed = parse_json_response(text)
 
         if not parsed or not parsed.get("decompose"):
+            _reason = parsed.get("reason", "llm_said_no") if parsed else "parse_failed"
+            logger.info("CHAT_DECOMPOSE | NO | reason=%s | message='%s'", _reason, user_message[:100])
             return DecompositionResult(
                 should_decompose=False,
-                reason=parsed.get("reason", "llm_said_no") if parsed else "parse_failed",
+                reason=_reason,
             )
 
         subtasks = parsed.get("subtasks", [])
@@ -174,10 +209,14 @@ def _create_foreground_graph(
         root_description=user_message,
     )
 
-    # Root vertex becomes WAITING_CHILDREN immediately
+    # Root vertex is just a placeholder in foreground graphs —
+    # mark it COMPLETED immediately so it never resumes.
+    # The Synthesis vertex handles combining results.
     root = graph.vertices[graph.root_vertex_id]
     root.vertex_type = VertexType.TASK
-    root.status = VertexStatus.WAITING_CHILDREN
+    root.status = VertexStatus.COMPLETED
+    root.result = "Decomposed into sub-tasks"
+    root.result_summary = "Decomposed into sub-tasks"
 
     # Create synthesis vertex (will run after all investigators complete)
     synthesis = add_vertex(
@@ -188,7 +227,7 @@ def _create_foreground_graph(
             f"Original question: {user_message}\n"
             "Respond in the same language as the original question."
         ),
-        vertex_type=VertexType.TASK,
+        vertex_type=VertexType.SYNTHESIS,
         parent_id=root.id,
         input_request=user_message,
         client_id=client_id,
@@ -205,7 +244,7 @@ def _create_foreground_graph(
             graph=graph,
             title=title,
             description=description,
-            vertex_type=VertexType.TASK,
+            vertex_type=VertexType.INVESTIGATOR,
             parent_id=root.id,
             input_request=description,
             client_id=client_id,

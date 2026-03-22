@@ -33,4 +33,5 @@ enum class ChatResponseType {
     BACKGROUND_RESULT,  // Result from a completed background task pushed to chat
     URGENT_ALERT,       // Urgent notification pushed to chat (email, deadline, etc.)
     THINKING_GRAPH_UPDATE,  // Thinking graph (TaskGraph) update from chat planning
+    THOUGHT_CONTEXT,        // Thought Map activated context (proactive spreading activation)
 }

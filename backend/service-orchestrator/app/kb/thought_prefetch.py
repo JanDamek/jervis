@@ -18,7 +18,7 @@ THOUGHT_SUMMARY_BUDGET = 2000  # tokens for ThoughtNode summaries
 ANCHORED_KNOWLEDGE_BUDGET = 2000  # tokens for anchored KnowledgeNodes
 RAG_BUDGET = 1000  # tokens for RAG chunks
 
-_TIMEOUT = httpx.Timeout(30.0, connect=5.0)
+_TIMEOUT = httpx.Timeout(10.0, connect=3.0)  # Short — don't block chat if GPU is busy
 
 
 class ThoughtContext:
@@ -69,7 +69,7 @@ async def prefetch_thought_context(
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
-        logger.warning("THOUGHT_PREFETCH: failed query=%s error=%s", query[:50], e)
+        logger.warning("THOUGHT_PREFETCH: failed query=%s error=%s (%s)", query[:50], e, type(e).__name__)
         return ThoughtContext()
 
     thoughts = data.get("thoughts", [])

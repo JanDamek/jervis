@@ -1,22 +1,26 @@
 package com.jervis.ui.chat
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -30,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.graph.TaskGraphDto
@@ -39,10 +44,12 @@ import com.jervis.ui.design.JIconButton
 import com.jervis.ui.design.JTopBar
 
 /**
- * Panel showing the Paměťový graf (Memory Graph) graph alongside chat.
+ * Panel showing the Paměťový graf (Memory Graph), Myšlenkový graf (Thinking Graph),
+ * and Thought Map context alongside chat.
  *
  * Supports navigation stack:
  * - Memory graph (default) → click TASK_REF → detail thinking graph (with back)
+ * - Thought Map context section (collapsible, shows activated ThoughtNodes)
  * - Task history dropdown from header
  * - Live log overlay for running coding agent tasks
  */
@@ -54,6 +61,7 @@ fun ThinkingGraphPanel(
     detailGraph: TaskGraphDto? = null,
     liveLogTaskId: String? = null,
     jobLogsService: IJobLogsService? = null,
+    thoughtContext: ThoughtContextDisplay? = null,
     onOpenSubGraph: ((String) -> Unit)? = null,
     onCloseSubGraph: (() -> Unit)? = null,
     onOpenLiveLog: ((String) -> Unit)? = null,
@@ -137,6 +145,11 @@ fun ThinkingGraphPanel(
                 }
             }
 
+            // Thought Map context section (collapsible)
+            if (thoughtContext != null && !showDetail) {
+                ThoughtMapSection(thoughtContext = thoughtContext)
+            }
+
             // Live log overlay (bottom portion)
             if (showLiveLog) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -200,13 +213,121 @@ fun ThinkingGraphPanel(
                             onOpenLiveLog = onOpenLiveLog,
                         )
                     }
-                } else {
+                } else if (thoughtContext == null) {
                     Text(
                         text = "Žádný aktivní graf",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 16.dp),
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Data for Thought Map display in the side panel.
+ */
+data class ThoughtContextDisplay(
+    val formattedContext: String,
+    val thoughtCount: Int,
+)
+
+/**
+ * Collapsible section showing Thought Map activated context.
+ * Displays which ThoughtNodes were activated by spreading activation
+ * for the current query.
+ */
+@Composable
+private fun ThoughtMapSection(
+    thoughtContext: ThoughtContextDisplay,
+) {
+    var expanded by remember { mutableStateOf(true) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f))
+            .padding(8.dp),
+    ) {
+        // Header row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                Icons.Default.Hub,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.tertiary,
+            )
+            Text(
+                text = "Thought Map",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = "${thoughtContext.thoughtCount} aktivních",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
+            )
+            JIconButton(
+                onClick = { expanded = !expanded },
+                icon = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = if (expanded) "Sbalit" else "Rozbalit",
+            )
+        }
+
+        // Content
+        AnimatedVisibility(visible = expanded) {
+            Column(modifier = Modifier.padding(top = 4.dp)) {
+                // Parse formatted context lines
+                val lines = thoughtContext.formattedContext.lines().filter { it.isNotBlank() }
+                lines.forEach { line ->
+                    val isEntry = line.trimStart().startsWith("→")
+                    val isKnowledge = line.trimStart().startsWith("- ") || line.trimStart().startsWith("Souvisej")
+
+                    when {
+                        isKnowledge && !line.trimStart().startsWith("Souvisej") -> {
+                            Text(
+                                text = line.trim(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 8.dp, bottom = 2.dp),
+                            )
+                        }
+                        line.trimStart().startsWith("Souvisej") -> {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 4.dp),
+                                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f),
+                            )
+                            Text(
+                                text = line.trim(),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.padding(bottom = 2.dp),
+                            )
+                        }
+                        else -> {
+                            Text(
+                                text = line.trim(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isEntry) {
+                                    MaterialTheme.colorScheme.onTertiaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.padding(bottom = 2.dp),
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -17,7 +17,7 @@ from typing import AsyncIterator
 from bson import ObjectId
 
 from app.chat.drift import detect_drift
-from app.chat.hallucination_guard import needs_verification_retry, is_empty_promise
+from app.chat.hallucination_guard import needs_verification_retry, is_empty_promise, claims_no_web_access
 from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, confidence_badge
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.source_attribution import SourceTracker
@@ -154,6 +154,10 @@ async def run_agentic_loop(
     effective_project_id = request.active_project_id
     stagnation_counter = 0  # Consecutive iterations without new unique tool calls
     last_unique_tool_count = 0
+    _guard_fallback_text: str | None = None  # First unverified answer saved for fallback
+    _skip_models: list[str] = []  # Models that failed hallucination guard → skip in routing
+    _guard_retries: int = 0  # How many times hallucination guard triggered clean retry
+    _guard_failed_models: list[dict] = []  # Track failed models for UI notification
 
     for iteration in range(effective_max_iterations):
         # Check disconnect between iterations
@@ -174,11 +178,20 @@ async def run_agentic_loop(
         estimated = _estimate_tokens_total(messages, selected_tools)
 
         # Capability-based routing: ask router for decision
+        # Detect image attachments → require "vision" capability
         max_tier = getattr(request, "max_openrouter_tier", "NONE")
+        has_images = any(
+            isinstance(m.get("content"), list) and any(
+                p.get("type") == "image_url" for p in m["content"] if isinstance(p, dict)
+            )
+            for m in messages if isinstance(m, dict)
+        )
+        route_capability = "visual" if has_images else "chat"
         route = await route_request(
-            capability="chat",
+            capability=route_capability,
             max_tier=max_tier,
             estimated_tokens=estimated,
+            skip_models=_skip_models or None,
         )
         logger.info("Chat: estimated_tokens=%d → tier=%s, route=%s/%s (max_tier=%s)",
                      estimated, tier.value, route.target, route.model or tier.value, max_tier)
@@ -208,37 +221,54 @@ async def run_agentic_loop(
             # Pre-processing hallucination guard: if model answered without ANY tool calls
             # and the response contains URLs or real-world entities, force a retry
             # so the model actually verifies claims via web_search/web_fetch.
-            # Phase 1 (iteration 0): gentle hint to use tools
-            # Phase 2 (iteration 1): if still no tools, strip unverified claims
+            # Hallucination guard: clean retry with model fallback.
+            # Each failing model gets skipped, next model in queue gets the
+            # original clean prompt. Max retries = number of models in queue.
             if not used_tools:
                 retry_reason = needs_verification_retry(final_text)
                 promise_detected = is_empty_promise(final_text)
+                no_access_claim = claims_no_web_access(final_text)
 
-                if retry_reason and iteration == 0:
-                    logger.warning("HALLUCINATION_GUARD | forcing retry (phase 1): %s", retry_reason)
-                    messages.append(choice.message.model_dump())
-                    messages.append({
-                        "role": "system",
-                        "content": (
-                            f"STOP — your response contains {retry_reason} without tool verification.\n"
-                            "You MUST call the web_search tool NOW. Do NOT just say what you will do — CALL the tool.\n"
-                            "If you cannot verify, respond WITHOUT URLs, WITHOUT prices, WITHOUT ratings — "
-                            "only state what you know from KB and admit you lack verified web data.\n"
-                            "Respond in the same language as the user's message."
-                        ),
-                    })
-                    continue  # retry the agentic loop
-                elif (retry_reason or promise_detected) and iteration <= 2:
-                    # Phase 2: model still didn't use tools or just promises action
-                    # Replace with honest fallback — don't deliver empty promises
-                    if promise_detected:
-                        logger.warning("HALLUCINATION_GUARD | empty promise detected, replacing response")
-                    else:
-                        logger.warning("HALLUCINATION_GUARD | phase 2: model ignored tools, cleaning response")
-                    final_text = (
-                        "Omlouvám se, nemám aktuálně ověřené informace z webu. "
-                        "Zkus se zeptat znovu — použiji vyhledávání pro ověření."
-                    )
+                if (retry_reason or promise_detected or no_access_claim) and _guard_retries < 5:
+                    _guard_retries += 1
+                    _reason = retry_reason or ("no_web_access_claim" if no_access_claim else "empty_promise")
+                    logger.warning("HALLUCINATION_GUARD | retry %d: %s — skipping model, clean retry",
+                                   _guard_retries, _reason)
+                    # Save first real answer for fallback
+                    if retry_reason and _guard_retries == 1 and len(final_text) > 200:
+                        _guard_fallback_text = final_text
+
+                    # Report current model as "failed" so router picks next model in queue
+                    if route and route.model:
+                        _failed_model = route.model
+                        if _failed_model not in _skip_models:
+                            _skip_models.append(_failed_model)
+                        _guard_failed_models.append({
+                            "model": _failed_model,
+                            "reason": _reason,
+                            "retry": _guard_retries,
+                        })
+                        from app.llm.router_client import report_model_error
+                        await report_model_error(
+                            _failed_model,
+                            f"Hallucination guard: model refused to use tools ({_reason})",
+                        )
+                        logger.info("HALLUCINATION_GUARD | reported %s as failed, skip_models=%s → next model gets clean prompt",
+                                    route.model, _skip_models)
+
+                    # Clean retry: do NOT append failed response to messages.
+                    logger.info("HALLUCINATION_GUARD | clean retry — discarding failed response (%d chars), "
+                                "sending original messages to next model", len(final_text))
+                    continue  # retry — router will pick next model via skip_models
+                elif (retry_reason or promise_detected) and _guard_retries >= 5:
+                    # Final fallback: all models in queue refused tools
+                    logger.warning("HALLUCINATION_GUARD | all models refused tools after %d retries", _guard_retries)
+                    if _guard_fallback_text:
+                        final_text = (
+                            "⚠️ Následující informace nejsou ověřené vyhledáváním:\n\n"
+                            + _guard_fallback_text
+                        )
+                    # else keep whatever model returned
 
             # Fact-check + topic tracking — parallel
             fc_result, topics = await asyncio.gather(
@@ -273,6 +303,8 @@ async def run_agentic_loop(
                 "used_tools": used_tools, "iterations": iteration + 1,
                 **({"contextTaskId": request.context_task_id} if request.context_task_id else {}),
                 **({"coding_agent_task_id": _ca_tid} if _ca_tid else {}),
+                **({"guard_failed_models": _guard_failed_models} if _guard_failed_models else {}),
+                **({"model": route.model} if route and route.model else {}),
                 **confidence_badge(fc_result),
                 **topic_metadata(topics),
                 **source_tracker.build_done_metadata(),
@@ -379,9 +411,10 @@ async def run_agentic_loop(
             except json.JSONDecodeError:
                 logger.warning("Chat: malformed tool arguments for %s: %s",
                                tool_name, tool_call.function.arguments[:200])
+                # Provide error response so assistant message with tool_calls stays valid
                 messages.append({
                     "role": "tool", "tool_call_id": tool_call.id,
-                    "content": f"Chyba: argumenty pro {tool_name} nejsou platný JSON. Oprav formát a zkus znovu.",
+                    "content": f"Error: arguments for {tool_name} are not valid JSON. Fix format and try again.",
                 })
                 continue
 

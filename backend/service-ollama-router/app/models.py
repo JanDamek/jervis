@@ -41,7 +41,7 @@ class Capability(str, Enum):
 
 _DEFAULT_GPU_MODEL_SETS: dict[str, list[str]] = {
     "p40-1": ["qwen3-coder-tool:30b"],                                                   # 48k ctx, heavy LLM
-    "p40-2": ["qwen3-embedding:8b", "qwen3:14b", "qwen3-vl-tool:latest"],   # embedding + extraction 14b (permanent) + VLM (on-demand swap)
+    "p40-2": ["bge-m3", "qwen3:14b", "qwen3-vl-tool:latest"],   # embedding + extraction 14b (permanent) + VLM (on-demand swap)
 }
 
 def _load_gpu_model_sets() -> dict[str, list[str]]:
@@ -67,7 +67,7 @@ VLM_GPU = "p40-2"
 LOCAL_MODEL_CAPABILITIES: dict[str, list[str]] = {
     "qwen3-coder-tool:30b": ["thinking", "coding", "chat"],
     "qwen3:14b": ["extraction"],   # KB extraction + qualification (GPU-2, permanent)
-    "qwen3-embedding:8b": ["embedding"],
+    "bge-m3": ["embedding"],
     "qwen3-vl-tool:latest": ["visual"],
 }
 
@@ -94,9 +94,9 @@ MODEL_SETS: dict[str, dict] = {
         "keep_alive": "-1",   # p40-2: permanent (KB graph extraction, summaries)
     },
     "embedding": {
-        "models": ["qwen3-embedding:8b"],
-        "vram_gb": 5.5,
-        "keep_alive": "-1",   # p40-2: always loaded
+        "models": ["bge-m3"],
+        "vram_gb": 1.0,
+        "keep_alive": "-1",   # p40-2: always loaded (568M model, ~1GB VRAM)
     },
     "vlm": {
         "models": ["qwen3-vl-tool:latest"],
@@ -115,12 +115,12 @@ for _set_name, _set_def in MODEL_SETS.items():
 MODEL_TO_PRIORITY: dict[str, Priority] = {
     "qwen3-coder-tool:30b": Priority.NORMAL,
     "qwen3:14b": Priority.NORMAL,
-    "qwen3-embedding:8b": Priority.NORMAL,
+    "bge-m3": Priority.NORMAL,
     "qwen3-vl-tool:latest": Priority.NORMAL,
 }
 
 # Embedding models (fast single-pass, don't preempt)
-EMBEDDING_MODELS = {"qwen3-embedding:8b"}
+EMBEDDING_MODELS = {"bge-m3"}
 
 # Embedding API paths
 EMBEDDING_PATHS = {"/api/embeddings", "/api/embed"}

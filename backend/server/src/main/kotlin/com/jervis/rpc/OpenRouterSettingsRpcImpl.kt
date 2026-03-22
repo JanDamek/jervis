@@ -341,6 +341,10 @@ class OpenRouterSettingsRpcImpl(
             enabled = this.enabled,
             label = this.label,
             capabilities = this.capabilities,
+            inputPricePerMillion = this.inputPricePerMillion,
+            outputPricePerMillion = this.outputPricePerMillion,
+            supportsTools = this.supportsTools,
+            provider = this.provider,
         )
 
     private fun ModelQueueDto.toEntity(): ModelQueue =
@@ -358,6 +362,10 @@ class OpenRouterSettingsRpcImpl(
             enabled = this.enabled,
             label = this.label,
             capabilities = this.capabilities,
+            inputPricePerMillion = this.inputPricePerMillion,
+            outputPricePerMillion = this.outputPricePerMillion,
+            supportsTools = this.supportsTools,
+            provider = this.provider,
         )
 }
 

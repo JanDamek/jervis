@@ -36,6 +36,7 @@ data class ChatMessage(
         BACKGROUND_RESULT,  // Background task result pushed to chat
         URGENT_ALERT,       // Urgent notification pushed to chat
         THINKING_GRAPH_UPDATE,  // Thinking graph (TaskGraph) update from chat planning
+        THOUGHT_CONTEXT,        // Thought Map activated context (spreading activation)
     }
 
     @Serializable

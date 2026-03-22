@@ -258,12 +258,14 @@ fun ClientsSettings(repository: JervisRepository) {
             visible = true,
             title = "Vytvořit nového klienta",
             onConfirm = {
+                val nameToCreate = newName
+                val descToCreate = newDescription.ifBlank { null }
+                showCreateDialog = false
                 scope.launch {
                     try {
                         repository.clients.createClient(
-                            ClientDto(name = newName, description = newDescription.ifBlank { null }),
+                            ClientDto(name = nameToCreate, description = descToCreate),
                         )
-                        showCreateDialog = false
                         loadData()
                     } catch (e: Exception) {
                         snackbarHostState.showSnackbar("Chyba: ${e.message}")
