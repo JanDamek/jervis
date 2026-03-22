@@ -21,4 +21,7 @@ data class ChatMessageDto(
     val metadata: Map<String, String> = emptyMap(),
     val sequence: Long? = null,
     val messageId: String? = null, // MongoDB ObjectId for pagination cursor
+    val isOutOfScope: Boolean = false, // Server sets true when message scope doesn't match current filter
+    val isDecomposed: Boolean = false, // Master request was decomposed into sub-requests
+    val parentRequestId: String? = null, // For sub-requests: ID of the master request
 )

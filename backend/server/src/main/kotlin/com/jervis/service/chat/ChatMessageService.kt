@@ -271,6 +271,110 @@ class ChatMessageService(
         chatMessageRepository.findByClientMessageId(clientMessageId)
 
     /**
+     * Scope-aware message query using ReactiveMongoTemplate with dynamic Criteria.
+     *
+     * Filtering logic:
+     * - No scope (filterClientId=null) → return all messages (backward compat)
+     * - With clientId → messages matching clientId OR null (legacy) OR affectedScopes containing clientId (cross-context masters)
+     * - With projectId → further filter by projectId
+     * - With groupProjectIds → filter by projectId IN groupProjectIds (group scope)
+     *
+     * Sets isOutOfScope on returned documents based on scope match.
+     */
+    suspend fun getMessagesWithScope(
+        conversationId: ObjectId,
+        limit: Int = 20,
+        beforeId: ObjectId? = null,
+        filterClientId: String? = null,
+        filterProjectId: String? = null,
+        groupProjectIds: List<String>? = null,
+        showChat: Boolean = true,
+        showTasks: Boolean = false,
+        showNeedReaction: Boolean = true,
+    ): List<ChatMessageDocument> {
+        val criteria = Criteria.where("conversationId").`is`(conversationId)
+
+        // Pagination cursor
+        if (beforeId != null) {
+            criteria.and("_id").lt(beforeId)
+        }
+
+        // Scope filtering — only when filterClientId is set
+        if (filterClientId != null) {
+            val scopeOr = mutableListOf(
+                Criteria.where("clientId").`is`(filterClientId),                   // direct scope match
+                Criteria.where("clientId").`is`(null),                              // legacy unscoped
+                Criteria.where("clientId").exists(false),                           // legacy unscoped (field missing)
+                Criteria.where("affectedScopes.clientId").`is`(filterClientId),    // cross-context master
+            )
+            if (filterProjectId != null) {
+                // Further narrow: within client, show only matching project + unscoped
+                scopeOr.clear()
+                scopeOr.addAll(listOf(
+                    Criteria().andOperator(
+                        Criteria.where("clientId").`is`(filterClientId),
+                        Criteria.where("projectId").`is`(filterProjectId),
+                    ),
+                    Criteria.where("clientId").`is`(null),
+                    Criteria.where("clientId").exists(false),
+                    Criteria.where("affectedScopes.clientId").`is`(filterClientId),
+                ))
+            } else if (groupProjectIds != null && groupProjectIds.isNotEmpty()) {
+                // Group scope: show messages for any project in the group
+                scopeOr.clear()
+                scopeOr.addAll(listOf(
+                    Criteria().andOperator(
+                        Criteria.where("clientId").`is`(filterClientId),
+                        Criteria.where("projectId").`in`(groupProjectIds),
+                    ),
+                    Criteria.where("clientId").`is`(null),
+                    Criteria.where("clientId").exists(false),
+                    Criteria.where("affectedScopes.clientId").`is`(filterClientId),
+                ))
+            }
+            criteria.orOperator(*scopeOr.toTypedArray())
+        }
+
+        // Role filtering (same logic as existing getChatHistory)
+        val roleFilters = mutableListOf<Criteria>()
+        if (showChat) {
+            roleFilters.add(Criteria.where("role").`in`(
+                MessageRole.USER.name, MessageRole.ASSISTANT.name, MessageRole.SYSTEM.name
+            ))
+        }
+        if (showTasks) {
+            roleFilters.add(Criteria.where("role").`is`(MessageRole.BACKGROUND.name))
+        }
+        if (showNeedReaction) {
+            roleFilters.add(Criteria().andOperator(
+                Criteria.where("role").`in`(MessageRole.BACKGROUND.name, MessageRole.ALERT.name),
+                Criteria().orOperator(
+                    Criteria.where("metadata.needsReaction").`is`("true"),
+                    Criteria.where("metadata.success").`is`("false"),
+                ),
+            ))
+        }
+        if (roleFilters.isNotEmpty()) {
+            criteria.orOperator(*roleFilters.toTypedArray())
+        }
+
+        val query = Query(criteria)
+            .with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "_id"))
+            .limit(limit)
+
+        val messages = mongoTemplate.find(query, ChatMessageDocument::class.java, "chat_messages")
+            .collectList()
+            .awaitSingle()
+
+        logger.debug {
+            "SCOPE_QUERY | conversationId=$conversationId | clientId=$filterClientId | projectId=$filterProjectId | " +
+                "count=${messages.size} | limit=$limit"
+        }
+
+        return messages.reversed()
+    }
+
+    /**
      * Atomic sequence counter using MongoDB findAndModify with $inc.
      * Prevents race conditions when parallel callers request next sequence.
      *

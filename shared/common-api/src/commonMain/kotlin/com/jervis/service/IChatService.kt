@@ -43,6 +43,7 @@ interface IChatService {
         activeGroupId: String? = null,
         contextTaskId: String? = null,
         attachments: List<AttachmentDto> = emptyList(),
+        tierOverride: String? = null,
     )
 
     /**
@@ -60,6 +61,9 @@ interface IChatService {
         showChat: Boolean = true,
         showTasks: Boolean = false,
         showNeedReaction: Boolean = true,
+        filterClientId: String? = null,
+        filterProjectId: String? = null,
+        filterGroupId: String? = null,
     ): ChatHistoryDto
 
     /**

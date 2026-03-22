@@ -17,6 +17,7 @@ import com.jervis.repository.TaskRepository
 import com.jervis.service.CloudModelPolicyResolver
 import com.jervis.service.IChatService
 import com.jervis.service.background.BackgroundEngine
+import com.jervis.service.chat.ChatMessageService
 import com.jervis.service.chat.ChatService
 import com.jervis.service.chat.ChatStreamEvent
 import com.jervis.service.chat.UnifiedTimelineService
@@ -43,6 +44,7 @@ import org.springframework.stereotype.Component
 @Component
 class ChatRpcImpl(
     private val chatService: ChatService,
+    private val chatMessageService: ChatMessageService,
     private val backgroundEngine: BackgroundEngine,
     private val clientRepository: ClientRepository,
     private val projectRepository: ProjectRepository,
@@ -294,12 +296,53 @@ class ChatRpcImpl(
         }
     }
 
-    override suspend fun getChatHistory(limit: Int, beforeMessageId: String?, showChat: Boolean, showTasks: Boolean, showNeedReaction: Boolean): ChatHistoryDto {
+    override suspend fun getChatHistory(
+        limit: Int, beforeMessageId: String?, showChat: Boolean, showTasks: Boolean, showNeedReaction: Boolean,
+        filterClientId: String?, filterProjectId: String?, filterGroupId: String?,
+    ): ChatHistoryDto {
         // "K reakci" badge = pending USER_TASKs + actionable BACKGROUND messages (failed/needsReaction)
         val pendingUserTasks = taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toInt()
         val actionableBackground = chatService.countActionableBackground().toInt()
         val userTaskCount = pendingUserTasks + actionableBackground
         val session = chatService.getOrCreateActiveSession()
+
+        // ── Scope-aware path: use ReactiveMongoTemplate with dynamic Criteria ──
+        if (filterClientId != null) {
+            // Resolve group → project IDs if group filter is set
+            val groupProjectIds = if (filterGroupId != null) {
+                projectRepository.findByGroupIdAndActiveTrue(org.bson.types.ObjectId(filterGroupId))
+                    .toList()
+                    .map { it.id.toHexString() }
+            } else null
+
+            val beforeId = beforeMessageId?.let { org.bson.types.ObjectId(it) }
+            val messages = chatMessageService.getMessagesWithScope(
+                conversationId = session.id,
+                limit = limit,
+                beforeId = beforeId,
+                filterClientId = filterClientId,
+                filterProjectId = filterProjectId,
+                groupProjectIds = groupProjectIds,
+                showChat = showChat,
+                showTasks = showTasks,
+                showNeedReaction = showNeedReaction,
+            )
+            val dtos = messages.map { msg ->
+                val dto = msg.toChatMessageDto(taskGraphExistsService)
+                // Mark out-of-scope: message clientId doesn't match filter
+                val isOut = msg.clientId != null && msg.clientId != filterClientId
+                if (isOut) dto.copy(isOutOfScope = true) else dto
+            }
+            return ChatHistoryDto(
+                messages = dtos,
+                hasMore = messages.size >= limit,
+                oldestMessageId = messages.firstOrNull()?.timestamp?.toString(),
+                userTaskCount = userTaskCount,
+                backgroundMessageCount = 0,
+            )
+        }
+
+        // ── Unscoped path (no filter) — existing optimized queries ──
 
         // Optimized paths for single-filter cases (no aggregation needed)
         if (showChat && !showTasks && !showNeedReaction) {
@@ -645,5 +688,7 @@ private suspend fun com.jervis.entity.ChatMessageDocument.toChatMessageDto(
         metadata = if (msgTaskId != null) metadata + ("hasGraph" to hasGraph.toString()) else metadata,
         sequence = sequence,
         messageId = id.toString(),
+        isDecomposed = isDecomposed,
+        parentRequestId = parentRequestId,
     )
 }

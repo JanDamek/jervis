@@ -66,6 +66,11 @@ class ChatViewModel(
         }
     })
 
+    // Current scope for filtering getChatHistory calls
+    private val currentFilterClientId get() = selectedClientId.value
+    private val currentFilterProjectId get() = selectedProjectId.value
+    private val currentFilterGroupId get() = selectedGroupId.value
+
     private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
 
@@ -262,6 +267,7 @@ class ChatViewModel(
     private var pendingState: PendingMessageState? = null
     private var retryJob: Job? = null
     private var chatJob: Job? = null
+    private var scopeWatchJob: Job? = null
     private var progressTimeoutJob: Job? = null
 
     companion object {
@@ -281,6 +287,23 @@ class ChatViewModel(
     fun subscribeToChatStream() {
         println("ChatViewModel: subscribeToChatStream() — global chat")
         chatJob?.cancel()
+
+        // Watch scope changes — reload messages when client/project changes
+        scopeWatchJob?.cancel()
+        scopeWatchJob = scope.launch {
+            var lastClient = selectedClientId.value
+            var lastProject = selectedProjectId.value
+            kotlinx.coroutines.flow.combine(selectedClientId, selectedProjectId) { c, p -> c to p }
+                .collect { (newClient, newProject) ->
+                    if (newClient != lastClient || newProject != lastProject) {
+                        lastClient = newClient
+                        lastProject = newProject
+                        println("ChatViewModel: scope changed → client=$newClient project=$newProject, reloading")
+                        reloadForCurrentFilter()
+                    }
+                }
+        }
+
         chatJob = scope.launch {
             connectionManager.resilientFlow { services ->
                 // Return a flow that first loads history, then streams events.
@@ -294,6 +317,9 @@ class ChatViewModel(
                             showChat = _showChat.value,
                             showTasks = _showTasks.value,
                             showNeedReaction = _showNeedReaction.value,
+                            filterClientId = currentFilterClientId,
+                            filterProjectId = currentFilterProjectId,
+                            filterGroupId = currentFilterGroupId,
                         )
                         applyHistory(history)
                         onStatusDetail("ok")
@@ -507,6 +533,9 @@ class ChatViewModel(
                     showChat = _showChat.value,
                     showTasks = _showTasks.value,
                     showNeedReaction = _showNeedReaction.value,
+                    filterClientId = currentFilterClientId,
+                    filterProjectId = currentFilterProjectId,
+                    filterGroupId = currentFilterGroupId,
                 )
                 applyHistory(history)
                 onStatusDetail("ok")
@@ -760,6 +789,9 @@ class ChatViewModel(
                     showChat = _showChat.value,
                     showTasks = _showTasks.value,
                     showNeedReaction = _showNeedReaction.value,
+                    filterClientId = currentFilterClientId,
+                    filterProjectId = currentFilterProjectId,
+                    filterGroupId = currentFilterGroupId,
                 )
                 val olderMessages = history.messages.map { msg ->
                     val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
@@ -838,6 +870,9 @@ class ChatViewModel(
                         showChat = _showChat.value,
                         showTasks = _showTasks.value,
                         showNeedReaction = _showNeedReaction.value,
+                        filterClientId = currentFilterClientId,
+                        filterProjectId = currentFilterProjectId,
+                        filterGroupId = currentFilterGroupId,
                     )
                     applyHistory(history)
                 } catch (e: Exception) {
@@ -1181,6 +1216,9 @@ class ChatViewModel(
                 workflowSteps = parseWorkflowSteps(msg.metadata),
                 sequence = msg.sequence,
                 id = msg.messageId,
+                isOutOfScope = msg.isOutOfScope,
+                isDecomposed = msg.isDecomposed,
+                parentRequestId = msg.parentRequestId,
             )
         }
         // Merge: preserve in-flight messages (not yet in DB) so they don't vanish on reconnect.
