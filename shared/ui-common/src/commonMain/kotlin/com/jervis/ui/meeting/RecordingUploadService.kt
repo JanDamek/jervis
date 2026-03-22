@@ -8,6 +8,7 @@ import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
 import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.util.platformLog
 import com.jervis.ui.storage.AudioChunkQueue
 import com.jervis.ui.storage.OfflineMeetingStorage
 import com.jervis.ui.storage.OfflineSyncState
@@ -49,7 +50,7 @@ class RecordingUploadService(
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob() + CoroutineExceptionHandler { _, e ->
         if (e !is CancellationException) {
-            println("[Upload] Uncaught exception: ${e::class.simpleName}: ${e.message}")
+            platformLog("Upload", "Uncaught exception: ${e::class.simpleName}: ${e.message}")
         }
     })
 
@@ -85,7 +86,7 @@ class RecordingUploadService(
                 .distinctUntilChanged()
                 .collect { connected ->
                     if (connected) {
-                        println("[Upload] Connection restored — starting upload cycle")
+                        platformLog("Upload", "Connection restored — starting upload cycle")
                         runUploadCycle()
                     }
                 }
@@ -163,28 +164,30 @@ class RecordingUploadService(
             val activeSessions = allSessions.filter { !it.finalized }
             if (activeSessions.isEmpty()) return
 
-            println("[Upload] Cycle: ${activeSessions.size} active sessions")
+            val connState = connectionManager.state.value
+            platformLog("Upload", "Cycle: ${activeSessions.size} active sessions, connection=$connState")
+
+            if (connState !is RpcConnectionState.Connected) {
+                platformLog("Upload", "Not connected — skipping cycle")
+                return
+            }
 
             // Process each session sequentially
             for (session in activeSessions) {
                 if (connectionManager.state.value !is RpcConnectionState.Connected) {
-                    println("[Upload] Connection lost — stopping cycle")
+                    platformLog("Upload", "Connection lost mid-cycle — stopping")
                     break
                 }
 
                 // Check pending chunks on disk
                 val pendingCount = AudioChunkQueue.getAllPending().count { it.meetingId == session.localId }
 
-                // Skip sessions that are still recording and have no pending chunks
-                if (session.stoppedAtMs == null && pendingCount == 0) {
-                    continue
-                }
-
                 // Detect orphaned sessions: chunks claimed but no files on disk
+                // This happens when app is reinstalled (files deleted) or crashed during recording
                 if (pendingCount == 0 && session.chunkCount > 0 && session.uploadedChunkCount < session.chunkCount) {
-                    println("[Upload] Session ${session.localId}: orphaned — claims ${session.chunkCount} chunks " +
+                    platformLog("Upload", "Session ${session.localId}: orphaned — claims ${session.chunkCount} chunks " +
                         "but 0 on disk (files lost after reinstall?). Finalizing with what server has.")
-                    if (session.serverMeetingId != null && session.stoppedAtMs != null) {
+                    if (session.serverMeetingId != null) {
                         try {
                             val meetingType = session.meetingType?.let {
                                 try { MeetingTypeEnum.valueOf(it) } catch (_: Exception) { null }
@@ -203,7 +206,12 @@ class RecordingUploadService(
                     continue
                 }
 
-                println("[Upload] Processing session ${session.localId}: " +
+                // Skip sessions that are still recording and have no pending chunks yet
+                if (session.stoppedAtMs == null && pendingCount == 0) {
+                    continue
+                }
+
+                platformLog("Upload", "Processing session ${session.localId}: " +
                     "server=${session.serverMeetingId}, chunks=${session.uploadedChunkCount}/${session.chunkCount}, " +
                     "pending=$pendingCount, stopped=${session.stoppedAtMs != null}")
 
@@ -218,12 +226,12 @@ class RecordingUploadService(
                         msg.contains("TRANSCRIBING") || msg.contains("DONE") ||
                         msg.contains("FAILED")
                     ) {
-                        println("[Upload] Session ${session.localId} already processed on server: $msg")
+                        platformLog("Upload", "Session ${session.localId} already processed on server: $msg")
                         AudioChunkQueue.clearMeeting(session.localId)
                         updateSession(session.localId) { it.copy(finalized = true, error = null) }
                     } else {
                         // Session-level error — log and continue to next session
-                        println("[Upload] Session ${session.localId} error: ${e::class.simpleName}: $msg")
+                        platformLog("Upload", "Session ${session.localId} error: ${e::class.simpleName}: $msg")
                     }
                 }
             }
@@ -258,7 +266,7 @@ class RecordingUploadService(
                     meetingType = meetingType,
                 ),
             )
-            println("[Upload] Server created meeting: ${serverMeeting.id} for session ${session.localId}")
+            platformLog("Upload", "Server created meeting: ${serverMeeting.id} for session ${session.localId}")
             updateSession(session.localId) { it.copy(serverMeetingId = serverMeeting.id) }
             serverMeeting.id
         }
@@ -281,20 +289,20 @@ class RecordingUploadService(
         for (chunk in pendingChunks) {
             // Check connection before each chunk
             if (connectionManager.state.value !is RpcConnectionState.Connected) {
-                println("[Upload] Connection lost during upload — pausing session ${session.localId}")
+                platformLog("Upload", "Connection lost during upload — pausing session ${session.localId}")
                 break
             }
 
             // Too many consecutive errors — pause this session for this cycle
             if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                println("[Upload] ${session.localId}: $consecutiveErrors consecutive errors — pausing for this cycle")
+                platformLog("Upload", "${session.localId}: $consecutiveErrors consecutive errors — pausing for this cycle")
                 break
             }
 
             val rawData = AudioChunkQueue.readChunk(chunk)
             if (rawData == null) {
                 // Chunk file missing from disk — skip it, dequeue the orphan
-                println("[Upload] ${session.localId}: chunk ${chunk.chunkIndex} missing from disk — skipping")
+                platformLog("Upload", "${session.localId}: chunk ${chunk.chunkIndex} missing from disk — skipping")
                 AudioChunkQueue.dequeue(chunk)
                 continue
             }
@@ -322,7 +330,7 @@ class RecordingUploadService(
                     throw e
                 } catch (e: Exception) {
                     consecutiveErrors++
-                    println("[Upload] ${session.localId}: chunk ${chunk.chunkIndex} sub-chunk failed " +
+                    platformLog("Upload", "${session.localId}: chunk ${chunk.chunkIndex} sub-chunk failed " +
                         "(error $consecutiveErrors/$MAX_CONSECUTIVE_ERRORS): ${e::class.simpleName}: ${e.message}")
                     subChunkFailed = true
                     // Wait before retrying next chunk (not this sub-chunk — move on)
@@ -342,7 +350,7 @@ class RecordingUploadService(
         }
 
         if (chunksUploaded > 0) {
-            println("[Upload] ${session.localId}: uploaded $chunksUploaded chunks this cycle (server has $serverChunkIndex)")
+            platformLog("Upload", "${session.localId}: uploaded $chunksUploaded chunks this cycle (server has $serverChunkIndex)")
         }
 
         // 3. Check if ready to finalize
@@ -353,7 +361,7 @@ class RecordingUploadService(
         val current = RecordingSessionStorage.load().find { it.localId == session.localId } ?: return
         val allPending = AudioChunkQueue.getAllPending().filter { it.meetingId == session.localId }
         if (current.stoppedAtMs != null && allPending.isEmpty()) {
-            println("[Upload] Finalizing session ${session.localId} → server meeting $serverMeetingId")
+            platformLog("Upload", "Finalizing session ${session.localId} → server meeting $serverMeetingId")
             repository.meetings.finalizeRecording(
                 MeetingFinalizeDto(
                     meetingId = serverMeetingId,
@@ -364,7 +372,7 @@ class RecordingUploadService(
             )
             AudioChunkQueue.clearMeeting(session.localId)
             updateSession(session.localId) { it.copy(finalized = true) }
-            println("[Upload] Session ${session.localId} finalized successfully")
+            platformLog("Upload", "Session ${session.localId} finalized successfully")
             _sessionFinalized.tryEmit(serverMeetingId)
         }
     }
@@ -435,7 +443,7 @@ class RecordingUploadService(
         }
 
         if (migrated.isNotEmpty()) {
-            println("[Upload] Migrated ${migrated.size} sessions from legacy storage")
+            platformLog("Upload", "Migrated ${migrated.size} sessions from legacy storage")
             RecordingSessionStorage.save(existingSessions + migrated)
         }
     }
