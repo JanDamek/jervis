@@ -76,6 +76,14 @@ Pod 3 ──┘
          └── NOTIFY bms_chain_complete (executionId, status)
 ```
 
+### DŮLEŽITÉ: Chainy a scripty jsou JEN v DB
+- **Chainy** = záznamy v PostgreSQL tabulce `chains` (sloupec `stepsJson` = JSONB pole kroků)
+- **Scripty** = záznamy v PostgreSQL tabulce `scripts` (Kotlin kód jako text, verze)
+- **processing_collections** = JSONB key-value store (mezidata mezi kroky chainu)
+- Chainy a scripty NEJSOU v kódu aplikace — kódová analýza je NENAJDE
+- Pro zjištění existujících chainů/scriptů je nutné dotazovat PostgreSQL přímo
+- Nové chainy/scripty se přidávají přes **Flyway migrace** (INSERT INTO chains/scripts)
+
 ### DB změny
 - Vždy přes **Flyway migrace** (inkrementální, V001__xxx.sql atd.)
 - Nikdy přímý ALTER/CREATE mimo Flyway
