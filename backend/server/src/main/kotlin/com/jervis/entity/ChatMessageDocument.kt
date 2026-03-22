@@ -26,9 +26,17 @@ import java.time.Instant
  * @property sequence Order within conversation (auto-incremented, 1, 2, 3, ...)
  * @property metadata Additional message metadata (e.g., model used, tokens, etc.)
  * @property clientMessageId Client-generated ID for deduplication on retry
+ * @property clientId Client scope when message was created (null = unscoped / legacy)
+ * @property projectId Project scope when message was created
+ * @property groupId Group scope when message was created
+ * @property parentRequestId For sub-requests: ID of the master request that was decomposed
+ * @property isDecomposed True if this master request was decomposed into sub-requests
+ * @property subRequestIds IDs of sub-request messages (for master messages)
+ * @property affectedScopes All client/project scopes this master touches (for cross-context query)
  */
 @Document(collection = "chat_messages")
 @CompoundIndex(name = "conversation_sequence_idx", def = "{'conversationId': 1, 'sequence': -1}")
+@CompoundIndex(name = "scope_idx", def = "{'conversationId': 1, 'clientId': 1, 'projectId': 1, '_id': -1}")
 data class ChatMessageDocument(
     @Id
     val id: ObjectId = ObjectId(),
@@ -44,6 +52,24 @@ data class ChatMessageDocument(
     val metadata: Map<String, String> = emptyMap(),
     @Indexed
     val clientMessageId: String? = null,
+    // Scope fields — which client/project context was active when message was created
+    @Indexed
+    val clientId: String? = null,
+    val projectId: String? = null,
+    val groupId: String? = null,
+    // Cross-context decomposition fields
+    val parentRequestId: String? = null,
+    val isDecomposed: Boolean = false,
+    val subRequestIds: List<String> = emptyList(),
+    val affectedScopes: List<ScopeRef> = emptyList(),
+)
+
+/**
+ * Reference to a client/project scope — used in affectedScopes for cross-context master messages.
+ */
+data class ScopeRef(
+    val clientId: String,
+    val projectId: String? = null,
 )
 
 /**

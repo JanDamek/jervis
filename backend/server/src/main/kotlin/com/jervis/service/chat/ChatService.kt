@@ -103,6 +103,9 @@ class ChatService(
             correlationId = correlationId,
             clientMessageId = clientMessageId,
             metadata = messageMetadata,
+            clientId = activeClientId,
+            projectId = activeProjectId,
+            groupId = activeGroupId,
         )
 
         // 4. Update session (including active scope for UI restore on restart)
@@ -264,6 +267,9 @@ class ChatService(
         role: MessageRole,
         content: String,
         metadata: Map<String, String> = emptyMap(),
+        clientId: String? = null,
+        projectId: String? = null,
+        groupId: String? = null,
     ): ChatMessageDocument {
         val correlationId = ObjectId().toString()
         return chatMessageService.addMessage(
@@ -272,6 +278,9 @@ class ChatService(
             content = content,
             correlationId = correlationId,
             metadata = metadata,
+            clientId = clientId,
+            projectId = projectId,
+            groupId = groupId,
         )
     }
 

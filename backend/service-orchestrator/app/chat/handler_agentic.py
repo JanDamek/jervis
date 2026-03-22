@@ -152,6 +152,15 @@ async def run_agentic_loop(
     source_tracker = SourceTracker()  # EPIC 14-S2: Track KB sources for attribution
     effective_client_id = request.active_client_id
     effective_project_id = request.active_project_id
+    effective_group_id = getattr(request, "active_group_id", None)
+
+    # Scope-aware save helper — all assistant messages carry client/project context
+    async def _save_msg(content: str, meta: dict | None = None, compress: bool = True) -> None:
+        await save_assistant_message(
+            request.session_id, content, meta, compress=compress,
+            client_id=effective_client_id, project_id=effective_project_id,
+            group_id=effective_group_id,
+        )
     stagnation_counter = 0  # Consecutive iterations without new unique tool calls
     last_unique_tool_count = 0
     _guard_fallback_text: str | None = None  # First unverified answer saved for fallback

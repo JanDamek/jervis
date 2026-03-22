@@ -19,6 +19,12 @@ data class ChatMessage(
     val userResponse: String? = null,
     /** Source platform for voice messages (desktop, mobile, watch). */
     val source: VoiceSource? = null,
+    /** Server sets true when message belongs to a different scope than the current filter. UI renders greyed out. */
+    val isOutOfScope: Boolean = false,
+    /** True if this user request was decomposed into sub-requests (cross-context or multi-entity). */
+    val isDecomposed: Boolean = false,
+    /** For sub-requests: ID of the master request that was decomposed. Used for grouping in UI. */
+    val parentRequestId: String? = null,
 ) {
     @Serializable
     enum class Sender { Me, Assistant }

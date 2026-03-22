@@ -112,6 +112,7 @@ class ChatRpcImpl(
         activeGroupId: String?,
         contextTaskId: String?,
         attachments: List<com.jervis.dto.AttachmentDto>,
+        tierOverride: String?,
     ) {
         // Validate ObjectId format — reject placeholder values like "client_123"
         val safeClientId = activeClientId?.takeIf { ObjectId.isValid(it) }
@@ -137,7 +138,15 @@ class ChatRpcImpl(
                     clientId = safeClientId?.let { ClientId(ObjectId(it)) },
                     projectId = safeProjectId?.let { ProjectId(ObjectId(it)) },
                 )
-                val maxOpenRouterTier = policy.maxOpenRouterTier.name
+                // UI tier override takes precedence over policy (temporary per-chat switch)
+                val maxOpenRouterTier = if (!tierOverride.isNullOrBlank() &&
+                    tierOverride in listOf("NONE", "FREE", "PAID", "PREMIUM")
+                ) {
+                    logger.info { "CHAT_TIER_OVERRIDE | policy=${policy.maxOpenRouterTier.name} → override=$tierOverride" }
+                    tierOverride
+                } else {
+                    policy.maxOpenRouterTier.name
+                }
                 // Use explicitly provided groupId, or derive from project
                 val resolvedGroupId = safeGroupId ?: project?.groupId?.toString()
 
@@ -419,6 +428,8 @@ class ChatRpcImpl(
         success: Boolean,
         taskId: String? = null,
         metadata: Map<String, String> = emptyMap(),
+        clientId: String? = null,
+        projectId: String? = null,
     ) {
         val session = chatService.getOrCreateActiveSession()
         val content = if (success) {
@@ -449,6 +460,8 @@ class ChatRpcImpl(
             role = MessageRole.BACKGROUND,
             content = content,
             metadata = persistMetadata,
+            clientId = clientId,
+            projectId = projectId,
         )
 
         // Emit to live stream

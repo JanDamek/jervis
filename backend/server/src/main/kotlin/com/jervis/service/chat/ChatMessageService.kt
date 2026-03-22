@@ -44,6 +44,9 @@ class ChatMessageService(
         correlationId: String,
         metadata: Map<String, String> = emptyMap(),
         clientMessageId: String? = null,
+        clientId: String? = null,
+        projectId: String? = null,
+        groupId: String? = null,
     ): ChatMessageDocument {
         require(content.isNotBlank()) { "Message content cannot be blank" }
 
@@ -67,6 +70,9 @@ class ChatMessageService(
             sequence = nextSequence,
             metadata = metadata,
             clientMessageId = clientMessageId,
+            clientId = clientId,
+            projectId = projectId,
+            groupId = groupId,
         )
 
         val saved = chatMessageRepository.save(message)

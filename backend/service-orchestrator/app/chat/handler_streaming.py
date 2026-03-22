@@ -231,6 +231,9 @@ async def save_assistant_message(
     content: str,
     metadata: dict | None = None,
     compress: bool = True,
+    client_id: str | None = None,
+    project_id: str | None = None,
+    group_id: str | None = None,
 ) -> None:
     """Save an assistant message to MongoDB with auto-sequence."""
     await chat_context_assembler.save_message(
@@ -240,6 +243,9 @@ async def save_assistant_message(
         correlation_id=str(ObjectId()),
         sequence=await chat_context_assembler.get_next_sequence(session_id),
         metadata=metadata or {},
+        client_id=client_id,
+        project_id=project_id,
+        group_id=group_id,
     )
     if compress:
         try:

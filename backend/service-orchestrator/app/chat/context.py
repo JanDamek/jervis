@@ -665,6 +665,9 @@ class ChatContextAssembler:
         correlation_id: str,
         sequence: int,
         metadata: dict[str, str] | None = None,
+        client_id: str | None = None,
+        project_id: str | None = None,
+        group_id: str | None = None,
     ) -> None:
         """Save a chat message to MongoDB.
 
@@ -694,6 +697,12 @@ class ChatContextAssembler:
             "sequence": sequence,
             "metadata": metadata or {},
         }
+        if client_id:
+            doc["clientId"] = client_id
+        if project_id:
+            doc["projectId"] = project_id
+        if group_id:
+            doc["groupId"] = group_id
 
         await self.db["chat_messages"].insert_one(doc)
 
