@@ -787,13 +787,15 @@ class EnvironmentK8sService(
                     ?.firstOrNull { it.type == "Available" }
                     ?.message
 
+                // 0/0 replicas = intentionally scaled down, not an error
+                val scaledDown = replicas == 0 && available == 0
                 ComponentStatusDto(
                     componentId = componentId,
                     name = name,
-                    ready = available > 0 && available >= replicas,
+                    ready = scaledDown || (available > 0 && available >= replicas),
                     replicas = replicas,
                     availableReplicas = available,
-                    message = message,
+                    message = if (scaledDown) "Scaled to 0 (stopped)" else message,
                 )
             }
         } catch (e: Exception) {

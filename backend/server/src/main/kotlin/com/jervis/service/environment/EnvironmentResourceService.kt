@@ -267,7 +267,8 @@ class EnvironmentResourceService {
             val readyDeployments = deployments.count { dep ->
                 val available = dep.status?.availableReplicas ?: 0
                 val desired = dep.status?.replicas ?: 0
-                available > 0 && available >= desired
+                // 0/0 = intentionally scaled down, counts as "ready"
+                (desired == 0 && available == 0) || (available > 0 && available >= desired)
             }
 
             val healthy = crashingPods.isEmpty() && readyDeployments == totalDeployments && runningPods == totalPods
