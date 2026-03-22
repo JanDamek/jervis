@@ -955,7 +955,33 @@ async def _execute_kb_search(
         logger.info("kb_search: query=%r → %d results (rag=%d, thought_added=%d): %s",
                      query[:80], len(merged), len(rag_items), thought_added, result_summary)
     else:
-        logger.info("kb_search: query=%r → 0 results", query[:80])
+        # Cross-context fallback: search globally when scoped search returns nothing
+        if client_id:
+            logger.info("kb_search: query=%r → 0 results in scope (client=%s), trying global fallback...",
+                        query[:80], client_id)
+            global_rag = await _kb_rag_search(query, max_results, "", None, None, headers)
+            if global_rag:
+                # Found results in different scope — tell the LLM
+                found_clients = set()
+                for item in global_rag:
+                    src_client = item.get("clientId", "")
+                    if src_client and src_client != client_id:
+                        found_clients.add(src_client)
+                if found_clients:
+                    client_names = ", ".join(found_clients)
+                    logger.info("kb_search: global fallback found %d results in other clients: %s",
+                                len(global_rag), client_names)
+                    lines = [f"⚠️ Žádné výsledky v aktuálním kontextu. Nalezeny výsledky v jiných klientech: {client_names}\n"]
+                    lines.append("Zeptej se uživatele zda chce přepnout kontext, nebo použij tyto výsledky:\n")
+                    for i, item in enumerate(global_rag[:3], 1):
+                        lines.append(f"**Result {i}** (client: {item.get('clientId', '?')})")
+                        lines.append(f"Source: {item.get('sourceUrn', '?')[:80]}")
+                        content = item.get("content", "")
+                        if content:
+                            lines.append(content[:500])
+                        lines.append("")
+                    return "\n".join(lines)
+        logger.info("kb_search: query=%r → 0 results (including global)", query[:80])
         return f"No Knowledge Base results found for: {query}"
 
     lines = [f"Knowledge Base results for: {query}\n"]

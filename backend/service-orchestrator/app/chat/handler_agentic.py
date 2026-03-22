@@ -177,7 +177,7 @@ async def run_agentic_loop(
             if request.context_task_id:
                 interrupted_meta["contextTaskId"] = request.context_task_id
             if partial:
-                await save_assistant_message(request.session_id, partial, interrupted_meta, compress=False)
+                await _save_msg(partial, interrupted_meta, compress=False)
             yield ChatStreamEvent(type="done", metadata={"interrupted": True, **({"contextTaskId": request.context_task_id} if request.context_task_id else {})})
             return
 
@@ -288,8 +288,8 @@ async def run_agentic_loop(
             await update_conversation_topics(request.session_id, topics)
 
             # Save to DB BEFORE streaming so messages survive window switch
-            await save_assistant_message(
-                request.session_id, final_text,
+            await _save_msg(
+                final_text,
                 {
                     **({"used_tools": ",".join(used_tools)} if used_tools else {}),
                     **({"created_tasks": ",".join(str(t.get("title", "")) for t in created_tasks)} if created_tasks else {}),
@@ -369,8 +369,8 @@ async def run_agentic_loop(
             await update_conversation_topics(request.session_id, drift_topics)
 
             # Save to DB BEFORE streaming so messages survive window switch
-            await save_assistant_message(
-                request.session_id, final_text,
+            await _save_msg(
+                final_text,
                 {"drift_break": drift_reason, "used_tools": ",".join(used_tools),
                  **({"contextTaskId": request.context_task_id} if request.context_task_id else {}),
                  **fact_check_metadata(fc_result), **topic_metadata(drift_topics),
@@ -410,7 +410,7 @@ async def run_agentic_loop(
                 logger.info("Chat: disconnect during tool execution (iter %d)", iteration)
                 partial = _build_interrupted_content(tool_summaries)
                 if partial:
-                    await save_assistant_message(request.session_id, partial, {"interrupted": "true"}, compress=False)
+                    await _save_msg(partial, {"interrupted": "true"}, compress=False)
                 yield ChatStreamEvent(type="done", metadata={"interrupted": True})
                 return
 
@@ -504,7 +504,7 @@ async def run_agentic_loop(
                         + ". Předchozí kontext uzavřen — následující zprávy patří k novému projektu."
                     )
                     try:
-                        await save_assistant_message(request.session_id, boundary_text, {"scope_boundary": "true"}, compress=False)
+                        await _save_msg(boundary_text, {"scope_boundary": "true"}, compress=False)
                     except Exception as e:
                         logger.warning("Failed to save scope boundary message: %s", e)
 
@@ -705,8 +705,8 @@ async def run_agentic_loop(
         await update_conversation_topics(request.session_id, max_iter_topics)
 
         # Save to DB BEFORE streaming so messages survive window switch
-        await save_assistant_message(
-            request.session_id, final_text,
+        await _save_msg(
+            final_text,
             {"max_iterations": "true", "used_tools": ",".join(used_tools),
              **fact_check_metadata(fc_result), **topic_metadata(max_iter_topics),
              **source_tracker.build_metadata()},
