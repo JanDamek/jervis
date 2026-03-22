@@ -60,8 +60,8 @@ async def route_request(
         }
         if skip_models:
             payload["skip_models"] = skip_models
-        # Timeout 180s: router may wait for rate limit slot (up to 120s for free models)
-        async with httpx.AsyncClient(timeout=180.0) as client:
+        # Timeout 90s: router waits max 65s for rate limit slot + 25s margin
+        async with httpx.AsyncClient(timeout=90.0) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()

@@ -48,11 +48,11 @@ class SlidingWindowRateLimiter:
         while self._timestamps and self._timestamps[0] < cutoff:
             self._timestamps.popleft()
 
-    async def acquire(self, timeout: float = 120.0) -> bool:
+    async def acquire(self, timeout: float = 65.0) -> bool:
         """Wait until a rate limit slot is available.
 
         Args:
-            timeout: Maximum time to wait in seconds. Default 120s (2 windows).
+            timeout: Maximum time to wait in seconds. Default 65s (window + 5s margin).
 
         Returns:
             True if slot acquired, False if timeout exceeded.
@@ -148,7 +148,7 @@ _free_limiter = SlidingWindowRateLimiter(max_requests=20, window_seconds=60.0, n
 _paid_limiter = SlidingWindowRateLimiter(max_requests=200, window_seconds=60.0, name="paid-models")
 
 
-async def acquire_openrouter_slot(queue_name: str, timeout: float = 120.0) -> bool:
+async def acquire_openrouter_slot(queue_name: str, timeout: float = 65.0) -> bool:
     """Acquire a rate limit slot for an OpenRouter request.
 
     Args:

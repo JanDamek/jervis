@@ -238,6 +238,19 @@ class ChatViewModel(
     private val _userTaskCount = MutableStateFlow(0)
     val userTaskCount: StateFlow<Int> = _userTaskCount.asStateFlow()
 
+    /**
+     * Temporary OpenRouter tier override for this chat session.
+     * null = use policy from client/project settings.
+     * "NONE" / "FREE" / "PAID" / "PREMIUM" = override until changed or context switch.
+     */
+    private val _tierOverride = MutableStateFlow<String?>(null)
+    val tierOverride: StateFlow<String?> = _tierOverride.asStateFlow()
+
+    /** Set temporary tier override. null = reset to policy. */
+    fun setTierOverride(tier: String?) {
+        _tierOverride.value = tier
+    }
+
     // pendingUserTasks removed — unified timeline handled server-side via $unionWith
 
     // Filtering is done at the Compose layer via remember() in screens/MainScreen.kt
@@ -585,6 +598,7 @@ class ChatViewModel(
                     activeGroupId = groupId,
                     contextTaskId = taskContext,
                     attachments = attachmentDtos,
+                    tierOverride = _tierOverride.value,
                 )
                 println("=== Message sent successfully (RPC) ===")
 
@@ -1694,7 +1708,7 @@ class ChatViewModel(
                             val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
                             val sampleRate = json?.get("sample_rate")?.jsonPrimitive?.content?.toIntOrNull() ?: 24000
                             println("TTS: opening audio stream, sampleRate=$sampleRate")
-                            withContext(Dispatchers.IO) {
+                            withContext(Dispatchers.Default) {
                                 ttsPlayer.startStream(sampleRate)
                             }
                         }
@@ -1705,21 +1719,21 @@ class ChatViewModel(
                             if (!audioB64.isNullOrBlank()) {
                                 val pcmBytes = Base64.decode(audioB64)
                                 // streamPcm blocks if buffer full — natural backpressure
-                                withContext(Dispatchers.IO) {
+                                withContext(Dispatchers.Default) {
                                     ttsPlayer.streamPcm(pcmBytes)
                                 }
                             }
                         }
                         "done" -> {
                             println("TTS: stream done, draining audio")
-                            withContext(Dispatchers.IO) {
+                            withContext(Dispatchers.Default) {
                                 ttsPlayer.finishStream()
                             }
                         }
                         "error" -> {
                             val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
                             println("TTS stream error: ${json?.get("text")?.jsonPrimitive?.content}")
-                            withContext(Dispatchers.IO) {
+                            withContext(Dispatchers.Default) {
                                 ttsPlayer.stopStream()
                             }
                         }

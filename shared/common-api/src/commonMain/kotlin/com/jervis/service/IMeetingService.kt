@@ -22,7 +22,8 @@ interface IMeetingService {
 
     suspend fun startRecording(request: MeetingCreateDto): MeetingDto
 
-    suspend fun uploadAudioChunk(chunk: AudioChunkDto): Boolean
+    /** Upload audio chunk. Returns server's current chunkCount after processing. */
+    suspend fun uploadAudioChunk(chunk: AudioChunkDto): Int
 
     suspend fun finalizeRecording(request: MeetingFinalizeDto): MeetingDto
 

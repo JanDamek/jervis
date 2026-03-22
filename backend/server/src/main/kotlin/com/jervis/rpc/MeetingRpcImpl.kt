@@ -91,7 +91,7 @@ class MeetingRpcImpl(
         return saved.toDto()
     }
 
-    override suspend fun uploadAudioChunk(chunk: AudioChunkDto): Boolean {
+    override suspend fun uploadAudioChunk(chunk: AudioChunkDto): Int {
         val meetingId = ObjectId(chunk.meetingId)
         val meeting = meetingRepository.findById(meetingId)
             ?: throw IllegalStateException("Meeting not found: ${chunk.meetingId}")
@@ -105,7 +105,7 @@ class MeetingRpcImpl(
         // Idempotency: skip chunks already received (prevents duplicates on retry)
         if (chunk.chunkIndex < meeting.chunkCount) {
             logger.info { "Skipping duplicate chunk ${chunk.chunkIndex} for meeting ${chunk.meetingId} (already have ${meeting.chunkCount} chunks)" }
-            return true
+            return meeting.chunkCount
         }
 
         val audioFilePath = meeting.audioFilePath
@@ -122,16 +122,17 @@ class MeetingRpcImpl(
         }
 
         // Update chunk count and size
+        val newChunkCount = meeting.chunkCount + 1
         meetingRepository.save(
             meeting.copy(
                 state = MeetingStateEnum.UPLOADING,
-                chunkCount = meeting.chunkCount + 1,
+                chunkCount = newChunkCount,
                 audioSizeBytes = meeting.audioSizeBytes + audioBytes.size,
             ),
         )
 
         logger.info { "Received chunk ${chunk.chunkIndex} for meeting ${chunk.meetingId} (${audioBytes.size} bytes)" }
-        return true
+        return newChunkCount
     }
 
     override suspend fun finalizeRecording(request: MeetingFinalizeDto): MeetingDto {

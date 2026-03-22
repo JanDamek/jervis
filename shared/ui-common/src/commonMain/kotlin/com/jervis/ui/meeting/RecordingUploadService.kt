@@ -9,7 +9,6 @@ import com.jervis.dto.meeting.MeetingFinalizeDto
 import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.storage.AudioChunkQueue
-import com.jervis.ui.storage.OfflineMeeting
 import com.jervis.ui.storage.OfflineMeetingStorage
 import com.jervis.ui.storage.OfflineSyncState
 import com.jervis.ui.storage.RecordingSession
@@ -20,9 +19,6 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,15 +32,16 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
- * Unified recording upload service — replaces OfflineMeetingSyncService.
+ * Unified recording upload service.
  *
- * Runs continuously while the app is alive. Uploads audio chunks for ALL recording sessions
- * (no "online" vs "offline" distinction). Handles:
- * - Creating server meeting on first contact
- * - Uploading pending chunks from disk (4MB sub-chunks, idempotent)
- * - Finalizing after user stops AND all chunks uploaded (triggers transcription)
- * - Retry with backoff on failures
- * - Migration from old OfflineMeetingStorage + RecordingStateStorage on first run
+ * Runs continuously while the app is alive. Uploads audio chunks for ALL recording sessions.
+ *
+ * Design principles:
+ * - Server is source of truth for chunkCount — client syncs before uploading
+ * - Per-chunk error handling — one failed chunk doesn't kill the session
+ * - Sequential sessions — no concurrent WebSocket contention
+ * - Never gives up — always retries, user can only manually cancel
+ * - Duplicate chunks = skip (not error), normal after reconnect
  */
 class RecordingUploadService(
     private val connectionManager: RpcConnectionManager,
@@ -52,7 +49,7 @@ class RecordingUploadService(
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob() + CoroutineExceptionHandler { _, e ->
         if (e !is CancellationException) {
-            println("RecordingUploadService: uncaught exception: ${e::class.simpleName}: ${e.message}")
+            println("[Upload] Uncaught exception: ${e::class.simpleName}: ${e.message}")
         }
     })
 
@@ -68,8 +65,9 @@ class RecordingUploadService(
 
     companion object {
         private const val CHUNK_SIZE_BYTES = 4 * 1024 * 1024
-        private const val MAX_RETRIES = 5
-        private const val POLL_INTERVAL_MS = 2_000L
+        private const val POLL_INTERVAL_MS = 3_000L
+        private const val CHUNK_ERROR_DELAY_MS = 2_000L
+        private const val MAX_CONSECUTIVE_ERRORS = 10
     }
 
     init {
@@ -79,27 +77,19 @@ class RecordingUploadService(
         val loaded = RecordingSessionStorage.load()
         _sessions.value = loaded.filter { !it.finalized }
 
-        // Continuous upload loop — polls every 5s + wakes on connection restore
+        // Wake on connection restore
         scope.launch {
             connectionManager.state
                 .map { it is RpcConnectionState.Connected }
                 .distinctUntilChanged()
                 .collect { connected ->
                     if (connected) {
-                        // Reset errors on reconnect so stuck sessions retry immediately
-                        val all = RecordingSessionStorage.load()
-                        val hasErrors = all.any { !it.finalized && it.error != null }
-                        if (hasErrors) {
-                            val reset = all.map { s ->
-                                if (!s.finalized && s.error != null) s.copy(error = null, retryCount = 0) else s
-                            }
-                            RecordingSessionStorage.save(reset)
-                            _sessions.value = reset.filter { !it.finalized }
-                        }
+                        println("[Upload] Connection restored — starting upload cycle")
                         runUploadCycle()
                     }
                 }
         }
+        // Continuous poll
         scope.launch {
             while (true) {
                 delay(POLL_INTERVAL_MS)
@@ -164,45 +154,40 @@ class RecordingUploadService(
 
     @OptIn(ExperimentalEncodingApi::class)
     private suspend fun runUploadCycle() {
-        if (_isSyncing.value) {
-            println("[Upload] Skipping cycle — already syncing")
-            return
-        }
+        if (_isSyncing.value) return
         _isSyncing.value = true
 
         try {
             val allSessions = RecordingSessionStorage.load()
-            val sessions = allSessions.filter { !it.finalized && it.error == null }
-            val errorSessions = allSessions.filter { !it.finalized && it.error != null }
-            println("[Upload] Cycle start: ${sessions.size} active, ${errorSessions.size} with errors, ${allSessions.count { it.finalized }} finalized")
+            val activeSessions = allSessions.filter { !it.finalized }
+            if (activeSessions.isEmpty()) return
 
-            // Upload all sessions concurrently
-            coroutineScope {
-                sessions.map { session ->
-                    async {
-                        println("[Upload] Processing session ${session.localId}: serverMeetingId=${session.serverMeetingId}, chunks=${session.uploadedChunkCount}/${session.chunkCount}, stopped=${session.stoppedAtMs != null}")
-                        try {
-                            uploadSession(session)
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            val msg = e.message ?: ""
-                            if (msg.contains("not in recording") || msg.contains("INDEXED") || msg.contains("TRANSCRIBING") || msg.contains("DONE")) {
-                                println("[Upload] Session ${session.localId} already processed on server, marking finalized: $msg")
-                                AudioChunkQueue.clearMeeting(session.localId)
-                                updateSession(session.localId) { it.copy(finalized = true, error = null) }
-                                return@async
-                            }
-                            val newRetry = session.retryCount + 1
-                            println("[Upload] FAILED session ${session.localId} (attempt $newRetry/$MAX_RETRIES): ${e::class.simpleName}: ${e.message}")
-                            if (newRetry >= MAX_RETRIES) {
-                                updateSession(session.localId) { it.copy(error = e.message ?: "Upload failed", retryCount = newRetry) }
-                            } else {
-                                updateSession(session.localId) { it.copy(retryCount = newRetry) }
-                            }
-                        }
+            println("[Upload] Cycle: ${activeSessions.size} active sessions")
+
+            // Process sessions SEQUENTIALLY — no WebSocket contention
+            for (session in activeSessions) {
+                if (connectionManager.state.value !is RpcConnectionState.Connected) {
+                    println("[Upload] Connection lost — stopping cycle")
+                    break
+                }
+                try {
+                    uploadSession(session)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    val msg = e.message ?: ""
+                    // Server says meeting is already processed — mark as done
+                    if (msg.contains("not in recording") || msg.contains("INDEXED") ||
+                        msg.contains("TRANSCRIBING") || msg.contains("DONE")
+                    ) {
+                        println("[Upload] Session ${session.localId} already processed on server: $msg")
+                        AudioChunkQueue.clearMeeting(session.localId)
+                        updateSession(session.localId) { it.copy(finalized = true, error = null) }
+                    } else {
+                        // Session-level error (e.g., can't create meeting) — log but don't kill
+                        println("[Upload] Session ${session.localId} error: ${e::class.simpleName}: $msg")
                     }
-                }.awaitAll()
+                }
             }
         } finally {
             _isSyncing.value = false
@@ -239,35 +224,93 @@ class RecordingUploadService(
             serverMeeting.id
         }
 
-        // 2. Upload pending chunks from disk
+        // 2. Upload pending chunks from disk — PER-CHUNK error handling
         val pendingChunks = AudioChunkQueue.getAllPending()
             .filter { it.meetingId == session.localId }
             .sortedBy { it.chunkIndex }
 
+        if (pendingChunks.isEmpty()) {
+            // No pending chunks — check if we should finalize
+            tryFinalize(session, serverMeetingId, meetingType)
+            return
+        }
+
         var serverChunkIndex = session.uploadedChunkCount
+        var consecutiveErrors = 0
+        var chunksUploaded = 0
+
         for (chunk in pendingChunks) {
-            val rawData = AudioChunkQueue.readChunk(chunk) ?: continue
+            // Check connection before each chunk
+            if (connectionManager.state.value !is RpcConnectionState.Connected) {
+                println("[Upload] Connection lost during upload — pausing session ${session.localId}")
+                break
+            }
+
+            // Too many consecutive errors — pause this session for this cycle
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                println("[Upload] ${session.localId}: $consecutiveErrors consecutive errors — pausing for this cycle")
+                break
+            }
+
+            val rawData = AudioChunkQueue.readChunk(chunk)
+            if (rawData == null) {
+                // Chunk file missing from disk — skip it, dequeue the orphan
+                println("[Upload] ${session.localId}: chunk ${chunk.chunkIndex} missing from disk — skipping")
+                AudioChunkQueue.dequeue(chunk)
+                continue
+            }
 
             // Upload in 4MB sub-chunks
             var offset = 0
+            var subChunkFailed = false
             while (offset < rawData.size) {
                 val end = minOf(offset + CHUNK_SIZE_BYTES, rawData.size)
                 val subChunk = rawData.copyOfRange(offset, end)
-                repository.meetings.uploadAudioChunk(
-                    AudioChunkDto(
-                        meetingId = serverMeetingId,
-                        chunkIndex = serverChunkIndex,
-                        data = Base64.encode(subChunk),
-                    ),
-                )
-                serverChunkIndex++
-                offset = end
+
+                try {
+                    val newServerCount = repository.meetings.uploadAudioChunk(
+                        AudioChunkDto(
+                            meetingId = serverMeetingId,
+                            chunkIndex = serverChunkIndex,
+                            data = Base64.encode(subChunk),
+                        ),
+                    )
+                    // Server returns its chunkCount — sync our state
+                    serverChunkIndex = newServerCount
+                    consecutiveErrors = 0
+                    offset = end
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    consecutiveErrors++
+                    println("[Upload] ${session.localId}: chunk ${chunk.chunkIndex} sub-chunk failed " +
+                        "(error $consecutiveErrors/$MAX_CONSECUTIVE_ERRORS): ${e::class.simpleName}: ${e.message}")
+                    subChunkFailed = true
+                    // Wait before retrying next chunk (not this sub-chunk — move on)
+                    delay(CHUNK_ERROR_DELAY_MS)
+                    break
+                }
             }
-            AudioChunkQueue.dequeue(chunk)
+
+            if (!subChunkFailed) {
+                // Entire disk chunk uploaded successfully — remove from queue
+                AudioChunkQueue.dequeue(chunk)
+                chunksUploaded++
+            }
+
+            // Persist progress after each chunk
             updateSession(session.localId) { it.copy(uploadedChunkCount = serverChunkIndex) }
         }
 
-        // 3. Finalize if stopped and all chunks uploaded
+        if (chunksUploaded > 0) {
+            println("[Upload] ${session.localId}: uploaded $chunksUploaded chunks this cycle (server has $serverChunkIndex)")
+        }
+
+        // 3. Check if ready to finalize
+        tryFinalize(session, serverMeetingId, meetingType)
+    }
+
+    private suspend fun tryFinalize(session: RecordingSession, serverMeetingId: String, meetingType: MeetingTypeEnum?) {
         val current = RecordingSessionStorage.load().find { it.localId == session.localId } ?: return
         val allPending = AudioChunkQueue.getAllPending().filter { it.meetingId == session.localId }
         if (current.stoppedAtMs != null && allPending.isEmpty()) {

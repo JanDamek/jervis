@@ -196,7 +196,7 @@ class OllamaRouter:
                 # Determine queue for rate limiting (free models end with :free)
                 queue = "FREE" if cloud_model.endswith(":free") else "PAID"
                 # Proactive rate limiting — wait for slot instead of hitting 429
-                slot_ok = await acquire_openrouter_slot(queue, timeout=120.0)
+                slot_ok = await acquire_openrouter_slot(queue, timeout=65.0)
                 if not slot_ok:
                     logger.warning("Route decision: FG rate limit timeout for %s queue → local fallback", queue)
                     return local_result
@@ -228,7 +228,7 @@ class OllamaRouter:
         cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level, skip_models, capability=capability)
         if cloud_model:
             queue = "FREE" if cloud_model.endswith(":free") else "PAID"
-            slot_ok = await acquire_openrouter_slot(queue, timeout=120.0)
+            slot_ok = await acquire_openrouter_slot(queue, timeout=65.0)
             if not slot_ok:
                 logger.warning("Route decision: BG rate limit timeout for %s queue → local fallback", queue)
                 return local_result
