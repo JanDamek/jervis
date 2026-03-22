@@ -223,8 +223,9 @@ class RecordingUploadService(
                     uploadSession(session)
                 } catch (e: Throwable) {
                     // Catch Throwable — kRPC DeserializedException may extend CancellationException
-                    if (e is CancellationException && !kotlinx.coroutines.isActive) {
-                        throw e // Real coroutine cancellation — propagate
+                    // Only rethrow real cancellation, not kRPC server errors disguised as CancellationException
+                    if (e is CancellationException && e::class.simpleName == "CancellationException") {
+                        throw e
                     }
                     val msg = e.message ?: ""
                     // Server meeting deleted — clear serverMeetingId, next cycle will create new one
@@ -337,7 +338,7 @@ class RecordingUploadService(
                     consecutiveErrors = 0
                     offset = end
                 } catch (e: Throwable) {
-                    if (e is CancellationException && !kotlinx.coroutines.isActive) throw e
+                    if (e is CancellationException && e::class.simpleName == "CancellationException") throw e
                     consecutiveErrors++
                     platformLog("Upload", "${session.localId}: chunk ${chunk.chunkIndex} sub-chunk failed " +
                         "(error $consecutiveErrors/$MAX_CONSECUTIVE_ERRORS): ${e::class.simpleName}: ${e.message}")
