@@ -225,13 +225,16 @@ class RecordingUploadService(
                     throw e
                 } catch (e: Exception) {
                     val msg = e.message ?: ""
-                    // Server says meeting is gone or already processed — mark as done
-                    if (msg.contains("not in recording") || msg.contains("INDEXED") ||
+                    // Server meeting deleted — clear serverMeetingId, next cycle will create new one
+                    if (msg.contains("not found", ignoreCase = true)) {
+                        platformLog("Upload", "Session ${session.localId}: server meeting gone — will re-create next cycle")
+                        updateSession(session.localId) { it.copy(serverMeetingId = null, uploadedChunkCount = 0) }
+                    // Server says meeting is already processed — mark as done
+                    } else if (msg.contains("not in recording") || msg.contains("INDEXED") ||
                         msg.contains("TRANSCRIBING") || msg.contains("DONE") ||
-                        msg.contains("FAILED") || msg.contains("not found") ||
-                        msg.contains("Not found")
+                        msg.contains("FAILED")
                     ) {
-                        platformLog("Upload", "Session ${session.localId} server rejected: $msg — clearing")
+                        platformLog("Upload", "Session ${session.localId} already processed: $msg — clearing")
                         AudioChunkQueue.clearMeeting(session.localId)
                         updateSession(session.localId) { it.copy(finalized = true, error = null) }
                     } else {
