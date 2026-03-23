@@ -169,12 +169,18 @@ If no conventions found, proceed with default rules below.
 
 ## Your task
 1. **Check KB conventions** (`kb_search` with "conventions rules") — apply learned rules FIRST.
-2. **Cross-source matching** (`kb_search`) — extract key identifiers from content (amounts, company names,
-   invoice numbers, order IDs, ticket numbers, dates) and search KB for matching entities.
-   - Bank statement entry → find matching invoice/order → link them (store_knowledge with relationship)
+2. **Cross-source matching** (`kb_search`) — extract ALL identifiers from content (amounts, company names,
+   invoice numbers, order IDs, ticket numbers, issue keys, branch names, PR numbers, dates, email addresses,
+   project names, requirement IDs) and search KB for matching entities.
+   - Bank statement → find matching invoice/order/subscription → link + mark as paid
    - Payment confirmation → find pending invoice → mark as resolved
    - Reply email → find original thread → consolidate
-   - Status update → find related task/ticket → update context
+   - Status update (Jira, GitHub, GitLab) → find related task/issue → update context
+   - Code review comment → find related PR/branch/issue → link
+   - Requirement/specification → find related project/epic/ticket → link
+   - Meeting notes → find related project/client/action items → link
+   - Slack/Teams message → find related discussion/task/issue → link
+   - ANY content with identifiable references → search KB for ALL of them
 3. **If match found** — create relationship in KB (`store_knowledge`), update status, decide:
    - Invoice paid → DONE + store "invoice #X paid on date Y"
    - Partial match (amount differs, unknown sender) → QUEUED for user verification
