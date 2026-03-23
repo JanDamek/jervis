@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onEach
 import mu.KotlinLogging
+import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.io.File
 import java.time.Instant
@@ -42,6 +43,7 @@ class TaskQualificationService(
     private val projectRepository: ProjectRepository,
     private val cloudModelPolicyResolver: CloudModelPolicyResolver,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
+    private val emailMessageIndexRepository: com.jervis.repository.EmailMessageIndexRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -140,6 +142,26 @@ class TaskQualificationService(
                 put("taskType", task.type.name)
                 put("correlationId", task.correlationId)
                 task.projectId?.let { put("projectId", it.toString()) }
+                // Email threading metadata — enables REPLY_TO edges in KB graph
+                if (task.type == com.jervis.dto.TaskTypeEnum.EMAIL_PROCESSING) {
+                    try {
+                        // correlationId format: "email:{emailDocId}"
+                        val emailId = task.correlationId.removePrefix("email:")
+                        val emailDoc = try { emailMessageIndexRepository.findById(ObjectId(emailId)) } catch (_: Exception) { null }
+                        if (emailDoc != null) {
+                            emailDoc.threadId?.let { put("emailThreadId", it) }
+                            emailDoc.messageId?.let { put("emailMessageId", it) }
+                            emailDoc.inReplyTo?.let { put("emailInReplyTo", it) }
+                            if (emailDoc.references.isNotEmpty()) {
+                                put("emailReferences", emailDoc.references.joinToString(","))
+                            }
+                            emailDoc.from?.let { put("emailFrom", it) }
+                            emailDoc.subject?.let { put("emailSubject", it) }
+                        }
+                    } catch (e: Exception) {
+                        logger.debug { "Could not load email metadata for task ${task.id}: ${e.message}" }
+                    }
+                }
             },
             observedAt = Instant.now(),
             attachments = attachments,

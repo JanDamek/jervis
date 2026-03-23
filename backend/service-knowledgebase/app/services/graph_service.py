@@ -181,6 +181,34 @@ class GraphService:
         # Deduplicate entity keys
         all_entity_keys = list(set(all_entity_keys))
 
+        # Post-processing: email thread linking (REPLY_TO edges + EMAIL_THREAD nodes)
+        metadata = getattr(request, "metadata", None) or {}
+        if isinstance(metadata, str):
+            try:
+                import json as _json
+                metadata = _json.loads(metadata)
+            except Exception:
+                metadata = {}
+        email_thread_id = metadata.get("emailThreadId")
+        email_message_id = metadata.get("emailMessageId")
+        email_in_reply_to = metadata.get("emailInReplyTo")
+        if email_thread_id:
+            try:
+                t_nodes, t_edges = await self._create_email_thread_edges(
+                    thread_id=email_thread_id,
+                    message_id=email_message_id,
+                    in_reply_to=email_in_reply_to,
+                    subject=metadata.get("emailSubject", ""),
+                    sender=metadata.get("emailFrom", ""),
+                    client_id=request.clientId,
+                    project_id=request.projectId or "",
+                    chunk_ids=chunk_ids or [],
+                )
+                nodes_created += t_nodes
+                edges_created += t_edges
+            except Exception as exc:
+                logger.warning("EMAIL_THREAD: Failed to create thread edges: %s", exc)
+
         logger.info(
             "GRAPH_WRITE: INGEST_COMPLETE sourceUrn=%s nodes=%d edges=%d entities=%d clientId=%s projectId=%s",
             request.sourceUrn, nodes_created, edges_created, len(all_entity_keys),
@@ -554,6 +582,156 @@ Text: {text}
             return await asyncio.to_thread(_fetch)
         except Exception:
             return []
+
+    async def _create_email_thread_edges(
+        self,
+        thread_id: str,
+        message_id: str | None,
+        in_reply_to: str | None,
+        subject: str,
+        sender: str,
+        client_id: str,
+        project_id: str,
+        chunk_ids: list[str],
+    ) -> tuple[int, int]:
+        """Create EMAIL_THREAD node + REPLY_TO / BELONGS_TO edges for email threading.
+
+        Creates:
+        1. EMAIL_THREAD aggregate node (one per thread, upsert)
+        2. EMAIL_MESSAGE node for this email (one per message)
+        3. BELONGS_TO edge: email → thread
+        4. REPLY_TO edge: email → parent email (if in_reply_to set)
+
+        Returns (nodes_created, edges_created).
+        """
+        def _thread_upsert():
+            nodes_col = self.db.collection("KnowledgeNodes")
+            edges_col = self.db.collection("KnowledgeEdges")
+            nodes_created = 0
+            edges_created = 0
+
+            # Sanitize keys for ArangoDB (no special chars)
+            def _safe_key(s: str) -> str:
+                import re
+                return re.sub(r"[^a-zA-Z0-9_-]", "_", s)[:200]
+
+            thread_key = f"email_thread__{_safe_key(thread_id)}"
+            msg_key = f"email_msg__{_safe_key(message_id or thread_id)}"
+
+            # 1. Upsert EMAIL_THREAD node
+            if nodes_col.has(thread_key):
+                try:
+                    existing = nodes_col.get(thread_key)
+                    msg_count = existing.get("messageCount", 0) + 1
+                    participants = set(existing.get("participants", []))
+                    if sender:
+                        participants.add(sender)
+                    existing_chunks = set(existing.get("ragChunks", []))
+                    new_chunks = existing_chunks | set(chunk_ids)
+                    nodes_col.update({
+                        "_key": thread_key,
+                        "messageCount": msg_count,
+                        "participants": list(participants),
+                        "ragChunks": list(new_chunks),
+                        "lastActivityAt": __import__("datetime").datetime.utcnow().isoformat(),
+                    })
+                except Exception:
+                    pass
+            else:
+                try:
+                    nodes_col.insert({
+                        "_key": thread_key,
+                        "canonicalKey": f"email_thread:{thread_id}",
+                        "label": f"Email thread: {subject[:100]}" if subject else f"Email thread: {thread_id[:50]}",
+                        "type": "email_thread",
+                        "description": f"Email conversation thread. Subject: {subject}. Participants: {sender}",
+                        "clientId": client_id,
+                        "projectId": project_id,
+                        "groupId": "",
+                        "ragChunks": chunk_ids,
+                        "messageCount": 1,
+                        "participants": [sender] if sender else [],
+                        "threadId": thread_id,
+                        "observedAt": __import__("datetime").datetime.utcnow().isoformat(),
+                    })
+                    nodes_created += 1
+                except Exception:
+                    pass
+
+            # 2. Create EMAIL_MESSAGE node for this specific email
+            if not nodes_col.has(msg_key):
+                try:
+                    nodes_col.insert({
+                        "_key": msg_key,
+                        "canonicalKey": f"email_msg:{message_id or thread_id}",
+                        "label": f"Email: {subject[:80]}" if subject else f"Email from {sender}",
+                        "type": "email_message",
+                        "description": f"Email from {sender}. Subject: {subject}",
+                        "clientId": client_id,
+                        "projectId": project_id,
+                        "groupId": "",
+                        "ragChunks": chunk_ids,
+                        "messageId": message_id,
+                        "threadId": thread_id,
+                        "sender": sender,
+                        "observedAt": __import__("datetime").datetime.utcnow().isoformat(),
+                    })
+                    nodes_created += 1
+                except Exception:
+                    pass
+            else:
+                # Update existing with new chunks
+                try:
+                    existing = nodes_col.get(msg_key)
+                    existing_chunks = set(existing.get("ragChunks", []))
+                    new_chunks = existing_chunks | set(chunk_ids)
+                    nodes_col.update({"_key": msg_key, "ragChunks": list(new_chunks)})
+                except Exception:
+                    pass
+
+            # 3. BELONGS_TO edge: email → thread
+            belongs_key = f"{msg_key}_belongs_to_{thread_key}"
+            if not edges_col.has(belongs_key):
+                try:
+                    edges_col.insert({
+                        "_key": belongs_key,
+                        "_from": f"KnowledgeNodes/{msg_key}",
+                        "_to": f"KnowledgeNodes/{thread_key}",
+                        "relation": "belongs_to_thread",
+                        "relationNormalized": "belongs_to_thread",
+                        "evidenceChunkIds": chunk_ids,
+                    })
+                    edges_created += 1
+                except Exception:
+                    pass
+
+            # 4. REPLY_TO edge: this email → parent email (via in_reply_to)
+            if in_reply_to:
+                parent_key = f"email_msg__{_safe_key(in_reply_to)}"
+                reply_edge_key = f"{msg_key}_reply_to_{parent_key}"
+                if nodes_col.has(parent_key) and not edges_col.has(reply_edge_key):
+                    try:
+                        edges_col.insert({
+                            "_key": reply_edge_key,
+                            "_from": f"KnowledgeNodes/{msg_key}",
+                            "_to": f"KnowledgeNodes/{parent_key}",
+                            "relation": "reply_to",
+                            "relationNormalized": "reply_to",
+                            "evidenceChunkIds": chunk_ids,
+                        })
+                        edges_created += 1
+                    except Exception:
+                        pass
+
+            return nodes_created, edges_created
+
+        n, e = await asyncio.to_thread(_thread_upsert)
+        if n > 0 or e > 0:
+            logger.info(
+                "EMAIL_THREAD: thread=%s msg=%s nodes=%d edges=%d",
+                thread_id[:30], message_id[:30] if message_id else "?", n, e,
+            )
+        return n, e
 
     async def get_edge_evidence(self, edge_key: str) -> list[str]:
         """
