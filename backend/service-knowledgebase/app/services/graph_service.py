@@ -1704,6 +1704,40 @@ Text: {text}
             logger.info("Deleted kb_document node key=%s", key)
         return deleted
 
+    async def retag_project(self, source_project_id: str, target_project_id: str) -> dict[str, int]:
+        """Migrate all ArangoDB data from one projectId to another.
+
+        Updates KnowledgeNodes, KnowledgeEdges, ThoughtNodes, ThoughtEdges, ThoughtAnchors.
+        Called during project merge.
+        Returns dict with counts per collection.
+        """
+        collections = ["KnowledgeNodes", "KnowledgeEdges", "ThoughtNodes", "ThoughtEdges", "ThoughtAnchors"]
+        results = {}
+
+        for coll_name in collections:
+            aql = f"""
+            FOR doc IN {coll_name}
+                FILTER doc.projectId == @sourceProjectId
+                UPDATE doc WITH {{ projectId: @targetProjectId }} IN {coll_name}
+                RETURN 1
+            """
+            bind_vars = {"sourceProjectId": source_project_id, "targetProjectId": target_project_id}
+
+            def _execute(q=aql, bv=bind_vars):
+                try:
+                    cursor = self.db.aql.execute(q, bind_vars=bv)
+                    return sum(1 for _ in cursor)
+                except Exception:
+                    return 0
+
+            updated = await asyncio.to_thread(_execute)
+            results[coll_name] = updated
+            if updated > 0:
+                logger.info("retag_project: %s — %d docs migrated (%s → %s)",
+                            coll_name, updated, source_project_id, target_project_id)
+
+        return results
+
     async def retag_group(self, project_id: str, new_group_id: str | None) -> int:
         """Update groupId on all ArangoDB nodes for a project.
 

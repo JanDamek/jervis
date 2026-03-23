@@ -574,6 +574,29 @@ async def purge(request: PurgeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@write_router.post("/retag-project")
+async def retag_project(request: dict):
+    """Migrate all KB data from one projectId to another.
+
+    Called during project merge. Updates ArangoDB (KnowledgeNodes, KnowledgeEdges,
+    ThoughtNodes, ThoughtEdges, ThoughtAnchors) and Weaviate (KnowledgeChunk).
+    """
+    source = request.get("sourceProjectId", "")
+    target = request.get("targetProjectId", "")
+    if not source or not target:
+        raise HTTPException(status_code=400, detail="sourceProjectId and targetProjectId are required")
+    try:
+        graph_results = await service.graph_service.retag_project(source, target)
+        weaviate_updated = await service.rag_service.retag_project(source, target)
+        return {
+            "status": "success",
+            "graphResults": graph_results,
+            "weaviateUpdated": weaviate_updated,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @write_router.post("/retag-group")
 async def retag_group(request: dict):
     """Update groupId on all KB items for a project.

@@ -348,13 +348,15 @@ class ProjectService(
             }
         }
 
-        // Bulk migrate all remaining data
+        // Bulk migrate all remaining data (projectId field)
         val allCollections = listOf(
             "tasks", "meetings", "environments", "guidelines", "agent_preferences",
             "filtering_rules", "agent_learning", "llm_costs", "error_logs",
             "user_corrections", "approval_queue", "merge_requests", "git_commits",
             "teams_message_index", "slack_message_index", "discord_message_index",
             "email_message_index", "bugtracker_issues", "wiki_pages",
+            "chat_messages",    // chat scope — messages linked to source project
+            "memory_graphs",    // memory graph — per-project memory
         )
 
         var totalMigrated = 0L

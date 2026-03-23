@@ -402,6 +402,51 @@ class RagService:
         logger.info("RAG_READ: COMPLETE query='%s' results=%d", request.query, len(items))
         return EvidencePack(items=items)
 
+    async def retag_project(self, source_project_id: str, target_project_id: str) -> int:
+        """Migrate all Weaviate chunks from one projectId to another.
+
+        Called during project merge.
+        Returns number of updated chunks.
+        """
+        def _retag():
+            collection = self.client.collections.get("KnowledgeChunk")
+            updated = 0
+            offset = 0
+            batch_size = 200
+
+            while True:
+                response = collection.query.fetch_objects(
+                    filters=wvq.Filter.by_property("projectId").equal(source_project_id),
+                    limit=batch_size,
+                    offset=offset,
+                    return_properties=["projectId"],
+                )
+                if not response.objects:
+                    break
+
+                for obj in response.objects:
+                    collection.data.update(
+                        uuid=obj.uuid,
+                        properties={"projectId": target_project_id},
+                    )
+                    updated += 1
+
+                if len(response.objects) < batch_size:
+                    break
+                offset += batch_size
+
+            return updated
+
+        try:
+            updated = await asyncio.to_thread(_retag)
+            logger.info("retag_project (Weaviate): %s → %s updated=%d chunks",
+                        source_project_id, target_project_id, updated)
+            return updated
+        except Exception as e:
+            logger.warning("retag_project (Weaviate) failed: %s → %s error=%s",
+                           source_project_id, target_project_id, e)
+            return 0
+
     async def retag_group(self, project_id: str, new_group_id: str | None) -> int:
         """Update groupId on all Weaviate chunks for a project.
 
