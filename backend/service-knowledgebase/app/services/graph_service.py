@@ -66,7 +66,7 @@ class GraphService:
                     num_ctx=num_ctx,
                     priority=priority,
                     temperature=0,
-                    format_json=True,
+                    format_json=False,
                 )
             except (httpx.ConnectError, httpx.RemoteProtocolError, OSError) as e:
                 if attempt < max_retries:
@@ -236,7 +236,8 @@ class GraphService:
 
         Returns: (nodes_created, edges_created, entity_keys)
         """
-        prompt = f"""Extract a knowledge graph from text. Return JSON:
+        prompt = f"""/no_think
+Extract a knowledge graph from text. Return ONLY a JSON object:
 {{"nodes": [{{"label": "...", "type": "...", "description": "..."}}],
  "edges": [{{"source": "...", "target": "...", "relation": "..."}}],
  "thoughts": [{{"type": "...", "label": "...", "summary": "...", "related_entities": [...]}}]}}
@@ -259,15 +260,27 @@ Text: {text}
         try:
             content = await self._llm_call(prompt, priority=embedding_priority, max_tier=max_tier)
             logger.info(
-                "GRAPH_WRITE: LLM_RESPONSE sourceUrn=%s response_len=%d",
-                request.sourceUrn, len(content)
+                "GRAPH_WRITE: LLM_RESPONSE sourceUrn=%s response_len=%d response_preview=%.200s",
+                request.sourceUrn, len(content), content.replace("\n", " ")[:200]
             )
+
+            # Strip thinking tags if present (qwen3 with /no_think sometimes still thinks)
+            if "<think>" in content:
+                import re
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
             # Clean up markdown code blocks if present
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0]
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0]
+
+            # Find JSON object in free text (model may prefix with explanation)
+            content = content.strip()
+            if not content.startswith("{"):
+                idx = content.find("{")
+                if idx >= 0:
+                    content = content[idx:]
 
             data = json.loads(content)
             logger.info(
