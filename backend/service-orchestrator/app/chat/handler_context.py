@@ -153,10 +153,15 @@ async def _load_learned_procedures() -> list[str]:
         return _procedures_cache
 
 
-async def _index_attachment_to_kb(filename: str, text: str, client_id: str = None, project_id: str = None) -> None:
+async def _index_attachment_to_kb(
+    filename: str, text: str, mime_type: str = "",
+    client_id: str = None, project_id: str = None,
+    session_id: str = None,
+) -> None:
     """Fire-and-forget: index extracted attachment text into KB for graph/map integration."""
     import httpx
     from app.config import settings
+    from datetime import datetime
 
     kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
     try:
@@ -164,11 +169,18 @@ async def _index_attachment_to_kb(filename: str, text: str, client_id: str = Non
             await client.post(f"{kb_write_url}/api/v1/ingest-queue", json={
                 "clientId": client_id or "",
                 "projectId": project_id or "",
-                "sourceUrn": f"chat-attachment:{filename}",
+                "sourceUrn": f"chat-attachment:{filename}:{datetime.now().isoformat()[:19]}",
                 "kind": "document",
-                "content": f"# Příloha: {filename}\n\n{text}",
+                "content": f"# Příloha z chatu: {filename}\n\n{text}",
+                "metadata": {
+                    "filename": filename,
+                    "mimeType": mime_type,
+                    "source": "chat_attachment",
+                    "sessionId": session_id or "",
+                    "indexedAt": datetime.now().isoformat(),
+                },
             })
-        logger.info("Attachment indexed to KB: %s (%d chars)", filename, len(text))
+        logger.info("Attachment indexed to KB: %s (%d chars, client=%s)", filename, len(text), client_id)
     except Exception as e:
         logger.warning("Attachment KB indexation failed: %s: %s", filename, e)
 
