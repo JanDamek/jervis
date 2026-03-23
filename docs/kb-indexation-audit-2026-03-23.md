@@ -173,3 +173,48 @@ Každý krok v pipeline má malý bug. Kombinace = totální selhání:
 | 7 | **Meeting indexace bez clientId** | — | Neztratí data | S (done) |
 | 8 | **Docs aktualizace** | — | Konzistence | S |
 | 9 | **JOERN integrace audit** | — | Kódová analýza v grafu | L |
+
+---
+
+## 5. JOERN / Git Indexace — Audit
+
+### Co funguje ✅
+- **Git commits se indexují** s branch izolací (node keys obsahují branch+projectId)
+- **JOERN CPG integrace** funguje — K8s Job, call graph, inheritance, type refs
+- **Tree-sitter** strukturální analýza (7 jazyků) — classes, methods, imports
+- **Branch izolace** — `file:{path}:branch:{name}:{projectId}` → žádné cross-branch mixing
+- **Diff jako RAG chunks** — fulltextově vyhledatelný
+- **CPG failure je non-fatal** — tree-sitter výsledky přežijí
+
+### Co chybí ❌
+
+#### 5.1 Commit → Issue linking (KRITICKÉ)
+Commit messages se **neparsují** na issue reference (`#123`, `TASK-456`, `Fixes JIRA-789`).
+- Commit nodes existují, issue nodes existují, ale **žádné edges mezi nimi**
+- Nelze se zeptat "které commity opravily bug #42?"
+- Řešení: regex parsování commit messages → `commit --[references]→ issue` edges
+
+#### 5.2 PR/MR bypasuje KB (KRITICKÉ)
+MergeRequestContinuousIndexer vytváří task s `state=QUEUED` — **skipuje KB indexaci**.
+- PR data jsou jen v MongoDB, NE v ArangoDB grafu
+- Žádné edges: PR → commits, PR → files, PR → issues
+- Code review tasks nemají KB kontext
+
+#### 5.3 Commit ancestry
+`parentHash` se ukládá ale **nepoužívá** pro edges.
+- Žádný `commit --[parent_of]→ commit` edge
+- Nelze procházet historii commitů v grafu
+
+#### 5.4 CPG dataflow
+JOERN umí taint analysis, SQL injection paths — ale **KB importuje jen call/inherit/typeref**.
+- Žádné security flow edges
+- Manuálně přes `/analyze/code` endpoint
+
+#### 5.5 Symbol version tracking
+`class Foo` v `main` a `develop` = 2 nezávislé nodes.
+- Žádné propojení verze symbolu across branches
+- Nelze odpovědět "kdy se class X změnila mezi větvemi?"
+
+#### 5.6 Import tracking
+Tree-sitter extrahuje importy ale **nepropojuje je s graph nodes**.
+- Nelze najít "všechny soubory co importují class X"
