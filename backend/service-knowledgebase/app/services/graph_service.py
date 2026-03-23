@@ -236,25 +236,17 @@ class GraphService:
 
         Returns: (nodes_created, edges_created, entity_keys)
         """
-        prompt = f"""Extract entities and relationships from text into a knowledge graph.
-Return JSON with keys: "nodes", "edges", "thoughts".
-
-"nodes": [{{"label": "name", "type": "category", "description": "brief"}}]
-"edges": [{{"source": "node_label", "target": "node_label", "relation": "type"}}]
-"thoughts": [{{"type": "category", "label": "short_id", "summary": "1-2 sentences", "related_entities": ["node_labels"]}}]
-
-Node types: person, organization, document, system, service, ticket, file, class, method, concept, amount, date, email_address, project, meeting, event
-Edge relations: mentions, sent_by, sent_to, belongs_to, contains, calls, assigned_to, references, pays, created_by, works_at
-Thought types: problem, decision, insight, topic, dependency, state, action_required
+        prompt = f"""Extract a knowledge graph from text. Return JSON:
+{{"nodes": [{{"label": "...", "type": "...", "description": "..."}}],
+ "edges": [{{"source": "...", "target": "...", "relation": "..."}}],
+ "thoughts": [{{"type": "...", "label": "...", "summary": "...", "related_entities": [...]}}]}}
 
 Rules:
-- Extract EVERY entity: people (full names), organizations, systems, files, tickets, amounts, dates, email addresses
-- For emails: extract sender, recipients, subject entities, mentioned organizations, amounts, deadlines
-- For code: extract classes, methods, files, tickets, commits
-- For meetings: extract participants, topics discussed, decisions made, action items
-- ALWAYS extract at least the main subject/topic as a node. Never return empty nodes for non-trivial text.
-- If text mentions a person, they MUST be a node with type "person"
-- If text mentions money/amount, extract as type "amount" with value in description
+- Extract every entity you can identify (people, organizations, systems, concepts, documents, amounts, dates...)
+- Choose the most specific type that fits
+- Create edges for every relationship between entities
+- Thoughts = high-level insights, decisions, problems, action items
+- IMPORTANT: Always extract at least one node. Empty result means you missed something.
 
 Text: {text}
 """
