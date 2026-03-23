@@ -94,8 +94,8 @@ async def handle_chat_sse(
                 runtime_context=runtime_ctx,
                 session_id=request.session_id,
             )
-            messages = build_messages(system_prompt, context, None, request.message,
-                                     attachments=request.attachments or None)
+            messages = await build_messages(system_prompt, context, None, request.message,
+                                           attachments=request.attachments or None)
             try:
                 # Route greeting via OpenRouter when client has cloud tier
                 greeting_max_tier = getattr(request, "max_openrouter_tier", "NONE") or "NONE"
@@ -138,8 +138,8 @@ async def handle_chat_sse(
             runtime_context=runtime_ctx,
             session_id=request.session_id,
         )
-        messages = build_messages(system_prompt, context, task_context_msg, request.message,
-                                  attachments=request.attachments or None)
+        messages = await build_messages(system_prompt, context, task_context_msg, request.message,
+                                        attachments=request.attachments or None)
 
         # Inject memory graph summary
         if map_ctx:

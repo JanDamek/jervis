@@ -153,7 +153,52 @@ async def _load_learned_procedures() -> list[str]:
         return _procedures_cache
 
 
-def build_messages(
+async def _extract_pdf_text(pdf_bytes: bytes, filename: str) -> str:
+    """Extract text from PDF via KB document extractor (Tika/VLM).
+
+    Sends PDF to KB write service which uses Apache Tika for text PDFs
+    and VLM for scanned/image PDFs.
+    """
+    import httpx
+    import base64
+    from app.config import settings
+
+    kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
+    url = f"{kb_write_url}/api/v1/extract-text"
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                url,
+                files={"file": (filename, pdf_bytes, "application/pdf")},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                text = data.get("text", "")
+                logger.info("PDF extracted: %s → %d chars (method=%s)", filename, len(text), data.get("method", "?"))
+                return text
+            else:
+                logger.warning("PDF extraction failed: %s → HTTP %d", filename, resp.status_code)
+    except Exception as e:
+        logger.warning("PDF extraction error: %s → %s", filename, e)
+
+    # Fallback: try pymupdf if available
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        text = "\n".join(page.get_text() for page in doc)
+        doc.close()
+        logger.info("PDF extracted (pymupdf fallback): %s → %d chars", filename, len(text))
+        return text
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.warning("PDF pymupdf fallback failed: %s → %s", filename, e)
+
+    return ""
+
+
+async def build_messages(
     system_prompt: str,
     context,
     task_context_msg: dict | None,
@@ -185,13 +230,21 @@ def build_messages(
             mime = att.get("mime_type", "")
             b64 = att.get("content_base64")
             if b64 and not mime.startswith("image/"):
-                # Text/document — decode and include inline
+                # Document — extract text (PDF via KB Tika/VLM, others via UTF-8 decode)
                 import base64
                 try:
                     raw = base64.b64decode(b64)
-                    text = raw.decode("utf-8", errors="replace")
-                    attachment_parts.append(f"\n\n--- Příloha: {filename} ---\n{text}")
-                except Exception:
+                    if mime == "application/pdf" or filename.lower().endswith(".pdf"):
+                        # PDF → extract text via KB document extractor
+                        text = await _extract_pdf_text(raw, filename)
+                    else:
+                        text = raw.decode("utf-8", errors="replace")
+                    if text and text.strip():
+                        attachment_parts.append(f"\n\n--- Příloha: {filename} ---\n{text}")
+                    else:
+                        attachment_parts.append(f"\n\n--- Příloha: {filename} (prázdný obsah) ---")
+                except Exception as e:
+                    logger.warning("Attachment decode failed: %s: %s", filename, e)
                     attachment_parts.append(f"\n\n--- Příloha: {filename} (nepodařilo se dekódovat) ---")
             elif b64 and mime.startswith("image/"):
                 attachment_parts.append(f"\n\n--- Obrázek: {filename} (vizuální obsah bude zpracován) ---")
