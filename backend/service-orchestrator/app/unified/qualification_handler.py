@@ -168,11 +168,22 @@ If no conventions found, proceed with default rules below.
 {mention_context}{topic_context}{active_tasks_context}
 
 ## Your task
-1. **Search KB** (`kb_search`) — what do we already know about this topic? Related issues, commits, context.
-2. **Check active tasks** — does incoming data relate to an already active task? If yes → CONSOLIDATE.
-3. **Analyze context** — who is affected, what urgency, relation to current work.
-4. **Suggest approach** — 3-5 steps for the orchestrator (if QUEUED).
-5. **Decide** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE + priority.
+1. **Check KB conventions** (`kb_search` with "conventions rules") — apply learned rules FIRST.
+2. **Cross-source matching** (`kb_search`) — extract key identifiers from content (amounts, company names,
+   invoice numbers, order IDs, ticket numbers, dates) and search KB for matching entities.
+   - Bank statement entry → find matching invoice/order → link them (store_knowledge with relationship)
+   - Payment confirmation → find pending invoice → mark as resolved
+   - Reply email → find original thread → consolidate
+   - Status update → find related task/ticket → update context
+3. **If match found** — create relationship in KB (`store_knowledge`), update status, decide:
+   - Invoice paid → DONE + store "invoice #X paid on date Y"
+   - Partial match (amount differs, unknown sender) → QUEUED for user verification
+4. **If no match** — this is genuinely new content. Analyze:
+   - Who is affected, what urgency, relation to current work
+   - Unknown payment/transaction → USER_TASK (user must verify)
+5. **Check active tasks** — does incoming data relate to an already active task? If yes → CONSOLIDATE.
+6. **Suggest approach** — 3-5 steps for the orchestrator (if QUEUED).
+7. **Decide** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE + priority.
 
 ## Client/Project name matching
 When incoming data mentions a client or project name, ALWAYS search existing ones first.
