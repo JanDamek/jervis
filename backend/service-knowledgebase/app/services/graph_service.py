@@ -236,32 +236,25 @@ class GraphService:
 
         Returns: (nodes_created, edges_created, entity_keys)
         """
-        prompt = f"""You are a knowledge graph extractor. Extract entities, relationships, and high-level insights from the text.
-Return a JSON object with three keys: "nodes", "edges", and "thoughts".
-"nodes": list of objects with:
-  - "label": name/identifier of the entity
-  - "type": category (e.g., person, file, jira_issue, class, method, concept)
-  - "description": brief description
+        prompt = f"""Extract entities and relationships from text into a knowledge graph.
+Return JSON with keys: "nodes", "edges", "thoughts".
 
-"edges": list of objects with:
-  - "source": label of source node (must match a node label)
-  - "target": label of target node (must match a node label)
-  - "relation": type of relationship (e.g., mentions, contains, calls, assigned_to)
+"nodes": [{{"label": "name", "type": "category", "description": "brief"}}]
+"edges": [{{"source": "node_label", "target": "node_label", "relation": "type"}}]
+"thoughts": [{{"type": "category", "label": "short_id", "summary": "1-2 sentences", "related_entities": ["node_labels"]}}]
 
-"thoughts": list of high-level insights extracted from the text:
-  - "type": category (problem, decision, insight, topic, dependency, state)
-  - "label": short identifier (e.g., "Auth fails after upgrade")
-  - "summary": 1-2 sentence explanation of the thought
-  - "related_entities": list of node labels this thought references (must match node labels)
+Node types: person, organization, document, system, service, ticket, file, class, method, concept, amount, date, email_address, project, meeting, event
+Edge relations: mentions, sent_by, sent_to, belongs_to, contains, calls, assigned_to, references, pays, created_by, works_at
+Thought types: problem, decision, insight, topic, dependency, state, action_required
 
-Guidelines:
-- Extract ALL mentioned entities: people, systems, files, tickets, code elements, concepts
-- Use specific types: person, jira_issue, confluence_page, file, class, method, commit, etc.
-- For people, use their full name or identifier
-- For tickets, include the key (e.g., "TASK-123")
-- Keep labels concise but specific
-- For thoughts: extract problems being discussed, decisions made, key insights, dependencies identified
-- Only extract thoughts when the text contains meaningful high-level information (skip for purely structural content)
+Rules:
+- Extract EVERY entity: people (full names), organizations, systems, files, tickets, amounts, dates, email addresses
+- For emails: extract sender, recipients, subject entities, mentioned organizations, amounts, deadlines
+- For code: extract classes, methods, files, tickets, commits
+- For meetings: extract participants, topics discussed, decisions made, action items
+- ALWAYS extract at least the main subject/topic as a node. Never return empty nodes for non-trivial text.
+- If text mentions a person, they MUST be a node with type "person"
+- If text mentions money/amount, extract as type "amount" with value in description
 
 Text: {text}
 """
