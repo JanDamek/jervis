@@ -574,6 +574,47 @@ async def purge(request: PurgeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@write_router.post("/maintenance/batch")
+async def maintenance_batch(request: dict):
+    """Process one batch of KB maintenance work.
+
+    Checkpoint-based: accepts cursor, returns nextCursor for resume.
+    Called by Kotlin BackgroundEngine during GPU idle time.
+
+    Types: dedup, orphan_cleanup, consistency_check, thought_decay, thought_merge, embedding_quality
+    """
+    mtype = request.get("maintenanceType", "")
+    client_id = request.get("clientId", "")
+    cursor = request.get("cursor")
+    batch_size = request.get("batchSize", 100)
+
+    if not mtype or not client_id:
+        raise HTTPException(status_code=400, detail="maintenanceType and clientId required")
+
+    try:
+        if mtype == "dedup":
+            result = await service.graph_service.maintenance_dedup_batch(client_id, cursor, batch_size)
+        elif mtype == "orphan_cleanup":
+            result = await service.graph_service.maintenance_orphan_batch(client_id, cursor, batch_size)
+        elif mtype == "consistency_check":
+            result = await service.graph_service.maintenance_consistency_batch(client_id, cursor, batch_size)
+        elif mtype == "thought_decay":
+            result = await service.thought_service.maintenance_decay_batch(client_id, cursor, batch_size)
+        elif mtype == "thought_merge":
+            result = await service.thought_service.maintenance_merge_batch(client_id, cursor, batch_size)
+        elif mtype == "embedding_quality":
+            result = await service.rag_service.maintenance_embedding_batch(client_id, cursor, batch_size)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown maintenance type: {mtype}")
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Maintenance batch error: type=%s client=%s error=%s", mtype, client_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @write_router.post("/retag-project")
 async def retag_project(request: dict):
     """Migrate all KB data from one projectId to another.

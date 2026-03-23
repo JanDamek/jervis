@@ -81,6 +81,7 @@ class BackgroundEngine(
     private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
     private val projectRepository: com.jervis.repository.ProjectRepository,
     private val idleTaskRegistry: IdleTaskRegistry,
+    private val kbMaintenanceService: com.jervis.service.maintenance.KbMaintenanceService,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -266,13 +267,16 @@ class BackgroundEngine(
 
     /**
      * Called by the Ollama Router when all GPUs have been idle for >= gpu_idle_notify_after_s
-     * (default 5 min). Runs 3-phase idle maintenance pipeline:
+     * (default 5 min). Runs checkpoint-based KB maintenance pipeline:
      *
      * Phase 1 (CPU-only): memory graph cleanup, thinking graph eviction, LQM drain, affair archival.
-     * Phase 2 (GPU-light): KB dedup for ONE client (NORMAL priority, auto-preempted by CRITICAL).
-     * Phase 3 (deep analysis): existing IDLE task mechanism for code quality, vuln scans etc.
+     * Phase 2 (KB maintenance): batch-based dedup → orphan → consistency → thought decay/merge → embedding
+     *   - Processes items in batches of 100
+     *   - Saves cursor after each batch (preemption-safe)
+     *   - Resumes from cursor on next idle period
+     *   - Cooldown: doesn't restart completed tasks within 30 min
      *
-     * Each phase checks for incoming FG/BG work before proceeding.
+     * Checks for incoming FG/BG work before each batch.
      */
     fun onGpuIdle() {
         if (!backgroundProperties.idleReviewEnabled) {
@@ -302,21 +306,42 @@ class BackgroundEngine(
                 // Abort if work arrived during Phase 1
                 if (hasActiveFgBgWork()) return@launch
 
-                // Phase 2: GPU-light KB maintenance for one client
-                val nextClient = phase1?.nextClientForPhase2
-                if (nextClient != null) {
-                    val phase2 = pythonOrchestratorClient.runMaintenance(phase = 2, clientId = nextClient)
-                    if (phase2 != null && phase2.findings.isNotEmpty()) {
-                        logger.info { "GPU_IDLE_P2: client=$nextClient findings=${phase2.findings.size}" }
+                // Phase 2: Checkpoint-based KB maintenance — process batches until preempted
+                var batchCount = 0
+                val maxBatchesPerIdle = 50 // Safety limit per idle session
+
+                while (batchCount < maxBatchesPerIdle) {
+                    // Check for preemption before each batch
+                    if (hasActiveFgBgWork()) {
+                        logger.info { "GPU_IDLE_KB: Preempted after $batchCount batches — cursor saved" }
+                        return@launch
+                    }
+
+                    // Pick next work (respects priority, cooldown, cursor)
+                    val work = kbMaintenanceService.pickNextWork() ?: break
+
+                    // Process one batch
+                    val result = kbMaintenanceService.processBatch(work)
+                    batchCount++
+
+                    // If this task just completed, loop to pick next task type
+                    if (result.completedAt != null) {
+                        logger.info {
+                            "GPU_IDLE_KB: ${work.maintenanceType} completed for ${work.clientId} " +
+                                "(${result.processedCount} items, ${result.findingsCount} findings, ${result.fixedCount} fixed)"
+                        }
+                        continue
+                    }
+
+                    // If error, move to next task
+                    if (result.lastError != null) {
+                        logger.warn { "GPU_IDLE_KB: ${work.maintenanceType} error for ${work.clientId}: ${result.lastError}" }
+                        continue
                     }
                 }
 
-                // Abort if work arrived during Phase 2
-                if (hasActiveFgBgWork()) return@launch
-
-                // Phase 3: deep analysis via existing IDLE task mechanism
-                if (!hasExistingIdleTask()) {
-                    createIdleTask()
+                if (batchCount > 0) {
+                    logger.info { "GPU_IDLE_KB: Processed $batchCount batches in this idle session" }
                 }
             } catch (e: Exception) {
                 logger.error(e) { "GPU_IDLE_MAINTENANCE: Error in idle pipeline" }
@@ -1101,38 +1126,25 @@ class BackgroundEngine(
      * 5. After completion, next iteration creates the next due check
      */
     private suspend fun runIdleReviewLoop() {
-        // Wait for startup + extra buffer to let system stabilize
+        // KB maintenance is now checkpoint-based via onGpuIdle() → KbMaintenanceService.
+        // This loop is kept as a fallback: if GPU idle notification doesn't arrive
+        // (e.g., no Ollama router), run maintenance periodically.
         delay(backgroundProperties.waitOnStartup)
-        delay(60_000) // Extra 1 minute after startup
+        delay(60_000)
 
         while (scope.isActive) {
             try {
                 delay(backgroundProperties.idleReviewInterval)
 
-                if (!backgroundProperties.idleReviewEnabled) {
-                    continue
+                if (!backgroundProperties.idleReviewEnabled) continue
+                if (hasActiveFgBgWork()) continue
+
+                // Delegate to same checkpoint-based pipeline as onGpuIdle
+                val work = kbMaintenanceService.pickNextWork() ?: continue
+                val result = kbMaintenanceService.processBatch(work)
+                if (result.completedAt != null) {
+                    logger.info { "IDLE_REVIEW_FALLBACK: ${work.maintenanceType} completed for ${work.clientId}" }
                 }
-
-                // Don't create idle tasks if there's any real work pending
-                val hasFgBgWork = taskRepository.countByProcessingModeAndState(
-                    com.jervis.entity.ProcessingMode.FOREGROUND, TaskStateEnum.QUEUED,
-                ) + taskRepository.countByProcessingModeAndState(
-                    com.jervis.entity.ProcessingMode.BACKGROUND, TaskStateEnum.QUEUED,
-                ) + taskRepository.countByState(TaskStateEnum.PROCESSING) +
-                    taskRepository.countByState(TaskStateEnum.INDEXING)
-
-                if (hasFgBgWork > 0) {
-                    logger.debug { "IDLE_TASK: System busy ($hasFgBgWork active tasks), skipping" }
-                    continue
-                }
-
-                // Only ONE idle task at a time
-                if (hasExistingIdleTask()) {
-                    logger.debug { "IDLE_TASK: Already exists, skipping" }
-                    continue
-                }
-
-                createIdleTask()
             } catch (e: CancellationException) {
                 logger.info { "Idle task loop cancelled" }
                 throw e
@@ -1159,206 +1171,8 @@ class BackgroundEngine(
         return existing != null
     }
 
-    /**
-     * Create a single IDLE task for the highest-priority due idle check.
-     * Uses ProcessingMode.IDLE so the execution loop treats it as lowest priority.
-     *
-     * Task scope is GLOBAL — the prompt includes all active clients and projects
-     * so the orchestrator can work across the entire system, not just one client.
-     */
-    private suspend fun createIdleTask() {
-        val allClients = try {
-            clientRepository.findAll().toList().filter { !it.archived }
-        } catch (_: Exception) {
-            emptyList()
-        }
-
-        if (allClients.isEmpty()) {
-            logger.debug { "IDLE_TASK: No active clients found, skipping" }
-            return
-        }
-
-        val lastRunTimes = buildLastRunTimes()
-        val nextTask = idleTaskRegistry.getNextIdleTask(lastRunTimes)
-
-        if (nextTask == null) {
-            logger.debug { "IDLE_TASK: All tasks ran recently, skipping" }
-            return
-        }
-
-        // Build client/project overview for global scope
-        val activeClientIds = allClients.mapNotNull { it.id }.toSet()
-        val allProjects = try {
-            projectRepository.findByActiveTrue().toList()
-                .filter { it.clientId in activeClientIds }
-        } catch (_: Exception) {
-            emptyList()
-        }
-        val clientOverview = allClients.joinToString("\n") { client ->
-            val projects = allProjects.filter { it.clientId == client.id }
-            val projectNames = projects.joinToString(", ") { it.name }
-            "- ${client.name} (ID: ${client.id}): projekty: $projectNames"
-        }
-
-        val taskName = idleTaskRegistry.getTaskDescription(nextTask.type)
-        val prompt = buildIdleTaskPrompt(nextTask.type)
-        val globalPrompt = """
-            |$prompt
-            |
-            |## Scope: ALL clients and projects
-            |
-            |Proveď kontrolu napříč VŠEMI klienty a projekty (ne jen jedním).
-            |Použij tool get_clients_projects() pro aktuální seznam.
-            |
-            |Přehled klientů:
-            |$clientOverview
-        """.trimMargin()
-
-        // Use first client for DB constraint, but prompt is global
-        val primaryClientId = allClients.first().id!!
-        val idleTask = TaskDocument(
-            type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
-            taskName = taskName,
-            content = globalPrompt,
-            clientId = primaryClientId,
-            state = TaskStateEnum.QUEUED,
-            processingMode = com.jervis.entity.ProcessingMode.IDLE,
-            sourceUrn = com.jervis.common.types.SourceUrn("system:idle-task:${nextTask.type.name.lowercase()}"),
-        )
-        taskRepository.save(idleTask)
-        taskNotifier.notifyNewTask()
-
-        logger.info { "IDLE_TASK: Created ${nextTask.type} task ${idleTask.id} (mode=IDLE, global scope, ${allClients.size} clients)" }
-    }
-
-    /**
-     * Build lastRunTimes map by scanning recent completed IDLE_REVIEW tasks.
-     * Matches task type from sourceUrn prefix (system:idle-task:<type>).
-     */
-    private suspend fun buildLastRunTimes(): Map<IdleTaskType, String> {
-        val result = mutableMapOf<IdleTaskType, String>()
-        try {
-            val recentDone = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
-                type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
-                state = TaskStateEnum.DONE,
-            ).toList().filter {
-                it.createdAt.isAfter(java.time.Instant.now().minus(Duration.ofDays(7)))
-            }
-
-            for (task in recentDone) {
-                val urn = task.sourceUrn.value
-                val taskType = when {
-                    urn.contains("kb_consistency_check") -> IdleTaskType.KB_CONSISTENCY_CHECK
-                    urn.contains("vulnerability_scan") -> IdleTaskType.VULNERABILITY_SCAN
-                    urn.contains("code_quality_scan") -> IdleTaskType.CODE_QUALITY_SCAN
-                    urn.contains("documentation_freshness") -> IdleTaskType.DOCUMENTATION_FRESHNESS
-                    urn.contains("learning_best_practices") -> IdleTaskType.LEARNING_BEST_PRACTICES
-                    urn.contains("daily_report") -> IdleTaskType.DAILY_REPORT
-                    else -> null
-                } ?: continue
-                // Keep the latest (list ordered by createdAt ASC, last wins)
-                result[taskType] = task.createdAt.toString()
-            }
-        } catch (e: Exception) {
-            logger.debug(e) { "IDLE_TASK: Failed to build lastRunTimes, treating all as never-run" }
-        }
-        return result
-    }
-
-    /**
-     * EPIC 7: Build the prompt for a specific idle task type.
-     * Each type gets a specialized prompt that the Python orchestrator
-     * executes using its existing tool set (kb_search, code_search, etc.).
-     */
-    private fun buildIdleTaskPrompt(type: IdleTaskType): String = when (type) {
-        IdleTaskType.KB_CONSISTENCY_CHECK -> """
-            |You are performing a Knowledge Base consistency check.
-            |
-            |Using kb_search, check for:
-            |1. **Duplicate content**: Search for similar topics and flag redundant entries.
-            |2. **Contradictions**: Look for conflicting information across KB articles.
-            |3. **Stale references**: Find KB entries referencing deleted or moved content.
-            |4. **Orphaned nodes**: Identify KB entries with no connections to other content.
-            |
-            |For each finding, update the KB entry directly or store findings to KB.
-            |Summarize your findings at the end.
-        """.trimMargin()
-
-        IdleTaskType.VULNERABILITY_SCAN -> """
-            |You are performing a dependency vulnerability scan across all projects.
-            |
-            |Using code_search and kb_search:
-            |1. **Find dependency manifests**: Search for package.json, build.gradle.kts,
-            |   requirements.txt, pom.xml, Gemfile, go.mod files.
-            |2. **Check versions**: Look for outdated or known-vulnerable dependency versions.
-            |3. **Report findings**: For each vulnerability found, use store_knowledge to save
-            |   a finding with severity, affected package, and recommended action.
-            |
-            |Focus on critical and high-severity issues. Be specific about versions.
-        """.trimMargin()
-
-        IdleTaskType.CODE_QUALITY_SCAN -> """
-            |You are performing a basic code quality scan across all projects.
-            |
-            |Using code_search and kb_search:
-            |1. **TODO/FIXME audit**: Search for TODO and FIXME comments, categorize by urgency.
-            |2. **Dead code**: Look for unused imports, unreachable code, empty catch blocks.
-            |3. **Complexity hotspots**: Identify overly complex functions or classes.
-            |
-            |For significant findings, use store_knowledge to save them. Summarize at the end.
-        """.trimMargin()
-
-        IdleTaskType.DOCUMENTATION_FRESHNESS -> """
-            |You are checking documentation freshness across all projects.
-            |
-            |Using kb_search and code_search:
-            |1. **Find documentation**: Search for README, docs/, wiki pages in KB.
-            |2. **Compare with code**: Check if documented APIs/configs match current code.
-            |3. **Flag stale docs**: Identify documentation that hasn't been updated
-            |   but references code that has changed significantly.
-            |
-            |For each stale document found, use store_knowledge to save a finding with specific
-            |sections that need updating. Summarize findings at the end.
-        """.trimMargin()
-
-        IdleTaskType.LEARNING_BEST_PRACTICES -> """
-            |You are searching for relevant best practices for the managed projects.
-            |
-            |Using kb_search and code_search:
-            |1. **Detect tech stack**: Identify languages, frameworks, and tools used.
-            |2. **Find improvement opportunities**: Based on the tech stack, suggest
-            |   best practices that are not yet followed.
-            |3. **Check recent issues**: Look at recent bug fixes and suggest preventive
-            |   patterns or tools.
-            |
-            |Create a summary with actionable recommendations. If any recommendation
-            |is critical, use store_knowledge to save it for tracking.
-        """.trimMargin()
-
-        IdleTaskType.DAILY_REPORT -> """
-            |You are generating today's daily activity report for Jervis.
-            |
-            |Gather information using kb_search:
-            |1. **Completed tasks**: Search KB for tasks/issues resolved today.
-            |2. **Pending approvals**: Search KB for items in Open/Review state.
-            |3. **Upcoming deadlines**: Search KB for deadline mentions in the next 7 days.
-            |4. **Errors**: Search KB for error reports created today.
-            |5. **Stuck tasks**: Search KB for in-progress items older than 3 days without updates.
-            |
-            |## Verification principle
-            |
-            |Before creating any task or alert, always verify the FULL context:
-            |search for related items, follow-ups, resolutions, and contradicting
-            |information. Think critically about what you find — a single KB hit
-            |is not enough to act on. Cross-reference dates, check whether the
-            |situation has already been resolved, and only escalate when you are
-            |confident the issue is real, current, and unhandled.
-            |
-            |Use store_knowledge to save the daily report summary with kind=finding.
-            |
-            |Keep the report concise and actionable.
-        """.trimMargin()
-    }
+    // KB maintenance is now checkpoint-based via KbMaintenanceService.
+    // onGpuIdle() and runIdleReviewLoop() process batches directly without creating IDLE tasks.
 
     private suspend fun runWorkspaceRetryLoop() {
         while (scope.isActive) {

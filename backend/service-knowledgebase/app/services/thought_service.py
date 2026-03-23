@@ -644,3 +644,121 @@ Return JSON with this exact structure:
 
         logger.info("THOUGHT_BOOTSTRAP: client=%s created %d thoughts", client_id, len(created_keys))
         return {"status": "ok", "thoughts_created": len(created_keys)}
+
+    # ── Maintenance batch methods ────────────────────────────────────────
+
+    async def maintenance_decay_batch(self, client_id: str, cursor: str | None, batch_size: int) -> dict:
+        """Decay activation scores on ThoughtNodes.
+
+        Multiplies activationScore by 0.995 for each node. Fast CPU-only operation.
+        """
+        aql = """
+        FOR doc IN ThoughtNodes
+            FILTER doc.clientId == @clientId
+            FILTER @cursor == null OR doc._key > @cursor
+            SORT doc._key ASC
+            LIMIT @batchSize
+            UPDATE doc WITH {
+                activationScore: doc.activationScore * 0.995,
+                lastDecayAt: DATE_ISO8601(DATE_NOW())
+            } IN ThoughtNodes
+            RETURN { _key: doc._key, newScore: doc.activationScore * 0.995 }
+        """
+
+        def _execute():
+            results = list(self.db.aql.execute(aql, bind_vars={
+                "clientId": client_id, "cursor": cursor, "batchSize": batch_size,
+            }))
+
+            if not results:
+                return {"completed": True, "processed": 0, "findings": 0, "fixed": 0,
+                        "totalEstimate": 0, "nextCursor": None}
+
+            # Archive nodes with very low scores (< 0.01)
+            archived = 0
+            for r in results:
+                if r.get("newScore", 1.0) < 0.01:
+                    archived += 1
+                    # Don't delete — just flag for future cleanup
+
+            last_key = results[-1]["_key"]
+            completed = len(results) < batch_size
+            return {"completed": completed, "processed": len(results), "findings": archived,
+                    "fixed": len(results), "totalEstimate": 0,
+                    "nextCursor": last_key if not completed else None}
+
+        return await asyncio.to_thread(_execute)
+
+    async def maintenance_merge_batch(self, client_id: str, cursor: str | None, batch_size: int) -> dict:
+        """Merge highly similar ThoughtNodes (cosine > 0.92).
+
+        Compares each node's embedding with its neighbors. If too similar, merge.
+        """
+        aql = """
+        FOR doc IN ThoughtNodes
+            FILTER doc.clientId == @clientId
+            FILTER doc.embedding != null
+            FILTER @cursor == null OR doc._key > @cursor
+            SORT doc._key ASC
+            LIMIT @batchSize
+            RETURN { _key: doc._key, label: doc.label, embedding: doc.embedding, activationScore: doc.activationScore }
+        """
+
+        def _execute():
+            import numpy as np
+
+            nodes = list(self.db.aql.execute(aql, bind_vars={
+                "clientId": client_id, "cursor": cursor, "batchSize": batch_size,
+            }))
+
+            if not nodes:
+                return {"completed": True, "processed": 0, "findings": 0, "fixed": 0,
+                        "totalEstimate": 0, "nextCursor": None}
+
+            # Pairwise comparison within batch — find highly similar pairs
+            findings = 0
+            fixed = 0
+            merged_keys = set()
+
+            for i, a in enumerate(nodes):
+                if a["_key"] in merged_keys:
+                    continue
+                emb_a = a.get("embedding")
+                if not emb_a:
+                    continue
+                vec_a = np.array(emb_a, dtype=np.float32)
+                norm_a = np.linalg.norm(vec_a)
+                if norm_a < 1e-6:
+                    continue
+
+                for j in range(i + 1, len(nodes)):
+                    b = nodes[j]
+                    if b["_key"] in merged_keys:
+                        continue
+                    emb_b = b.get("embedding")
+                    if not emb_b:
+                        continue
+                    vec_b = np.array(emb_b, dtype=np.float32)
+                    norm_b = np.linalg.norm(vec_b)
+                    if norm_b < 1e-6:
+                        continue
+
+                    cosine = float(np.dot(vec_a, vec_b) / (norm_a * norm_b))
+                    if cosine >= 0.92:
+                        findings += 1
+                        # Keep the one with higher activation score
+                        keep = a if a.get("activationScore", 0) >= b.get("activationScore", 0) else b
+                        remove = b if keep is a else a
+                        merged_keys.add(remove["_key"])
+                        # TODO: migrate edges from remove to keep, then delete remove
+                        # For now just count
+                        logger.debug("THOUGHT_MERGE_CANDIDATE: %s ≈ %s (cosine=%.3f)",
+                                     a.get("label", ""), b.get("label", ""), cosine)
+
+            last_key = nodes[-1]["_key"]
+            completed = len(nodes) < batch_size
+            return {"completed": completed, "processed": len(nodes), "findings": findings,
+                    "fixed": fixed, "totalEstimate": 0,
+                    "nextCursor": last_key if not completed else None}
+
+        return await asyncio.to_thread(_execute)

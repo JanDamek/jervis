@@ -6,73 +6,77 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * EPIC 7-S1: Idle Tasks Registry.
+ * Idle Maintenance Registry — KB-focused maintenance tasks.
  *
- * Manages the configurable list of idle activities JERVIS performs
- * when no foreground or background tasks are pending.
+ * Priority-ordered list of maintenance activities JERVIS performs when GPU is idle.
+ * All tasks are KB health focused — personal assistant needs clean, consistent knowledge.
  *
- * Priority-ordered. The BackgroundEngine's idle review loop consults
- * this registry to pick the next idle task.
+ * Each task processes in batches with checkpoint/cursor support:
+ * - Preemptible: saves cursor when interrupted by FG/BG work
+ * - Resumable: continues from cursor on next idle period
+ * - Cooldown: doesn't restart if completed within last 30 minutes
  */
 @Service
 class IdleTaskRegistry {
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Default idle task configuration, ordered by priority (highest first).
-     * Can be overridden per-client via guidelines or DB config.
+     * KB maintenance pipeline, ordered by priority (highest first).
+     *
+     * Pipeline runs top-to-bottom: finish dedup before starting orphan cleanup etc.
+     * Each task has its own cooldown — after completing a full cycle, waits before re-running.
      */
-    private val defaultTasks = listOf(
+    private val maintenancePipeline = listOf(
         IdleTaskConfig(
-            type = IdleTaskType.KB_CONSISTENCY_CHECK,
+            type = IdleTaskType.THOUGHT_DECAY,
+            enabled = true,
+            priority = 100,         // Highest — fast CPU-only operation
+            intervalHours = 6,      // Every 6 hours
+        ),
+        IdleTaskConfig(
+            type = IdleTaskType.KB_DEDUP,
+            enabled = true,
+            priority = 90,
+            intervalHours = 24,
+        ),
+        IdleTaskConfig(
+            type = IdleTaskType.KB_ORPHAN_CLEANUP,
             enabled = true,
             priority = 80,
             intervalHours = 24,
         ),
         IdleTaskConfig(
-            type = IdleTaskType.VULNERABILITY_SCAN,
+            type = IdleTaskType.KB_CONSISTENCY_CHECK,
             enabled = true,
             priority = 70,
-            intervalHours = 24,
+            intervalHours = 48,     // Every 2 days — heaviest task
         ),
         IdleTaskConfig(
-            type = IdleTaskType.CODE_QUALITY_SCAN,
+            type = IdleTaskType.THOUGHT_MERGE,
             enabled = true,
             priority = 60,
-            intervalHours = 48,
-        ),
-        IdleTaskConfig(
-            type = IdleTaskType.DOCUMENTATION_FRESHNESS,
-            enabled = true,
-            priority = 50,
-            intervalHours = 72,
-        ),
-        IdleTaskConfig(
-            type = IdleTaskType.LEARNING_BEST_PRACTICES,
-            enabled = true,
-            priority = 40,
-            intervalHours = 168, // Weekly
-        ),
-        IdleTaskConfig(
-            type = IdleTaskType.DAILY_REPORT,
-            enabled = true,
-            priority = 90, // High — runs daily
             intervalHours = 24,
+        ),
+        IdleTaskConfig(
+            type = IdleTaskType.EMBEDDING_QUALITY,
+            enabled = true,
+            priority = 50,          // Lowest — only when everything else is done
+            intervalHours = 168,    // Weekly
         ),
     )
 
     /**
-     * Get the next idle task to execute, respecting priority and interval.
+     * Get the next maintenance task to execute, respecting priority and cooldown.
      *
-     * @param lastRunTimes Map of IdleTaskType → last run timestamp (ISO)
-     * @return Next task config to execute, or null if all tasks ran recently
+     * @param lastRunTimes Map of IdleTaskType → last completion timestamp (ISO)
+     * @return Next task config to execute, or null if all tasks completed recently
      */
     fun getNextIdleTask(
         lastRunTimes: Map<IdleTaskType, String>,
     ): IdleTaskConfig? {
         val now = java.time.Instant.now()
 
-        return defaultTasks
+        return maintenancePipeline
             .filter { it.enabled }
             .sortedByDescending { it.priority }
             .firstOrNull { config ->
@@ -88,19 +92,19 @@ class IdleTaskRegistry {
     }
 
     /**
-     * Get all configured idle tasks (for UI display).
+     * Get all configured maintenance tasks (for UI display in settings).
      */
-    fun getAllTasks(): List<IdleTaskConfig> = defaultTasks.toList()
+    fun getAllTasks(): List<IdleTaskConfig> = maintenancePipeline.toList()
 
     /**
      * Get task description for logging/reporting.
      */
     fun getTaskDescription(type: IdleTaskType): String = when (type) {
-        IdleTaskType.KB_CONSISTENCY_CHECK -> "Check KB for duplicates and contradictions"
-        IdleTaskType.VULNERABILITY_SCAN -> "Scan dependencies for known CVEs"
-        IdleTaskType.CODE_QUALITY_SCAN -> "Run basic code quality analysis"
-        IdleTaskType.DOCUMENTATION_FRESHNESS -> "Check documentation freshness"
-        IdleTaskType.LEARNING_BEST_PRACTICES -> "Search for relevant best practices"
-        IdleTaskType.DAILY_REPORT -> "Generate daily activity report"
+        IdleTaskType.KB_DEDUP -> "KB Dedup — merge similar nodes and chunks"
+        IdleTaskType.KB_ORPHAN_CLEANUP -> "KB Orphan Cleanup — remove disconnected nodes"
+        IdleTaskType.KB_CONSISTENCY_CHECK -> "KB Consistency — find contradictions and stale refs"
+        IdleTaskType.THOUGHT_DECAY -> "Thought Map Decay — reduce old activation scores"
+        IdleTaskType.THOUGHT_MERGE -> "Thought Map Merge — consolidate similar thoughts"
+        IdleTaskType.EMBEDDING_QUALITY -> "Embedding Quality — re-embed outdated chunks"
     }
 }

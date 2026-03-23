@@ -10,22 +10,25 @@ import kotlinx.serialization.Serializable
  */
 
 /**
- * Types of idle tasks that JERVIS can perform autonomously.
+ * Types of idle maintenance that JERVIS performs when GPU is idle.
+ *
+ * Focused on KB health — personal assistant needs clean, consistent knowledge.
+ * Code quality, vulnerability scans etc. are handled by coding agents on demand.
  */
 @Serializable
 enum class IdleTaskType {
-    /** Check KB for duplicate/contradictory chunks. */
+    /** Deduplicate similar KB nodes and chunks (cosine similarity > threshold). */
+    KB_DEDUP,
+    /** Remove orphaned nodes with no edges (disconnected from graph). */
+    KB_ORPHAN_CLEANUP,
+    /** Check KB for contradictions, stale refs, broken links. */
     KB_CONSISTENCY_CHECK,
-    /** Scan project dependencies for known CVEs. */
-    VULNERABILITY_SCAN,
-    /** Basic static code quality analysis from KB data. */
-    CODE_QUALITY_SCAN,
-    /** Check if docs are stale relative to code changes. */
-    DOCUMENTATION_FRESHNESS,
-    /** Search for best practices relevant to project technologies. */
-    LEARNING_BEST_PRACTICES,
-    /** Generate daily activity report and post to Confluence. */
-    DAILY_REPORT,
+    /** Thought Map decay — reduce activation scores over time. */
+    THOUGHT_DECAY,
+    /** Thought Map merge — merge highly similar ThoughtNodes. */
+    THOUGHT_MERGE,
+    /** Re-embed chunks with outdated embeddings (model version change). */
+    EMBEDDING_QUALITY,
 }
 
 /**
@@ -41,54 +44,26 @@ data class IdleTaskConfig(
 )
 
 /**
- * Result of a vulnerability scan for a single dependency.
+ * KB maintenance finding — issue found during idle maintenance.
  */
 @Serializable
-data class VulnerabilityFinding(
-    val dependency: String,
-    val version: String,
-    val cveId: String? = null,
-    val severity: VulnerabilitySeverity,
+data class KbMaintenanceFinding(
+    val type: MaintenanceFindingType,
+    val nodeKey1: String,
+    val nodeKey2: String? = null,
     val description: String,
-    val fixVersion: String? = null,
-    val projectId: String,
+    val autoFixed: Boolean = false,
 )
 
 @Serializable
-enum class VulnerabilitySeverity {
-    LOW, MEDIUM, HIGH, CRITICAL,
-}
-
-/**
- * KB consistency check result.
- */
-@Serializable
-data class KbConsistencyFinding(
-    val type: ConsistencyIssueType,
-    val sourceUrn1: String,
-    val sourceUrn2: String? = null,
-    val description: String,
-    val suggestedAction: String,
-)
-
-@Serializable
-enum class ConsistencyIssueType {
+enum class MaintenanceFindingType {
+    DUPLICATE_NODE,
     DUPLICATE_CHUNK,
+    ORPHANED_NODE,
     CONTRADICTORY_INFO,
-    STALE_INFORMATION,
+    STALE_REFERENCE,
+    LOW_QUALITY_EMBEDDING,
 }
-
-/**
- * Documentation freshness check result.
- */
-@Serializable
-data class DocFreshnessResult(
-    val docPath: String,
-    val lastDocUpdate: String,
-    val lastCodeUpdate: String,
-    val staleDays: Int,
-    val affectedCodePaths: List<String> = emptyList(),
-)
 
 /**
  * Response from Python orchestrator's /maintenance/run endpoint.

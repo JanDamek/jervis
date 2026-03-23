@@ -755,8 +755,56 @@ class KnowledgeServiceRestClient(
     }
 
     /**
+     * Run one batch of KB maintenance work.
+     * Called by KbMaintenanceService during GPU idle time.
+     *
+     * @param maintenanceType Type: dedup, orphan_cleanup, consistency_check, thought_decay, thought_merge, embedding_quality
+     * @param clientId Client to process
+     * @param cursor Resume cursor from previous batch (null = start from beginning)
+     * @param batchSize Number of items to process in this batch
+     * @return Batch result with next cursor, or null on error
+     */
+    suspend fun runMaintenanceBatch(
+        maintenanceType: String,
+        clientId: String,
+        cursor: String?,
+        batchSize: Int,
+    ): MaintenanceBatchResult? {
+        try {
+            val response = client.post("$apiBaseUrl/maintenance/batch") {
+                contentType(ContentType.Application.Json)
+                setBody(mapOf(
+                    "maintenanceType" to maintenanceType,
+                    "clientId" to clientId,
+                    "cursor" to cursor,
+                    "batchSize" to batchSize,
+                ))
+            }
+            if (response.status.isSuccess()) {
+                return response.body<MaintenanceBatchResult>()
+            }
+            logger.warn { "KB maintenance batch failed: ${response.status}" }
+        } catch (e: Exception) {
+            logger.warn(e) { "KB maintenance batch error: ${e.message}" }
+        }
+        return null
+    }
+
+    /**
+     * Result from KB maintenance batch processing.
+     */
+    @kotlinx.serialization.Serializable
+    data class MaintenanceBatchResult(
+        val completed: Boolean = false,
+        val nextCursor: String? = null,
+        val processed: Int = 0,
+        val findings: Int = 0,
+        val fixed: Int = 0,
+        val totalEstimate: Int = 0,
+    )
+
+    /**
      * Retag all KB entries from one project to another (for project merge).
-     * Calls the same /retag-group endpoint but with projectId migration.
      */
     suspend fun retagProjectId(sourceProjectId: String, targetProjectId: String): Boolean {
         logger.info { "KB retag-project: source=$sourceProjectId target=$targetProjectId" }

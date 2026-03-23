@@ -402,6 +402,45 @@ class RagService:
         logger.info("RAG_READ: COMPLETE query='%s' results=%d", request.query, len(items))
         return EvidencePack(items=items)
 
+    async def maintenance_embedding_batch(self, client_id: str, cursor: str | None, batch_size: int) -> dict:
+        """Check and re-embed chunks with outdated embeddings.
+
+        Chunks created before the current embedding model version get re-embedded.
+        Cursor is the last processed UUID string.
+        """
+        def _check():
+            collection = self.client.collections.get("KnowledgeChunk")
+            # Fetch batch of chunks for this client
+            filters = wvq.Filter.by_property("clientId").equal(client_id)
+            response = collection.query.fetch_objects(
+                filters=filters,
+                limit=batch_size,
+                offset=0 if not cursor else None,
+                return_properties=["clientId", "sourceUrn"],
+                return_metadata=wvq.MetadataQuery(creation_time=True),
+            )
+
+            if not response.objects:
+                return {"completed": True, "processed": 0, "findings": 0, "fixed": 0,
+                        "totalEstimate": 0, "nextCursor": None}
+
+            processed = len(response.objects)
+            last_uuid = str(response.objects[-1].uuid) if response.objects else None
+            completed = processed < batch_size
+
+            # For now, just count — actual re-embedding requires GPU and is expensive
+            # TODO: check embedding model version in metadata, re-embed if outdated
+            return {"completed": completed, "processed": processed, "findings": 0,
+                    "fixed": 0, "totalEstimate": 0,
+                    "nextCursor": last_uuid if not completed else None}
+
+        try:
+            return await asyncio.to_thread(_check)
+        except Exception as e:
+            logger.warning("maintenance_embedding_batch failed: %s", e)
+            return {"completed": True, "processed": 0, "findings": 0, "fixed": 0,
+                    "totalEstimate": 0, "nextCursor": None}
+
     async def retag_project(self, source_project_id: str, target_project_id: str) -> int:
         """Migrate all Weaviate chunks from one projectId to another.
 

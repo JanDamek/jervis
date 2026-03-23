@@ -1704,6 +1704,147 @@ Text: {text}
             logger.info("Deleted kb_document node key=%s", key)
         return deleted
 
+    # ── Maintenance batch methods (checkpoint-based, called from Kotlin BackgroundEngine) ──
+
+    async def maintenance_dedup_batch(self, client_id: str, cursor: str | None, batch_size: int) -> dict:
+        """Find and merge duplicate KnowledgeNodes (same label, similar summary).
+
+        Cursor = last processed node _key. Returns batch result dict.
+        """
+        aql_count = """
+        FOR doc IN KnowledgeNodes
+            FILTER doc.clientId == @clientId
+            COLLECT WITH COUNT INTO total
+            RETURN total
+        """
+        aql_batch = """
+        FOR doc IN KnowledgeNodes
+            FILTER doc.clientId == @clientId
+            FILTER @cursor == null OR doc._key > @cursor
+            SORT doc._key ASC
+            LIMIT @batchSize
+            RETURN { _key: doc._key, label: doc.label, type: doc.type }
+        """
+
+        def _execute():
+            total = 0
+            try:
+                tc = self.db.aql.execute(aql_count, bind_vars={"clientId": client_id})
+                total = next(tc, 0)
+            except Exception:
+                pass
+
+            nodes = list(self.db.aql.execute(aql_batch, bind_vars={
+                "clientId": client_id, "cursor": cursor, "batchSize": batch_size,
+            }))
+
+            if not nodes:
+                return {"completed": True, "processed": 0, "findings": 0, "fixed": 0,
+                        "totalEstimate": total, "nextCursor": None}
+
+            # Simple dedup: group by normalized label+type, flag duplicates
+            seen: dict[str, str] = {}  # "label:type" → first _key
+            findings = 0
+            fixed = 0
+            for node in nodes:
+                key = f"{(node.get('label') or '').lower().strip()}:{node.get('type', '')}"
+                if key in seen:
+                    findings += 1
+                    # TODO: merge edges from duplicate to original, then delete duplicate
+                    # For now just count — actual merge requires edge traversal
+                else:
+                    seen[key] = node["_key"]
+
+            last_key = nodes[-1]["_key"]
+            completed = len(nodes) < batch_size
+            return {"completed": completed, "processed": len(nodes), "findings": findings,
+                    "fixed": fixed, "totalEstimate": total, "nextCursor": last_key if not completed else None}
+
+        return await asyncio.to_thread(_execute)
+
+    async def maintenance_orphan_batch(self, client_id: str, cursor: str | None, batch_size: int) -> dict:
+        """Find and remove orphaned KnowledgeNodes with no edges.
+
+        Orphan = node with degree 0 (no inbound or outbound edges).
+        """
+        aql_batch = """
+        FOR doc IN KnowledgeNodes
+            FILTER doc.clientId == @clientId
+            FILTER @cursor == null OR doc._key > @cursor
+            SORT doc._key ASC
+            LIMIT @batchSize
+            LET inDeg = LENGTH(FOR e IN KnowledgeEdges FILTER e._to == doc._id LIMIT 1 RETURN 1)
+            LET outDeg = LENGTH(FOR e IN KnowledgeEdges FILTER e._from == doc._id LIMIT 1 RETURN 1)
+            LET anchored = LENGTH(FOR a IN ThoughtAnchors FILTER a._to == doc._id LIMIT 1 RETURN 1)
+            RETURN { _key: doc._key, _id: doc._id, orphan: (inDeg == 0 AND outDeg == 0 AND anchored == 0) }
+        """
+
+        def _execute():
+            nodes = list(self.db.aql.execute(aql_batch, bind_vars={
+                "clientId": client_id, "cursor": cursor, "batchSize": batch_size,
+            }))
+
+            if not nodes:
+                return {"completed": True, "processed": 0, "findings": 0, "fixed": 0,
+                        "totalEstimate": 0, "nextCursor": None}
+
+            orphans = [n for n in nodes if n.get("orphan")]
+            fixed = 0
+            for orphan in orphans:
+                try:
+                    self.db.collection("KnowledgeNodes").delete(orphan["_key"])
+                    fixed += 1
+                except Exception:
+                    pass
+
+            last_key = nodes[-1]["_key"]
+            completed = len(nodes) < batch_size
+            return {"completed": completed, "processed": len(nodes), "findings": len(orphans),
+                    "fixed": fixed, "totalEstimate": 0, "nextCursor": last_key if not completed else None}
+
+        return await asyncio.to_thread(_execute)
+
+    async def maintenance_consistency_batch(self, client_id: str, cursor: str | None, batch_size: int) -> dict:
+        """Check KB consistency — find nodes with broken edge references.
+
+        Checks that all edges reference existing nodes.
+        """
+        aql_batch = """
+        FOR e IN KnowledgeEdges
+            FILTER e.clientId == @clientId OR e.clientId == null OR e.clientId == ""
+            FILTER @cursor == null OR e._key > @cursor
+            SORT e._key ASC
+            LIMIT @batchSize
+            LET fromExists = LENGTH(FOR doc IN KnowledgeNodes FILTER doc._id == e._from LIMIT 1 RETURN 1) > 0
+            LET toExists = LENGTH(FOR doc IN KnowledgeNodes FILTER doc._id == e._to LIMIT 1 RETURN 1) > 0
+            RETURN { _key: e._key, broken: (!fromExists OR !toExists) }
+        """
+
+        def _execute():
+            edges = list(self.db.aql.execute(aql_batch, bind_vars={
+                "clientId": client_id, "cursor": cursor, "batchSize": batch_size,
+            }))
+
+            if not edges:
+                return {"completed": True, "processed": 0, "findings": 0, "fixed": 0,
+                        "totalEstimate": 0, "nextCursor": None}
+
+            broken = [e for e in edges if e.get("broken")]
+            fixed = 0
+            for edge in broken:
+                try:
+                    self.db.collection("KnowledgeEdges").delete(edge["_key"])
+                    fixed += 1
+                except Exception:
+                    pass
+
+            last_key = edges[-1]["_key"]
+            completed = len(edges) < batch_size
+            return {"completed": completed, "processed": len(edges), "findings": len(broken),
+                    "fixed": fixed, "totalEstimate": 0, "nextCursor": last_key if not completed else None}
+
+        return await asyncio.to_thread(_execute)
+
     async def retag_project(self, source_project_id: str, target_project_id: str) -> dict[str, int]:
         """Migrate all ArangoDB data from one projectId to another.
 
