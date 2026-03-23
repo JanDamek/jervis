@@ -301,6 +301,7 @@ class ChatRpcImpl(
         limit: Int, beforeMessageId: String?, showChat: Boolean, showTasks: Boolean, showNeedReaction: Boolean,
         filterClientId: String?, filterProjectId: String?, filterGroupId: String?,
     ): ChatHistoryDto {
+        logger.info { "CHAT_HISTORY | filterClient=$filterClientId filterProject=$filterProjectId filterGroup=$filterGroupId limit=$limit" }
         // "K reakci" badge = pending USER_TASKs + actionable BACKGROUND messages (failed/needsReaction)
         val pendingUserTasks = taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toInt()
         val actionableBackground = chatService.countActionableBackground().toInt()

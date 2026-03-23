@@ -292,11 +292,15 @@ class ChatMessageService(
         showTasks: Boolean = false,
         showNeedReaction: Boolean = true,
     ): List<ChatMessageDocument> {
-        val criteria = Criteria.where("conversationId").`is`(conversationId)
+        // Build all conditions as $and elements to avoid orOperator overwrite
+        val andConditions = mutableListOf<Criteria>()
+
+        // Base: conversationId
+        andConditions.add(Criteria.where("conversationId").`is`(conversationId))
 
         // Pagination cursor
         if (beforeId != null) {
-            criteria.and("_id").lt(beforeId)
+            andConditions.add(Criteria.where("_id").lt(beforeId))
         }
 
         // Scope filtering — only when filterClientId is set
@@ -308,7 +312,6 @@ class ChatMessageService(
                 Criteria.where("affectedScopes.clientId").`is`(filterClientId),    // cross-context master
             )
             if (filterProjectId != null) {
-                // Further narrow: within client, show only matching project + unscoped
                 scopeOr.clear()
                 scopeOr.addAll(listOf(
                     Criteria().andOperator(
@@ -320,7 +323,6 @@ class ChatMessageService(
                     Criteria.where("affectedScopes.clientId").`is`(filterClientId),
                 ))
             } else if (groupProjectIds != null && groupProjectIds.isNotEmpty()) {
-                // Group scope: show messages for any project in the group
                 scopeOr.clear()
                 scopeOr.addAll(listOf(
                     Criteria().andOperator(
@@ -332,7 +334,7 @@ class ChatMessageService(
                     Criteria.where("affectedScopes.clientId").`is`(filterClientId),
                 ))
             }
-            criteria.orOperator(*scopeOr.toTypedArray())
+            andConditions.add(Criteria().orOperator(*scopeOr.toTypedArray()))
         }
 
         // Role filtering (same logic as existing getChatHistory)
@@ -355,10 +357,10 @@ class ChatMessageService(
             ))
         }
         if (roleFilters.isNotEmpty()) {
-            criteria.orOperator(*roleFilters.toTypedArray())
+            andConditions.add(Criteria().orOperator(*roleFilters.toTypedArray()))
         }
 
-        val query = Query(criteria)
+        val query = Query(Criteria().andOperator(*andConditions.toTypedArray()))
             .with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "_id"))
             .limit(limit)
 
