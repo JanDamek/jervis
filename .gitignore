@@ -12,3 +12,5 @@ xcuserdata/
 # Python
 __pycache__/
 *.pyc
+data/
+backend/service-knowledgebase/scripts/

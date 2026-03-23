@@ -31,6 +31,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
@@ -310,9 +311,9 @@ class ChatRpcImpl(
         if (filterClientId != null) {
             // Resolve group → project IDs if group filter is set
             val groupProjectIds = if (filterGroupId != null) {
-                projectRepository.findByGroupIdAndActiveTrue(org.bson.types.ObjectId(filterGroupId))
+                projectRepository.findByGroupIdAndActiveTrue(com.jervis.common.types.ProjectGroupId.fromString(filterGroupId))
                     .toList()
-                    .map { it.id.toHexString() }
+                    .map { it.id.toString() }
             } else null
 
             val beforeId = beforeMessageId?.let { org.bson.types.ObjectId(it) }

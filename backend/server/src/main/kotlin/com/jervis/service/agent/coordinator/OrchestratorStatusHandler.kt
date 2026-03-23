@@ -250,8 +250,8 @@ class OrchestratorStatusHandler(
                             summary = summary ?: "Completed",
                             success = true,
                             taskId = task.id.toString(),
-                            clientId = task.clientId?.toHexString(),
-                            projectId = task.projectId?.toHexString(),
+                            clientId = task.clientId?.toString(),
+                            projectId = task.projectId?.toString(),
                         )
                     } catch (e: Exception) {
                         logger.warn(e) { "Failed to push background result to chat for task ${task.id}" }
@@ -360,8 +360,8 @@ class OrchestratorStatusHandler(
                     success = false,
                     taskId = task.id.toString(),
                     metadata = mapOf("needsReaction" to "true"),
-                    clientId = task.clientId?.toHexString(),
-                    projectId = task.projectId?.toHexString(),
+                    clientId = task.clientId?.toString(),
+                    projectId = task.projectId?.toString(),
                 )
             } catch (e: Exception) {
                 logger.warn(e) { "Failed to push background error to chat for task ${task.id}" }

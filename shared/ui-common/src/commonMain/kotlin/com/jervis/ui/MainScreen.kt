@@ -42,6 +42,11 @@ import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JHorizontalSplitLayout
 import com.jervis.ui.model.PendingMessageInfo
 import com.jervis.ui.util.PickedFile
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 
 /**
  * Main screen for Jervis – chat content area.
@@ -98,6 +103,8 @@ fun MainScreenView(
     onCancelVoice: () -> Unit = {},
     onTtsPlay: (String) -> Unit = {},
     isTtsPlaying: Boolean = false,
+    tierOverride: String? = null,
+    onTierOverrideChange: (String?) -> Unit = {},
     activeThinkingGraph: TaskGraphDto? = null,
     thinkingGraphPanelVisible: Boolean = false,
     thinkingGraphPanelWidthFraction: Float = 0.35f,
@@ -177,6 +184,8 @@ fun MainScreenView(
                             onMicClick = onMicClick,
                             onTtsPlay = onTtsPlay,
                             isTtsPlaying = isTtsPlaying,
+                            tierOverride = tierOverride,
+                            onTierOverrideChange = onTierOverrideChange,
                             onNavigateToTask = onNavigateToTask,
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -247,6 +256,8 @@ fun MainScreenView(
                             onMicClick = onMicClick,
                             onTtsPlay = onTtsPlay,
                             isTtsPlaying = isTtsPlaying,
+                            tierOverride = tierOverride,
+                            onTierOverrideChange = onTierOverrideChange,
                             onNavigateToTask = onNavigateToTask,
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -307,6 +318,8 @@ fun MainScreenView(
                     onCancelVoice = onCancelVoice,
                     onTtsPlay = onTtsPlay,
                     isTtsPlaying = isTtsPlaying,
+                    tierOverride = tierOverride,
+                    onTierOverrideChange = onTierOverrideChange,
                     onNavigateToTask = onNavigateToTask,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -369,6 +382,8 @@ private fun ChatContent(
     onCancelVoice: () -> Unit = {},
     onTtsPlay: (String) -> Unit = {},
     isTtsPlaying: Boolean = false,
+    tierOverride: String? = null,
+    onTierOverrideChange: (String?) -> Unit = {},
     onNavigateToTask: ((taskId: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -432,6 +447,15 @@ private fun ChatContent(
                     Text("Ignorovat vše", style = MaterialTheme.typography.labelSmall)
                 }
             }
+
+            // Tier override toggle — right-aligned
+            if (!(showNeedReaction && userTaskCount > 0)) {
+                Spacer(Modifier.weight(1f))
+            }
+            TierToggle(
+                selected = tierOverride,
+                onSelect = onTierOverrideChange,
+            )
         }
 
         // Chat area
@@ -691,6 +715,59 @@ private fun ApprovalBanner(
                     modifier = Modifier.size(18.dp),
                 )
             }
+        }
+    }
+}
+
+/**
+ * Tier override toggle — compact segmented button for quick OpenRouter tier switching.
+ * null = policy (default from settings), NONE/FREE/PAID/PREMIUM = override.
+ */
+@Composable
+private fun TierToggle(
+    selected: String?,
+    onSelect: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tiers = listOf(null to "Auto", "NONE" to "GPU", "FREE" to "Free", "PAID" to "Paid", "PREMIUM" to "Pro")
+    val shape = RoundedCornerShape(6.dp)
+
+    Row(
+        modifier = modifier
+            .height(26.dp)
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        tiers.forEachIndexed { index, (tier, label) ->
+            val isSelected = selected == tier
+            val bgColor = if (isSelected) {
+                when (tier) {
+                    null -> MaterialTheme.colorScheme.primaryContainer
+                    "NONE" -> MaterialTheme.colorScheme.surfaceVariant
+                    "FREE" -> MaterialTheme.colorScheme.tertiaryContainer
+                    "PAID" -> MaterialTheme.colorScheme.secondaryContainer
+                    "PREMIUM" -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                    else -> MaterialTheme.colorScheme.surfaceVariant
+                }
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+            val textColor = if (isSelected) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            }
+
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = textColor,
+                modifier = Modifier
+                    .background(bgColor)
+                    .clickable { onSelect(tier) }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
         }
     }
 }

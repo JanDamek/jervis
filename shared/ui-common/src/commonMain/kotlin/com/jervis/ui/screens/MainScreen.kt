@@ -49,6 +49,7 @@ fun MainScreen(
     val isRecordingVoice by viewModel.chat.isRecordingVoice.collectAsState()
     val voiceStatus by viewModel.chat.voiceStatus.collectAsState()
     val isTtsPlaying by viewModel.chat.isTtsPlaying.collectAsState()
+    val tierOverride by viewModel.chat.tierOverride.collectAsState()
 
     // Environment panel state (delegated to EnvironmentViewModel)
     val environments by viewModel.environment.environments.collectAsState()
@@ -122,6 +123,8 @@ fun MainScreen(
         onCancelVoice = viewModel.chat::cancelVoiceRecording,
         onTtsPlay = viewModel.chat::playTts,
         isTtsPlaying = isTtsPlaying,
+        tierOverride = tierOverride,
+        onTierOverrideChange = viewModel.chat::setTierOverride,
         activeThinkingGraph = activeThinkingGraph,
         thinkingGraphPanelVisible = thinkingGraphPanelVisible,
         thinkingGraphPanelWidthFraction = thinkingGraphPanelWidthFraction,
