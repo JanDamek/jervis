@@ -312,6 +312,7 @@ class ChatViewModel(
                     onConnectionReady()
                     onStatusDetail("stream")
                     try {
+                        println("ChatViewModel: loading history with scope client=${currentFilterClientId} project=${currentFilterProjectId} group=${currentFilterGroupId}")
                         val history = services.chatService.getChatHistory(
                             limit = 50,
                             showChat = _showChat.value,
