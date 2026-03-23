@@ -175,6 +175,7 @@ class LLMExtractionWorker:
             kind=task.kind,
             clientId=task.client_id,
             projectId=task.project_id,
+            metadata=task.metadata or {},
         )
 
         # Progress callback — updates SQLite so UI can show chunk X/Y

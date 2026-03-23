@@ -277,6 +277,7 @@ class KnowledgeService:
             created_at=datetime.utcnow().isoformat(),
             priority=priority,
             max_tier=getattr(request, "maxTier", "NONE"),
+            metadata=request.metadata if hasattr(request, "metadata") else {},
         )
         await self.extraction_queue.enqueue(task)
         logger.info(

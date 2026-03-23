@@ -52,6 +52,7 @@ class ExtractionTask:
         error: Optional[str] = None,
         priority: int = 4,
         max_tier: str = "NONE",
+        metadata: Optional[dict] = None,
     ):
         self.task_id = task_id
         self.source_urn = source_urn
@@ -68,6 +69,7 @@ class ExtractionTask:
         self.worker_id = worker_id
         self.error = error
         self.priority = priority
+        self.metadata = metadata or {}
 
     def to_dict(self) -> dict:
         return {
@@ -85,10 +87,14 @@ class ExtractionTask:
             "worker_id": self.worker_id,
             "error": self.error,
             "priority": self.priority,
+            "metadata": self.metadata,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "ExtractionTask":
+        # Handle older tasks without metadata field
+        if "metadata" not in data:
+            data["metadata"] = {}
         return cls(**data)
 
 
@@ -172,6 +178,13 @@ class LLMExtractionQueue:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
+            # Migration: add metadata column for email threading etc.
+            try:
+                conn.execute("ALTER TABLE tasks ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'")
+                logger.info("Added metadata column to tasks table")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
             # Migration: add progress columns for extraction tracking
             for col, default in [("progress_current", "0"), ("progress_total", "0")]:
                 try:
@@ -214,8 +227,8 @@ class LLMExtractionQueue:
             conn.execute("""
                 INSERT INTO tasks (
                     task_id, source_urn, content, client_id, project_id, kind,
-                    chunk_ids, created_at, status, attempts, priority, max_tier
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    chunk_ids, created_at, status, attempts, priority, max_tier, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 task.task_id,
                 task.source_urn,
@@ -229,6 +242,7 @@ class LLMExtractionQueue:
                 0,
                 task.priority,
                 task.max_tier,
+                json.dumps(task.metadata or {}),
             ))
             conn.commit()
 
@@ -293,6 +307,7 @@ class LLMExtractionQueue:
                 worker_id=worker_id,
                 priority=row["priority"] if "priority" in row.keys() else 4,
                 max_tier=row["max_tier"] if "max_tier" in row.keys() else "NONE",
+                metadata=json.loads(row["metadata"]) if "metadata" in row.keys() and row["metadata"] else {},
             )
 
             # Log stats

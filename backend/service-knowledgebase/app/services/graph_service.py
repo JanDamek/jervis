@@ -192,6 +192,11 @@ class GraphService:
         email_thread_id = metadata.get("emailThreadId")
         email_message_id = metadata.get("emailMessageId")
         email_in_reply_to = metadata.get("emailInReplyTo")
+        logger.info(
+            "EMAIL_THREAD_CHECK: sourceUrn=%s threadId=%s messageId=%s inReplyTo=%s metadata_keys=%s",
+            request.sourceUrn, email_thread_id, email_message_id, email_in_reply_to,
+            list(metadata.keys()) if metadata else "none",
+        )
         if email_thread_id:
             try:
                 t_nodes, t_edges = await self._create_email_thread_edges(
