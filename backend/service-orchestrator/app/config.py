@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     knowledgebase_write_url: str = os.getenv(
         "KNOWLEDGEBASE_WRITE_URL", "http://jervis-knowledgebase-write:8080"
     )
+    # Document Extraction Service
+    document_extraction_url: str = os.getenv(
+        "DOCUMENT_EXTRACTION_URL", "http://jervis-document-extraction:8080"
+    )
 
     # ArangoDB (direct access for Graph Agent artifact graph)
     arango_url: str = os.getenv("ARANGO_URL", "http://192.168.100.117:8529")

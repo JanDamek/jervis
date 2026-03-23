@@ -153,47 +153,59 @@ async def _load_learned_procedures() -> list[str]:
         return _procedures_cache
 
 
-async def _extract_pdf_text(pdf_bytes: bytes, filename: str) -> str:
-    """Extract text from PDF via KB document extractor (Tika/VLM).
+async def _index_attachment_to_kb(filename: str, text: str, client_id: str = None, project_id: str = None) -> None:
+    """Fire-and-forget: index extracted attachment text into KB for graph/map integration."""
+    import httpx
+    from app.config import settings
 
-    Sends PDF to KB write service which uses Apache Tika for text PDFs
-    and VLM for scanned/image PDFs.
+    kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            await client.post(f"{kb_write_url}/api/v1/ingest-queue", json={
+                "clientId": client_id or "",
+                "projectId": project_id or "",
+                "sourceUrn": f"chat-attachment:{filename}",
+                "kind": "document",
+                "content": f"# Příloha: {filename}\n\n{text}",
+            })
+        logger.info("Attachment indexed to KB: %s (%d chars)", filename, len(text))
+    except Exception as e:
+        logger.warning("Attachment KB indexation failed: %s: %s", filename, e)
+
+
+async def _extract_document_text(file_bytes: bytes, filename: str, mime_type: str = "") -> str:
+    """Extract text from any document via Document Extraction Service.
+
+    Routes to the dedicated microservice which handles PDF, DOCX, XLSX,
+    images (VLM), HTML, etc. Returns plain text.
     """
     import httpx
     import base64
     from app.config import settings
 
-    kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
-    url = f"{kb_write_url}/api/v1/extract-text"
+    docext_url = getattr(settings, "document_extraction_url", None) or "http://jervis-document-extraction:8080"
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        b64 = base64.b64encode(file_bytes).decode("ascii")
+        async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
-                url,
-                files={"file": (filename, pdf_bytes, "application/pdf")},
+                f"{docext_url}/extract-base64",
+                data={
+                    "content_base64": b64,
+                    "filename": filename,
+                    "mime_type": mime_type,
+                    "max_tier": "NONE",
+                },
             )
             if resp.status_code == 200:
                 data = resp.json()
                 text = data.get("text", "")
-                logger.info("PDF extracted: %s → %d chars (method=%s)", filename, len(text), data.get("method", "?"))
+                logger.info("Document extracted: %s → %d chars (method=%s)", filename, len(text), data.get("method", "?"))
                 return text
             else:
-                logger.warning("PDF extraction failed: %s → HTTP %d", filename, resp.status_code)
+                logger.warning("Document extraction failed: %s → HTTP %d: %s", filename, resp.status_code, resp.text[:200])
     except Exception as e:
-        logger.warning("PDF extraction error: %s → %s", filename, e)
-
-    # Fallback: try pymupdf if available
-    try:
-        import fitz  # PyMuPDF
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        text = "\n".join(page.get_text() for page in doc)
-        doc.close()
-        logger.info("PDF extracted (pymupdf fallback): %s → %d chars", filename, len(text))
-        return text
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.warning("PDF pymupdf fallback failed: %s → %s", filename, e)
+        logger.warning("Document extraction error: %s → %s", filename, e)
 
     return ""
 
@@ -204,6 +216,8 @@ async def build_messages(
     task_context_msg: dict | None,
     current_message: str,
     attachments: list[dict] | None = None,
+    client_id: str | None = None,
+    project_id: str | None = None,
 ) -> list[dict]:
     """Build LLM messages from context + current message.
 
@@ -230,27 +244,41 @@ async def build_messages(
             mime = att.get("mime_type", "")
             b64 = att.get("content_base64")
             if b64 and not mime.startswith("image/"):
-                # Document — extract text (PDF via KB Tika/VLM, others via UTF-8 decode)
+                # Document → extract text via Document Extraction Service
                 import base64
                 try:
                     raw = base64.b64decode(b64)
-                    if mime == "application/pdf" or filename.lower().endswith(".pdf"):
-                        # PDF → extract text via KB document extractor
-                        text = await _extract_pdf_text(raw, filename)
-                    else:
+                    # Plain text files → direct decode, everything else → extraction service
+                    is_plain_text = mime.startswith("text/") or filename.lower().endswith((".txt", ".csv", ".json", ".xml", ".yaml", ".yml", ".md"))
+                    if is_plain_text:
                         text = raw.decode("utf-8", errors="replace")
+                    else:
+                        text = await _extract_document_text(raw, filename, mime)
                     if text and text.strip():
                         attachment_parts.append(f"\n\n--- Příloha: {filename} ---\n{text}")
+                        att["_extracted_text"] = text  # for KB indexation
                     else:
                         attachment_parts.append(f"\n\n--- Příloha: {filename} (prázdný obsah) ---")
                 except Exception as e:
-                    logger.warning("Attachment decode failed: %s: %s", filename, e)
-                    attachment_parts.append(f"\n\n--- Příloha: {filename} (nepodařilo se dekódovat) ---")
+                    logger.warning("Attachment extract failed: %s: %s", filename, e)
+                    attachment_parts.append(f"\n\n--- Příloha: {filename} (nepodařilo se extrahovat) ---")
             elif b64 and mime.startswith("image/"):
                 attachment_parts.append(f"\n\n--- Obrázek: {filename} (vizuální obsah bude zpracován) ---")
             else:
                 attachment_parts.append(f"\n\n--- Příloha: {filename} ({mime}) ---")
         user_content += "".join(attachment_parts)
+
+        # Fire-and-forget: index all extracted attachments into KB
+        import asyncio
+        for att in attachments:
+            att_filename = att.get("filename", "attachment")
+            att_text = att.get("_extracted_text")
+            if att_text and att_text.strip():
+                asyncio.create_task(_index_attachment_to_kb(
+                    att_filename, att_text,
+                    client_id=client_id,
+                    project_id=project_id,
+                ))
 
     # For image attachments, use multimodal content format
     image_parts = []
