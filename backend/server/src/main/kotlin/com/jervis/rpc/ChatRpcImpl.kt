@@ -308,8 +308,12 @@ class ChatRpcImpl(
         val userTaskCount = pendingUserTasks + actionableBackground
         val session = chatService.getOrCreateActiveSession()
 
+        // ── "K reakci" is ALWAYS GLOBAL — no scope filter ──
+        // When only showNeedReaction is active, skip scope filtering entirely
+        val needReactionOnly = showNeedReaction && !showChat && !showTasks
+
         // ── Scope-aware path: use ReactiveMongoTemplate with dynamic Criteria ──
-        if (filterClientId != null) {
+        if (filterClientId != null && !needReactionOnly) {
             // Resolve group → project IDs if group filter is set
             val groupProjectIds = if (filterGroupId != null) {
                 projectRepository.findByGroupIdAndActiveTrue(com.jervis.common.types.ProjectGroupId.fromString(filterGroupId))
