@@ -129,25 +129,44 @@ Stejný flow jako email:
 2. **Kvalifikace** → DONE / QUEUED / URGENT
 3. **Cross-source matching** → najít souvislosti v KB
 
-### 4.2 Auto-response kanály
+### 4.2 Auto-response — VÝCHOZÍ STAV: VYPNUTO
 
-Některé kanály mají povolený **plně automatický response**:
+**Kritické pravidlo:** Auto-response je **vždy vypnutý** dokud ho uživatel explicitně nezapne v nastavení pro konkrétní kanál/klient/projekt. Některé klienty nebudou mít auto-response NIKDY.
+
+**Úrovně povolení (v UI nastavení):**
+- **Per klient**: "Commerzbank: auto-response ZAKÁZÁN" (nikdy, bez ohledu na kanál)
+- **Per projekt**: "Domácnost/Guru: auto-response POVOLEN"
+- **Per kanál**: "Teams kanál X: auto-response POVOLEN"
+- **Default = VYPNUTO** — pokud není explicitně zapnuto, JERVIS jen navrhne draft
 
 ```
-MongoDB: channel_auto_response_rules
+MongoDB: auto_response_settings
 {
-    channelType: "teams"|"slack"|"email"|"portal",
-    channelId: "...",  // specific channel/chat ID
-    clientId: "...",
-    autoResponse: true|false,
+    _id,
+    scope: {
+        clientId: "...",          // null = globální pravidlo
+        projectId: "...",         // null = celý klient
+        channelType: "teams"|"slack"|"email"|"portal",
+        channelId: "...",         // null = celý typ kanálu
+    },
+    enabled: false,               // DEFAULT = false, musí se explicitně zapnout
+    neverAutoResponse: false,     // true = zakázat auto-response pro tento scope NAVŽDY
     responseRules: [
         { trigger: "job_offer", action: "accept_and_notify" },
         { trigger: "direct_question", action: "draft_and_wait" },
         { trigger: "newsletter", action: "ignore" },
     ],
-    learningEnabled: true,  // učí se z uživatelových reakcí
+    learningEnabled: true,
+    createdAt, updatedAt,
 }
 ```
+
+**Evaluační kaskáda** (od nejspecifičtějšího):
+1. Per kanál setting → pokud existuje, použij
+2. Per projekt setting → fallback
+3. Per klient setting → fallback
+4. `neverAutoResponse=true` na klientovi → blokuje vše pod ním
+5. Default → `enabled=false` (jen draft, čeká na uživatele)
 
 ### 4.3 Guru/portály práce — automatické přijímání
 
@@ -303,20 +322,121 @@ mazlusek.eu, mazlusek.cz:
   → aliasy na mazlusek.com
 ```
 
-## 8. Implementační pořadí
+## 8. Ochrana existujících implementací
 
-### Fáze 1 — Základ (bez auto-response)
-1. `pending_agent_questions` collection + API
-2. `ask_jervis` MCP tool pro coding agenta
-3. Question router v orchestrátoru (KB auto-answer + user escalation)
-4. Post-completion chain (next_step_resolver)
-5. Desktop notifikace (macOS NSUserNotificationCenter)
-6. Fronta v UI ("K reakci" badge s proklikem)
+**Pravidla:**
+- Žádné deprecated funkce — vše nové, čisté
+- Existující kRPC API se rozšiřuje (nové parametry s defaults), neláme se
+- UI patterns podle `docs/ui-design.md` a `docs/guidelines.md`
+- Orchestrátor: nové handlery, neměnit existující chat/background flow
+- KB: nové kolekce/endpointy, neměnit existující ingest/search
+- Server: nové RPC metody, existující zachovat beze změn
+- Všechny změny inkrementální — každý commit musí být deployovatelný
 
-### Fáze 2 — Draft responses
-7. Kvalifikátor: draft response generation pro URGENT
-8. UI: [Odeslat] [Upravit] [Ignorovat] pro draft responses
-9. Teams/Slack: odeslání schváleného draftu přes API
+## 9. Implementační plán
+
+### Fáze 1 — Agent komunikace + fronta
+
+**Server (Kotlin):**
+- `PendingAgentQuestionDocument` — nová MongoDB entity
+- `PendingAgentQuestionRepository` — CRUD
+- `AgentQuestionService` — create, present, answer, expire
+- `ChatRpcImpl` — nové RPC: `submitAgentQuestion()`, `answerAgentQuestion()`, `getPendingQuestions()`
+- `IPendingQuestionService` — nové shared-api interface
+
+**Orchestrátor (Python):**
+- `agent/question_router.py` — **NOVÝ** — KB auto-answer + user escalation
+- `agent/next_step_resolver.py` — **NOVÝ** — post-completion convention lookup
+- Integrace do `handler_agentic.py` — po task done volat next_step_resolver
+
+**MCP (Python):**
+- `ask_jervis` tool v MCP serveru — coding agent volá, blokuje do odpovědi
+- `report_done` tool — coding agent hlásí dokončení + suggested next steps
+
+**UI (KMP Compose):**
+- "K reakci" badge na hlavním tabu — počet pending questions
+- `PendingQuestionsPanel` — seznam dotazů s [Odpovědět] [Ignorovat]
+- Proklik z notifikace → správný scope + otázka
+
+**Žádné změny v:**
+- Existující chat flow (handler_streaming, handler_agentic) — jen přidání volání
+- KB search/ingest — beze změn
+- UI chat zobrazení — jen přidání badge
+
+### Fáze 2 — Draft responses + notifikace
+
+**Orchestrátor:**
+- `qualification/draft_generator.py` — **NOVÝ** — generuje draft odpovědi pro URGENT
+- Integrace do kvalifikátoru: pokud URGENT + přímý dotaz → vygeneruj draft
+- Draft se uloží do `pending_agent_questions` s `type=draft_response`
+
+**Server:**
+- `pushDraftResponse()` — nový RPC pro draft s [Odeslat][Upravit][Ignorovat]
+- `sendApprovedDraft()` — odešle schválený draft přes Teams/Slack/Email API
+
+**UI:**
+- `DraftResponseCard` — zobrazení draftu s akcemi
+- Desktop: macOS `NSUserNotificationCenter` integrace (expect/actual)
+- iOS/Android: push notifikace (už funguje, jen nový typ)
+
+**Žádné změny v:**
+- Existující notification flow — jen nový typ `DRAFT_RESPONSE`
+- Teams/Slack polling — beze změn, jen přidání send metody
+
+### Fáze 3 — Auto-response settings
+
+**Server:**
+- `AutoResponseSettingsDocument` — nová MongoDB entity
+- `AutoResponseSettingsService` — CRUD + evaluační kaskáda
+- `IAutoResponseSettingsService` — shared-api interface
+- Nastavení v UI per klient/projekt/kanál
+
+**Orchestrátor:**
+- Kvalifikátor: před draft → check auto_response_settings
+  - `enabled=true` → auto-send (bez uživatele)
+  - `neverAutoResponse=true` → nikdy auto-send, vždy draft
+  - Default (`enabled=false`) → draft + čeká na uživatele
+
+**UI:**
+- `AutoResponseSettings` screen — per klient/projekt/kanál
+  - Toggle: Vypnuto (default) / Draft / Plně automatický
+  - `neverAutoResponse` checkbox: "Nikdy automaticky neodpovídat"
+  - Response rules: trigger → action mapping
+
+**Žádné změny v:**
+- Fáze 1+2 kód — jen přidání auto-response check před draft
+
+### Fáze 4 — Email routing
+
+**Server (Kotlin):**
+- `EmailRoutingService` — **NOVÝ** — sender/content matching → clientId/projectId
+- Integrace do `EmailContinuousIndexer` — před uložením emailu zavolat routing
+- Convention-based rules z KB (ne hardcoded)
+
+**Orchestrátor:**
+- Kvalifikátor: email routing suggestions → kb_store pokud jistý
+- Nejistý routing → USER_TASK "Kam patří email od X?"
+
+**UI:**
+- Email routing rules v nastavení klienta
+- "Přeřadit email" akce na emailu v UI
+
+### Fáze 5 — Učení z reakcí
+
+**Orchestrátor:**
+- `learning/feedback_handler.py` — **NOVÝ**
+  - Approve draft → reinforcement v Thought Map + confidence++
+  - Reject draft → negative signal + confidence--
+  - Explicit instruction ("nehlídej X") → kb_store(convention)
+  - Ignore → one-time, žádný kb_store
+
+**KB:**
+- `POST /thoughts/reinforce` — už existuje, jen volat z feedback handleru
+- Confidence scoring na auto_response_settings
+
+**Žádné změny v:**
+- KB ingest/search — beze změn
+- Thought Map schema — beze změn, jen víc dat
 
 ### Fáze 3 — Auto-response
 10. `channel_auto_response_rules` collection
