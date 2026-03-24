@@ -360,43 +360,30 @@ class ChatMessageService(
             andConditions.add(Criteria().orOperator(*roleFilters.toTypedArray()))
         }
 
-        // Use aggregation pipeline to compute isOutOfScope in DB
-        val pipeline = mutableListOf<org.springframework.data.mongodb.core.aggregation.AggregationOperation>()
+        // Simple find query — no aggregation for now (isOutOfScope computed in-code for reliability)
+        val combinedCriteria = Criteria().andOperator(*andConditions.toTypedArray())
+        val query = Query(combinedCriteria)
+            .with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "_id"))
+            .limit(limit)
 
-        // $match stage — all filters
-        pipeline.add(org.springframework.data.mongodb.core.aggregation.Aggregation.match(
-            Criteria().andOperator(*andConditions.toTypedArray())
-        ))
-
-        // $sort + $limit
-        pipeline.add(org.springframework.data.mongodb.core.aggregation.Aggregation.sort(
-            org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "_id")
-        ))
-        pipeline.add(org.springframework.data.mongodb.core.aggregation.Aggregation.limit(limit.toLong()))
-
-        // $addFields: isOutOfScope = (clientId != null AND clientId != filterClientId)
-        if (filterClientId != null) {
-            pipeline.add(org.springframework.data.mongodb.core.aggregation.Aggregation.addFields()
-                .addFieldWithValue("isOutOfScope",
-                    org.springframework.data.mongodb.core.aggregation.ConditionalOperators.Cond.`when`(
-                        Criteria().andOperator(
-                            Criteria.where("clientId").ne(null),
-                            Criteria.where("clientId").ne(filterClientId),
-                        )
-                    ).then(true).otherwise(false)
-                ).build()
-            )
+        logger.info {
+            "SCOPE_QUERY_START | conversationId=$conversationId | clientId=$filterClientId | projectId=$filterProjectId | " +
+                "groupProjectIds=$groupProjectIds | showChat=$showChat | showTasks=$showTasks | showReaction=$showNeedReaction | " +
+                "andConditions=${andConditions.size} | roleFilters=${roleFilters.size}"
         }
 
-        val aggregation = org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(pipeline)
-        val messages = mongoTemplate.aggregate(aggregation, "chat_messages", ChatMessageDocument::class.java)
-            .collectList()
-            .awaitSingle()
-
-        logger.debug {
-            "SCOPE_QUERY | conversationId=$conversationId | clientId=$filterClientId | projectId=$filterProjectId | " +
-                "count=${messages.size} | limit=$limit"
+        val messages = try {
+            kotlinx.coroutines.withTimeout(10_000) {
+                mongoTemplate.find(query, ChatMessageDocument::class.java, "chat_messages")
+                    .collectList()
+                    .awaitSingle()
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "SCOPE_QUERY_ERROR | query=$combinedCriteria" }
+            emptyList()
         }
+
+        logger.info { "SCOPE_QUERY_RESULT | count=${messages.size} | limit=$limit" }
 
         return messages.reversed()
     }

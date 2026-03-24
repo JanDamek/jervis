@@ -334,7 +334,10 @@ class ChatRpcImpl(
                 showNeedReaction = showNeedReaction,
             )
             // isOutOfScope is computed by DB aggregation pipeline — no in-code filtering
-            val dtos = messages.map { it.toChatMessageDto(taskGraphExistsService) }
+            val dtos = messages.map { msg ->
+                val outOfScope = filterClientId != null && msg.clientId != null && msg.clientId != filterClientId
+                msg.toChatMessageDto(taskGraphExistsService, isOutOfScope = outOfScope)
+            }
             return ChatHistoryDto(
                 messages = dtos,
                 hasMore = messages.size >= limit,
@@ -671,6 +674,7 @@ class ChatRpcImpl(
 /** Convert ChatMessageDocument to ChatMessageDto with graph enrichment. */
 private suspend fun com.jervis.entity.ChatMessageDocument.toChatMessageDto(
     taskGraphExistsService: com.jervis.service.graph.TaskGraphExistsService,
+    isOutOfScope: Boolean = false,
 ): ChatMessageDto {
     val msgTaskId = metadata["taskId"] ?: metadata["contextTaskId"]
     val hasGraph = if (msgTaskId != null) {
