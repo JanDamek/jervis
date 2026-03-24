@@ -333,12 +333,8 @@ class ChatRpcImpl(
                 showTasks = showTasks,
                 showNeedReaction = showNeedReaction,
             )
-            val dtos = messages.map { msg ->
-                val dto = msg.toChatMessageDto(taskGraphExistsService)
-                // Mark out-of-scope: message clientId doesn't match filter
-                val isOut = msg.clientId != null && msg.clientId != filterClientId
-                if (isOut) dto.copy(isOutOfScope = true) else dto
-            }
+            // isOutOfScope is computed by DB aggregation pipeline — no in-code filtering
+            val dtos = messages.map { it.toChatMessageDto(taskGraphExistsService) }
             return ChatHistoryDto(
                 messages = dtos,
                 hasMore = messages.size >= limit,
@@ -696,5 +692,6 @@ private suspend fun com.jervis.entity.ChatMessageDocument.toChatMessageDto(
         messageId = id.toString(),
         isDecomposed = isDecomposed,
         parentRequestId = parentRequestId,
+        isOutOfScope = isOutOfScope,
     )
 }

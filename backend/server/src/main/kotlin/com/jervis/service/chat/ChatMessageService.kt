@@ -360,11 +360,36 @@ class ChatMessageService(
             andConditions.add(Criteria().orOperator(*roleFilters.toTypedArray()))
         }
 
-        val query = Query(Criteria().andOperator(*andConditions.toTypedArray()))
-            .with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "_id"))
-            .limit(limit)
+        // Use aggregation pipeline to compute isOutOfScope in DB
+        val pipeline = mutableListOf<org.springframework.data.mongodb.core.aggregation.AggregationOperation>()
 
-        val messages = mongoTemplate.find(query, ChatMessageDocument::class.java, "chat_messages")
+        // $match stage — all filters
+        pipeline.add(org.springframework.data.mongodb.core.aggregation.Aggregation.match(
+            Criteria().andOperator(*andConditions.toTypedArray())
+        ))
+
+        // $sort + $limit
+        pipeline.add(org.springframework.data.mongodb.core.aggregation.Aggregation.sort(
+            org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "_id")
+        ))
+        pipeline.add(org.springframework.data.mongodb.core.aggregation.Aggregation.limit(limit.toLong()))
+
+        // $addFields: isOutOfScope = (clientId != null AND clientId != filterClientId)
+        if (filterClientId != null) {
+            pipeline.add(org.springframework.data.mongodb.core.aggregation.Aggregation.addFields()
+                .addFieldWithValue("isOutOfScope",
+                    org.springframework.data.mongodb.core.aggregation.ConditionalOperators.Cond.`when`(
+                        Criteria().andOperator(
+                            Criteria.where("clientId").ne(null),
+                            Criteria.where("clientId").ne(filterClientId),
+                        )
+                    ).then(true).otherwise(false)
+                ).build()
+            )
+        }
+
+        val aggregation = org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(pipeline)
+        val messages = mongoTemplate.aggregate(aggregation, "chat_messages", ChatMessageDocument::class.java)
             .collectList()
             .awaitSingle()
 

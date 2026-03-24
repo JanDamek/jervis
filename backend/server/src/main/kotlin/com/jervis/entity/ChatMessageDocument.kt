@@ -62,6 +62,9 @@ data class ChatMessageDocument(
     val isDecomposed: Boolean = false,
     val subRequestIds: List<String> = emptyList(),
     val affectedScopes: List<ScopeRef> = emptyList(),
+    // Computed by aggregation pipeline — not persisted, set by $addFields
+    @org.springframework.data.annotation.Transient
+    val isOutOfScope: Boolean = false,
 )
 
 /**
