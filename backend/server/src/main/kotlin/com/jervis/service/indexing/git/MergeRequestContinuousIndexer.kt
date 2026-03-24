@@ -37,8 +37,10 @@ private val logger = KotlinLogging.logger {}
  * Continuous indexer for merge requests / pull requests.
  *
  * Polls GitLab/GitHub for open MRs/PRs on all projects with REPOSITORY resources.
- * New MRs are saved to MongoDB and a SCHEDULED_TASK is created in QUEUED state
- * that goes directly to the orchestrator for code review dispatch.
+ * New MRs are saved to MongoDB and a SCHEDULED_TASK is created in INDEXING state
+ * so the MR content goes through KB indexation (graph nodes, embeddings) first.
+ * After KB calls /internal/kb-done, the task transitions to QUEUED for orchestrator
+ * code review dispatch.
  *
  * Filters applied:
  * - Skips draft MRs/PRs (not ready for review)
@@ -242,9 +244,10 @@ class MergeRequestContinuousIndexer(
     /**
      * Create a code review task for a discovered MR/PR.
      *
-     * The task is created as SCHEDULED_TASK in QUEUED state, bypassing KB indexation.
-     * The MR content IS the review task — no extraction needed.
-     * The task enters the orchestrator directly, which dispatches a code review agent.
+     * The task is created as SCHEDULED_TASK in INDEXING state so MR content goes
+     * through the normal KB indexation pipeline (graph nodes, embeddings, qualification).
+     * After KB calls /internal/kb-done, the task transitions INDEXING → QUEUED,
+     * entering the orchestrator which dispatches a code review agent.
      */
     private suspend fun createReviewTask(mr: MergeRequestDocument) {
         val mrPrefix = if (mr.provider == "gitlab") "!" else "#"
@@ -285,17 +288,17 @@ class MergeRequestContinuousIndexer(
                 mrId = mr.mergeRequestId,
             ),
             taskName = "Code review: ${mr.title}",
-            state = TaskStateEnum.QUEUED, // Bypass KB indexation — go straight to orchestrator
+            state = TaskStateEnum.INDEXING, // Go through KB indexation first, then QUEUED via kb-done
         )
 
         mergeRequestRepository.save(
             mr.copy(
-                state = MergeRequestState.REVIEW_DISPATCHED,
+                state = MergeRequestState.KB_INDEXING,
                 reviewTaskId = task.id.value,
             ),
         )
 
-        logger.info { "Created code review task ${task.id} for ${mr.provider} MR ${mr.mergeRequestId}" }
+        logger.info { "Created code review task ${task.id} (KB indexing) for ${mr.provider} MR ${mr.mergeRequestId}" }
     }
 
     private fun isJervisBranch(branchName: String): Boolean =

@@ -1,7 +1,7 @@
 # KB Indexation Pipeline — Systémová Analýza
 
-**Datum:** 2026-03-23
-**Status:** Probíhající analýza
+**Datum:** 2026-03-23 (analýza), 2026-03-24 (implementace oprav)
+**Status:** Opravy implementovány a nasazeny
 
 ---
 

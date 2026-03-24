@@ -1,6 +1,7 @@
 import json
 import asyncio
 import logging
+import re
 
 import httpx
 import tiktoken
@@ -1622,6 +1623,34 @@ Text: {text}
     def _make_commit_key(self, commit_hash: str, project_id: str) -> str:
         return self._safe_arango_key(["commit", commit_hash, project_id])
 
+    def _make_issue_key(self, issue_ref: str, project_id: str) -> str:
+        """Build issue node key. issue_ref is e.g. '123' or 'PROJ-456'."""
+        if re.match(r'^[A-Z]+-\d+$', issue_ref):
+            return self._safe_arango_key(["jira", issue_ref])
+        return self._safe_arango_key(["issue", issue_ref, project_id])
+
+    # Patterns for extracting issue references from commit messages
+    _ISSUE_REF_PATTERNS = [
+        # "fixes #123", "closes PROJ-456", "relates #789", "refs PROJ-100"
+        re.compile(r'(?:fixes|closes|relates|refs)\s*#?([A-Z]+-\d+|\d+)', re.IGNORECASE),
+        # JIRA-style standalone: "PROJ-123"
+        re.compile(r'(?<![A-Za-z])([A-Z]{2,}-\d+)'),
+        # GitHub-style: "#123"
+        re.compile(r'#(\d+)'),
+    ]
+
+    @staticmethod
+    def _extract_issue_refs(message: str) -> set[str]:
+        """Extract unique issue references from a commit message."""
+        refs: set[str] = set()
+        if not message:
+            return refs
+        for pattern in GraphService._ISSUE_REF_PATTERNS:
+            for m in pattern.finditer(message):
+                ref = m.group(1)
+                refs.add(ref)
+        return refs
+
     async def ingest_git_commits(
         self,
         client_id: str,
@@ -1638,6 +1667,13 @@ Text: {text}
         - Edge: commit --[modifies]--> file (if file node exists)
         - Edge: commit --[creates]--> file
         - Edge: commit --[deletes]--> file
+        - Edge: commit --[parent_of]--> parent_commit (ancestry, placeholder if needed)
+        - Edge: commit --[references]--> issue (parsed from message, placeholder if needed)
+
+        Issue references parsed from commit messages:
+        - #123 -> issue::123::{projectId}
+        - PROJ-456 -> jira::PROJ-456
+        - fixes/closes/relates/refs #123 or PROJ-456
 
         Args:
             client_id: Client ID
@@ -1726,6 +1762,85 @@ Text: {text}
                                 edge_count += 1
                             except Exception:
                                 pass
+
+                # commit -> parent commit edge (ancestry)
+                parent_hash = c.get("parent_hash", "")
+                if parent_hash:
+                    parent_key = self._make_commit_key(parent_hash, project_id)
+                    # Create placeholder parent node if not yet indexed
+                    if not nodes_col.has(parent_key):
+                        try:
+                            nodes_col.insert({
+                                "_key": parent_key,
+                                "canonicalKey": f"commit:{parent_hash}:{project_id}",
+                                "label": f"{parent_hash[:8]}: (pending indexation)",
+                                "type": "commit",
+                                "hash": parent_hash,
+                                "message": "",
+                                "author": "",
+                                "date": "",
+                                "branch": "",
+                                "parentHash": "",
+                                "clientId": client_id,
+                                "projectId": project_id,
+                                "groupId": "",
+                                "ragChunks": [],
+                                "_placeholder": True,
+                            })
+                        except Exception:
+                            pass  # Already exists (race condition)
+                    e_key = self._safe_arango_key([c_key, "parent_of", parent_key], max_len=250)
+                    if not edges_col.has(e_key):
+                        try:
+                            edges_col.insert({
+                                "_key": e_key,
+                                "_from": f"KnowledgeNodes/{c_key}",
+                                "_to": f"KnowledgeNodes/{parent_key}",
+                                "relation": "parent_of",
+                                "relationNormalized": "parent_of",
+                                "evidenceChunkIds": [],
+                            })
+                            edge_count += 1
+                        except Exception:
+                            pass
+
+                # commit -> issue edges (references)
+                message = c.get("message", "") or ""
+                issue_refs = GraphService._extract_issue_refs(message)
+                for ref in issue_refs:
+                    i_key = self._make_issue_key(ref, project_id)
+                    # Create placeholder issue node if it doesn't exist
+                    if not nodes_col.has(i_key):
+                        is_jira = bool(re.match(r'^[A-Z]+-\d+$', ref))
+                        try:
+                            nodes_col.insert({
+                                "_key": i_key,
+                                "canonicalKey": f"jira:{ref}" if is_jira else f"issue:{ref}:{project_id}",
+                                "label": ref,
+                                "type": "jira_issue" if is_jira else "issue",
+                                "issueKey": ref,
+                                "clientId": client_id,
+                                "projectId": project_id,
+                                "groupId": "",
+                                "ragChunks": [],
+                                "_placeholder": True,
+                            })
+                        except Exception:
+                            pass  # Already exists
+                    e_key = self._safe_arango_key([c_key, "references", i_key], max_len=250)
+                    if not edges_col.has(e_key):
+                        try:
+                            edges_col.insert({
+                                "_key": e_key,
+                                "_from": f"KnowledgeNodes/{c_key}",
+                                "_to": f"KnowledgeNodes/{i_key}",
+                                "relation": "references",
+                                "relationNormalized": "references",
+                                "evidenceChunkIds": [],
+                            })
+                            edge_count += 1
+                        except Exception:
+                            pass
 
             return created, edge_count
 

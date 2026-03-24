@@ -9,6 +9,7 @@ import java.time.Instant
 
 enum class MergeRequestState {
     NEW,
+    KB_INDEXING,
     REVIEW_DISPATCHED,
     DONE,
     FAILED,
