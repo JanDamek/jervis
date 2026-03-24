@@ -347,23 +347,11 @@ class ChatRpcImpl(
             )
         }
 
-        // ── Unscoped path (no filter) — existing optimized queries ──
+        // ── Unscoped fallback — only when NO client selected at all ──
+        // This should rarely happen (only before client selection on app start)
+        logger.info { "CHAT_HISTORY_UNSCOPED | showChat=$showChat showTasks=$showTasks showReaction=$showNeedReaction" }
 
-        // Optimized paths for single-filter cases (no aggregation needed)
-        if (showChat && !showTasks && !showNeedReaction) {
-            // Chat only — Spring Data derived query (most efficient)
-            return loadChatHistory(session, limit, beforeMessageId, excludeBackground = true, userTaskCount = userTaskCount)
-        }
-        if (!showChat && showTasks && !showNeedReaction) {
-            // Tasks only — Spring Data BACKGROUND-only query
-            return loadBackgroundHistory(session, limit, beforeMessageId, userTaskCount)
-        }
-        if (showChat && showTasks && !showNeedReaction) {
-            // Chat + Tasks — all messages, no filter
-            return loadChatHistory(session, limit, beforeMessageId, excludeBackground = false, userTaskCount = userTaskCount)
-        }
-
-        // Any combination involving K reakci → aggregation pipeline (handles $unionWith for USER_TASK)
+        // Use unified timeline for all unscoped queries
         val (messages, hasMore) = unifiedTimelineService.loadTimeline(
             conversationId = session.id,
             limit = limit,
