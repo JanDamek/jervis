@@ -347,7 +347,11 @@ class RagService:
             # so we only add filters for non-empty values
             parts = []
             if request.clientId:
-                parts.append(wvq.Filter.by_property("clientId").equal(request.clientId))
+                # Include both client-scoped AND global data (clientId="" = global)
+                parts.append(wvq.Filter.any_of([
+                    wvq.Filter.by_property("clientId").equal(request.clientId),
+                    wvq.Filter.by_property("clientId").equal(""),
+                ]))
             if request.projectId:
                 project_alternatives = [
                     wvq.Filter.by_property("projectId").equal(request.projectId),
@@ -381,12 +385,42 @@ class RagService:
         response = await asyncio.to_thread(_weaviate_query)
         logger.info("RAG_READ: WEAVIATE returned %d results", len(response.objects))
 
+        # Score boosting: docs/conventions get priority, newsletters get penalized
+        _SCORE_BOOST = {
+            "docs://": 0.15,           # Internal documentation = highest priority
+            "user-knowledge:convention": 0.10,  # User conventions
+            "user-knowledge:decision": 0.08,    # User decisions
+            "user-knowledge:pattern": 0.05,     # Patterns
+            "git:": 0.03,              # Code commits
+            "meeting:": 0.0,           # Meetings = neutral
+        }
+        _NEWSLETTER_PENALTY = -0.3     # Newsletters pushed way down
+
         items = []
         for i, obj in enumerate(response.objects):
+            raw_score = 1.0 - (obj.metadata.distance or 0.0)
+            source_urn = obj.properties.get("sourceUrn", "")
+            content = obj.properties.get("content", "")
+
+            # Apply boost based on source type
+            boost = 0.0
+            for prefix, b in _SCORE_BOOST.items():
+                if source_urn.startswith(prefix):
+                    boost = b
+                    break
+
+            # Detect and penalize newsletters/spam
+            content_lower = content[:500].lower()
+            if any(kw in content_lower for kw in [
+                "#wearealza", "unsubscribe", "odhlásit", "newsletter",
+                "©", "privacy policy", "zasílání obchodních", "obchodní sdělení",
+            ]):
+                boost = _NEWSLETTER_PENALTY
+
             items.append(EvidenceItem(
-                content=obj.properties["content"],
-                score=1.0 - (obj.metadata.distance or 0.0),
-                sourceUrn=obj.properties["sourceUrn"],
+                content=content,
+                score=min(1.0, max(0.0, raw_score + boost)),
+                sourceUrn=source_urn,
                 metadata=obj.properties
             ))
             if i < 3:  # Log first 3 results
@@ -398,6 +432,9 @@ class RagService:
                     obj.properties.get("projectId", "?"),
                     obj.properties.get("content", "")[:100]
                 )
+
+        # Re-sort by boosted score (docs/conventions float up, newsletters sink)
+        items.sort(key=lambda x: x.score, reverse=True)
 
         logger.info("RAG_READ: COMPLETE query='%s' results=%d", request.query, len(items))
         return EvidencePack(items=items)
