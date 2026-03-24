@@ -353,7 +353,7 @@ class ChatRpcImpl(
         return ChatHistoryDto(
             messages = emptyList(),
             hasMore = false,
-            oldestMessageId = messages.firstOrNull()?.timestamp,
+            oldestMessageId = null,
             userTaskCount = userTaskCount,
             backgroundMessageCount = 0,
         )

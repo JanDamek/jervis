@@ -6,6 +6,7 @@ import com.jervis.di.buildMultipartBody
 import com.jervis.di.postSseStream
 import com.jervis.ui.audio.AudioPlayer
 import com.jervis.ui.audio.AudioRecorder
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import com.jervis.dto.ChatResponseType
@@ -312,6 +313,12 @@ class ChatViewModel(
                     onConnectionReady()
                     onStatusDetail("stream")
                     try {
+                        // Wait for client selection before loading history (scope must be set)
+                        if (currentFilterClientId == null) {
+                            println("ChatViewModel: waiting for client selection before loading history...")
+                            selectedClientId.first { it != null }
+                            println("ChatViewModel: client selected: ${currentFilterClientId}")
+                        }
                         println("ChatViewModel: loading history with scope client=${currentFilterClientId} project=${currentFilterProjectId} group=${currentFilterGroupId}")
                         val history = services.chatService.getChatHistory(
                             limit = 50,
