@@ -16,6 +16,9 @@ value class ClientId(
     override fun toString(): String = value.toHexString()
 
     companion object {
+        /** Sentinel for unclassified content (no client assigned yet). All-zeros ObjectId. */
+        val UNCLASSIFIED: ClientId = ClientId(ObjectId("000000000000000000000000"))
+
         fun fromString(hex: String): ClientId = ClientId(ObjectId(hex))
 
         fun generate(): ClientId = ClientId(ObjectId())

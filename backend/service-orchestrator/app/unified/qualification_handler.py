@@ -196,16 +196,16 @@ When incoming data mentions a client or project name, ALWAYS search existing one
 Names are often abbreviated, misspelled, or in a different language. Never assume a new
 client/project needs to be created — 99% of mentions refer to existing entities.
 
-## Thorough verification principle
+## Verification principle
 
-Never decide based on a single fragment of information. Before choosing QUEUED
-or URGENT_ALERT, always search KB for context: are there related items,
-follow-ups, responses, resolutions? Think critically — is the situation current
-and genuinely unresolved? If unsure, choose DONE (information is in KB
-and can be found later) instead of a false alert.
+Before deciding, search KB for context: related items, follow-ups, payments, resolutions.
+Think critically — is the situation current and genuinely unresolved?
 
-URGENT_ALERT is an exceptional state — use it only when you have strong evidence
-that the situation requires immediate user attention and has not been addressed yet.
+If content has a deadline, payment term, or requires user decision → QUEUED or URGENT_ALERT.
+If content is purely informational with no action needed → DONE.
+
+URGENT_ALERT when: deadline < 7 days, overdue payment, direct question requiring response,
+or any situation where delay causes harm (financial, legal, reputational).
 
 ### Response format
 Respond EXACTLY in this format (last message):

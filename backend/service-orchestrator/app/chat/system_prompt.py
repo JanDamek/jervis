@@ -19,6 +19,7 @@ class RuntimeContext:
     learned_procedures: list[str] = field(default_factory=list)  # Dynamic: loaded from KB at chat start
     guidelines_text: str = ""  # Formatted guidelines from GuidelinesResolver
     thought_context: str = ""  # Proactive Thought Map context (spreading activation)
+    rag_context: str = ""  # Proactive RAG context (cosine similarity on KB chunks)
     activated_thought_ids: list[str] = field(default_factory=list)  # For post-response reinforcement
     activated_edge_ids: list[str] = field(default_factory=list)  # For post-response reinforcement
 
@@ -55,6 +56,7 @@ async def build_system_prompt(
     learned_section = _build_learned_procedures_section(ctx.learned_procedures)
     guidelines_section = f"\n{ctx.guidelines_text}\n" if ctx.guidelines_text else ""
     thought_section = f"\n## Aktivní kontext (Thought Map)\n{ctx.thought_context}\n" if ctx.thought_context else ""
+    rag_section = f"\n## Relevantní znalosti (KB)\n{ctx.rag_context}\n" if ctx.rag_context else ""
     active_graph_section = await _build_active_graph_section(session_id)
 
     return f"""You are Jervis — a personal AI assistant and project manager for Jan Damek.
@@ -67,7 +69,7 @@ async def build_system_prompt(
 
 ## Current time: {now}
 {scope_info}
-{clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}{thought_section}{active_graph_section}
+{clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}{thought_section}{rag_section}{active_graph_section}
 ## Tool Usage
 
 You have tools available (see tool schemas). USE THEM whenever you need factual information.

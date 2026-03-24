@@ -397,16 +397,11 @@ class MeetingContinuousIndexer(
             return
         }
 
-        // Skip KB indexing for unclassified meetings (no clientId) — classify first
+        // Use sentinel UNCLASSIFIED clientId for meetings without clientId — still index to KB
         val clientId = meeting.clientId
+        val effectiveClientId = clientId ?: ClientId.UNCLASSIFIED
         if (clientId == null) {
-            // Mark as INDEXED without KB task — will be indexed later when client is assigned
-            logger.info { "Skipping KB indexing for unclassified meeting ${meeting.id} (no clientId), marking INDEXED" }
-            meetingRepository.save(meeting.copy(
-                state = MeetingStateEnum.INDEXED,
-                stateChangedAt = Instant.now(),
-            ))
-            return
+            logger.info { "Indexing unclassified meeting ${meeting.id} (no clientId) with sentinel UNCLASSIFIED — will be re-indexed when client is assigned" }
         }
 
         val meetingContent = buildMeetingContent(meeting)
@@ -414,7 +409,7 @@ class MeetingContinuousIndexer(
         taskService.createTask(
             taskType = TaskTypeEnum.MEETING_PROCESSING,
             content = meetingContent,
-            clientId = clientId,
+            clientId = effectiveClientId,
             correlationId = "meeting:${meeting.id}",
             sourceUrn = SourceUrn.meeting(
                 meetingId = meeting.id.toHexString(),
@@ -425,7 +420,7 @@ class MeetingContinuousIndexer(
         )
 
         // Auto-qualify meetings that already have clientId (user assigned project)
-        val isQualified = meeting.qualified || meeting.clientId != null
+        val isQualified = meeting.qualified || clientId != null
 
         meetingRepository.save(meeting.copy(
             state = MeetingStateEnum.INDEXED,
@@ -433,9 +428,9 @@ class MeetingContinuousIndexer(
             stateChangedAt = Instant.now(),
         ))
         notificationRpc.emitMeetingStateChanged(
-            meeting.id.toHexString(), clientId.toString(), MeetingStateEnum.INDEXED.name, meeting.title,
+            meeting.id.toHexString(), effectiveClientId.toString(), MeetingStateEnum.INDEXED.name, meeting.title,
         )
-        logger.info { "Indexed meeting (raw transcript): ${meeting.title ?: meeting.id}, qualified=$isQualified" }
+        logger.info { "Indexed meeting (raw transcript): ${meeting.title ?: meeting.id}, qualified=$isQualified, unclassified=${clientId == null}" }
     }
 
     // ===== Pipeline 3: LLM Correction (after qualification) =====
@@ -569,6 +564,13 @@ class MeetingContinuousIndexer(
         }
         meeting.meetingType?.let { append("**Type:** ${it.name}\n") }
         meeting.audioInputType.let { append("**Audio Input:** ${it.name}\n") }
+
+        // Include participant/speaker names if available
+        val speakerNames = meeting.speakerMapping.values.filter { it.isNotBlank() }.distinct()
+        if (speakerNames.isNotEmpty()) {
+            append("**Participants:** ${speakerNames.joinToString(", ")}\n")
+        }
+
         append("\n---\n\n")
 
         append("## Transcript\n\n")
@@ -576,10 +578,15 @@ class MeetingContinuousIndexer(
         // Prefer corrected segments over raw
         val segments = meeting.correctedTranscriptSegments.ifEmpty { meeting.transcriptSegments }
         if (segments.isNotEmpty()) {
+            // Resolve speaker labels via speakerMapping (e.g. "SPEAKER_0" -> "Jan Novak")
+            val mapping = meeting.speakerMapping
             segments.forEach { seg ->
                 val timestamp = formatTimestamp(seg.startSec)
-                val speaker = seg.speaker?.let { "**$it:** " } ?: ""
-                append("[$timestamp] $speaker${seg.text}\n")
+                val resolvedSpeaker = seg.speaker?.let { label ->
+                    val name = mapping[label]
+                    if (!name.isNullOrBlank()) "**$name:** " else "**$label:** "
+                } ?: ""
+                append("[$timestamp] $resolvedSpeaker${seg.text}\n")
             }
         } else {
             append(meeting.correctedTranscriptText ?: meeting.transcriptText ?: "")
@@ -588,7 +595,7 @@ class MeetingContinuousIndexer(
         append("\n\n## Source Metadata\n")
         append("- **Source Type:** Meeting\n")
         append("- **Meeting ID:** ${meeting.id}\n")
-        append("- **Client ID:** ${meeting.clientId}\n")
+        append("- **Client ID:** ${meeting.clientId ?: "unclassified"}\n")
         meeting.projectId?.let { append("- **Project ID:** $it\n") }
         meeting.title?.let { append("- **Title:** $it\n") }
         meeting.meetingType?.let { append("- **Meeting Type:** ${it.name}\n") }

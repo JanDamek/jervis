@@ -162,6 +162,35 @@ class TaskQualificationService(
                         logger.debug { "Could not load email metadata for task ${task.id}: ${e.message}" }
                     }
                 }
+                // Meeting metadata — enables meeting-specific graph nodes and search in KB
+                if (task.type == com.jervis.dto.TaskTypeEnum.MEETING_PROCESSING) {
+                    // correlationId format: "meeting:{meetingObjectId}"
+                    val meetingId = task.correlationId.removePrefix("meeting:")
+                    put("meetingId", meetingId)
+                    // Extract title from first line of content (format: "# Title")
+                    val firstLine = task.content.lineSequence().firstOrNull()?.removePrefix("# ")?.trim()
+                    if (!firstLine.isNullOrBlank()) {
+                        put("meetingTitle", firstLine)
+                    }
+                    // Extract meeting type from content (format: "**Type:** ENUM_NAME")
+                    val typeLine = task.content.lineSequence()
+                        .firstOrNull { it.startsWith("**Type:**") }
+                        ?.removePrefix("**Type:**")?.trim()
+                    if (!typeLine.isNullOrBlank()) {
+                        put("meetingType", typeLine)
+                    }
+                    // Extract participants from content (format: "**Participants:** Name1, Name2")
+                    val participantsLine = task.content.lineSequence()
+                        .firstOrNull { it.startsWith("**Participants:**") }
+                        ?.removePrefix("**Participants:**")?.trim()
+                    if (!participantsLine.isNullOrBlank()) {
+                        put("meetingParticipants", participantsLine)
+                    }
+                    // Check if this is an unclassified meeting (sentinel clientId)
+                    if (task.clientId == com.jervis.common.types.ClientId.UNCLASSIFIED) {
+                        put("unclassified", "true")
+                    }
+                }
             },
             observedAt = Instant.now(),
             attachments = attachments,

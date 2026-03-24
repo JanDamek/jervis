@@ -79,24 +79,42 @@ async def load_runtime_context(
     except Exception as e:
         logger.warning("Failed to load guidelines: %s", e)
 
-    # Thought Map — proactive traversal (spreading activation)
+    # Proactive dual context: Thought Map + RAG prefetch (parallel)
     thought_context = ""
+    rag_context = ""
     activated_thought_ids: list[str] = []
     activated_edge_ids: list[str] = []
     if query and client_id:
-        try:
+        import asyncio
+
+        async def _thought_prefetch():
             from app.kb.thought_prefetch import prefetch_thought_context
-            tc = await prefetch_thought_context(
-                query=query,
-                client_id=client_id,
-                project_id=project_id,
-                group_id=group_id,
+            return await prefetch_thought_context(
+                query=query, client_id=client_id,
+                project_id=project_id, group_id=group_id,
             )
+
+        async def _rag_prefetch():
+            return await _prefetch_rag_context(
+                query=query, client_id=client_id,
+                project_id=project_id, group_id=group_id,
+            )
+
+        thought_task = asyncio.create_task(_thought_prefetch())
+        rag_task = asyncio.create_task(_rag_prefetch())
+
+        try:
+            tc = await thought_task
             thought_context = tc.formatted_context
             activated_thought_ids = tc.activated_thought_ids
             activated_edge_ids = tc.activated_edge_ids
         except Exception as e:
             logger.warning("Failed to load thought context: %s", e)
+
+        try:
+            rag_context = await rag_task
+        except Exception as e:
+            logger.warning("Failed to load RAG context: %s", e)
 
     return RuntimeContext(
         clients_projects=_clients_cache,
@@ -105,6 +123,7 @@ async def load_runtime_context(
         learned_procedures=learned_procedures,
         guidelines_text=guidelines_text,
         thought_context=thought_context,
+        rag_context=rag_context,
         activated_thought_ids=activated_thought_ids,
         activated_edge_ids=activated_edge_ids,
     )
@@ -151,6 +170,69 @@ async def _load_learned_procedures() -> list[str]:
     except Exception as e:
         logger.warning("Failed to load learned procedures from KB: %s", e)
         return _procedures_cache
+
+
+async def _prefetch_rag_context(
+    query: str, client_id: str, project_id: str | None = None, group_id: str | None = None,
+) -> str:
+    """Proactive RAG search — cosine similarity on KB chunks before LLM call.
+
+    Runs in parallel with Thought Map prefetch. Results injected into system prompt
+    so the model ALWAYS sees relevant KB data without needing to call kb_search tool.
+    """
+    import httpx
+    from app.config import settings
+
+    kb_url = settings.knowledgebase_url
+    payload = {
+        "query": query,
+        "clientId": client_id,
+        "projectId": project_id or "",
+        "groupId": group_id or "",
+        "maxResults": 5,
+        "minConfidence": 0.5,
+        "expandGraph": False,  # Pure RAG, no graph expansion (faster)
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0)) as client:
+            resp = await client.post(
+                f"{kb_url}/api/v1/retrieve",
+                json=payload,
+                headers={"X-Ollama-Priority": "0"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        logger.warning("RAG_PREFETCH: failed query=%s error=%s", query[:50], e)
+        return ""
+
+    results = data.get("results", [])
+    if not results:
+        return ""
+
+    # Format as structured context — max ~3000 chars
+    parts = []
+    total_chars = 0
+    for item in results:
+        source = item.get("sourceUrn", "?")[:60]
+        content = item.get("content", "")
+        score = item.get("score", 0)
+        if not content:
+            continue
+        # Truncate per-item to keep total under budget
+        snippet = content[:600] if len(content) > 600 else content
+        entry = f"[{score:.2f}] {source}: {snippet}"
+        if total_chars + len(entry) > 3000:
+            break
+        parts.append(entry)
+        total_chars += len(entry)
+
+    if not parts:
+        return ""
+
+    logger.info("RAG_PREFETCH: client=%s results=%d context_len=%d", client_id, len(parts), total_chars)
+    return "\n".join(parts)
 
 
 async def _index_attachment_to_kb(

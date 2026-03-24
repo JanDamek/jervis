@@ -197,6 +197,11 @@ class GraphService:
             request.sourceUrn, email_thread_id, email_message_id, email_in_reply_to,
             list(metadata.keys()) if metadata else "none",
         )
+        # Fallback: if no threadId but has messageId, use messageId as thread anchor
+        if not email_thread_id and email_message_id:
+            email_thread_id = email_message_id
+            logger.info("EMAIL_THREAD: No threadId, using messageId=%s as thread anchor", email_message_id)
+
         if email_thread_id:
             try:
                 t_nodes, t_edges = await self._create_email_thread_edges(
@@ -208,6 +213,7 @@ class GraphService:
                     client_id=request.clientId,
                     project_id=request.projectId or "",
                     chunk_ids=chunk_ids or [],
+                    references=metadata.get("emailReferences", ""),
                 )
                 nodes_created += t_nodes
                 edges_created += t_edges

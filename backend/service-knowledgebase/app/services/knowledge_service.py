@@ -1012,58 +1012,24 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
                 len(content), max_content_chars, content_budget_tokens,
             )
 
-        prompt = f"""Analyzuj tento {source_type or 'obsah'} a vrať JSON odpověď.
-DŮLEŽITÉ: Pole "summary" piš ČESKY (čeština).
+        prompt = f"""/no_think
+Analyzuj tento {source_type or 'obsah'} a vrať JSON.
+Pole "summary" piš ČESKY.
 
 Předmět: {subject or 'N/A'}
 
 Obsah:
 {truncated}
 
-Odpověz POUZE validním JSON:
-{{
-    "summary": "2-3 věty česky shrnující hlavní body",
-    "entities": ["seznam", "klíčových", "entit"],
-    "hasActionableContent": true/false,
-    "suggestedActions": ["action1", "action2"],
-    "hasFutureDeadline": true/false,
-    "suggestedDeadline": "ISO-8601 datetime nebo null",
-    "assignedTo": "jméno osoby/týmu nebo null",
-    "urgency": "urgent/normal/low"
-}}
+Vrať JSON:
+{{"summary": "2-3 věty česky", "entities": ["klíčové entity"], "hasActionableContent": true/false, "suggestedActions": ["akce"], "hasFutureDeadline": true/false, "suggestedDeadline": "ISO-8601 nebo null", "assignedTo": "osoba nebo null", "urgency": "urgent/normal/low"}}
 
-hasActionableContent je TRUE POUZE pokud:
-- Osobní email/zpráva která explicitně žádá MĚ o akci nebo odpověď
-- Úkol/issue přiřazený konkrétní osobě
-- Code review request směřovaný na mě
-- Přímá otázka vyžadující MOJI odpověď
-- Akční bod ze schůzky přiřazený někomu
-
-hasActionableContent je FALSE pro:
-- Newslettery, oznámení, marketingové emaily, pozvánky na události
-- Automatické systémové notifikace (JIRA přechody, CI/CD, monitoring)
-- Informační emaily nevyžadující odpověď
-- Hromadné emaily, mailing listy, propagační obsah
-- Oznámení o svátcích, firemní oznámení
-- Automatické potvrzení, doručenky, notifikace o zásilkách
-
-hasFutureDeadline je TRUE pokud:
-- Obsah zmiňuje konkrétní budoucí deadline nebo termín
-- Konec sprintu, milník, release date
-- "do pátku", "termín 15. března", "deadline: 2025-04-01", apod.
-
-suggestedDeadline: Pokud hasFutureDeadline je true, uveď deadline jako ISO-8601 (např. "2025-04-01T00:00:00"). Pokud nejasné, nastav null.
-
-assignedTo: Extrahuj osobu/tým kterému je úkol přiřazen. Hledej "assigned to X", "assignee: X", "@mentions". Nastav null pokud nenalezeno.
-
-urgency:
-- "urgent" pokud označeno jako urgent/critical/blocker/P0, nebo má blízký deadline (<24h)
-- "normal" pro běžné úkoly, standardní prioritu
-- "low" pro nice-to-have, nízkou prioritu, informační obsah
-
-suggestedActions příklady: "reply_email", "review_code", "fix_issue", "answer_question", "schedule_meeting", "pick_up_order"
-
-Odpověz POUZE validním JSON."""
+Pravidla:
+- hasActionableContent = obsah vyžaduje reakci, rozhodnutí, platbu, odpověď, nebo jinou akci od uživatele
+- hasFutureDeadline = obsah zmiňuje jakýkoliv termín, datum, splatnost, deadline, lhůtu
+- urgency: "urgent" pokud deadline < 7 dní nebo finanční/právní dopad, "normal" běžné, "low" informační
+- entities: extrahuj VŠECHNY zmíněné entity (osoby, organizace, částky, data, dokumenty)
+- suggestedDeadline: ISO-8601 pokud nalezen termín, jinak null"""
 
         try:
             from app.services.llm_router import llm_generate
@@ -1076,8 +1042,21 @@ Odpověz POUZE validním JSON."""
                 num_ctx=8192,
                 priority=embedding_priority,
                 temperature=0,
-                format_json=True,
+                format_json=False,
             )
+            # Parse JSON from free text (model may prefix with explanation)
+            raw_content = raw_content.strip()
+            if "<think>" in raw_content:
+                import re
+                raw_content = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL).strip()
+            if "```json" in raw_content:
+                raw_content = raw_content.split("```json")[1].split("```")[0]
+            elif "```" in raw_content:
+                raw_content = raw_content.split("```")[1].split("```")[0]
+            if not raw_content.startswith("{"):
+                idx = raw_content.find("{")
+                if idx >= 0:
+                    raw_content = raw_content[idx:]
             result = json.loads(raw_content)
             logger.info("Summary generated entities=%d actionable=%s deadline=%s urgency=%s",
                         len(result.get("entities", [])),
