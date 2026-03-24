@@ -347,29 +347,12 @@ class ChatRpcImpl(
             )
         }
 
-        // ── Unscoped fallback — only when NO client selected at all ──
-        // This should rarely happen (only before client selection on app start)
-        logger.info { "CHAT_HISTORY_UNSCOPED | showChat=$showChat showTasks=$showTasks showReaction=$showNeedReaction" }
-
-        // Use unified timeline for all unscoped queries
-        val (messages, hasMore) = unifiedTimelineService.loadTimeline(
-            conversationId = session.id,
-            limit = limit,
-            beforeTimestamp = beforeMessageId,
-            includeChat = showChat,
-            includeTasks = showTasks,
-            includeNeedReaction = showNeedReaction,
-        )
-        val allTaskIds = messages.mapNotNull { it.metadata["taskId"] ?: it.metadata["contextTaskId"] }.toSet()
-        val taskIdsWithGraph = taskGraphExistsService.findExistingGraphTaskIds(allTaskIds)
-        val enriched = messages.map { msg ->
-            val tid = msg.metadata["taskId"] ?: msg.metadata["contextTaskId"]
-            if (tid != null) msg.copy(metadata = msg.metadata + ("hasGraph" to (tid in taskIdsWithGraph).toString()))
-            else msg
-        }
+        // ── No filterClientId = no client selected = empty result ──
+        // Client MUST be selected before loading history. Return empty, not unfiltered data.
+        logger.warn { "CHAT_HISTORY_NO_SCOPE | No filterClientId — returning empty. showChat=$showChat showTasks=$showTasks showReaction=$showNeedReaction" }
         return ChatHistoryDto(
-            messages = enriched,
-            hasMore = hasMore,
+            messages = emptyList(),
+            hasMore = false,
             oldestMessageId = messages.firstOrNull()?.timestamp,
             userTaskCount = userTaskCount,
             backgroundMessageCount = 0,
