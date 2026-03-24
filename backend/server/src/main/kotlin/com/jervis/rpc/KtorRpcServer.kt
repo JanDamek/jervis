@@ -83,6 +83,8 @@ class KtorRpcServer(
     private val speakerRpcImpl: SpeakerRpcImpl,
     private val taskGraphRpcImpl: TaskGraphRpcImpl,
     private val jobLogsRpcImpl: JobLogsRpcImpl,
+    private val agentQuestionRpcImpl: AgentQuestionRpcImpl,
+    private val autoResponseSettingsRpcImpl: AutoResponseSettingsRpcImpl,
     private val guidelinesService: com.jervis.service.guidelines.GuidelinesService,
     private val filteringRulesService: com.jervis.service.filtering.FilteringRulesService,
     private val chatService: com.jervis.service.chat.ChatService,
@@ -1293,6 +1295,8 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.ISpeakerService> { speakerRpcImpl }
                                 registerService<com.jervis.service.ITaskGraphService> { taskGraphRpcImpl }
                                 registerService<com.jervis.service.IJobLogsService> { jobLogsRpcImpl }
+                                registerService<com.jervis.service.IAgentQuestionService> { agentQuestionRpcImpl }
+                                registerService<com.jervis.service.IAutoResponseSettingsService> { autoResponseSettingsRpcImpl }
                             }
                         }
                     }

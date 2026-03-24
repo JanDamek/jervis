@@ -27,6 +27,8 @@ import com.jervis.service.ISpeakerService
 import com.jervis.service.ISystemConfigService
 import com.jervis.service.IJobLogsService
 import com.jervis.service.ITaskGraphService
+import com.jervis.service.IAgentQuestionService
+import com.jervis.service.IAutoResponseSettingsService
 
 /**
  * Main repository facade for Jervis application.
@@ -64,4 +66,6 @@ class JervisRepository(
     val speakers: ISpeakerService get() = servicesProvider().speakerService
     val taskGraphs: ITaskGraphService get() = servicesProvider().taskGraphService
     val jobLogs: IJobLogsService get() = servicesProvider().jobLogsService
+    val agentQuestions: IAgentQuestionService get() = servicesProvider().agentQuestionService
+    val autoResponseSettings: IAutoResponseSettingsService get() = servicesProvider().autoResponseSettingsService
 }

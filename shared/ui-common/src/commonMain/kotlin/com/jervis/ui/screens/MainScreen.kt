@@ -23,6 +23,7 @@ fun MainScreen(
     val showNeedReaction by viewModel.chat.showNeedReaction.collectAsState()
     val backgroundMessageCount by viewModel.chat.backgroundMessageCount.collectAsState()
     val userTaskCount by viewModel.chat.userTaskCount.collectAsState()
+    val pendingQuestionCount by viewModel.pendingQuestions.pendingCount.collectAsState()
 
     // No client-side filtering — server returns exactly what UI should display (DB-filtered).
     // Filter mode (CHAT/TASKS/NEED_REACTION) is passed to getChatHistory() on server.
@@ -117,6 +118,7 @@ fun MainScreen(
         onToggleNeedReaction = viewModel.chat::toggleNeedReaction,
         backgroundMessageCount = backgroundMessageCount,
         userTaskCount = userTaskCount,
+        pendingQuestionCount = pendingQuestionCount,
         isRecordingVoice = isRecordingVoice,
         voiceStatus = voiceStatus,
         onMicClick = viewModel.chat::toggleVoiceRecording,

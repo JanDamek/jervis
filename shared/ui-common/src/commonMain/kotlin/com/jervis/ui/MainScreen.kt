@@ -22,6 +22,9 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -97,6 +100,7 @@ fun MainScreenView(
     onToggleNeedReaction: () -> Unit = {},
     backgroundMessageCount: Int = 0,
     userTaskCount: Int = 0,
+    pendingQuestionCount: Int = 0,
     isRecordingVoice: Boolean = false,
     voiceStatus: String = "",
     onMicClick: () -> Unit = {},
@@ -179,6 +183,7 @@ fun MainScreenView(
                             onToggleNeedReaction = onToggleNeedReaction,
                             backgroundMessageCount = backgroundMessageCount,
                             userTaskCount = userTaskCount,
+                            pendingQuestionCount = pendingQuestionCount,
                             isRecordingVoice = isRecordingVoice,
                             voiceStatus = voiceStatus,
                             onMicClick = onMicClick,
@@ -251,6 +256,7 @@ fun MainScreenView(
                             onToggleNeedReaction = onToggleNeedReaction,
                             backgroundMessageCount = backgroundMessageCount,
                             userTaskCount = userTaskCount,
+                            pendingQuestionCount = pendingQuestionCount,
                             isRecordingVoice = isRecordingVoice,
                             voiceStatus = voiceStatus,
                             onMicClick = onMicClick,
@@ -312,6 +318,7 @@ fun MainScreenView(
                     onToggleNeedReaction = onToggleNeedReaction,
                     backgroundMessageCount = backgroundMessageCount,
                     userTaskCount = userTaskCount,
+                    pendingQuestionCount = pendingQuestionCount,
                     isRecordingVoice = isRecordingVoice,
                     voiceStatus = voiceStatus,
                     onMicClick = onMicClick,
@@ -376,6 +383,7 @@ private fun ChatContent(
     onToggleNeedReaction: () -> Unit = {},
     backgroundMessageCount: Int = 0,
     userTaskCount: Int = 0,
+    pendingQuestionCount: Int = 0,
     isRecordingVoice: Boolean = false,
     voiceStatus: String = "",
     onMicClick: () -> Unit = {},
@@ -419,18 +427,24 @@ private fun ChatContent(
                 modifier = Modifier.height(28.dp),
                 label = { Text("Tasky", style = MaterialTheme.typography.labelSmall) },
             )
-            FilterChip(
-                selected = showNeedReaction,
-                onClick = onToggleNeedReaction,
-                modifier = Modifier.height(28.dp),
-                label = {
-                    Text(
-                        if (userTaskCount > 0) "K reakci ($userTaskCount)"
-                        else "K reakci",
-                        style = MaterialTheme.typography.labelSmall,
-                    )
+            @OptIn(ExperimentalMaterial3Api::class)
+            BadgedBox(
+                badge = {
+                    val totalBadge = userTaskCount + pendingQuestionCount
+                    if (totalBadge > 0) {
+                        Badge { Text("$totalBadge") }
+                    }
                 },
-            )
+            ) {
+                FilterChip(
+                    selected = showNeedReaction,
+                    onClick = onToggleNeedReaction,
+                    modifier = Modifier.height(28.dp),
+                    label = {
+                        Text("K reakci", style = MaterialTheme.typography.labelSmall)
+                    },
+                )
+            }
             if (showNeedReaction && userTaskCount > 0) {
                 Spacer(Modifier.weight(1f))
                 TextButton(

@@ -102,6 +102,8 @@ class MainViewModel(
 
     val environment = EnvironmentViewModel(repository, _selectedClientId, _selectedProjectId)
 
+    val pendingQuestions = com.jervis.ui.questions.PendingQuestionsViewModel(repository, _selectedClientId)
+
     val chat = ChatViewModel(
         repository = repository,
         connectionManager = connectionManager,
@@ -191,6 +193,9 @@ class MainViewModel(
         scope.launch {
             chat.subscribeToChatStream()
         }
+
+        // Start polling for pending question count (badge updates)
+        pendingQuestions.startCountPolling()
 
         // Subscribe to global events for the selected client + register FCM token
         scope.launch {

@@ -574,7 +574,7 @@ async def kb_document_delete(doc_id: str) -> str:
 
 # ── MongoDB Tools ────────────────────────────────────────────────────────
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson import ObjectId
 
 
@@ -3026,6 +3026,181 @@ from starlette.routing import Route, Mount
 from app.oauth_provider import oauth_routes
 
 _mcp_app = mcp.http_app(path="/mcp", stateless_http=True)
+
+# ── Coding Agent Communication Tools ──────────────────────────────────────
+# Tools for coding agents to communicate with JERVIS and the user.
+
+
+@mcp.tool
+async def ask_jervis(
+    question: str,
+    priority: str = "question",
+    context: str = "",
+    task_id: str = "",
+    client_id: str = "",
+    project_id: str = "",
+) -> str:
+    """Ask JERVIS a question when you need a decision or information.
+
+    JERVIS will first search KB for an answer. If found, returns immediately.
+    If not found, escalates to the user and waits for a response.
+
+    Args:
+        question: The question you need answered
+        priority: "blocking" (wait for user, urgent push), "question" (wait, normal push), "info" (don't wait)
+        context: Additional context about what you're working on
+        task_id: Your current task ID (for tracking)
+        client_id: Client scope
+        project_id: Project scope
+    """
+    db = await get_db()
+
+    # 1. Search KB for auto-answer
+    kb_url = os.environ.get("KNOWLEDGE_SERVICE_URL", "http://jervis-knowledgebase-read:8080")
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{kb_url}/api/v1/retrieve",
+                json={
+                    "query": question,
+                    "clientId": client_id,
+                    "projectId": project_id,
+                    "maxResults": 3,
+                    "minConfidence": 0.7,
+                    "expandGraph": True,
+                },
+            )
+            if resp.status_code == 200:
+                results = resp.json().get("results", [])
+                if results and len(results) > 0:
+                    # Check if results are relevant (not just generic)
+                    top_score = results[0].get("score", 0)
+                    if top_score > 0.75:
+                        answer_parts = []
+                        for r in results[:3]:
+                            text = r.get("text", r.get("content", ""))[:500]
+                            if text:
+                                answer_parts.append(text)
+                        if answer_parts:
+                            return f"[KB Auto-Answer (confidence: {top_score:.2f})]\n\n" + "\n---\n".join(answer_parts)
+    except Exception as e:
+        logger.warning("ask_jervis KB search failed: %s", e)
+
+    # 2. No KB answer — submit to pending questions for user
+    from bson import ObjectId as BsonObjectId
+
+    question_id = BsonObjectId()
+    now = datetime.utcnow()
+    await db["pending_agent_questions"].insert_one({
+        "_id": question_id,
+        "taskId": task_id,
+        "agentType": "coding",
+        "question": question,
+        "context": context,
+        "priority": priority.upper(),
+        "clientId": client_id or None,
+        "projectId": project_id or None,
+        "state": "PENDING",
+        "createdAt": now,
+        "expiresAt": now + timedelta(hours=24),
+    })
+
+    if priority == "info":
+        return f"Question submitted (id={question_id}). Continuing without waiting."
+
+    # 3. Wait for user answer (poll with timeout)
+    timeout_s = 3600 if priority == "blocking" else 1800  # 1h for blocking, 30min for question
+    poll_interval = 5
+    elapsed = 0
+    while elapsed < timeout_s:
+        import asyncio
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
+
+        doc = await db["pending_agent_questions"].find_one({"_id": question_id})
+        if doc and doc.get("state") == "ANSWERED":
+            answer = doc.get("answer", "")
+            return f"[User Answer]\n\n{answer}"
+        if doc and doc.get("state") == "EXPIRED":
+            return "[Timeout] No answer received. Proceeding with best judgment."
+
+    # Timeout — mark as expired
+    await db["pending_agent_questions"].update_one(
+        {"_id": question_id},
+        {"$set": {"state": "EXPIRED"}},
+    )
+    return "[Timeout] No answer received after waiting. Proceeding with best judgment."
+
+
+@mcp.tool
+async def report_done(
+    task_id: str,
+    result_summary: str,
+    suggested_next_steps: str = "",
+    client_id: str = "",
+    project_id: str = "",
+) -> str:
+    """Report that your current task is complete and suggest next steps.
+
+    JERVIS will check KB for conventions about what to do next.
+    If a convention exists (e.g., "after PR, run e2e tests"), JERVIS may
+    auto-dispatch the next task or ask the user.
+
+    Args:
+        task_id: The task ID you completed
+        result_summary: Brief summary of what you did and the result
+        suggested_next_steps: Your suggestion for what should happen next
+        client_id: Client scope
+        project_id: Project scope
+    """
+    db = await get_db()
+
+    # 1. Search KB for post-task conventions
+    kb_url = os.environ.get("KNOWLEDGE_SERVICE_URL", "http://jervis-knowledgebase-read:8080")
+    convention_hint = ""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                f"{kb_url}/api/v1/retrieve",
+                json={
+                    "query": f"convention: what to do after completing a task in this project",
+                    "clientId": client_id,
+                    "projectId": project_id,
+                    "maxResults": 2,
+                    "minConfidence": 0.7,
+                },
+            )
+            if resp.status_code == 200:
+                results = resp.json().get("results", [])
+                if results:
+                    convention_hint = results[0].get("text", "")[:300]
+    except Exception as e:
+        logger.warning("report_done KB search failed: %s", e)
+
+    # 2. Create completion notification for user
+    from bson import ObjectId as BsonObjectId
+
+    notification = {
+        "_id": BsonObjectId(),
+        "taskId": task_id,
+        "agentType": "coding",
+        "question": f"Agent dokončil úkol.\n\nVýsledek: {result_summary}\n\n"
+                    + (f"Konvence z KB: {convention_hint}\n\n" if convention_hint else "")
+                    + (f"Agent navrhuje: {suggested_next_steps}" if suggested_next_steps else "Co dál?"),
+        "context": result_summary,
+        "priority": "QUESTION",
+        "clientId": client_id or None,
+        "projectId": project_id or None,
+        "state": "PENDING",
+        "createdAt": datetime.utcnow(),
+    }
+    await db["pending_agent_questions"].insert_one(notification)
+
+    response = f"Completion reported. User will be notified."
+    if convention_hint:
+        response += f"\nKB convention found: {convention_hint[:200]}"
+    return response
+
 
 # Combined app: OAuth routes + MCP (as catch-all mount)
 _combined_app = Starlette(

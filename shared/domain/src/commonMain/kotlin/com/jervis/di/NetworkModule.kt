@@ -30,6 +30,8 @@ import com.jervis.service.ISpeakerService
 import com.jervis.service.ISystemConfigService
 import com.jervis.service.IJobLogsService
 import com.jervis.service.ITaskGraphService
+import com.jervis.service.IAgentQuestionService
+import com.jervis.service.IAutoResponseSettingsService
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.plugins.HttpTimeout
@@ -158,6 +160,8 @@ object NetworkModule {
             speakerService = rpcClient.withService<ISpeakerService>(),
             taskGraphService = rpcClient.withService<ITaskGraphService>(),
             jobLogsService = rpcClient.withService<IJobLogsService>(),
+            agentQuestionService = rpcClient.withService<IAgentQuestionService>(),
+            autoResponseSettingsService = rpcClient.withService<IAutoResponseSettingsService>(),
         )
 
     /**
@@ -194,5 +198,7 @@ object NetworkModule {
         val speakerService: ISpeakerService,
         val taskGraphService: ITaskGraphService,
         val jobLogsService: IJobLogsService,
+        val agentQuestionService: IAgentQuestionService,
+        val autoResponseSettingsService: IAutoResponseSettingsService,
     )
 }
