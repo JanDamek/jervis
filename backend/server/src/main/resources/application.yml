@@ -141,8 +141,8 @@ coding-tools:
 endpoints:
   searxng:
     baseUrl: http://localhost:30053/      # Web search (SearXNG)
-  tika:
-    baseUrl: ws://localhost:8081/         # Document extraction (Apache Tika)
+  document-extraction:
+    baseUrl: http://localhost:8080/       # Python document-extraction service (HTML, PDF, DOCX, XLSX, images)
   knowledgebase:
     baseUrl: http://localhost:8080/       # Knowledge Base (Python, RAG+Graph) - read operations
   knowledgebase-write:

@@ -13,7 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "endpoints")
 data class EndpointProperties(
     val searxng: Host,               // SearXNG web search
-    val tika: Host = Host("http://localhost:8081"),  // Deprecated — Tika replaced by DocumentExtractor
+    val documentExtraction: Host = Host("http://localhost:8080"),  // Python document-extraction service (HTML, PDF, DOCX, XLSX, images)
     val knowledgebase: Host,         // Python KB microservice (HTTP) - read operations
     val knowledgebaseWrite: Host? = null,  // Python KB write endpoint (defaults to knowledgebase if not set)
     val orchestrator: Host = Host("http://localhost:8090"),  // Python orchestrator (HTTP)

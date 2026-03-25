@@ -793,8 +793,9 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - **Interval:** 30 seconds
 - **Process:** Reads INDEXING tasks from MongoDB, ordered by `queuePosition ASC NULLS LAST, createdAt ASC`
 - **Dispatch:** `TaskQualificationService` dispatches to KB microservice (fire-and-forget)
-- **Concurrency:** 1 (dispatch is fast — text extraction + HTTP POST, not blocking on KB)
-- **Dispatch flow:** `claimForIndexing()` (atomic claim via `indexingClaimedAt`, state stays INDEXING) → `TaskQualificationService.dispatch()` (text extraction, attachment loading, HTTP POST to `/ingest/full/async`) → returns immediately. Task stays in INDEXING until KB calls back.
+- **Concurrency:** 1 (dispatch is fast — content already cleaned, just HTTP POST, not blocking on KB)
+- **Text extraction:** All HTML/XML content is cleaned at `TaskService.createTask()` time via `DocumentExtractionClient` → Python `jervis-document-extraction` microservice (BeautifulSoup for HTML, python-docx, pymupdf for binaries). No local Jsoup/Tika — single extraction point, fail-fast.
+- **Dispatch flow:** `claimForIndexing()` (atomic claim via `indexingClaimedAt`, state stays INDEXING) → `TaskQualificationService.processOne()` (task.content already clean, attachment loading, HTTP POST to `/ingest/full/async`) → returns immediately. Task stays in INDEXING until KB calls back.
 - **Retry:** If KB is unreachable or rejects the request → `returnToQueue()` unsets `indexingClaimedAt` with backoff. KB handles its own internal retry (Ollama busy, timeouts). When KB permanently fails, it calls `/internal/kb-done` with `status="error"` → server marks task as ERROR. Recovery: stuck INDEXING tasks with `indexingClaimedAt > 10min` → unset `indexingClaimedAt` (re-dispatch).
 - **Priority:** Items with explicit `queuePosition` are processed first (set via UI reorder controls)
 - **Completion callback:** KB POSTs to `/internal/kb-done` with `FullIngestResult` → handler saves kbSummary/kbEntities/kbActionable to TaskDocument, applies filters, routes:

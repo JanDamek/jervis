@@ -10,7 +10,7 @@ import com.jervis.service.background.TaskService
 import com.jervis.service.indexing.AttachmentExtractionService
 import com.jervis.service.indexing.AttachmentInfo
 import com.jervis.service.indexing.AttachmentKbIndexingService
-import com.jervis.service.text.TikaTextExtractionService
+import com.jervis.configuration.DocumentExtractionClient
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,7 +47,7 @@ private val logger = KotlinLogging.logger {}
 class EmailContinuousIndexer(
     private val repository: EmailMessageIndexRepository,
     private val taskService: TaskService,
-    private val tikaTextExtractionService: TikaTextExtractionService,
+    private val documentExtractionClient: DocumentExtractionClient,
     private val attachmentKbIndexingService: AttachmentKbIndexingService,
     private val attachmentExtractionService: AttachmentExtractionService,
     private val emailThreadService: EmailThreadService,
@@ -251,10 +251,7 @@ class EmailContinuousIndexer(
 
     private suspend fun buildEmailContent(doc: EmailMessageIndexDocument): String {
         val rawEmailBody = doc.textBody ?: doc.htmlBody ?: ""
-        val emailBody = tikaTextExtractionService.extractPlainText(
-            content = rawEmailBody,
-            fileName = "email-${doc.id}.html",
-        )
+        val emailBody = documentExtractionClient.extractText(rawEmailBody, "text/html")
 
         return buildString {
             append("# Email: ${doc.subject}\n")

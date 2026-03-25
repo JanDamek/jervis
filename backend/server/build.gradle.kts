@@ -115,7 +115,6 @@ dependencies {
     // Text processing and parsers
     implementation(libs.commons.text)
     implementation(libs.javaparser.core)
-    implementation(libs.jsoup)
 
     // Kotlin compiler embeddable
     implementation(libs.kotlin.compiler.embeddable)

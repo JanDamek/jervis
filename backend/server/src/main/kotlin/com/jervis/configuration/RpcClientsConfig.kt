@@ -51,6 +51,7 @@ class RpcClientsConfig(
     private var _knowledgeService: KnowledgeServiceRestClient? = null
     private var _pythonOrchestratorClient: PythonOrchestratorClient? = null
     private var _correctionClient: CorrectionClient? = null
+    private var _documentExtractionClient: DocumentExtractionClient? = null
 
     // Provider-specific fine-grained RPC clients (used by indexers and services for data operations)
     private var _atlassianClient: IAtlassianClient? = null
@@ -68,6 +69,11 @@ class RpcClientsConfig(
     fun correctionClient(): CorrectionClient =
         _correctionClient
             ?: CorrectionClient(endpoints.correction.baseUrl).also { _correctionClient = it }
+
+    @Bean
+    fun documentExtractionClient(): DocumentExtractionClient =
+        _documentExtractionClient
+            ?: DocumentExtractionClient(endpoints.documentExtraction.baseUrl).also { _documentExtractionClient = it }
 
     /** Concrete REST client — used by TaskQualificationService for KB dispatch. */
     @Bean

@@ -6,7 +6,7 @@ import com.jervis.knowledgebase.model.Attachment
 import com.jervis.knowledgebase.model.FullIngestRequest
 import com.jervis.repository.ProjectRepository
 import com.jervis.service.CloudModelPolicyResolver
-import com.jervis.service.text.TikaTextExtractionService
+
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch
@@ -39,7 +39,6 @@ import java.time.Instant
 class TaskQualificationService(
     private val taskService: TaskService,
     private val knowledgeClient: com.jervis.configuration.KnowledgeServiceRestClient,
-    private val tikaTextExtractionService: TikaTextExtractionService,
     private val projectRepository: ProjectRepository,
     private val cloudModelPolicyResolver: CloudModelPolicyResolver,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
@@ -111,12 +110,9 @@ class TaskQualificationService(
 
         emitProgress(task, "Zahajuji indexaci...", "agent_start")
 
-        // 1. Extract clean text from content
-        val cleanedContent = tikaTextExtractionService.extractPlainText(
-            content = task.content,
-            fileName = "task-${task.correlationId}.txt",
-        )
-        emitProgress(task, "Text extrahován (${cleanedContent.length} znaků)", "text_extracted")
+        // Content already cleaned at TaskService.createTask() time via document-extraction service
+        val cleanedContent = task.content
+        emitProgress(task, "Text připraven (${cleanedContent.length} znaků)", "text_extracted")
 
         // 2. Load attachments from storage
         val attachments = loadAttachments(task)

@@ -13,7 +13,7 @@ import com.jervis.configuration.properties.QualifierProperties
 import com.jervis.repository.ClientRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
-import com.jervis.service.text.TikaTextExtractionService
+import com.jervis.configuration.DocumentExtractionClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filter
@@ -37,7 +37,7 @@ import java.time.Instant
 class TaskService(
     private val taskRepository: TaskRepository,
     private val clientRepository: ClientRepository,
-    private val tikaTextExtractionService: TikaTextExtractionService,
+    private val documentExtractionClient: DocumentExtractionClient,
     private val qualifierProperties: QualifierProperties,
     @Lazy private val notificationRpc: NotificationRpcImpl,
     private val mongoTemplate: ReactiveMongoTemplate,
@@ -93,7 +93,7 @@ class TaskService(
     ): TaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
-        val cleanContent = cleanContentWithTika(content, correlationId, taskType)
+        val cleanContent = cleanHtmlContent(content, correlationId, taskType)
 
         val task =
             TaskDocument(
@@ -840,41 +840,27 @@ class TaskService(
     }
 
     /**
-     * Clean content through Tika to remove HTML, XML, Confluence/Jira markup.
-     * Detects content type and applies appropriate extraction.
+     * Clean content via document-extraction microservice.
+     *
+     * Routes to BeautifulSoup (HTML), lxml (XML), or returns as-is (plain text).
+     * Wiki and bugtracker content arrives as HTML/XML and needs extraction.
+     * Email/meeting/git content is already plain text — the service detects this and returns unchanged.
      */
-    private suspend fun cleanContentWithTika(
+    private suspend fun cleanHtmlContent(
         content: String,
         correlationId: String,
         taskType: TaskTypeEnum,
     ): String {
-        val fileName =
-            when (taskType) {
-                TaskTypeEnum.WIKI_PROCESSING -> "wiki-$correlationId.xml"
-                TaskTypeEnum.BUGTRACKER_PROCESSING -> "bugtracker-$correlationId.html"
-                else -> "content-$correlationId.txt"
-            }
-
-        return try {
-            logger.debug { "Cleaning content for $correlationId (type=$taskType), original length: ${content.length}" }
-            val cleaned =
-                tikaTextExtractionService.extractPlainText(
-                    content = content,
-                    fileName = fileName,
-                )
-
-            if (cleaned.isBlank() && content.isNotBlank()) {
-                logger.warn {
-                    "Tika returned empty content for $correlationId (type=$taskType). Using original content to prevent data loss."
-                }
-                return content
-            }
-
-            logger.debug { "Cleaned content for $correlationId, new length: ${cleaned.length}" }
-            cleaned
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to clean content through Tika for $correlationId, using original" }
-            content
+        val mimeType = when (taskType) {
+            TaskTypeEnum.WIKI_PROCESSING -> "application/xml"
+            TaskTypeEnum.BUGTRACKER_PROCESSING -> "text/html"
+            TaskTypeEnum.EMAIL_PROCESSING -> "text/html"
+            else -> "text/plain"
         }
+
+        logger.debug { "Cleaning content for $correlationId (type=$taskType, mime=$mimeType), original length: ${content.length}" }
+        val cleaned = documentExtractionClient.extractText(content, mimeType)
+        logger.debug { "Cleaned content for $correlationId, new length: ${cleaned.length}" }
+        return cleaned
     }
 }

@@ -1,9 +1,9 @@
 package com.jervis.service.link
 
+import com.jervis.configuration.DocumentExtractionClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
-import org.jsoup.Jsoup
 import org.springframework.stereotype.Service
 import java.net.URI
 import java.net.http.HttpClient
@@ -14,7 +14,9 @@ import java.time.Duration
 private val logger = KotlinLogging.logger {}
 
 @Service
-class LinkContentService {
+class LinkContentService(
+    private val documentExtractionClient: DocumentExtractionClient,
+) {
     private val httpClient: HttpClient =
         HttpClient
             .newBuilder()
@@ -67,22 +69,9 @@ class LinkContentService {
                     )
                 }
 
-                // Parse HTML via Jsoup to extract plain text
                 val htmlContent = String(responseBody, Charsets.UTF_8)
-                val doc = Jsoup.parse(htmlContent)
-                doc.select("script, style, noscript").remove()
-                val plainText = doc.text().trim()
-
-                if (plainText.isEmpty() && responseBody.isNotEmpty()) {
-                    logger.warn { "HTML parsing returned empty content for URL $url. Using raw UTF-8 as fallback." }
-                    return@withContext LinkPlainText(
-                        url,
-                        htmlContent,
-                        contentType,
-                        success = true,
-                        errorMessage = "HTML parsing returned empty, fell back to raw UTF-8",
-                    )
-                }
+                val mimeType = contentType?.substringBefore(";")?.trim() ?: "text/html"
+                val plainText = documentExtractionClient.extractText(htmlContent, mimeType)
 
                 LinkPlainText(url, plainText, contentType, success = true, errorMessage = null)
             }.getOrElse { e ->

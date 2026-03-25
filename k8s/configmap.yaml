@@ -141,6 +141,8 @@ data:
     endpoints:
       searxng:
         baseUrl: http://nas.lan.mazlusek.com:30053/       # SearXNG web search (NodePort)
+      document-extraction:
+        baseUrl: http://jervis-document-extraction:8080/  # Python document extraction (HTML, PDF, DOCX, XLSX, images)
       knowledgebase:
         baseUrl: http://jervis-knowledgebase:8080/        # Python KB (RAG+Graph) - read operations
       knowledgebase-write:
