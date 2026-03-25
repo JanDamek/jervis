@@ -8,9 +8,11 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -21,6 +23,12 @@ import com.jervis.ui.navigation.AppNavigator
 import com.jervis.ui.navigation.Screen
 import com.jervis.ui.notification.UserTaskNotificationDialog
 import com.jervis.ui.screens.*
+
+/**
+ * RPC connection generation counter — increments on each reconnect.
+ * Use as LaunchedEffect key to reload data after server restart.
+ */
+val LocalRpcGeneration = compositionLocalOf { 0L }
 
 /**
  * Root Compose Application
@@ -69,7 +77,10 @@ fun App(
         }
     }
 
+    val rpcGeneration by connectionManager.generation.collectAsState()
+
     JervisTheme {
+      CompositionLocalProvider(LocalRpcGeneration provides rpcGeneration) {
       Surface(
           modifier = Modifier.fillMaxSize().safeDrawingPadding(),
           color = MaterialTheme.colorScheme.background,
@@ -285,5 +296,6 @@ fun App(
         }
 
       }
+      } // CompositionLocalProvider
     }
 }

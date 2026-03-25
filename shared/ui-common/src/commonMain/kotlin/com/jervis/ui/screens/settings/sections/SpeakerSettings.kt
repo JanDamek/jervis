@@ -62,6 +62,7 @@ import com.jervis.ui.design.JSnackbarHost
 import com.jervis.ui.design.JTextField
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.util.RefreshIconButton
+import com.jervis.ui.LocalRpcGeneration
 import kotlinx.coroutines.launch
 
 private val CHAT_PROVIDERS = setOf(
@@ -100,7 +101,8 @@ internal fun SpeakerSettings(repository: JervisRepository) {
         }
     }
 
-    LaunchedEffect(Unit) {
+    val rpcGeneration = LocalRpcGeneration.current
+    LaunchedEffect(rpcGeneration) {
         try {
             clients = repository.clients.getAllClients()
             connections = repository.connections.getAllConnections()

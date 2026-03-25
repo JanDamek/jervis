@@ -49,6 +49,7 @@ import com.jervis.ui.design.JTextField
 import com.jervis.ui.util.SystemGpgKey
 import com.jervis.ui.util.exportSystemGpgKey
 import com.jervis.ui.util.listSystemGpgKeys
+import com.jervis.ui.LocalRpcGeneration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -71,7 +72,8 @@ fun GpgCertificateSettings(repository: JervisRepository) {
         }
     }
 
-    LaunchedEffect(Unit) {
+    val rpcGeneration = LocalRpcGeneration.current
+    LaunchedEffect(rpcGeneration) {
         loadCertificates()
         isLoading = false
     }

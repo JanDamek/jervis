@@ -61,6 +61,7 @@ import com.jervis.ui.util.ConfirmDialog
 import com.jervis.ui.util.RefreshIconButton
 import com.jervis.ui.util.openUrlInBrowser
 import com.jervis.ui.util.openUrlInPrivateBrowser
+import com.jervis.ui.LocalRpcGeneration
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -89,7 +90,8 @@ fun ConnectionsSettings(repository: JervisRepository) {
         }
     }
 
-    LaunchedEffect(Unit) {
+    val rpcGeneration = LocalRpcGeneration.current
+    LaunchedEffect(rpcGeneration) {
         isLoading = true
         try {
             connections = repository.connections.getAllConnections()

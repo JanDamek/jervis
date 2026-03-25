@@ -26,6 +26,7 @@ import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JListDetailLayout
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.util.RefreshIconButton
+import com.jervis.ui.LocalRpcGeneration
 import kotlinx.coroutines.launch
 
 @Composable
@@ -47,7 +48,8 @@ fun ProjectsSettings(repository: JervisRepository) {
         }
     }
 
-    LaunchedEffect(Unit) { loadData() }
+    val rpcGeneration = LocalRpcGeneration.current
+    LaunchedEffect(rpcGeneration) { loadData() }
 
     JListDetailLayout(
         items = projects,

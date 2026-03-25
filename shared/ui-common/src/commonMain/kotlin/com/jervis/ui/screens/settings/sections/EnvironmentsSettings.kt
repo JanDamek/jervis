@@ -40,6 +40,7 @@ import com.jervis.ui.design.JStatusBadge
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.util.ConfirmDialog
 import com.jervis.ui.util.RefreshIconButton
+import com.jervis.ui.LocalRpcGeneration
 import kotlinx.coroutines.launch
 
 /**
@@ -71,7 +72,8 @@ fun EnvironmentsSettings(
         }
     }
 
-    LaunchedEffect(Unit) { loadData() }
+    val rpcGeneration = LocalRpcGeneration.current
+    LaunchedEffect(rpcGeneration) { loadData() }
 
     JListDetailLayout(
         items = environments,

@@ -42,6 +42,7 @@ import com.jervis.ui.design.JSection
 import com.jervis.ui.design.JSnackbarHost
 import com.jervis.ui.design.JTextField
 import com.jervis.ui.design.JervisSpacing
+import com.jervis.ui.LocalRpcGeneration
 import kotlinx.coroutines.launch
 
 /**
@@ -84,7 +85,8 @@ fun IndexingSettings(repository: JervisRepository) {
         }
     }
 
-    LaunchedEffect(Unit) { loadSettings() }
+    val rpcGeneration = LocalRpcGeneration.current
+    LaunchedEffect(rpcGeneration) { loadSettings() }
 
     fun saveSettings() {
         scope.launch {

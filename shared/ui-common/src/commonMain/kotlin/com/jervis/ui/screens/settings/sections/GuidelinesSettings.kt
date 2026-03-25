@@ -53,6 +53,7 @@ import com.jervis.ui.design.JSnackbarHost
 import com.jervis.ui.design.JSwitch
 import com.jervis.ui.design.JTextField
 import com.jervis.ui.design.JervisSpacing
+import com.jervis.ui.LocalRpcGeneration
 import kotlinx.coroutines.launch
 
 /**
@@ -145,7 +146,8 @@ internal fun GuidelinesSettings(repository: JervisRepository) {
     }
 
     // Load clients on start
-    LaunchedEffect(Unit) {
+    val rpcGeneration = LocalRpcGeneration.current
+    LaunchedEffect(rpcGeneration) {
         try {
             clients = repository.clients.getAllClients()
         } catch (_: Exception) { }

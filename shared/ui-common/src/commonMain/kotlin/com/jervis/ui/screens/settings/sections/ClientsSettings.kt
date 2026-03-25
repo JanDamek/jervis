@@ -41,6 +41,7 @@ import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.*
+import com.jervis.ui.LocalRpcGeneration
 import com.jervis.ui.util.*
 import kotlinx.coroutines.launch
 
@@ -69,7 +70,8 @@ fun ClientsSettings(repository: JervisRepository) {
         }
     }
 
-    LaunchedEffect(Unit) { loadData() }
+    val rpcGeneration = LocalRpcGeneration.current
+    LaunchedEffect(rpcGeneration) { loadData() }
 
     // If editing a client or project, show the edit form
     if (editingClient != null) {

@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.LocalRpcGeneration
 import com.jervis.ui.design.*
 import com.jervis.ui.navigation.Screen
 import com.jervis.ui.screens.settings.sections.*
@@ -79,7 +80,8 @@ private fun GeneralSettings(repository: JervisRepository) {
     // System config state
     var isLoading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) {
+    val rpcGeneration = LocalRpcGeneration.current
+    LaunchedEffect(rpcGeneration) {
         try {
             repository.systemConfig.getSystemConfig()
         } catch (e: Exception) {

@@ -54,6 +54,7 @@ import com.jervis.dto.openrouter.OpenRouterSettingsDto
 import com.jervis.dto.openrouter.OpenRouterSettingsUpdateDto
 import com.jervis.dto.openrouter.QueueModelEntryDto
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.LocalRpcGeneration
 import com.jervis.ui.design.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -126,7 +127,8 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
         }
     }
 
-    LaunchedEffect(Unit) { loadSettings() }
+    val rpcGeneration = LocalRpcGeneration.current
+    LaunchedEffect(rpcGeneration) { loadSettings() }
 
     // Auto-refresh model errors every 30s
     LaunchedEffect(Unit) {
