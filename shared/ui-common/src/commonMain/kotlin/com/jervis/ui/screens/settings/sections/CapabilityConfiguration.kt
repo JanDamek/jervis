@@ -34,6 +34,7 @@ import com.jervis.dto.ClientConnectionCapabilityDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionResponseDto
+import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCheckboxRow
 import com.jervis.ui.design.JTextField
@@ -75,7 +76,11 @@ internal fun ConnectionCapabilityCard(
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Text(
-                    connection.capabilities.joinToString(", ") { it.name },
+                    if (connection.state == ConnectionStateEnum.DISCOVERING) {
+                        "Zjišťuji dostupné služby..."
+                    } else {
+                        connection.capabilities.joinToString(", ") { it.name }
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -92,20 +97,38 @@ internal fun ConnectionCapabilityCard(
             HorizontalDivider()
             Spacer(Modifier.height(8.dp))
 
-            connection.capabilities.forEach { capability ->
-                CapabilityConfigItem(
-                    connectionId = connection.id,
-                    capability = capability,
-                    config = getConfig(capability),
-                    resources = availableResources[Pair(connection.id, capability)] ?: emptyList(),
-                    isLoadingResources = Pair(connection.id, capability) in loadingResources,
-                    hasError = Pair(connection.id, capability) in errorResources,
-                    onLoadResources = { onLoadResources(capability) },
-                    onRetryResources = { onRetryResources(capability) },
-                    onUpdateConfig = onUpdateConfig,
-                    onRemoveConfig = { onRemoveConfig(capability) },
-                )
-                Spacer(Modifier.height(8.dp))
+            if (connection.state == ConnectionStateEnum.DISCOVERING) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Zjišťuji dostupné služby — konfigurace bude možná po dokončení...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                connection.capabilities.forEach { capability ->
+                    CapabilityConfigItem(
+                        connectionId = connection.id,
+                        capability = capability,
+                        config = getConfig(capability),
+                        resources = availableResources[Pair(connection.id, capability)] ?: emptyList(),
+                        isLoadingResources = Pair(connection.id, capability) in loadingResources,
+                        hasError = Pair(connection.id, capability) in errorResources,
+                        onLoadResources = { onLoadResources(capability) },
+                        onRetryResources = { onRetryResources(capability) },
+                        onUpdateConfig = onUpdateConfig,
+                        onRemoveConfig = { onRemoveConfig(capability) },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
             }
         }
     }
