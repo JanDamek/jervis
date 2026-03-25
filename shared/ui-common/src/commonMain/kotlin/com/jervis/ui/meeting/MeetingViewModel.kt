@@ -27,6 +27,7 @@ import com.jervis.ui.audio.AudioPlayer
 import com.jervis.ui.audio.AudioRecorder
 import com.jervis.ui.audio.AudioRecordingConfig
 import com.jervis.ui.audio.PlatformRecordingService
+import com.jervis.ui.util.getDeviceName
 import com.jervis.ui.audio.RecordingServiceBridge
 import com.jervis.ui.storage.AudioChunkQueue
 import com.jervis.ui.storage.RecordingSession
@@ -416,6 +417,7 @@ class MeetingViewModel(
                 meetingType = meetingType?.name,
                 audioInputType = audioInputType.name,
                 startedAtMs = Clock.System.now().toEpochMilliseconds(),
+                deviceName = getDeviceName(),
             )
             uploadService.registerSession(session)
 

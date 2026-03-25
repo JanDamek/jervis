@@ -173,7 +173,12 @@ class RecordingUploadService(
                 platformLog("Upload", "Cycle skipped — not connected (${activeSessions.size} sessions pending)")
                 return
             }
-            platformLog("Upload", "Cycle: ${activeSessions.size} active sessions")
+            val sessionSummary = activeSessions.joinToString(", ") { s ->
+                val device = s.deviceName ?: "unknown"
+                val title = s.title ?: s.localId.takeLast(8)
+                "'$title' ($device)"
+            }
+            platformLog("Upload", "Cycle: ${activeSessions.size} active sessions: $sessionSummary")
 
             // Process each session sequentially
             for (session in activeSessions) {
@@ -214,7 +219,7 @@ class RecordingUploadService(
                     continue
                 }
 
-                platformLog("Upload", "Processing session ${session.localId}: " +
+                platformLog("Upload", "Processing session ${session.localId} (${session.deviceName ?: "unknown device"}): " +
                     "server=${session.serverMeetingId}, chunks=${session.uploadedChunkCount}/${session.chunkCount}, " +
                     "pending=$pendingCount, stopped=${session.stoppedAtMs != null}")
 

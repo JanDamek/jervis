@@ -18,6 +18,8 @@ data class RecordingSession(
     val meetingType: String? = null,
     val audioInputType: String = "MIXED",
     val startedAtMs: Long,
+    /** Device name where the recording was created (e.g. "iPhone 15", "MacBook Pro"). */
+    val deviceName: String? = null,
     /** Set when user stops recording. null = still recording. */
     val stoppedAtMs: Long? = null,
     val durationSeconds: Long = 0,

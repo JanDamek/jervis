@@ -5,3 +5,7 @@ actual fun platformLog(tag: String, message: String) {
     // when running via devicectl/Xcode
     println("[$tag] $message")
 }
+
+actual fun getDeviceName(): String {
+    return platform.UIKit.UIDevice.currentDevice.name
+}
