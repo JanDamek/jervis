@@ -4,6 +4,7 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.connection.AuthTypeEnum
+import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.entity.ClientDocument
@@ -92,6 +93,12 @@ class O365PollingHandler(
 
         // Browser scraping mode — read from o365_scrape_messages collection
         if (isBrowserScraping) {
+            // Skip polling if connection is still discovering or invalid
+            if (connectionDocument.state in listOf(ConnectionStateEnum.DISCOVERING, ConnectionStateEnum.INVALID, ConnectionStateEnum.NEW)) {
+                logger.debug { "Skipping O365 poll for '${connectionDocument.name}' — state=${connectionDocument.state}" }
+                return PollingResult()
+            }
+
             logger.debug { "O365 Teams polling for '${connectionDocument.name}' (VLM scraping/${o365ClientId})" }
             return try {
                 pollFromScrapeMessages(connectionDocument, context)

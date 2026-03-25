@@ -525,13 +525,32 @@ class ConnectionRpcImpl(
             var state = sessionJson["state"]?.jsonPrimitive?.content ?: "ERROR"
             val hasToken = sessionJson["has_token"]?.jsonPrimitive?.booleanOrNull ?: false
 
-            // Auto re-init session only if EXPIRED (not PENDING_LOGIN — user may be logging in)
-            if (state == "EXPIRED") {
+            // Browser pool session lost (pod restart, session expired, error)
+            // → mark connection as INVALID so UI shows "Přihlásit k Teams" button
+            if (state in listOf("EXPIRED", "ERROR") &&
+                connection.state in listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING)
+            ) {
+                connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+                logger.info { "Connection ${connection.id} marked INVALID — browser pool session $state" }
+            }
+
+            // Auto re-init session if EXPIRED and connection has credentials
+            if (state == "EXPIRED" && connection.username?.isNotBlank() == true) {
                 try {
-                    val initResponse = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init")
+                    val capabilities = connection.availableCapabilities.map { it.name }
+                    val initResponse = httpClient.post("$o365BrowserPoolUrl/session/$clientId/init") {
+                        contentType(ContentType.Application.Json)
+                        setBody(buildJsonObject {
+                            put("login_url", "https://teams.microsoft.com")
+                            putJsonArray("capabilities") { capabilities.forEach { add(it) } }
+                            connection.username?.takeIf { it.isNotBlank() }?.let { put("username", it) }
+                            connection.password?.takeIf { it.isNotBlank() }?.let { put("password", it) }
+                        }.toString())
+                    }
                     if (initResponse.status.isSuccess()) {
                         state = "PENDING_LOGIN"
-                        logger.info { "Auto re-init browser session for $clientId (was EXPIRED)" }
+                        connectionService.save(connection.copy(state = ConnectionStateEnum.NEW))
+                        logger.info { "Auto re-init browser session for $clientId (was EXPIRED, has credentials)" }
                     }
                 } catch (e: Exception) {
                     logger.warn { "Failed to auto re-init session for $clientId: ${e.message}" }
@@ -589,6 +608,11 @@ class ConnectionRpcImpl(
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to get browser session status for $clientId" }
+            // Browser pool unreachable — mark connection as INVALID
+            if (connection.state in listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING)) {
+                connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+                logger.info { "Connection ${connection.id} marked INVALID — browser pool unreachable" }
+            }
             BrowserSessionStatusDto(
                 state = "ERROR",
                 message = "Chyba komunikace s browser pool: ${e.message}",
