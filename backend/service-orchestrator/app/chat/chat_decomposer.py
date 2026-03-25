@@ -139,7 +139,11 @@ async def detect_and_decompose(
             max_tier=max_openrouter_tier,
         )
 
-        text = response.choices[0].message.content or ""
+        if not response.choices:
+            logger.warning("CHAT_DECOMPOSE | empty choices | message='%s'", user_message[:100])
+            return DecompositionResult(should_decompose=False, reason="empty_choices")
+
+        text = getattr(response.choices[0].message, "content", None) or ""
         parsed = parse_json_response(text)
 
         if not parsed or not parsed.get("decompose"):

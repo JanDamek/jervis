@@ -1924,8 +1924,9 @@ Complex multi-entity queries (e.g. "compare Rust, Go and TypeScript") are automa
 
 **Detection** (`chat_decomposer.py`):
 - Quick LLM classification call (LOCAL_COMPACT) decides if query needs decomposition
-- Triggers for: named entities to compare, discovery+research, multi-aspect queries
+- Triggers for: named entities to compare, discovery+research (incl. vendor/contractor/supplier discovery in Czech — "najdi firmy", "vyhledej dodavatele"), multi-aspect queries
 - Conversation context included to detect follow-ups (which are NOT decomposed)
+- Safe attribute access (`getattr`) on response objects — some OpenRouter models (e.g. Step-3.5-flash) return non-standard Choice objects missing `finish_reason`
 
 **Graph structure:**
 ```

@@ -108,7 +108,7 @@ async def call_llm(
 
     # Empty response check OUTSIDE try/except — prevents double retry
     # (ValueError from _retry_with_next_model must NOT be caught by except Exception above)
-    if effective_tier == ModelTier.CLOUD_OPENROUTER and model_override:
+    if effective_tier == ModelTier.CLOUD_OPENROUTER and model_override and result.choices:
         msg = result.choices[0].message
         content = getattr(msg, "content", None) or ""
         tool_calls = getattr(msg, "tool_calls", None)
@@ -183,6 +183,9 @@ async def _retry_with_next_model(
                 api_key_override=fallback.api_key,
             )
             # Check for empty response from fallback model too
+            if not result.choices:
+                skip_models.append(fallback.model)
+                continue
             msg = result.choices[0].message
             content = getattr(msg, "content", None) or ""
             tool_calls = getattr(msg, "tool_calls", None)
