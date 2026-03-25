@@ -28,7 +28,9 @@ import kotlin.math.min
 sealed class RpcConnectionState {
     data object Disconnected : RpcConnectionState()
     data object Connecting : RpcConnectionState()
-    data class Connected(val services: NetworkModule.Services) : RpcConnectionState()
+    data class Connected(val services: NetworkModule.Services) : RpcConnectionState() {
+        override fun toString() = "Connected(${services.countServices()} services)"
+    }
 }
 
 /**

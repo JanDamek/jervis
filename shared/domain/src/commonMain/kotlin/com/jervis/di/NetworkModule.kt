@@ -200,5 +200,10 @@ object NetworkModule {
         val jobLogsService: IJobLogsService,
         val agentQuestionService: IAgentQuestionService,
         val autoResponseSettingsService: IAutoResponseSettingsService,
-    )
+    ) {
+        /** Number of service stubs in this container. */
+        fun countServices(): Int = 31
+
+        override fun toString() = "Services(${countServices()} stubs)"
+    }
 }
