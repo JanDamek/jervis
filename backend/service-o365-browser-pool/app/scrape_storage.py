@@ -31,7 +31,7 @@ class ScrapeStorage:
     async def start(self) -> None:
         # Build URI from individual env-var settings (configmap + secret)
         uri = (
-            f"mongodb://{settings.mongodb_username}:{settings.mongodb_password}"
+            f"mongodb://{settings.mongodb_user}:{settings.mongodb_password}"
             f"@{settings.mongodb_host}:{settings.mongodb_port}"
             f"/{settings.mongodb_database}?authSource={settings.mongodb_auth_db}"
         )

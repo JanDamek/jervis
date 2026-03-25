@@ -27,7 +27,7 @@ spec:
             - containerPort: 8090
           envFrom:
             - configMapRef:
-                name: jervis-orchestrator-config
+                name: jervis-config
           env:
             - name: MONGODB_URL
               valueFrom:

@@ -26,7 +26,7 @@ spec:
             - containerPort: 11430
           envFrom:
             - configMapRef:
-                name: jervis-ollama-router-config
+                name: jervis-config
           resources:
             requests:
               memory: "128Mi"

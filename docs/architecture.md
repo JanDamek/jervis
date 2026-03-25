@@ -249,7 +249,7 @@ All services use Ollama Router (K8s service `jervis-ollama-router:11430`):
 ### Deployment
 
 - K8s deployment: `k8s/app_ollama_router.yaml`
-- ConfigMap: `k8s/configmap.yaml` (jervis-ollama-router-config)
+- ConfigMap: `k8s/configmap.yaml` (`jervis-config` — unified Python ConfigMap)
 - Build script: `k8s/build_ollama_router.sh`
 - ClusterIP service (no hostNetwork, no hostPort)
 
@@ -1786,6 +1786,26 @@ build_*.sh:
 | `build_service.sh` | Generic (provider services) | Gradle + Docker + K8s |
 | `build_tts.sh` | jervis-tts | Docker + K8s |
 | `build_image.sh` | Generic (Job-only images) | Docker only (no K8s Deployment) |
+
+### ConfigMaps & Secrets
+
+Exactly **2 ConfigMaps** in `k8s/configmap.yaml`:
+
+| ConfigMap | Scope | Injection | Content |
+|-----------|-------|-----------|---------|
+| `jervis-config` | ALL Python microservices | `envFrom` in every Python deployment YAML | Unified env vars |
+| `jervis-server-config` | Kotlin server only | Mounted as file (`application.yml`) | Spring Boot config |
+
+**`jervis-config` design:**
+- Shared values defined ONCE: `MONGODB_HOST`, `OLLAMA_ROUTER_URL`, `KOTLIN_SERVER_URL`, etc.
+- Service-specific values use prefixes: `O365_POOL_*`, `MCP_*`, `ORCHESTRATOR_*`, etc.
+- Every Python deployment YAML includes `envFrom: [{configMapRef: {name: jervis-config}}]`
+- Python services use pydantic-settings with `Field(validation_alias="PREFIX_FIELD")` for prefixed vars and read shared fields directly (no prefix)
+- All settings classes have `model_config = {"extra": "ignore"}` to silently ignore env vars from other services
+
+**Secrets** (`jervis-secrets` K8s Secret):
+- Contains `MONGODB_PASSWORD`, `ARANGO_PASSWORD`, API keys, etc.
+- Injected individually via `env[].valueFrom.secretKeyRef` in deployment YAMLs (not `envFrom`)
 
 ---
 

@@ -161,73 +161,60 @@ data:
 
 ---
 # =============================================================================
-# Knowledge Base Microservice – Production Configuration (K8s ConfigMap)
-# Injected as env vars via envFrom in k8s/app_knowledgebase.yaml.
-# Maps to Python Settings class in backend/service-knowledgebase/app/core/config.py.
-# See docs/structures.md § "Ollama Instance Architecture" for hardware layout.
+# Jervis Unified Configuration (K8s ConfigMap)
+# Single ConfigMap for ALL Python microservices.
+# Injected as env vars via envFrom in each deployment YAML.
+#
+# Shared values are defined ONCE. Service-specific values are prefixed.
+# Python services read shared values directly (no env_prefix).
 # =============================================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: jervis-knowledgebase-config
+  name: jervis-config
   namespace: jervis
 data:
-  # -- Ollama endpoints (all via Ollama Router on :11430) ---------------------
-  OLLAMA_BASE_URL: "http://jervis-ollama-router:11430"             # Via router → GPU/CPU
-  OLLAMA_EMBEDDING_BASE_URL: "http://jervis-ollama-router:11430"   # Via router → GPU/CPU
-  OLLAMA_INGEST_BASE_URL: "http://jervis-ollama-router:11430"      # Via router → GPU/CPU
-  # -- Model routing (see docs/structures.md § "Model Routing") ---------------
-  LLM_MODEL: "qwen3:14b"                                      # Graph extraction (GPU-2, permanent)
-  INGEST_MODEL_SIMPLE: "qwen3:14b"                             # Link relevance, quick classification (GPU-2, permanent)
-  INGEST_MODEL_COMPLEX: "qwen3:14b"                            # Summary extraction, complex ingest (GPU-2, permanent)
-  INGEST_CONTEXT_CAP: "32768"                                  # GPU-2: 3 models in VRAM, limited KV cache budget
-  # -- Storage backends -------------------------------------------------------
-  WEAVIATE_URL: "http://nas.lan.mazlusek.com:8080"                  # Vector store (RAG)
-  WEAVIATE_GRPC_URL: "nas.lan.mazlusek.com:50051"                   # Weaviate gRPC
-  ARANGO_URL: "http://nas.lan.mazlusek.com:8529"                    # Knowledge graph
+  # ── SHARED: Microservice endpoints (defined ONCE) ─────────────────────
+  KOTLIN_SERVER_URL: "http://jervis-server:5500"
+  KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
+  KNOWLEDGEBASE_WRITE_URL: "http://jervis-knowledgebase-write:8080"
+  OLLAMA_ROUTER_URL: "http://jervis-ollama-router:11430"
+  SEARXNG_URL: "http://nas.lan.mazlusek.com:30053"
+  DOCUMENT_EXTRACTION_URL: "http://jervis-document-extraction:8080"
+  MCP_URL: "http://jervis-mcp:8100"
+  O365_GATEWAY_URL: "http://jervis-o365-gateway:8080"
+
+  # ── SHARED: Storage backends ──────────────────────────────────────────
+  MONGODB_HOST: "nas.lan.mazlusek.com"
+  MONGODB_PORT: "27017"
+  MONGODB_USER: "root"
+  MONGODB_DATABASE: "jervis"
+  WEAVIATE_URL: "http://nas.lan.mazlusek.com:8080"
+  WEAVIATE_GRPC_URL: "nas.lan.mazlusek.com:50051"
+  ARANGO_URL: "http://nas.lan.mazlusek.com:8529"
   ARANGO_DB: "jervis"
   ARANGO_USER: "root"
-  # -- Microservice endpoints -------------------------------------------------
-  KOTLIN_SERVER_URL: "http://jervis-server:5500"               # Kotlin server for progress callbacks
 
----
-# =============================================================================
-# Orchestrator Microservice – Production Configuration (K8s ConfigMap)
-# Injected as env vars via envFrom in k8s/app_orchestrator.yaml.
-# Maps to Python Settings class in backend/service-orchestrator/app/config.py.
-# =============================================================================
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: jervis-orchestrator-config
-  namespace: jervis
-data:
-  # -- Service configuration --------------------------------------------------
+  # ── SHARED: Ollama endpoints (all via Ollama Router on :11430) ────────
+  OLLAMA_BASE_URL: "http://jervis-ollama-router:11430"
+  OLLAMA_EMBEDDING_BASE_URL: "http://jervis-ollama-router:11430"
+  OLLAMA_INGEST_BASE_URL: "http://jervis-ollama-router:11430"
+  OLLAMA_API_BASE: "http://jervis-ollama-router:11430"
+
+  # ── KB: Knowledge Base service ────────────────────────────────────────
+  LLM_MODEL: "qwen3:14b"
+  INGEST_MODEL_SIMPLE: "qwen3:14b"
+  INGEST_MODEL_COMPLEX: "qwen3:14b"
+  INGEST_CONTEXT_CAP: "32768"
+
+  # ── ORCHESTRATOR: Orchestrator service ────────────────────────────────
   ORCHESTRATOR_PORT: "8090"
   K8S_NAMESPACE: "jervis"
   DATA_ROOT: "/opt/jervis/data"
   CONTAINER_REGISTRY: "registry.damek-soft.eu/jandamek"
-  # -- Microservice endpoints -------------------------------------------------
-  KOTLIN_SERVER_URL: "http://jervis-server:5500"
-  KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
-  SEARXNG_URL: "http://nas.lan.mazlusek.com:30053"
-  # -- MCP Server (internal K8s endpoint for coding agents) -------------------
-  MCP_URL: "http://jervis-mcp:8100"
   MCP_API_TOKEN: "72f78904b9974741fd4d2d6eef3055418b90f4a190096b631cf0266df34c5304"
-  # -- Ollama endpoints (via Ollama Router on :11430) -------------------------
-  OLLAMA_API_BASE: "http://jervis-ollama-router:11430"
 
----
-# =============================================================================
-# Ollama Router – GPU/CPU routing proxy (K8s ConfigMap)
-# Injected as env vars via envFrom in k8s/app_ollama_router.yaml.
-# =============================================================================
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: jervis-ollama-router-config
-  namespace: jervis
-data:
+  # ── OLLAMA ROUTER: GPU/CPU routing proxy ──────────────────────────────
   ROUTER_PORT: "11430"
   GPU_BACKENDS: '[{"url":"http://nas.lan.mazlusek.com:11434","vram_gb":24,"name":"p40-1"},{"url":"http://ollama.lan.mazlusek.com:11434","vram_gb":24,"name":"p40-2"}]'
   ORCHESTRATOR_MODEL: "qwen3-coder-tool:30b"
@@ -238,51 +225,18 @@ data:
   BACKGROUND_LOAD_DELAY_S: "5"
   DEFAULT_KEEP_ALIVE: "-1"
   GPU_IDLE_NOTIFY_AFTER_S: "120"
-  KOTLIN_SERVER_URL: "http://jervis-server:5500"
 
----
-# =============================================================================
-# MCP Server – Production Configuration (K8s ConfigMap)
-# Injected as env vars via envFrom in k8s/app_mcp.yaml.
-# Exposes Jervis platform as MCP tools for Claude Desktop / Claude Code.
-# =============================================================================
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: jervis-mcp-config
-  namespace: jervis
-data:
+  # ── MCP: MCP Server ──────────────────────────────────────────────────
   MCP_HOST: "0.0.0.0"
   MCP_PORT: "8100"
-  MCP_MONGODB_HOST: "nas.lan.mazlusek.com"
-  MCP_MONGODB_PORT: "27017"
-  MCP_MONGODB_USER: "root"
-  MCP_MONGODB_DATABASE: "jervis"
-  # -- Microservice endpoints (K8s service names) --
-  MCP_KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
-  MCP_KNOWLEDGEBASE_WRITE_URL: "http://jervis-knowledgebase-write:8080"
-  MCP_KOTLIN_SERVER_URL: "http://jervis-server:5500"
-  # -- Default tenant (override per tool call) --
   MCP_DEFAULT_CLIENT_ID: ""
   MCP_DEFAULT_PROJECT_ID: ""
----
-# =============================================================================
-# O365 Browser Pool – Production Configuration (K8s ConfigMap)
-# Injected as env vars via envFrom in k8s/app_o365_browser_pool.yaml.
-# =============================================================================
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: jervis-o365-browser-pool-config
-  namespace: jervis
-data:
+
+  # ── O365 BROWSER POOL: Browser session management ────────────────────
   O365_POOL_HEADLESS: "false"
   O365_POOL_MAX_CONTEXTS: "10"
   O365_POOL_NOVNC_ENABLED: "true"
-  # -- MongoDB --
-  O365_POOL_MONGODB_HOST: "192.168.100.117"
-  O365_POOL_MONGODB_DATABASE: "jervis"
-  O365_POOL_MONGODB_USERNAME: "root"
-  # -- Microservice endpoints --
-  O365_POOL_KOTLIN_SERVER_URL: "http://jervis-server:5500"
-  O365_POOL_OLLAMA_ROUTER_URL: "http://jervis-ollama-router:11430"
+
+  # ── CORRECTION: Transcript correction service ────────────────────────
+  OLLAMA_URL: "http://jervis-ollama-router:11430"
+  DEFAULT_CORRECTION_MODEL: "qwen3-coder-tool:30b"

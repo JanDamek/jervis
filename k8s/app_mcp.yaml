@@ -45,35 +45,35 @@ spec:
             - containerPort: 8100
           envFrom:
             - configMapRef:
-                name: jervis-mcp-config
+                name: jervis-config
           env:
-            - name: MCP_MONGODB_PASSWORD
+            - name: MONGODB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: jervis-secrets
                   key: MONGODB_PASSWORD
-            - name: MCP_MCP_API_TOKENS
+            - name: MCP_API_TOKENS
               valueFrom:
                 secretKeyRef:
                   name: jervis-secrets
                   key: MCP_API_TOKENS
                   optional: false
             # OAuth 2.1 (Google IdP for Claude.ai / iOS connectors)
-            - name: MCP_GOOGLE_CLIENT_ID
+            - name: GOOGLE_CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: jervis-secrets
                   key: GOOGLE_CLIENT_ID
                   optional: true
-            - name: MCP_GOOGLE_CLIENT_SECRET
+            - name: GOOGLE_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: jervis-secrets
                   key: GOOGLE_CLIENT_SECRET
                   optional: true
-            - name: MCP_OAUTH_ISSUER
+            - name: OAUTH_ISSUER
               value: "https://jervis-mcp.damek-soft.eu"
-            - name: MCP_OAUTH_ALLOWED_EMAILS
+            - name: OAUTH_ALLOWED_EMAILS
               value: "damekjan74@gmail.com"
           resources:
             requests:

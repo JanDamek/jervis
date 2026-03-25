@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     """Environment-based configuration."""
 
     # Service
-    host: str = "0.0.0.0"
-    port: int = 8090
+    host: str = os.getenv("ORCHESTRATOR_HOST", "0.0.0.0")
+    port: int = int(os.getenv("ORCHESTRATOR_PORT", "8090"))
 
     # MongoDB (persistent checkpointer – same instance as Kotlin server)
     mongodb_url: str = os.getenv("MONGODB_URL", "")
@@ -200,8 +200,7 @@ class Settings(BaseSettings):
     complex_max_iterations: int = 6
     memory_max_iterations: int = 3
 
-    class Config:
-        env_prefix = "ORCHESTRATOR_"
+    model_config = {"extra": "ignore"}
 
 
 settings = Settings()

@@ -38,10 +38,10 @@ spec:
               mountPath: /browser-profiles
           envFrom:
             - configMapRef:
-                name: jervis-o365-browser-pool-config
+                name: jervis-config
           env:
             # Secret — not in ConfigMap
-            - name: O365_POOL_MONGODB_PASSWORD
+            - name: MONGODB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: jervis-secrets
