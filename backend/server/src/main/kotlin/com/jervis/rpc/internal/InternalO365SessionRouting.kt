@@ -206,6 +206,8 @@ private suspend fun createSessionNotification(
 fun Routing.installInternalO365CapabilitiesApi(
     connectionRepository: ConnectionRepository,
     notificationRpc: NotificationRpcImpl,
+    fcmPushService: FcmPushService,
+    apnsPushService: ApnsPushService,
 ) {
     post("/internal/o365/capabilities-discovered") {
         try {
@@ -258,17 +260,35 @@ fun Routing.installInternalO365CapabilitiesApi(
             // Notify UI that discovery is complete
             val clientId = com.jervis.common.types.ClientId(org.bson.types.ObjectId("68a332361b04695a243e5ae8"))
             val capLabels = capabilities.joinToString(", ") { it.name }
+            val message = if (capabilities.isEmpty()) {
+                "Připojení ${connection.name}: žádné služby nenalezeny"
+            } else {
+                "Připojení ${connection.name}: nalezeny služby — $capLabels"
+            }
+
+            // kRPC event (in-app snackbar)
             notificationRpc.emitConnectionStateChanged(
                 clientId = clientId.toString(),
                 connectionId = body.connectionId,
                 connectionName = connection.name,
                 newState = "VALID",
-                message = if (capabilities.isEmpty()) {
-                    "Připojení ${connection.name}: žádné služby nenalezeny"
-                } else {
-                    "Připojení ${connection.name}: nalezeny služby — $capLabels"
-                },
+                message = message,
             )
+
+            // Push notification (FCM + APNs) for background/closed app
+            if (!notificationRpc.hasActiveSubscribers(clientId.toString())) {
+                val pushTitle = "Microsoft 365"
+                try {
+                    fcmPushService.sendPushNotification(clientId.toString(), pushTitle, message, emptyMap())
+                } catch (e: Exception) {
+                    logger.warn { "FCM push failed for discovery: ${e.message}" }
+                }
+                try {
+                    apnsPushService.sendPushNotification(clientId.toString(), pushTitle, message, emptyMap())
+                } catch (e: Exception) {
+                    logger.warn { "APNs push failed for discovery: ${e.message}" }
+                }
+            }
 
             call.respondText(
                 """{"status":"ok","capabilities":${capabilities.size}}""",
