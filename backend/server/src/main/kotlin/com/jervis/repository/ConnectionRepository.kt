@@ -26,4 +26,6 @@ interface ConnectionRepository : CoroutineCrudRepository<ConnectionDocument, Con
      * Uses an explicit query because 'state' is defined in subclasses, not on sealed class.
      */
     fun findAllByState(state: ConnectionStateEnum): Flow<ConnectionDocument>
+
+    fun findAllByStateIn(states: Collection<ConnectionStateEnum>): Flow<ConnectionDocument>
 }

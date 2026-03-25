@@ -106,7 +106,7 @@ class CentralPoller(
 
         logger.debug { "=== Starting polling cycle ===" }
 
-        connectionService.findAllValid().collect { connection ->
+        connectionService.findAllPollable().collect { connection ->
             connectionDocuments.add(connection)
             val job =
                 scope.async {

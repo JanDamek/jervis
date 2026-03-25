@@ -49,6 +49,10 @@ class ConnectionService(
      */
     fun findAllValid(): Flow<ConnectionDocument> = repository.findAllByState(ConnectionStateEnum.VALID)
 
+    fun findAllPollable(): Flow<ConnectionDocument> = repository.findAllByStateIn(
+        listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING),
+    )
+
     /**
      * Find all connections as Flow.
      */

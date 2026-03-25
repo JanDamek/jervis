@@ -29,6 +29,8 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate
@@ -62,6 +64,8 @@ class O365PollingHandler(
     private val mongoTemplate: ReactiveMongoTemplate,
     @Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
     private val gatewayUrl: String,
+    @Value("\${jervis.o365-browser-pool.url:http://jervis-o365-browser-pool:8090}")
+    private val browserPoolUrl: String,
 ) : PollingHandler {
     override val provider: ProviderEnum = ProviderEnum.MICROSOFT_TEAMS
 
@@ -93,9 +97,36 @@ class O365PollingHandler(
 
         // Browser scraping mode — read from o365_scrape_messages collection
         if (isBrowserScraping) {
-            // Skip polling if connection is still discovering or invalid
-            if (connectionDocument.state in listOf(ConnectionStateEnum.DISCOVERING, ConnectionStateEnum.INVALID, ConnectionStateEnum.NEW)) {
+            // Skip polling if connection is invalid or new (no session yet)
+            if (connectionDocument.state in listOf(ConnectionStateEnum.INVALID, ConnectionStateEnum.NEW)) {
                 logger.debug { "Skipping O365 poll for '${connectionDocument.name}' — state=${connectionDocument.state}" }
+                return PollingResult()
+            }
+
+            // Proactive health check: verify browser pool session is alive
+            // If session is EXPIRED/ERROR, mark connection INVALID immediately
+            if (connectionDocument.state in listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING)) {
+                try {
+                    val statusResponse = httpClient.get("$browserPoolUrl/session/$o365ClientId")
+                    if (statusResponse.status.isSuccess()) {
+                        val statusJson = json.parseToJsonElement(statusResponse.body<String>()).jsonObject
+                        val sessionState = statusJson["state"]?.jsonPrimitive?.content
+                        if (sessionState in listOf("EXPIRED", "ERROR")) {
+                            logger.warn { "Browser pool session $sessionState for '${connectionDocument.name}' — marking INVALID" }
+                            connectionService.save(connectionDocument.copy(state = ConnectionStateEnum.INVALID))
+                            return PollingResult()
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.warn { "Browser pool unreachable for '${connectionDocument.name}' — marking INVALID: ${e.message}" }
+                    connectionService.save(connectionDocument.copy(state = ConnectionStateEnum.INVALID))
+                    return PollingResult()
+                }
+            }
+
+            // DISCOVERING passed health check (session alive) — skip polling, wait for capabilities callback
+            if (connectionDocument.state == ConnectionStateEnum.DISCOVERING) {
+                logger.debug { "Skipping O365 poll for '${connectionDocument.name}' — still discovering" }
                 return PollingResult()
             }
 
