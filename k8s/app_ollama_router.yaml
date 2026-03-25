@@ -46,7 +46,8 @@ spec:
               path: /router/health
               port: 11430
             periodSeconds: 15
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           readinessProbe:
             httpGet:
               path: /router/health

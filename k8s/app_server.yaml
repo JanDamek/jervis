@@ -243,14 +243,21 @@ spec:
             - name: apns-key
               mountPath: /etc/apns
               readOnly: true
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "3Gi"
+              cpu: "2000m"
           livenessProbe:
             httpGet:
               path: /
               port: 5500
             initialDelaySeconds: 45
             periodSeconds: 15
-            timeoutSeconds: 5
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           readinessProbe:
             httpGet:
               path: /

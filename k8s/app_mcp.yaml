@@ -77,10 +77,10 @@ spec:
               value: "damekjan74@gmail.com"
           resources:
             requests:
-              memory: "128Mi"
+              memory: "256Mi"
               cpu: "100m"
             limits:
-              memory: "512Mi"
+              memory: "1Gi"
               cpu: "500m"
           livenessProbe:
             httpGet:
@@ -88,8 +88,8 @@ spec:
               port: 8100
             initialDelaySeconds: 10
             periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           readinessProbe:
             httpGet:
               path: /health

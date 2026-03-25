@@ -36,6 +36,13 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "1000m"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 20
           readinessProbe:
             httpGet:
               path: /health
@@ -46,8 +53,9 @@ spec:
             httpGet:
               path: /health
               port: 8080
-            initialDelaySeconds: 10
             periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
       imagePullSecrets:
         - name: regcred
 ---
