@@ -78,6 +78,25 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Memory: `backend/service-orchestrator/app/memory/` (agent.py, affairs.py, lqm.py, composer.py)
 - Tools: `backend/service-orchestrator/app/tools/definitions.py`, `executor.py`
 
+## K8s Deployment
+
+> Full deployment reference in **KB** (`kb_search: "k8s deployment"`) and in memory (`reference-k8s-deployment.md`).
+
+- **Registry**: `registry.damek-soft.eu/jandamek`, images `:latest`, `imagePullPolicy: Always`
+- **Namespace**: `jervis`, PVC `jervis-data-pvc` (10Gi RWX → `/opt/jervis/data`)
+- **Deploy**: Always via `k8s/build_*.sh` scripts, NEVER Gradle/Docker/kubectl directly
+- **Build flow**: Gradle (Kotlin only) → Docker build (linux/amd64) → push → kubectl apply → rollout restart
+- **Key scripts**: `build_server.sh`, `build_orchestrator.sh`, `build_kb.sh`, `build_mcp.sh`, `build_all.sh`
+- **Redeploy** (no rebuild): `redeploy_service.sh <name>`, `redeploy_all.sh`
+- **Full deploy** (infra + all): `deploy_all.sh` (namespace → PVC → secrets → configmap → redeploy all → ingress)
+- **ConfigMaps**: `configmap.yaml` (5 ConfigMaps: server, KB, orchestrator, ollama-router, MCP)
+- **Ingress**: `jervis.damek-soft.eu` (server), `jervis-mcp.damek-soft.eu` (MCP SSE)
+
+| Doc | What's inside |
+|-----|---------------|
+| `docs/architecture.md` | System architecture, service topology, K8s layout |
+| KB: "k8s deployment" | Detailed deployment procedures, troubleshooting |
+
 ## Build Notes
 
 - No network in CI/sandbox – cannot run Gradle
