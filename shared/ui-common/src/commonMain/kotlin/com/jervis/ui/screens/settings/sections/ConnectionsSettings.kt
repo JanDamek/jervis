@@ -174,6 +174,18 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                     }
                                 },
                                 onTeamsLogin = { showTeamsLoginDialog = connection },
+                                onRediscover = {
+                                    scope.launch {
+                                        try {
+                                            repository.connections.rediscoverCapabilities(connection.id)
+                                            snackbarHostState.showSnackbar("Zjišťuji dostupné služby...")
+                                            loadConnections()
+                                        } catch (e: Exception) {
+                                            snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                                            loadConnections()
+                                        }
+                                    }
+                                },
                                 onEdit = { showEditDialog = connection },
                                 onDelete = { showDeleteDialog = connection },
                             )
@@ -283,6 +295,7 @@ private fun ConnectionItemCard(
     onReauthorize: () -> Unit,
     onReauthorizePrivate: () -> Unit,
     onTeamsLogin: () -> Unit,
+    onRediscover: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -435,6 +448,18 @@ private fun ConnectionItemCard(
             ) {
                 JPrimaryButton(onClick = onTeamsLogin) {
                     Text("Přihlásit k Teams")
+                }
+            }
+            if (isBrowserSession && (
+                    connection.state == ConnectionStateEnum.VALID ||
+                    connection.state == ConnectionStateEnum.DISCOVERING
+                )
+            ) {
+                JSecondaryButton(
+                    onClick = onRediscover,
+                    enabled = connection.state != ConnectionStateEnum.DISCOVERING,
+                ) {
+                    Text("Znovu zjistit služby")
                 }
             }
             JIconButton(

@@ -615,16 +615,44 @@ class ConnectionRpcImpl(
             val message = responseJson["message"]?.jsonPrimitive?.content
 
             if (state == "ACTIVE") {
-                connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+                // Set DISCOVERING — capabilities callback from browser pool will transition to VALID
+                connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
             }
 
             BrowserSessionStatusDto(
                 state = state,
                 hasToken = state == "ACTIVE",
-                message = message ?: if (state == "ACTIVE") "MFA ověřeno — přihlášení úspěšné" else "MFA ověření",
+                message = message ?: if (state == "ACTIVE") "MFA ověřeno — zjišťuji dostupné služby..." else "MFA ověření",
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to submit MFA for $clientId" }
+            BrowserSessionStatusDto(state = "ERROR", message = "Chyba: ${e.message}")
+        }
+    }
+
+    override suspend fun rediscoverCapabilities(connectionId: String): BrowserSessionStatusDto {
+        val connection = connectionService.findById(ConnectionId.fromString(connectionId))
+            ?: throw IllegalArgumentException("Connection not found: $connectionId")
+
+        val clientId = connection.o365ClientId
+            ?: return BrowserSessionStatusDto(state = "ERROR", message = "Připojení nemá o365ClientId")
+
+        // Set state to DISCOVERING while re-checking tabs
+        connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
+
+        return try {
+            val response = httpClient.post("$o365BrowserPoolUrl/session/$clientId/rediscover")
+            val responseText = response.bodyAsText()
+            logger.info { "Rediscovery triggered for $clientId: $responseText" }
+
+            BrowserSessionStatusDto(
+                state = "DISCOVERING",
+                message = "Znovu zjišťuji dostupné služby...",
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to trigger rediscovery for $clientId" }
+            // Revert to VALID on error
+            connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
             BrowserSessionStatusDto(state = "ERROR", message = "Chyba: ${e.message}")
         }
     }

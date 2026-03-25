@@ -67,4 +67,10 @@ interface IConnectionService {
      * Submit MFA code for a browser session awaiting multi-factor authentication.
      */
     suspend fun submitBrowserSessionMfa(connectionId: String, code: String): BrowserSessionStatusDto
+
+    /**
+     * Re-run capability discovery for a browser session connection.
+     * Closes existing tabs, re-opens them, and pushes updated capabilities.
+     */
+    suspend fun rediscoverCapabilities(connectionId: String): BrowserSessionStatusDto
 }

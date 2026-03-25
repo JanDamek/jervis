@@ -383,6 +383,47 @@ def create_session_router(
             last_activity=datetime.now(timezone.utc).isoformat(),
         )
 
+    @router.post("/session/{client_id}/rediscover")
+    async def rediscover_capabilities(client_id: str) -> dict:
+        """Re-run tab setup to rediscover available capabilities.
+
+        Closes existing tabs, re-opens them, and pushes updated capabilities
+        to the Kotlin server. Use when account licenses change or to verify
+        current capability state.
+        """
+        context = browser_manager.get_context(client_id)
+        if not context:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No session for client '{client_id}'",
+            )
+
+        state = browser_manager.get_state(client_id)
+        if state != SessionState.ACTIVE:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Session not active (state: {state})",
+            )
+
+        # Stop scraping during rediscovery
+        screen_scraper.stop_scraping(client_id)
+
+        # Re-run tab setup with stored capabilities
+        caps = _client_capabilities.get(client_id, [])
+        await tab_manager.setup_tabs(client_id, context, caps)
+        available = tab_manager.get_available_capabilities(client_id)
+        await notify_capabilities_discovered(client_id, client_id, available)
+
+        # Restart scraping
+        screen_scraper.set_connection_id(client_id, client_id)
+        await screen_scraper.start_scraping(client_id)
+
+        logger.info("Rediscovery complete for %s: %s", client_id, available)
+        return {
+            "client_id": client_id,
+            "available_capabilities": available,
+        }
+
     @router.delete("/session/{client_id}")
     async def delete_session(client_id: str) -> dict:
         """Close browser context and clean up."""
