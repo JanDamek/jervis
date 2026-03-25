@@ -265,3 +265,24 @@ data:
   # -- Default tenant (override per tool call) --
   MCP_DEFAULT_CLIENT_ID: ""
   MCP_DEFAULT_PROJECT_ID: ""
+---
+# =============================================================================
+# O365 Browser Pool – Production Configuration (K8s ConfigMap)
+# Injected as env vars via envFrom in k8s/app_o365_browser_pool.yaml.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jervis-o365-browser-pool-config
+  namespace: jervis
+data:
+  O365_POOL_HEADLESS: "false"
+  O365_POOL_MAX_CONTEXTS: "10"
+  O365_POOL_NOVNC_ENABLED: "true"
+  # -- MongoDB --
+  O365_POOL_MONGODB_HOST: "192.168.100.117"
+  O365_POOL_MONGODB_DATABASE: "jervis"
+  O365_POOL_MONGODB_USERNAME: "root"
+  # -- Microservice endpoints --
+  O365_POOL_KOTLIN_SERVER_URL: "http://jervis-server:5500"
+  O365_POOL_OLLAMA_ROUTER_URL: "http://jervis-ollama-router:11430"
