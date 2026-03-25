@@ -358,22 +358,47 @@ private fun ConnectionItemCard(
             )
         }
 
-        // Capabilities
-        if (connection.capabilities.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    "Funkce: ",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                connection.capabilities.forEach { capability ->
-                    CapabilityChip(capability)
+        // Capabilities — show loading state while DISCOVERING
+        Spacer(Modifier.height(8.dp))
+        when {
+            connection.state == ConnectionStateEnum.DISCOVERING -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Text(
+                        "Zjišťuji dostupné služby...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
+            }
+            connection.capabilities.isNotEmpty() -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        "Funkce: ",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    connection.capabilities.forEach { capability ->
+                        CapabilityChip(capability)
+                    }
+                }
+            }
+            connection.state == ConnectionStateEnum.VALID && connection.capabilities.isEmpty() -> {
+                Text(
+                    "Žádné služby nenalezeny",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
 

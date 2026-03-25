@@ -539,8 +539,12 @@ class ConnectionRpcImpl(
             }
 
             // Update connection state if token was captured
-            if (hasToken && state == "ACTIVE" && connection.state != ConnectionStateEnum.VALID) {
-                connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+            // Set DISCOVERING (not VALID) — capabilities callback will finalize the state
+            if (hasToken && state == "ACTIVE" &&
+                connection.state != ConnectionStateEnum.VALID &&
+                connection.state != ConnectionStateEnum.DISCOVERING
+            ) {
+                connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
             }
 
             // Generate one-time VNC token if login is needed (not active = needs login/re-login)
@@ -657,8 +661,9 @@ class ConnectionRpcImpl(
 
             when (state) {
                 "ACTIVE" -> {
-                    connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
-                    "Automatické přihlášení úspěšné!"
+                    // Set DISCOVERING — capabilities callback from browser pool will transition to VALID
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
+                    "Automatické přihlášení úspěšné — zjišťuji dostupné služby..."
                 }
                 "AWAITING_MFA" -> {
                     connectionService.save(connection.copy(state = ConnectionStateEnum.NEW))
@@ -807,6 +812,12 @@ class ConnectionRpcImpl(
         connection: ConnectionDocument,
         capability: ConnectionCapability,
     ): List<ConnectionResourceDto> {
+        // Skip capabilities that were not discovered as available
+        if (capability !in connection.availableCapabilities) {
+            logger.info { "Capability $capability not available for connection ${connection.id} — skipping" }
+            return emptyList()
+        }
+
         // For OAuth2 connections, use Graph API directly with access token
         if (connection.authType == com.jervis.dto.connection.AuthTypeEnum.OAUTH2) {
             return listO365ResourcesViaGraphApi(connection, capability)

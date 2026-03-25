@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.auto_login import LoginStage, auto_login, submit_mfa_code
 from app.browser_manager import BrowserManager
-from app.kotlin_callback import notify_session_state
+from app.kotlin_callback import notify_capabilities_discovered, notify_session_state
 from app.models import (
     SessionInitRequest,
     SessionInitResponse,
@@ -122,6 +122,8 @@ def create_session_router(
             if context:
                 caps = _client_capabilities.get(client_id, [])
                 await tab_manager.setup_tabs(client_id, context, caps)
+                available = tab_manager.get_available_capabilities(client_id)
+                await notify_capabilities_discovered(client_id, client_id, available)
                 # client_id IS the connectionId (set by Kotlin server)
                 screen_scraper.set_connection_id(client_id, client_id)
                 await screen_scraper.start_scraping(client_id)
@@ -198,6 +200,8 @@ def create_session_router(
                 # Set up tabs and start scraping
                 caps = _client_capabilities.get(client_id, [])
                 await tab_manager.setup_tabs(client_id, context, caps)
+                available = tab_manager.get_available_capabilities(client_id)
+                await notify_capabilities_discovered(client_id, client_id, available)
                 screen_scraper.set_connection_id(client_id, client_id)
                 await screen_scraper.start_scraping(client_id)
                 # Auto-crawl Teams chats
@@ -314,6 +318,8 @@ def create_session_router(
             # Set up tabs and start scraping
             caps = _client_capabilities.get(client_id, [])
             await tab_manager.setup_tabs(client_id, context, caps)
+            available = tab_manager.get_available_capabilities(client_id)
+            await notify_capabilities_discovered(client_id, client_id, available)
             screen_scraper.set_connection_id(client_id, client_id)
             await screen_scraper.start_scraping(client_id)
             # Auto-crawl Teams chats

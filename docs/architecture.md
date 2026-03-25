@@ -2382,6 +2382,17 @@ Browser Pool (Playwright, headed mode with Xvfb)
 - `kotlin_callback.py` POSTs to `/internal/o365/session-event`
 - Kotlin creates USER_TASK with VNC link + sends FCM/APNs push
 
+**Push-based capability discovery**:
+- After browser session login, tab_manager opens tabs for each requested service (chat/email/calendar)
+- Tabs that redirect to marketing/login pages are detected as unavailable and closed
+- `tab_manager.get_available_capabilities()` returns only capabilities for successfully opened tabs
+- Python POSTs discovered capabilities to `POST /internal/o365/capabilities-discovered`
+- Kotlin server updates `connection.availableCapabilities` and transitions state `DISCOVERING → VALID`
+- Connection state flow: `NEW → (login) → DISCOVERING → (capabilities callback) → VALID`
+- UI shows "Zjišťuji dostupné služby..." spinner during DISCOVERING state
+- `listO365Resources()` guards on `availableCapabilities` — returns empty for undiscovered capabilities
+- `POST /scrape/{client_id}/discover` accepts `{"capability": "CHAT_READ"}` body — returns `service_unavailable: true` for missing tabs
+
 **Persistent resource discovery**:
 - VLM scraping auto-discovers chats/channels/teams from sidebar
 - Stored in `o365_discovered_resources` collection (upsert by connectionId + externalId)
@@ -2482,8 +2493,8 @@ CentralPoller
 | `backend/server/.../entity/teams/O365DiscoveredResourceDocument.kt` | Persistent discovered O365 resources |
 | `backend/server/.../repository/O365ScrapeMessageRepository.kt` | Scrape message queries (by connectionId + state) |
 | `backend/server/.../repository/O365DiscoveredResourceRepository.kt` | Discovered resource queries |
-| `backend/server/.../rpc/internal/InternalO365SessionRouting.kt` | Session callback API (MFA/expiry → USER_TASK + push) |
-| `backend/service-o365-browser-pool/app/kotlin_callback.py` | Python→Kotlin session state notification |
+| `backend/server/.../rpc/internal/InternalO365SessionRouting.kt` | Session callback API (MFA/expiry → USER_TASK + push) + capabilities discovery endpoint |
+| `backend/service-o365-browser-pool/app/kotlin_callback.py` | Python→Kotlin session state + capabilities discovery notification |
 | `backend/service-o365-browser-pool/app/scrape_storage.py` | MongoDB storage for scrape messages + discovered resources |
 | `backend/server/.../integration/chat/ChatReplyService.kt` | Outbound message sending (stubs, EPIC 11-S5) |
 

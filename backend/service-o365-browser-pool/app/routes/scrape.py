@@ -238,30 +238,9 @@ def create_scrape_router(
         success = await tab_manager.click_at(client_id, tt, x, y)
         return {"success": success, "x": x, "y": y}
 
-    @router.post("/scrape/{client_id}/discover")
-    async def discover_resources(client_id: str) -> dict:
-        """Screenshot Teams sidebar and extract all visible chats/teams/channels via VLM.
-
-        Returns structured list of resources for connection settings UI.
-        """
-        if not tab_manager.has_tabs(client_id):
-            raise HTTPException(
-                status_code=404,
-                detail=f"No tabs set up for client '{client_id}'",
-            )
-
-        # Screenshot the chat tab (Teams sidebar shows chats/teams/channels)
-        screenshot = await tab_manager.screenshot_tab(client_id, TabType.CHAT)
-        if not screenshot:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Screenshot failed for {client_id}/chat",
-            )
-
-        from app.vlm_client import analyze_screenshot as vlm_analyze
-        from app.screen_scraper import _parse_vlm_response
-
-        discovery_prompt = """Analyze this Microsoft Teams screenshot. Extract ALL visible items:
+    # Discovery prompts per capability type
+    _DISCOVERY_PROMPTS = {
+        "CHAT": """Analyze this Microsoft Teams screenshot. Extract ALL visible items:
 1. Chats in the sidebar (name, last message preview)
 2. Teams and their channels
 3. Any other navigation items
@@ -275,7 +254,105 @@ Return JSON:
   ]
 }
 
-List EVERY visible item. Use slugified names for IDs (lowercase, dashes)."""
+List EVERY visible item. Use slugified names for IDs (lowercase, dashes).""",
+
+        "EMAIL": """Analyze this Outlook Mail screenshot. Extract ALL visible items:
+1. Mail folders in the sidebar (Inbox, Sent, Drafts, etc.)
+2. Any visible emails in the list (sender, subject, date)
+
+Return JSON:
+{
+  "resources": [
+    {"type": "folder", "id": "folder_<name_slug>", "name": "Folder Name", "description": "N messages"},
+    {"type": "email", "id": "email_<index>", "name": "Subject", "description": "From: sender, Date: date"}
+  ]
+}
+
+List EVERY visible item. Use slugified names for IDs (lowercase, dashes).""",
+
+        "CALENDAR": """Analyze this Outlook Calendar screenshot. Extract ALL visible items:
+1. Calendar list in the sidebar (My calendars, Other calendars, etc.)
+2. Any visible events
+
+Return JSON:
+{
+  "resources": [
+    {"type": "calendar", "id": "cal_<name_slug>", "name": "Calendar Name", "description": "Owner or category"},
+    {"type": "event", "id": "event_<index>", "name": "Event Title", "description": "Time, attendees"}
+  ]
+}
+
+List EVERY visible item. Use slugified names for IDs (lowercase, dashes).""",
+    }
+
+    # Map capability prefix to TabType
+    _CAPABILITY_TO_TAB = {
+        "CHAT": TabType.CHAT,
+        "EMAIL": TabType.EMAIL,
+        "CALENDAR": TabType.CALENDAR,
+    }
+
+    @router.post("/scrape/{client_id}/discover")
+    async def discover_resources(client_id: str, body: dict | None = None) -> dict:
+        """Screenshot a tab and extract visible resources via VLM.
+
+        Body (optional): {"capability": "CHAT_READ"}
+
+        If capability is provided, discovers resources for that specific service.
+        If the tab for that capability is not available, returns empty resources
+        with service_unavailable=true (no error).
+
+        Without capability, defaults to CHAT discovery (legacy behavior).
+        """
+        body = body or {}
+        capability = body.get("capability")
+
+        # Determine which tab to screenshot based on capability
+        if capability:
+            cap_prefix = capability.split("_")[0]  # CHAT_READ → CHAT
+        else:
+            cap_prefix = "CHAT"  # Default to chat discovery
+
+        tab_type = _CAPABILITY_TO_TAB.get(cap_prefix)
+        if not tab_type:
+            return {
+                "client_id": client_id,
+                "resources": [],
+                "service_unavailable": True,
+                "message": f"Unknown capability prefix: {cap_prefix}",
+            }
+
+        # Check if the tab is available (service exists for this account)
+        available_tabs = tab_manager.get_available_tabs(client_id)
+        if tab_type not in available_tabs:
+            return {
+                "client_id": client_id,
+                "resources": [],
+                "service_unavailable": True,
+                "message": f"{cap_prefix} is not available for this account",
+            }
+
+        if not tab_manager.has_tabs(client_id):
+            return {
+                "client_id": client_id,
+                "resources": [],
+                "service_unavailable": True,
+                "message": "No tabs set up yet — capabilities still being discovered",
+            }
+
+        # Screenshot the appropriate tab
+        screenshot = await tab_manager.screenshot_tab(client_id, tab_type)
+        if not screenshot:
+            return {
+                "client_id": client_id,
+                "resources": [],
+                "message": f"Screenshot failed for {tab_type.value}",
+            }
+
+        from app.vlm_client import analyze_screenshot as vlm_analyze
+        from app.screen_scraper import _parse_vlm_response
+
+        discovery_prompt = _DISCOVERY_PROMPTS.get(cap_prefix, _DISCOVERY_PROMPTS["CHAT"])
 
         try:
             result_text = await vlm_analyze(screenshot, discovery_prompt)

@@ -1812,7 +1812,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |       +-- ProjectGroupDialogs.kt   <- Group create dialog (internal)
 |   |       +-- EnvironmentsSettings.kt  <- Environment list + read-only summary + cross-link to Environment Manager
 |   |       +-- EnvironmentDialogs.kt    <- NewEnvironmentDialog, AddComponentDialog, componentTypeLabel(), environmentTierLabel()
-|   |       +-- ConnectionsSettings.kt <- Connection list + per-card actions
+|   |       +-- ConnectionsSettings.kt <- Connection list + per-card actions (DISCOVERING state → spinner + "Zjišťuji dostupné služby...")
 |   |       +-- ConnectionDialogs.kt    <- Connection create/edit dialogs (internal)
 |   |       +-- ConnectionFormComponents.kt <- Connection form fields (internal)
 |   |       +-- CodingAgentsSettings.kt <- Coding agent config

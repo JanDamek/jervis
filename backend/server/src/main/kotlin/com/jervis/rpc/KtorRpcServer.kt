@@ -29,6 +29,7 @@ import com.jervis.rpc.internal.installInternalProjectManagementApi
 import com.jervis.rpc.internal.installInternalMeetingApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalBugTrackerApi
+import com.jervis.rpc.internal.installInternalO365CapabilitiesApi
 import com.jervis.rpc.internal.installInternalO365SessionApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import kotlinx.coroutines.launch
@@ -145,6 +146,7 @@ class KtorRpcServer(
                             installInternalMeetingApi(meetingRpcImpl)
                             installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
                             installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
+                            installInternalO365CapabilitiesApi(connectionRepository)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)

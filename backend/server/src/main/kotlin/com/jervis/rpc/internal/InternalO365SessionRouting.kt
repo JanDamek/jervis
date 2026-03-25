@@ -5,6 +5,8 @@ import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.SourceUrn
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
+import com.jervis.dto.connection.ConnectionCapability
+import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.repository.ConnectionRepository
 import com.jervis.repository.TaskRepository
@@ -192,6 +194,87 @@ private suspend fun createSessionNotification(
 
     logger.info { "Created O365 session notification for $clientId: $title" }
 }
+
+/**
+ * Internal REST endpoint for O365 browser pool capability discovery callback.
+ *
+ * After the browser pool opens tabs and detects which O365 services are
+ * actually available (chat/email/calendar), it POSTs the discovered
+ * capabilities here. The server updates the connection's availableCapabilities
+ * and transitions state from DISCOVERING to VALID.
+ */
+fun Routing.installInternalO365CapabilitiesApi(
+    connectionRepository: ConnectionRepository,
+) {
+    post("/internal/o365/capabilities-discovered") {
+        try {
+            val body = call.receive<O365CapabilitiesDiscoveredRequest>()
+            logger.info { "O365 capabilities discovered for connection=${body.connectionId}: ${body.availableCapabilities}" }
+
+            val connectionId = try {
+                ConnectionId(ObjectId(body.connectionId))
+            } catch (_: Exception) {
+                call.respondText(
+                    """{"error":"invalid connectionId"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                )
+                return@post
+            }
+
+            val connection = connectionRepository.getById(connectionId)
+            if (connection == null) {
+                call.respondText(
+                    """{"error":"connection not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+                return@post
+            }
+
+            // Map string capability names to enum values
+            val capabilities = body.availableCapabilities.mapNotNull { name ->
+                try {
+                    ConnectionCapability.valueOf(name)
+                } catch (_: IllegalArgumentException) {
+                    logger.warn { "Unknown capability: $name" }
+                    null
+                }
+            }.toSet()
+
+            // Update connection with discovered capabilities and transition to VALID
+            connectionRepository.save(
+                connection.copy(
+                    availableCapabilities = capabilities,
+                    state = ConnectionStateEnum.VALID,
+                )
+            )
+
+            logger.info {
+                "Connection ${body.connectionId} capabilities updated: $capabilities (state → VALID)"
+            }
+
+            call.respondText(
+                """{"status":"ok","capabilities":${capabilities.size}}""",
+                ContentType.Application.Json,
+                HttpStatusCode.OK,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Error handling O365 capabilities discovery" }
+            call.respondText(
+                json.encodeToString(mapOf("error" to (e.message ?: "internal error"))),
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+}
+
+@Serializable
+private data class O365CapabilitiesDiscoveredRequest(
+    val connectionId: String,
+    val availableCapabilities: List<String>,
+)
 
 @Serializable
 private data class O365SessionEventRequest(

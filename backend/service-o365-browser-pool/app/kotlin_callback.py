@@ -70,6 +70,45 @@ async def notify_session_state(
         )
 
 
+async def notify_capabilities_discovered(
+    client_id: str,
+    connection_id: str,
+    available_capabilities: list[str],
+) -> None:
+    """Push discovered capabilities to Kotlin server after tab setup.
+
+    The server updates connection.availableCapabilities and transitions
+    state from DISCOVERING to VALID.
+    """
+    if not settings.kotlin_server_url:
+        return
+
+    url = f"{settings.kotlin_server_url}/internal/o365/capabilities-discovered"
+    payload = {
+        "connectionId": connection_id,
+        "availableCapabilities": available_capabilities,
+    }
+
+    try:
+        client = await _get_client()
+        resp = await client.post(url, json=payload)
+        if resp.status_code < 300:
+            logger.info(
+                "Capabilities discovered for %s: %s",
+                client_id, available_capabilities,
+            )
+        else:
+            logger.warning(
+                "Capabilities callback returned %d for %s: %s",
+                resp.status_code, client_id, resp.text[:200],
+            )
+    except Exception as e:
+        logger.warning(
+            "Failed to push capabilities for %s: %s",
+            client_id, e,
+        )
+
+
 async def shutdown() -> None:
     """Close the HTTP client on service shutdown."""
     global _client

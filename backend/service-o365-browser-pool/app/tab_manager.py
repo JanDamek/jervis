@@ -40,6 +40,13 @@ CAPABILITY_TO_TAB: dict[str, TabType] = {
     "CALENDAR_WRITE": TabType.CALENDAR,
 }
 
+# Reverse mapping: TabType → capabilities that require it
+TAB_TO_CAPABILITIES: dict[TabType, list[str]] = {
+    TabType.CHAT: ["CHAT_READ", "CHAT_SEND"],
+    TabType.EMAIL: ["EMAIL_READ", "EMAIL_SEND"],
+    TabType.CALENDAR: ["CALENDAR_READ", "CALENDAR_WRITE"],
+}
+
 # O365 web URLs per account type
 _BUSINESS_URLS = {
     TabType.CHAT: "https://teams.microsoft.com",
@@ -226,14 +233,31 @@ class TabManager:
                 pass
 
         self._tabs[client_id] = tabs
+        available = {t for t in tabs if not tabs[t].is_closed()}
+        unavailable = enabled - available
         logger.info(
-            "Tabs set up for %s: %s",
-            client_id, [t.value for t in enabled],
+            "Tabs set up for %s: available=%s, unavailable=%s",
+            client_id,
+            [t.value for t in available],
+            [t.value for t in unavailable],
         )
 
     def get_enabled_tabs(self, client_id: str) -> set[TabType]:
         """Get which tabs are enabled for a client."""
         return self._enabled_tabs.get(client_id, set())
+
+    def get_available_tabs(self, client_id: str) -> set[TabType]:
+        """Get which tabs are actually available (opened successfully, not login/marketing redirect)."""
+        tabs = self._tabs.get(client_id, {})
+        return {t for t, page in tabs.items() if not page.is_closed()}
+
+    def get_available_capabilities(self, client_id: str) -> list[str]:
+        """Get capabilities for actually available tabs (reverse mapping)."""
+        available = self.get_available_tabs(client_id)
+        caps: list[str] = []
+        for tab_type in available:
+            caps.extend(TAB_TO_CAPABILITIES.get(tab_type, []))
+        return caps
 
     async def get_tab(self, client_id: str, tab_type: TabType) -> Page | None:
         """Get a specific tab page."""
