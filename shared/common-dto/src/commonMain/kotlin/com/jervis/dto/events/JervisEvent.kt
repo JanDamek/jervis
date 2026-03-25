@@ -129,6 +129,19 @@ sealed class JervisEvent {
     ) : JervisEvent()
 
     /**
+     * Connection state changed — emitted when connection discovery completes
+     * or connection state changes significantly. Shown as snackbar in UI.
+     */
+    @Serializable
+    data class ConnectionStateChanged(
+        val connectionId: String,
+        val connectionName: String,
+        val newState: String,
+        val message: String,
+        override val timestamp: String,
+    ) : JervisEvent()
+
+    /**
      * EPIC 5: Approval required event — emitted when an action needs user approval.
      */
     @Serializable

@@ -146,7 +146,7 @@ class KtorRpcServer(
                             installInternalMeetingApi(meetingRpcImpl)
                             installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
                             installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
-                            installInternalO365CapabilitiesApi(connectionRepository)
+                            installInternalO365CapabilitiesApi(connectionRepository, notificationRpcImpl)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)

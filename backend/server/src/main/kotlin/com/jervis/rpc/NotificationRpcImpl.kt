@@ -259,6 +259,23 @@ class NotificationRpcImpl : INotificationService {
         }
     }
 
+    suspend fun emitConnectionStateChanged(
+        clientId: String,
+        connectionId: String,
+        connectionName: String,
+        newState: String,
+        message: String,
+    ) {
+        val event = JervisEvent.ConnectionStateChanged(
+            connectionId = connectionId,
+            connectionName = connectionName,
+            newState = newState,
+            message = message,
+            timestamp = Instant.now().toString(),
+        )
+        emitEvent(clientId, event)
+    }
+
     /**
      * Emit a generic event to a client.
      */
