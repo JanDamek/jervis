@@ -141,6 +141,10 @@ class ConnectionManager(
                 updateTaskBadge()
                 MacOSUtils.showNotification("Schválení vyžadováno", event.action)
             }
+            is com.jervis.dto.events.JervisEvent.ConnectionStateChanged -> {
+                println("Connection state changed: ${event.connectionName} → ${event.newState}")
+                MacOSUtils.showNotification("Připojení", event.message)
+            }
         }
     }
 
