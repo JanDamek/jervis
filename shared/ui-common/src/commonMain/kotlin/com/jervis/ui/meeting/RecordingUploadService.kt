@@ -169,12 +169,11 @@ class RecordingUploadService(
             if (activeSessions.isEmpty()) return
 
             val connState = connectionManager.state.value
-            platformLog("Upload", "Cycle: ${activeSessions.size} active sessions, connection=$connState")
-
             if (connState !is RpcConnectionState.Connected) {
-                platformLog("Upload", "Not connected — skipping cycle")
+                platformLog("Upload", "Cycle skipped — not connected (${activeSessions.size} sessions pending)")
                 return
             }
+            platformLog("Upload", "Cycle: ${activeSessions.size} active sessions")
 
             // Process each session sequentially
             for (session in activeSessions) {
