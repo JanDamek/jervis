@@ -6,6 +6,7 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.teams.TeamsMessageIndexDocument
 import com.jervis.repository.TeamsMessageIndexRepository
 import com.jervis.service.background.TaskService
+import com.jervis.configuration.DocumentExtractionClient
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +34,7 @@ private val logger = KotlinLogging.logger {}
 class TeamsContinuousIndexer(
     private val repository: TeamsMessageIndexRepository,
     private val taskService: TaskService,
+    private val documentExtractionClient: DocumentExtractionClient,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -114,7 +116,7 @@ class TeamsContinuousIndexer(
         logger.debug { "Indexed Teams message: $taskName" }
     }
 
-    private fun buildMessageContent(doc: TeamsMessageIndexDocument): String = buildString {
+    private suspend fun buildMessageContent(doc: TeamsMessageIndexDocument): String = buildString {
         val context = when {
             doc.channelDisplayName != null ->
                 "Team: ${doc.teamDisplayName ?: "?"} / Channel: ${doc.channelDisplayName}"
@@ -132,12 +134,12 @@ class TeamsContinuousIndexer(
 
         val body = doc.body
         if (!body.isNullOrBlank()) {
-            if (doc.bodyContentType == "html") {
-                // Strip basic HTML tags for plain text indexing
-                append(body.replace(Regex("<[^>]+>"), "").trim())
+            val plainText = if (doc.bodyContentType == "html") {
+                documentExtractionClient.extractText(body, "text/html")
             } else {
-                append(body.trim())
+                body.trim()
             }
+            append(plainText)
             appendLine()
         }
 
