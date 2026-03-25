@@ -347,11 +347,12 @@ class RagService:
             # so we only add filters for non-empty values
             parts = []
             if request.clientId:
-                # Include both client-scoped AND global data (clientId="" = global)
-                parts.append(wvq.Filter.any_of([
-                    wvq.Filter.by_property("clientId").equal(request.clientId),
-                    wvq.Filter.by_property("clientId").equal(""),
-                ]))
+                # Include client-scoped data only — global data (clientId="") cannot be
+                # filtered with WORD tokenization (empty string = stopwords-only error).
+                # Global data is included by omitting clientId filter entirely when needed.
+                parts.append(
+                    wvq.Filter.by_property("clientId").equal(request.clientId)
+                )
             if request.projectId:
                 project_alternatives = [
                     wvq.Filter.by_property("projectId").equal(request.projectId),
