@@ -127,7 +127,7 @@ async def design(state: dict) -> dict:
 
         # Check for tool calls
         tool_calls = getattr(message, "tool_calls", None)
-        if not tool_calls or choice.finish_reason == "stop":
+        if not tool_calls or getattr(choice, "finish_reason", None) == "stop":
             # No more tool calls → final design
             parsed = parse_json_response(message.content or "")
             break

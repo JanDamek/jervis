@@ -249,7 +249,7 @@ async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -
 
         # Check for tool calls
         tool_calls = getattr(message, "tool_calls", None)
-        if not tool_calls or choice.finish_reason == "stop":
+        if not tool_calls or getattr(choice, "finish_reason", None) == "stop":
             content = message.content or ""
             result = _parse_goals_result(content, task.query, complexity)
             logger.info("Planned %d coding goals after %d iterations", len(result["goals"]), iteration)

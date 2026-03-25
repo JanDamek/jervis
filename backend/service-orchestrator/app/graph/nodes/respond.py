@@ -237,7 +237,7 @@ async def respond(state: dict) -> dict:
 
         logger.info(
             "Respond: LLM response - finish_reason=%s, has_content=%s, content_len=%d, has_tool_calls=%s",
-            choice.finish_reason,
+            getattr(choice, "finish_reason", None),
             bool(message.content),
             len(message.content or ""),
             bool(getattr(message, "tool_calls", None)),

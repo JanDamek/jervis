@@ -113,7 +113,7 @@ async def call_llm(
         content = getattr(msg, "content", None) or ""
         tool_calls = getattr(msg, "tool_calls", None)
         if not content.strip() and not tool_calls:
-            finish = result.choices[0].finish_reason
+            finish = getattr(result.choices[0], "finish_reason", None)
             logger.warning("Empty response from OpenRouter %s (finish_reason=%s), retrying",
                            model_override, finish)
             from app.llm.router_client import report_model_error
@@ -187,7 +187,7 @@ async def _retry_with_next_model(
             content = getattr(msg, "content", None) or ""
             tool_calls = getattr(msg, "tool_calls", None)
             if not content.strip() and not tool_calls:
-                finish = result.choices[0].finish_reason
+                finish = getattr(result.choices[0], "finish_reason", None)
                 logger.warning("Fallback model %s also returned empty (finish_reason=%s)",
                                fallback.model, finish)
                 await report_model_error(
