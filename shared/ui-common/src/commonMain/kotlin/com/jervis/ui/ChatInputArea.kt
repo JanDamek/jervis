@@ -28,7 +28,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -39,6 +42,8 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.jervis.ui.design.JIconButton
 import com.jervis.ui.design.JTextField
@@ -78,6 +83,16 @@ internal fun InputArea(
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
+
+    // Internal TextFieldValue to track cursor position
+    var textFieldValue by remember { mutableStateOf(TextFieldValue(inputText)) }
+
+    // Sync from external String → internal TextFieldValue (when parent changes text, e.g. clear after send)
+    LaunchedEffect(inputText) {
+        if (textFieldValue.text != inputText) {
+            textFieldValue = TextFieldValue(inputText, TextRange(inputText.length))
+        }
+    }
 
     LaunchedEffect(requestFocus) {
         if (requestFocus) focusRequester.requestFocus()
@@ -147,8 +162,11 @@ internal fun InputArea(
                 }
 
                 JTextField(
-                    value = inputText,
-                    onValueChange = onInputChanged,
+                    value = textFieldValue,
+                    onValueChange = { newValue ->
+                        textFieldValue = newValue
+                        onInputChanged(newValue.text)
+                    },
                     label = "",
                     placeholder = placeholder,
                     enabled = enabled,
@@ -159,7 +177,11 @@ internal fun InputArea(
                         .onPreviewKeyEvent { keyEvent ->
                             if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown) {
                                 if (keyEvent.isShiftPressed) {
-                                    onInputChanged(inputText + "\n")
+                                    val cursorPos = textFieldValue.selection.start
+                                    val newText = textFieldValue.text.substring(0, cursorPos) + "\n" + textFieldValue.text.substring(cursorPos)
+                                    val newCursor = cursorPos + 1
+                                    textFieldValue = TextFieldValue(newText, TextRange(newCursor))
+                                    onInputChanged(newText)
                                     true
                                 } else {
                                     if (enabled && inputText.isNotBlank()) onSendClick()

@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import com.jervis.di.OfflineException
 import com.jervis.di.RpcConnectionManager
 import com.jervis.di.RpcConnectionState
+import com.jervis.dto.events.JervisEvent
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,8 +28,6 @@ sealed class ConnectionStatus {
     data class Disconnected(
         val error: String,
     ) : ConnectionStatus()
-
-    data object Offline : ConnectionStatus()
 }
 
 /**
@@ -36,21 +35,22 @@ sealed class ConnectionStatus {
  * Delegates to [RpcConnectionManager] for actual connection lifecycle.
  */
 class ConnectionManager(
-    private val serverBaseUrl: String,
+    serverBaseUrl: String,
 ) {
     var status by mutableStateOf<ConnectionStatus>(ConnectionStatus.Connecting)
         private set
 
     // Eager non-nullable repository — services lambda is only called on actual RPC invocations,
     // not at construction time. If offline, throws OfflineException which callers handle.
-    val repository: JervisRepository = JervisRepository {
-        rpcConnectionManager.getServices() ?: throw OfflineException()
-    }
+    val repository: JervisRepository =
+        JervisRepository {
+            rpcConnectionManager.getServices() ?: throw OfflineException()
+        }
 
     var taskBadgeCount by mutableStateOf(0)
         private set
 
-    var errorNotifications by mutableStateOf<List<com.jervis.dto.events.JervisEvent.ErrorNotification>>(emptyList())
+    var errorNotifications by mutableStateOf<List<JervisEvent.ErrorNotification>>(emptyList())
         private set
 
     val rpcConnectionManager = RpcConnectionManager(serverBaseUrl)
@@ -80,9 +80,11 @@ class ConnectionManager(
                             println("Desktop: Failed to start event stream after connect: ${e.message}")
                         }
                     }
+
                     is RpcConnectionState.Connecting -> {
                         status = ConnectionStatus.Connecting
                     }
+
                     is RpcConnectionState.Disconnected -> {
                         status = ConnectionStatus.Disconnected("Connection lost")
                     }
@@ -96,52 +98,69 @@ class ConnectionManager(
 
     private fun startEventStream(clientId: String) {
         eventJob?.cancel()
-        eventJob = scope.launch {
-            rpcConnectionManager.resilientFlow { services ->
-                services.notificationService.subscribeToEvents(clientId)
-            }.collect { event ->
-                handleEvent(event)
+        eventJob =
+            scope.launch {
+                rpcConnectionManager
+                    .resilientFlow { services ->
+                        services.notificationService.subscribeToEvents(clientId)
+                    }.collect { event ->
+                        handleEvent(event)
+                    }
             }
-        }
     }
 
-    private suspend fun handleEvent(event: com.jervis.dto.events.JervisEvent) {
+    private suspend fun handleEvent(event: JervisEvent) {
         when (event) {
-            is com.jervis.dto.events.JervisEvent.UserTaskCreated -> {
+            is JervisEvent.UserTaskCreated -> {
                 println("User task created: ${event.title} (approval=${event.isApproval}, action=${event.interruptAction})")
                 updateTaskBadge()
                 val notifTitle = if (event.isApproval) "Schválení vyžadováno" else "Nová úloha"
                 MacOSUtils.showNotification(notifTitle, event.title)
             }
 
-            is com.jervis.dto.events.JervisEvent.UserTaskCancelled -> {
+            is JervisEvent.UserTaskCancelled -> {
                 println("User task cancelled: ${event.title}")
                 updateTaskBadge()
             }
 
-            is com.jervis.dto.events.JervisEvent.PendingTaskCreated -> {
+            is JervisEvent.PendingTaskCreated -> {
                 // Ignore for badge
             }
 
-            is com.jervis.dto.events.JervisEvent.ErrorNotification -> {
+            is JervisEvent.ErrorNotification -> {
                 println("Error: ${event.message}")
                 errorNotifications = errorNotifications + event
                 MacOSUtils.showNotification("Error", event.message)
             }
 
-            is com.jervis.dto.events.JervisEvent.MeetingStateChanged -> { /* handled by MeetingViewModel */ }
-            is com.jervis.dto.events.JervisEvent.MeetingTranscriptionProgress -> { /* handled by MeetingViewModel */ }
-            is com.jervis.dto.events.JervisEvent.MeetingCorrectionProgress -> { /* handled by MeetingViewModel */ }
-            is com.jervis.dto.events.JervisEvent.OrchestratorTaskProgress -> { /* handled by MainViewModel */ }
-            is com.jervis.dto.events.JervisEvent.OrchestratorTaskStatusChange -> { /* handled by MainViewModel */ }
-            is com.jervis.dto.events.JervisEvent.QualificationProgress -> { /* handled by MainViewModel */ }
-            is com.jervis.dto.events.JervisEvent.MemoryGraphChanged -> { /* handled by MainViewModel */ }
-            is com.jervis.dto.events.JervisEvent.ApprovalRequired -> {
+            is JervisEvent.MeetingStateChanged -> { // handled by MeetingViewModel
+            }
+
+            is JervisEvent.MeetingTranscriptionProgress -> { // handled by MeetingViewModel
+            }
+
+            is JervisEvent.MeetingCorrectionProgress -> { // handled by MeetingViewModel
+            }
+
+            is JervisEvent.OrchestratorTaskProgress -> { // handled by MainViewModel
+            }
+
+            is JervisEvent.OrchestratorTaskStatusChange -> { // handled by MainViewModel
+            }
+
+            is JervisEvent.QualificationProgress -> { // handled by MainViewModel
+            }
+
+            is JervisEvent.MemoryGraphChanged -> { // handled by MainViewModel
+            }
+
+            is JervisEvent.ApprovalRequired -> {
                 println("Approval required: ${event.action}")
                 updateTaskBadge()
                 MacOSUtils.showNotification("Schválení vyžadováno", event.action)
             }
-            is com.jervis.dto.events.JervisEvent.ConnectionStateChanged -> {
+
+            is JervisEvent.ConnectionStateChanged -> {
                 println("Connection state changed: ${event.connectionName} → ${event.newState}")
                 MacOSUtils.showNotification("Připojení", event.message)
             }
@@ -166,13 +185,6 @@ class ConnectionManager(
         } catch (e: Exception) {
             println("Failed to update badge: ${e.message}")
         }
-    }
-
-    /**
-     * Manually disconnect
-     */
-    fun disconnect() {
-        status = ConnectionStatus.Offline
     }
 }
 
