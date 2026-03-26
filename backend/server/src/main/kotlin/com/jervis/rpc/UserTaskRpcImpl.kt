@@ -18,9 +18,16 @@ import com.jervis.service.IUserTaskService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.background.TaskService
 import com.jervis.service.task.UserTaskService
+import io.ktor.client.HttpClient
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.time.Instant
 
@@ -33,6 +40,9 @@ class UserTaskRpcImpl(
     private val chatMessageRepository: com.jervis.repository.ChatMessageRepository,
     private val taskRepository: com.jervis.repository.TaskRepository,
     private val chatService: com.jervis.service.chat.ChatService,
+    private val httpClient: HttpClient,
+    @Value("\${jervis.o365-browser-pool.url:http://jervis-o365-browser-pool:8090}")
+    private val browserPoolUrl: String,
 ) : IUserTaskService {
     private val logger = KotlinLogging.logger {}
 
@@ -97,6 +107,14 @@ class UserTaskRpcImpl(
         // Input validation
         if (additionalInput != null && additionalInput.length > 5000) {
             throw IllegalArgumentException("Additional input is too long (max 5000 characters)")
+        }
+
+        // O365 MFA code forwarding — intercept before regular task routing
+        if (task.sourceUrn.value.contains("o365-browser-pool") &&
+            !additionalInput.isNullOrBlank() &&
+            additionalInput.trim().length <= 10 // MFA codes are short (4-8 digits)
+        ) {
+            return handleO365MfaResponse(task, additionalInput.trim())
         }
 
         try {
@@ -304,5 +322,48 @@ class UserTaskRpcImpl(
 
         // Notify client that task state changed
         notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
+    }
+
+    /**
+     * Forward MFA code to O365 browser pool and mark the task as done.
+     * This is called when a user responds to an O365 MFA UserTask notification.
+     * The code is forwarded to the browser pool's /session/{clientId}/mfa endpoint.
+     * For authenticator_number type (no code needed), user just approves in Authenticator app —
+     * the browser pool polling loop handles that automatically.
+     */
+    private suspend fun handleO365MfaResponse(
+        task: com.jervis.entity.TaskDocument,
+        mfaCode: String,
+    ): UserTaskDto {
+        // actionType stores the browser pool client ID (= connection._id)
+        val browserPoolClientId = task.actionType
+            ?: throw IllegalStateException("O365 MFA task missing browser pool client ID")
+
+        logger.info { "O365_MFA_RESPONSE | taskId=${task.id} | browserPoolClient=$browserPoolClientId | forwarding code" }
+
+        try {
+            val response = httpClient.post("$browserPoolUrl/session/$browserPoolClientId/mfa") {
+                contentType(ContentType.Application.Json)
+                setBody("""{"code":"$mfaCode"}""")
+            }
+
+            val responseText = response.bodyAsText()
+            logger.info { "O365_MFA_FORWARD | status=${response.status} | response=$responseText" }
+
+            // Mark the MFA task as done regardless of result
+            // (browser pool will send new notification if MFA fails)
+            val updated = task.copy(state = TaskStateEnum.DONE)
+            taskRepository.save(updated)
+            notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
+
+        } catch (e: Exception) {
+            logger.error(e) { "O365_MFA_FORWARD_FAILED | taskId=${task.id}" }
+            // Still mark as done — browser pool will re-notify if needed
+            val updated = task.copy(state = TaskStateEnum.DONE)
+            taskRepository.save(updated)
+            notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
+        }
+
+        return task.toUserTaskDto()
     }
 }

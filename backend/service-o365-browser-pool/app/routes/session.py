@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
-from app.auto_login import LoginStage, auto_login, submit_mfa_code
+from app.auto_login import LoginStage, MfaType, auto_login, poll_mfa_approval, submit_mfa_code
 from app.browser_manager import BrowserManager
 from app.kotlin_callback import notify_capabilities_discovered, notify_session_state
 from app.models import (
@@ -42,6 +42,46 @@ def create_session_router(
     _mfa_state: dict[str, dict] = {}
     # Track crawl tasks per client
     _crawl_tasks: dict[str, asyncio.Task] = {}
+    # Track MFA approval polling tasks per client
+    _mfa_poll_tasks: dict[str, asyncio.Task] = {}
+
+    async def _activate_session(client_id: str, context) -> None:
+        """Common activation steps after successful login (direct or MFA).
+
+        Sets up tabs, discovers capabilities, starts scraping and crawling.
+        """
+        browser_manager.set_state(client_id, SessionState.ACTIVE)
+        await browser_manager.save_state(client_id)
+        _mfa_state.pop(client_id, None)
+
+        caps = _client_capabilities.get(client_id, [])
+        await tab_manager.setup_tabs(client_id, context, caps)
+        available = tab_manager.get_available_capabilities(client_id)
+        await notify_capabilities_discovered(client_id, client_id, available)
+        screen_scraper.set_connection_id(client_id, client_id)
+        await screen_scraper.start_scraping(client_id)
+        await _trigger_crawl(client_id, context)
+
+    async def _poll_and_activate(client_id: str, page, context) -> None:
+        """Background task: poll MFA approval, activate session on success."""
+        try:
+            result = await poll_mfa_approval(page, timeout_seconds=120)
+
+            if result.stage == LoginStage.LOGGED_IN:
+                logger.info("MFA approved for %s — activating session", client_id)
+                await _activate_session(client_id, context)
+            else:
+                logger.warning("MFA polling ended for %s: %s", client_id, result.error)
+                browser_manager.set_state(client_id, SessionState.ERROR)
+                await notify_session_state(
+                    client_id, client_id, "EXPIRED",
+                    mfa_message="MFA ověření vypršelo — spusťte přihlášení znovu",
+                )
+        except Exception as e:
+            logger.error("MFA poll task failed for %s: %s", client_id, e)
+            browser_manager.set_state(client_id, SessionState.ERROR)
+        finally:
+            _mfa_poll_tasks.pop(client_id, None)
 
     async def _trigger_crawl(client_id: str, context) -> None:
         """Start Teams crawl in background after session activation."""
@@ -192,20 +232,8 @@ def create_session_router(
             result = await auto_login(page, req.username, req.password, req.login_url)
 
             if result.stage == LoginStage.LOGGED_IN:
-                browser_manager.set_state(client_id, SessionState.ACTIVE)
-                await browser_manager.save_state(client_id)
-                _mfa_state.pop(client_id, None)
                 logger.info("Auto-login successful for %s", client_id)
-
-                # Set up tabs and start scraping
-                caps = _client_capabilities.get(client_id, [])
-                await tab_manager.setup_tabs(client_id, context, caps)
-                available = tab_manager.get_available_capabilities(client_id)
-                await notify_capabilities_discovered(client_id, client_id, available)
-                screen_scraper.set_connection_id(client_id, client_id)
-                await screen_scraper.start_scraping(client_id)
-                # Auto-crawl Teams chats
-                await _trigger_crawl(client_id, context)
+                await _activate_session(client_id, context)
 
                 return SessionInitResponse(
                     client_id=client_id,
@@ -225,13 +253,26 @@ def create_session_router(
                     "Auto-login: MFA required for %s — %s",
                     client_id, result.mfa_type,
                 )
-                # Notify Kotlin server (creates USER_TASK if user not in settings)
+                # Notify Kotlin server (creates USER_TASK notification)
                 await notify_session_state(
                     client_id, client_id, "AWAITING_MFA",
                     mfa_type=mfa_type_val,
                     mfa_message=result.mfa_message,
                     mfa_number=result.mfa_number,
                 )
+
+                # For authenticator_number: start background polling
+                # (user approves in Authenticator app, page auto-transitions)
+                if result.mfa_type == MfaType.AUTHENTICATOR_NUMBER:
+                    # Cancel any existing poll task
+                    old_task = _mfa_poll_tasks.pop(client_id, None)
+                    if old_task and not old_task.done():
+                        old_task.cancel()
+                    _mfa_poll_tasks[client_id] = asyncio.create_task(
+                        _poll_and_activate(client_id, page, context)
+                    )
+                    logger.info("Started MFA approval polling for %s", client_id)
+
                 return SessionInitResponse(
                     client_id=client_id,
                     state=SessionState.AWAITING_MFA,
@@ -307,23 +348,17 @@ def create_session_router(
             )
 
         page = context.pages[0]
+
+        # Cancel any running MFA poll task (user submitted code manually)
+        old_poll = _mfa_poll_tasks.pop(client_id, None)
+        if old_poll and not old_poll.done():
+            old_poll.cancel()
+
         result = await submit_mfa_code(page, code)
 
         if result.stage == LoginStage.LOGGED_IN:
-            browser_manager.set_state(client_id, SessionState.ACTIVE)
-            await browser_manager.save_state(client_id)
-            _mfa_state.pop(client_id, None)
             logger.info("MFA verified, session active for %s", client_id)
-
-            # Set up tabs and start scraping
-            caps = _client_capabilities.get(client_id, [])
-            await tab_manager.setup_tabs(client_id, context, caps)
-            available = tab_manager.get_available_capabilities(client_id)
-            await notify_capabilities_discovered(client_id, client_id, available)
-            screen_scraper.set_connection_id(client_id, client_id)
-            await screen_scraper.start_scraping(client_id)
-            # Auto-crawl Teams chats
-            await _trigger_crawl(client_id, context)
+            await _activate_session(client_id, context)
 
             return SessionInitResponse(
                 client_id=client_id,

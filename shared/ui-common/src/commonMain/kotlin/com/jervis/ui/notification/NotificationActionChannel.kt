@@ -19,6 +19,8 @@ object NotificationActionChannel {
 data class NotificationActionResult(
     val taskId: String,
     val action: NotificationAction,
+    /** Text reply from inline notification input (e.g. MFA code). */
+    val replyText: String? = null,
 )
 
 /**
@@ -33,4 +35,7 @@ enum class NotificationAction {
 
     /** User tapped notification to open the app */
     OPEN,
+
+    /** User replied inline (e.g. MFA code from notification) */
+    REPLY,
 }

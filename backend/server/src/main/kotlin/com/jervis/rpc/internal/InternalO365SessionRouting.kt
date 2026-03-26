@@ -97,6 +97,7 @@ fun Routing.installInternalO365SessionApi(
                         taskRepository, notificationRpc, fcmPushService, apnsPushService,
                         clientId, connection.name, title, description,
                         interruptAction = "o365_mfa",
+                        browserPoolClientId = body.connectionId,
                     )
                 }
 
@@ -112,6 +113,7 @@ fun Routing.installInternalO365SessionApi(
                         taskRepository, notificationRpc, fcmPushService, apnsPushService,
                         clientId, connection.name, title, description,
                         interruptAction = "o365_relogin",
+                        browserPoolClientId = body.connectionId,
                     )
                 }
 
@@ -146,6 +148,7 @@ private suspend fun createSessionNotification(
     title: String,
     description: String,
     interruptAction: String,
+    browserPoolClientId: String? = null,
 ) {
     // Check if UI has active subscribers — skip push if app is open
     val hasActiveUi = notificationRpc.hasActiveSubscribers(clientId.toString())
@@ -161,6 +164,8 @@ private suspend fun createSessionNotification(
         userQuestionContext = description,
         priorityScore = 70, // High priority — needs immediate attention
         lastActivityAt = Instant.now(),
+        // Store browser pool client ID for MFA code forwarding
+        actionType = browserPoolClientId,
     )
     taskRepository.save(task)
 

@@ -62,6 +62,23 @@ class NotificationViewModel(
                     NotificationAction.DENY -> {
                         // Deny from notification → show in-app dialog for reason input
                     }
+                    NotificationAction.REPLY -> {
+                        // Inline reply (e.g. MFA code from notification RemoteInput)
+                        val text = result.replyText
+                        if (!text.isNullOrBlank()) {
+                            try {
+                                repository.userTasks.sendToAgent(
+                                    taskId = result.taskId,
+                                    routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                                    additionalInput = text,
+                                )
+                                refreshUserTaskCount()
+                            } catch (e: Exception) {
+                                println("Failed to reply to task ${result.taskId}: ${e.message}")
+                            }
+                            _userTaskDialogEvent.value = null
+                        }
+                    }
                     NotificationAction.OPEN -> {
                         // Navigate to user tasks — handled by UI layer
                     }

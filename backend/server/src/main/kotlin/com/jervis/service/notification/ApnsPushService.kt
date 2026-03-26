@@ -88,12 +88,18 @@ class ApnsPushService(
         logger.info { "Sending APNs push to ${tokens.size} iOS device(s) for client=$clientId" }
 
         val isApproval = data["isApproval"] == "true"
+        val isUrgent = data["interruptAction"] in listOf("o365_mfa", "o365_relogin")
 
         val payloadBuilder = SimpleApnsPayloadBuilder()
             .setAlertTitle(title)
             .setAlertBody(body)
-            .setSound("default")
+            .setSound(if (isUrgent) "default" else "default")
             .setContentAvailable(true)
+
+        // time-sensitive: immediate delivery, bypasses Focus/DND for 1 hour
+        if (isUrgent) {
+            payloadBuilder.addCustomProperty("interruption-level", "time-sensitive")
+        }
 
         // Set category for actionable notifications (Approve/Deny buttons)
         if (isApproval) {
@@ -112,7 +118,20 @@ class ApnsPushService(
         for (tokenDoc in tokens) {
             try {
                 val sanitizedToken = TokenUtil.sanitizeTokenString(tokenDoc.token)
-                val notification = SimpleApnsPushNotification(sanitizedToken, bundleId, payload)
+                val expiration = if (isUrgent) {
+                    java.time.Instant.now().plusSeconds(120) // 2 min TTL for MFA
+                } else {
+                    java.time.Instant.now().plusSeconds(86400)
+                }
+                val priority = if (isUrgent) {
+                    com.eatthepath.pushy.apns.DeliveryPriority.IMMEDIATE
+                } else {
+                    com.eatthepath.pushy.apns.DeliveryPriority.CONSERVE_POWER
+                }
+                val notification = SimpleApnsPushNotification(
+                    sanitizedToken, bundleId, payload, expiration, priority,
+                    com.eatthepath.pushy.apns.PushType.ALERT,
+                )
                 val response = client.sendNotification(notification).get()
 
                 if (response.isAccepted) {

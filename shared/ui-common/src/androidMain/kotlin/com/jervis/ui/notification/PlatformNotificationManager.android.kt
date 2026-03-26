@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 
 /**
@@ -27,6 +28,8 @@ actual class PlatformNotificationManager actual constructor() {
         const val CHANNEL_TASKS = "jervis_tasks"
         const val ACTION_APPROVE = "com.jervis.APPROVE"
         const val ACTION_DENY = "com.jervis.DENY"
+        const val ACTION_REPLY = "com.jervis.REPLY"
+        const val KEY_MFA_CODE = "mfa_code"
     }
 
     actual fun initialize() {
@@ -130,6 +133,28 @@ actual class PlatformNotificationManager actual constructor() {
 
             builder.addAction(0, "Povolit", approvePi)
             builder.addAction(0, "Zamítnout", denyPi)
+        }
+
+        // Add inline reply for MFA code input (authenticator_code, sms_code)
+        if (interruptAction == "o365_mfa" && taskId != null) {
+            val replyIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+                action = ACTION_REPLY
+                putExtra("taskId", taskId)
+            }
+            val replyPi = PendingIntent.getBroadcast(
+                context,
+                notificationId * 2 + 2,
+                replyIntent,
+                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val remoteInput = RemoteInput.Builder(KEY_MFA_CODE)
+                .setLabel("MFA kód")
+                .build()
+            val replyAction = NotificationCompat.Action.Builder(0, "Zadat kód", replyPi)
+                .addRemoteInput(remoteInput)
+                .setAllowGeneratedReplies(false)
+                .build()
+            builder.addAction(replyAction)
         }
 
         // Tap opens the app

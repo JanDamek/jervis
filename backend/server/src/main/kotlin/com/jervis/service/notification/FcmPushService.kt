@@ -69,14 +69,27 @@ class FcmPushService(
 
         for (tokenDoc in tokens) {
             try {
-                val message = com.google.firebase.messaging.Message.builder()
+                val isUrgent = data["interruptAction"] in listOf("o365_mfa", "o365_relogin")
+
+                val messageBuilder = com.google.firebase.messaging.Message.builder()
                     .setToken(tokenDoc.token)
                     .putAllData(data + mapOf(
                         "title" to title,
                         "body" to body,
                         "clientId" to clientId,
                     ))
-                    .build()
+
+                // MFA notifications need immediate delivery with short TTL
+                if (isUrgent) {
+                    messageBuilder.setAndroidConfig(
+                        com.google.firebase.messaging.AndroidConfig.builder()
+                            .setPriority(com.google.firebase.messaging.AndroidConfig.Priority.HIGH)
+                            .setTtl(120_000) // 2 minutes — MFA has a short window
+                            .build()
+                    )
+                }
+
+                val message = messageBuilder.build()
 
                 messaging.send(message)
                 logger.debug { "Push sent to device=${tokenDoc.deviceId} platform=${tokenDoc.platform}" }

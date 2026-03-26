@@ -505,6 +505,49 @@ async def submit_mfa_code(page: Page, code: str) -> LoginResult:
         return LoginResult(stage=LoginStage.ERROR, error=str(e))
 
 
+async def poll_mfa_approval(page: Page, timeout_seconds: int = 120) -> LoginResult:
+    """Poll page for MFA approval completion (authenticator_number type).
+
+    When the user approves in Microsoft Authenticator, the login page
+    auto-transitions. We poll every 3s to detect the transition.
+    Returns LOGGED_IN on success, ERROR on timeout or failure.
+    """
+    import time
+    start = time.time()
+    logger.info("Polling for MFA approval (timeout=%ds)", timeout_seconds)
+
+    while time.time() - start < timeout_seconds:
+        try:
+            stage = await _detect_stage(page)
+
+            if stage == LoginStage.STAY_SIGNED_IN:
+                await _handle_stay_signed_in(page)
+                logger.info("MFA approved — login complete")
+                return LoginResult(stage=LoginStage.LOGGED_IN)
+
+            if stage == LoginStage.LOGGED_IN:
+                logger.info("MFA approved — login complete")
+                return LoginResult(stage=LoginStage.LOGGED_IN)
+
+            if stage == LoginStage.ERROR:
+                error_text = await _get_error_text(page)
+                logger.warning("MFA approval failed: %s", error_text)
+                return LoginResult(
+                    stage=LoginStage.ERROR,
+                    error=f"MFA approval failed: {error_text}",
+                )
+        except Exception as e:
+            logger.warning("MFA polling error: %s", e)
+
+        await asyncio.sleep(3)
+
+    logger.warning("MFA approval timed out after %ds", timeout_seconds)
+    return LoginResult(
+        stage=LoginStage.ERROR,
+        error="MFA approval timeout — user did not approve in time",
+    )
+
+
 # ─── Internal helpers ───
 
 
