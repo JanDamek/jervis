@@ -1,6 +1,6 @@
 package com.jervis.ui.meeting
 
-import com.jervis.dto.ProjectDto
+import com.jervis.dto.project.ProjectDto
 import com.jervis.dto.filterVisible
 import com.jervis.dto.meeting.AudioInputType
 import com.jervis.dto.meeting.MeetingClassifyDto
@@ -22,7 +22,7 @@ import com.jervis.di.postSseStream
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import com.jervis.dto.events.JervisEvent
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.audio.AudioPlayer
 import com.jervis.ui.audio.AudioRecorder
 import com.jervis.ui.audio.AudioRecordingConfig

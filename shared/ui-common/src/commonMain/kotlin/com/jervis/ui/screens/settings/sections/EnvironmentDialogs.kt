@@ -14,7 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ClientDto
+import com.jervis.dto.client.ClientDto
 import com.jervis.dto.filterVisible
 import com.jervis.dto.environment.ComponentTemplateDto
 import com.jervis.dto.environment.ComponentTypeEnum
@@ -22,7 +22,7 @@ import com.jervis.dto.environment.ComponentVersionDto
 import com.jervis.dto.environment.EnvironmentComponentDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentTierEnum
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JFormDialog
 import com.jervis.ui.design.JTextField
@@ -196,7 +196,7 @@ fun NewEnvironmentDialog(
     var selectedScope by remember { mutableStateOf(EnvironmentScope.CLIENT) }
     var groups by remember { mutableStateOf<List<com.jervis.dto.ProjectGroupDto>>(emptyList()) }
     var selectedGroupId by remember { mutableStateOf<String?>(null) }
-    var projects by remember { mutableStateOf<List<com.jervis.dto.ProjectDto>>(emptyList()) }
+    var projects by remember { mutableStateOf<List<com.jervis.dto.project.ProjectDto>>(emptyList()) }
     var selectedProjectId by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }

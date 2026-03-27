@@ -2,7 +2,7 @@ package com.jervis.ui.notification
 
 import com.google.firebase.messaging.FirebaseMessaging
 import com.jervis.dto.notification.DeviceTokenDto
-import com.jervis.service.IDeviceTokenService
+import com.jervis.service.notification.IDeviceTokenService
 import kotlinx.coroutines.tasks.await
 
 actual object PushTokenRegistrar {

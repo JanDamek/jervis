@@ -1,9 +1,9 @@
 package com.jervis.ui.queue
 
 import com.jervis.di.RpcConnectionManager
-import com.jervis.dto.ChatResponseType
+import com.jervis.dto.chat.ChatResponseType
 import com.jervis.dto.events.JervisEvent
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.model.AgentActivityEntry
 import com.jervis.ui.model.AgentActivityLog
 import com.jervis.ui.model.NodeEntry
@@ -530,7 +530,7 @@ class QueueViewModel(
         }
     }
 
-    private fun com.jervis.dto.TaskHistoryEntryDto.toUiEntry(): TaskHistoryEntry {
+    private fun com.jervis.dto.task.TaskHistoryEntryDto.toUiEntry(): TaskHistoryEntry {
         return TaskHistoryEntry(
             taskId = taskId,
             taskPreview = taskPreview,

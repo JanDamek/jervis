@@ -9,12 +9,12 @@ import com.jervis.ui.audio.AudioRecorder
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import com.jervis.dto.ChatResponseType
-import com.jervis.dto.CompressionBoundaryDto
+import com.jervis.dto.chat.ChatResponseType
+import com.jervis.dto.chat.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
-import com.jervis.repository.JervisRepository
-import com.jervis.service.IJobLogsService
+import com.jervis.di.JervisRepository
+import com.jervis.service.meeting.IJobLogsService
 import com.jervis.ui.model.PendingMessageInfo
 import com.jervis.ui.model.classifySendError
 import com.jervis.ui.storage.PendingMessageState
@@ -23,7 +23,7 @@ import com.jervis.ui.storage.isExpired
 import com.jervis.ui.util.PickedFile
 import com.jervis.ui.util.currentVoiceSource
 import com.jervis.ui.util.pickFile
-import com.jervis.dto.AttachmentDto
+import com.jervis.dto.chat.AttachmentDto
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.ExperimentalUuidApi
@@ -802,21 +802,21 @@ class ChatViewModel(
                     filterGroupId = currentFilterGroupId,
                 )
                 val olderMessages = history.messages.map { msg ->
-                    val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
+                    val sender = if (msg.role == com.jervis.dto.chat.ChatRole.USER) {
                         ChatMessage.Sender.Me
                     } else {
                         ChatMessage.Sender.Assistant
                     }
                     val msgType = when (msg.role) {
-                        com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
-                        com.jervis.dto.ChatRole.BACKGROUND -> {
+                        com.jervis.dto.chat.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
+                        com.jervis.dto.chat.ChatRole.BACKGROUND -> {
                             if (msg.metadata["sender"] == "thinking_graph") {
                                 ChatMessage.MessageType.THINKING_GRAPH_UPDATE
                             } else {
                                 ChatMessage.MessageType.BACKGROUND_RESULT
                             }
                         }
-                        com.jervis.dto.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
+                        com.jervis.dto.chat.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
                         else -> ChatMessage.MessageType.FINAL
                     }
                     ChatMessage(
@@ -1196,14 +1196,14 @@ class ChatViewModel(
         _backgroundMessageCount.value = history.backgroundMessageCount
         _userTaskCount.value = history.userTaskCount
         val newMessages = history.messages.map { msg ->
-            val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
+            val sender = if (msg.role == com.jervis.dto.chat.ChatRole.USER) {
                 ChatMessage.Sender.Me
             } else {
                 ChatMessage.Sender.Assistant
             }
             val msgType = when (msg.role) {
-                com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
-                com.jervis.dto.ChatRole.BACKGROUND -> {
+                com.jervis.dto.chat.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
+                com.jervis.dto.chat.ChatRole.BACKGROUND -> {
                     // Distinguish thinking graph updates from regular background results
                     if (msg.metadata["sender"] == "thinking_graph") {
                         ChatMessage.MessageType.THINKING_GRAPH_UPDATE
@@ -1211,7 +1211,7 @@ class ChatViewModel(
                         ChatMessage.MessageType.BACKGROUND_RESULT
                     }
                 }
-                com.jervis.dto.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
+                com.jervis.dto.chat.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
                 else -> ChatMessage.MessageType.FINAL
             }
             ChatMessage(

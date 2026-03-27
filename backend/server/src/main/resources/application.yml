@@ -111,30 +111,19 @@ link:
   indexing:
     skip-if-indexed-within: 30d    # Don't re-index URLs crawled within this period
 
-# -- Coding tools (Aider, OpenHands, Junie) ------------------------------------
-# Each tool has default (local Ollama) and paid (cloud API) provider+model pairs.
+# -- Coding agents ---------------------------------------------------------------
+# Available coding agents. Selection is per-project (never mix two on same project).
 coding-tools:
-  aider:
-    default-provider: ollama       # Uses GPU instance (:11434)
-    default-model: qwen3-coder-tool:30b
-    paid-provider: anthropic
-    paid-model: claude-3-5-sonnet-20241022
-  openhands:
-    default-provider: ollama
-    default-model: qwen3-coder-tool:30b
-    paid-provider: anthropic
-    paid-model: claude-3-5-sonnet-20241022
-    ollama-base-url: http://192.168.100.117:11434  # OpenHands needs direct Ollama URL
-  junie:
-    default-provider: anthropic    # Junie always uses cloud (no local default)
-    default-model: claude-3-5-sonnet-20241022
-    paid-provider: anthropic
-    paid-model: claude-3-5-sonnet-20241022
   claude:
-    default-provider: anthropic    # Claude CLI agent (cloud only)
-    default-model: claude-3-5-sonnet-20241022
+    default-provider: anthropic
+    default-model: claude-sonnet-4-20250514
     paid-provider: anthropic
-    paid-model: claude-3-5-sonnet-20241022
+    paid-model: claude-sonnet-4-20250514
+  kilo:
+    default-provider: anthropic
+    default-model: claude-sonnet-4-20250514
+    paid-provider: anthropic
+    paid-model: claude-sonnet-4-20250514
 
 # -- Microservice endpoints (local dev) ----------------------------------------
 # In production, these are K8s service names (see k8s/configmap.yaml).

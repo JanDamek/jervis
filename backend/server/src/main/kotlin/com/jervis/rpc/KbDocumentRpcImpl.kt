@@ -1,8 +1,8 @@
 package com.jervis.rpc
 
 import com.jervis.common.types.ClientId
-import com.jervis.configuration.KnowledgeServiceRestClient
-import com.jervis.configuration.PythonKbDocumentDto
+import com.jervis.infrastructure.llm.KnowledgeServiceRestClient
+import com.jervis.infrastructure.llm.PythonKbDocumentDto
 import com.jervis.dto.kb.KbDocumentCategoryEnum
 import com.jervis.dto.kb.KbDocumentContentDto
 import com.jervis.dto.kb.KbDocumentDeleteDto
@@ -11,8 +11,8 @@ import com.jervis.dto.kb.KbDocumentStateEnum
 import com.jervis.dto.kb.KbDocumentSummaryDto
 import com.jervis.dto.kb.KbDocumentUpdateDto
 import com.jervis.dto.kb.KbDocumentUploadDto
-import com.jervis.service.IKbDocumentService
-import com.jervis.service.storage.DirectoryStructureService
+import com.jervis.service.kb.IKbDocumentService
+import com.jervis.infrastructure.storage.DirectoryStructureService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component

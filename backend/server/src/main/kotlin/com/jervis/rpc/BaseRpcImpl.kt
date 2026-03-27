@@ -1,6 +1,6 @@
 package com.jervis.rpc
 
-import com.jervis.service.error.ErrorLogService
+import com.jervis.infrastructure.error.ErrorLogService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 

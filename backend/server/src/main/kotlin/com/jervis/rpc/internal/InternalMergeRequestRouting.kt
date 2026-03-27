@@ -4,11 +4,11 @@ import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.TaskId
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ProviderEnum
-import com.jervis.repository.TaskRepository
-import com.jervis.service.connection.ConnectionService
-import com.jervis.service.github.GitHubClient
-import com.jervis.service.gitlab.GitLabClient
-import com.jervis.service.project.ProjectService
+import com.jervis.task.TaskRepository
+import com.jervis.connection.ConnectionService
+import com.jervis.git.client.GitHubClient
+import com.jervis.git.client.GitLabClient
+import com.jervis.project.ProjectService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -36,7 +36,7 @@ fun Routing.installInternalMergeRequestApi(
     connectionService: ConnectionService,
     gitHubClient: GitHubClient,
     gitLabClient: GitLabClient,
-    reviewLanguageResolver: com.jervis.service.ReviewLanguageResolver,
+    reviewLanguageResolver: com.jervis.infrastructure.llm.ReviewLanguageResolver,
 ) {
     // Resolve review language for a client/project — called before review dispatch
     get("/internal/resolve-review-language") {
@@ -413,7 +413,7 @@ fun Routing.installInternalMergeRequestApi(
 
                     val reviewComments = body.comments.mapNotNull { c ->
                         if (c.file.isNotBlank() && c.line != null && c.line > 0) {
-                            com.jervis.service.github.GitHubReviewComment(
+                            com.jervis.git.client.GitHubReviewComment(
                                 path = c.file,
                                 line = c.line,
                                 body = c.body,

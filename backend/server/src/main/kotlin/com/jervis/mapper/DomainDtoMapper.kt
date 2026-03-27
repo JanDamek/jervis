@@ -1,7 +1,7 @@
 package com.jervis.mapper
 
-import com.jervis.domain.git.GitConfig
-import com.jervis.dto.GitConfigDto
+import com.jervis.git.model.GitConfig
+import com.jervis.dto.git.GitConfigDto
 
 fun GitConfig.toDto(): GitConfigDto =
     GitConfigDto(

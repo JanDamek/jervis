@@ -1,7 +1,7 @@
 package com.jervis.ui.questions
 
-import com.jervis.dto.AgentQuestionDto
-import com.jervis.repository.JervisRepository
+import com.jervis.dto.agent.AgentQuestionDto
+import com.jervis.di.JervisRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope

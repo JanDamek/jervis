@@ -1,7 +1,7 @@
 package com.jervis.ui.storage
 
-import com.jervis.dto.ClientDto
-import com.jervis.dto.ProjectDto
+import com.jervis.dto.client.ClientDto
+import com.jervis.dto.project.ProjectDto
 import kotlinx.serialization.Serializable
 
 /**

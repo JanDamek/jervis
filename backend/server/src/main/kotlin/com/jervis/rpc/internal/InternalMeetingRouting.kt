@@ -1,6 +1,6 @@
 package com.jervis.rpc.internal
 
-import com.jervis.rpc.MeetingRpcImpl
+import com.jervis.meeting.MeetingRpcImpl
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respondText

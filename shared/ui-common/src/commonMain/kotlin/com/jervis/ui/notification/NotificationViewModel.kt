@@ -2,7 +2,7 @@ package com.jervis.ui.notification
 
 import com.jervis.dto.events.JervisEvent
 import com.jervis.dto.user.TaskRoutingMode
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope

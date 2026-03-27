@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.indexing.PollingIntervalSettingsDto
 import com.jervis.dto.indexing.PollingIntervalUpdateDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JErrorState
 import com.jervis.ui.design.JPrimaryButton

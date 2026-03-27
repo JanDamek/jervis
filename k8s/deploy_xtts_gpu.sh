@@ -55,7 +55,7 @@ echo "  coqui-tts + deps installed"
 
 # Step 4: Copy server file
 echo "Step 4/6: Copying XTTS server..."
-ssh_cmd "cat > $INSTALL_DIR/xtts_server.py" < "$PROJECT_ROOT/backend/service-tts/xtts_server.py"
+ssh_cmd "cat > $INSTALL_DIR/xtts_server.py" < "$PROJECT_ROOT/backend/service-tts/app/xtts_server.py"
 echo "  server copied"
 
 # Step 5: Pre-download XTTS v2 model

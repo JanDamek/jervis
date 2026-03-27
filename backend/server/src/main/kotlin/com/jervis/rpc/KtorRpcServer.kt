@@ -1,8 +1,8 @@
 package com.jervis.rpc
 
 import com.jervis.common.types.ConnectionId
-import com.jervis.dto.ChatResponseDto
-import com.jervis.dto.ChatResponseType
+import com.jervis.dto.chat.ChatResponseDto
+import com.jervis.dto.chat.ChatResponseType
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
@@ -32,6 +32,29 @@ import com.jervis.rpc.internal.installInternalBugTrackerApi
 import com.jervis.rpc.internal.installInternalO365CapabilitiesApi
 import com.jervis.rpc.internal.installInternalO365SessionApi
 import com.jervis.rpc.internal.installInternalTaskApi
+import com.jervis.agent.AgentOrchestratorRpcImpl
+import com.jervis.agent.AgentQuestionRpcImpl
+import com.jervis.agent.AutoResponseSettingsRpcImpl
+import com.jervis.client.ClientRpcImpl
+import com.jervis.connection.ConnectionRpcImpl
+import com.jervis.connection.PollingIntervalRpcImpl
+import com.jervis.environment.EnvironmentRpcImpl
+import com.jervis.environment.EnvironmentResourceRpcImpl
+import com.jervis.git.rpc.GitConfigurationRpcImpl
+import com.jervis.git.rpc.GpgCertificateRpcImpl
+import com.jervis.git.rpc.JobLogsRpcImpl
+import com.jervis.guidelines.GuidelinesRpcImpl
+import com.jervis.meeting.installWatchMeetingApi
+import com.jervis.preferences.DeviceTokenRpcImpl
+import com.jervis.preferences.SystemConfigRpcImpl
+import com.jervis.project.ClientProjectLinkRpcImpl
+import com.jervis.project.ProjectRpcImpl
+import com.jervis.projectgroup.ProjectGroupRpcImpl
+import com.jervis.task.IndexingQueueRpcImpl
+import com.jervis.task.PendingTaskRpcImpl
+import com.jervis.task.TaskGraphRpcImpl
+import com.jervis.task.TaskSchedulingRpcImpl
+import com.jervis.task.UserTaskRpcImpl
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import jakarta.annotation.PostConstruct
@@ -58,54 +81,54 @@ class KtorRpcServer(
     private val pendingTaskRpcImpl: PendingTaskRpcImpl,
     private val notificationRpcImpl: NotificationRpcImpl,
     private val pollingIntervalRpcImpl: PollingIntervalRpcImpl,
-    private val meetingRpcImpl: MeetingRpcImpl,
-    private val transcriptCorrectionRpcImpl: TranscriptCorrectionRpcImpl,
+    private val meetingRpcImpl: com.jervis.meeting.MeetingRpcImpl,
+    private val transcriptCorrectionRpcImpl: com.jervis.meeting.TranscriptCorrectionRpcImpl,
     private val deviceTokenRpcImpl: DeviceTokenRpcImpl,
     private val indexingQueueRpcImpl: IndexingQueueRpcImpl,
     private val projectGroupRpcImpl: ProjectGroupRpcImpl,
     private val environmentRpcImpl: EnvironmentRpcImpl,
     private val environmentResourceRpcImpl: EnvironmentResourceRpcImpl,
     private val gpgCertificateRpcImpl: GpgCertificateRpcImpl,
-    private val environmentResourceService: com.jervis.service.environment.EnvironmentResourceService,
-    private val environmentService: com.jervis.service.environment.EnvironmentService,
-    private val environmentK8sService: com.jervis.service.environment.EnvironmentK8sService,
-    private val orchestratorWorkflowTracker: com.jervis.service.agent.coordinator.OrchestratorWorkflowTracker,
-    private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
-    private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
-    private val taskRepository: com.jervis.repository.TaskRepository,
-    private val taskService: com.jervis.service.background.TaskService,
+    private val environmentResourceService: com.jervis.environment.EnvironmentResourceService,
+    private val environmentService: com.jervis.environment.EnvironmentService,
+    private val environmentK8sService: com.jervis.environment.EnvironmentK8sService,
+    private val orchestratorWorkflowTracker: com.jervis.agent.OrchestratorWorkflowTracker,
+    private val orchestratorStatusHandler: com.jervis.agent.OrchestratorStatusHandler,
+    private val oauth2Service: com.jervis.infrastructure.oauth2.OAuth2Service,
+    private val taskRepository: com.jervis.task.TaskRepository,
+    private val taskService: com.jervis.task.TaskService,
     private val systemConfigRpcImpl: SystemConfigRpcImpl,
-    private val userTaskService: com.jervis.service.task.UserTaskService,
-    private val backgroundEngine: com.jervis.service.background.BackgroundEngine,
-    private val chatRpcImpl: ChatRpcImpl,
+    private val userTaskService: com.jervis.task.UserTaskService,
+    private val backgroundEngine: com.jervis.task.BackgroundEngine,
+    private val chatRpcImpl: com.jervis.chat.ChatRpcImpl,
     private val guidelinesRpcImpl: GuidelinesRpcImpl,
     private val kbDocumentRpcImpl: KbDocumentRpcImpl,
     private val openRouterSettingsRpcImpl: OpenRouterSettingsRpcImpl,
-    private val speakerRpcImpl: SpeakerRpcImpl,
+    private val speakerRpcImpl: com.jervis.meeting.SpeakerRpcImpl,
     private val taskGraphRpcImpl: TaskGraphRpcImpl,
     private val jobLogsRpcImpl: JobLogsRpcImpl,
     private val agentQuestionRpcImpl: AgentQuestionRpcImpl,
     private val autoResponseSettingsRpcImpl: AutoResponseSettingsRpcImpl,
-    private val guidelinesService: com.jervis.service.guidelines.GuidelinesService,
-    private val filteringRulesService: com.jervis.service.filtering.FilteringRulesService,
-    private val chatService: com.jervis.service.chat.ChatService,
-    private val chatMessageService: com.jervis.service.chat.ChatMessageService,
+    private val guidelinesService: com.jervis.guidelines.GuidelinesService,
+    private val filteringRulesService: com.jervis.filtering.FilteringRulesService,
+    private val chatService: com.jervis.chat.ChatService,
+    private val chatMessageService: com.jervis.chat.ChatMessageService,
     // Dependencies for internal routing modules (injected, used by install*Api extensions)
-    private val clientService: com.jervis.service.client.ClientService,
-    private val projectService: com.jervis.service.project.ProjectService,
-    private val connectionService: com.jervis.service.connection.ConnectionService,
-    private val gitRepoCreationService: com.jervis.service.git.GitRepositoryCreationService,
-    private val projectTemplateService: com.jervis.service.project.ProjectTemplateService,
+    private val clientService: com.jervis.client.ClientService,
+    private val projectService: com.jervis.project.ProjectService,
+    private val connectionService: com.jervis.connection.ConnectionService,
+    private val gitRepoCreationService: com.jervis.git.GitRepositoryCreationService,
+    private val projectTemplateService: com.jervis.project.ProjectTemplateService,
     private val applicationEventPublisher: org.springframework.context.ApplicationEventPublisher,
-    private val gitHubClient: com.jervis.service.github.GitHubClient,
-    private val gitLabClient: com.jervis.service.gitlab.GitLabClient,
-    private val reviewLanguageResolver: com.jervis.service.ReviewLanguageResolver,
-    private val bugTrackerService: com.jervis.integration.bugtracker.BugTrackerService,
-    private val whisperRestClient: com.jervis.service.meeting.WhisperRestClient,
-    private val whisperProperties: com.jervis.configuration.properties.WhisperProperties,
-    private val connectionRepository: com.jervis.repository.ConnectionRepository,
-    private val fcmPushService: com.jervis.service.notification.FcmPushService,
-    private val apnsPushService: com.jervis.service.notification.ApnsPushService,
+    private val gitHubClient: com.jervis.git.client.GitHubClient,
+    private val gitLabClient: com.jervis.git.client.GitLabClient,
+    private val reviewLanguageResolver: com.jervis.infrastructure.llm.ReviewLanguageResolver,
+    private val bugTrackerService: com.jervis.bugtracker.BugTrackerService,
+    private val whisperRestClient: com.jervis.meeting.WhisperRestClient,
+    private val whisperProperties: com.jervis.infrastructure.config.properties.WhisperProperties,
+    private val connectionRepository: com.jervis.connection.ConnectionRepository,
+    private val fcmPushService: com.jervis.infrastructure.notification.FcmPushService,
+    private val apnsPushService: com.jervis.infrastructure.notification.ApnsPushService,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -197,7 +220,7 @@ class KtorRpcServer(
                                 }
 
                                 when (val result = oauth2Service.handleCallback(code, state)) {
-                                    is com.jervis.service.oauth2.OAuth2CallbackResult.Success -> {
+                                    is com.jervis.infrastructure.oauth2.OAuth2CallbackResult.Success -> {
                                         call.respondText(
                                             """
                                             <html>
@@ -216,7 +239,7 @@ class KtorRpcServer(
                                         )
                                     }
 
-                                    is com.jervis.service.oauth2.OAuth2CallbackResult.InvalidState -> {
+                                    is com.jervis.infrastructure.oauth2.OAuth2CallbackResult.InvalidState -> {
                                         call.respondText(
                                             "<html><body><h1>Invalid State</h1><p>Authorization state not found or expired.</p></body></html>",
                                             io.ktor.http.ContentType.Text.Html,
@@ -224,7 +247,7 @@ class KtorRpcServer(
                                         )
                                     }
 
-                                    is com.jervis.service.oauth2.OAuth2CallbackResult.Error -> {
+                                    is com.jervis.infrastructure.oauth2.OAuth2CallbackResult.Error -> {
                                         call.respondText(
                                             "<html><body><h1>Authorization Failed</h1><p>${result.message}</p></body></html>",
                                             io.ktor.http.ContentType.Text.Html,
@@ -276,7 +299,7 @@ class KtorRpcServer(
                                             val taskId = com.jervis.common.types.TaskId(org.bson.types.ObjectId(body.taskId))
                                             taskService.appendOrchestratorStep(
                                                 taskId,
-                                                com.jervis.entity.OrchestratorStepRecord(
+                                                com.jervis.task.OrchestratorStepRecord(
                                                     timestamp = java.time.Instant.now(),
                                                     node = body.node,
                                                     message = body.message,
@@ -654,7 +677,7 @@ class KtorRpcServer(
                                         "[]", io.ktor.http.ContentType.Application.Json,
                                     )
                                 try {
-                                    val state = com.jervis.dto.TaskStateEnum.valueOf(stateStr)
+                                    val state = com.jervis.dto.task.TaskStateEnum.valueOf(stateStr)
                                     val tasks = mutableListOf<Map<String, Any?>>()
                                     taskRepository.findByStateOrderByCreatedAtAsc(state).collect { task ->
                                         tasks.add(
@@ -704,7 +727,7 @@ class KtorRpcServer(
                                         )
                                     // Transition back to PROCESSING (graph will resume)
                                     val updated = task.copy(
-                                        state = com.jervis.dto.TaskStateEnum.PROCESSING,
+                                        state = com.jervis.dto.task.TaskStateEnum.PROCESSING,
                                         agentJobState = "COMPLETED",
                                     )
                                     taskRepository.save(updated)
@@ -739,7 +762,7 @@ class KtorRpcServer(
                                             HttpStatusCode.NotFound,
                                         )
                                     val updated = task.copy(
-                                        state = com.jervis.dto.TaskStateEnum.CODING,
+                                        state = com.jervis.dto.task.TaskStateEnum.CODING,
                                         agentJobName = body.jobName,
                                         agentJobState = "RUNNING",
                                         agentJobStartedAt = java.time.Instant.now(),
@@ -788,7 +811,7 @@ class KtorRpcServer(
                                         val taskId = com.jervis.common.types.TaskId(org.bson.types.ObjectId(body.taskId))
                                         taskService.appendQualificationStep(
                                             taskId,
-                                            com.jervis.entity.QualificationStepRecord(
+                                            com.jervis.task.QualificationStepRecord(
                                                 timestamp = java.time.Instant.now(),
                                                 step = body.step,
                                                 message = body.message,
@@ -831,7 +854,7 @@ class KtorRpcServer(
                                                 return@launch
                                             }
 
-                                            if (task.state != com.jervis.dto.TaskStateEnum.INDEXING) {
+                                            if (task.state != com.jervis.dto.task.TaskStateEnum.INDEXING) {
                                                 logger.warn { "KB_DONE_CALLBACK: task not in INDEXING state taskId=${body.taskId} state=${task.state}" }
                                                 return@launch
                                             }
@@ -844,7 +867,7 @@ class KtorRpcServer(
                                                 // Emit final progress step
                                                 taskService.appendQualificationStep(
                                                     taskId,
-                                                    com.jervis.entity.QualificationStepRecord(
+                                                    com.jervis.task.QualificationStepRecord(
                                                         timestamp = java.time.Instant.now(),
                                                         step = "error",
                                                         message = "KB chyba: $errorMsg",
@@ -892,7 +915,7 @@ class KtorRpcServer(
 
                                             // IGNORE filter → DONE (but @mention overrides IGNORE)
                                             if (filterAction == com.jervis.dto.filtering.FilterAction.IGNORE && !task.mentionsJervis) {
-                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
+                                                taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
                                                 logger.info { "KB_DONE_CALLBACK: filtered IGNORE taskId=${body.taskId}" }
                                                 return@launch
                                             }
@@ -900,7 +923,7 @@ class KtorRpcServer(
                                             // Not actionable → DONE (info only, indexed in KB)
                                             // BUT: @mention overrides — if Jervis is mentioned, always QUEUE
                                             if (!r.hasActionableContent && !task.mentionsJervis) {
-                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
+                                                taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
                                                 logger.info { "KB_DONE_CALLBACK: not actionable taskId=${body.taskId}" }
                                                 return@launch
                                             }
@@ -927,7 +950,7 @@ class KtorRpcServer(
                                             }
 
                                             // Actionable → QUEUED (orchestrator classifies as first step)
-                                            taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
+                                            taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
                                             logger.info {
                                                 "KB_DONE_CALLBACK: taskId=${body.taskId} → QUEUED " +
                                                     "actionable=${r.hasActionableContent} urgency=${r.urgency}"
@@ -1010,7 +1033,7 @@ class KtorRpcServer(
                                         put("projectId", kotlinx.serialization.json.JsonPrimitive(session.lastProjectId ?: ""))
                                         put("topics", kotlinx.serialization.json.buildJsonArray {
                                             messages
-                                                .filter { it.role == com.jervis.entity.MessageRole.USER || it.role == com.jervis.entity.MessageRole.ASSISTANT }
+                                                .filter { it.role == com.jervis.chat.MessageRole.USER || it.role == com.jervis.chat.MessageRole.ASSISTANT }
                                                 .forEach { msg ->
                                                     add(kotlinx.serialization.json.buildJsonObject {
                                                         put("role", kotlinx.serialization.json.JsonPrimitive(msg.role.name.lowercase()))
@@ -1035,13 +1058,13 @@ class KtorRpcServer(
                                     val correlationId = ObjectId().toHexString()
 
                                     val task = taskService.createTask(
-                                        taskType = com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING,
+                                        taskType = com.jervis.dto.task.TaskTypeEnum.USER_INPUT_PROCESSING,
                                         content = body.description,
                                         clientId = clientId,
                                         correlationId = correlationId,
                                         sourceUrn = com.jervis.common.types.SourceUrn("chat:background-task"),
                                         projectId = projectId,
-                                        state = com.jervis.dto.TaskStateEnum.QUEUED,
+                                        state = com.jervis.dto.task.TaskStateEnum.QUEUED,
                                         taskName = body.title,
                                     )
 
@@ -1069,13 +1092,13 @@ class KtorRpcServer(
 
                                     val sourceUrn = body.sourceUrn ?: "chat:coding-agent"
                                     var task = taskService.createTask(
-                                        taskType = com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING,
+                                        taskType = com.jervis.dto.task.TaskTypeEnum.USER_INPUT_PROCESSING,
                                         content = body.taskDescription,
                                         clientId = clientId,
                                         correlationId = correlationId,
                                         sourceUrn = com.jervis.common.types.SourceUrn(sourceUrn),
                                         projectId = projectId,
-                                        state = com.jervis.dto.TaskStateEnum.QUEUED,
+                                        state = com.jervis.dto.task.TaskStateEnum.QUEUED,
                                         taskName = body.taskDescription.take(100),
                                     )
                                     // Persist review metadata if this is a code-review fix task
@@ -1193,8 +1216,8 @@ class KtorRpcServer(
                                     for (taskId in body.taskIds) {
                                         try {
                                             val task = taskRepository.getById(com.jervis.common.types.TaskId(org.bson.types.ObjectId(taskId)))
-                                            if (task != null && task.state == com.jervis.dto.TaskStateEnum.USER_TASK) {
-                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
+                                            if (task != null && task.state == com.jervis.dto.task.TaskStateEnum.USER_TASK) {
+                                                taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
                                                 dismissed++
                                             }
                                         } catch (e: Exception) {
@@ -1269,36 +1292,36 @@ class KtorRpcServer(
                                     }
                                 }
 
-                                registerService<com.jervis.service.IClientService> { clientRpcImpl }
-                                registerService<com.jervis.service.IProjectService> { projectRpcImpl }
-                                registerService<com.jervis.service.IUserTaskService> { userTaskRpcImpl }
-                                registerService<com.jervis.service.ITaskSchedulingService> { taskSchedulingRpcImpl }
-                                registerService<com.jervis.service.IAgentOrchestratorService> { agentOrchestratorRpcImpl }
-                                registerService<com.jervis.service.IErrorLogService> { errorLogRpcImpl }
-                                registerService<com.jervis.service.IConnectionService> { connectionRpcImpl }
-                                registerService<com.jervis.service.IGitConfigurationService> { gitConfigurationRpcImpl }
-                                registerService<com.jervis.service.IClientProjectLinkService> { clientProjectLinkRpcImpl }
-                                registerService<com.jervis.service.IPendingTaskService> { pendingTaskRpcImpl }
-                                registerService<com.jervis.service.INotificationService> { notificationRpcImpl }
-                                registerService<com.jervis.service.IGpgCertificateService> { gpgCertificateRpcImpl }
-                                registerService<com.jervis.service.IPollingIntervalService> { pollingIntervalRpcImpl }
-                                registerService<com.jervis.service.IMeetingService> { meetingRpcImpl }
-                                registerService<com.jervis.service.ITranscriptCorrectionService> { transcriptCorrectionRpcImpl }
-                                registerService<com.jervis.service.IDeviceTokenService> { deviceTokenRpcImpl }
-                                registerService<com.jervis.service.IIndexingQueueService> { indexingQueueRpcImpl }
-                                registerService<com.jervis.service.IProjectGroupService> { projectGroupRpcImpl }
-                                registerService<com.jervis.service.IEnvironmentService> { environmentRpcImpl }
-                                registerService<com.jervis.service.IEnvironmentResourceService> { environmentResourceRpcImpl }
-                                registerService<com.jervis.service.ISystemConfigService> { systemConfigRpcImpl }
-                                registerService<com.jervis.service.IChatService> { chatRpcImpl }
-                                registerService<com.jervis.service.IGuidelinesService> { guidelinesRpcImpl }
-                                registerService<com.jervis.service.IKbDocumentService> { kbDocumentRpcImpl }
-                                registerService<com.jervis.service.IOpenRouterSettingsService> { openRouterSettingsRpcImpl }
-                                registerService<com.jervis.service.ISpeakerService> { speakerRpcImpl }
-                                registerService<com.jervis.service.ITaskGraphService> { taskGraphRpcImpl }
-                                registerService<com.jervis.service.IJobLogsService> { jobLogsRpcImpl }
-                                registerService<com.jervis.service.IAgentQuestionService> { agentQuestionRpcImpl }
-                                registerService<com.jervis.service.IAutoResponseSettingsService> { autoResponseSettingsRpcImpl }
+                                registerService<com.jervis.service.client.IClientService> { clientRpcImpl }
+                                registerService<com.jervis.service.project.IProjectService> { projectRpcImpl }
+                                registerService<com.jervis.service.task.IUserTaskService> { userTaskRpcImpl }
+                                registerService<com.jervis.service.task.ITaskSchedulingService> { taskSchedulingRpcImpl }
+                                registerService<com.jervis.service.agent.IAgentOrchestratorService> { agentOrchestratorRpcImpl }
+                                registerService<com.jervis.service.error.IErrorLogService> { errorLogRpcImpl }
+                                registerService<com.jervis.service.connection.IConnectionService> { connectionRpcImpl }
+                                registerService<com.jervis.service.git.IGitConfigurationService> { gitConfigurationRpcImpl }
+                                registerService<com.jervis.service.project.IClientProjectLinkService> { clientProjectLinkRpcImpl }
+                                registerService<com.jervis.service.task.IPendingTaskService> { pendingTaskRpcImpl }
+                                registerService<com.jervis.service.notification.INotificationService> { notificationRpcImpl }
+                                registerService<com.jervis.service.git.IGpgCertificateService> { gpgCertificateRpcImpl }
+                                registerService<com.jervis.service.connection.IPollingIntervalService> { pollingIntervalRpcImpl }
+                                registerService<com.jervis.service.meeting.IMeetingService> { meetingRpcImpl }
+                                registerService<com.jervis.service.meeting.ITranscriptCorrectionService> { transcriptCorrectionRpcImpl }
+                                registerService<com.jervis.service.notification.IDeviceTokenService> { deviceTokenRpcImpl }
+                                registerService<com.jervis.service.task.IIndexingQueueService> { indexingQueueRpcImpl }
+                                registerService<com.jervis.service.projectgroup.IProjectGroupService> { projectGroupRpcImpl }
+                                registerService<com.jervis.service.environment.IEnvironmentService> { environmentRpcImpl }
+                                registerService<com.jervis.service.environment.IEnvironmentResourceService> { environmentResourceRpcImpl }
+                                registerService<com.jervis.service.preferences.ISystemConfigService> { systemConfigRpcImpl }
+                                registerService<com.jervis.service.chat.IChatService> { chatRpcImpl }
+                                registerService<com.jervis.service.guidelines.IGuidelinesService> { guidelinesRpcImpl }
+                                registerService<com.jervis.service.kb.IKbDocumentService> { kbDocumentRpcImpl }
+                                registerService<com.jervis.service.preferences.IOpenRouterSettingsService> { openRouterSettingsRpcImpl }
+                                registerService<com.jervis.service.meeting.ISpeakerService> { speakerRpcImpl }
+                                registerService<com.jervis.service.task.ITaskGraphService> { taskGraphRpcImpl }
+                                registerService<com.jervis.service.meeting.IJobLogsService> { jobLogsRpcImpl }
+                                registerService<com.jervis.service.agent.IAgentQuestionService> { agentQuestionRpcImpl }
+                                registerService<com.jervis.service.agent.IAutoResponseSettingsService> { autoResponseSettingsRpcImpl }
                             }
                         }
                     }

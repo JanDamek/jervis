@@ -34,7 +34,7 @@ import com.jervis.dto.environment.ComponentStateEnum
 import com.jervis.dto.environment.ComponentTemplateDto
 import com.jervis.dto.environment.EnvironmentComponentDto
 import com.jervis.dto.environment.EnvironmentDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JErrorState

@@ -7,7 +7,7 @@ import com.jervis.dto.meeting.AudioInputType
 import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
 import com.jervis.dto.meeting.MeetingTypeEnum
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.util.platformLog
 import com.jervis.ui.storage.AudioChunkQueue
 import com.jervis.ui.storage.OfflineMeetingStorage

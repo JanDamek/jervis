@@ -5,12 +5,12 @@ import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ProviderEnum
-import com.jervis.integration.bugtracker.BugTrackerService
-import com.jervis.integration.bugtracker.CreateBugTrackerIssueRequest
-import com.jervis.service.connection.ConnectionService
-import com.jervis.service.github.GitHubClient
-import com.jervis.service.gitlab.GitLabClient
-import com.jervis.service.project.ProjectService
+import com.jervis.bugtracker.BugTrackerService
+import com.jervis.bugtracker.CreateBugTrackerIssueRequest
+import com.jervis.connection.ConnectionService
+import com.jervis.git.client.GitHubClient
+import com.jervis.git.client.GitLabClient
+import com.jervis.project.ProjectService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -441,7 +441,7 @@ private suspend fun resolveBugTrackerConnection(
     projectId: String,
     projectService: ProjectService,
     connectionService: ConnectionService,
-): Pair<com.jervis.entity.connection.ConnectionDocument, String>? {
+): Pair<com.jervis.connection.ConnectionDocument, String>? {
     val project = projectService.getProjectByIdOrNull(ProjectId(ObjectId(projectId))) ?: return null
 
     // Try BUGTRACKER resource first, then fall back to REPOSITORY

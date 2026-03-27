@@ -43,14 +43,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ClientDto
+import com.jervis.dto.client.ClientDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.dto.meeting.SpeakerChannelDto
 import com.jervis.dto.meeting.SpeakerDto
 import com.jervis.dto.meeting.SpeakerMergeRequestDto
 import com.jervis.dto.meeting.SpeakerUpdateDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JActionBar
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JConfirmDialog

@@ -3,7 +3,7 @@ package com.jervis.provider
 import com.jervis.common.client.IProviderService
 import com.jervis.common.client.ProviderListResourcesRequest
 import com.jervis.common.client.ProviderTestRequest
-import com.jervis.configuration.ProviderRegistry
+import com.jervis.connection.ProviderRegistry
 import com.jervis.dto.connection.AuthOption
 import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability

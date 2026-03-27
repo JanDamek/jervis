@@ -36,10 +36,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.CompressionBoundaryDto
+import com.jervis.dto.chat.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
-import com.jervis.service.IJobLogsService
+import com.jervis.service.meeting.IJobLogsService
 import com.jervis.ui.chat.ChatViewModel
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JHorizontalSplitLayout

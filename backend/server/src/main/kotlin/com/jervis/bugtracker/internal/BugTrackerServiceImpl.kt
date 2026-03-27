@@ -1,0 +1,299 @@
+package com.jervis.bugtracker.internal
+
+import com.jervis.common.client.IBugTrackerClient
+import com.jervis.common.dto.AuthType
+import com.jervis.common.dto.bugtracker.BugTrackerAddCommentRpcRequest
+import com.jervis.common.dto.bugtracker.BugTrackerCreateIssueRpcRequest
+import com.jervis.common.dto.bugtracker.BugTrackerGetCommentsRequest
+import com.jervis.common.dto.bugtracker.BugTrackerIssueRequest
+import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
+import com.jervis.common.dto.bugtracker.BugTrackerTransitionRpcRequest
+import com.jervis.common.dto.bugtracker.BugTrackerUpdateIssueRpcRequest
+import com.jervis.common.rpc.withRpcRetry
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
+import com.jervis.connection.ProviderRegistry
+import com.jervis.dto.connection.ProviderEnum
+import com.jervis.connection.ConnectionDocument
+import com.jervis.bugtracker.BugTrackerComment
+import com.jervis.bugtracker.BugTrackerIssue
+import com.jervis.bugtracker.BugTrackerProject
+import com.jervis.bugtracker.BugTrackerService
+import com.jervis.bugtracker.CreateBugTrackerIssueRequest
+import com.jervis.bugtracker.UpdateBugTrackerIssueRequest
+import com.jervis.client.ClientService
+import com.jervis.connection.ConnectionService
+import mu.KotlinLogging
+import org.springframework.stereotype.Service
+
+@Service
+class BugTrackerServiceImpl(
+    private val bugTrackerClient: IBugTrackerClient,
+    private val connectionService: ConnectionService,
+    private val clientService: ClientService,
+    private val providerRegistry: ProviderRegistry,
+) : BugTrackerService {
+    private val logger = KotlinLogging.logger {}
+
+    override suspend fun searchIssues(
+        clientId: ClientId,
+        query: String,
+        project: String?,
+        maxResults: Int,
+    ): List<BugTrackerIssue> {
+        val connection = findBugTrackerConnection(clientId) ?: return emptyList()
+        val finalQuery = if (project != null) "project = \"$project\" AND ($query)" else query
+
+        val response =
+            withRpcRetry(
+                name = "BugTrackerSearch",
+                reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+            ) {
+                bugTrackerClient.searchIssues(
+                    BugTrackerSearchRequest(
+                        baseUrl = connection.baseUrl,
+                        authType = AuthType.valueOf(connection.authType.name),
+                        basicUsername = connection.username,
+                        basicPassword = connection.password,
+                        bearerToken = connection.bearerToken,
+                        cloudId = connection.cloudId,
+                        query = finalQuery,
+                        maxResults = maxResults,
+                    ),
+                )
+            }
+
+        return response.issues.map { issue ->
+            BugTrackerIssue(
+                key = issue.key,
+                summary = issue.title,
+                description = issue.description,
+                status = issue.status,
+                assignee = issue.assignee,
+                reporter = issue.reporter ?: "Unknown",
+                created = issue.created,
+                updated = issue.updated,
+                issueType = "Task",
+                priority = issue.priority,
+                labels = emptyList(),
+            )
+        }
+    }
+
+    override suspend fun getIssue(
+        clientId: ClientId,
+        issueKey: String,
+    ): BugTrackerIssue {
+        val connection =
+            findBugTrackerConnection(clientId)
+                ?: throw IllegalStateException("No BugTracker connection found for client $clientId")
+
+        val response =
+            withRpcRetry(
+                name = "BugTrackerGetIssue",
+                reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+            ) {
+                bugTrackerClient.getIssue(
+                    BugTrackerIssueRequest(
+                        baseUrl = connection.baseUrl,
+                        authType = AuthType.valueOf(connection.authType.name),
+                        basicUsername = connection.username,
+                        basicPassword = connection.password,
+                        bearerToken = connection.bearerToken,
+                        issueKey = issueKey,
+                    ),
+                )
+            }.issue
+
+        return BugTrackerIssue(
+            key = response.key,
+            summary = response.title,
+            description = response.description,
+            status = response.status,
+            assignee = response.assignee,
+            reporter = response.reporter ?: "Unknown",
+            created = response.created,
+            updated = response.updated,
+            issueType = "Task",
+            priority = response.priority,
+            labels = emptyList(),
+        )
+    }
+
+    override suspend fun listProjects(clientId: ClientId): List<BugTrackerProject> {
+        return emptyList()
+    }
+
+    override suspend fun getComments(
+        clientId: ClientId,
+        issueKey: String,
+    ): List<BugTrackerComment> {
+        val connection = findBugTrackerConnection(clientId) ?: return emptyList()
+
+        val response = withRpcRetry(
+            name = "BugTrackerGetComments",
+            reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+        ) {
+            bugTrackerClient.getComments(
+                BugTrackerGetCommentsRequest(
+                    baseUrl = connection.baseUrl,
+                    authType = AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
+                    issueKey = issueKey,
+                ),
+            )
+        }
+
+        return response.comments.map { dto ->
+            BugTrackerComment(
+                id = dto.id,
+                author = dto.author,
+                body = dto.body,
+                created = dto.created,
+            )
+        }
+    }
+
+    override suspend fun createIssue(
+        clientId: ClientId,
+        request: CreateBugTrackerIssueRequest,
+    ): BugTrackerIssue {
+        val connection = findBugTrackerConnection(clientId)
+            ?: throw IllegalStateException("No BugTracker connection found for client $clientId")
+
+        val response = withRpcRetry(
+            name = "BugTrackerCreateIssue",
+            reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+        ) {
+            bugTrackerClient.createIssue(
+                BugTrackerCreateIssueRpcRequest(
+                    baseUrl = connection.baseUrl,
+                    authType = AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
+                    projectKey = request.projectKey,
+                    summary = request.summary,
+                    description = request.description,
+                    issueType = request.issueType,
+                    priority = request.priority,
+                    assignee = request.assignee,
+                    labels = request.labels,
+                ),
+            )
+        }.issue
+
+        return BugTrackerIssue(
+            key = response.key,
+            summary = response.title,
+            description = response.description,
+            status = response.status,
+            assignee = response.assignee,
+            reporter = response.reporter ?: "Jervis",
+            created = response.created,
+            updated = response.updated,
+            issueType = request.issueType,
+            priority = response.priority,
+            labels = request.labels,
+        )
+    }
+
+    override suspend fun updateIssue(
+        clientId: ClientId,
+        issueKey: String,
+        request: UpdateBugTrackerIssueRequest,
+    ): BugTrackerIssue {
+        val connection = findBugTrackerConnection(clientId)
+            ?: throw IllegalStateException("No BugTracker connection found for client $clientId")
+
+        val response = withRpcRetry(
+            name = "BugTrackerUpdateIssue",
+            reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+        ) {
+            bugTrackerClient.updateIssue(
+                BugTrackerUpdateIssueRpcRequest(
+                    baseUrl = connection.baseUrl,
+                    authType = AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
+                    issueKey = issueKey,
+                    summary = request.summary,
+                    description = request.description,
+                    assignee = request.assignee,
+                    priority = request.priority,
+                    labels = request.labels,
+                ),
+            )
+        }.issue
+
+        return BugTrackerIssue(
+            key = response.key,
+            summary = response.title,
+            description = response.description,
+            status = response.status,
+            assignee = response.assignee,
+            reporter = response.reporter ?: "Unknown",
+            created = response.created,
+            updated = response.updated,
+            issueType = "Task",
+            priority = response.priority,
+            labels = request.labels ?: emptyList(),
+        )
+    }
+
+    override suspend fun addComment(
+        clientId: ClientId,
+        issueKey: String,
+        comment: String,
+    ): BugTrackerComment {
+        val connection = findBugTrackerConnection(clientId)
+            ?: throw IllegalStateException("No BugTracker connection found for client $clientId")
+
+        val response = withRpcRetry(
+            name = "BugTrackerAddComment",
+            reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+        ) {
+            bugTrackerClient.addComment(
+                BugTrackerAddCommentRpcRequest(
+                    baseUrl = connection.baseUrl,
+                    authType = AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
+                    issueKey = issueKey,
+                    body = comment,
+                ),
+            )
+        }
+
+        return BugTrackerComment(
+            id = response.id,
+            author = response.author ?: "Jervis",
+            body = response.body,
+            created = response.created,
+        )
+    }
+
+    private suspend fun findBugTrackerConnection(clientId: ClientId): ConnectionDocument? {
+        val client = clientService.getClientById(clientId)
+        val connectionIds = client.connectionIds.map { ConnectionId(it) }
+
+        for (id in connectionIds) {
+            val conn = connectionService.findById(id) ?: continue
+            if (conn.state == com.jervis.dto.connection.ConnectionStateEnum.VALID &&
+                conn.protocol == com.jervis.dto.connection.ProtocolEnum.HTTP &&
+                conn.baseUrl.contains("atlassian.net", ignoreCase = true)
+            ) {
+                return conn
+            }
+        }
+        return null
+    }
+}

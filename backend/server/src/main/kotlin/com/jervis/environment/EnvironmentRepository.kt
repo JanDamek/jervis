@@ -1,0 +1,47 @@
+package com.jervis.environment
+
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.EnvironmentId
+import com.jervis.common.types.ProjectGroupId
+import com.jervis.common.types.ProjectId
+import com.jervis.environment.EnvironmentDocument
+import kotlinx.coroutines.flow.Flow
+import org.springframework.data.repository.kotlin.CoroutineCrudRepository
+import org.springframework.stereotype.Repository
+
+/**
+ * MongoDB repository for environment documents.
+ */
+@Repository
+interface EnvironmentRepository : CoroutineCrudRepository<EnvironmentDocument, EnvironmentId> {
+    /**
+     * Find environment by ID. Use this instead of the inherited findById(EnvironmentId) to avoid
+     * AOP proxy issues with Kotlin inline value classes.
+     */
+    suspend fun getById(id: EnvironmentId): EnvironmentDocument?
+
+    /**
+     * Find all environments for a given client.
+     */
+    fun findByClientId(clientId: ClientId): Flow<EnvironmentDocument>
+
+    /**
+     * Find environment scoped to a specific project.
+     */
+    suspend fun findByProjectId(projectId: ProjectId): EnvironmentDocument?
+
+    /**
+     * Find environment scoped to a specific group.
+     */
+    suspend fun findByGroupId(groupId: ProjectGroupId): EnvironmentDocument?
+
+    /**
+     * Find client-level environment (no group and no project).
+     */
+    suspend fun findByClientIdAndGroupIdIsNullAndProjectIdIsNull(clientId: ClientId): EnvironmentDocument?
+
+    /**
+     * Find environment by namespace (globally unique in K8s).
+     */
+    suspend fun findByNamespace(namespace: String): EnvironmentDocument?
+}

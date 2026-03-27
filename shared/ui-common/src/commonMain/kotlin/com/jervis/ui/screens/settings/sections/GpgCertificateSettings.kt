@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.coding.GpgCertificateDeleteDto
 import com.jervis.dto.coding.GpgCertificateDto
 import com.jervis.dto.coding.GpgCertificateUploadDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JDropdown

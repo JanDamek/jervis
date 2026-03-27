@@ -1,9 +1,9 @@
 package com.jervis.rpc.internal
 
-import com.jervis.rpc.MeetingRpcImpl
-import com.jervis.service.client.ClientService
-import com.jervis.service.project.ProjectService
-import com.jervis.service.task.UserTaskService
+import com.jervis.meeting.MeetingRpcImpl
+import com.jervis.client.ClientService
+import com.jervis.project.ProjectService
+import com.jervis.task.UserTaskService
 import io.ktor.http.ContentType
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
@@ -67,7 +67,7 @@ fun Routing.installInternalChatContextApi(
                 query = null,
                 offset = 0,
                 limit = limit,
-                stateFilter = com.jervis.dto.TaskStateEnum.USER_TASK,
+                stateFilter = com.jervis.dto.task.TaskStateEnum.USER_TASK,
             )
             val response = buildJsonObject {
                 put("count", result.totalCount)

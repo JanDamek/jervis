@@ -3,7 +3,7 @@ package com.jervis.ui.environment
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStateEnum
 import com.jervis.dto.environment.EnvironmentStatusDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope

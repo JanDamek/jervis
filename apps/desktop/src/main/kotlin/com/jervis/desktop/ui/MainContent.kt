@@ -3,7 +3,7 @@ package com.jervis.desktop.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import com.jervis.di.RpcConnectionManager
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.App
 import com.jervis.ui.navigation.AppNavigator
 import com.jervis.ui.navigation.Screen

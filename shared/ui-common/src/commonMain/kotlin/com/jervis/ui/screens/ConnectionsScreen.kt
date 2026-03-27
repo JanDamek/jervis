@@ -2,7 +2,7 @@ package com.jervis.ui.screens
 
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import org.jetbrains.compose.ui.tooling.preview.PreviewParameter
 

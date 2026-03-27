@@ -37,9 +37,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ClientDto
-import com.jervis.dto.ProjectDto
-import com.jervis.repository.JervisRepository
+import com.jervis.dto.client.ClientDto
+import com.jervis.dto.project.ProjectDto
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.*
 import com.jervis.ui.LocalRpcGeneration
 import com.jervis.ui.util.*

@@ -31,8 +31,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.jervis.dto.JobLogEventDto
-import com.jervis.service.IJobLogsService
+import com.jervis.dto.git.JobLogEventDto
+import com.jervis.service.meeting.IJobLogsService
 import kotlinx.coroutines.CancellationException
 
 /**

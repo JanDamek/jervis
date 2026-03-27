@@ -1,0 +1,21 @@
+package com.jervis.infrastructure.config.properties
+
+import org.springframework.boot.context.properties.ConfigurationProperties
+import java.time.Duration
+
+/**
+ * BackgroundEngine timing configuration (prefix: `jervis.background`).
+ *
+ * Controls the three independent loops in BackgroundEngine:
+ * - Indexing loop (CPU): runs every [waitInterval], processes INDEXING tasks
+ * - Execution loop: runs when idle, processes QUEUED tasks
+ * - Orchestrator poll loop: polls Python orchestrator every 5s (hardcoded)
+ */
+@ConfigurationProperties(prefix = "jervis.background")
+data class BackgroundProperties(
+    val waitOnError: Duration,    // Delay after error before retrying (default 1m)
+    val waitOnStartup: Duration,  // Delay before BackgroundEngine starts processing (default 10s)
+    val waitInterval: Duration,   // Qualification loop sleep between cycles (default 30s)
+    val idleReviewInterval: Duration = Duration.ofMinutes(30), // How often idle review runs
+    val idleReviewEnabled: Boolean = true,  // Feature flag to disable idle review
+)

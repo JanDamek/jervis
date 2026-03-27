@@ -1,8 +1,9 @@
 package com.jervis.rpc
 
-import com.jervis.dto.ErrorNotificationDto
+import com.jervis.rpc.NotificationRpcImpl
+import com.jervis.dto.error.ErrorNotificationDto
 import com.jervis.dto.events.JervisEvent
-import com.jervis.service.INotificationService
+import com.jervis.service.notification.INotificationService
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow

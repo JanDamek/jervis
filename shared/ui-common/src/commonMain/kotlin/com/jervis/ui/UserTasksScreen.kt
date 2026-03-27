@@ -32,12 +32,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ChatMessageDto
-import com.jervis.dto.ChatRole
+import com.jervis.dto.chat.ChatMessageDto
+import com.jervis.dto.chat.ChatRole
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskDto
 import com.jervis.dto.user.UserTaskListItemDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.*
 import com.jervis.ui.util.ConfirmDialog
 import com.jervis.ui.util.DeleteIconButton

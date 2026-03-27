@@ -10,7 +10,7 @@ import com.jervis.di.OfflineException
 import com.jervis.di.RpcConnectionManager
 import com.jervis.di.RpcConnectionState
 import com.jervis.dto.events.JervisEvent
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

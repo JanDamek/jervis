@@ -1,0 +1,35 @@
+package com.jervis.task
+
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
+import com.jervis.client.ClientDocument
+import com.jervis.project.ProjectDocument
+
+/**
+ * TaskContext - Execution context for agent workflow.
+ *
+ * - Routing handled by TaskRouting object
+ * - Agent works internally in English, responds in originalLanguage
+ */
+data class TaskContext(
+    val query: String,
+    /** Language of user's instruction (for response translation) */
+    val originalLanguage: String,
+    /** Client context */
+    val clientDocument: ClientDocument,
+    /** Optional project context */
+    val projectDocument: ProjectDocument? = null,
+    /** Background execution mode */
+    val backgroundMode: Boolean = false,
+    /** Correlation ID for tracking across services */
+    val correlationId: String,
+) {
+    val clientId: ClientId
+        get() = clientId
+
+    val projectId: ProjectId?
+        get() = projectId
+
+    override fun toString(): String =
+        "TaskContext(client: ${clientDocument.name}, project: ${projectDocument?.name ?: "none"}, background: $backgroundMode) "
+}

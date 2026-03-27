@@ -26,7 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.indexing.IndexingDashboardDto
 import com.jervis.dto.indexing.PipelineItemDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JEmptyState

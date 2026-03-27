@@ -61,9 +61,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.jervis.dto.ClientDto
-import com.jervis.dto.ProjectDto
-import com.jervis.dto.ProjectGroupDto
+import com.jervis.dto.client.ClientDto
+import com.jervis.dto.project.ProjectDto
+import com.jervis.dto.project.ProjectGroupDto
 import com.jervis.ui.design.JIconButton
 import com.jervis.ui.design.LocalJervisSemanticColors
 import com.jervis.ui.navigation.Screen

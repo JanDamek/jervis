@@ -1,6 +1,6 @@
 package com.jervis.rpc.internal
 
-import com.jervis.service.guidelines.GuidelinesService
+import com.jervis.guidelines.GuidelinesService
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respondText

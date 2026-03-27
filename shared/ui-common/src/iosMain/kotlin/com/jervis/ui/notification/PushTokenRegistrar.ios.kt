@@ -1,7 +1,7 @@
 package com.jervis.ui.notification
 
 import com.jervis.dto.notification.DeviceTokenDto
-import com.jervis.service.IDeviceTokenService
+import com.jervis.service.notification.IDeviceTokenService
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull

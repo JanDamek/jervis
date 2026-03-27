@@ -53,7 +53,7 @@ import com.jervis.dto.openrouter.OpenRouterModelUseCase
 import com.jervis.dto.openrouter.OpenRouterSettingsDto
 import com.jervis.dto.openrouter.OpenRouterSettingsUpdateDto
 import com.jervis.dto.openrouter.QueueModelEntryDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.LocalRpcGeneration
 import com.jervis.ui.design.*
 import kotlinx.coroutines.delay

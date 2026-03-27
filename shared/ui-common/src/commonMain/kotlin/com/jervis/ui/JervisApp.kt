@@ -5,7 +5,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import com.jervis.di.OfflineException
 import com.jervis.di.RpcConnectionManager
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 
 /**
  * Main Jervis Application Composable

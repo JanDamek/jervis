@@ -1,6 +1,6 @@
 package com.jervis.dto.user
 
-import com.jervis.dto.AttachmentDto
+import com.jervis.dto.chat.AttachmentDto
 import kotlinx.serialization.Serializable
 
 @Serializable

@@ -42,12 +42,10 @@ if (System.getenv("DOCKER_BUILD") != "true") {
 include(
     ":backend:common-services",
     ":backend:server",
-    ":backend:service-aider",
     ":backend:service-coding-engine",
     ":backend:service-atlassian",
     ":backend:service-github",
     ":backend:service-gitlab",
-    ":backend:service-junie",
     ":backend:service-claude",
     ":backend:service-knowledgebase",
     ":backend:service-o365-gateway",

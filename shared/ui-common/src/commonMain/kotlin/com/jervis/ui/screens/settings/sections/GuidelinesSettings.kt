@@ -27,8 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ClientDto
-import com.jervis.dto.ProjectDto
+import com.jervis.dto.client.ClientDto
+import com.jervis.dto.project.ProjectDto
 import com.jervis.dto.guidelines.ApprovalGuidelinesDto
 import com.jervis.dto.guidelines.ApprovalRule
 import com.jervis.dto.guidelines.CodingGuidelinesDto
@@ -42,7 +42,7 @@ import com.jervis.dto.guidelines.PatternRule
 import com.jervis.dto.guidelines.PatternSeverity
 import com.jervis.dto.guidelines.ReviewChecklistItem
 import com.jervis.dto.guidelines.ReviewGuidelinesDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JCheckboxRow
 import com.jervis.ui.design.JDropdown

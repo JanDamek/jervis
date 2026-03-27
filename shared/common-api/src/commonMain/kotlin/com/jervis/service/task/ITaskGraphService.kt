@@ -1,0 +1,11 @@
+package com.jervis.service.task
+
+import com.jervis.dto.graph.TaskGraphDto
+import kotlinx.rpc.annotations.Rpc
+
+@Rpc
+interface ITaskGraphService {
+    /** Get the full task graph for a given task ID. Returns null if not found.
+     *  For master graph, pass clientId to get client-filtered view. */
+    suspend fun getGraph(taskId: String, clientId: String? = null): TaskGraphDto?
+}

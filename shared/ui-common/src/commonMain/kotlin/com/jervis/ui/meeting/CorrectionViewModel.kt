@@ -2,7 +2,7 @@ package com.jervis.ui.meeting
 
 import com.jervis.dto.meeting.TranscriptCorrectionDto
 import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
-import com.jervis.service.ITranscriptCorrectionService
+import com.jervis.service.meeting.ITranscriptCorrectionService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope

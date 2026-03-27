@@ -33,8 +33,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.PendingTaskDto
-import com.jervis.repository.JervisRepository
+import com.jervis.dto.task.PendingTaskDto
+import com.jervis.di.JervisRepository
 import com.jervis.ui.coding.CodingAgentLogPanel
 import com.jervis.ui.design.*
 import com.jervis.ui.util.*
@@ -60,8 +60,8 @@ fun PendingTasksScreen(
     var selectedTaskType by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedState by rememberSaveable { mutableStateOf<String?>(null) }
 
-    val taskTypes = remember { com.jervis.dto.TaskTypeEnum.values().map { it.name } }
-    val taskStates = remember { com.jervis.dto.TaskStateEnum.values().map { it.name } }
+    val taskTypes = remember { com.jervis.dto.task.TaskTypeEnum.values().map { it.name } }
+    val taskStates = remember { com.jervis.dto.task.TaskStateEnum.values().map { it.name } }
 
     fun load() {
         scope.launch {

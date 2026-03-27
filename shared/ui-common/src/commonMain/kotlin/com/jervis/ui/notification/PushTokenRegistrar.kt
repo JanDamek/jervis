@@ -1,6 +1,6 @@
 package com.jervis.ui.notification
 
-import com.jervis.service.IDeviceTokenService
+import com.jervis.service.notification.IDeviceTokenService
 
 /**
  * Platform-specific push token registration.

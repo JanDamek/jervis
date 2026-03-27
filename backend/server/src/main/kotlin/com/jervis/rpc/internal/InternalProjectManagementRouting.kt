@@ -2,13 +2,14 @@ package com.jervis.rpc.internal
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
-import com.jervis.entity.ClientDocument
-import com.jervis.entity.ProjectDocument
-import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.mapper.toDto
-import com.jervis.service.client.ClientService
-import com.jervis.service.connection.ConnectionService
-import com.jervis.service.project.ProjectService
+import com.jervis.client.ClientDocument
+import com.jervis.project.ProjectDocument
+import com.jervis.connection.ConnectionDocument
+import com.jervis.client.toDto
+import com.jervis.project.toDto
+import com.jervis.client.ClientService
+import com.jervis.connection.ConnectionService
+import com.jervis.project.ProjectService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -48,7 +49,7 @@ fun Routing.installInternalProjectManagementApi(
     clientService: ClientService,
     projectService: ProjectService,
     connectionService: ConnectionService,
-    projectTemplateService: com.jervis.service.project.ProjectTemplateService,
+    projectTemplateService: com.jervis.project.ProjectTemplateService,
 ) {
     // --- Create client ---
     post("/internal/clients") {
@@ -61,7 +62,7 @@ fun Routing.installInternalProjectManagementApi(
             val created = clientService.create(doc)
             val dto = created.toDto()
             call.respondText(
-                pmJson.encodeToString(com.jervis.dto.ClientDto.serializer(), dto),
+                pmJson.encodeToString(com.jervis.dto.client.ClientDto.serializer(), dto),
                 ContentType.Application.Json,
                 HttpStatusCode.Created,
             )
@@ -83,7 +84,7 @@ fun Routing.installInternalProjectManagementApi(
             call.respondText(
                 pmJson.encodeToString(
                     kotlinx.serialization.builtins.ListSerializer(
-                        com.jervis.dto.ClientDto.serializer(),
+                        com.jervis.dto.client.ClientDto.serializer(),
                     ),
                     dtos,
                 ),
@@ -113,7 +114,7 @@ fun Routing.installInternalProjectManagementApi(
             )
             val dto = projectService.saveProject(doc)
             call.respondText(
-                pmJson.encodeToString(com.jervis.dto.ProjectDto.serializer(), dto),
+                pmJson.encodeToString(com.jervis.dto.project.ProjectDto.serializer(), dto),
                 ContentType.Application.Json,
                 HttpStatusCode.Created,
             )
@@ -146,7 +147,7 @@ fun Routing.installInternalProjectManagementApi(
             call.respondText(
                 pmJson.encodeToString(
                     kotlinx.serialization.builtins.ListSerializer(
-                        com.jervis.dto.ProjectDto.serializer(),
+                        com.jervis.dto.project.ProjectDto.serializer(),
                     ),
                     dtos,
                 ),
@@ -192,7 +193,7 @@ fun Routing.installInternalProjectManagementApi(
                 val repoIdx = existingResources.indexOfFirst {
                     it.capability == com.jervis.dto.connection.ConnectionCapability.REPOSITORY
                 }
-                val newResource = com.jervis.entity.ProjectResource(
+                val newResource = com.jervis.project.ProjectResource(
                     id = if (repoIdx >= 0) existingResources[repoIdx].id else ObjectId().toString(),
                     connectionId = resolvedConnectionId,
                     capability = com.jervis.dto.connection.ConnectionCapability.REPOSITORY,
@@ -212,7 +213,7 @@ fun Routing.installInternalProjectManagementApi(
 
             val dto = projectService.saveProject(updated)
             call.respondText(
-                pmJson.encodeToString(com.jervis.dto.ProjectDto.serializer(), dto),
+                pmJson.encodeToString(com.jervis.dto.project.ProjectDto.serializer(), dto),
                 ContentType.Application.Json,
             )
         } catch (e: Exception) {
@@ -311,7 +312,7 @@ fun Routing.installInternalProjectManagementApi(
             val recommendations = projectTemplateService.getRecommendations(req.requirements)
             call.respondText(
                 pmJson.encodeToString(
-                    com.jervis.service.project.ProjectRecommendations.serializer(),
+                    com.jervis.project.ProjectRecommendations.serializer(),
                     recommendations,
                 ),
                 ContentType.Application.Json,
@@ -333,7 +334,7 @@ fun Routing.installInternalProjectManagementApi(
             call.respondText(
                 pmJson.encodeToString(
                     kotlinx.serialization.builtins.ListSerializer(
-                        com.jervis.service.project.StackArchetype.serializer(),
+                        com.jervis.project.StackArchetype.serializer(),
                     ),
                     archetypes,
                 ),

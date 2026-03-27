@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.K8sEventDto
 import com.jervis.dto.environment.K8sPodDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JDropdown

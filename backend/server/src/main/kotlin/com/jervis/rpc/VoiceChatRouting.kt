@@ -3,12 +3,12 @@ package com.jervis.rpc
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.common.types.SourceUrn
-import com.jervis.dto.TaskStateEnum
-import com.jervis.repository.TaskRepository
-import com.jervis.service.background.TaskService
-import com.jervis.service.chat.ChatService
-import com.jervis.service.meeting.WhisperRestClient
-import com.jervis.configuration.properties.WhisperProperties
+import com.jervis.dto.task.TaskStateEnum
+import com.jervis.task.TaskRepository
+import com.jervis.task.TaskService
+import com.jervis.chat.ChatService
+import com.jervis.meeting.WhisperRestClient
+import com.jervis.infrastructure.config.properties.WhisperProperties
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -829,7 +829,7 @@ private suspend fun processQuery(
     logger.info { "SIRI_CHAT | source=$source | query=${query.take(100)}" }
 
     val task = taskService.createTask(
-        taskType = com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING,
+        taskType = com.jervis.dto.task.TaskTypeEnum.USER_INPUT_PROCESSING,
         content = query,
         clientId = clientId,
         correlationId = "siri-${java.util.UUID.randomUUID().toString().take(8)}",

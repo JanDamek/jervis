@@ -2,7 +2,7 @@ package com.jervis.knowledgebase.model
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
-import com.jervis.dto.TaskTypeEnum
+import com.jervis.dto.task.TaskTypeEnum
 import java.time.Instant
 
 /**

@@ -4,12 +4,12 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.common.types.SourceUrn
 import com.jervis.common.types.TaskId
-import com.jervis.dto.TaskStateEnum
-import com.jervis.dto.TaskTypeEnum
-import com.jervis.repository.TaskRepository
-import com.jervis.service.background.TaskService
-import com.jervis.service.task.UserTaskService
-import com.jervis.entity.ProcessingMode
+import com.jervis.dto.task.TaskStateEnum
+import com.jervis.dto.task.TaskTypeEnum
+import com.jervis.task.TaskRepository
+import com.jervis.task.TaskService
+import com.jervis.task.UserTaskService
+import com.jervis.task.ProcessingMode
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -315,7 +315,7 @@ fun Routing.installInternalTaskApi(
             // 2. Create child tasks per phase
             // First pass: create all tasks to get their IDs, map title → TaskId
             val titleToId = mutableMapOf<String, TaskId>()
-            val childTasks = mutableListOf<com.jervis.entity.TaskDocument>()
+            val childTasks = mutableListOf<com.jervis.task.TaskDocument>()
             var totalChildren = 0
 
             for ((phaseIndex, phase) in body.phases.withIndex()) {

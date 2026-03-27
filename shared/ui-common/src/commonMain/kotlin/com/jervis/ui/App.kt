@@ -17,7 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.jervis.di.RpcConnectionManager
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JervisTheme
 import com.jervis.ui.navigation.AppNavigator
 import com.jervis.ui.navigation.Screen

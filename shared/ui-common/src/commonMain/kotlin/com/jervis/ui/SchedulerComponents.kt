@@ -17,8 +17,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ClientDto
-import com.jervis.dto.ProjectDto
+import com.jervis.dto.client.ClientDto
+import com.jervis.dto.project.ProjectDto
 import com.jervis.ui.design.JDestructiveButton
 import com.jervis.ui.design.JDetailScreen
 import com.jervis.ui.design.JDropdown

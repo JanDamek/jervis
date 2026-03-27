@@ -7,7 +7,7 @@ import com.jervis.dto.rag.RagSearchRequestDto
 import com.jervis.dto.rag.RagSearchResponseDto
 import com.jervis.knowledgebase.KnowledgeService
 import com.jervis.knowledgebase.model.RetrievalRequest
-import com.jervis.service.IRagSearchService
+import com.jervis.service.rag.IRagSearchService
 import org.springframework.stereotype.Component
 
 @Component

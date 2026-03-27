@@ -41,7 +41,7 @@ import com.jervis.dto.environment.K8sNamespaceStatusDto
 import com.jervis.dto.environment.K8sPodDto
 import com.jervis.dto.environment.K8sResourceListDto
 import com.jervis.dto.environment.K8sServiceDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JActionBar
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading

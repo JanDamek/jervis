@@ -6,7 +6,7 @@ import com.jervis.dto.filtering.FilterAction
 import com.jervis.dto.filtering.FilterConditionType
 import com.jervis.dto.filtering.FilterSourceType
 import com.jervis.dto.filtering.FilteringRuleRequest
-import com.jervis.service.filtering.FilteringRulesService
+import com.jervis.filtering.FilteringRulesService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive

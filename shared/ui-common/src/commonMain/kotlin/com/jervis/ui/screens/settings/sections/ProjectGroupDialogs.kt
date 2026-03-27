@@ -29,13 +29,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ClientDto
-import com.jervis.dto.ProjectGroupDto
+import com.jervis.dto.client.ClientDto
+import com.jervis.dto.project.ProjectGroupDto
 import com.jervis.dto.ProjectResourceDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionResponseDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JFormDialog
 import com.jervis.ui.design.JTextField
@@ -162,11 +162,11 @@ internal fun AddGroupResourceDialog(
 
 @Composable
 internal fun AddProjectToGroupDialog(
-    allProjects: List<com.jervis.dto.ProjectDto>,
-    projectsInGroup: List<com.jervis.dto.ProjectDto>,
+    allProjects: List<com.jervis.dto.project.ProjectDto>,
+    projectsInGroup: List<com.jervis.dto.project.ProjectDto>,
     groupId: String,
     repository: JervisRepository,
-    onAdded: (com.jervis.dto.ProjectDto) -> Unit,
+    onAdded: (com.jervis.dto.project.ProjectDto) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val availableProjects = allProjects.filter { project ->

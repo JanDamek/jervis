@@ -24,7 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.meeting.TranscriptCorrectionDto
 import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
-import com.jervis.service.ITranscriptCorrectionService
+import com.jervis.service.meeting.ITranscriptCorrectionService
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JDetailScreen

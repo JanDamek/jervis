@@ -2,9 +2,9 @@ package com.jervis.rpc.internal
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
-import com.jervis.service.git.GitRepositoryCreationService
-import com.jervis.service.project.ProjectService
-import com.jervis.service.project.ProjectWorkspaceInitEvent
+import com.jervis.git.GitRepositoryCreationService
+import com.jervis.project.ProjectService
+import com.jervis.project.ProjectWorkspaceInitEvent
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -54,7 +54,7 @@ fun Routing.installInternalGitApi(
             )
             call.respondText(
                 gitJson.encodeToString(
-                    com.jervis.service.git.GitRepoCreationResult.serializer(),
+                    com.jervis.git.GitRepoCreationResult.serializer(),
                     result,
                 ),
                 ContentType.Application.Json,

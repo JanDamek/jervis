@@ -1,7 +1,7 @@
 package com.jervis.ui.notification
 
 import com.jervis.dto.notification.DeviceTokenDto
-import com.jervis.service.IDeviceTokenService
+import com.jervis.service.notification.IDeviceTokenService
 
 actual object PushTokenRegistrar {
     private var lastRegisteredKey: String? = null

@@ -24,7 +24,7 @@ RUN python3 -c "from faster_whisper.utils import download_model; download_model(
 RUN python3 -c "from faster_whisper.utils import download_model; download_model('medium')"
 RUN python3 -c "from faster_whisper.utils import download_model; download_model('large-v3')"
 
-COPY backend/service-whisper/whisper_runner.py /opt/jervis/whisper/whisper_runner.py
+COPY backend/service-whisper/app/whisper_runner.py /opt/jervis/whisper/whisper_runner.py
 COPY backend/service-whisper/entrypoint-whisper-job.sh /opt/jervis/entrypoint-whisper-job.sh
 RUN chmod +x /opt/jervis/entrypoint-whisper-job.sh
 

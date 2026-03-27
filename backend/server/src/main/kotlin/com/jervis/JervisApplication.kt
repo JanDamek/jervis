@@ -1,16 +1,16 @@
 package com.jervis
 
-import com.jervis.configuration.properties.ArangoProperties
-import com.jervis.configuration.properties.BackgroundProperties
-import com.jervis.configuration.properties.CodingToolsProperties
-import com.jervis.configuration.properties.DataRootProperties
-import com.jervis.configuration.properties.EndpointProperties
-import com.jervis.configuration.properties.QualifierProperties
-import com.jervis.configuration.properties.LinkIndexingProperties
-import com.jervis.configuration.properties.PollingProperties
-import com.jervis.configuration.properties.SecurityProperties
-import com.jervis.configuration.properties.WeaviateProperties
-import com.jervis.configuration.properties.WhisperProperties
+import com.jervis.infrastructure.config.properties.ArangoProperties
+import com.jervis.infrastructure.config.properties.BackgroundProperties
+import com.jervis.infrastructure.config.properties.CodingToolsProperties
+import com.jervis.infrastructure.config.properties.DataRootProperties
+import com.jervis.infrastructure.config.properties.EndpointProperties
+import com.jervis.infrastructure.config.properties.QualifierProperties
+import com.jervis.infrastructure.config.properties.LinkIndexingProperties
+import com.jervis.infrastructure.config.properties.PollingProperties
+import com.jervis.infrastructure.config.properties.SecurityProperties
+import com.jervis.infrastructure.config.properties.WeaviateProperties
+import com.jervis.infrastructure.config.properties.WhisperProperties
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.runApplication

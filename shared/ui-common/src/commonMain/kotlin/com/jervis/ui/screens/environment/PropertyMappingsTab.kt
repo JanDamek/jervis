@@ -37,7 +37,7 @@ import com.jervis.dto.environment.ComponentTypeEnum
 import com.jervis.dto.environment.EnvironmentComponentDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.PropertyMappingDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JEmptyState

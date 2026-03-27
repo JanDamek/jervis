@@ -89,10 +89,10 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.CompressionBoundaryDto
+import com.jervis.dto.chat.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
-import com.jervis.service.IJobLogsService
+import com.jervis.service.meeting.IJobLogsService
 import com.jervis.ui.chat.TaskGraphSection
 import com.jervis.ui.coding.CodingAgentLogPanel
 import com.jervis.ui.queue.OrchestratorProgressInfo

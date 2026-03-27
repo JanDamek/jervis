@@ -29,7 +29,7 @@ import com.jervis.dto.environment.ComponentTemplateDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStateEnum
 import com.jervis.dto.environment.EnvironmentStatusDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JErrorState
 import com.jervis.ui.design.JListDetailLayout
 import com.jervis.ui.design.JTopBar

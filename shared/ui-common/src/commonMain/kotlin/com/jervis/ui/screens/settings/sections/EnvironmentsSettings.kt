@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.environment.ComponentTypeEnum
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStateEnum
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JActionBar
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JDestructiveButton

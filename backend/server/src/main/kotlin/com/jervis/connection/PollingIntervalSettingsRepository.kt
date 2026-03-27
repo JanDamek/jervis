@@ -1,0 +1,8 @@
+package com.jervis.connection
+
+import com.jervis.connection.PollingIntervalSettingsDocument
+import org.springframework.data.repository.kotlin.CoroutineCrudRepository
+import org.springframework.stereotype.Repository
+
+@Repository
+interface PollingIntervalSettingsRepository : CoroutineCrudRepository<PollingIntervalSettingsDocument, String>

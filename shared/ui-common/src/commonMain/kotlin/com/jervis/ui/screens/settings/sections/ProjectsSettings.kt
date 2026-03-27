@@ -19,8 +19,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.jervis.dto.ProjectDto
-import com.jervis.repository.JervisRepository
+import com.jervis.dto.project.ProjectDto
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JActionBar
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JListDetailLayout

@@ -4,7 +4,7 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.guidelines.GuidelinesScope
 import com.jervis.dto.guidelines.GuidelinesUpdateRequest
-import com.jervis.service.guidelines.GuidelinesService
+import com.jervis.guidelines.GuidelinesService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive

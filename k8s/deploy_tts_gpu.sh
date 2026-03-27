@@ -47,7 +47,7 @@ echo "  dependencies OK"
 
 # Step 3: Copy server files
 echo "Step 3/5: Copying TTS server..."
-ssh_cmd "cat > $INSTALL_DIR/tts_server.py" < "$PROJECT_ROOT/backend/service-tts/tts_server.py"
+ssh_cmd "cat > $INSTALL_DIR/tts_server.py" < "$PROJECT_ROOT/backend/service-tts/app/tts_server.py"
 echo "  files copied"
 
 # Step 4: Create systemd service

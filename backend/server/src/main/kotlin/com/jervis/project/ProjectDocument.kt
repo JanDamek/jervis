@@ -1,0 +1,182 @@
+package com.jervis.project
+
+import com.jervis.infrastructure.llm.CloudModelPolicy
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectGroupId
+import com.jervis.common.types.ProjectId
+import com.jervis.domain.language.LanguageEnum
+import com.jervis.dto.connection.ConnectionCapability
+import org.bson.types.ObjectId
+import org.springframework.data.annotation.Id
+import org.springframework.data.mongodb.core.index.Indexed
+import org.springframework.data.mongodb.core.mapping.Document
+
+/**
+ * MongoDB document representing a project.
+ *
+ * Git configuration can be defined at project level or inherited from the client.
+ * If no Git is configured, Git indexing is skipped for this project.
+ */
+@Document(collection = "projects")
+data class ProjectDocument(
+    @Id
+    val id: ProjectId = ProjectId.generate(),
+    @Indexed
+    val clientId: ClientId,
+    /** Optional group membership. Null = ungrouped project. */
+    @Indexed
+    val groupId: ProjectGroupId? = null,
+    @Indexed(unique = true)
+    val name: String,
+    val description: String? = null,
+    val communicationLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
+    val buildConfig: ProjectBuildConfig? = null,
+    val cloudModelPolicy: CloudModelPolicy? = null, // null = inherit from client
+    /** Review language override (null = inherit from group/client) */
+    val reviewLanguage: String? = null,
+    val gitCommitConfig: GitCommitConfig? = null, // Overrides client's config
+    /**
+     * Connection capabilities assigned to this project.
+     * Allows mixing capabilities from different connections.
+     * Example: GitHub for repository, Atlassian for bugtracker, GitLab for wiki
+     */
+    val connectionCapabilities: List<ProjectConnectionCapability> = emptyList(),
+    /** Multi-resource model: all resources in this project */
+    val resources: List<ProjectResource> = emptyList(),
+    /** N:M links between resources (e.g., repo ↔ issue tracker) */
+    val resourceLinks: List<ResourceLink> = emptyList(),
+    /** JERVIS internal project for orchestrator planning. Max 1 per client. */
+    val isJervisInternal: Boolean = false,
+    /** Workspace clone/readiness status. Null if no git connection. */
+    val workspaceStatus: WorkspaceStatus? = null,
+    /** Last time workspace status was checked. */
+    val lastWorkspaceCheck: java.time.Instant? = null,
+    /** Number of consecutive workspace clone retry attempts. Reset to 0 on success. */
+    val workspaceRetryCount: Int = 0,
+    /** Earliest time for next workspace retry (exponential backoff). Null = retry immediately. */
+    val nextWorkspaceRetryAt: java.time.Instant? = null,
+    /** Last workspace error message for diagnostics. */
+    val lastWorkspaceError: String? = null,
+    /** Non-null when a KB retag-group operation is pending (crash recovery). */
+    val pendingRetagGroupId: String? = null,
+    /**
+     * Whether this project is actively worked on.
+     * Inactive projects are excluded from indexing, qualification, vulnerability scans,
+     * code review, and other background processing. They remain visible in UI but marked
+     * as "Uzavřeno" (closed/completed).
+     */
+    val active: Boolean = true,
+)
+
+/**
+ * Build and verification configuration for a project.
+ *
+ * Used by Coding Agent when delegating CODING_VERIFY tasks.
+ * If null, Coding Agent will attempt auto-detection based on files in workspace.
+ */
+data class ProjectBuildConfig(
+    /** Commands to run for building (e.g., ["./gradlew build"]) */
+    val buildCommands: List<String> = emptyList(),
+    /** Commands to run for testing (e.g., ["./gradlew test"]) */
+    val testCommands: List<String> = emptyList(),
+    /** Maximum time to wait for verification (in seconds) */
+    val verifyTimeoutSeconds: Long = 600, // 10 minutes default
+)
+
+/**
+ * Git commit configuration for a project.
+ *
+ * Defines how commits should be formatted and signed when the agent makes changes.
+ */
+data class GitCommitConfig(
+    /** Template for commit messages, e.g., "[{project}] {message}" */
+    val messageFormat: String? = null,
+    /** Pattern with placeholders, e.g., "[$project] $message" */
+    val messagePattern: String? = null,
+    /** Git author name for commits */
+    val authorName: String? = null,
+    /** Git author email for commits */
+    val authorEmail: String? = null,
+    /** Git committer name (if different from author) */
+    val committerName: String? = null,
+    /** Git committer email (if different from author) */
+    val committerEmail: String? = null,
+    /** Whether to GPG sign commits */
+    val gpgSign: Boolean = false,
+    /** GPG key ID to use for signing */
+    val gpgKeyId: String? = null,
+)
+
+/**
+ * A specific resource assigned to a project.
+ * Multiple resources of the same capability type are allowed.
+ */
+data class ProjectResource(
+    val id: String,
+    val connectionId: ObjectId,
+    val capability: ConnectionCapability,
+    val resourceIdentifier: String,
+    val displayName: String = "",
+)
+
+/**
+ * N:M link between project resources.
+ */
+data class ResourceLink(
+    val sourceId: String,
+    val targetId: String,
+)
+
+/**
+ * Represents a capability assignment from a specific connection to a project.
+ * Allows projects to use specific capabilities from different connections.
+ */
+data class ProjectConnectionCapability(
+    /** The connection providing this capability */
+    val connectionId: ObjectId,
+    /** The capability type (BUGTRACKER, WIKI, REPOSITORY, EMAIL, GIT) */
+    val capability: ConnectionCapability,
+    /** Whether this capability is enabled for this project */
+    val enabled: Boolean = true,
+    /** Resource identifier specific to this capability (e.g., project key, repo name, space key) */
+    val resourceIdentifier: String? = null,
+    /** Specific resources to index for this project (overrides client's selectedResources) */
+    val selectedResources: List<String> = emptyList(),
+)
+
+/**
+ * Status of project workspace (git clone) readiness.
+ *
+ * Failure states are classified to distinguish retryable vs non-retryable errors:
+ * - AUTH/NOT_FOUND: user must fix connection settings (no auto-retry)
+ * - NETWORK/OTHER: transient errors, auto-retry with exponential backoff
+ */
+enum class WorkspaceStatus {
+    /** Project has no git connection, workspace not needed */
+    NOT_NEEDED,
+    /** Git clone in progress */
+    CLONING,
+    /** Workspace ready for use */
+    READY,
+    /** Auth error (bad credentials, expired token without refresh) — user must fix */
+    CLONE_FAILED_AUTH,
+    /** Network/timeout error — retryable with exponential backoff */
+    CLONE_FAILED_NETWORK,
+    /** Repository not found (404) — user must fix URL */
+    CLONE_FAILED_NOT_FOUND,
+    /** Unknown failure — retryable with exponential backoff */
+    CLONE_FAILED_OTHER,
+    ;
+
+    /** True if this failure is transient and should be auto-retried with backoff. */
+    val isRetryable: Boolean
+        get() = this == CLONE_FAILED_NETWORK || this == CLONE_FAILED_OTHER
+
+    /** True if this is any kind of clone failure. */
+    val isCloneFailed: Boolean
+        get() = name.startsWith("CLONE_FAILED")
+
+    companion object {
+        val RETRYABLE_FAILURES = entries.filter { it.isRetryable }
+    }
+}

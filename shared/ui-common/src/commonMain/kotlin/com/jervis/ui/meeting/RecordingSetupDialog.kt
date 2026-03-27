@@ -27,8 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ClientDto
-import com.jervis.dto.ProjectDto
+import com.jervis.dto.client.ClientDto
+import com.jervis.dto.project.ProjectDto
 import com.jervis.dto.meeting.AudioInputType
 import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.ui.audio.AudioDevice

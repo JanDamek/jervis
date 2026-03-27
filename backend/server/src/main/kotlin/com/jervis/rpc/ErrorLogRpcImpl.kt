@@ -3,8 +3,8 @@ package com.jervis.rpc
 
 import com.jervis.dto.error.ErrorLogCreateRequestDto
 import com.jervis.dto.error.ErrorLogDto
-import com.jervis.service.IErrorLogService
-import com.jervis.service.error.ErrorLogService
+import com.jervis.service.error.IErrorLogService
+import com.jervis.infrastructure.error.ErrorLogService
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
 
@@ -45,7 +45,7 @@ class ErrorLogRpcImpl(
     }
 }
 
-private fun com.jervis.domain.error.ErrorLog.toDto(): ErrorLogDto =
+private fun com.jervis.infrastructure.error.ErrorLog.toDto(): ErrorLogDto =
     ErrorLogDto(
         id = this.id.toString(),
         clientId = this.clientId?.toString(),

@@ -11,12 +11,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ClientDto
-import com.jervis.dto.ProjectDto
-import com.jervis.dto.TaskStateEnum
+import com.jervis.dto.client.ClientDto
+import com.jervis.dto.project.ProjectDto
+import com.jervis.dto.task.TaskStateEnum
 import com.jervis.dto.filterVisible
-import com.jervis.dto.ScheduledTaskDto
-import com.jervis.repository.JervisRepository
+import com.jervis.dto.task.ScheduledTaskDto
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.*
 import com.jervis.ui.util.*
 import kotlinx.coroutines.async

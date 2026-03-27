@@ -27,9 +27,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ProjectDto
+import com.jervis.dto.project.ProjectDto
 import com.jervis.dto.connection.ConnectionResponseDto
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JFormDialog
 import com.jervis.ui.design.JRemoveIconButton

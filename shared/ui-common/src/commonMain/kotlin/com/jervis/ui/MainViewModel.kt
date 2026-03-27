@@ -2,12 +2,12 @@ package com.jervis.ui
 
 import com.jervis.di.RpcConnectionManager
 import com.jervis.di.RpcConnectionState
-import com.jervis.dto.ClientDto
-import com.jervis.dto.ProjectDto
+import com.jervis.dto.client.ClientDto
+import com.jervis.dto.project.ProjectDto
 import com.jervis.dto.filterVisible
 import com.jervis.dto.events.JervisEvent
 import com.jervis.dto.ui.ChatMessage
-import com.jervis.repository.JervisRepository
+import com.jervis.di.JervisRepository
 import com.jervis.ui.chat.ChatViewModel
 import com.jervis.ui.notification.NotificationViewModel
 import com.jervis.ui.notification.PushTokenRegistrar
