@@ -188,6 +188,21 @@ class AtlassianServiceImpl(
             )
         }
 
+    override suspend fun getComments(request: BugTrackerGetCommentsRequest): BugTrackerGetCommentsResponse =
+        withContext(Dispatchers.IO) {
+            logger.info { "BugTracker: getComments for issue=${request.issueKey}" }
+            val comments = atlassianApiClient.getJiraComments(
+                baseUrl = request.baseUrl,
+                authType = request.authType,
+                basicUsername = request.basicUsername,
+                basicPassword = request.basicPassword,
+                bearerToken = request.bearerToken,
+                cloudId = request.cloudId,
+                issueKey = request.issueKey,
+            )
+            BugTrackerGetCommentsResponse(comments = comments)
+        }
+
     override suspend fun transitionIssue(request: BugTrackerTransitionRpcRequest) =
         withContext(Dispatchers.IO) {
             logger.info { "BugTracker: transitionIssue key=${request.issueKey} to ${request.transitionName}" }

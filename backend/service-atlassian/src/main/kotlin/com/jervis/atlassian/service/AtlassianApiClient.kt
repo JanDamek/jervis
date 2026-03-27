@@ -14,6 +14,7 @@ import com.jervis.common.dto.atlassian.JiraIssueRequest
 import com.jervis.common.dto.atlassian.JiraIssueResponse
 import com.jervis.common.dto.atlassian.JiraSearchRequest
 import com.jervis.common.dto.atlassian.JiraSearchResponse
+import com.jervis.common.dto.bugtracker.BugTrackerCommentDto
 import com.jervis.common.dto.bugtracker.BugTrackerCommentResponse
 import com.jervis.common.dto.bugtracker.BugTrackerIssueDto
 import com.jervis.common.dto.bugtracker.BugTrackerIssueResponse
@@ -50,6 +51,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -1537,6 +1542,78 @@ class AtlassianApiClient(
             body = commentBody,
             created = result.created ?: "",
         )
+    }
+
+    suspend fun getJiraComments(
+        baseUrl: String,
+        authType: com.jervis.common.dto.AuthType,
+        basicUsername: String?,
+        basicPassword: String?,
+        bearerToken: String?,
+        cloudId: String?,
+        issueKey: String,
+    ): List<BugTrackerCommentDto> {
+        logger.info { "Getting comments for Jira issue: $issueKey" }
+        val conn = resolveConnection(baseUrl, authType, basicUsername, basicPassword, bearerToken, cloudId)
+        val jiraBase = getJiraBaseUrl(conn)
+        val isCloud = baseUrl.contains("atlassian.net") || conn.cloudId != null
+        val apiVersion = if (isCloud) "3" else "2"
+        val url = "$jiraBase/rest/api/$apiVersion/issue/$issueKey/comment?orderBy=-created&maxResults=50"
+
+        val response = rateLimitedRequest(url) { client, _ ->
+            client.request(url) {
+                method = HttpMethod.Get
+                applyAuth(conn)
+            }
+        }
+
+        if (response.status.value !in 200..299) {
+            val responseBody = runCatching { response.body<String>() }.getOrNull() ?: ""
+            logger.warn { "Get Jira comments failed: status=${response.status.value}, body=$responseBody" }
+            return emptyList()
+        }
+
+        val responseJson = json.parseToJsonElement(response.body<String>()).jsonObject
+        val comments = responseJson["comments"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
+
+        return comments.map { comment ->
+            val authorObj = comment["author"]?.jsonObject
+            val authorName = authorObj?.get("displayName")?.jsonPrimitive?.contentOrNull ?: "Unknown"
+            val authorId = authorObj?.get("accountId")?.jsonPrimitive?.contentOrNull
+                ?: authorObj?.get("key")?.jsonPrimitive?.contentOrNull
+            val bodyText = if (isCloud) {
+                // ADF → extract text nodes
+                extractAdfText(comment["body"])
+            } else {
+                comment["body"]?.jsonPrimitive?.contentOrNull ?: ""
+            }
+            BugTrackerCommentDto(
+                id = comment["id"]?.jsonPrimitive?.contentOrNull ?: "",
+                author = authorName,
+                authorId = authorId,
+                body = bodyText,
+                created = comment["created"]?.jsonPrimitive?.contentOrNull ?: "",
+            )
+        }
+    }
+
+    private fun extractAdfText(adfElement: kotlinx.serialization.json.JsonElement?): String {
+        if (adfElement == null) return ""
+        return buildString {
+            fun traverse(el: kotlinx.serialization.json.JsonElement) {
+                when (el) {
+                    is kotlinx.serialization.json.JsonObject -> {
+                        if (el["type"]?.jsonPrimitive?.contentOrNull == "text") {
+                            append(el["text"]?.jsonPrimitive?.contentOrNull ?: "")
+                        }
+                        el["content"]?.let { traverse(it) }
+                    }
+                    is kotlinx.serialization.json.JsonArray -> el.forEach { traverse(it) }
+                    else -> {}
+                }
+            }
+            traverse(adfElement)
+        }
     }
 
     suspend fun transitionJiraIssue(
