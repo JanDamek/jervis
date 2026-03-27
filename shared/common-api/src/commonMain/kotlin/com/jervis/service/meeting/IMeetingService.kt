@@ -5,6 +5,7 @@ import com.jervis.dto.meeting.CorrectionAnswerDto
 import com.jervis.dto.meeting.MeetingClassifyDto
 import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.MeetingDto
+import com.jervis.dto.meeting.MeetingMergeDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
 import com.jervis.dto.meeting.MeetingSummaryDto
 import com.jervis.dto.meeting.MeetingTimelineDto
@@ -76,6 +77,8 @@ interface IMeetingService {
         clientId: String,
         projectId: String?,
     ): MeetingTimelineDto
+
+    suspend fun mergeMeetings(request: MeetingMergeDto): MeetingDto
 
     suspend fun listMeetingsByRange(
         clientId: String,

@@ -67,6 +67,8 @@ data class MeetingDocument(
     val qualified: Boolean = false,
     val deleted: Boolean = false,
     val deletedAt: Instant? = null,
+    /** True when meeting completed full pipeline: transcribed + corrected + re-indexed. */
+    val fullyProcessed: Boolean = false,
     /** Device session ID for multi-device deduplication (future: merge recordings from multiple devices). */
     val deviceSessionId: String? = null,
 )

@@ -404,7 +404,7 @@ class MeetingContinuousIndexer(
 
         val meetingContent = buildMeetingContent(meeting)
 
-        taskService.createTask(
+        val task = taskService.createTask(
             taskType = TaskTypeEnum.MEETING_PROCESSING,
             content = meetingContent,
             clientId = effectiveClientId,
@@ -416,6 +416,11 @@ class MeetingContinuousIndexer(
             projectId = meeting.projectId,
             taskName = (meeting.title ?: "Meeting ${meeting.id}").take(120),
         )
+
+        // Set topicId for session consolidation (like email threadId / slack channelId)
+        computeMeetingTopicId(meeting)?.let { topicId ->
+            taskService.setTopicId(task.id, topicId)
+        }
 
         // Auto-qualify meetings that already have clientId (user assigned project)
         val isQualified = meeting.qualified || clientId != null
@@ -466,11 +471,12 @@ class MeetingContinuousIndexer(
             }
             try {
                 reindexCorrectedMeeting(meeting)
-                // Transition to INDEXED — pipeline complete
+                // Transition to INDEXED — full pipeline complete (transcribed + corrected + re-indexed)
                 meetingRepository.save(
                     meeting.copy(
                         state = MeetingStateEnum.INDEXED,
                         stateChangedAt = java.time.Instant.now(),
+                        fullyProcessed = true,
                     ),
                 )
                 val clientIdStr = meeting.clientId?.toString().orEmpty()
@@ -496,7 +502,7 @@ class MeetingContinuousIndexer(
         val meetingContent = buildMeetingContent(meeting)
 
         // Create re-indexing task with corrected content
-        taskService.createTask(
+        val task = taskService.createTask(
             taskType = TaskTypeEnum.MEETING_PROCESSING,
             content = meetingContent,
             clientId = clientId,
@@ -508,6 +514,10 @@ class MeetingContinuousIndexer(
             projectId = meeting.projectId,
             taskName = "Re-index: ${(meeting.title ?: "Meeting ${meeting.id}").take(110)}",
         )
+
+        computeMeetingTopicId(meeting)?.let { topicId ->
+            taskService.setTopicId(task.id, topicId)
+        }
 
         logger.info { "Re-indexed meeting with corrected text: ${meeting.title ?: meeting.id}" }
     }
@@ -542,6 +552,34 @@ class MeetingContinuousIndexer(
     }
 
     // ===== Shared Utilities =====
+
+    /**
+     * Compute topicId for meeting session consolidation.
+     * Meetings with same (clientId, projectId, meetingType) within ±10 min get same topicId.
+     */
+    private suspend fun computeMeetingTopicId(meeting: MeetingDocument): String? {
+        val clientId = meeting.clientId ?: return null
+        val meetingType = meeting.meetingType ?: return null
+        val windowMinutes = 10L
+        val from = meeting.startedAt.minusSeconds(windowMinutes * 60)
+        val to = meeting.startedAt.plusSeconds(windowMinutes * 60)
+
+        val overlapping = meetingRepository.findOverlapping(
+            clientId = clientId,
+            projectId = meeting.projectId,
+            meetingType = meetingType,
+            excludeId = meeting.id,
+            from = from,
+            to = to,
+        ).toList()
+
+        // Use earliest meeting's startedAt (truncated to hour) as the dateKey
+        val earliest = (overlapping.map { it.startedAt } + meeting.startedAt).min()
+        val dateKey = earliest.truncatedTo(java.time.temporal.ChronoUnit.HOURS).toString()
+        val projectPart = meeting.projectId?.toString() ?: "none"
+
+        return "meeting-session:${clientId}/${projectPart}/${meetingType.name}/${dateKey}"
+    }
 
     private fun buildMeetingContent(meeting: MeetingDocument): String = buildString {
         val title = meeting.title ?: "Meeting ${meeting.id}"

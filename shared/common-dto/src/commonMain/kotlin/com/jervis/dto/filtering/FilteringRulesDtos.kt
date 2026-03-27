@@ -14,7 +14,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 enum class FilterSourceType {
-    EMAIL, JIRA, GIT, WIKI, CHAT, ALL,
+    EMAIL, JIRA, GIT, WIKI, CHAT, MEETING, ALL,
 }
 
 /**

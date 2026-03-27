@@ -544,9 +544,21 @@ class MeetingRpcImpl(
             }
         }
 
-        // If meeting was INDEXED without clientId, reset to TRANSCRIBED so Pipeline 2
-        // re-indexes with the new clientId (KB indexing + qualified=true)
+        // If meeting was INDEXED without clientId, purge old UNCLASSIFIED KB entry
+        // and reset to TRANSCRIBED so Pipeline 2 re-indexes with real clientId
         val needsReindex = meeting.clientId == null && meeting.state == MeetingStateEnum.INDEXED
+        if (needsReindex) {
+            try {
+                val oldSourceUrn = com.jervis.common.types.SourceUrn.meeting(
+                    meetingId = meeting.id.toHexString(),
+                    title = meeting.title,
+                )
+                knowledgeService.purge(oldSourceUrn.toString())
+                logger.info { "Purged UNCLASSIFIED KB entry for meeting ${request.meetingId}" }
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to purge UNCLASSIFIED KB entry for meeting ${request.meetingId}" }
+            }
+        }
         val newState = if (needsReindex) MeetingStateEnum.TRANSCRIBED else meeting.state
 
         val updated = meeting.copy(
@@ -671,6 +683,62 @@ class MeetingRpcImpl(
             targetStartedAt = candidate.startedAt.toString(),
             targetDurationSeconds = candidate.durationSeconds,
         )
+    }
+
+    override suspend fun mergeMeetings(request: com.jervis.dto.meeting.MeetingMergeDto): MeetingDto {
+        val sourceId = ObjectId(request.sourceMeetingId)
+        val targetId = ObjectId(request.targetMeetingId)
+
+        val source = meetingRepository.findById(sourceId)
+            ?: throw IllegalStateException("Source meeting not found: ${request.sourceMeetingId}")
+        val target = meetingRepository.findById(targetId)
+            ?: throw IllegalStateException("Target meeting not found: ${request.targetMeetingId}")
+
+        // Combine transcript segments sorted by time
+        val combinedSegments = (target.transcriptSegments + source.transcriptSegments)
+            .sortedBy { it.startSec }
+        val combinedText = combinedSegments.joinToString("\n") { it.text }
+
+        // Combine corrected segments if any exist
+        val combinedCorrectedSegments = if (target.correctedTranscriptSegments.isNotEmpty() || source.correctedTranscriptSegments.isNotEmpty()) {
+            (target.correctedTranscriptSegments + source.correctedTranscriptSegments)
+                .sortedBy { it.startSec }
+        } else emptyList()
+        val combinedCorrectedText = combinedCorrectedSegments
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString("\n") { it.text }
+
+        // Merge speaker mappings and duration
+        val mergedDuration = maxOf(target.durationSeconds ?: 0L, source.durationSeconds ?: 0L)
+        val mergedSpeakerMapping = target.speakerMapping + source.speakerMapping
+
+        // Save merged target — reset to TRANSCRIBED to trigger full re-index pipeline
+        val merged = target.copy(
+            transcriptSegments = combinedSegments,
+            transcriptText = combinedText,
+            correctedTranscriptSegments = combinedCorrectedSegments,
+            correctedTranscriptText = combinedCorrectedText,
+            durationSeconds = mergedDuration,
+            speakerMapping = mergedSpeakerMapping,
+            state = MeetingStateEnum.TRANSCRIBED,
+            stateChangedAt = Instant.now(),
+            fullyProcessed = false,
+        )
+        val saved = meetingRepository.save(merged)
+
+        // Purge source KB entry and soft-delete source
+        try {
+            val sourceUrn = com.jervis.common.types.SourceUrn.meeting(
+                meetingId = source.id.toHexString(), title = source.title,
+            )
+            knowledgeService.purge(sourceUrn.toString())
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to purge KB for merged source meeting ${source.id}" }
+        }
+        meetingRepository.save(source.copy(deleted = true, deletedAt = Instant.now()))
+
+        logger.info { "Merged meeting ${source.id} into ${target.id}" }
+        return saved.toDto()
     }
 
     override suspend fun listUnclassifiedMeetings(): List<MeetingDto> {

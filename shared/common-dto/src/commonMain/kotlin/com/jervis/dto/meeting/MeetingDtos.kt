@@ -179,6 +179,12 @@ data class MeetingSummaryDto(
 )
 
 @Serializable
+data class MeetingMergeDto(
+    val sourceMeetingId: String,
+    val targetMeetingId: String,
+)
+
+@Serializable
 data class MergeSuggestionDto(
     val targetMeetingId: String,
     val targetTitle: String?,

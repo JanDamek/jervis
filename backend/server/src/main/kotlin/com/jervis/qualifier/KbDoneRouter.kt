@@ -15,6 +15,7 @@ object KbDoneRouter {
             urn.startsWith("github-issue::") || urn.startsWith("gitlab-issue::") || urn.startsWith("git::") -> FilterSourceType.GIT
             urn.startsWith("confluence::") -> FilterSourceType.WIKI
             urn.startsWith("chat::") -> FilterSourceType.CHAT
+            urn.startsWith("meeting::") -> FilterSourceType.MEETING
             else -> FilterSourceType.ALL
         }
     }
