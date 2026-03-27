@@ -209,6 +209,55 @@ def _detect_type(mime_type: str, filename: str) -> str:
     return "text"
 
 
+# Binary file extensions — listed in archive output but content not extracted
+_BINARY_EXTENSIONS = {
+    # Executables / system
+    ".exe", ".dll", ".so", ".dylib", ".lib", ".a", ".o", ".obj",
+    ".bin", ".com", ".sys", ".drv", ".msi", ".dmg", ".app",
+    # JVM
+    ".class", ".jar", ".war", ".ear",
+    # .NET
+    ".pdb", ".nupkg",
+    # Python
+    ".pyc", ".pyo", ".pyd", ".whl", ".egg",
+    # Native compiled
+    ".deb", ".rpm", ".apk", ".ipa", ".aab",
+    # Fonts
+    ".ttf", ".otf", ".woff", ".woff2", ".eot",
+    # Media (not processable as text or VLM-worthy in archive context)
+    ".mp3", ".mp4", ".avi", ".mov", ".mkv", ".wmv", ".flv",
+    ".wav", ".flac", ".aac", ".ogg", ".m4a",
+    ".ico",
+    # Database / data
+    ".db", ".sqlite", ".sqlite3", ".mdb", ".accdb",
+    # Compressed (nested archives handled by recursion, these are opaque)
+    ".iso", ".img", ".vmdk", ".vhd",
+    # Misc binary
+    ".dat", ".pak", ".res", ".cache",
+    ".min.js", ".min.css",  # minified — technically text but useless
+    ".map",  # source maps — very large, not useful for KB
+    ".lock",  # lock files
+    ".wasm",
+}
+
+
+def _is_binary_extension(filename_lower: str) -> bool:
+    """Check if file is a known binary format (no useful text to extract)."""
+    for ext in _BINARY_EXTENSIONS:
+        if filename_lower.endswith(ext):
+            return True
+    return False
+
+
+def _human_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Main extractor
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -628,29 +677,43 @@ class DocumentExtractor:
             )
 
         parts = []
+        binary_listing = []
         files_processed = 0
         total_bytes = 0
-        skipped = []
+        truncated = False
 
         try:
             entries = self._list_archive_entries(file_bytes, filename, archive_type)
 
             for entry_name, entry_bytes in entries:
                 if files_processed >= _MAX_ARCHIVE_FILES:
-                    skipped.append(f"... truncated at {_MAX_ARCHIVE_FILES} files")
+                    truncated = True
                     break
                 if total_bytes >= _MAX_ARCHIVE_TOTAL_BYTES:
-                    skipped.append("... total size limit reached")
+                    truncated = True
                     break
-                if len(entry_bytes) > _MAX_SINGLE_FILE_BYTES:
-                    skipped.append(f"{entry_name} (too large: {len(entry_bytes)} bytes)")
-                    continue
-                if len(entry_bytes) == 0:
+
+                base = PurePosixPath(entry_name).name.lower()
+                size = len(entry_bytes)
+
+                # Skip OS metadata
+                if base in ("thumbs.db", "desktop.ini", ".ds_store"):
                     continue
 
-                # Skip known binary junk
-                base = PurePosixPath(entry_name).name.lower()
-                if base.startswith(".") or base == "thumbs.db" or base == "desktop.ini":
+                # Binary files — list but don't extract content
+                if _is_binary_extension(base):
+                    binary_listing.append(f"  {entry_name} ({_human_size(size)})")
+                    files_processed += 1
+                    continue
+
+                # Empty files
+                if size == 0:
+                    continue
+
+                # Too large for extraction — list with size
+                if size > _MAX_SINGLE_FILE_BYTES:
+                    binary_listing.append(f"  {entry_name} ({_human_size(size)}, too large to extract)")
+                    files_processed += 1
                     continue
 
                 try:
@@ -660,10 +723,10 @@ class DocumentExtractor:
                     if result.text.strip():
                         parts.append(f"=== {entry_name} ===\n{result.text}")
                         files_processed += 1
-                        total_bytes += len(entry_bytes)
+                        total_bytes += size
                 except Exception as e:
                     logger.warning("Failed to extract %s from archive: %s", entry_name, e)
-                    skipped.append(f"{entry_name} (extraction error)")
+                    binary_listing.append(f"  {entry_name} ({_human_size(size)}, extraction error)")
 
         except Exception as e:
             logger.warning("Archive extraction failed for %s: %s", filename, e)
@@ -672,8 +735,10 @@ class DocumentExtractor:
                 method="archive-error",
             )
 
-        if skipped:
-            parts.append("=== Skipped ===\n" + "\n".join(skipped))
+        if binary_listing:
+            parts.append("=== Binary/non-text files ===\n" + "\n".join(binary_listing))
+        if truncated:
+            parts.append(f"(archive truncated: limit reached at {files_processed} files)")
 
         text = "\n\n".join(parts) if parts else "(empty archive)"
         return ExtractedDocument(
@@ -681,7 +746,7 @@ class DocumentExtractor:
             metadata={
                 "archive_type": archive_type,
                 "files_extracted": files_processed,
-                "files_skipped": len(skipped),
+                "binary_files": len(binary_listing),
             },
         )
 
