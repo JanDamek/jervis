@@ -1,10 +1,11 @@
 """Document Extraction Service — converts any file format to plain text.
 
-Extraction strategy per mime type:
-- text/*, CSV, JSON, XML, YAML, Markdown → direct UTF-8 decode
+Supported formats:
+- text/*, code files → direct UTF-8 decode
+- CSV/TSV → structured table extraction
 - HTML → BeautifulSoup strip tags
 - DOCX → python-docx paragraphs + tables
-- DOC (legacy) → mammoth → HTML → BeautifulSoup
+- DOC (legacy) → mammoth → HTML → text
 - XLSX → openpyxl sheet rows
 - XLS (legacy) → xlrd sheet rows
 - PPTX → python-pptx slides (shapes + tables + notes)
@@ -14,6 +15,9 @@ Extraction strategy per mime type:
 - Images → VLM description + OCR
 - MSG (Outlook) → extract-msg
 - EML → stdlib email parser
+- EPUB → ebooklib chapters
+- VSDX (Visio) → shape text extraction
+- ZIP/RAR/7z/tar.gz → recursive extraction of contained files
 
 VLM calls go through Ollama router (HTTP) for GPU/cloud routing.
 """
@@ -23,11 +27,24 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import os
+import zipfile
+import tarfile
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Max recursion depth for nested archives
+_MAX_ARCHIVE_DEPTH = 3
+# Max total extracted size from archive (100MB)
+_MAX_ARCHIVE_TOTAL_BYTES = 100 * 1024 * 1024
+# Max files to extract from a single archive
+_MAX_ARCHIVE_FILES = 200
+# Skip files larger than this inside archives (20MB)
+_MAX_SINGLE_FILE_BYTES = 20 * 1024 * 1024
 
 
 @dataclass
@@ -57,19 +74,19 @@ class ExtractedDocument:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _TEXT_MIMES = {
-    "text/plain", "text/csv", "text/markdown", "text/x-markdown",
+    "text/plain", "text/markdown", "text/x-markdown",
     "application/json", "application/xml", "text/xml", "text/yaml",
     "application/x-yaml",
 }
+_CSV_MIMES = {"text/csv", "text/tab-separated-values"}
 _HTML_MIMES = {"text/html", "application/xhtml+xml"}
 _PDF_MIMES = {"application/pdf"}
 _DOCX_MIMES = {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
 _DOC_MIMES = {"application/msword"}
 _XLSX_MIMES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-excel",
 }
-_XLS_MIMES = {"application/vnd.ms-excel"}  # shared with xlsx — resolved by extension
+_XLS_MIMES = {"application/vnd.ms-excel"}
 _PPTX_MIMES = {
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "application/vnd.ms-powerpoint",
@@ -80,6 +97,15 @@ _ODP_MIMES = {"application/vnd.oasis.opendocument.presentation"}
 _RTF_MIMES = {"application/rtf", "text/rtf"}
 _MSG_MIMES = {"application/vnd.ms-outlook"}
 _EML_MIMES = {"message/rfc822"}
+_EPUB_MIMES = {"application/epub+zip"}
+_VSDX_MIMES = {"application/vnd.ms-visio.drawing.main+xml",
+               "application/vnd.visio"}
+_ZIP_MIMES = {"application/zip", "application/x-zip-compressed"}
+_TAR_MIMES = {"application/x-tar", "application/gzip", "application/x-gzip",
+              "application/x-bzip2", "application/x-xz",
+              "application/x-compressed-tar"}
+_RAR_MIMES = {"application/x-rar-compressed", "application/vnd.rar"}
+_SEVENZ_MIMES = {"application/x-7z-compressed"}
 _IMAGE_MIMES = {
     "image/png", "image/jpeg", "image/jpg", "image/webp",
     "image/bmp", "image/gif", "image/tiff",
@@ -87,15 +113,29 @@ _IMAGE_MIMES = {
 
 _EXT_TO_TYPE = {
     # Text
-    ".txt": "text", ".csv": "text", ".json": "text", ".xml": "text",
+    ".txt": "text", ".json": "text", ".xml": "text",
     ".yaml": "text", ".yml": "text", ".md": "text", ".log": "text",
     ".ini": "text", ".cfg": "text", ".conf": "text", ".properties": "text",
+    ".toml": "text", ".env": "text",
+    # CSV/TSV
+    ".csv": "csv", ".tsv": "csv",
     # Code (as text)
-    ".py": "text", ".js": "text", ".ts": "text", ".java": "text",
-    ".kt": "text", ".kts": "text", ".swift": "text", ".go": "text",
-    ".rs": "text", ".c": "text", ".cpp": "text", ".h": "text",
-    ".cs": "text", ".rb": "text", ".php": "text", ".sh": "text",
-    ".sql": "text", ".gradle": "text",
+    ".py": "text", ".js": "text", ".ts": "text", ".tsx": "text",
+    ".jsx": "text", ".java": "text", ".kt": "text", ".kts": "text",
+    ".swift": "text", ".go": "text", ".rs": "text", ".c": "text",
+    ".cpp": "text", ".h": "text", ".hpp": "text", ".cs": "text",
+    ".rb": "text", ".php": "text", ".sh": "text", ".bash": "text",
+    ".zsh": "text", ".fish": "text", ".ps1": "text",
+    ".sql": "text", ".gradle": "text", ".groovy": "text",
+    ".scala": "text", ".clj": "text", ".ex": "text", ".exs": "text",
+    ".r": "text", ".R": "text", ".m": "text", ".mm": "text",
+    ".dart": "text", ".lua": "text", ".pl": "text", ".pm": "text",
+    ".tf": "text", ".hcl": "text",  # Terraform
+    ".proto": "text", ".graphql": "text", ".gql": "text",
+    ".dockerfile": "text", ".makefile": "text",
+    ".cmake": "text", ".bat": "text", ".cmd": "text",
+    ".vue": "text", ".svelte": "text",
+    ".css": "text", ".scss": "text", ".less": "text", ".sass": "text",
     # HTML
     ".html": "html", ".htm": "html", ".xhtml": "html",
     # PDF
@@ -103,16 +143,28 @@ _EXT_TO_TYPE = {
     # Office — modern
     ".docx": "docx", ".xlsx": "xlsx", ".pptx": "pptx",
     # Office — legacy
-    ".doc": "doc", ".xls": "xls", ".ppt": "pptx",  # ppt → try pptx parser
+    ".doc": "doc", ".xls": "xls", ".ppt": "pptx",
     # OpenDocument
     ".odt": "odt", ".ods": "ods", ".odp": "odp",
     # RTF
     ".rtf": "rtf",
     # Email
-    ".msg": "msg", ".eml": "eml",
+    ".msg": "msg", ".eml": "eml", ".mbox": "eml",
+    # EPUB
+    ".epub": "epub",
+    # Visio
+    ".vsdx": "vsdx",
+    # Archives
+    ".zip": "zip", ".jar": "zip", ".war": "zip",
+    ".tar": "tar", ".tar.gz": "tar", ".tgz": "tar",
+    ".tar.bz2": "tar", ".tar.xz": "tar",
+    ".gz": "tar",
+    ".rar": "rar",
+    ".7z": "7z",
     # Images
     ".png": "image", ".jpg": "image", ".jpeg": "image", ".webp": "image",
     ".bmp": "image", ".gif": "image", ".tiff": "image", ".tif": "image",
+    ".svg": "html",  # SVG is XML — extract text
 }
 
 
@@ -121,6 +173,7 @@ def _detect_type(mime_type: str, filename: str) -> str:
 
     # MIME-based detection
     if mime_lower in _TEXT_MIMES: return "text"
+    if mime_lower in _CSV_MIMES: return "csv"
     if mime_lower in _HTML_MIMES: return "html"
     if mime_lower in _PDF_MIMES: return "pdf"
     if mime_lower in _DOCX_MIMES: return "docx"
@@ -132,19 +185,25 @@ def _detect_type(mime_type: str, filename: str) -> str:
     if mime_lower in _RTF_MIMES: return "rtf"
     if mime_lower in _MSG_MIMES: return "msg"
     if mime_lower in _EML_MIMES: return "eml"
+    if mime_lower in _EPUB_MIMES: return "epub"
+    if mime_lower in _VSDX_MIMES: return "vsdx"
+    if mime_lower in _ZIP_MIMES: return "zip"
+    if mime_lower in _TAR_MIMES: return "tar"
+    if mime_lower in _RAR_MIMES: return "rar"
+    if mime_lower in _SEVENZ_MIMES: return "7z"
     if mime_lower in _IMAGE_MIMES: return "image"
-    # xlsx vs xls — resolve by extension first
-    if mime_lower in _XLSX_MIMES:
+    # xlsx vs xls — resolve by extension
+    if mime_lower in _XLSX_MIMES or mime_lower in _XLS_MIMES:
         fname_lower = filename.lower() if filename else ""
         if fname_lower.endswith(".xls"):
             return "xls"
         return "xlsx"
 
-    # Extension-based fallback
+    # Extension-based fallback (check longest match first for .tar.gz etc)
     fname_lower = filename.lower() if filename else ""
-    for ext, doc_type in _EXT_TO_TYPE.items():
+    for ext in sorted(_EXT_TO_TYPE.keys(), key=len, reverse=True):
         if fname_lower.endswith(ext):
-            return doc_type
+            return _EXT_TO_TYPE[ext]
 
     # Unknown → try as text
     return "text"
@@ -166,13 +225,16 @@ class DocumentExtractor:
         filename: str,
         mime_type: str = "",
         max_tier: str = "NONE",
+        _depth: int = 0,
     ) -> ExtractedDocument:
         doc_type = _detect_type(mime_type, filename)
-        logger.info("DocumentExtractor: file=%s mime=%s type=%s size=%d",
-                     filename, mime_type, doc_type, len(file_bytes))
+        logger.info("DocumentExtractor: file=%s mime=%s type=%s size=%d depth=%d",
+                     filename, mime_type, doc_type, len(file_bytes), _depth)
 
-        extractors = {
+        # Sync extractors
+        sync_extractors = {
             "text": lambda: self._extract_text_direct(file_bytes, filename),
+            "csv": lambda: self._extract_csv(file_bytes, filename),
             "html": lambda: self._extract_html(file_bytes),
             "docx": lambda: self._extract_docx(file_bytes),
             "doc": lambda: self._extract_doc_legacy(file_bytes),
@@ -185,24 +247,58 @@ class DocumentExtractor:
             "rtf": lambda: self._extract_rtf(file_bytes),
             "msg": lambda: self._extract_msg(file_bytes),
             "eml": lambda: self._extract_eml(file_bytes),
+            "epub": lambda: self._extract_epub(file_bytes),
+            "vsdx": lambda: self._extract_vsdx(file_bytes),
         }
 
-        if doc_type in extractors:
-            return extractors[doc_type]()
+        if doc_type in sync_extractors:
+            return sync_extractors[doc_type]()
         elif doc_type == "pdf":
             return await self._extract_pdf(file_bytes, max_tier)
         elif doc_type == "image":
             return await self._extract_image(file_bytes, max_tier)
+        elif doc_type in ("zip", "tar", "rar", "7z"):
+            return await self._extract_archive(file_bytes, filename, doc_type, max_tier, _depth)
         else:
             return self._extract_text_direct(file_bytes, filename)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # Text / HTML
+    # Text / CSV / HTML
     # ═══════════════════════════════════════════════════════════════════════════
 
     def _extract_text_direct(self, file_bytes: bytes, filename: str) -> ExtractedDocument:
         text = file_bytes.decode("utf-8", errors="replace")
         return ExtractedDocument(text=text, method="direct", metadata={"filename": filename})
+
+    def _extract_csv(self, file_bytes: bytes, filename: str) -> ExtractedDocument:
+        """Extract CSV/TSV with proper table structure."""
+        import csv
+        text_content = file_bytes.decode("utf-8", errors="replace")
+
+        # Detect delimiter
+        try:
+            dialect = csv.Sniffer().sniff(text_content[:4096])
+            delimiter = dialect.delimiter
+        except csv.Error:
+            delimiter = "," if filename.lower().endswith(".csv") else "\t"
+
+        reader = csv.reader(io.StringIO(text_content), delimiter=delimiter)
+        rows = []
+        header = None
+        for i, row in enumerate(reader):
+            if i == 0:
+                header = row
+                rows.append(" | ".join(row))
+                rows.append(" | ".join(["---"] * len(row)))
+            else:
+                rows.append(" | ".join(row))
+            if i > 5000:
+                rows.append(f"... (truncated at {i} rows)")
+                break
+
+        text = "\n".join(rows)
+        return ExtractedDocument(text=text, method="csv",
+                                 metadata={"delimiter": delimiter, "columns": len(header) if header else 0})
 
     def _extract_html(self, file_bytes: bytes) -> ExtractedDocument:
         from bs4 import BeautifulSoup
@@ -215,7 +311,7 @@ class DocumentExtractor:
                                  metadata={"title": soup.title.string if soup.title else ""})
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # Word: DOCX (modern) + DOC (legacy via mammoth)
+    # Word: DOCX + DOC (legacy)
     # ═══════════════════════════════════════════════════════════════════════════
 
     def _extract_docx(self, file_bytes: bytes) -> ExtractedDocument:
@@ -237,13 +333,11 @@ class DocumentExtractor:
                                  metadata={"page_count": len(doc.sections), "has_tables": len(doc.tables) > 0})
 
     def _extract_doc_legacy(self, file_bytes: bytes) -> ExtractedDocument:
-        """Extract .doc (legacy Word 97-2003) via mammoth → HTML → text."""
         try:
             import mammoth
             result = mammoth.convert_to_html(io.BytesIO(file_bytes))
-            html = result.value
             from bs4 import BeautifulSoup
-            soup = BeautifulSoup(html, "lxml")
+            soup = BeautifulSoup(result.value, "lxml")
             text = soup.get_text(separator="\n", strip=True)
             return ExtractedDocument(text=text, method="doc-mammoth",
                                      metadata={"warnings": len(result.messages)})
@@ -252,7 +346,7 @@ class DocumentExtractor:
             return self._extract_text_direct(file_bytes, "document.doc")
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # Excel: XLSX (modern) + XLS (legacy via xlrd)
+    # Excel: XLSX + XLS (legacy)
     # ═══════════════════════════════════════════════════════════════════════════
 
     def _extract_xlsx(self, file_bytes: bytes) -> ExtractedDocument:
@@ -273,7 +367,6 @@ class DocumentExtractor:
         return ExtractedDocument(text=text, method="xlsx", metadata={"sheet_count": len(wb.sheetnames)})
 
     def _extract_xls_legacy(self, file_bytes: bytes) -> ExtractedDocument:
-        """Extract .xls (legacy Excel 97-2003) via xlrd."""
         try:
             import xlrd
             wb = xlrd.open_workbook(file_contents=file_bytes)
@@ -299,7 +392,6 @@ class DocumentExtractor:
     # ═══════════════════════════════════════════════════════════════════════════
 
     def _extract_pptx(self, file_bytes: bytes) -> ExtractedDocument:
-        """Extract .pptx (and attempt .ppt) — slides, tables, notes."""
         try:
             from pptx import Presentation
             prs = Presentation(io.BytesIO(file_bytes))
@@ -332,7 +424,6 @@ class DocumentExtractor:
     # ═══════════════════════════════════════════════════════════════════════════
 
     def _extract_odf(self, file_bytes: bytes, odf_type: str) -> ExtractedDocument:
-        """Extract OpenDocument formats via odfpy."""
         try:
             from odf.opendocument import load as odf_load
             from odf import text as odf_text, table as odf_table
@@ -341,7 +432,6 @@ class DocumentExtractor:
             doc = odf_load(io.BytesIO(file_bytes))
 
             def get_text_recursive(element: Element) -> str:
-                """Recursively extract text from ODF elements."""
                 result = []
                 if hasattr(element, 'childNodes'):
                     for child in element.childNodes:
@@ -362,7 +452,6 @@ class DocumentExtractor:
                     t = get_text_recursive(heading).strip()
                     if t:
                         parts.append(f"## {t}")
-
             elif odf_type in ("ods", "odp"):
                 for tbl in doc.getElementsByType(odf_table.Table):
                     table_name = tbl.getAttribute("name") or ""
@@ -374,7 +463,6 @@ class DocumentExtractor:
                             cells.append(get_text_recursive(cell).strip())
                         if any(cells):
                             parts.append(" | ".join(cells))
-                # Also get text paragraphs (for ODP slides)
                 for para in doc.getElementsByType(odf_text.P):
                     t = get_text_recursive(para).strip()
                     if t:
@@ -405,12 +493,9 @@ class DocumentExtractor:
     # ═══════════════════════════════════════════════════════════════════════════
 
     def _extract_msg(self, file_bytes: bytes) -> ExtractedDocument:
-        """Extract Outlook .msg files."""
         try:
             import extract_msg
             import tempfile
-            import os
-            # extract_msg needs a file path
             with tempfile.NamedTemporaryFile(suffix=".msg", delete=False) as tmp:
                 tmp.write(file_bytes)
                 tmp_path = tmp.name
@@ -443,7 +528,6 @@ class DocumentExtractor:
             return self._extract_text_direct(file_bytes, "email.msg")
 
     def _extract_eml(self, file_bytes: bytes) -> ExtractedDocument:
-        """Extract .eml files using stdlib email parser."""
         try:
             import email
             from email import policy
@@ -474,6 +558,194 @@ class DocumentExtractor:
         except Exception as e:
             logger.warning("EML extraction failed: %s — trying as text", e)
             return self._extract_text_direct(file_bytes, "email.eml")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # EPUB
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _extract_epub(self, file_bytes: bytes) -> ExtractedDocument:
+        try:
+            from ebooklib import epub
+            from bs4 import BeautifulSoup
+
+            book = epub.read_epub(io.BytesIO(file_bytes))
+            parts = []
+
+            title = book.get_metadata('DC', 'title')
+            if title:
+                parts.append(f"# {title[0][0]}")
+
+            for item in book.get_items_of_type(9):  # ITEM_DOCUMENT
+                soup = BeautifulSoup(item.get_content(), "lxml")
+                text = soup.get_text(separator="\n", strip=True)
+                if text.strip():
+                    parts.append(text)
+
+            text = "\n\n".join(parts)
+            return ExtractedDocument(text=text, method="epub",
+                                     metadata={"title": title[0][0] if title else ""})
+        except Exception as e:
+            logger.warning("EPUB extraction failed: %s", e)
+            return ExtractedDocument(text="(EPUB extraction failed)", method="epub-error")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Visio (VSDX)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _extract_vsdx(self, file_bytes: bytes) -> ExtractedDocument:
+        """VSDX is a ZIP containing XML — extract shape text."""
+        try:
+            from bs4 import BeautifulSoup
+            parts = []
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+                for name in zf.namelist():
+                    if name.startswith("visio/pages/page") and name.endswith(".xml"):
+                        with zf.open(name) as f:
+                            soup = BeautifulSoup(f.read(), "lxml-xml")
+                            for text_elem in soup.find_all("Text"):
+                                t = text_elem.get_text(strip=True)
+                                if t:
+                                    parts.append(t)
+            text = "\n".join(parts) if parts else "(no text found in Visio diagram)"
+            return ExtractedDocument(text=text, method="vsdx",
+                                     metadata={"shape_count": len(parts)})
+        except Exception as e:
+            logger.warning("VSDX extraction failed: %s", e)
+            return ExtractedDocument(text="(Visio extraction failed)", method="vsdx-error")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Archives: ZIP, TAR, RAR, 7z — recursive extraction
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def _extract_archive(
+        self, file_bytes: bytes, filename: str, archive_type: str,
+        max_tier: str, depth: int,
+    ) -> ExtractedDocument:
+        if depth >= _MAX_ARCHIVE_DEPTH:
+            return ExtractedDocument(
+                text=f"(archive recursion limit reached: {filename})",
+                method="archive-skip",
+            )
+
+        parts = []
+        files_processed = 0
+        total_bytes = 0
+        skipped = []
+
+        try:
+            entries = self._list_archive_entries(file_bytes, filename, archive_type)
+
+            for entry_name, entry_bytes in entries:
+                if files_processed >= _MAX_ARCHIVE_FILES:
+                    skipped.append(f"... truncated at {_MAX_ARCHIVE_FILES} files")
+                    break
+                if total_bytes >= _MAX_ARCHIVE_TOTAL_BYTES:
+                    skipped.append("... total size limit reached")
+                    break
+                if len(entry_bytes) > _MAX_SINGLE_FILE_BYTES:
+                    skipped.append(f"{entry_name} (too large: {len(entry_bytes)} bytes)")
+                    continue
+                if len(entry_bytes) == 0:
+                    continue
+
+                # Skip known binary junk
+                base = PurePosixPath(entry_name).name.lower()
+                if base.startswith(".") or base == "thumbs.db" or base == "desktop.ini":
+                    continue
+
+                try:
+                    result = await self.extract(
+                        entry_bytes, entry_name, max_tier=max_tier, _depth=depth + 1,
+                    )
+                    if result.text.strip():
+                        parts.append(f"=== {entry_name} ===\n{result.text}")
+                        files_processed += 1
+                        total_bytes += len(entry_bytes)
+                except Exception as e:
+                    logger.warning("Failed to extract %s from archive: %s", entry_name, e)
+                    skipped.append(f"{entry_name} (extraction error)")
+
+        except Exception as e:
+            logger.warning("Archive extraction failed for %s: %s", filename, e)
+            return ExtractedDocument(
+                text=f"(failed to open archive: {filename}: {e})",
+                method="archive-error",
+            )
+
+        if skipped:
+            parts.append("=== Skipped ===\n" + "\n".join(skipped))
+
+        text = "\n\n".join(parts) if parts else "(empty archive)"
+        return ExtractedDocument(
+            text=text, method=f"archive-{archive_type}",
+            metadata={
+                "archive_type": archive_type,
+                "files_extracted": files_processed,
+                "files_skipped": len(skipped),
+            },
+        )
+
+    def _list_archive_entries(
+        self, file_bytes: bytes, filename: str, archive_type: str,
+    ) -> list[tuple[str, bytes]]:
+        """Yield (name, bytes) for each file in the archive."""
+        entries = []
+
+        if archive_type == "zip":
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+                for info in zf.infolist():
+                    if info.is_dir():
+                        continue
+                    try:
+                        entries.append((info.filename, zf.read(info)))
+                    except Exception as e:
+                        logger.warning("Skipping %s in ZIP: %s", info.filename, e)
+
+        elif archive_type == "tar":
+            mode = "r:*"  # auto-detect compression
+            try:
+                with tarfile.open(fileobj=io.BytesIO(file_bytes), mode=mode) as tf:
+                    for member in tf.getmembers():
+                        if not member.isfile():
+                            continue
+                        f = tf.extractfile(member)
+                        if f:
+                            entries.append((member.name, f.read()))
+            except Exception:
+                # Try plain gzip single file
+                import gzip
+                try:
+                    data = gzip.decompress(file_bytes)
+                    inner_name = filename.replace(".gz", "")
+                    entries.append((inner_name, data))
+                except Exception:
+                    pass
+
+        elif archive_type == "rar":
+            try:
+                import rarfile
+                with rarfile.RarFile(io.BytesIO(file_bytes)) as rf:
+                    for info in rf.infolist():
+                        if info.is_dir():
+                            continue
+                        entries.append((info.filename, rf.read(info)))
+            except ImportError:
+                logger.warning("RAR support requires 'rarfile' package + unrar binary")
+            except Exception as e:
+                logger.warning("RAR extraction failed: %s", e)
+
+        elif archive_type == "7z":
+            try:
+                import py7zr
+                with py7zr.SevenZipFile(io.BytesIO(file_bytes), mode='r') as sz:
+                    for fname, bio in sz.readall().items():
+                        entries.append((fname, bio.read()))
+            except ImportError:
+                logger.warning("7z support requires 'py7zr' package")
+            except Exception as e:
+                logger.warning("7z extraction failed: %s", e)
+
+        return entries
 
     # ═══════════════════════════════════════════════════════════════════════════
     # PDF (hybrid: pymupdf text + VLM for scanned pages)
@@ -526,7 +798,6 @@ class DocumentExtractor:
         return ExtractedDocument(text=text, method="vlm", metadata={"type": "image"})
 
     async def _call_vlm(self, image_bytes: bytes, max_tier: str) -> str:
-        """VLM call via Ollama router — router decides GPU/cloud based on tier."""
         b64 = base64.b64encode(image_bytes).decode("ascii")
 
         prompt = ("Extract all text, data, and describe all visual elements "
