@@ -688,7 +688,7 @@ EmailContinuousIndexer
 
 ### AttachmentKbIndexingService (shared)
 
-- **Location:** `backend/server/.../service/indexing/AttachmentKbIndexingService.kt`
+- **Location:** `backend/server/.../infrastructure/indexing/AttachmentKbIndexingService.kt`
 - **Purpose:** Shared service for indexing attachments from any source as KB documents
 - **Methods:**
   - `indexAttachmentAsKbDocument()` — stores binary + registers (for new binary data)
@@ -1170,9 +1170,9 @@ and `SourceUrn.confluenceAttachment()` factories in Kotlin.
 | `shared/common-dto/.../kb/KbDocumentDtos.kt` | Document DTOs (state, category, upload/update/delete) |
 | `shared/common-api/.../IKbDocumentService.kt` | KRPC service interface |
 | `backend/server/.../rpc/KbDocumentRpcImpl.kt` | Kotlin RPC implementation (stores on FS, calls KB REST) |
-| `backend/server/.../storage/DirectoryStructureService.kt` | FS storage methods (`storeKbDocument`, `readKbDocument`, `deleteKbDocument`) |
-| `backend/server/.../service/indexing/AttachmentKbIndexingService.kt` | Shared service for indexing attachments as KB documents |
-| `backend/server/.../configuration/KnowledgeServiceRestClient.kt` | REST client to Python KB (document CRUD methods) |
+| `backend/server/.../infrastructure/storage/DirectoryStructureService.kt` | FS storage methods (`storeKbDocument`, `readKbDocument`, `deleteKbDocument`) |
+| `backend/server/.../infrastructure/indexing/AttachmentKbIndexingService.kt` | Shared service for indexing attachments as KB documents |
+| `backend/server/.../infrastructure/llm/KnowledgeServiceRestClient.kt` | REST client to Python KB (document CRUD methods) |
 | `backend/service-knowledgebase/app/api/routes.py` | Python endpoints (`/documents/*`) |
 | `backend/service-knowledgebase/app/services/knowledge_service.py` | Document business logic (upload, extract, list, delete) |
 | `backend/service-knowledgebase/app/services/graph_service.py` | ArangoDB node management (`kb_document` type) |
@@ -1375,9 +1375,7 @@ The KB is complemented by an internal Jira+Confluence instance ("Brain") configu
 
 | File | Purpose |
 |------|---------|
-| `backend/server/.../service/brain/BrainWriteService.kt` | High-level brain write API |
-| `backend/server/.../service/brain/BrainWriteServiceImpl.kt` | Implementation (resolves SystemConfig, delegates to BugTrackerService/WikiService) |
-| `backend/server/.../service/background/TaskQualificationService.kt` | KB dispatch and cross-project write |
+| `backend/server/.../task/TaskQualificationService.kt` | KB dispatch and cross-project write |
 | `backend/service-orchestrator/app/tools/brain_client.py` | Python HTTP client for brain endpoints |
 
 ---

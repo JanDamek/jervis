@@ -68,10 +68,21 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 > Full index of all source files is in **KB** (search: "Key Source Files Index").
 > Below are only the most critical paths needed for everyday decisions.
 
+**Backend server** (`backend/server/src/main/kotlin/com/jervis/`):
+- **Domain-driven packages** — each domain has its own package containing entities, repositories, services, mappers, and RPC impls together: `agent/`, `chat/`, `meeting/`, `task/`, `environment/`, `git/`, `calendar/`, `teams/`, `slack/`, `discord/`, `client/`, `project/`, `projectgroup/`, `filtering/`, `deadline/`, `maintenance/`, `preferences/`, etc.
+- `infrastructure/` — cross-cutting: `config/`, `http/`, `polling/`, `storage/`, `indexing/`, `notification/`, `llm/`, `oauth2/`, `text/`, `error/`, `debug/`
+- `rpc/` — bootstrap only: `KtorRpcServer`, `BaseRpcImpl`, `internal/*Routing`
+- `domain/` — shared types: atlassian, sender, gateway
+
+**Shared modules:**
 - Design system: `shared/ui-common/.../design/` (DesignTheme, DesignLayout, DesignButtons, DesignCards, DesignForms, DesignDialogs, DesignDataDisplay, DesignState)
-- Shared helpers: `sections/ClientsSharedHelpers.kt` (getCapabilityLabel, GitCommitConfigFields – `internal`)
+- Shared helpers: `shared/ui-common/.../settings/sections/ClientsSharedHelpers.kt` (getCapabilityLabel, GitCommitConfigFields – `internal`)
 - Navigation: `shared/ui-common/.../navigation/AppNavigator.kt`
-- DTOs: `shared/common-dto/`, Repository: `shared/domain/`
+- DTOs: `shared/common-dto/` (31 domain sub-packages under `dto/`)
+- RPC interfaces: `shared/common-api/` (17 domain sub-packages under `service/`)
+- Repository: `shared/domain/` (JervisRepository in `com.jervis.di`)
+
+**Python services:**
 - Agent (unified): `backend/service-orchestrator/app/agent/` (models, graph, decomposer, langgraph_runner, tool_sets, persistence, vertex_executor, chat_router)
 - KB service: `backend/service-knowledgebase/app/` (graph_service.py, knowledge_service.py, routes.py)
 - Chat handler: `backend/service-orchestrator/app/chat/handler_agentic.py`

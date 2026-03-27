@@ -80,23 +80,23 @@
 ## Implementace – HOTOVO
 
 ### Fáze 1: MongoDB model + repository ✅
-- `backend/server/.../entity/AttachmentExtractDocument.kt` – entita s ExtractionStatus enum
-- `backend/server/.../repository/AttachmentExtractRepository.kt` – Spring Data repo
+- `backend/server/.../infrastructure/indexing/AttachmentExtractDocument.kt` – entita s ExtractionStatus enum
+- `backend/server/.../infrastructure/indexing/AttachmentExtractRepository.kt` – Spring Data repo
 
 ### Fáze 2: kb_document_upload base64 rozšíření ✅
 - `backend/service-mcp/app/main.py` – `file_content` (base64) + `file_name` parametry
 - Validace: buď `file_path` NEBO `file_content + file_name`, whitelist přípon, max 20 MB
 
 ### Fáze 3: TaskDocument rozšíření ✅
-- `backend/server/.../entity/TaskDocument.kt` – `hasAttachments`, `attachmentCount`
+- `backend/server/.../task/TaskDocument.kt` – `hasAttachments`, `attachmentCount`
 - `TaskService.createTask()` – nové parametry
 - `@PersistenceCreator` factory aktualizován
 
 ### Fáze 4: VLM-first text extraction pipeline ✅
-- `backend/server/.../service/indexing/AttachmentExtractionService.kt` – nový service
+- `backend/server/.../infrastructure/indexing/AttachmentExtractionService.kt` – nový service
 - `backend/service-knowledgebase/app/api/routes.py` – `POST /documents/extract-text`
 - `backend/service-knowledgebase/app/services/knowledge_service.py` – `extract_text_only()`
-- `backend/server/.../configuration/KnowledgeServiceRestClient.kt` – `extractText()` + `TextExtractionResult`
+- `backend/server/.../infrastructure/llm/KnowledgeServiceRestClient.kt` – `extractText()` + `TextExtractionResult`
 - Strategie: VLM-first pro obrázky, pymupdf/python-docx pro dokumenty, VLM hybrid pro scanned PDF
 
 ### Fáze 5: EmailContinuousIndexer integrace ✅

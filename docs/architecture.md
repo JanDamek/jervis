@@ -582,12 +582,10 @@ State transitions (TRANSCRIBING → TRANSCRIBED/FAILED, CORRECTING → CORRECTED
 | `backend/service-whisper/entrypoint-whisper-job.sh` | K8s Job entrypoint — env parsing, error handling |
 | `backend/service-whisper/Dockerfile` | Docker image for K8s Job mode |
 | `backend/service-whisper/Dockerfile.rest` | Docker image for REST server mode (FastAPI + uvicorn) |
-| `backend/server/.../service/meeting/WhisperJobRunner.kt` | Orchestration — routes to K8s Job, REST, or local subprocess |
-| `backend/server/.../service/meeting/WhisperRestClient.kt` | Ktor HTTP client for REST_REMOTE mode |
-| `backend/server/.../service/meeting/MeetingTranscriptionService.kt` | High-level transcription API + speaker auto-matching (cosine similarity) |
-| `backend/server/.../service/meeting/MeetingContinuousIndexer.kt` | 4 pipelines: transcribe → correct → index → purge |
-| `backend/server/.../entity/WhisperSettingsDocument.kt` | MongoDB singleton settings document |
-| `backend/server/.../rpc/WhisperSettingsRpcImpl.kt` | RPC service for settings CRUD |
+| `backend/server/.../meeting/WhisperJobRunner.kt` | Orchestration — routes to K8s Job, REST, or local subprocess |
+| `backend/server/.../meeting/WhisperRestClient.kt` | Ktor HTTP client for REST_REMOTE mode |
+| `backend/server/.../meeting/MeetingTranscriptionService.kt` | High-level transcription API + speaker auto-matching (cosine similarity) |
+| `backend/server/.../meeting/MeetingContinuousIndexer.kt` | 4 pipelines: transcribe → correct → index → purge |
 | `shared/common-api/.../service/IWhisperSettingsService.kt` | kRPC interface |
 | `shared/common-dto/.../dto/whisper/WhisperSettingsDtos.kt` | Settings DTOs + enums (incl. WhisperDeploymentMode) |
 | `shared/ui-common/.../settings/sections/WhisperSettings.kt` | Settings UI composable |
@@ -683,15 +681,15 @@ When user answers "Nevím" (I don't know) to correction questions, the system re
 |------|---------|
 | `backend/service-orchestrator/app/whisper/correction_agent.py` | Python correction agent — KB loading, LLM calls, interactive questions, targeted correction |
 | `backend/service-orchestrator/app/main.py` | Python endpoints incl. `/correction/correct-targeted` |
-| `backend/server/.../service/meeting/TranscriptCorrectionService.kt` | Kotlin delegation to Python orchestrator, question handling, retranscribe+correct flow |
-| `backend/server/.../service/meeting/WhisperJobRunner.kt` | Whisper orchestration (K8s Job / REST / local) — includes `retranscribe()` for audio extraction + high-accuracy re-transcription |
+| `backend/server/.../meeting/TranscriptCorrectionService.kt` | Kotlin delegation to Python orchestrator, question handling, retranscribe+correct flow |
+| `backend/server/.../meeting/WhisperJobRunner.kt` | Whisper orchestration (K8s Job / REST / local) — includes `retranscribe()` for audio extraction + high-accuracy re-transcription |
 | `backend/service-whisper/whisper_runner.py` | Whisper transcription script — supports `extraction_ranges` for partial re-transcription |
-| `backend/server/.../configuration/PythonOrchestratorClient.kt` | REST client for Python correction endpoints incl. `correctTargeted()` |
+| `backend/server/.../agent/PythonOrchestratorClient.kt` | REST client for Python correction endpoints incl. `correctTargeted()` |
 | `shared/common-api/.../service/ITranscriptCorrectionService.kt` | RPC interface for correction CRUD |
 | `shared/common-dto/.../dto/meeting/MeetingDtos.kt` | `MeetingStateEnum` (incl. CORRECTION_REVIEW), `CorrectionQuestionDto`, `CorrectionAnswerDto` |
 | `shared/ui-common/.../meeting/CorrectionsScreen.kt` | Corrections management UI |
 | `shared/ui-common/.../meeting/CorrectionViewModel.kt` | Corrections UI state management |
-| `backend/server/.../service/meeting/MeetingContinuousIndexer.kt` | Pipeline 5 stuck detection via `stateChangedAt` timestamp (STUCK_CORRECTING_THRESHOLD_MINUTES = 15) |
+| `backend/server/.../meeting/MeetingContinuousIndexer.kt` | Pipeline 5 stuck detection via `stateChangedAt` timestamp (STUCK_CORRECTING_THRESHOLD_MINUTES = 15) |
 
 ---
 
@@ -1453,11 +1451,11 @@ When a coding task is dispatched to the Python orchestrator:
 
 | File | Purpose |
 |------|---------|
-| `backend/server/.../entity/EnvironmentDocument.kt` | MongoDB document + embedded types |
-| `backend/server/.../service/environment/EnvironmentService.kt` | CRUD + resolve inheritance |
-| `backend/server/.../service/environment/EnvironmentK8sService.kt` | K8s namespace provisioning |
-| `backend/server/.../service/environment/ComponentDefaults.kt` | Default Docker images per type |
-| `backend/server/.../mapper/EnvironmentMapper.kt` | Document ↔ DTO + toAgentContextJson() |
+| `backend/server/.../environment/EnvironmentDocument.kt` | MongoDB document + embedded types |
+| `backend/server/.../environment/EnvironmentService.kt` | CRUD + resolve inheritance |
+| `backend/server/.../environment/EnvironmentK8sService.kt` | K8s namespace provisioning |
+| `backend/server/.../environment/ComponentDefaults.kt` | Default Docker images per type |
+| `backend/server/.../environment/EnvironmentMapper.kt` | Document ↔ DTO + toAgentContextJson() |
 | `shared/common-dto/.../dto/environment/EnvironmentDtos.kt` | Cross-platform DTOs |
 
 ### Environment MCP Integration (Runtime K8s Access for Agents)
@@ -1595,7 +1593,7 @@ GET  /internal/environment/{ns}/status
 | `backend/server/.../environment/EnvironmentResourceService.kt` | K8s resource inspection via fabric8 |
 | `backend/server/.../environment/EnvironmentK8sService.kt` | Namespace/deployment/service lifecycle |
 | `backend/server/.../rpc/internal/InternalEnvironmentRouting.kt` | Internal REST endpoints for environment CRUD |
-| `backend/server/.../rpc/KtorRpcServer.kt` | Internal REST endpoints routing + resource inspection |
+| `backend/server/.../rpc/KtorRpcServer.kt` | Internal REST endpoints routing |
 | `backend/service-orchestrator/app/tools/definitions.py` | Tool definitions (ENVIRONMENT_TOOLS, DEVOPS_AGENT_TOOLS) |
 | `backend/service-orchestrator/app/tools/executor.py` | Tool execution (environment_* handlers) |
 | `backend/service-orchestrator/app/agents/workspace_manager.py` | MCP config injection |
@@ -1644,9 +1642,9 @@ Projects can be marked as active or closed via `ProjectDocument.active` (default
 
 | File | Purpose |
 |------|---------|
-| `backend/server/.../entity/ProjectGroupDocument.kt` | MongoDB document |
-| `backend/server/.../service/projectgroup/ProjectGroupService.kt` | CRUD |
-| `backend/server/.../mapper/ProjectGroupMapper.kt` | Document ↔ DTO |
+| `backend/server/.../projectgroup/ProjectGroupDocument.kt` | MongoDB document |
+| `backend/server/.../projectgroup/ProjectGroupService.kt` | CRUD |
+| `backend/server/.../projectgroup/ProjectGroupMapper.kt` | Document ↔ DTO |
 | `shared/common-dto/.../dto/ProjectGroupDto.kt` | Cross-platform DTO |
 
 ---
@@ -1735,9 +1733,9 @@ NotificationActionChannel (MutableSharedFlow)
 | `shared/ui-common/.../notification/PlatformNotificationManager.kt` | expect class |
 | `shared/ui-common/.../notification/NotificationActionChannel.kt` | Cross-platform action callback |
 | `shared/ui-common/.../notification/ApprovalNotificationDialog.kt` | In-app approve/deny dialog |
-| `backend/server/.../service/notification/FcmPushService.kt` | Firebase Cloud Messaging sender (Android) |
-| `backend/server/.../service/notification/ApnsPushService.kt` | APNs HTTP/2 push sender (iOS, Pushy) |
-| `backend/server/.../entity/DeviceTokenDocument.kt` | Device token storage (platform: android/ios) |
+| `backend/server/.../infrastructure/notification/FcmPushService.kt` | Firebase Cloud Messaging sender (Android) |
+| `backend/server/.../infrastructure/notification/ApnsPushService.kt` | APNs HTTP/2 push sender (iOS, Pushy) |
+| `backend/server/.../preferences/DeviceTokenDocument.kt` | Device token storage (platform: android/ios) |
 | `shared/common-api/.../IDeviceTokenService.kt` | Token registration RPC |
 | `shared/ui-common/.../notification/IosTokenHolder.kt` | APNs token holder (Swift → Kotlin bridge) |
 | `shared/ui-common/.../notification/PushTokenRegistrar.kt` | expect/actual token registration |
@@ -2106,16 +2104,16 @@ Installed in `KtorRpcServer` routing block via extension functions on `Routing`.
 
 | File | Purpose |
 |------|---------|
-| `backend/server/.../service/chat/ChatService.kt` | Session management + message coordination |
-| `backend/server/.../service/chat/PythonChatClient.kt` | Ktor HTTP SSE client for Python /chat + stopChat() |
-| `backend/server/.../service/chat/ChatStreamEvent.kt` | SSE event data class |
-| `backend/server/.../rpc/ChatRpcImpl.kt` | kRPC bridge: UI ↔ ChatService ↔ Python |
+| `backend/server/.../chat/ChatService.kt` | Session management + message coordination |
+| `backend/server/.../chat/PythonChatClient.kt` | Ktor HTTP SSE client for Python /chat + stopChat() |
+| `backend/server/.../chat/ChatStreamEvent.kt` | SSE event data class |
+| `backend/server/.../chat/ChatRpcImpl.kt` | kRPC bridge: UI ↔ ChatService ↔ Python |
 | `backend/server/.../rpc/internal/InternalChatContextRouting.kt` | Ktor routing: clients-projects, pending tasks, meetings count |
 | `backend/server/.../rpc/internal/InternalTaskApiRouting.kt` | Ktor routing: task status, search, recent tasks |
 | `backend/server/.../rpc/internal/InternalCacheRouting.kt` | Ktor routing: cache invalidation after MongoDB writes |
 | `shared/common-api/.../service/IChatService.kt` | kRPC interface (subscribeToChatEvents, sendMessage, getChatHistory, archiveSession). `getChatHistory` has `excludeBackground: Boolean = true` for filtering |
-| `backend/server/.../entity/ChatSessionDocument.kt` | MongoDB session entity |
-| `backend/server/.../repository/ChatSessionRepository.kt` | Spring Data repo |
+| `backend/server/.../chat/ChatSessionDocument.kt` | MongoDB session entity |
+| `backend/server/.../chat/ChatSessionRepository.kt` | Spring Data repo |
 | `backend/service-orchestrator/app/agent/sse_handler.py` | Chat entry-point: route → vertex_executor → SSE stream |
 | `backend/service-orchestrator/app/agent/chat_router.py` | Message → vertex routing (new/resume/answer/direct) |
 | `backend/service-orchestrator/app/agent/vertex_executor.py` | Unified agentic loop (shared with background) |
@@ -2500,23 +2498,23 @@ CentralPoller
 
 | File | Description |
 |------|-------------|
-| `backend/server/.../service/polling/handler/teams/O365PollingHandler.kt` | Teams polling via O365 Gateway |
-| `backend/server/.../service/polling/handler/slack/SlackPollingHandler.kt` | Slack polling via Web API |
-| `backend/server/.../service/polling/handler/discord/DiscordPollingHandler.kt` | Discord polling via REST API |
-| `backend/server/.../service/teams/TeamsContinuousIndexer.kt` | Teams NEW→INDEXED pipeline |
-| `backend/server/.../service/slack/SlackContinuousIndexer.kt` | Slack NEW→INDEXED pipeline |
-| `backend/server/.../service/discord/DiscordContinuousIndexer.kt` | Discord NEW→INDEXED pipeline |
-| `backend/server/.../entity/teams/TeamsMessageIndexDocument.kt` | Teams message tracking in MongoDB |
-| `backend/server/.../entity/slack/SlackMessageIndexDocument.kt` | Slack message tracking in MongoDB |
-| `backend/server/.../entity/discord/DiscordMessageIndexDocument.kt` | Discord message tracking in MongoDB |
-| `backend/server/.../entity/teams/O365ScrapeMessageDocument.kt` | VLM-scraped message entity (maps to `o365_scrape_messages`) |
-| `backend/server/.../entity/teams/O365DiscoveredResourceDocument.kt` | Persistent discovered O365 resources |
-| `backend/server/.../repository/O365ScrapeMessageRepository.kt` | Scrape message queries (by connectionId + state) |
-| `backend/server/.../repository/O365DiscoveredResourceRepository.kt` | Discovered resource queries |
+| `backend/server/.../teams/O365PollingHandler.kt` | Teams polling via O365 Gateway |
+| `backend/server/.../slack/SlackPollingHandler.kt` | Slack polling via Web API |
+| `backend/server/.../discord/DiscordPollingHandler.kt` | Discord polling via REST API |
+| `backend/server/.../teams/TeamsContinuousIndexer.kt` | Teams NEW→INDEXED pipeline |
+| `backend/server/.../slack/SlackContinuousIndexer.kt` | Slack NEW→INDEXED pipeline |
+| `backend/server/.../discord/DiscordContinuousIndexer.kt` | Discord NEW→INDEXED pipeline |
+| `backend/server/.../teams/TeamsMessageIndexDocument.kt` | Teams message tracking in MongoDB |
+| `backend/server/.../slack/SlackMessageIndexDocument.kt` | Slack message tracking in MongoDB |
+| `backend/server/.../discord/DiscordMessageIndexDocument.kt` | Discord message tracking in MongoDB |
+| `backend/server/.../teams/O365ScrapeMessageDocument.kt` | VLM-scraped message entity (maps to `o365_scrape_messages`) |
+| `backend/server/.../teams/O365DiscoveredResourceDocument.kt` | Persistent discovered O365 resources |
+| `backend/server/.../teams/O365ScrapeMessageRepository.kt` | Scrape message queries (by connectionId + state) |
+| `backend/server/.../teams/O365DiscoveredResourceRepository.kt` | Discovered resource queries |
 | `backend/server/.../rpc/internal/InternalO365SessionRouting.kt` | Session callback API (MFA/expiry → USER_TASK + push) + capabilities discovery endpoint |
 | `backend/service-o365-browser-pool/app/kotlin_callback.py` | Python→Kotlin session state + capabilities discovery notification |
 | `backend/service-o365-browser-pool/app/scrape_storage.py` | MongoDB storage for scrape messages + discovered resources |
-| `backend/server/.../integration/chat/ChatReplyService.kt` | Outbound message sending (stubs, EPIC 11-S5) |
+| `backend/server/.../chat/ChatReplyService.kt` | Outbound message sending (stubs, EPIC 11-S5) |
 
 ---
 
@@ -2591,7 +2589,7 @@ Files:
 - Accepts: `{ "query": "...", "source": "siri|google_assistant|...", "clientId?": "...", "projectId?": "..." }`
 - Returns: `{ "response": "...", "taskId": "...", "state": "DONE|PROCESSING|..." }`
 - Creates a task (QUEUED, skip KB indexing), polls up to 25s for completion
-- File: `backend/server/src/main/kotlin/com/jervis/rpc/SiriChatRouting.kt`
+- File: `backend/server/src/main/kotlin/com/jervis/rpc/VoiceChatRouting.kt`
 
 ---
 

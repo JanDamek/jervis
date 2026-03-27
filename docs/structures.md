@@ -299,7 +299,7 @@ The correction agent (`backend/service-correction/app/agent.py`) processes trans
 | `backend/service-correction/app/agent.py` | CorrectionAgent — KB context, phase analysis, sequential correction |
 | `backend/server/.../meeting/MeetingContinuousIndexer.kt` | Pipeline orchestration (index raw → correct qualified → re-index) |
 | `backend/server/.../meeting/TranscriptCorrectionService.kt` | State transitions, error recovery |
-| `backend/server/.../entity/meeting/MeetingDocument.kt` | Meeting entity with `qualified` flag |
+| `backend/server/.../meeting/MeetingDocument.kt` | Meeting entity with `qualified` flag |
 
 ---
 
@@ -350,12 +350,12 @@ Meeting 2 (auto-match):
 | File | Purpose |
 |------|---------|
 | `backend/service-whisper/whisper_rest_server.py` | Returns `speaker_embeddings` in result JSON |
-| `backend/server/.../service/meeting/WhisperJobRunner.kt` | Parses `speaker_embeddings` from whisper result |
-| `backend/server/.../service/meeting/MeetingTranscriptionService.kt` | Auto-matching after transcription (cosine similarity) |
-| `backend/server/.../entity/meeting/MeetingDocument.kt` | Stores `speakerEmbeddings` per meeting |
-| `backend/server/.../entity/SpeakerDocument.kt` | Stores `voiceEmbedding` per speaker profile |
-| `backend/server/.../rpc/MeetingRpcImpl.kt` | Builds `autoSpeakerMapping` for UI |
-| `backend/server/.../rpc/SpeakerRpcImpl.kt` | `setVoiceEmbedding` endpoint |
+| `backend/server/.../meeting/WhisperJobRunner.kt` | Parses `speaker_embeddings` from whisper result |
+| `backend/server/.../meeting/MeetingTranscriptionService.kt` | Auto-matching after transcription (cosine similarity) |
+| `backend/server/.../meeting/MeetingDocument.kt` | Stores `speakerEmbeddings` per meeting |
+| `backend/server/.../meeting/SpeakerDocument.kt` | Stores `voiceEmbedding` per speaker profile |
+| `backend/server/.../meeting/MeetingRpcImpl.kt` | Builds `autoSpeakerMapping` for UI |
+| `backend/server/.../meeting/SpeakerRpcImpl.kt` | `setVoiceEmbedding` endpoint |
 | `shared/ui-common/.../meeting/SpeakerAssignmentPanel.kt` | Shows auto-match confidence, saves embedding on confirm |
 | `shared/common-dto/.../meeting/SpeakerDtos.kt` | `AutoSpeakerMatchDto`, `SpeakerEmbeddingDto`, `hasVoiceprint` |
 
@@ -1580,14 +1580,14 @@ DTOs: `shared/common-dto/.../pipeline/PipelineDtos.kt`
 - `INVESTIGATE` → BACKGROUND task
 - Deduplication via `correlationId`
 
-Source: `backend/server/.../service/background/AutoTaskCreationService.kt`
+Source: `backend/server/.../task/AutoTaskCreationService.kt`
 
 ### Priority-Based Scheduling (EPIC 2-S3)
 
 Tasks ordered by `priorityScore DESC, createdAt ASC` instead of FIFO.
 `TaskPriorityCalculator` assigns 0-100 scores based on urgency, deadline, security keywords.
 
-Source: `backend/server/.../service/background/TaskPriorityCalculator.kt`
+Source: `backend/server/.../task/TaskPriorityCalculator.kt`
 
 ### Planning Phase (EPIC 2-S4)
 
@@ -1645,7 +1645,7 @@ Sources:
 - `backend/service-orchestrator/app/review/code_review_handler.py` (orchestration — Path A)
 - `backend/service-orchestrator/app/review/review_engine.py` (static analysis)
 - `backend/service-orchestrator/app/agent_task_watcher.py` (trigger + MR creation — Path A)
-- `backend/server/.../service/indexing/git/MergeRequestContinuousIndexer.kt` (polling + task creation — Path B)
+- `backend/server/.../git/indexing/MergeRequestContinuousIndexer.kt` (polling + task creation — Path B)
 - `backend/server/.../rpc/internal/InternalMergeRequestRouting.kt` (MR/PR API)
 
 ### Universal Approval Gate (EPIC 4)
@@ -1669,7 +1669,7 @@ Sources:
 - DENIED → reject and log
 
 Sources:
-- `backend/server/.../service/action/ActionExecutorService.kt`
+- `backend/server/.../agent/ActionExecutorService.kt`
 - `shared/common-dto/.../pipeline/ApprovalActionDtos.kt`
 
 ### Anti-Hallucination Guard (EPIC 14)
@@ -1710,7 +1710,7 @@ Sources:
 - `recordApprovalDecision()` / `getApprovalStats()` — in-memory approval statistics
 - `shouldSuggestAutoApprove()` — suggests auto-approve when ≥10 approvals with 0 denials
 
-Source: `backend/server/.../service/action/ActionExecutorService.kt`
+Source: `backend/server/.../agent/ActionExecutorService.kt`
 
 ### Action Memory (EPIC 9-S4)
 
@@ -1736,7 +1736,7 @@ Sources:
 - Chat tools: `app/chat/tools.py` (TOOL_SET_FILTER_RULE, etc.)
 - Handlers: `app/chat/handler_tools.py`
 - Kotlin API: `app/tools/kotlin_client.py` (set_filter_rule, list_filter_rules, remove_filter_rule)
-- Internal API: `backend/server/.../rpc/internal/InternalFilterRulesRouting.kt`
+- Internal API: `backend/server/.../rpc/internal/InternalFilterRulesRouting.kt` (rpc/ = bootstrap routing only)
 
 ### Foundation DTOs (EPICs 7-13, 16-17)
 
@@ -1756,34 +1756,34 @@ Sources:
 
 | Service | EPIC | Source |
 |---------|------|--------|
-| IdleTaskRegistry | 7-S1 | `backend/server/.../service/maintenance/IdleTaskRegistry.kt` |
-| VulnerabilityScannerService | 7-S2 | `backend/server/.../service/maintenance/VulnerabilityScannerService.kt` |
-| KbConsistencyCheckerService | 7-S3 | `backend/server/.../service/maintenance/KbConsistencyCheckerService.kt` |
-| LearningEngineService | 7-S4 | `backend/server/.../service/maintenance/LearningEngineService.kt` |
-| DocFreshnessService | 7-S5 | `backend/server/.../service/maintenance/DocFreshnessService.kt` |
-| DeadlineTrackerService | 8-S1/S2 | `backend/server/.../service/deadline/DeadlineTrackerService.kt` |
-| ProactivePreparationService | 8-S3 | `backend/server/.../service/deadline/ProactivePreparationService.kt` |
-| FilteringRulesService | 10-S1 | `backend/server/.../service/filtering/FilteringRulesService.kt` |
+| IdleTaskRegistry | 7-S1 | `backend/server/.../maintenance/IdleTaskRegistry.kt` |
+| VulnerabilityScannerService | 7-S2 | REMOVED |
+| KbConsistencyCheckerService | 7-S3 | REMOVED |
+| LearningEngineService | 7-S4 | `backend/server/.../maintenance/LearningEngineService.kt` |
+| DocFreshnessService | 7-S5 | REMOVED |
+| DeadlineTrackerService | 8-S1/S2 | `backend/server/.../deadline/DeadlineTrackerService.kt` |
+| ProactivePreparationService | 8-S3 | `backend/server/.../deadline/ProactivePreparationService.kt` |
+| FilteringRulesService | 10-S1 | `backend/server/.../filtering/FilteringRulesService.kt` |
 | TopicTracker | 9-S1 | `backend/service-orchestrator/app/chat/topic_tracker.py` |
 | MemoryConsolidation | 9-S2 | `backend/service-orchestrator/app/memory/consolidation.py` |
 | IntentDecomposer | 9-S3 | REMOVED — replaced by `agent/chat_router.py` |
 | SourceAttribution | 14-S2 | `backend/service-orchestrator/app/chat/source_attribution.py` |
-| ApprovalQueueDocument | 4-S3 | `backend/server/.../entity/ApprovalQueueDocument.kt` |
-| ApprovalStatisticsDocument | 4-S5 | `backend/server/.../entity/ApprovalStatisticsDocument.kt` |
-| TeamsContinuousIndexer | 11-S4 | `backend/server/.../service/teams/TeamsContinuousIndexer.kt` |
-| SlackContinuousIndexer | 11-S4 | `backend/server/.../service/slack/SlackContinuousIndexer.kt` |
-| DiscordContinuousIndexer | 11-S4 | `backend/server/.../service/discord/DiscordContinuousIndexer.kt` |
-| O365PollingHandler | 11-S3 | `backend/server/.../service/polling/handler/teams/O365PollingHandler.kt` |
-| SlackPollingHandler | 11-S2 | `backend/server/.../service/polling/handler/slack/SlackPollingHandler.kt` |
-| DiscordPollingHandler | 11-S2 | `backend/server/.../service/polling/handler/discord/DiscordPollingHandler.kt` |
-| ChatReplyService | 11-S5 | `backend/server/.../integration/chat/ChatReplyService.kt` |
-| CalendarService | 12-S1–S5 | `backend/server/.../service/calendar/CalendarService.kt` |
+| ApprovalQueueDocument | 4-S3 | `backend/server/.../task/ApprovalQueueDocument.kt` |
+| ApprovalStatisticsDocument | 4-S5 | `backend/server/.../task/ApprovalStatisticsDocument.kt` |
+| TeamsContinuousIndexer | 11-S4 | `backend/server/.../teams/TeamsContinuousIndexer.kt` |
+| SlackContinuousIndexer | 11-S4 | `backend/server/.../slack/SlackContinuousIndexer.kt` |
+| DiscordContinuousIndexer | 11-S4 | `backend/server/.../discord/DiscordContinuousIndexer.kt` |
+| O365PollingHandler | 11-S3 | `backend/server/.../teams/O365PollingHandler.kt` |
+| SlackPollingHandler | 11-S2 | `backend/server/.../slack/SlackPollingHandler.kt` |
+| DiscordPollingHandler | 11-S2 | `backend/server/.../discord/DiscordPollingHandler.kt` |
+| ChatReplyService | 11-S5 | `backend/server/.../chat/ChatReplyService.kt` |
+| CalendarService | 12-S1–S5 | `backend/server/.../calendar/CalendarService.kt` |
 | CalendarIntegration | 12-S2/S5 | `backend/service-orchestrator/app/calendar/calendar_integration.py` |
-| PromptEvolutionService | 13-S1–S4 | `backend/server/.../service/selfevolution/PromptEvolutionService.kt` |
+| PromptEvolutionService | 13-S1–S4 | REMOVED |
 | BehaviorLearning | 13-S2 | `backend/service-orchestrator/app/selfevolution/behavior_learning.py` |
 | UserCorrections | 13-S3 | `backend/service-orchestrator/app/selfevolution/user_corrections.py` |
-| BrainWorkflowService | 16-S1/S2 | `backend/server/.../service/brain/BrainWorkflowService.kt` |
-| EnvironmentAgentService | 17-S1–S3 | `backend/server/.../service/environment/EnvironmentAgentService.kt` |
+| BrainWorkflowService | 16-S1/S2 | REMOVED |
+| EnvironmentAgentService | 17-S1–S3 | `backend/server/.../environment/EnvironmentAgentService.kt` |
 
 ---
 

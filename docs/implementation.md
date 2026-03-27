@@ -796,7 +796,7 @@ T+10s  Auto-retry succeeds → message delivered ✓
 
 **Files:**
 - `backend/service-whisper/whisper_rest_server.py` - In-memory progress queue
-- `backend/server/.../service/meeting/WhisperRestClient.kt` - SSE client updates
+- `backend/server/.../meeting/WhisperRestClient.kt` - SSE client updates
 
 **Benefits:**
 - Lower latency for progress updates
@@ -824,7 +824,7 @@ T+10s  Auto-retry succeeds → message delivered ✓
 - Plain text: "Error:", "Chyba:", "llm_call_failed", "Operation not allowed"
 
 **Files:**
-- `backend/server/.../service/chat/ChatHistoryService.kt`
+- `backend/server/.../chat/ChatMessageService.kt`
 - `backend/service-orchestrator/app/graph/nodes/_helpers.py`
 - `backend/service-orchestrator/app/graph/nodes/intake.py`
 - `backend/service-orchestrator/app/graph/nodes/respond.py`

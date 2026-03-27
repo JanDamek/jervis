@@ -4171,8 +4171,8 @@ This means **LLM decides priority** based on understanding of tasks, not hardcod
 **Source files:**
 - `backend/server/.../rpc/internal/InternalProjectManagementRouting.kt`
 - `backend/server/.../rpc/internal/InternalGitRouting.kt`
-- `backend/server/.../service/git/GitRepositoryCreationService.kt`
-- `backend/server/.../service/project/ProjectTemplateService.kt` — advisor pattern (recommendations, not file generation)
+- `backend/server/.../git/GitRepositoryCreationService.kt`
+- `backend/server/.../project/ProjectTemplateService.kt` — advisor pattern (recommendations, not file generation)
 
 **Orchestrator tools** (SETUP vertex + MCP):
 - `create_client(name, description)` — create client
