@@ -15,16 +15,34 @@ validate_common_resources "jervis"
 echo ""
 
 # Build persistent services (Deployments)
+"${K8S_DIR}/build_server.sh"
+echo ""
+
+"${K8S_DIR}/build_orchestrator.sh"
+echo ""
+
+"${K8S_DIR}/build_kb.sh"
+echo ""
+
+"${K8S_DIR}/build_mcp.sh"
+echo ""
+
+"${K8S_DIR}/build_ollama_router.sh"
+echo ""
+
+"${K8S_DIR}/build_docext.sh"
+echo ""
+
+"${K8S_DIR}/build_correction.sh"
+echo ""
+
+"${K8S_DIR}/build_o365_gateway.sh"
+echo ""
+
+"${K8S_DIR}/build_o365_browser_pool.sh"
+echo ""
+
 "${K8S_DIR}/build_atlassian.sh"
-echo ""
-
-"${K8S_DIR}/build_aider.sh"
-echo ""
-
-"${K8S_DIR}/build_coding_engine.sh"
-echo ""
-
-"${K8S_DIR}/build_junie.sh"
 echo ""
 
 "${K8S_DIR}/build_github.sh"
@@ -33,29 +51,21 @@ echo ""
 "${K8S_DIR}/build_gitlab.sh"
 echo ""
 
-"${K8S_DIR}/build_server.sh"
-echo ""
-
-"${K8S_DIR}/build_kb.sh"
-echo ""
-
-"${K8S_DIR}/build_orchestrator.sh"
+"${K8S_DIR}/build_coding_engine.sh"
 echo ""
 
 "${K8S_DIR}/build_claude.sh"
 echo ""
 
-# Note: qualification service removed - SimpleQualifierAgent calls KB directly
-
 # Build Job-only images (no persistent Deployment)
 "${K8S_DIR}/build_joern.sh"
 echo ""
 
-"${K8S_DIR}/build_whisper.sh"
+# TTS is deployed as K8s Deployment
+"${K8S_DIR}/build_tts.sh"
 echo ""
 
-"${K8S_DIR}/build_whisper_rest.sh"
-echo ""
+# Note: Whisper runs on GPU VM (ollama.lan.mazlusek.com), deployed via deploy_whisper_gpu.sh
 
 echo ""
 echo "=== ✓ All services built and deployed successfully ==="

@@ -17,15 +17,13 @@ private val logger = KotlinLogging.logger {}
 private val json = Json { ignoreUnknownKeys = true }
 
 /**
- * Runs Whisper transcription via REST remote server.
+ * Whisper transcription client — calls GPU REST server on Ollama VM.
  *
- * Sends audio to a persistent Whisper REST server via HTTP multipart,
- * reads SSE stream for progress + result.
- *
- * Reads configurable parameters from [WhisperProperties] (ConfigMap).
+ * Sends audio via HTTP multipart, reads SSE stream for progress + result.
+ * Server runs at ollama.lan.mazlusek.com:8786 (deployed via deploy_whisper_gpu.sh).
  */
 @Service
-class WhisperJobRunner(
+class WhisperTranscriptionClient(
     private val whisperProperties: WhisperProperties,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val correctionClient: com.jervis.infrastructure.llm.CorrectionClient,

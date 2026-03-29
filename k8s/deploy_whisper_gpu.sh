@@ -61,8 +61,8 @@ echo "  dependencies OK (including pyannote-audio for speaker diarization)"
 
 # Step 3: Copy server files (using ssh+cat — more reliable with sshpass than scp)
 echo "Step 3/6: Copying server files..."
-ssh_cmd "cat > $INSTALL_DIR/whisper_runner.py" < "$PROJECT_ROOT/backend/service-whisper/app/whisper_runner.py"
-ssh_cmd "cat > $INSTALL_DIR/whisper_rest_server.py" < "$PROJECT_ROOT/backend/service-whisper/app/whisper_rest_server.py"
+ssh_cmd "cat > $INSTALL_DIR/whisper_runner.py" < "$PROJECT_ROOT/backend/service-whisper/whisper_runner.py"
+ssh_cmd "cat > $INSTALL_DIR/whisper_rest_server.py" < "$PROJECT_ROOT/backend/service-whisper/whisper_rest_server.py"
 echo "  files copied"
 
 # Step 4: Pre-download whisper models (if not cached)

@@ -30,7 +30,7 @@ class TranscriptCorrectionService(
     private val meetingRepository: MeetingRepository,
     private val correctionClient: com.jervis.infrastructure.llm.CorrectionClient,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
-    private val whisperJobRunner: WhisperJobRunner,
+    private val whisperClient: WhisperTranscriptionClient,
     private val speakerRepository: SpeakerRepository,
 ) {
     suspend fun correct(meeting: MeetingDocument): MeetingDocument {
@@ -373,7 +373,7 @@ class TranscriptCorrectionService(
                 "Retranscribing ${extractionRanges.size} ranges for meeting $meetingIdStr " +
                     "(segments: ${extractionRanges.map { it.segmentIndex }})"
             }
-            val whisperResult = whisperJobRunner.retranscribe(
+            val whisperResult = whisperClient.retranscribe(
                 audioFilePath = audioFilePath,
                 extractionRanges = extractionRanges,
                 meetingId = meetingIdStr,
@@ -553,7 +553,7 @@ class TranscriptCorrectionService(
                     "(indices: $segmentIndices)"
             }
 
-            val whisperResult = whisperJobRunner.retranscribe(
+            val whisperResult = whisperClient.retranscribe(
                 audioFilePath = audioFilePath,
                 extractionRanges = extractionRanges,
                 meetingId = meetingIdStr,
@@ -691,7 +691,7 @@ class TranscriptCorrectionService(
         val meetingIdStr = meeting.id.toHexString()
         val clientIdStr = meeting.clientId?.toString().orEmpty()
 
-        val whisperResult = whisperJobRunner.retranscribe(
+        val whisperResult = whisperClient.retranscribe(
             audioFilePath = audioFilePath,
             extractionRanges = extractionRanges,
             meetingId = meetingIdStr,

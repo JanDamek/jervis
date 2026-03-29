@@ -13,13 +13,13 @@ private val logger = KotlinLogging.logger {}
  * Orchestrates Whisper transcription for uploaded meeting recordings.
  *
  * Called by MeetingContinuousIndexer when a meeting reaches UPLOADED state.
- * Uses WhisperJobRunner (REST remote).
+ * Uses WhisperTranscriptionClient (REST remote).
  */
 @Service
 class MeetingTranscriptionService(
     private val meetingRepository: MeetingRepository,
     private val speakerRepository: SpeakerRepository,
-    private val whisperJobRunner: WhisperJobRunner,
+    private val whisperClient: WhisperTranscriptionClient,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
 ) {
 
@@ -47,7 +47,7 @@ class MeetingTranscriptionService(
         notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.TRANSCRIBING.name, meeting.title)
 
         try {
-            val result = whisperJobRunner.transcribe(
+            val result = whisperClient.transcribe(
                 audioFilePath = meeting.audioFilePath,
                 meetingId = meetingIdStr,
                 clientId = clientIdStr,

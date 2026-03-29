@@ -24,7 +24,7 @@ import java.time.Instant
  * 1. Client calls startRecording -> creates RECORDING document + empty audio file on PVC
  * 2. Client uploads audio chunks via uploadAudioChunk -> appended to file on disk
  * 3. Client calls finalizeRecording -> state becomes UPLOADED, metadata set
- * 4. MeetingContinuousIndexer picks up UPLOADED -> runs Whisper K8s Job -> TRANSCRIBED
+ * 4. MeetingContinuousIndexer picks up UPLOADED -> sends to Whisper GPU REST -> TRANSCRIBED
  * 5. MeetingContinuousIndexer indexes raw transcript -> INDEXED (creates MEETING_PROCESSING task)
  * 6. After qualification (client/project known, qualified=true) -> LLM correction -> CORRECTED
  * 7. Re-indexing with corrected text
