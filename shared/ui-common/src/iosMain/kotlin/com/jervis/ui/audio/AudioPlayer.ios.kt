@@ -30,10 +30,7 @@ actual class AudioPlayer actual constructor() {
 
     private fun createPlayer(audioData: ByteArray): AVAudioPlayer? {
         val nsData = audioData.usePinned { pinned ->
-            NSData.create(
-                bytes = pinned.addressOf(0),
-                length = audioData.size.toULong(),
-            )
+            NSData.create(bytes = pinned.addressOf(0), length = audioData.size.toULong())
         }
         return AVAudioPlayer(data = nsData, error = null)
     }
@@ -51,6 +48,11 @@ actual class AudioPlayer actual constructor() {
         }
     }
 
+    actual fun playAsync(audioData: ByteArray) {
+        // AVAudioPlayer is already non-blocking
+        play(audioData)
+    }
+
     actual fun playRange(audioData: ByteArray, startSec: Double, endSec: Double) {
         stop()
         try {
@@ -60,15 +62,11 @@ actual class AudioPlayer actual constructor() {
             audioPlayer.currentTime = startSec
             audioPlayer.play()
             player = audioPlayer
-            // Schedule stop at endSec
             val duration = endSec - startSec
             rangeTimer = NSTimer.scheduledTimerWithTimeInterval(
-                interval = duration,
-                repeats = false,
+                interval = duration, repeats = false,
             ) { _ ->
-                if (player === audioPlayer) {
-                    stop()
-                }
+                if (player === audioPlayer) stop()
             }
         } catch (e: Exception) {
             player = null
@@ -85,11 +83,20 @@ actual class AudioPlayer actual constructor() {
     actual val isPlaying: Boolean
         get() = player?.isPlaying() == true
 
-    actual fun release() {
-        stop()
+    actual val positionSec: Double
+        get() = player?.currentTime ?: 0.0
+
+    actual val durationSec: Double
+        get() = player?.duration ?: 0.0
+
+    actual fun seekTo(positionSec: Double) {
+        player?.currentTime = positionSec
+        if (player?.isPlaying() != true) player?.play()
     }
 
-    // ── PCM Streaming (no-op on iOS — TTS streaming is desktop-only) ────
+    actual fun release() { stop() }
+
+    // ── PCM Streaming (no-op on iOS) ────
     actual fun startStream(sampleRate: Int, sampleSizeInBits: Int, channels: Int) {}
     actual fun streamPcm(pcmData: ByteArray) {}
     actual fun finishStream() {}

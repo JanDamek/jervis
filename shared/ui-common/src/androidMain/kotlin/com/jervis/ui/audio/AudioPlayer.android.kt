@@ -15,19 +15,7 @@ actual class AudioPlayer actual constructor() {
     actual fun play(audioData: ByteArray) {
         stop()
         try {
-            val tmp = File.createTempFile("jervis_playback_", ".wav")
-            tmp.writeBytes(audioData)
-            tmp.deleteOnExit()
-            tempFile = tmp
-
-            val player = MediaPlayer()
-            player.setDataSource(tmp.absolutePath)
-            player.setOnCompletionListener {
-                it.release()
-                if (mediaPlayer === it) mediaPlayer = null
-                cleanupTempFile()
-            }
-            player.prepare()
+            val player = preparePlayer(audioData)
             player.start()
             mediaPlayer = player
         } catch (e: Exception) {
@@ -36,31 +24,21 @@ actual class AudioPlayer actual constructor() {
         }
     }
 
+    actual fun playAsync(audioData: ByteArray) {
+        // On Android MediaPlayer is already non-blocking
+        play(audioData)
+    }
+
     actual fun playRange(audioData: ByteArray, startSec: Double, endSec: Double) {
         stop()
         try {
-            val tmp = File.createTempFile("jervis_playback_", ".wav")
-            tmp.writeBytes(audioData)
-            tmp.deleteOnExit()
-            tempFile = tmp
-
-            val player = MediaPlayer()
-            player.setDataSource(tmp.absolutePath)
-            player.setOnCompletionListener {
-                it.release()
-                if (mediaPlayer === it) mediaPlayer = null
-                cleanupTempFile()
-            }
-            player.prepare()
+            val player = preparePlayer(audioData)
             player.seekTo((startSec * 1000).toInt())
             player.start()
             mediaPlayer = player
-            // Schedule stop at endSec
             val durationMs = ((endSec - startSec) * 1000).toLong()
             val stopRunnable = Runnable {
-                if (mediaPlayer === player) {
-                    stop()
-                }
+                if (mediaPlayer === player) stop()
             }
             rangeStopRunnable = stopRunnable
             handler.postDelayed(stopRunnable, durationMs)
@@ -82,21 +60,41 @@ actual class AudioPlayer actual constructor() {
     }
 
     actual val isPlaying: Boolean
-        get() = try {
-            mediaPlayer?.isPlaying == true
-        } catch (_: Exception) {
-            false
-        }
+        get() = try { mediaPlayer?.isPlaying == true } catch (_: Exception) { false }
 
-    actual fun release() {
-        stop()
+    actual val positionSec: Double
+        get() = try { mediaPlayer?.currentPosition?.let { it / 1000.0 } ?: 0.0 } catch (_: Exception) { 0.0 }
+
+    actual val durationSec: Double
+        get() = try { mediaPlayer?.duration?.let { it / 1000.0 } ?: 0.0 } catch (_: Exception) { 0.0 }
+
+    actual fun seekTo(positionSec: Double) {
+        try { mediaPlayer?.seekTo((positionSec * 1000).toInt()) } catch (_: Exception) {}
     }
 
-    // ── PCM Streaming (no-op on Android — TTS streaming is desktop-only) ──
+    actual fun release() { stop() }
+
+    // ── PCM Streaming (no-op on Android) ──
     actual fun startStream(sampleRate: Int, sampleSizeInBits: Int, channels: Int) {}
     actual fun streamPcm(pcmData: ByteArray) {}
     actual fun finishStream() {}
     actual fun stopStream() {}
+
+    private fun preparePlayer(audioData: ByteArray): MediaPlayer {
+        val tmp = File.createTempFile("jervis_playback_", ".wav")
+        tmp.writeBytes(audioData)
+        tmp.deleteOnExit()
+        tempFile = tmp
+        val player = MediaPlayer()
+        player.setDataSource(tmp.absolutePath)
+        player.setOnCompletionListener {
+            it.release()
+            if (mediaPlayer === it) mediaPlayer = null
+            cleanupTempFile()
+        }
+        player.prepare()
+        return player
+    }
 
     private fun cleanupTempFile() {
         tempFile?.delete()

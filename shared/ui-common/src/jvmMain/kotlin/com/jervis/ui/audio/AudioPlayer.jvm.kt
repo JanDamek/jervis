@@ -18,61 +18,34 @@ actual class AudioPlayer actual constructor() {
     // ── Streaming via SourceDataLine ────────────────────────────────────
     private var streamLine: SourceDataLine? = null
 
-    /**
-     * Open a continuous audio stream for PCM playback.
-     * Call [streamPcm] to write chunks, [finishStream] when done.
-     */
     actual fun startStream(sampleRate: Int, sampleSizeInBits: Int, channels: Int) {
         stopStream()
         val format = AudioFormat(
-            sampleRate.toFloat(),
-            sampleSizeInBits,
-            channels,
-            true, // signed
-            false, // little-endian (matches numpy int16 default)
+            sampleRate.toFloat(), sampleSizeInBits, channels, true, false,
         )
         val info = DataLine.Info(SourceDataLine::class.java, format)
         val line = AudioSystem.getLine(info) as SourceDataLine
-        // Buffer size: ~500ms of audio for smooth playback
         val bufferSize = sampleRate * channels * (sampleSizeInBits / 8) / 2
         line.open(format, bufferSize)
         line.start()
         streamLine = line
-        println("AudioPlayer: stream opened, sampleRate=$sampleRate, bufferSize=$bufferSize")
     }
 
-    /**
-     * Write raw PCM data to the audio stream. Blocks until data is written to the buffer.
-     * This provides gapless playback — SourceDataLine handles continuous output.
-     */
     actual fun streamPcm(pcmData: ByteArray) {
-        val line = streamLine ?: return
-        // write() blocks if the internal buffer is full — natural backpressure
-        line.write(pcmData, 0, pcmData.size)
+        streamLine?.write(pcmData, 0, pcmData.size)
     }
 
-    /**
-     * Finish streaming — drain remaining audio and close.
-     */
     actual fun finishStream() {
-        streamLine?.let { line ->
-            line.drain() // play remaining buffered audio
-            line.stop()
-            line.close()
-        }
+        streamLine?.let { it.drain(); it.stop(); it.close() }
         streamLine = null
-        println("AudioPlayer: stream finished")
     }
 
     actual fun stopStream() {
-        streamLine?.let { line ->
-            line.stop()
-            line.close()
-        }
+        streamLine?.let { it.stop(); it.close() }
         streamLine = null
     }
 
-    // ── One-shot WAV playback via Clip (for non-streaming use) ──────────
+    // ── One-shot WAV playback via Clip (blocking — for TTS chunks) ──────
     actual fun play(audioData: ByteArray) {
         stop()
         try {
@@ -89,11 +62,30 @@ actual class AudioPlayer actual constructor() {
             }
             clip = newClip
             newClip.start()
-            // Block until clip finishes so sequential TTS chunks play in order
             val durationMs = (newClip.microsecondLength / 1000) + 500
             latch.await(durationMs, TimeUnit.MILLISECONDS)
         } catch (e: Exception) {
             println("AudioPlayer.play error: ${e::class.simpleName}: ${e.message}")
+            clip = null
+        }
+    }
+
+    // ── Non-blocking playback (for meeting player with seek) ─────────────
+    actual fun playAsync(audioData: ByteArray) {
+        stop()
+        try {
+            val stream = AudioSystem.getAudioInputStream(ByteArrayInputStream(audioData))
+            val newClip = AudioSystem.getClip()
+            newClip.open(stream)
+            newClip.addLineListener { event ->
+                if (event.type == LineEvent.Type.STOP) {
+                    if (clip === newClip) clip = null
+                }
+            }
+            clip = newClip
+            newClip.start()
+        } catch (e: Exception) {
+            println("AudioPlayer.playAsync error: ${e::class.simpleName}: ${e.message}")
             clip = null
         }
     }
@@ -117,14 +109,10 @@ actual class AudioPlayer actual constructor() {
             }
             clip = newClip
             newClip.start()
-            // Stop at endFrame using a background thread
             rangeStopThread = Thread {
                 try {
-                    val durationMs = ((endSec - startSec) * 1000).toLong()
-                    Thread.sleep(durationMs)
-                    if (clip === newClip && newClip.isRunning) {
-                        newClip.stop()
-                    }
+                    Thread.sleep(((endSec - startSec) * 1000).toLong())
+                    if (clip === newClip && newClip.isRunning) newClip.stop()
                 } catch (_: InterruptedException) {}
             }.apply { isDaemon = true; start() }
         } catch (e: Exception) {
@@ -145,6 +133,21 @@ actual class AudioPlayer actual constructor() {
 
     actual val isPlaying: Boolean
         get() = clip?.isRunning == true || streamLine?.isRunning == true
+
+    actual val positionSec: Double
+        get() = clip?.microsecondPosition?.let { it / 1_000_000.0 } ?: 0.0
+
+    actual val durationSec: Double
+        get() = clip?.microsecondLength?.let { it / 1_000_000.0 } ?: 0.0
+
+    actual fun seekTo(positionSec: Double) {
+        clip?.let { c ->
+            val frame = (positionSec * c.format.frameRate).toLong()
+                .coerceIn(0, c.frameLength.toLong())
+            c.framePosition = frame.toInt()
+            if (!c.isRunning) c.start()
+        }
+    }
 
     actual fun release() {
         stop()

@@ -12,8 +12,16 @@ expect class AudioPlayer() {
     fun play(audioData: ByteArray)
     /** Play a range of audio from [startSec] to [endSec] seconds. */
     fun playRange(audioData: ByteArray, startSec: Double, endSec: Double)
+    /** Play full audio non-blocking (for meeting playback with seek). */
+    fun playAsync(audioData: ByteArray)
     fun stop()
     val isPlaying: Boolean
+    /** Current playback position in seconds. */
+    val positionSec: Double
+    /** Total duration in seconds (available after play/playAsync). */
+    val durationSec: Double
+    /** Seek to position in seconds. */
+    fun seekTo(positionSec: Double)
     fun release()
 
     // ── PCM Streaming (for TTS) ─────────────────────────────────────────

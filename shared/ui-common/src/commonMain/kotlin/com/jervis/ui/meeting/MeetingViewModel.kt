@@ -105,6 +105,12 @@ class MeetingViewModel(
     private val _playingSegmentIndex = MutableStateFlow(-1)
     val playingSegmentIndex: StateFlow<Int> = _playingSegmentIndex.asStateFlow()
 
+    private val _playbackPositionSec = MutableStateFlow(0.0)
+    val playbackPositionSec: StateFlow<Double> = _playbackPositionSec.asStateFlow()
+
+    private val _playbackDurationSec = MutableStateFlow(0.0)
+    val playbackDurationSec: StateFlow<Double> = _playbackDurationSec.asStateFlow()
+
     /** Cached audio bytes for segment playback (avoids re-downloading per segment). */
     private var cachedAudioMeetingId: String? = null
     private var cachedAudioBytes: ByteArray? = null
@@ -607,20 +613,27 @@ class MeetingViewModel(
         stopPlayback()
 
         _playingMeetingId.value = meetingId
+        _playbackPositionSec.value = 0.0
+        _playbackDurationSec.value = 0.0
         scope.launch {
             try {
                 val base64Data = repository.meetings.getAudioData(meetingId)
                 val audioBytes = Base64.decode(base64Data)
                 val player = AudioPlayer()
                 audioPlayer = player
-                player.play(audioBytes)
+                player.playAsync(audioBytes)
 
-                // Monitor playback completion
+                // Update duration once available
+                _playbackDurationSec.value = player.durationSec
+
+                // Monitor position and completion
                 playbackMonitorJob?.cancel()
                 playbackMonitorJob = scope.launch {
                     while (audioPlayer?.isPlaying == true) {
-                        delay(500)
+                        _playbackPositionSec.value = audioPlayer?.positionSec ?: 0.0
+                        delay(250)
                     }
+                    _playbackPositionSec.value = 0.0
                     if (_playingMeetingId.value == meetingId) {
                         _playingMeetingId.value = null
                     }
@@ -630,6 +643,11 @@ class MeetingViewModel(
                 _playingMeetingId.value = null
             }
         }
+    }
+
+    fun seekPlayback(positionSec: Double) {
+        audioPlayer?.seekTo(positionSec)
+        _playbackPositionSec.value = positionSec
     }
 
     fun stopPlayback() {

@@ -1,6 +1,8 @@
 package com.jervis.ui.meeting
 
 import androidx.compose.foundation.background
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -98,6 +100,9 @@ internal fun MeetingDetailView(
     onSetVoiceSample: (speakerId: String, voiceSample: VoiceSampleRefDto) -> Unit = { _, _ -> },
     onSetVoiceEmbedding: (SpeakerEmbeddingDto) -> Unit = {},
     onUpdateSpeakerMapping: (label: String, speakerId: String?) -> Unit = { _, _ -> },
+    playbackPositionSec: Double = 0.0,
+    playbackDurationSec: Double = 0.0,
+    onSeek: (Double) -> Unit = {},
 ) {
     // Toggle between corrected and raw transcript
     var showCorrected by remember { mutableStateOf(true) }
@@ -237,6 +242,16 @@ internal fun MeetingDetailView(
                         contentDescription = "Zavřít",
                     )
                 }
+            }
+
+            // Mini player with seekbar — visible during playback
+            if (isPlaying && playingSegmentIndex < 0 && playbackDurationSec > 0) {
+                MiniPlayerBar(
+                    positionSec = playbackPositionSec,
+                    durationSec = playbackDurationSec,
+                    onSeek = onSeek,
+                    onStop = onPlayToggle,
+                )
             }
 
             // Metadata header — scrollable when content overflows (error messages, correction questions)
@@ -508,4 +523,52 @@ internal fun MeetingDetailView(
             },
         )
     }
+}
+
+@Composable
+private fun MiniPlayerBar(
+    positionSec: Double,
+    durationSec: Double,
+    onSeek: (Double) -> Unit,
+    onStop: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = formatDuration(positionSec),
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.width(44.dp),
+            )
+            Slider(
+                value = positionSec.toFloat(),
+                onValueChange = { onSeek(it.toDouble()) },
+                valueRange = 0f..durationSec.toFloat().coerceAtLeast(1f),
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = formatDuration(durationSec),
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.width(44.dp),
+            )
+            JIconButton(
+                onClick = onStop,
+                icon = Icons.Default.Stop,
+                contentDescription = "Zastavit",
+            )
+        }
+    }
+}
+
+private fun formatDuration(seconds: Double): String {
+    val totalSec = seconds.toInt().coerceAtLeast(0)
+    val min = totalSec / 60
+    val sec = totalSec % 60
+    return "%d:%02d".format(min, sec)
 }

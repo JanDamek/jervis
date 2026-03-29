@@ -85,6 +85,8 @@ fun MeetingsScreen(
     val expandedGroups by viewModel.expandedGroups.collectAsState()
     val loadingGroups by viewModel.loadingGroups.collectAsState()
     val clientSpeakers by viewModel.clientSpeakers.collectAsState()
+    val playbackPositionSec by viewModel.playbackPositionSec.collectAsState()
+    val playbackDurationSec by viewModel.playbackDurationSec.collectAsState()
 
     var showSetupDialog by remember { mutableStateOf(false) }
     var showTrash by remember { mutableStateOf(false) }
@@ -210,6 +212,9 @@ fun MeetingsScreen(
             onCreateSpeaker = { request -> viewModel.createSpeaker(request) },
             onSetVoiceSample = { speakerId, voiceSample -> viewModel.setVoiceSample(speakerId, voiceSample) },
             onSetVoiceEmbedding = { request -> viewModel.setVoiceEmbedding(request) },
+            playbackPositionSec = if (playingMeetingId == currentDetail.id) playbackPositionSec else 0.0,
+            playbackDurationSec = if (playingMeetingId == currentDetail.id) playbackDurationSec else 0.0,
+            onSeek = { viewModel.seekPlayback(it) },
             onUpdateSpeakerMapping = { label, speakerId ->
                 val currentMapping = currentDetail.speakerMapping.toMutableMap()
                 if (speakerId != null) {
