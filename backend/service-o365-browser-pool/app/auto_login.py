@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from enum import Enum
 
 from playwright.async_api import Page
@@ -512,7 +513,6 @@ async def poll_mfa_approval(page: Page, timeout_seconds: int = 120) -> LoginResu
     auto-transitions. We poll every 3s to detect the transition.
     Returns LOGGED_IN on success, ERROR on timeout or failure.
     """
-    import time
     start = time.time()
     logger.info("Polling for MFA approval (timeout=%ds)", timeout_seconds)
 
