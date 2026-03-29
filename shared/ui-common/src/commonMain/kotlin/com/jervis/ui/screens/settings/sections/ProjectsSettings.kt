@@ -1,6 +1,6 @@
 package com.jervis.ui.screens.settings.sections
 
-import com.jervis.dto.filterVisible
+import com.jervis.dto.project.filterVisible
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer

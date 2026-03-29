@@ -4,7 +4,7 @@ import com.jervis.di.RpcConnectionManager
 import com.jervis.di.RpcConnectionState
 import com.jervis.dto.client.ClientDto
 import com.jervis.dto.project.ProjectDto
-import com.jervis.dto.filterVisible
+import com.jervis.dto.project.filterVisible
 import com.jervis.dto.events.JervisEvent
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.di.JervisRepository
@@ -70,8 +70,8 @@ class MainViewModel(
     private val _projects = MutableStateFlow<List<ProjectDto>>(emptyList())
     val projects: StateFlow<List<ProjectDto>> = _projects.asStateFlow()
 
-    private val _projectGroups = MutableStateFlow<List<com.jervis.dto.ProjectGroupDto>>(emptyList())
-    val projectGroups: StateFlow<List<com.jervis.dto.ProjectGroupDto>> = _projectGroups.asStateFlow()
+    private val _projectGroups = MutableStateFlow<List<com.jervis.dto.project.ProjectGroupDto>>(emptyList())
+    val projectGroups: StateFlow<List<com.jervis.dto.project.ProjectGroupDto>> = _projectGroups.asStateFlow()
 
     private val _selectedClientId = MutableStateFlow<String?>(defaultClientId)
     val selectedClientId: StateFlow<String?> = _selectedClientId.asStateFlow()

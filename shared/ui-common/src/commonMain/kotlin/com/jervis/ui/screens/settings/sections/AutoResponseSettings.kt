@@ -28,7 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.agent.AutoResponseSettingsDto
-import com.jervis.dto.ResponseRuleDto
+import com.jervis.dto.agent.ResponseRuleDto
 import com.jervis.di.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading

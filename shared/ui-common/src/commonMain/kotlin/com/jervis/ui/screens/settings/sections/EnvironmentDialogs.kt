@@ -15,7 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.client.ClientDto
-import com.jervis.dto.filterVisible
+import com.jervis.dto.project.filterVisible
 import com.jervis.dto.environment.ComponentTemplateDto
 import com.jervis.dto.environment.ComponentTypeEnum
 import com.jervis.dto.environment.ComponentVersionDto
@@ -194,7 +194,7 @@ fun NewEnvironmentDialog(
     var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
     var selectedClientId by remember { mutableStateOf<String?>(null) }
     var selectedScope by remember { mutableStateOf(EnvironmentScope.CLIENT) }
-    var groups by remember { mutableStateOf<List<com.jervis.dto.ProjectGroupDto>>(emptyList()) }
+    var groups by remember { mutableStateOf<List<com.jervis.dto.project.ProjectGroupDto>>(emptyList()) }
     var selectedGroupId by remember { mutableStateOf<String?>(null) }
     var projects by remember { mutableStateOf<List<com.jervis.dto.project.ProjectDto>>(emptyList()) }
     var selectedProjectId by remember { mutableStateOf<String?>(null) }

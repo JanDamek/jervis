@@ -1,7 +1,7 @@
 package com.jervis.ui.meeting
 
 import com.jervis.dto.project.ProjectDto
-import com.jervis.dto.filterVisible
+import com.jervis.dto.project.filterVisible
 import com.jervis.dto.meeting.AudioInputType
 import com.jervis.dto.meeting.MeetingClassifyDto
 import com.jervis.dto.meeting.CorrectionChatMessageDto
@@ -74,8 +74,8 @@ class MeetingViewModel(
     private val _projects = MutableStateFlow<List<ProjectDto>>(emptyList())
     val projects: StateFlow<List<ProjectDto>> = _projects.asStateFlow()
 
-    private val _projectGroups = MutableStateFlow<List<com.jervis.dto.ProjectGroupDto>>(emptyList())
-    val projectGroups: StateFlow<List<com.jervis.dto.ProjectGroupDto>> = _projectGroups.asStateFlow()
+    private val _projectGroups = MutableStateFlow<List<com.jervis.dto.project.ProjectGroupDto>>(emptyList())
+    val projectGroups: StateFlow<List<com.jervis.dto.project.ProjectGroupDto>> = _projectGroups.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()

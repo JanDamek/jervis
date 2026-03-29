@@ -586,7 +586,7 @@ private fun EditMeetingDialog(
     meeting: MeetingDto,
     clients: List<ClientDto>,
     projects: List<ProjectDto>,
-    projectGroups: List<com.jervis.dto.ProjectGroupDto> = emptyList(),
+    projectGroups: List<com.jervis.dto.project.ProjectGroupDto> = emptyList(),
     onLoadProjects: (String) -> Unit,
     onSave: (clientId: String, projectId: String?, groupId: String?, title: String?, meetingType: MeetingTypeEnum?) -> Unit,
     onDismiss: () -> Unit,

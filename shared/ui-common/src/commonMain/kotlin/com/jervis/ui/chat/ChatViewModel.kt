@@ -848,7 +848,7 @@ class ChatViewModel(
 
     // --- Internal ---
 
-    private suspend fun handleChatResponse(response: com.jervis.dto.ChatResponseDto) {
+    private suspend fun handleChatResponse(response: com.jervis.dto.chat.ChatResponseDto) {
         val projectId = selectedProjectId.value ?: ""
         if (response.metadata["status"] == "synchronized" ||
             response.type == ChatResponseType.QUEUE_STATUS
@@ -1164,7 +1164,7 @@ class ChatViewModel(
         _chatMessages.value = messages
     }
 
-    private fun handleStreamingToken(response: com.jervis.dto.ChatResponseDto, projectId: String) {
+    private fun handleStreamingToken(response: com.jervis.dto.chat.ChatResponseDto, projectId: String) {
         val messageId = response.messageId ?: return
         val accumulated = (streamingBuffer[messageId] ?: "") + response.message
         streamingBuffer[messageId] = accumulated
@@ -1191,7 +1191,7 @@ class ChatViewModel(
      * Apply loaded chat history to UI state.
      * Called from subscribeToChatStream (with connected services) and loadMoreHistory.
      */
-    private fun applyHistory(history: com.jervis.dto.ChatHistoryDto) {
+    private fun applyHistory(history: com.jervis.dto.chat.ChatHistoryDto) {
         val projectId = selectedProjectId.value ?: ""
         _backgroundMessageCount.value = history.backgroundMessageCount
         _userTaskCount.value = history.userTaskCount

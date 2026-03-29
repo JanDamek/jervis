@@ -1,6 +1,6 @@
 package com.jervis.ui.screens.settings.sections
 
-import com.jervis.dto.filterVisible
+import com.jervis.dto.project.filterVisible
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -410,7 +410,7 @@ private fun MergeProjectDialog(
 ) {
     val scope = rememberCoroutineScope()
     var selectedTarget by remember { mutableStateOf<ProjectDto?>(null) }
-    var preview by remember { mutableStateOf<com.jervis.dto.MergePreviewDto?>(null) }
+    var preview by remember { mutableStateOf<com.jervis.dto.project.MergePreviewDto?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var resolutions by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var customValues by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -604,11 +604,11 @@ private fun MergeProjectDialog(
                         isLoading = true
                         scope.launch {
                             try {
-                                val req = com.jervis.dto.MergeExecuteDto(
+                                val req = com.jervis.dto.project.MergeExecuteDto(
                                     sourceProjectId = source.id,
                                     targetProjectId = selectedTarget!!.id,
                                     resolutions = resolutions.map { (k, v) ->
-                                        com.jervis.dto.MergeResolutionDto(
+                                        com.jervis.dto.project.MergeResolutionDto(
                                             key = k,
                                             resolution = v,
                                             customValue = if (v == "CUSTOM") customValues[k] else null,

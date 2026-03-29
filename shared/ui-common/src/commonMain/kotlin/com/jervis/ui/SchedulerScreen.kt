@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.client.ClientDto
 import com.jervis.dto.project.ProjectDto
 import com.jervis.dto.task.TaskStateEnum
-import com.jervis.dto.filterVisible
+import com.jervis.dto.project.filterVisible
 import com.jervis.dto.task.ScheduledTaskDto
 import com.jervis.di.JervisRepository
 import com.jervis.ui.design.*

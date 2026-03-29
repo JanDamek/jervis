@@ -30,8 +30,8 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.client.ClientDto
 import com.jervis.dto.project.ProjectDto
 import com.jervis.dto.project.ProjectGroupDto
-import com.jervis.dto.ProjectResourceDto
-import com.jervis.dto.ResourceLinkDto
+import com.jervis.dto.project.ProjectResourceDto
+import com.jervis.dto.project.ResourceLinkDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionResponseDto

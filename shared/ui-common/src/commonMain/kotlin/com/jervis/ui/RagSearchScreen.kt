@@ -13,7 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.client.ClientDto
-import com.jervis.dto.filterVisible
+import com.jervis.dto.project.filterVisible
 import com.jervis.dto.project.ProjectDto
 import com.jervis.dto.rag.RagSearchItemDto
 import com.jervis.dto.rag.RagSearchRequestDto

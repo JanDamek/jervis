@@ -30,7 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ClientConnectionCapabilityDto
+import com.jervis.dto.client.ClientConnectionCapabilityDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionResponseDto

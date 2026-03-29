@@ -1,6 +1,6 @@
 package com.jervis.ui.screens.settings.sections
 
-import com.jervis.dto.filterVisible
+import com.jervis.dto.project.filterVisible
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,8 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.project.ProjectGroupDto
-import com.jervis.dto.ProjectResourceDto
-import com.jervis.dto.ResourceLinkDto
+import com.jervis.dto.project.ProjectResourceDto
+import com.jervis.dto.project.ResourceLinkDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionResponseDto
