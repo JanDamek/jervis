@@ -835,9 +835,9 @@ class MeetingViewModel(
                         meetingType = meetingType,
                     ),
                 )
-                // Remove from unclassified list
+                // Remove from unclassified list and refresh both lists
                 _unclassifiedMeetings.value = _unclassifiedMeetings.value.filter { it.id != meetingId }
-                // Refresh timeline to show classified item
+                loadUnclassifiedMeetings()
                 lastClientId?.let { loadTimeline(it, lastProjectId, silent = true) }
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se klasifikovat nahrávku: ${e.message}"
@@ -866,7 +866,8 @@ class MeetingViewModel(
                     ),
                 )
                 _selectedMeeting.value = updated
-                // Refresh timeline in case client/project changed
+                // Refresh both lists in case client/project changed
+                loadUnclassifiedMeetings()
                 lastClientId?.let { loadTimeline(it, lastProjectId, silent = true) }
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se aktualizovat meeting: ${e.message}"

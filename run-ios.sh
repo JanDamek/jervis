@@ -1,7 +1,8 @@
 #!/bin/bash
+set -euo pipefail
 
 # Check if simulator mode is requested
-if [ "$1" = "simulator" ]; then
+if [ "${1:-}" = "simulator" ]; then
     USE_SIMULATOR=true
     DEVICE_NAME="iPhone 16 Pro"
     DEVICE_ID="810FCC11-70AB-4CFA-B83C-19CFDA22B2BA"
@@ -49,9 +50,15 @@ if [ "$USE_SIMULATOR" = true ]; then
       -derivedDataPath build/ios \
       clean build
 
+    APP_PATH="build/ios/Build/Products/Debug-iphonesimulator/iosApp.app"
+    if [ ! -d "$APP_PATH" ]; then
+        echo "ERROR: Build succeeded but .app not found at $APP_PATH"
+        exit 1
+    fi
+
     # Install and launch the app
     echo "Installing app on simulator..."
-    xcrun simctl install "$DEVICE_ID" "build/ios/Build/Products/Debug-iphonesimulator/iosApp.app"
+    xcrun simctl install "$DEVICE_ID" "$APP_PATH"
 
     echo "Launching app..."
     xcrun simctl launch --console "$DEVICE_ID" com.jervis
@@ -70,6 +77,12 @@ else
       -derivedDataPath build/ios \
       clean build
 
+    APP_PATH="build/ios/Build/Products/Debug-iphoneos/iosApp.app"
+    if [ ! -d "$APP_PATH" ]; then
+        echo "ERROR: Build succeeded but .app not found at $APP_PATH"
+        exit 1
+    fi
+
     echo "Installing and launching app on physical device..."
     # Find device ID for the given name
     DEVICE_ID=$(xcrun devicectl list devices --verbose | grep -B 20 "$DEVICE_NAME" | grep "udid:" | head -n 1 | sed 's/.*("//' | sed 's/")//')
@@ -86,12 +99,13 @@ else
     if [ -n "$DEVICE_ID" ]; then
         echo "Found Device ID: $DEVICE_ID"
         echo "Installing app..."
-        xcrun devicectl device install app --device "$DEVICE_ID" "build/ios/Build/Products/Debug-iphoneos/iosApp.app"
+        xcrun devicectl device install app --device "$DEVICE_ID" "$APP_PATH"
         
         echo "Launching app..."
         xcrun devicectl device process launch --device "$DEVICE_ID" com.jervis
     else
         echo "Error: Could not find device ID for '$DEVICE_NAME'. Please ensure it's connected and paired."
         echo "You can check connected devices with: xcrun devicectl list devices"
+        exit 1
     fi
 fi

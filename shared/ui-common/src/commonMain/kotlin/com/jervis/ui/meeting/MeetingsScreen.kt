@@ -337,10 +337,10 @@ fun MeetingsScreen(
             } else {
                 // Active meetings view with timeline grouping
                 when {
-                    selectedClientId == null -> {
+                    selectedClientId == null && unclassifiedMeetings.isEmpty() -> {
                         JEmptyState(message = "Vyberte klienta", icon = "")
                     }
-                    isLoading -> {
+                    isLoading && unclassifiedMeetings.isEmpty() -> {
                         JCenteredLoading()
                     }
                     currentWeekMeetings.isEmpty() && olderGroups.isEmpty() && !isRecording
