@@ -21,6 +21,7 @@ enum class ProviderEnum {
     SLACK,
     MICROSOFT_TEAMS,   // OAuth2 / Browser Session (K8s pod) / Local token
     DISCORD,
+    WHATSAPP,          // Browser Session + VLM scraping
 }
 
 /**

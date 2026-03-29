@@ -31,6 +31,8 @@ import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalBugTrackerApi
 import com.jervis.rpc.internal.installInternalO365CapabilitiesApi
 import com.jervis.rpc.internal.installInternalO365SessionApi
+import com.jervis.rpc.internal.installInternalWhatsAppSessionApi
+import com.jervis.rpc.internal.installInternalWhatsAppCapabilitiesApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import com.jervis.agent.AgentOrchestratorRpcImpl
 import com.jervis.agent.AgentQuestionRpcImpl
@@ -170,6 +172,8 @@ class KtorRpcServer(
                             installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
                             installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalO365CapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)
+                            installInternalWhatsAppSessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
+                            installInternalWhatsAppCapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)

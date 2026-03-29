@@ -1,0 +1,96 @@
+# =============================================================================
+# Jervis WhatsApp Browser – K8s StatefulSet
+#
+# Stateful service. Manages Playwright browser for WhatsApp Web session.
+# VLM-based scraping of chat messages and attachments.
+# Includes Xvfb + noVNC for QR code scanning via browser.
+# =============================================================================
+
+# ===== StatefulSet =====
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jervis-whatsapp-browser
+  namespace: jervis
+spec:
+  serviceName: jervis-whatsapp-browser
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: jervis-whatsapp-browser
+  template:
+    metadata:
+      labels:
+        app: jervis-whatsapp-browser
+    spec:
+      containers:
+        - name: whatsapp-browser
+          image: registry.damek-soft.eu/jandamek/jervis-whatsapp-browser:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8091
+              name: api
+            - containerPort: 6080
+              name: novnc
+          volumeMounts:
+            - name: browser-profiles
+              mountPath: /browser-profiles
+          envFrom:
+            - configMapRef:
+                name: jervis-config
+          env:
+            # Secret — not in ConfigMap
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: MONGODB_PASSWORD
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8091
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8091
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: browser-profiles
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+---
+# ===== Service =====
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-whatsapp-browser
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-whatsapp-browser
+  ports:
+    - name: api
+      port: 8091
+      targetPort: 8091
+    - name: novnc
+      port: 6080
+      targetPort: 6080

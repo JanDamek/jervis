@@ -138,6 +138,17 @@ value class SourceUrn(
                 }",
             )
 
+        fun whatsapp(
+            connectionId: ConnectionId,
+            messageId: String,
+            chatName: String? = null,
+        ): SourceUrn =
+            SourceUrn(
+                "whatsapp::conn:$connectionId,msgId:${encodeValue(messageId)}${
+                    chatName?.let { ",chat:${encodeValue(it)}" } ?: ""
+                }",
+            )
+
         fun mergeRequest(
             projectId: ProjectId,
             provider: String,

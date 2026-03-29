@@ -16,6 +16,7 @@ enum class TaskTypeEnum(val sourceKey: String) {
     CHAT_PROCESSING("teams"),
     SLACK_PROCESSING("slack"),
     DISCORD_PROCESSING("discord"),
+    WHATSAPP_PROCESSING("whatsapp"),
     USER_INPUT_PROCESSING("chat"),
     USER_TASK("user_task"),
     SCHEDULED_TASK("scheduled"),

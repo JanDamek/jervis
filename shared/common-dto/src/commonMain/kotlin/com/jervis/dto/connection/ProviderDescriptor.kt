@@ -221,6 +221,26 @@ data class ProviderDescriptor(
                     ),
                 ),
             ),
+            ProviderDescriptor(
+                provider = ProviderEnum.WHATSAPP,
+                displayName = "WhatsApp",
+                capabilities = setOf(
+                    ConnectionCapability.CHAT_READ,
+                ),
+                protocols = setOf(ProtocolEnum.HTTP),
+                supportsCloud = true,
+                supportsSelfHosted = false,
+                defaultPollingIntervalSeconds = 120,
+                authOptions = listOf(
+                    AuthOption(
+                        authType = AuthTypeEnum.NONE,
+                        displayName = "Web Scraping (Browser Session)",
+                        fields = listOf(
+                            FormField(FormFieldType.USERNAME, "Telefonní číslo", required = false),
+                        ),
+                    ),
+                ),
+            ),
         )
 
         val defaultsByProvider: Map<ProviderEnum, ProviderDescriptor> =
