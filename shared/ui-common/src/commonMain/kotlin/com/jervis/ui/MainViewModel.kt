@@ -467,6 +467,23 @@ class MainViewModel(
         }
     }
 
+    /** Refresh project list for current client (call after CRUD in Settings). */
+    fun refreshProjects() {
+        val clientId = _selectedClientId.value ?: return
+        scope.launch {
+            try {
+                val projectList = repository.projects.listProjectsForClient(clientId).filterVisible()
+                _projects.value = projectList
+                saveProjectsToCache(clientId, projectList)
+
+                val allGroups = repository.projectGroups.getAllGroups()
+                _projectGroups.value = allGroups.filter { it.clientId == clientId }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+            }
+        }
+    }
+
     fun selectGroup(groupId: String) {
         println("MainViewModel: selectGroup($groupId) — previous group=${_selectedGroupId.value}, project=${_selectedProjectId.value}")
         if (_selectedGroupId.value == groupId) return

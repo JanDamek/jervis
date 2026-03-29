@@ -179,6 +179,7 @@ fun App(
                     repository = repository,
                     onBack = { appNavigator.goBack() },
                     onNavigate = { screen -> appNavigator.navigateTo(screen) },
+                    onDataChanged = { viewModel.refreshProjects() },
                 )
             }
 

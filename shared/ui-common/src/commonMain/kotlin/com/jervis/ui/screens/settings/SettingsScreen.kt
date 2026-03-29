@@ -27,6 +27,7 @@ import com.jervis.ui.LocalRpcGeneration
 import com.jervis.ui.design.*
 import com.jervis.ui.navigation.Screen
 import com.jervis.ui.screens.settings.sections.*
+import androidx.compose.runtime.DisposableEffect
 import kotlinx.coroutines.launch
 
 @Composable
@@ -34,9 +35,15 @@ fun SettingsScreen(
     repository: JervisRepository,
     onBack: () -> Unit,
     onNavigate: (Screen) -> Unit = {},
+    onDataChanged: () -> Unit = {},
 ) {
     val categories = remember { SettingsCategory.entries.toList() }
     var selectedIndex by remember { mutableIntStateOf(0) }
+
+    // Refresh main data when leaving settings (projects/clients may have changed)
+    DisposableEffect(Unit) {
+        onDispose { onDataChanged() }
+    }
 
     JAdaptiveSidebarLayout(
         categories = categories,
