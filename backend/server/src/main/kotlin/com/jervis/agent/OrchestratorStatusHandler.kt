@@ -142,6 +142,8 @@ class OrchestratorStatusHandler(
                         role = com.jervis.chat.MessageRole.ASSISTANT,
                         content = description,
                         sequence = sequence,
+                        clientId = task.clientId.toString(),
+                        projectId = task.projectId?.toString(),
                     ),
                 )
             } catch (e: Exception) {
@@ -198,6 +200,8 @@ class OrchestratorStatusHandler(
                         content = resultSummary,
                         sequence = sequence,
                         metadata = metadata,
+                        clientId = task.clientId.toString(),
+                        projectId = task.projectId?.toString(),
                     ),
                 )
                 logger.info { "ASSISTANT_MESSAGE_SAVED | taskId=${task.id} | sequence=$sequence | workflowSteps=${workflowStepsJson != null}" }
@@ -300,6 +304,8 @@ class OrchestratorStatusHandler(
                         content = cancelMsg,
                         sequence = sequence,
                         metadata = mapOf("status" to "cancelled"),
+                        clientId = task.clientId.toString(),
+                        projectId = task.projectId?.toString(),
                     ),
                 )
             } catch (e: Exception) {
@@ -344,6 +350,8 @@ class OrchestratorStatusHandler(
                         content = errorContent,
                         sequence = sequence,
                         metadata = mapOf("status" to "error"),
+                        clientId = task.clientId.toString(),
+                        projectId = task.projectId?.toString(),
                     ),
                 )
             } catch (e: Exception) {

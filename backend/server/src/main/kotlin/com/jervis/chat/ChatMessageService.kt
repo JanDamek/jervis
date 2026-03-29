@@ -304,8 +304,6 @@ class ChatMessageService(
         if (filterClientId != null) {
             val scopeOr = mutableListOf(
                 Criteria.where("clientId").`is`(filterClientId),                   // direct scope match
-                Criteria.where("clientId").`is`(null),                              // legacy unscoped
-                Criteria.where("clientId").exists(false),                           // legacy unscoped (field missing)
                 Criteria.where("affectedScopes.clientId").`is`(filterClientId),    // cross-context master
             )
             if (filterProjectId != null) {
@@ -315,8 +313,11 @@ class ChatMessageService(
                         Criteria.where("clientId").`is`(filterClientId),
                         Criteria.where("projectId").`is`(filterProjectId),
                     ),
-                    Criteria.where("clientId").`is`(null),
-                    Criteria.where("clientId").exists(false),
+                    // Client-level messages (no project) still visible when project selected
+                    Criteria().andOperator(
+                        Criteria.where("clientId").`is`(filterClientId),
+                        Criteria.where("projectId").`is`(null),
+                    ),
                     Criteria.where("affectedScopes.clientId").`is`(filterClientId),
                 ))
             } else if (groupProjectIds != null && groupProjectIds.isNotEmpty()) {
@@ -326,8 +327,10 @@ class ChatMessageService(
                         Criteria.where("clientId").`is`(filterClientId),
                         Criteria.where("projectId").`in`(groupProjectIds),
                     ),
-                    Criteria.where("clientId").`is`(null),
-                    Criteria.where("clientId").exists(false),
+                    Criteria().andOperator(
+                        Criteria.where("clientId").`is`(filterClientId),
+                        Criteria.where("projectId").`is`(null),
+                    ),
                     Criteria.where("affectedScopes.clientId").`is`(filterClientId),
                 ))
             }
