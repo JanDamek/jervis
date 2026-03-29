@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 from app.api.models import (
     RetrievalRequest, EvidencePack, EvidenceItem,
-    TraversalRequest, TraversalSpec, GraphNode
+    TraversalRequest, TraversalSpec, GraphNode,
+    CREDIBILITY_WEIGHTS, BRANCH_ROLE_BOOST, SourceCredibility
 )
 from app.services.rag_service import RagService
 from app.services.graph_service import GraphService
@@ -36,10 +37,14 @@ class ScoredChunk:
     graph_score: float = 0.0         # Score from graph expansion
     entity_score: float = 0.0        # Score from entity match
     combined_score: float = 0.0      # Final combined score
+    credibility_boost: float = 1.0   # Credibility multiplier applied
     graph_refs: list = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
     source: str = "rag"              # "rag", "graph", "entity"
     graph_distance: int = 0          # Hops from seed node
+    credibility: str = ""            # SourceCredibility tier
+    branch_scope: str = ""           # Which branch this info is scoped to
+    branch_role: str = ""            # "default", "protected", "active", etc.
 
 
 class HybridRetriever:
@@ -102,7 +107,10 @@ class HybridRetriever:
                 rag_score=item.score,
                 graph_refs=item.metadata.get("graphRefs", []),
                 metadata=item.metadata,
-                source="rag"
+                source="rag",
+                credibility=item.credibility or item.metadata.get("credibility", ""),
+                branch_scope=item.branchScope or item.metadata.get("branchScope", ""),
+                branch_role=item.metadata.get("branchRole", ""),
             )
             all_chunks[chunk_id] = chunk
 
@@ -154,6 +162,9 @@ class HybridRetriever:
         if diversity_factor < 1.0:
             self._apply_diversity_penalty(all_chunks, diversity_factor)
 
+        # 5b. Apply source credibility boost
+        self._apply_credibility_boost(all_chunks)
+
         # 6. Sort and filter
         sorted_chunks = sorted(
             all_chunks.values(),
@@ -174,12 +185,16 @@ class HybridRetriever:
                 content=chunk.content,
                 score=chunk.combined_score,
                 sourceUrn=chunk.source_urn,
+                credibility=chunk.credibility or None,
+                branchScope=chunk.branch_scope or None,
                 metadata={
                     "id": chunk.chunk_id,
                     "source": chunk.source,
                     "ragScore": chunk.rag_score,
                     "graphScore": chunk.graph_score,
                     "entityScore": chunk.entity_score,
+                    "credibilityBoost": chunk.credibility_boost,
+                    "branchRole": chunk.branch_role,
                     "graphDistance": chunk.graph_distance,
                     "graphRefs": chunk.graph_refs,
                     **chunk.metadata
@@ -483,6 +498,38 @@ class HybridRetriever:
                 chunk.combined_score *= penalty
 
             source_counts[source] = count + 1
+
+    def _apply_credibility_boost(self, chunks: dict[str, ScoredChunk]):
+        """
+        Boost scores based on source credibility and branch role.
+
+        Credibility multiplier:
+          verified_fact=1.0, official_doc=0.95, structured_data=0.85,
+          code_analysis=0.75, llm_extracted=0.60, inferred=0.40
+
+        Branch role multiplier (for code-related chunks):
+          default=1.0, protected=0.95, active=0.75, merged=0.50, stale=0.30
+
+        Combined: score *= credibility_weight * branch_boost
+        Chunks without credibility info get a neutral 0.70 default (between
+        STRUCTURED_DATA and CODE_ANALYSIS — conservative assumption).
+        """
+        DEFAULT_CREDIBILITY_WEIGHT = 0.70
+
+        for chunk in chunks.values():
+            # Credibility weight
+            cred_weight = DEFAULT_CREDIBILITY_WEIGHT
+            if chunk.credibility:
+                cred_weight = CREDIBILITY_WEIGHTS.get(chunk.credibility, DEFAULT_CREDIBILITY_WEIGHT)
+
+            # Branch role boost (only applies if branch-scoped)
+            branch_boost = 1.0
+            if chunk.branch_role:
+                branch_boost = BRANCH_ROLE_BOOST.get(chunk.branch_role, 0.75)
+
+            total_boost = cred_weight * branch_boost
+            chunk.combined_score *= total_boost
+            chunk.credibility_boost = total_boost
 
 
 # Convenience function for simple usage

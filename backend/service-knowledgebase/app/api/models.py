@@ -26,6 +26,66 @@ class SourceType(str, Enum):
     IDLE_REVIEW = "idle_review"
 
 
+class SourceCredibility(str, Enum):
+    """Credibility tier of ingested information.
+
+    Determines how much weight this information carries during retrieval.
+    Higher-credibility sources are boosted in scoring and presented first.
+
+    Tiers (descending trust):
+      VERIFIED_FACT  — User explicitly asserted as ground truth (e.g., MCP kb_store with verified=true)
+      OFFICIAL_DOC   — Official vendor/project documentation (crawled docs, uploaded specs)
+      STRUCTURED_DATA— Authoritative system records (Jira tickets, Confluence pages, emails, git commits)
+      CODE_ANALYSIS  — Extracted from source code, branch-scoped (tree-sitter, Joern CPG)
+      LLM_EXTRACTED  — LLM-inferred relationships and summaries from content
+      INFERRED       — Weak signals: chat mentions, learned patterns, heuristic guesses
+    """
+    VERIFIED_FACT = "verified_fact"
+    OFFICIAL_DOC = "official_doc"
+    STRUCTURED_DATA = "structured_data"
+    CODE_ANALYSIS = "code_analysis"
+    LLM_EXTRACTED = "llm_extracted"
+    INFERRED = "inferred"
+
+
+# Credibility weight multiplier for retrieval scoring.
+# Applied as a boost factor on combined_score in hybrid retriever.
+CREDIBILITY_WEIGHTS: dict[str, float] = {
+    SourceCredibility.VERIFIED_FACT: 1.0,
+    SourceCredibility.OFFICIAL_DOC: 0.95,
+    SourceCredibility.STRUCTURED_DATA: 0.85,
+    SourceCredibility.CODE_ANALYSIS: 0.75,
+    SourceCredibility.LLM_EXTRACTED: 0.60,
+    SourceCredibility.INFERRED: 0.40,
+}
+
+# Default credibility auto-derived from SourceType when not explicitly set.
+SOURCE_TYPE_DEFAULT_CREDIBILITY: dict[str, SourceCredibility] = {
+    SourceType.EMAIL: SourceCredibility.STRUCTURED_DATA,
+    SourceType.JIRA: SourceCredibility.STRUCTURED_DATA,
+    SourceType.LINK: SourceCredibility.OFFICIAL_DOC,
+    SourceType.CONFLUENCE: SourceCredibility.OFFICIAL_DOC,
+    SourceType.GIT: SourceCredibility.CODE_ANALYSIS,
+    SourceType.MEETING: SourceCredibility.STRUCTURED_DATA,
+    SourceType.CHAT: SourceCredibility.INFERRED,
+    SourceType.USER_TASK: SourceCredibility.STRUCTURED_DATA,
+    SourceType.SCHEDULED: SourceCredibility.STRUCTURED_DATA,
+    SourceType.TEAMS: SourceCredibility.INFERRED,
+    SourceType.SLACK: SourceCredibility.INFERRED,
+    SourceType.DISCORD: SourceCredibility.INFERRED,
+    SourceType.IDLE_REVIEW: SourceCredibility.LLM_EXTRACTED,
+}
+
+# Branch role boost: default/protected branches are more authoritative than feature branches.
+BRANCH_ROLE_BOOST: dict[str, float] = {
+    "default": 1.0,       # main/master — canonical truth
+    "protected": 0.95,    # develop, release/* — near-canonical
+    "active": 0.75,       # feature branches currently active
+    "merged": 0.50,       # merged feature branches — historical, may be outdated
+    "stale": 0.30,        # stale/abandoned branches — low trust
+}
+
+
 class IngestRequest(BaseModel):
     """
     Request to ingest content into the knowledge base.
@@ -47,6 +107,15 @@ class IngestRequest(BaseModel):
     metadata: Dict[str, Any] = {}
     observedAt: datetime = Field(default_factory=datetime.now)
     maxTier: str = "NONE"  # OpenRouter tier: NONE/FREE/PAID/PREMIUM — from CloudModelPolicy
+    # Source credibility — how trustworthy is this information.
+    # None = auto-derive from sourceType; explicit value overrides auto-derivation.
+    credibility: Optional[SourceCredibility] = None
+    # Branch scope — for code-related data, which branch does this info apply to.
+    # Empty = not branch-scoped (applies globally). E.g., "main", "develop", "feature/xyz".
+    branchScope: Optional[str] = None
+    # Branch role — "default", "protected", "active", "merged", "stale".
+    # Auto-set by git indexers; affects credibility boost during retrieval.
+    branchRole: Optional[str] = None
 
     @model_validator(mode='after')
     def validate_tenant_hierarchy(self):
@@ -105,6 +174,8 @@ class EvidenceItem(BaseModel):
     content: str
     score: float
     sourceUrn: str
+    credibility: Optional[str] = None  # SourceCredibility value
+    branchScope: Optional[str] = None
     metadata: Dict[str, Any] = {}
 
 class EvidencePack(BaseModel):
@@ -204,6 +275,11 @@ class FullIngestRequest(BaseModel):
     metadata: Dict[str, Any] = {}
     observedAt: datetime = Field(default_factory=datetime.now)
     maxTier: str = "NONE"  # OpenRouter tier: NONE/FREE/PAID/PREMIUM — from CloudModelPolicy
+    # Source credibility — how trustworthy is this information.
+    credibility: Optional[SourceCredibility] = None
+    # Branch scope — for code-related data, which branch this info applies to.
+    branchScope: Optional[str] = None
+    branchRole: Optional[str] = None
     # Attachments are sent separately via multipart form
 
     @model_validator(mode='after')
@@ -307,9 +383,13 @@ class HybridEvidenceItem(BaseModel):
     ragScore: float = 0.0              # Score from vector search
     graphScore: float = 0.0            # Score from graph expansion
     entityScore: float = 0.0           # Score from entity match
+    credibilityBoost: float = 1.0      # Credibility multiplier applied
 
     # Provenance
     source: str = "rag"                # "rag", "graph", "entity"
+    credibility: Optional[str] = None  # SourceCredibility tier
+    branchScope: Optional[str] = None  # Branch this info is scoped to
+    branchRole: Optional[str] = None   # "default", "protected", "active", etc.
     graphDistance: int = 0             # Hops from seed (if graph)
     graphRefs: List[str] = []          # Referenced entities
     matchedEntity: Optional[str] = None  # If from entity match

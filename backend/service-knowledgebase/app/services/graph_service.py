@@ -147,6 +147,24 @@ class GraphService:
         edges_created = 0
         all_entity_keys = []
 
+        # LLM-extracted entities: credibility is capped at LLM_EXTRACTED
+        # (even if the source document has higher credibility like STRUCTURED_DATA,
+        # the extracted relationships are only as reliable as the LLM's interpretation)
+        from app.api.models import SourceCredibility
+        _CREDIBILITY_ORDER = [
+            SourceCredibility.INFERRED, SourceCredibility.LLM_EXTRACTED,
+            SourceCredibility.CODE_ANALYSIS, SourceCredibility.STRUCTURED_DATA,
+            SourceCredibility.OFFICIAL_DOC, SourceCredibility.VERIFIED_FACT,
+        ]
+        source_cred = request.credibility
+        llm_cap = SourceCredibility.LLM_EXTRACTED
+        if source_cred and source_cred in _CREDIBILITY_ORDER:
+            src_idx = _CREDIBILITY_ORDER.index(source_cred)
+            cap_idx = _CREDIBILITY_ORDER.index(llm_cap)
+            request.credibility = _CREDIBILITY_ORDER[min(src_idx, cap_idx)]
+        else:
+            request.credibility = llm_cap
+
         logger.info(
             "GRAPH_WRITE: SPLIT sourceUrn=%s → %d text chunks (processing %d, LLM model=%s)",
             request.sourceUrn, len(all_chunks), len(chunks), settings.LLM_MODEL
@@ -382,6 +400,13 @@ Text: {text}
                         "ragChunks": chunk_ids or [],
                         "observedAt": observed_at_str,
                     }
+                    # Source credibility & branch scope
+                    if hasattr(request, "credibility") and request.credibility:
+                        doc["credibility"] = request.credibility.value if hasattr(request.credibility, "value") else str(request.credibility)
+                    if hasattr(request, "branchScope") and request.branchScope:
+                        doc["branchScope"] = request.branchScope
+                    if hasattr(request, "branchRole") and request.branchRole:
+                        doc["branchRole"] = request.branchRole
                     try:
                         nodes_collection.insert(doc)
                         local_nodes += 1
@@ -418,6 +443,10 @@ Text: {text}
                         "relationNormalized": relation_normalized,
                         "evidenceChunkIds": chunk_ids or [],
                     }
+                    if hasattr(request, "credibility") and request.credibility:
+                        edge_doc["credibility"] = request.credibility.value if hasattr(request.credibility, "value") else str(request.credibility)
+                    if hasattr(request, "branchScope") and request.branchScope:
+                        edge_doc["branchScope"] = request.branchScope
                     try:
                         edges_collection.insert(edge_doc)
                         local_edges += 1
@@ -1121,6 +1150,12 @@ Text: {text}
             edge_count = 0
             methods_count = 0
 
+            # Determine branch role for credibility
+            _is_default = branch == default_branch
+            _branch_role = "default" if _is_default else "active"
+            _cred = "structured_data"  # repo-level = structured
+            _code_cred = "code_analysis"  # code nodes = code_analysis
+
             # 1. Upsert repository node
             if not nodes_col.has(repo_key):
                 nodes_col.insert({
@@ -1133,6 +1168,7 @@ Text: {text}
                     "projectId": project_id,
                     "groupId": "",
                     "ragChunks": [],
+                    "credibility": _cred,
                 })
                 created += 1
             else:
@@ -1145,6 +1181,8 @@ Text: {text}
             # 2. Upsert branch nodes from branch list
             for b in branches:
                 b_key = self._make_branch_key(b["name"], project_id)
+                b_is_default = b.get("isDefault", False)
+                b_role = "default" if b_is_default else ("merged" if b.get("status") == "merged" else "active")
                 if not nodes_col.has(b_key):
                     nodes_col.insert({
                         "_key": b_key,
@@ -1152,13 +1190,16 @@ Text: {text}
                         "label": b["name"],
                         "type": "branch",
                         "branchName": b["name"],
-                        "isDefault": b.get("isDefault", False),
+                        "isDefault": b_is_default,
                         "status": b.get("status", "active"),
                         "lastCommitHash": b.get("lastCommitHash", ""),
                         "clientId": client_id,
                         "projectId": project_id,
                         "groupId": "",
                         "ragChunks": [],
+                        "credibility": _cred,
+                        "branchScope": b["name"],
+                        "branchRole": b_role,
                     })
                     created += 1
                 else:
@@ -1192,13 +1233,16 @@ Text: {text}
                     "label": branch,
                     "type": "branch",
                     "branchName": branch,
-                    "isDefault": branch == default_branch,
+                    "isDefault": _is_default,
                     "status": "active",
                     "fileCount": len(files),
                     "clientId": client_id,
                     "projectId": project_id,
                     "groupId": "",
                     "ragChunks": [],
+                    "credibility": _cred,
+                    "branchScope": branch,
+                    "branchRole": _branch_role,
                 })
                 created += 1
                 # repo -> current branch edge
@@ -1241,6 +1285,9 @@ Text: {text}
                         "projectId": project_id,
                         "groupId": "",
                         "ragChunks": [],
+                        "credibility": _code_cred,
+                        "branchScope": branch,
+                        "branchRole": _branch_role,
                     })
                     created += 1
                 else:
@@ -1282,6 +1329,9 @@ Text: {text}
                         "projectId": project_id,
                         "groupId": "",
                         "ragChunks": [],
+                        "credibility": _code_cred,
+                        "branchScope": branch,
+                        "branchRole": _branch_role,
                     })
                     created += 1
                 else:
@@ -1324,6 +1374,9 @@ Text: {text}
                             "projectId": project_id,
                             "groupId": "",
                             "ragChunks": [],
+                            "credibility": _code_cred,
+                            "branchScope": branch,
+                            "branchRole": _branch_role,
                         })
                         created += 1
                         methods_count += 1
@@ -1717,6 +1770,8 @@ Text: {text}
                         "projectId": project_id,
                         "groupId": "",
                         "ragChunks": [],
+                        "credibility": "structured_data",
+                        "branchScope": branch,
                     })
                     created += 1
 

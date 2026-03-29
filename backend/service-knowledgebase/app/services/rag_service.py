@@ -68,6 +68,33 @@ class RagService:
                 logger.info("Added observedAt property to KnowledgeChunk schema")
             except Exception:
                 pass  # Already exists
+            # Source credibility tier (SourceCredibility enum value)
+            try:
+                collection = self.client.collections.get("KnowledgeChunk")
+                collection.config.add_property(
+                    wvc.Property(name="credibility", data_type=wvc.DataType.TEXT)
+                )
+                logger.info("Added credibility property to KnowledgeChunk schema")
+            except Exception:
+                pass
+            # Branch scope — which git branch this info applies to
+            try:
+                collection = self.client.collections.get("KnowledgeChunk")
+                collection.config.add_property(
+                    wvc.Property(name="branchScope", data_type=wvc.DataType.TEXT)
+                )
+                logger.info("Added branchScope property to KnowledgeChunk schema")
+            except Exception:
+                pass
+            # Branch role — "default", "protected", "active", "merged", "stale"
+            try:
+                collection = self.client.collections.get("KnowledgeChunk")
+                collection.config.add_property(
+                    wvc.Property(name="branchRole", data_type=wvc.DataType.TEXT)
+                )
+                logger.info("Added branchRole property to KnowledgeChunk schema")
+            except Exception:
+                pass
 
     async def _embed_with_priority(self, text: str | list[str], priority: int | None = None) -> list[float] | list[list[float]]:
         """Embed text with priority header for router.
@@ -161,9 +188,7 @@ class RagService:
                     observed_at_str = ""
                     if hasattr(request, "observedAt") and request.observedAt:
                         observed_at_str = request.observedAt.isoformat() if hasattr(request.observedAt, "isoformat") else str(request.observedAt)
-                    batch.add_object(
-                        uuid=chunk_id,
-                        properties={
+                    props = {
                             "content": chunk,
                             "sourceUrn": request.sourceUrn,
                             "clientId": request.clientId,
@@ -173,7 +198,17 @@ class RagService:
                             "graphRefs": graph_refs or [],
                             "contentHash": content_hash,
                             "observedAt": observed_at_str,
-                        },
+                    }
+                    # Source credibility & branch scope (optional)
+                    if hasattr(request, "credibility") and request.credibility:
+                        props["credibility"] = request.credibility.value if hasattr(request.credibility, "value") else str(request.credibility)
+                    if hasattr(request, "branchScope") and request.branchScope:
+                        props["branchScope"] = request.branchScope
+                    if hasattr(request, "branchRole") and request.branchRole:
+                        props["branchRole"] = request.branchRole
+                    batch.add_object(
+                        uuid=chunk_id,
+                        properties=props,
                         vector=vectors[i]
                     )
                     chunk_ids.append(chunk_id)
@@ -422,6 +457,8 @@ class RagService:
                 content=content,
                 score=min(1.0, max(0.0, raw_score + boost)),
                 sourceUrn=source_urn,
+                credibility=obj.properties.get("credibility", None),
+                branchScope=obj.properties.get("branchScope", None),
                 metadata=obj.properties
             ))
             if i < 3:  # Log first 3 results

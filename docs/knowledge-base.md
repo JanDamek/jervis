@@ -537,6 +537,70 @@ edge {
 }
 ```
 
+### Source Credibility & Branch Scope
+
+#### Problem: Not all information is equally trustworthy
+
+KB ingests data from many sources: official documentation, Jira tickets, code analysis, LLM extraction, chat messages. When retrieving evidence, information from an official API reference should rank higher than a casual Slack mention. Similarly, code structure from `main` branch is canonical truth, while a feature branch may contain experimental code that never merges.
+
+#### Solution: Source Credibility Tiers
+
+Every chunk and graph node carries a `credibility` field — a tier indicating how trustworthy the information is:
+
+| Tier | Weight | Description | Auto-derived from |
+|------|--------|-------------|-------------------|
+| `verified_fact` | 1.00 | User explicitly asserted as ground truth | MCP `kb_store` with `credibility: "verified_fact"` |
+| `official_doc` | 0.95 | Official vendor/project documentation | `SourceType.LINK`, `SourceType.CONFLUENCE`, `/crawl` endpoint |
+| `structured_data` | 0.85 | Authoritative system records | `SourceType.EMAIL`, `SourceType.JIRA`, `SourceType.MEETING`, git commits |
+| `code_analysis` | 0.75 | Extracted from source code (branch-scoped) | `SourceType.GIT`, tree-sitter, Joern CPG |
+| `llm_extracted` | 0.60 | LLM-inferred relationships and summaries | Graph extraction by LLM (capped — even if source is higher) |
+| `inferred` | 0.40 | Weak signals: chat mentions, learned patterns | `SourceType.CHAT`, `SourceType.SLACK`, `SourceType.TEAMS`, `SourceType.DISCORD` |
+
+**Auto-derivation:** When `credibility` is not explicitly set on an ingest request, it is automatically derived from `sourceType` using `SOURCE_TYPE_DEFAULT_CREDIBILITY` mapping in `models.py`.
+
+**LLM extraction cap:** When the graph service extracts entities/relationships via LLM, the credibility is capped at `llm_extracted` — even if the source document has higher credibility (e.g., a Jira ticket is `structured_data`, but the LLM-extracted relationships from it are only `llm_extracted`).
+
+**Explicit override:** Callers (MCP, API) can always set `credibility` explicitly to override auto-derivation. Use `verified_fact` for information the user has personally confirmed as ground truth.
+
+#### Branch Scope & Branch Role
+
+Code-related information is scoped to a specific git branch. The same class may exist on `main`, `develop`, and `feature/xyz` with different content.
+
+| Field | Description |
+|-------|-------------|
+| `branchScope` | Which branch this info applies to (e.g., `"main"`, `"develop"`, `"feature/xyz"`) |
+| `branchRole` | Role of the branch: `"default"`, `"protected"`, `"active"`, `"merged"`, `"stale"` |
+
+**Branch role boost** — applied during retrieval as a multiplier on the credibility weight:
+
+| Role | Boost | Rationale |
+|------|-------|-----------|
+| `default` | 1.00 | `main`/`master` — canonical truth |
+| `protected` | 0.95 | `develop`, `release/*` — near-canonical |
+| `active` | 0.75 | Active feature branches |
+| `merged` | 0.50 | Merged branches — historical, may be outdated |
+| `stale` | 0.30 | Abandoned branches — low trust |
+
+**Combined scoring:** During hybrid retrieval, the final score is:
+```
+final_score = combined_score × credibility_weight × branch_role_boost
+```
+Chunks without credibility info get a conservative default weight of `0.70`.
+
+#### Storage
+
+Both Weaviate (RAG chunks) and ArangoDB (graph nodes/edges) store:
+- `credibility` — `SourceCredibility` enum value (string)
+- `branchScope` — branch name (string, empty if not branch-scoped)
+- `branchRole` — branch role (string, empty if not branch-scoped)
+
+**Key files:**
+- `app/api/models.py` — `SourceCredibility`, `CREDIBILITY_WEIGHTS`, `BRANCH_ROLE_BOOST`, `SOURCE_TYPE_DEFAULT_CREDIBILITY`
+- `app/services/hybrid_retriever.py` — `_apply_credibility_boost()`
+- `app/services/rag_service.py` — chunk storage with credibility fields, schema migration
+- `app/services/graph_service.py` — node/edge creation with credibility, LLM cap logic
+- `app/services/knowledge_service.py` — auto-derivation from sourceType
+
 ### Normalization & Canonicalization
 
 #### Problem: Variable naming

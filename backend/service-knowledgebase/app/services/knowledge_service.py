@@ -466,13 +466,15 @@ class KnowledgeService:
                     skipped += 1
                     continue
 
+            from app.api.models import SourceCredibility
             ingest_req = IngestRequest(
                 clientId=request.clientId,
                 projectId=request.projectId,
                 sourceUrn=source_url,
                 kind="documentation",
                 content=text,
-                metadata=doc.metadata
+                metadata=doc.metadata,
+                credibility=SourceCredibility.OFFICIAL_DOC,
             )
 
             res = await self.ingest(ingest_req)
@@ -590,6 +592,12 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         # Combine all content
         combined_content = "\n\n".join(all_content_parts)
 
+        # Auto-derive credibility from sourceType when not explicitly set
+        from app.api.models import SOURCE_TYPE_DEFAULT_CREDIBILITY, SourceCredibility
+        effective_credibility = request.credibility
+        if not effective_credibility and request.sourceType:
+            effective_credibility = SOURCE_TYPE_DEFAULT_CREDIBILITY.get(request.sourceType)
+
         # Create ingest request for combined content
         ingest_req = IngestRequest(
             clientId=request.clientId,
@@ -605,6 +613,9 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             },
             observedAt=request.observedAt,
             maxTier=getattr(request, "maxTier", "NONE"),
+            credibility=effective_credibility,
+            branchScope=request.branchScope,
+            branchRole=request.branchRole,
         )
 
         # Ingest to RAG — idempotent: skip if content unchanged, purge+re-ingest if changed
@@ -879,6 +890,12 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
                     f"Obsah nezměněn ({existing_chunks} chunks), přeskakuji RAG",
                     {"chunks": str(existing_chunks), "hash": content_hash})
 
+        # Auto-derive credibility from sourceType when not explicitly set
+        from app.api.models import SOURCE_TYPE_DEFAULT_CREDIBILITY, SourceCredibility
+        effective_credibility = request.credibility
+        if not effective_credibility and request.sourceType:
+            effective_credibility = SOURCE_TYPE_DEFAULT_CREDIBILITY.get(request.sourceType)
+
         ingest_req = IngestRequest(
             clientId=request.clientId,
             projectId=request.projectId,
@@ -893,6 +910,9 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             },
             observedAt=request.observedAt,
             maxTier=getattr(request, "maxTier", "NONE"),
+            credibility=effective_credibility,
+            branchScope=request.branchScope,
+            branchRole=request.branchRole,
         )
 
         if skip_rag:
