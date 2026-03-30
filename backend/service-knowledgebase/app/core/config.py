@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "qwen3:14b"                             # Graph extraction — complex reasoning, GPU-2 (permanent)
     VISION_MODEL: str = "qwen3-vl-tool:latest"               # VLM for image description (GPU-2, on-demand swap)
 
+    # -- Reranker (TEI / bge-reranker-v2-m3 on CPU) ----------------------------
+    RERANKER_URL: str = ""                                    # Empty = disabled. Set to http://jervis-reranker:8080 to enable.
+    RERANKER_TOP_K: int = 50                                  # Retrieve this many candidates for reranking
+    RERANKER_FINAL_K: int = 10                                # Return this many after reranking
+
+    # -- Contextual chunking ----------------------------------------------------
+    CONTEXTUAL_PREFIX_ENABLED: bool = True                    # Prepend LLM-generated context to chunks before embedding
+    CONTEXTUAL_PREFIX_MODEL: str = ""                         # Model for context generation (empty = use LLM_MODEL)
+
     # Ingest model routing — single extraction model on GPU-2.
     # GPU-1 (30b) freed for orchestrator/chat. GPU-2 runs extraction parallel.
     INGEST_MODEL_SIMPLE: str = "qwen3:14b"                   # Link relevance, quick classification (GPU-2, permanent)

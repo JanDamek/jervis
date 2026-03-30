@@ -320,8 +320,22 @@ Called by `TaskQualificationService` for each task. Fire-and-forget: returns HTT
 
 **Legacy endpoint (`POST /ingest/full`):** Still available for backward compatibility (synchronous processing). Note: The Kotlin `ingestFullWithProgress` NDJSON streaming client method has been removed — only the async callback pattern (`POST /ingest/full/async`) is used in production.
 
+**Contextual Prefix (Anthropic Contextual Retrieval pattern):**
+- Before embedding, one LLM call per document generates a 2-3 sentence context
+- Prefix prepended to every chunk: "This chunk is from [type] about [topic]..."
+- Significantly improves retrieval for chunks that lose meaning in isolation
+- Enabled by `CONTEXTUAL_PREFIX_ENABLED=true` (default), disabled for short content (<200 chars)
+- Uses low priority (4) to avoid blocking critical GPU work
+
+**Cross-Encoder Reranking (TEI / bge-reranker-v2-m3):**
+- After hybrid retrieval, top-50 candidates are re-scored by a cross-encoder model
+- TEI (HuggingFace Text Embeddings Inference) runs as separate K8s pod on CPU
+- Reranker jointly attends over query+document pair → much better relevance than bi-encoder alone
+- Graceful degradation: if reranker unavailable, falls back to pre-rerank order
+- Config: `RERANKER_URL`, `RERANKER_TOP_K=50`, `RERANKER_FINAL_K=10`
+
 **Content Hash Deduplication (upsert semantics):**
-- SHA256 of combined content, truncated to 16 chars
+- SHA256 of combined content, truncated to 32 chars (128-bit collision resistance)
 - Stored as `contentHash` property on Weaviate `KnowledgeChunk` objects
 - On re-ingest: compare hash → same = skip, different = purge + re-ingest
 - Weaviate schema auto-migrates to add `contentHash` property if missing

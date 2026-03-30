@@ -427,6 +427,19 @@ and write (ingest, crawl, purge, alias/register, alias/merge)
 
 **Build script:** `k8s/build_kb.sh` builds Docker image and deploys to K8s with 3 replicas.
 
+### Reranker (TEI)
+
+Cross-encoder reranking for improved retrieval precision.
+
+**Deployment:** `jervis-reranker` — HuggingFace Text Embeddings Inference (TEI), Rust binary
+**Model:** `BAAI/bge-reranker-v2-m3` (568M params, multilingual, runs on CPU)
+**Service:** `jervis-reranker:8080` — `/rerank` endpoint
+**K8s manifest:** `k8s/app_reranker.yaml`
+
+**Pipeline integration:** After hybrid retrieval (RAG + graph + entity + RRF), top-50 candidates
+are sent to TEI for cross-encoder reranking. Returns top-10 with re-scored relevance.
+Graceful degradation: if TEI unavailable, retrieval falls back to pre-rerank order.
+
 ### Additional: `asyncio.to_thread()` + Batch Embeddings + Workers
 
 Three changes make the service non-blocking:
@@ -1804,6 +1817,59 @@ Exactly **2 ConfigMaps** in `k8s/configmap.yaml`:
 **Secrets** (`jervis-secrets` K8s Secret):
 - Contains `MONGODB_PASSWORD`, `ARANGO_PASSWORD`, API keys, etc.
 - Injected individually via `env[].valueFrom.secretKeyRef` in deployment YAMLs (not `envFrom`)
+
+---
+
+## Timezone Management
+
+### Core Rules
+
+- **All backend services run in UTC** — enforced via `TZ=UTC` env var in K8s deployments and `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC` for JVM
+- **Storage is always UTC** — MongoDB `Instant`, ArangoDB timestamps, Python `datetime.now(timezone.utc)`
+- **Client timezone flows from device** — sent in every chat request as `clientTimezone` (e.g., `Europe/Prague`)
+- **Last-known timezone** — persisted to GLOBAL `AgentPreference` (key `timezone`) on each chat request, used as fallback by scheduler/calendar when no direct client connection
+- **Client apps** display times in the device's system timezone via `TimeZone.currentSystemDefault()`
+
+### LLM Awareness
+
+The system prompt includes both UTC and user local time:
+```
+## Current time
+- UTC: 2026-03-30 14:00 UTC
+- User local: 2026-03-30 15:00 (Europe/Prague)
+When the user asks about time, always answer in their local timezone.
+```
+
+### Scheduled Tasks — Two Timezone Modes
+
+| Type | `followUserTimezone` | Timezone source | Use case |
+|------|---------------------|----------------|----------|
+| **Automated/cron** | `false` | `cronTimezone` on TaskDocument (immutable, set at creation) | Reports, deploys, recurring jobs |
+| **Personal reminder** | `true` | User's CURRENT timezone (from preference, updated on each chat) | "Remind me at 16:00", "5 min before call" |
+
+**How it works:**
+
+1. **Automated tasks** — cron expression `0 9 * * MON` + `cronTimezone=Europe/Prague` → always fires at 9:00 CET/CEST, regardless of where user travels. DST handled by Java `ZoneId`.
+
+2. **Personal reminders** — `scheduledLocalTime=2026-03-31T16:00` + `followUserTimezone=true`. Scheduler recalculates `scheduledAt` (UTC Instant) every loop iteration using user's current timezone. User flies to London → preference updates to `Europe/London` → reminder fires at 16:00 GMT, not 16:00 CET.
+
+**TaskDocument fields:**
+```kotlin
+val cronTimezone: String?          // Fixed tz for cron (e.g. "Europe/Prague")
+val followUserTimezone: Boolean    // true = personal reminder, false = fixed
+val scheduledLocalTime: String?    // ISO LocalDateTime (e.g. "2026-03-31T16:00")
+```
+
+### Python Services
+
+- **Always** use `datetime.now(timezone.utc)` — never `datetime.now()` or `datetime.utcnow()`
+- `from datetime import datetime, timezone` at top of file
+
+### Kotlin Server
+
+- Use `preferenceService.getUserTimezone()` for user-facing time calculations
+- Use `Instant.now()` for internal storage (always UTC)
+- Never use `ZoneId.systemDefault()` for user-facing operations
 
 ---
 

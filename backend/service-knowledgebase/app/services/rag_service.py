@@ -146,6 +146,59 @@ class RagService:
                 logger.error("Embedding failed: %s", e)
                 raise
 
+    async def _generate_contextual_prefix(self, request: IngestRequest) -> str:
+        """
+        Generate a short contextual prefix for a document (Anthropic's Contextual Retrieval pattern).
+
+        One LLM call per document (not per chunk). The prefix is prepended to every chunk
+        before embedding, giving each chunk context about what document it belongs to.
+
+        Returns empty string on failure (graceful degradation — chunks embedded without prefix).
+        """
+        from app.services.llm_router import llm_generate
+
+        # Use first ~2000 chars as document sample (enough for context, not too expensive)
+        doc_sample = request.content[:2000]
+        if len(request.content) > 2000:
+            doc_sample += f"\n[... {len(request.content) - 2000} more characters ...]"
+
+        prompt = f"""/no_think
+Generate a brief contextual description (2-3 sentences, max 100 words) for this document.
+Include: what type of content it is, who/what it's about, and its purpose.
+This context will be prepended to each chunk of this document to improve search retrieval.
+Return ONLY the context text, no quotes or labels.
+
+Source: {request.sourceUrn}
+Kind: {request.kind or 'unknown'}
+
+Document:
+{doc_sample}
+"""
+        try:
+            model = settings.CONTEXTUAL_PREFIX_MODEL or settings.LLM_MODEL
+            result = await llm_generate(
+                prompt=prompt,
+                max_tier="NONE",
+                model=model,
+                num_ctx=4096,
+                priority=4,  # Low priority — don't block critical work
+                temperature=0,
+                format_json=False,
+            )
+            # Clean up thinking tags
+            if "<think>" in result:
+                import re
+                result = re.sub(r"<think>.*?</think>", "", result, flags=re.DOTALL).strip()
+            # Limit to 150 words max
+            words = result.split()
+            if len(words) > 150:
+                result = " ".join(words[:150])
+            return result.strip()
+        except Exception as e:
+            logger.warning("CONTEXTUAL_PREFIX: Failed for sourceUrn=%s: %s (proceeding without prefix)",
+                          request.sourceUrn, e)
+            return ""
+
     async def ingest(
         self,
         request: IngestRequest,
@@ -172,6 +225,14 @@ class RagService:
 
         chunks = self.text_splitter.split_text(request.content)
         logger.info("RAG_WRITE: SPLIT sourceUrn=%s → %d chunks", request.sourceUrn, len(chunks))
+
+        # Contextual prefix: generate document-level context and prepend to each chunk
+        # This significantly improves retrieval by giving each chunk context about the source.
+        if settings.CONTEXTUAL_PREFIX_ENABLED and len(request.content) > 200:
+            context_prefix = await self._generate_contextual_prefix(request)
+            if context_prefix:
+                chunks = [f"{context_prefix}\n\n{chunk}" for chunk in chunks]
+                logger.info("RAG_WRITE: CONTEXTUAL_PREFIX sourceUrn=%s prefix_len=%d", request.sourceUrn, len(context_prefix))
 
         # Batch embed all chunks at once (instead of per-chunk embed_query)
         logger.info("RAG_WRITE: EMBEDDING sourceUrn=%s chunks=%d model=%s priority=%s",

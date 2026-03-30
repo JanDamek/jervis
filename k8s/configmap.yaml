@@ -201,6 +201,9 @@ data:
   OLLAMA_INGEST_BASE_URL: "http://jervis-ollama-router:11430"
   OLLAMA_API_BASE: "http://jervis-ollama-router:11430"
 
+  # ── SHARED: Reranker (TEI) ─────────────────────────────────────────────
+  RERANKER_URL: "http://jervis-reranker:8080"
+
   # ── KB: Knowledge Base service ────────────────────────────────────────
   LLM_MODEL: "qwen3:14b"
   INGEST_MODEL_SIMPLE: "qwen3:14b"

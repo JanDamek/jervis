@@ -1,0 +1,84 @@
+# ===== TEI Reranker (bge-reranker-v2-m3, CPU) =====
+# HuggingFace Text Embeddings Inference — provides /rerank endpoint
+# for cross-encoder reranking in KB hybrid retrieval pipeline.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-reranker
+  namespace: jervis
+spec:
+  revisionHistoryLimit: 2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-reranker
+  template:
+    metadata:
+      labels:
+        app: jervis-reranker
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: reranker
+          image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+          args:
+            - "--model-id"
+            - "BAAI/bge-reranker-v2-m3"
+            - "--port"
+            - "8080"
+          ports:
+            - containerPort: 8080
+          env:
+            - name: TZ
+              value: "UTC"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 4
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            failureThreshold: 60
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "4000m"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /data
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: jervis-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-reranker
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-reranker
+  ports:
+    - port: 8080
+      targetPort: 8080

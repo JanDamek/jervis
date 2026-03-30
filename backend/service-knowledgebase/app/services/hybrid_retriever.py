@@ -15,6 +15,8 @@ import re
 import time
 from dataclasses import dataclass, field
 from typing import Optional
+import httpx
+from app.core.config import settings
 from app.api.models import (
     RetrievalRequest, EvidencePack, EvidenceItem,
     TraversalRequest, TraversalSpec, GraphNode,
@@ -174,6 +176,17 @@ class HybridRetriever:
 
         # Filter by min confidence
         filtered = [c for c in sorted_chunks if c.combined_score >= request.minConfidence]
+
+        # 7. Cross-encoder reranking (if reranker available)
+        if settings.RERANKER_URL and filtered:
+            t0 = time.monotonic()
+            # Take top RERANKER_TOP_K candidates for reranking
+            candidates = filtered[:settings.RERANKER_TOP_K]
+            reranked = await self._rerank(request.query, candidates)
+            if reranked is not None:
+                filtered = reranked
+                logger.info("HYBRID: RERANK %d→%d candidates (%.0fms)",
+                           len(candidates), len(filtered), (time.monotonic() - t0) * 1000)
 
         # Limit results
         final = filtered[:request.maxResults]
@@ -576,6 +589,50 @@ class HybridRetriever:
             total_boost = cred_weight * branch_boost * recency_boost
             chunk.combined_score *= total_boost
             chunk.credibility_boost = total_boost
+
+
+    async def _rerank(self, query: str, chunks: list[ScoredChunk]) -> list[ScoredChunk] | None:
+        """
+        Cross-encoder reranking via TEI (HuggingFace Text Embeddings Inference).
+
+        Sends (query, chunk.content) pairs to the reranker and re-scores.
+        Returns reranked list limited to RERANKER_FINAL_K, or None on failure (graceful degradation).
+        """
+        if not chunks:
+            return chunks
+
+        texts = [c.content for c in chunks]
+        payload = {
+            "query": query,
+            "texts": texts,
+            "truncate": True,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{settings.RERANKER_URL}/rerank",
+                    json=payload,
+                )
+                resp.raise_for_status()
+                results = resp.json()
+
+            # TEI returns [{"index": 0, "score": 0.99}, ...] sorted by score desc
+            # Map back to ScoredChunks and update combined_score
+            reranked = []
+            for item in results[:settings.RERANKER_FINAL_K]:
+                idx = item["index"]
+                if idx < len(chunks):
+                    chunk = chunks[idx]
+                    chunk.combined_score = item["score"]
+                    chunk.metadata["rerankerScore"] = item["score"]
+                    reranked.append(chunk)
+
+            return reranked
+
+        except Exception as e:
+            logger.warning("RERANK: Failed (graceful degradation, using pre-rerank order): %s", e)
+            return None
 
 
 # Convenience function for simple usage
