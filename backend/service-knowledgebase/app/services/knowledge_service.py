@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlparse, urlunparse
 
 from app.api.models import (
@@ -131,34 +131,65 @@ class KnowledgeService:
                     "normalizedUrl": normalized,
                     "originalUrl": url,
                     "depth": depth,
-                    "indexedAt": datetime.utcnow().isoformat(),
+                    "indexedAt": datetime.now(timezone.utc).isoformat(),
                 })
             except Exception:
                 # Already exists (unique index), update timestamp
                 cursor = col.find({"clientId": client_id, "normalizedUrl": normalized}, limit=1)
                 for doc in cursor:
-                    col.update({"_key": doc["_key"], "indexedAt": datetime.utcnow().isoformat()})
+                    col.update({"_key": doc["_key"], "indexedAt": datetime.now(timezone.utc).isoformat()})
 
         await asyncio.to_thread(_mark)
 
     async def ingest(self, request: IngestRequest, embedding_priority: int | None = None, content_hash: str = "") -> IngestResult:
         """
-        Ingest content with async LLM extraction.
+        Ingest content with async LLM extraction.  Supports upsert semantics:
+        if chunks already exist for the same sourceUrn and content changed,
+        old chunks are purged before re-ingest.  If content is identical, skip.
 
         Flow:
-        1. RAG Ingest → embedding + Weaviate insert (fast, returns immediately)
-        2. Enqueue LLM extraction task → background worker processes later
-        3. Return immediately without waiting for LLM
+        1. Upsert check — compare contentHash for sourceUrn
+        2. RAG Ingest → embedding + Weaviate insert (fast, returns immediately)
+        3. Enqueue LLM extraction task → background worker processes later
+        4. Return immediately without waiting for LLM
 
         Queue has two priority levels (FIFO within each):
         - CRITICAL (priority 0): processed first, embedding runs on GPU
         - NORMAL (priority 4+): processed after all CRITICAL tasks
         """
+        import hashlib
         logger.info(
             "KB_WRITE: INGEST_START sourceUrn=%s kind=%s clientId=%s projectId=%s groupId=%s content_len=%d priority=%s",
             request.sourceUrn, request.kind or "?", request.clientId,
             request.projectId or "", request.groupId or "", len(request.content or ""), embedding_priority
         )
+
+        # 0. Upsert: check if sourceUrn already has chunks — purge if content changed, skip if identical
+        if not content_hash:
+            content_hash = hashlib.sha256((request.content or "").encode()).hexdigest()[:32]
+
+        existing_count = await self.rag_service.count_by_source(request.sourceUrn)
+        if existing_count > 0:
+            existing_hash = await self.rag_service.get_content_hash(request.sourceUrn)
+            if existing_hash == content_hash:
+                logger.info(
+                    "KB_WRITE: UPSERT_SKIP sourceUrn=%s hash=%s existing_chunks=%d (content unchanged)",
+                    request.sourceUrn, content_hash, existing_count
+                )
+                return IngestResult(
+                    status="skipped_unchanged",
+                    chunks_count=existing_count,
+                    nodes_created=0,
+                    edges_created=0,
+                    chunk_ids=[],
+                    entity_keys=[],
+                )
+            else:
+                logger.info(
+                    "KB_WRITE: UPSERT_PURGE sourceUrn=%s old_hash=%s new_hash=%s — purging %d old chunks",
+                    request.sourceUrn, existing_hash, content_hash, existing_count
+                )
+                await self.purge(request.sourceUrn)
 
         # 1. RAG Ingest - get chunk IDs (fast)
         rag_start = time.time()
@@ -274,7 +305,7 @@ class KnowledgeService:
             project_id=request.projectId,
             kind=request.kind,
             chunk_ids=chunk_ids,
-            created_at=datetime.utcnow().isoformat(),
+            created_at=datetime.now(timezone.utc).isoformat(),
             priority=priority,
             max_tier=getattr(request, "maxTier", "NONE"),
             metadata=request.metadata if hasattr(request, "metadata") else {},
@@ -620,7 +651,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
 
         # Ingest to RAG — idempotent: skip if content unchanged, purge+re-ingest if changed
         import hashlib
-        content_hash = hashlib.sha256(combined_content.encode()).hexdigest()[:16]
+        content_hash = hashlib.sha256(combined_content.encode()).hexdigest()[:32]
 
         existing_chunks = await self.rag_service.count_by_source(request.sourceUrn)
         if existing_chunks > 0:
@@ -869,7 +900,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
 
         # ── 2. Combine + hash ──
         combined_content = "\n\n".join(all_content_parts)
-        content_hash = hashlib.sha256(combined_content.encode()).hexdigest()[:16]
+        content_hash = hashlib.sha256(combined_content.encode()).hexdigest()[:32]
         content_len = len(combined_content)
 
         yield await _emit("content_ready",
@@ -1559,7 +1590,7 @@ Pravidla:
         updates = {
             "state": "INDEXED",
             "ragChunks": result.chunk_ids,
-            "indexedAt": datetime.utcnow().isoformat(),
+            "indexedAt": datetime.now(timezone.utc).isoformat(),
         }
         await self.graph_service.update_kb_document_node(doc_id, updates)
 

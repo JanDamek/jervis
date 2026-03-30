@@ -320,11 +320,14 @@ Called by `TaskQualificationService` for each task. Fire-and-forget: returns HTT
 
 **Legacy endpoint (`POST /ingest/full`):** Still available for backward compatibility (synchronous processing). Note: The Kotlin `ingestFullWithProgress` NDJSON streaming client method has been removed — only the async callback pattern (`POST /ingest/full/async`) is used in production.
 
-**Content Hash Deduplication:**
+**Content Hash Deduplication (upsert semantics):**
 - SHA256 of combined content, truncated to 16 chars
 - Stored as `contentHash` property on Weaviate `KnowledgeChunk` objects
 - On re-ingest: compare hash → same = skip, different = purge + re-ingest
 - Weaviate schema auto-migrates to add `contentHash` property if missing
+- **Applies to all ingest paths** — both `full-ingest` and `ingest-queue` (MCP `kb_store`)
+  now perform upsert: if `sourceUrn` already has chunks, content hash is compared;
+  identical content is skipped, changed content triggers purge + re-ingest
 
 **`_generate_summary()` output fields:**
 - `hasActionableContent: bool` — LLM decides if content requires action
@@ -1216,6 +1219,7 @@ and `SourceUrn.confluenceAttachment()` factories in Kotlin.
 | GET | `/api/v1/documents/{docId}` | Get document details |
 | PUT | `/api/v1/documents/{docId}` | Update metadata (title, category, tags) |
 | DELETE | `/api/v1/documents/{docId}` | Delete (purges RAG + graph node) |
+| POST | `/api/v1/purge` | Purge all RAG chunks + graph refs for a `sourceUrn` (also cleans ThoughtAnchors) |
 | POST | `/api/v1/documents/{docId}/reindex` | Re-extract and re-ingest |
 | POST | `/api/v1/retag-group` | Update groupId on all KB nodes for a project (called on group change) |
 
@@ -1226,6 +1230,7 @@ and `SourceUrn.confluenceAttachment()` factories in Kotlin.
 | `kb_document_upload` | Upload a file from local disk / PVC into KB |
 | `kb_document_list` | List all KB documents for a client |
 | `kb_document_delete` | Delete a document from KB |
+| `kb_delete_by_source` | Purge all RAG chunks + graph data for a `source_urn` (cleanup duplicates, outdated entries) |
 
 ### Key Files
 

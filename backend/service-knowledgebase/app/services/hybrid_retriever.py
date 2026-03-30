@@ -212,6 +212,9 @@ class HybridRetriever:
         - User mentions: @john, john.doe@email.com
         - File patterns: *.kt, Service.java
         - Explicit refs: jira:TASK-123, user:john
+        - CamelCase identifiers: MyService, UserController
+        - Version strings: v1.2.3, 2.0.0
+        - Qualified class names: com.jervis.MyClass
         """
         entities = []
 
@@ -231,9 +234,24 @@ class HybridRetriever:
             entities.append(normalize_graph_ref(f"user:{match.group(1)}"))
 
         # File patterns with extension
-        file_pattern = r'\b(\w+\.(?:kt|java|py|ts|js|go|rs|cpp|c|h))\b'
+        file_pattern = r'\b([\w/]+\.(?:kt|java|py|ts|tsx|js|jsx|go|rs|cpp|c|h|yaml|yml|json|toml|xml|sql|sh|md))\b'
         for match in re.finditer(file_pattern, query.lower()):
             entities.append(f"file:{match.group(1)}")
+
+        # CamelCase identifiers (class/service names, min 2 parts)
+        camel_pattern = r'\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b'
+        for match in re.finditer(camel_pattern, query):
+            entities.append(normalize_graph_ref(f"entity:{match.group(1)}"))
+
+        # Qualified class names (com.jervis.MyClass)
+        qualified_pattern = r'\b([a-z]+(?:\.[a-z]+)+\.[A-Z]\w+)\b'
+        for match in re.finditer(qualified_pattern, query):
+            entities.append(normalize_graph_ref(f"file:{match.group(1)}"))
+
+        # Version strings
+        version_pattern = r'\bv?(\d+\.\d+(?:\.\d+)?)\b'
+        for match in re.finditer(version_pattern, query):
+            entities.append(f"version:{match.group(1)}")
 
         # Explicit namespace:value patterns
         explicit_pattern = r'\b(\w+:\S+)\b'
@@ -431,24 +449,27 @@ class HybridRetriever:
             reverse=True
         )
 
+        # Build rank lookup dicts (O(n) instead of O(n²) from .index() calls)
+        rag_rank = {id(c): i + 1 for i, c in enumerate(rag_ranking)}
+        graph_rank = {id(c): i + 1 for i, c in enumerate(graph_ranking)}
+        entity_rank = {id(c): i + 1 for i, c in enumerate(entity_ranking)}
+
         # Calculate RRF scores
         for chunk in chunks.values():
             rrf_score = 0.0
+            cid = id(chunk)
 
             # RAG contribution
-            if chunk in rag_ranking:
-                rank = rag_ranking.index(chunk) + 1
-                rrf_score += self.RAG_WEIGHT * (1.0 / (self.RRF_K + rank))
+            if cid in rag_rank:
+                rrf_score += self.RAG_WEIGHT * (1.0 / (self.RRF_K + rag_rank[cid]))
 
             # Graph contribution
-            if chunk in graph_ranking:
-                rank = graph_ranking.index(chunk) + 1
-                rrf_score += self.GRAPH_WEIGHT * (1.0 / (self.RRF_K + rank))
+            if cid in graph_rank:
+                rrf_score += self.GRAPH_WEIGHT * (1.0 / (self.RRF_K + graph_rank[cid]))
 
             # Entity contribution
-            if chunk in entity_ranking:
-                rank = entity_ranking.index(chunk) + 1
-                rrf_score += self.ENTITY_WEIGHT * (1.0 / (self.RRF_K + rank))
+            if cid in entity_rank:
+                rrf_score += self.ENTITY_WEIGHT * (1.0 / (self.RRF_K + entity_rank[cid]))
 
             chunk.combined_score = rrf_score
 
@@ -501,7 +522,7 @@ class HybridRetriever:
 
     def _apply_credibility_boost(self, chunks: dict[str, ScoredChunk]):
         """
-        Boost scores based on source credibility and branch role.
+        Boost scores based on source credibility, branch role, and recency.
 
         Credibility multiplier:
           verified_fact=1.0, official_doc=0.95, structured_data=0.85,
@@ -510,11 +531,20 @@ class HybridRetriever:
         Branch role multiplier (for code-related chunks):
           default=1.0, protected=0.95, active=0.75, merged=0.50, stale=0.30
 
-        Combined: score *= credibility_weight * branch_boost
+        Recency boost: newer content gets a mild boost (up to 1.15x for today,
+        decaying to 1.0x for content older than 30 days).
+
+        Combined: score *= credibility_weight * branch_boost * recency_boost
         Chunks without credibility info get a neutral 0.70 default (between
         STRUCTURED_DATA and CODE_ANALYSIS — conservative assumption).
         """
+        from datetime import datetime, timezone
+
         DEFAULT_CREDIBILITY_WEIGHT = 0.70
+        RECENCY_MAX_BOOST = 1.15  # Max 15% boost for very recent content
+        RECENCY_HALF_LIFE_DAYS = 14  # Boost halves every 14 days
+
+        now = datetime.now(timezone.utc)
 
         for chunk in chunks.values():
             # Credibility weight
@@ -527,7 +557,23 @@ class HybridRetriever:
             if chunk.branch_role:
                 branch_boost = BRANCH_ROLE_BOOST.get(chunk.branch_role, 0.75)
 
-            total_boost = cred_weight * branch_boost
+            # Recency boost (mild — based on observedAt timestamp)
+            recency_boost = 1.0
+            observed_at = chunk.metadata.get("observedAt", "")
+            if observed_at:
+                try:
+                    if isinstance(observed_at, str) and observed_at:
+                        obs_dt = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+                        if obs_dt.tzinfo is None:
+                            obs_dt = obs_dt.replace(tzinfo=timezone.utc)
+                        age_days = max(0, (now - obs_dt).days)
+                        # Exponential decay: 1.0 + (MAX_BOOST - 1.0) * 0.5^(age/half_life)
+                        decay = 0.5 ** (age_days / RECENCY_HALF_LIFE_DAYS)
+                        recency_boost = 1.0 + (RECENCY_MAX_BOOST - 1.0) * decay
+                except (ValueError, TypeError):
+                    pass
+
+            total_boost = cred_weight * branch_boost * recency_boost
             chunk.combined_score *= total_boost
             chunk.credibility_boost = total_boost
 

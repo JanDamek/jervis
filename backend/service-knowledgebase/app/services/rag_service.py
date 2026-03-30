@@ -20,8 +20,8 @@ class RagService:
         self.embedding_priority = None
         self.http_client = httpx.AsyncClient(timeout=300.0)  # 5 min — embedding + router queue
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
+            chunk_size=2000,
+            chunk_overlap=400
         )
         # Concurrency tuned per GPU-2 benchmark: sweet spot 4-5 concurrent.
         # With multi-worker uvicorn, total concurrent = UVICORN_WORKERS × this value.
@@ -250,25 +250,49 @@ class RagService:
 
     async def get_chunks_by_ids(self, chunk_ids: list[str]) -> list[dict]:
         """
-        Fetch chunks by their UUIDs.
+        Fetch chunks by their UUIDs using Weaviate filter-based batch query.
 
-        Used for evidence retrieval from graph nodes.
+        Uses a single query with UUID filter instead of N individual fetches.
         """
+        if not chunk_ids:
+            return []
+
         def _fetch():
             collection = self.client.collections.get("KnowledgeChunk")
             results = []
-            for chunk_id in chunk_ids:
+
+            # Batch fetch using filter on UUID list (much faster than N individual queries)
+            BATCH_SIZE = 100
+            for batch_start in range(0, len(chunk_ids), BATCH_SIZE):
+                batch_ids = chunk_ids[batch_start:batch_start + BATCH_SIZE]
                 try:
-                    obj = collection.query.fetch_object_by_id(chunk_id)
-                    if obj:
+                    response = collection.query.fetch_objects(
+                        filters=wvq.Filter.by_id().contains_any(batch_ids),
+                        limit=BATCH_SIZE,
+                        return_properties=["content", "sourceUrn", "graphRefs"],
+                    )
+                    for obj in response.objects:
                         results.append({
-                            "id": chunk_id,
+                            "id": str(obj.uuid),
                             "content": obj.properties.get("content", ""),
                             "sourceUrn": obj.properties.get("sourceUrn", ""),
                             "graphRefs": obj.properties.get("graphRefs", []),
                         })
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Fallback to individual fetch if batch filter not supported
+                    logger.warning("Batch chunk fetch failed, falling back to individual: %s", e)
+                    for chunk_id in batch_ids:
+                        try:
+                            obj = collection.query.fetch_object_by_id(chunk_id)
+                            if obj:
+                                results.append({
+                                    "id": chunk_id,
+                                    "content": obj.properties.get("content", ""),
+                                    "sourceUrn": obj.properties.get("sourceUrn", ""),
+                                    "graphRefs": obj.properties.get("graphRefs", []),
+                                })
+                        except Exception:
+                            pass
             return results
 
         return await asyncio.to_thread(_fetch)

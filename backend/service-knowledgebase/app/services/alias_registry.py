@@ -28,7 +28,7 @@ Usage:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from app.services.normalizer import normalize_graph_ref
 
@@ -97,7 +97,7 @@ class AliasRegistry:
                 collection.update({
                     "_key": doc_key,
                     "seenCount": doc.get("seenCount", 0) + 1,
-                    "lastSeenAt": datetime.utcnow().isoformat()
+                    "lastSeenAt": datetime.now(timezone.utc).isoformat()
                 })
                 return doc.get("canonicalKey", normalized_alias)
         except Exception as e:
@@ -164,8 +164,8 @@ class AliasRegistry:
                 "aliasKey": normalized_alias,
                 "canonicalKey": normalized_canonical,
                 "seenCount": 1,
-                "createdAt": datetime.utcnow().isoformat(),
-                "lastSeenAt": datetime.utcnow().isoformat()
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "lastSeenAt": datetime.now(timezone.utc).isoformat()
             }
             collection.insert(doc)
             return normalized_canonical
@@ -207,7 +207,7 @@ class AliasRegistry:
                 collection.update({
                     "_key": doc_key,
                     "canonicalKey": normalized_canonical,
-                    "lastSeenAt": datetime.utcnow().isoformat()
+                    "lastSeenAt": datetime.now(timezone.utc).isoformat()
                 })
             else:
                 doc = {
@@ -216,8 +216,8 @@ class AliasRegistry:
                     "aliasKey": normalized_alias,
                     "canonicalKey": normalized_canonical,
                     "seenCount": 1,
-                    "createdAt": datetime.utcnow().isoformat(),
-                    "lastSeenAt": datetime.utcnow().isoformat()
+                    "createdAt": datetime.now(timezone.utc).isoformat(),
+                    "lastSeenAt": datetime.now(timezone.utc).isoformat()
                 }
                 collection.insert(doc)
             return True
@@ -270,7 +270,7 @@ class AliasRegistry:
                 collection.update({
                     "_key": doc_key,
                     "canonicalKey": normalized_target,
-                    "lastSeenAt": datetime.utcnow().isoformat()
+                    "lastSeenAt": datetime.now(timezone.utc).isoformat()
                 })
                 count += 1
 
@@ -280,7 +280,7 @@ class AliasRegistry:
                 collection.update({
                     "_key": source_doc_key,
                     "canonicalKey": normalized_target,
-                    "lastSeenAt": datetime.utcnow().isoformat()
+                    "lastSeenAt": datetime.now(timezone.utc).isoformat()
                 })
                 count += 1
             else:

@@ -787,7 +787,9 @@ async def register_kb_document(request: KbDocumentUploadRequest):
     try:
         file_bytes = None
         data_root = os.environ.get("DATA_ROOT_DIR", "/opt/jervis/data")
-        full_path = os.path.join(data_root, request.storagePath)
+        full_path = os.path.normpath(os.path.join(data_root, request.storagePath))
+        if not full_path.startswith(os.path.normpath(data_root)):
+            raise HTTPException(status_code=400, detail="Invalid storage path: directory traversal detected")
         if os.path.exists(full_path):
             with open(full_path, "rb") as f:
                 file_bytes = f.read()

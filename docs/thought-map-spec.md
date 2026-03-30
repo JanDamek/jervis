@@ -574,6 +574,16 @@ metrics = {
 - Merge rate: nodes merged per cycle
 - Archive rate: nodes archived per cycle
 
+### ThoughtAnchor cleanup on purge
+
+When KB data is purged via `POST /api/v1/purge` (sourceUrn-based deletion):
+1. RAG chunks deleted from Weaviate
+2. KnowledgeNodes/Edges cleaned and orphans removed
+3. **ThoughtAnchors** pointing to deleted KnowledgeNodes are automatically removed
+4. ThoughtNodes that lose all anchors get `activationScore *= 0.5` (decay)
+
+This prevents orphaned ThoughtAnchors accumulating over time as KB data is updated or cleaned up.
+
 ---
 
 ## Component Changes

@@ -572,9 +572,50 @@ async def kb_document_delete(doc_id: str) -> str:
         return f"Document {doc_id} deleted successfully."
 
 
+@mcp.tool
+async def kb_delete_by_source(
+    source_urn: str,
+    client_id: str = "",
+) -> str:
+    """Delete all KB data (RAG chunks + graph nodes/edges) for a given source_urn.
+
+    Use this to clean up duplicates or outdated kb_store entries.
+    Removes ALL chunks matching the source_urn, cleans graph references,
+    and deletes orphaned nodes/edges.  Also cleans up ThoughtAnchors.
+
+    Args:
+        source_urn: Source identifier to purge (e.g., "infra://credentials", "agent://claude-code/finding")
+        client_id: Optional client ID filter (empty = match any client)
+    """
+    payload = {"sourceUrn": source_urn}
+    if client_id:
+        payload["clientId"] = client_id
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        try:
+            resp = await client.post(
+                f"{settings.knowledgebase_write_url}/api/v1/purge",
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPStatusError as e:
+            detail = e.response.text[:500] if e.response else str(e)
+            return f"Error purging KB (HTTP {e.response.status_code}): {detail}"
+
+    return (
+        f"Purged source_urn='{source_urn}':\n"
+        f"  RAG chunks deleted: {data.get('chunks_deleted', 0)}\n"
+        f"  Graph nodes cleaned: {data.get('nodes_cleaned', 0)}\n"
+        f"  Graph nodes deleted: {data.get('nodes_deleted', 0)}\n"
+        f"  Graph edges cleaned: {data.get('edges_cleaned', 0)}\n"
+        f"  Graph edges deleted: {data.get('edges_deleted', 0)}"
+    )
+
+
 # ── MongoDB Tools ────────────────────────────────────────────────────────
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 
 
@@ -1043,13 +1084,16 @@ async def schedule_task(
 
     db = await get_db()
     task_id = str(uuid.uuid4())[:24]
-    now = datetime.now(tz=None)
+    now = datetime.now(tz=timezone.utc)
 
     if scheduled_at_iso:
         try:
             scheduled_at = datetime.fromisoformat(scheduled_at_iso.replace("Z", "+00:00"))
+            # Ensure UTC — convert if timezone-aware, assume UTC if naive
             if scheduled_at.tzinfo:
-                scheduled_at = scheduled_at.replace(tzinfo=None)
+                scheduled_at = scheduled_at.astimezone(timezone.utc)
+            else:
+                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
         except ValueError:
             return f"Error: Invalid ISO datetime format: {scheduled_at_iso}"
     else:
@@ -1073,6 +1117,8 @@ async def schedule_task(
     }
     if cron_expression:
         task_doc["cronExpression"] = cron_expression
+        # Store timezone at creation time — cron is always evaluated in this timezone
+        task_doc["cronTimezone"] = "Europe/Prague"  # MCP tasks use default; chat tasks pass client tz
 
     await db["tasks"].insert_one(task_doc)
     sched_str = scheduled_at.strftime("%Y-%m-%d %H:%M")
@@ -3090,7 +3136,7 @@ async def ask_jervis(
     from bson import ObjectId as BsonObjectId
 
     question_id = BsonObjectId()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     await db["pending_agent_questions"].insert_one({
         "_id": question_id,
         "taskId": task_id,
@@ -3192,7 +3238,7 @@ async def report_done(
         "clientId": client_id or None,
         "projectId": project_id or None,
         "state": "PENDING",
-        "createdAt": datetime.utcnow(),
+        "createdAt": datetime.now(timezone.utc),
     }
     await db["pending_agent_questions"].insert_one(notification)
 

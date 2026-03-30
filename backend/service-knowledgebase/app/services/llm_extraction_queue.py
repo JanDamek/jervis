@@ -18,7 +18,7 @@ import logging
 import sqlite3
 from pathlib import Path
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -265,7 +265,7 @@ class LLMExtractionQueue:
 
             # Find first PENDING task with attempts < max (priority 1 before 4).
             # Respects retry_after: tasks with future retry_after are skipped (backoff).
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             row = conn.execute("""
                 SELECT * FROM tasks
                 WHERE status = ? AND attempts < ?
@@ -280,7 +280,7 @@ class LLMExtractionQueue:
 
             task_id = row["task_id"]
             attempts = row["attempts"] + 1
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
 
             # Mark as IN_PROGRESS (atomic)
             conn.execute("""
@@ -446,7 +446,7 @@ class LLMExtractionQueue:
                 # Reset to PENDING with exponential backoff via retry_after timestamp.
                 # Attempt 1 → 60s, attempt 2 → 180s (prevents retry loops every ~3 min).
                 backoff_seconds = 60 * (3 ** (attempts - 1))  # 60s, 180s
-                retry_after = (datetime.utcnow() + timedelta(seconds=backoff_seconds)).isoformat()
+                retry_after = (datetime.now(timezone.utc) + timedelta(seconds=backoff_seconds)).isoformat()
                 conn.execute("""
                     UPDATE tasks
                     SET status = ?, worker_id = NULL, error = ?, retry_after = ?
@@ -525,7 +525,7 @@ class LLMExtractionQueue:
         conn = self._get_conn()
         try:
             threshold_time = (
-                datetime.utcnow() - timedelta(minutes=stale_threshold_minutes)
+                datetime.now(timezone.utc) - timedelta(minutes=stale_threshold_minutes)
             ).isoformat()
 
             # Find stale tasks

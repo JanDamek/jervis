@@ -10,6 +10,7 @@ from app.api.models import IngestRequest, TraversalRequest, GraphNode, Traversal
 from app.services.normalizer import (
     normalize_graph_ref,
     normalize_entity_type,
+    normalize_relation_type,
     build_graph_key
 )
 from app.services.alias_registry import AliasRegistry
@@ -416,7 +417,7 @@ Text: {text}
             for edge, source_key, target_key, relation in edge_specs:
                 source_arango = source_key.replace(":", "__")
                 target_arango = target_key.replace(":", "__")
-                relation_normalized = normalize_graph_ref(relation)
+                relation_normalized = normalize_relation_type(relation)
                 edge_key = f"{source_arango}_{relation_normalized}_{target_arango}"
 
                 if not (nodes_collection.has(source_arango) and nodes_collection.has(target_arango)):
@@ -595,9 +596,77 @@ Text: {text}
             return nodes_cleaned, edges_cleaned, nodes_deleted, edges_deleted
 
         nodes_cleaned, edges_cleaned, nodes_deleted, edges_deleted = await asyncio.to_thread(_purge)
+
+        # Clean up ThoughtAnchors pointing to deleted KnowledgeNodes
+        if nodes_deleted > 0:
+            await self._cleanup_thought_anchors_for_deleted_nodes(deleted_chunk_ids)
+
         logger.info("Graph purge: nodes_cleaned=%d nodes_deleted=%d edges_cleaned=%d edges_deleted=%d",
                      nodes_cleaned, nodes_deleted, edges_cleaned, edges_deleted)
         return nodes_cleaned, edges_cleaned, nodes_deleted, edges_deleted
+
+    async def _cleanup_thought_anchors_for_deleted_nodes(self, deleted_chunk_ids: list[str]) -> int:
+        """Remove ThoughtAnchors pointing to KnowledgeNodes that were deleted during purge.
+
+        Also decays activationScore of orphaned ThoughtNodes (no remaining anchors).
+        """
+        def _cleanup():
+            if not self.db.has_collection("ThoughtAnchors") or not self.db.has_collection("ThoughtNodes"):
+                return 0
+
+            # Find ThoughtAnchors whose _to target no longer exists
+            aql = """
+            FOR a IN ThoughtAnchors
+                LET target_exists = LENGTH(
+                    FOR n IN KnowledgeNodes FILTER n._id == a._to LIMIT 1 RETURN 1
+                )
+                FILTER target_exists == 0
+                RETURN a._key
+            """
+            try:
+                orphan_keys = list(self.db.aql.execute(aql))
+            except Exception as e:
+                logger.warning("Failed to find orphaned ThoughtAnchors: %s", e)
+                return 0
+
+            if not orphan_keys:
+                return 0
+
+            # Collect ThoughtNode _from IDs before deleting anchors
+            thought_node_ids = set()
+            anchors_col = self.db.collection("ThoughtAnchors")
+            for key in orphan_keys:
+                try:
+                    anchor = anchors_col.get(key)
+                    if anchor:
+                        thought_node_ids.add(anchor["_from"])
+                    anchors_col.delete(key)
+                except Exception as e:
+                    logger.warning("Failed to delete ThoughtAnchor %s: %s", key, e)
+
+            # Decay activationScore on ThoughtNodes that lost all anchors
+            if thought_node_ids:
+                thoughts_col = self.db.collection("ThoughtNodes")
+                for tid in thought_node_ids:
+                    try:
+                        remaining = list(self.db.aql.execute(
+                            "FOR a IN ThoughtAnchors FILTER a._from == @tid LIMIT 1 RETURN 1",
+                            bind_vars={"tid": tid},
+                        ))
+                        if not remaining:
+                            tkey = tid.split("/")[-1]
+                            doc = thoughts_col.get(tkey)
+                            if doc:
+                                new_score = (doc.get("activationScore", 0.5)) * 0.5
+                                thoughts_col.update({"_key": tkey, "activationScore": new_score})
+                    except Exception as e:
+                        logger.warning("Failed to decay ThoughtNode %s: %s", tid, e)
+
+            logger.info("ThoughtAnchor cleanup: deleted=%d thought_nodes_decayed=%d",
+                        len(orphan_keys), len(thought_node_ids))
+            return len(orphan_keys)
+
+        return await asyncio.to_thread(_cleanup)
 
     async def get_node_chunks(self, node_key: str, client_id: str = "") -> list[str]:
         """
@@ -672,7 +741,7 @@ Text: {text}
                         "messageCount": msg_count,
                         "participants": list(participants),
                         "ragChunks": list(new_chunks),
-                        "lastActivityAt": __import__("datetime").datetime.utcnow().isoformat(),
+                        "lastActivityAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
                     })
                 except Exception:
                     pass
@@ -691,7 +760,7 @@ Text: {text}
                         "messageCount": 1,
                         "participants": [sender] if sender else [],
                         "threadId": thread_id,
-                        "observedAt": __import__("datetime").datetime.utcnow().isoformat(),
+                        "observedAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
                     })
                     nodes_created += 1
                 except Exception:
@@ -713,7 +782,7 @@ Text: {text}
                         "messageId": message_id,
                         "threadId": thread_id,
                         "sender": sender,
-                        "observedAt": __import__("datetime").datetime.utcnow().isoformat(),
+                        "observedAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
                     })
                     nodes_created += 1
                 except Exception:
@@ -1936,7 +2005,7 @@ Text: {text}
         content_hash: str | None = None,
     ) -> dict:
         """Create a kb_document node in ArangoDB. No LLM involved."""
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         key = self._make_kb_document_key(doc_id)
         node_data = {
@@ -1963,7 +2032,7 @@ Text: {text}
             "clientId": client_id,
             "projectId": project_id or "",
             "groupId": "",
-            "uploadedAt": datetime.utcnow().isoformat(),
+            "uploadedAt": datetime.now(timezone.utc).isoformat(),
             "indexedAt": None,
         }
 

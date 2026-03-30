@@ -198,7 +198,158 @@ ENTITY_TYPE_ALIASES = {
     # Git
     "revision": "commit",
     "changeset": "commit",
+
+    # Infrastructure
+    "service": "service",
+    "component": "component",
+    "product": "product",
+    "feature": "feature",
+    "version": "version",
+    "environment": "environment",
+    "configuration": "configuration",
+    "server": "server",
+    "database": "database",
+    "api": "api",
+    "endpoint": "endpoint",
+    "deployment": "deployment",
+    "namespace": "namespace",
+    "container": "container",
+    "pod": "pod",
+
+    # Concepts
+    "concept": "concept",
+    "topic": "concept",
+    "idea": "concept",
+    "pattern": "pattern",
+    "technology": "technology",
+    "framework": "technology",
+    "library": "technology",
+    "tool": "technology",
+    "language": "technology",
+    "protocol": "technology",
+
+    # Business
+    "client": "client",
+    "customer": "client",
+    "company": "organization",
+    "team": "organization",
+    "organization": "organization",
+    "project": "project",
+    "meeting": "meeting",
+    "event": "event",
+    "deadline": "event",
 }
+
+
+# Relationship type aliases — canonicalize LLM-generated relation names
+# to a consistent set of relation types.
+RELATION_TYPE_ALIASES = {
+    # Dependency
+    "depends_on": "depends_on",
+    "depends on": "depends_on",
+    "dependency": "depends_on",
+    "requires": "depends_on",
+    "prerequisite": "depends_on",
+    "needed_by": "depends_on",
+    "relies_on": "depends_on",
+
+    # Usage
+    "uses": "uses",
+    "utilizes": "uses",
+    "employs": "uses",
+    "calls": "uses",
+    "invokes": "uses",
+    "references": "uses",
+
+    # Containment
+    "contains": "contains",
+    "has": "contains",
+    "includes": "contains",
+    "comprises": "contains",
+    "consists_of": "contains",
+
+    # Membership / ownership
+    "belongs_to": "belongs_to",
+    "part_of": "belongs_to",
+    "member_of": "belongs_to",
+    "owned_by": "belongs_to",
+    "managed_by": "belongs_to",
+
+    # Creation / assignment
+    "created_by": "created_by",
+    "authored_by": "created_by",
+    "written_by": "created_by",
+    "developed_by": "created_by",
+    "assigned_to": "assigned_to",
+    "responsible_for": "assigned_to",
+
+    # Communication
+    "communicates_with": "communicates_with",
+    "sends_to": "communicates_with",
+    "notifies": "communicates_with",
+    "reports_to": "communicates_with",
+
+    # Modification
+    "modifies": "modifies",
+    "changes": "modifies",
+    "updates": "modifies",
+    "edits": "modifies",
+    "affects": "modifies",
+
+    # Inheritance / extension
+    "extends": "extends",
+    "inherits": "extends",
+    "implements": "implements",
+    "overrides": "extends",
+
+    # Relation
+    "related_to": "related_to",
+    "associated_with": "related_to",
+    "connected_to": "related_to",
+    "linked_to": "related_to",
+
+    # Deployment / running
+    "deployed_to": "deployed_to",
+    "runs_on": "deployed_to",
+    "hosted_on": "deployed_to",
+    "installed_on": "deployed_to",
+
+    # Resolution / fixing
+    "fixes": "fixes",
+    "resolves": "fixes",
+    "addresses": "fixes",
+    "patches": "fixes",
+
+    # Blocking
+    "blocks": "blocks",
+    "blocked_by": "blocks",
+    "prevents": "blocks",
+}
+
+
+def normalize_relation_type(raw_relation: str) -> str:
+    """
+    Normalize a relationship type from LLM extraction.
+
+    Maps common aliases to canonical relation types.
+    Normalizes whitespace, case, and separators.
+
+    Args:
+        raw_relation: Raw relation string from LLM
+
+    Returns:
+        Normalized relation type
+    """
+    if not raw_relation:
+        return "related_to"
+
+    # Lowercase, strip, replace spaces/dashes with underscore
+    normalized = raw_relation.lower().strip()
+    normalized = normalized.replace(" ", "_").replace("-", "_")
+    # Collapse multiple underscores
+    normalized = re.sub(r'_+', '_', normalized).strip('_')
+
+    return RELATION_TYPE_ALIASES.get(normalized, normalized)
 
 
 def normalize_entity_type(raw_type: str) -> str:
