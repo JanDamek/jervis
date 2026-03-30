@@ -26,9 +26,11 @@ spec:
           image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
           args:
             - "--model-id"
-            - "BAAI/bge-reranker-v2-m3"
+            - "BAAI/bge-reranker-base"
             - "--port"
             - "8080"
+            - "--max-concurrent-requests"
+            - "32"
           ports:
             - containerPort: 8080
           env:
@@ -54,14 +56,14 @@ spec:
             httpGet:
               path: /health
               port: 8080
-            failureThreshold: 60
-            periodSeconds: 5
+            failureThreshold: 120
+            periodSeconds: 10
           resources:
             requests:
-              memory: "2Gi"
-              cpu: "500m"
-            limits:
               memory: "4Gi"
+              cpu: "1000m"
+            limits:
+              memory: "12Gi"
               cpu: "4000m"
           volumeMounts:
             - name: model-cache
