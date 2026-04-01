@@ -46,6 +46,16 @@ class CzechKeyboardNormalizer {
         '{' to 'Ú',
     )
 
+    // Shifted punctuation: CZ keyboard Shift+key → what EN keyboard produces
+    // When layout evidence detected, these are converted back.
+    // CZ Shift+, = ? but EN Shift+, = <
+    // CZ Shift+. = : but EN Shift+. = >  (: already handled above)
+    // CZ Shift+- = _ but that's same on EN
+    private val shiftedPunctMap: Map<Char, Char> = mapOf(
+        '<' to '?',   // CZ: Shift+, = ?
+        '>' to ':',   // CZ: Shift+. = :
+    )
+
     private val caronPlusMap: Map<Char, Char> = mapOf(
         'd' to 'ď',
         't' to 'ť',
@@ -131,6 +141,16 @@ class CzechKeyboardNormalizer {
                 val mappedUpper = punctToCzUpper[ch]
                 if (mappedUpper != null) {
                     out.append(mappedUpper)
+                    i++
+                    continue
+                }
+            }
+
+            // Shifted punctuation mapping (< → ?, > → :) when layout evidence detected
+            if (enablePunctuation || enableYzSwap) {
+                val mappedShifted = shiftedPunctMap[ch]
+                if (mappedShifted != null) {
+                    out.append(mappedShifted)
                     i++
                     continue
                 }
