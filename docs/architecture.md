@@ -2689,8 +2689,15 @@ playback starts immediately without waiting for the full text.
 - **JVM/Android** (`SseClient.jvm.kt`, `SseClient.android.kt`): Ktor CIO engine — `bodyAsChannel().readUTF8Line()` works natively
 - **iOS** (`SseClient.ios.kt`): Native `NSURLSession` with `NSURLSessionDataDelegate` — Darwin Ktor engine buffers the entire response (no SSE streaming), so we bypass it with direct Foundation networking
 
-The same `postSseStream()` is used for voice chat (`POST /api/v1/voice/stream`) providing
-real-time transcription and response streaming on all platforms.
+**Voice chat** uses WebSocket (`ws://server:5500/api/v1/voice/ws`) for continuous bidirectional
+voice sessions. Client sends 100ms PCM chunks (binary frames), server detects speech boundaries
+(EnergyVad), transcribes via Whisper GPU on VD, classifies intent, responds with text + TTS audio
+(binary frames). Anti-echo via tts_playing/tts_finished control messages. All platforms:
+- **JVM/Android**: Ktor CIO WebSocket client (`VoiceWebSocketClient.jvm.kt`)
+- **iOS**: Native `NSURLSessionWebSocketTask` (`VoiceWebSocketClient.ios.kt`)
+- **watchOS**: Native `URLSessionWebSocketTask` (`WatchVoiceSession.swift`)
+
+Shared session logic in `VoiceSessionManager.kt` (commonMain) manages AudioRecorder + WebSocket + AudioPlayer.
 
 ---
 
