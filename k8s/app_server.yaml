@@ -115,6 +115,11 @@ spec:
           ports:
             - containerPort: 5500
           env:
+            # Timezone — all backend services MUST run in UTC
+            - name: TZ
+              value: "UTC"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Duser.timezone=UTC"
             # Secrets (passwords, API keys)
             - name: MONGODB_PASSWORD
               valueFrom:
@@ -245,10 +250,10 @@ spec:
               readOnly: true
           resources:
             requests:
-              memory: "2Gi"
+              memory: "3Gi"
               cpu: "500m"
             limits:
-              memory: "4Gi"
+              memory: "6Gi"
               cpu: "2000m"
           livenessProbe:
             httpGet:
