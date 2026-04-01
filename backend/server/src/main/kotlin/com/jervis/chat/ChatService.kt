@@ -23,6 +23,7 @@ class ChatService(
     private val chatSessionRepository: ChatSessionRepository,
     private val chatMessageService: ChatMessageService,
     private val pythonChatClient: PythonChatClient,
+    private val czechKeyboardNormalizer: com.jervis.infrastructure.text.CzechKeyboardNormalizer,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -68,8 +69,17 @@ class ChatService(
         contextTaskId: String? = null,
         maxOpenRouterTier: String = "NONE",
         attachments: List<com.jervis.dto.chat.AttachmentDto> = emptyList(),
+        clientTimezone: String? = null,
     ): Flow<ChatStreamEvent> {
         require(text.isNotBlank()) { "Message text cannot be blank" }
+
+        // 0. Normalize keyboard layout (Czech typed on English keyboard)
+        val normalizedText = czechKeyboardNormalizer.convertIfMistyped(text)
+        if (normalizedText != text) {
+            logger.info { "CHAT_INPUT_NORMALIZED: original='${text.take(80)}' normalized='${normalizedText.take(80)}'" }
+        }
+        @Suppress("NAME_SHADOWING")
+        val text = normalizedText
 
         // 1. Get/create session
         val session = getOrCreateActiveSession(userId)
@@ -136,6 +146,7 @@ class ChatService(
             contextTaskId = contextTaskId,
             maxOpenRouterTier = maxOpenRouterTier,
             attachments = attachments,
+            clientTimezone = clientTimezone,
         )
     }
 
