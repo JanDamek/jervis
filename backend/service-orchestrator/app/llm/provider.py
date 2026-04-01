@@ -305,13 +305,15 @@ class LLMProvider:
         return result
 
     @staticmethod
-    async def _call_with_retry(fn, kwargs: dict, model: str, max_retries: int = 3) -> object:
+    async def _call_with_retry(fn, kwargs: dict, model: str, max_retries: int = 2) -> object:
         """Call LLM function with retry for transient errors.
 
-        Retries on: connection errors, "Operation not allowed", 503, AND 429 rate limit.
-        429 rate limit: wait and retry same model (FREE models are all rate-limited,
-        switching to another model just hits another rate limit).
-        Uses exponential backoff: 5s, 10s, 20s for rate limits.
+        Retries on: connection errors, "Operation not allowed", 503 status.
+        Uses exponential backoff: 2s, 4s.
+
+        429 rate limit: ONE short retry (3s), then escalate to model fallback.
+        Waiting 30s on a rate-limited model is worse than trying the next one.
+        The router's model fallback will cycle through the queue quickly.
         """
         last_exc: Exception | None = None
         for attempt in range(1 + max_retries):
@@ -325,24 +327,16 @@ class LLMProvider:
                 err_str = str(e).lower()
                 is_rate_limit = "rate limit" in err_str or "429" in err_str
 
-                # Rate limit: wait and retry (don't switch models — all FREE models are rate-limited)
                 if is_rate_limit:
-                    if attempt >= max_retries:
-                        raise
-                    # Parse Retry-After if available, default 5s * (attempt+1)
-                    retry_after = 5 * (attempt + 1)
-                    try:
-                        if hasattr(e, 'response') and hasattr(e.response, 'headers'):
-                            ra = e.response.headers.get('retry-after') or e.response.headers.get('Retry-After')
-                            if ra:
-                                retry_after = min(int(ra), 30)
-                    except Exception:
-                        pass
-                    logger.info("LLM rate limit (model=%s), waiting %ds before retry %d/%d",
-                                model, retry_after, attempt + 1, max_retries)
-                    last_exc = e
-                    await asyncio.sleep(retry_after)
-                    continue
+                    # One short retry (3s), then escalate to next model
+                    if attempt == 0:
+                        logger.info("LLM rate limit (model=%s), short retry in 3s", model)
+                        last_exc = e
+                        await asyncio.sleep(3)
+                        continue
+                    # Second 429 → escalate to model fallback (don't waste more time)
+                    logger.info("LLM rate limit persists (model=%s), escalating to model fallback", model)
+                    raise
 
                 retryable = (
                     "operation not allowed" in err_str
