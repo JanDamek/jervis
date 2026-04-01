@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ async def build_system_prompt(
     active_project_name: str | None = None,
     runtime_context: RuntimeContext | None = None,
     session_id: str | None = None,
+    user_timezone: str = "Europe/Prague",
 ) -> str:
     """Build the system prompt for Jervis chat.
 
@@ -38,16 +40,23 @@ async def build_system_prompt(
     Scope info from UI is included as context hints.
     Runtime context provides live data (clients, pending tasks, meetings).
     """
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now_utc = datetime.now(timezone.utc)
+    try:
+        user_tz = ZoneInfo(user_timezone)
+    except Exception:
+        user_tz = ZoneInfo("Europe/Prague")
+    now_local = now_utc.astimezone(user_tz)
+    now_utc_str = now_utc.strftime("%Y-%m-%d %H:%M UTC")
+    now_local_str = now_local.strftime("%Y-%m-%d %H:%M") + f" ({user_timezone})"
     ctx = runtime_context or RuntimeContext()
 
     scope_info = ""
     if active_client_id:
         name = f" ({active_client_name})" if active_client_name else ""
-        scope_info += f"\nAktuální klient v UI: {active_client_id}{name}"
+        scope_info += f"\nCurrent client in UI: {active_client_id}{name}"
     if active_project_id:
         name = f" ({active_project_name})" if active_project_name else ""
-        scope_info += f"\nAktuální projekt v UI: {active_project_id}{name}"
+        scope_info += f"\nCurrent project in UI: {active_project_id}{name}"
 
     # Build runtime sections
     clients_section = _build_clients_section(ctx.clients_projects)
@@ -67,7 +76,10 @@ async def build_system_prompt(
 - Be concise and direct. No filler phrases like "I'd be happy to help" — just help.
 - You know Jan, his projects, his work. Use KB and conversation history for context.
 
-## Current time: {now}
+## Current time
+- UTC: {now_utc_str}
+- User local: {now_local_str}
+When the user asks about time, always answer in their local timezone ({user_timezone}).
 {scope_info}
 {clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}{thought_section}{rag_section}{active_graph_section}
 ## Tool Usage

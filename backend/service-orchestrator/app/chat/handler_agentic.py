@@ -347,13 +347,14 @@ async def run_agentic_loop(
                 "role": "system",
                 "content": (
                     f"STOP — {drift_reason}.\n\n"
-                    "PRAVIDLA PRO ODPOVĚĎ:\n"
-                    "1. Odpověz POUZE na základě dat z tool výsledků výše (web_search, web_fetch, kb_search).\n"
-                    "2. NIKDY nedoplňuj chybějící údaje (adresy, ceny, hodnocení, telefonní čísla) z vlastních znalostí.\n"
-                    "3. Pokud pro některou entitu nemáš ověřená data z tool výsledků → napiš 'nenalezeno' nebo entitu vynech.\n"
-                    "4. U každého tvrzení uveď zdroj (URL z web_search výsledku).\n"
-                    "5. Raději uveď 3 ověřené výsledky než 10 neověřených.\n"
-                    "Nevolej žádné další tools."
+                    "RULES FOR YOUR FINAL RESPONSE:\n"
+                    "1. Answer ONLY based on data from tool results above (web_search, web_fetch, kb_search).\n"
+                    "2. NEVER fabricate missing details (addresses, prices, ratings, phone numbers) from your own knowledge.\n"
+                    "3. If you don't have verified data for an entity from tool results → write 'not found' or omit it.\n"
+                    "4. Cite source (URL from web_search result) for each claim.\n"
+                    "5. Prefer 3 verified results over 10 unverified ones.\n"
+                    "6. Do NOT call any more tools. Respond with text only.\n"
+                    "7. Respond in the SAME LANGUAGE as the user's message."
                 ),
             })
             break_response = await call_llm(messages=messages, tier=tier, route=route,
@@ -697,7 +698,12 @@ async def run_agentic_loop(
     logger.warning("Chat: max iterations (%d) reached, forcing response", effective_max_iterations)
     messages.append({
         "role": "system",
-        "content": "Dosáhl jsi maximálního počtu iterací. Odpověz uživateli s tím co víš. Nevolej žádné tools.",
+        "content": (
+            "You have reached the maximum number of iterations. "
+            "Respond to the user with whatever information you have gathered so far. "
+            "Do NOT call any more tools. Respond with text only. "
+            "Respond in the SAME LANGUAGE as the user's message."
+        ),
     })
     try:
         final_resp = await call_llm(messages=messages, tier=tier, route=route,
@@ -763,12 +769,12 @@ def _synthesize_from_tool_results(tool_summaries: list[str], original_question: 
 
     Used as fallback when drift/max-iter forcing produces empty or XML-only output.
     Compiles tool summaries into a readable answer.
+    Note: hardcoded Czech because this is a last-resort fallback for Czech-speaking users.
     """
     if not tool_summaries:
-        return f"Omlouvám se, nepodařilo se najít odpověď na: {original_question[:100]}"
+        return f"Nepodařilo se najít odpověď na: {original_question[:100]}"
 
-    parts = [f"Na základě hledání k dotazu '{original_question[:80]}':\n"]
-    for summary in tool_summaries[-5:]:  # Last 5 tool results
+    parts = [f"Výsledky hledání k '{original_question[:80]}':\n"]
+    for summary in tool_summaries[-5:]:
         parts.append(f"• {summary}")
-    parts.append("\n(Odpověď sestavena z výsledků nástrojů — model nedokázal shrnout.)")
     return "\n".join(parts)
