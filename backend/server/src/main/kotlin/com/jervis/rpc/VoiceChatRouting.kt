@@ -197,8 +197,10 @@ fun Routing.installVoiceChatApi(
 
             logger.info { "VOICE_CHAT_STT | source=$source | text=${transcription.take(100)}" }
 
-            // Step 2: Send to orchestrator via chat — collect SSE tokens (max 15s)
-            val chatResponse = collectChatResponse(chatService, transcription, source)
+            // Step 2: Send to Python voice pipeline (intent classification + KB store + response)
+            // Same pipeline as /voice/stream — ensures DICTATION/INSTRUCTION content
+            // is stored in KB, not just answered as chat.
+            val chatResponse = collectVoicePipelineResponse(transcription, source)
 
             logger.info { "VOICE_CHAT_RESPONSE | complete=${chatResponse.complete} | text=${chatResponse.text.take(100)}" }
 
@@ -740,6 +742,91 @@ data class TtsStreamRequest(val text: String, val speed: Float = 1.2f)
 /** Escape JSON special chars for SSE data. */
 private fun String.escapeJson(): String =
     replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
+
+/**
+ * Send transcription to Python voice pipeline (intent classification + KB store + response).
+ * Same pipeline as /voice/stream — ensures instructions/dictation are stored in KB.
+ */
+private suspend fun collectVoicePipelineResponse(
+    transcription: String,
+    source: String,
+): ChatResult {
+    val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
+    val responseBuilder = StringBuilder()
+    var complete = false
+
+    try {
+        val client = io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO) {
+            install(io.ktor.client.plugins.HttpTimeout) {
+                requestTimeoutMillis = 45_000
+                connectTimeoutMillis = 5_000
+                socketTimeoutMillis = 45_000
+            }
+        }
+        try {
+            val payload = """{"text":"${transcription.replace("\"", "\\\"").replace("\n", " ")}","source":"$source","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":false}"""
+            val resp = client.post("$orchestratorUrl/voice/process") {
+                contentType(io.ktor.http.ContentType.Application.Json)
+                setBody(payload)
+            }
+
+            // Parse SSE events from Python voice pipeline
+            val channel = resp.bodyAsChannel()
+            var currentEvent = ""
+            var currentData = ""
+
+            while (!channel.isClosedForRead) {
+                val line = channel.readUTF8Line() ?: break
+                when {
+                    line.startsWith("event: ") -> currentEvent = line.removePrefix("event: ").trim()
+                    line.startsWith("data: ") -> currentData = line.removePrefix("data: ").trim()
+                    line.isBlank() && currentData.isNotEmpty() -> {
+                        try {
+                            val data = kotlinx.serialization.json.Json.parseToJsonElement(currentData)
+                            val text = data.jsonObject["text"]?.jsonPrimitive?.content ?: ""
+                            when (currentEvent) {
+                                "token" -> responseBuilder.append(text)
+                                "response" -> {
+                                    if (responseBuilder.isEmpty()) responseBuilder.append(text)
+                                    complete = true
+                                }
+                                "stored" -> {
+                                    // KB store confirmed — build confirmation response
+                                    if (responseBuilder.isEmpty()) {
+                                        val summary = data.jsonObject["summary"]?.jsonPrimitive?.content ?: transcription.take(80)
+                                        responseBuilder.append("Uloženo: $summary")
+                                    }
+                                    complete = true
+                                }
+                                "done" -> {
+                                    complete = true
+                                }
+                                "error" -> {
+                                    if (responseBuilder.isEmpty()) responseBuilder.append(text)
+                                    complete = true
+                                }
+                            }
+                        } catch (_: Exception) {}
+                        currentEvent = ""
+                        currentData = ""
+                    }
+                }
+            }
+        } finally {
+            client.close()
+        }
+    } catch (e: Exception) {
+        logger.warn(e) { "VOICE_PIPELINE_COLLECT_ERROR" }
+        if (responseBuilder.isEmpty()) {
+            responseBuilder.append("Zpracovávám na pozadí.")
+        }
+    }
+
+    return ChatResult(
+        text = responseBuilder.toString().trim(),
+        complete = complete,
+    )
+}
 
 /**
  * Send message to orchestrator via ChatService and collect response tokens.
