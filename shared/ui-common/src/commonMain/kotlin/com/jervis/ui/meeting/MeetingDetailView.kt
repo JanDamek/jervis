@@ -570,5 +570,5 @@ private fun formatDuration(seconds: Double): String {
     val totalSec = seconds.toInt().coerceAtLeast(0)
     val min = totalSec / 60
     val sec = totalSec % 60
-    return "%d:%02d".format(min, sec)
+    return "$min:${sec.toString().padStart(2, '0')}"
 }

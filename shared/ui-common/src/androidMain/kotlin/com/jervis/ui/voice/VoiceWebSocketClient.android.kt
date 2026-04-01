@@ -1,11 +1,10 @@
 package com.jervis.ui.voice
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.websocket.Frame
-import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
 import io.ktor.websocket.readText
 import kotlinx.coroutines.channels.Channel
@@ -17,10 +16,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 
 /**
- * Android WebSocket client — same Ktor CIO implementation as JVM.
+ * Android WebSocket client using Ktor OkHttp engine.
  */
 actual class VoiceWebSocketClient actual constructor() {
-    private val httpClient = HttpClient(CIO) {
+    private val httpClient = HttpClient(OkHttp) {
         install(WebSockets) {
             pingIntervalMillis = 20_000
         }
@@ -59,6 +58,7 @@ actual class VoiceWebSocketClient actual constructor() {
                     _isConnected = false
                 }
             } catch (e: Exception) {
+                println("VoiceWebSocketClient Android: connection error: ${e.message}")
                 _isConnected = false
             }
         }

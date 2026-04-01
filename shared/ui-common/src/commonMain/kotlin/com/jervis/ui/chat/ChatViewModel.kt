@@ -1399,9 +1399,9 @@ class ChatViewModel(
 
         voiceSessionManager.start(
             wsUrl = wsUrl,
-            source = currentVoiceSource ?: "app",
-            clientId = activeClientId?.toString() ?: "",
-            projectId = activeProjectId?.toString() ?: "",
+            source = currentVoiceSource?.name ?: "app",
+            clientId = selectedClientId.value ?: "",
+            projectId = selectedProjectId.value ?: "",
         )
     }
 
