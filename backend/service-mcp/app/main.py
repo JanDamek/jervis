@@ -483,8 +483,8 @@ async def kb_document_upload(
     else:
         return "Error: Provide either file_path OR (file_content + file_name)"
 
-    # Upload to KB service
-    async with httpx.AsyncClient(timeout=300) as client:
+    # Upload to KB service — returns immediately, extraction runs in background
+    async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             f"{settings.knowledgebase_write_url}/api/v1/documents/upload",
             files={"file": (filename, file_bytes, mime_type)},
@@ -506,11 +506,12 @@ async def kb_document_upload(
     state = result.get("state", "UNKNOWN")
     doc_id = result.get("id", "")
     return (
-        f"Document uploaded successfully.\n"
+        f"Document uploaded and queued for processing.\n"
         f"  ID: {doc_id}\n"
         f"  Filename: {filename}\n"
-        f"  State: {state}\n"
-        f"  Size: {len(file_bytes)} bytes"
+        f"  State: {state} (extraction + indexing runs in background)\n"
+        f"  Size: {len(file_bytes)} bytes\n"
+        f"Use kb_document_list to check processing status."
     )
 
 

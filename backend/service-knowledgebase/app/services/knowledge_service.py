@@ -1526,25 +1526,51 @@ Pravidla:
             content_hash=request.contentHash,
         )
 
-        # 2. If binary data provided, extract and ingest
+        # 2. If binary data provided, queue extraction in background (fire-and-forget)
+        # Same pattern as kb_store → /ingest-queue: return immediately, process async.
         if file_bytes:
+            asyncio.create_task(self._extract_and_ingest_document_safe(
+                doc_id=doc_id,
+                file_bytes=file_bytes,
+                filename=request.filename,
+                source_urn=source_urn,
+                client_id=request.clientId,
+                project_id=request.projectId,
+            ))
+
+        return self._node_to_dto(node)
+
+    async def _extract_and_ingest_document_safe(
+        self,
+        doc_id: str,
+        file_bytes: bytes,
+        filename: str,
+        source_urn: str,
+        client_id: str,
+        project_id: str | None,
+    ):
+        """Background wrapper for _extract_and_ingest_document with error handling.
+
+        On failure, marks the kb_document node as FAILED with error message.
+        """
+        try:
+            await self._extract_and_ingest_document(
+                doc_id=doc_id,
+                file_bytes=file_bytes,
+                filename=filename,
+                source_urn=source_urn,
+                client_id=client_id,
+                project_id=project_id,
+            )
+        except Exception as e:
+            logger.error("Document extraction failed doc_id=%s: %s", doc_id, e)
             try:
-                await self._extract_and_ingest_document(
-                    doc_id=doc_id,
-                    file_bytes=file_bytes,
-                    filename=request.filename,
-                    source_urn=source_urn,
-                    client_id=request.clientId,
-                    project_id=request.projectId,
-                )
-            except Exception as e:
-                logger.error("Document extraction failed doc_id=%s: %s", doc_id, e)
                 await self.graph_service.update_kb_document_node(doc_id, {
                     "state": "FAILED",
                     "errorMessage": str(e)[:500],
                 })
-
-        return self._node_to_dto(node)
+            except Exception as update_err:
+                logger.error("Failed to update doc node state doc_id=%s: %s", doc_id, update_err)
 
     async def _extract_and_ingest_document(
         self,
