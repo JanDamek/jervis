@@ -99,4 +99,31 @@ def extract_tool_calls(message) -> tuple[list, str | None]:
         except (json.JSONDecodeError, KeyError, TypeError):
             pass
 
+    # XML-style <tool_call> tags (some FREE OpenRouter models generate these)
+    # Format: <tool_call>\n<function=name>\n<parameter=key>value</parameter>\n</function>\n</tool_call>
+    xml_match = re.search(r'<tool_call>(.*?)</tool_call>', content, re.DOTALL)
+    if xml_match:
+        try:
+            xml_content = xml_match.group(1).strip()
+            func_match = re.search(r'<function=(\w+)>', xml_content)
+            if func_match:
+                func_name = func_match.group(1)
+                params = {}
+                for param_match in re.finditer(r'<parameter=(\w+)>\s*(.*?)\s*</parameter>', xml_content, re.DOTALL):
+                    params[param_match.group(1)] = param_match.group(2).strip()
+                calls = [OllamaToolCall({
+                    "function": {"name": func_name, "arguments": params},
+                })]
+                remaining = content[:xml_match.start()] + content[xml_match.end():]
+                remaining = remaining.strip() or None
+                logger.info("XML workaround: extracted tool call '%s' from <tool_call> tags", func_name)
+                return calls, remaining
+        except Exception:
+            pass
+
+        # XML tool_call detected but couldn't parse — strip it (don't show raw XML to user)
+        cleaned = re.sub(r'<tool_call>.*?</tool_call>', '', content, flags=re.DOTALL).strip()
+        if cleaned:
+            return [], cleaned
+
     return [], content

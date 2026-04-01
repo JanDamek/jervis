@@ -79,7 +79,7 @@ async def _persist_approval_rule(action: str):
         rules_coll = db["approval_rules"]
         await rules_coll.update_one(
             {"action": action},
-            {"$set": {"action": action, "enabled": True, "updated_at": __import__("datetime").datetime.utcnow()}},
+            {"$set": {"action": action, "enabled": True, "updated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc)}},
             upsert=True,
         )
         _global_auto_approvals.add(action)
@@ -358,7 +358,14 @@ async def run_agentic_loop(
             })
             break_response = await call_llm(messages=messages, tier=tier, route=route,
                                               max_tier=max_tier, estimated_tokens=estimated)
-            final_text = break_response.choices[0].message.content or "Nemám dostatek informací pro odpověď."
+            raw_text = break_response.choices[0].message.content or ""
+
+            # Strip any raw XML tool_call tags that FREE models sometimes generate in text
+            import re as _re
+            final_text = _re.sub(r'<tool_call>.*?</tool_call>', '', raw_text, flags=_re.DOTALL).strip()
+            if not final_text or len(final_text) < 10:
+                # Model failed to produce useful response — synthesize from tool results
+                final_text = _synthesize_from_tool_results(tool_summaries, request.message)
 
             # Fact-check + topic tracking — parallel
             fc_result, drift_topics = await asyncio.gather(
@@ -695,7 +702,11 @@ async def run_agentic_loop(
     try:
         final_resp = await call_llm(messages=messages, tier=tier, route=route,
                                        max_tier=max_tier, estimated_tokens=estimated)
-        final_text = final_resp.choices[0].message.content or "Omlouvám se, vyčerpal jsem limit operací."
+        raw_text = final_resp.choices[0].message.content or ""
+        import re as _re
+        final_text = _re.sub(r'<tool_call>.*?</tool_call>', '', raw_text, flags=_re.DOTALL).strip()
+        if not final_text or len(final_text) < 10:
+            final_text = _synthesize_from_tool_results(tool_summaries, request.message)
 
         # EPIC 14-S1 + EPIC 9-S1: Fact-check + topic detection in parallel
         fc_result, max_iter_topics = await asyncio.gather(
@@ -745,3 +756,19 @@ def _build_interrupted_content(tool_summaries: list[str]) -> str | None:
         f"[Přerušeno po {len(tool_summaries)} operacích]\n"
         + "\n".join(f"- {s}" for s in tool_summaries)
     )
+
+
+def _synthesize_from_tool_results(tool_summaries: list[str], original_question: str) -> str:
+    """Synthesize a response from tool results when LLM fails to produce one.
+
+    Used as fallback when drift/max-iter forcing produces empty or XML-only output.
+    Compiles tool summaries into a readable answer.
+    """
+    if not tool_summaries:
+        return f"Omlouvám se, nepodařilo se najít odpověď na: {original_question[:100]}"
+
+    parts = [f"Na základě hledání k dotazu „{original_question[:80]}":\n"]
+    for summary in tool_summaries[-5:]:  # Last 5 tool results
+        parts.append(f"• {summary}")
+    parts.append("\n(Odpověď sestavena z výsledků nástrojů — model nedokázal shrnout.)")
+    return "\n".join(parts)
