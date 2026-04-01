@@ -10,7 +10,10 @@ Timeout strategy:
 - Streaming calls: per-chunk token-arrival timeout (TOKEN_TIMEOUT_SECONDS).
 - Blocking calls (tool calls): tier-based timeout via TIER_TIMEOUT_SECONDS.
 
-Router handles all GPU/cloud concurrency — no artificial limits here.
+Rate limiting:
+- OpenRouter FREE: 20 RPM account-wide. Orchestrator calls OpenRouter directly
+  (not via ollama-router proxy), so rate limiting must happen here.
+- Sliding window tracks request timestamps; waits for slot when at capacity.
 """
 
 from __future__ import annotations
@@ -18,6 +21,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
+from collections import deque
 from datetime import datetime, timezone
 from typing import AsyncIterator
 
@@ -27,6 +32,47 @@ from app.config import settings, estimate_tokens
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
+
+
+# ── OpenRouter Rate Limiter ──────────────────────────────────────────────
+
+class _OpenRouterRateLimiter:
+    """Sliding window rate limiter for OpenRouter API calls.
+
+    OpenRouter FREE: 20 requests per minute (account-wide, not per model).
+    Orchestrator calls OpenRouter directly via litellm, bypassing ollama-router,
+    so rate limiting must happen here to prevent 429 errors.
+    """
+
+    def __init__(self, max_rpm: int = 20, window: float = 60.0):
+        self.max_rpm = max_rpm
+        self.window = window
+        self._timestamps: deque[float] = deque()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        """Wait until a rate limit slot is available."""
+        while True:
+            async with self._lock:
+                now = time.monotonic()
+                # Cleanup expired timestamps
+                cutoff = now - self.window
+                while self._timestamps and self._timestamps[0] < cutoff:
+                    self._timestamps.popleft()
+
+                if len(self._timestamps) < self.max_rpm:
+                    self._timestamps.append(now)
+                    return
+
+                # At capacity — wait until oldest expires
+                wait_time = self._timestamps[0] + self.window - now + 0.1
+                logger.info("OPENROUTER_RATE_LIMIT: at capacity (%d/%d RPM), waiting %.1fs",
+                            len(self._timestamps), self.max_rpm, wait_time)
+
+            await asyncio.sleep(min(wait_time, 5.0))
+
+
+_openrouter_limiter = _OpenRouterRateLimiter(max_rpm=20)
 
 # ── Gemini daily counter ──────────────────────────────────────────────────
 _gemini_lock = threading.Lock()
@@ -312,9 +358,12 @@ class LLMProvider:
         Uses exponential backoff: 2s, 4s.
 
         429 rate limit: ONE short retry (3s), then escalate to model fallback.
-        Waiting 30s on a rate-limited model is worse than trying the next one.
-        The router's model fallback will cycle through the queue quickly.
+        Rate limiter proactively prevents most 429s by waiting for slot.
         """
+        # Proactive rate limiting for OpenRouter calls
+        if model.startswith("openrouter/"):
+            await _openrouter_limiter.acquire()
+
         last_exc: Exception | None = None
         for attempt in range(1 + max_retries):
             try:
