@@ -224,7 +224,12 @@ async def run_agentic_loop(
 
         # No tool calls → final text response
         if not tool_calls:
-            final_text = remaining_text or choice.message.content or ""
+            import re as _re
+            raw_final = remaining_text or choice.message.content or ""
+            # Strip any residual <tool_call> XML that extract_tool_calls may have missed
+            final_text = _re.sub(r'<tool_call>.*?</tool_call>', '', raw_final, flags=_re.DOTALL).strip()
+            if not final_text:
+                final_text = ""  # Will trigger hallucination guard or empty response handling
             logger.info("Chat: final answer after %d iterations (%d chars)", iteration + 1, len(final_text))
 
             # Pre-processing hallucination guard: if model answered without ANY tool calls
