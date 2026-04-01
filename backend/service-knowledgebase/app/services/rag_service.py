@@ -176,14 +176,19 @@ Document:
 """
         try:
             model = settings.CONTEXTUAL_PREFIX_MODEL or settings.LLM_MODEL
-            result = await llm_generate(
-                prompt=prompt,
-                max_tier="NONE",
-                model=model,
-                num_ctx=4096,
-                priority=4,  # Low priority — don't block critical work
-                temperature=0,
-                format_json=False,
+            # Short timeout — contextual prefix is nice-to-have, not critical.
+            # If GPU is busy, skip rather than queue up and worsen contention.
+            result = await asyncio.wait_for(
+                llm_generate(
+                    prompt=prompt,
+                    max_tier="NONE",
+                    model=model,
+                    num_ctx=4096,
+                    priority=4,  # Low priority — don't block critical work
+                    temperature=0,
+                    format_json=False,
+                ),
+                timeout=30.0,  # 30s max — if GPU can't serve in 30s, skip
             )
             # Clean up thinking tags
             if "<think>" in result:

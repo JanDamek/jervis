@@ -80,6 +80,17 @@ class GraphService:
                     await asyncio.sleep(wait)
                 else:
                     raise
+            except httpx.HTTPStatusError as e:
+                # 499 = GPU busy / client preempted — retry with backoff
+                if e.response.status_code == 499 and attempt < max_retries:
+                    wait = 5 * (attempt + 1)  # 5s, 10s — give GPU time to free up
+                    logger.warning(
+                        "LLM call 499 GPU busy (attempt %d/%d): retrying in %ds",
+                        attempt + 1, max_retries + 1, wait,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    raise
 
     async def ingest(
         self,
@@ -172,7 +183,7 @@ class GraphService:
         )
 
         # Process chunks in parallel — router queue manages backend concurrency
-        _extract_sem = asyncio.Semaphore(4)
+        _extract_sem = asyncio.Semaphore(2)  # Reduced from 4 to prevent GPU queue flooding
         _completed = 0
 
         async def _process_one(idx: int, chunk_text: str):

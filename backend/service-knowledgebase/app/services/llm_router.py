@@ -125,7 +125,9 @@ async def _call_ollama(
     temperature: float,
     format_json: bool,
 ) -> str:
-    """Call local Ollama via router."""
+    """Call local Ollama via router with retry on 499 (GPU busy)."""
+    import asyncio
+
     url = f"{_router_base_url()}/api/generate"
     headers = {}
     if priority is not None:
@@ -140,9 +142,19 @@ async def _call_ollama(
     if format_json:
         payload["format"] = "json"
 
-    resp = await _llm_http.post(url, json=payload, headers=headers)
-    resp.raise_for_status()
-    return resp.json()["response"]
+    max_retries = 3
+    for attempt in range(1 + max_retries):
+        resp = await _llm_http.post(url, json=payload, headers=headers)
+        if resp.status_code == 499 and attempt < max_retries:
+            wait = 5 * (attempt + 1)  # 5s, 10s, 15s — give GPU time to free up
+            logger.warning(
+                "LLM_ROUTER: 499 GPU busy (attempt %d/%d, model=%s), retrying in %ds",
+                attempt + 1, max_retries + 1, model, wait,
+            )
+            await asyncio.sleep(wait)
+            continue
+        resp.raise_for_status()
+        return resp.json()["response"]
 
 
 async def _call_openrouter(
