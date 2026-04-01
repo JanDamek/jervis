@@ -124,19 +124,19 @@ class LLMExtractionQueue:
         logger.info("Initialized SQLite extraction queue at %s", self.db_path)
 
     def _nfs_safe_connect(self, db_path=None) -> sqlite3.Connection:
-        """Connect to SQLite on NFS — single-writer pod, exclusive locking."""
+        """Connect to SQLite with busy_timeout for multi-worker contention."""
         path = str(db_path or self.db_path)
         conn = sqlite3.connect(path, timeout=30.0)
-        conn.execute("PRAGMA locking_mode=EXCLUSIVE")
+        conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
     def _init_db(self) -> None:
-        """Initialize SQLite database schema (NFS-safe, no fcntl locking)."""
+        """Initialize SQLite database schema."""
         conn = self._nfs_safe_connect()
         try:
-            conn.execute("PRAGMA journal_mode=DELETE")
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("PRAGMA busy_timeout=5000")
 
             # Create tasks table
             conn.execute("""
