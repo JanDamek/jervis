@@ -22,7 +22,7 @@ struct ContentView: View {
                         autoStart = false
                     }
                 case .chat:
-                    ChatView(chatManager: chatManager, connectivity: connectivity, autoStart: autoStart) {
+                    ChatView(connectivity: connectivity, autoStart: autoStart) {
                         activeMode = nil
                         autoStart = false
                     }

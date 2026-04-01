@@ -1,99 +1,23 @@
 import SwiftUI
 
 struct ChatView: View {
-    @ObservedObject var chatManager: WatchChatManager
     @ObservedObject var connectivity: WatchConnectivityManager
+    @ObservedObject private var voiceSession = WatchVoiceSession.shared
     var autoStart: Bool = false
     var onDismiss: () -> Void
 
-    @State private var isListening = false
-    @State private var responseText: String? = nil
-    @State private var isProcessing = false
-    @State private var statusText = "Čekám na odpověď..."
-
     var body: some View {
         VStack(spacing: 8) {
-            if let response = responseText {
-                // Response view
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(.green)
-                    Text("Jervis")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Button(action: { responseText = nil; isListening = false }) {
-                        Image(systemName: "mic.fill")
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                    }
-                    .buttonStyle(.plain)
-                    Button(action: onDismiss) {
-                        Image(systemName: "xmark")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                ScrollView {
-                    Text(response)
-                        .font(.body)
-                        .foregroundColor(.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 2)
-                }
-            } else if isListening {
-                // Recording mode — stop + cancel
-                Spacer()
-
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 44))
-                    .foregroundColor(.green)
-
-                Text("Poslouchám...")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 20) {
-                    // Send (stop + send)
-                    Button(action: stopAndSend) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 36))
-                            .foregroundColor(.blue)
-                    }
-                    .buttonStyle(.plain)
-
-                    // Cancel
-                    Button(action: cancelRecording) {
-                        Image(systemName: "xmark.circle")
-                            .font(.system(size: 30))
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Spacer()
-            } else if isProcessing {
-                // Processing
-                Spacer()
-                ProgressView()
-                    .scaleEffect(1.5)
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                Spacer()
-            } else {
-                // Idle — tap to record
+            switch voiceSession.state {
+            case .idle:
+                // Idle — tap to start continuous session
                 Spacer()
 
                 Text("Klepni a mluv")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                Button(action: startRecording) {
+                Button(action: { voiceSession.start() }) {
                     Image(systemName: "mic.circle.fill")
                         .font(.system(size: 56))
                         .foregroundColor(.blue)
@@ -104,58 +28,132 @@ struct ChatView: View {
 
                 Button("Zpět", action: onDismiss)
                     .font(.caption)
+
+            case .connecting:
+                Spacer()
+                ProgressView()
+                Text("Připojuji...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+
+            case .listening:
+                // Listening — VAD waiting for speech
+                Spacer()
+
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 44))
+                    .foregroundColor(.green)
+                    .opacity(0.6)
+
+                Text("Poslouchám...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                // Show last response if available
+                if !voiceSession.responseText.isEmpty {
+                    ScrollView {
+                        Text(voiceSession.responseText)
+                            .font(.caption2)
+                            .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 60)
+                }
+
+                Button(action: { voiceSession.stop() }) {
+                    Image(systemName: "stop.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundColor(.red)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+            case .recording:
+                // Speech detected
+                Spacer()
+
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 44))
+                    .foregroundColor(.green)
+
+                Text(voiceSession.transcript.isEmpty ? "Mluvíte..." : String(voiceSession.transcript.suffix(40)))
+                    .font(.caption)
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+
+                Button(action: { voiceSession.stop() }) {
+                    Image(systemName: "stop.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundColor(.red)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+            case .processing:
+                Spacer()
+                ProgressView()
+                    .scaleEffect(1.5)
+                Text(voiceSession.statusText.isEmpty ? "Zpracovávám..." : voiceSession.statusText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+
+                if !voiceSession.transcript.isEmpty {
+                    Text(voiceSession.transcript)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+
+            case .playingTts:
+                // TTS playing — show response
+                Spacer()
+
+                Image(systemName: "speaker.wave.2.circle.fill")
+                    .font(.system(size: 44))
+                    .foregroundColor(.blue)
+
+                ScrollView {
+                    Text(voiceSession.responseText.isEmpty ? "Odpovídám..." : voiceSession.responseText)
+                        .font(.body)
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Spacer()
+
+            case .error:
+                Spacer()
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 30))
+                    .foregroundColor(.orange)
+                Text(voiceSession.statusText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Button("Zkusit znovu") { voiceSession.start() }
+                    .font(.caption)
+
+                Spacer()
+
+                Button("Zpět", action: onDismiss)
+                    .font(.caption)
             }
         }
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            if autoStart && !isListening && !isProcessing {
-                startRecording()
+            if autoStart && voiceSession.state == .idle {
+                voiceSession.start()
             }
         }
-    }
-
-    private func startRecording() {
-        isListening = true
-        chatManager.startListening()
-    }
-
-    private func cancelRecording() {
-        chatManager.stopListening()
-        isListening = false
-    }
-
-    private func stopAndSend() {
-        isListening = false
-        isProcessing = true
-        statusText = "Odesílám..."
-
-        guard let audioData = chatManager.stopListening() else {
-            isProcessing = false
-            responseText = "Žádná nahrávka"
-            return
-        }
-
-        Task {
-            let info = ProcessInfo.processInfo
-            info.performExpiringActivity(withReason: "Voice to Jervis") { expired in
-                if expired { return }
-            }
-
-            WatchJervisApiClient.shared.onStatusUpdate = { status in
-                DispatchQueue.main.async { statusText = status }
-            }
-
-            let result = await WatchJervisApiClient.shared.sendVoiceCommand(audioData)
-            await MainActor.run {
-                isProcessing = false
-                responseText = result.text
-
-                // TTS is played inline by SSE handler (first chunk)
-                // Play remaining if SSE didn't play
-                if let ttsData = result.ttsAudioData, ttsData.count > 0 {
-                    WatchJervisApiClient.shared.playTtsAudio(ttsData)
-                }
+        .onDisappear {
+            if voiceSession.state != .idle {
+                voiceSession.stop()
             }
         }
     }
