@@ -32,7 +32,10 @@ import io.ktor.server.response.respondTextWriter
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.post
 import io.ktor.utils.io.readRemaining
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.channels.Channel
 import kotlinx.io.readByteArray
@@ -197,23 +200,40 @@ fun Routing.installVoiceChatApi(
 
             logger.info { "VOICE_CHAT_STT | source=$source | text=${transcription.take(100)}" }
 
-            // Step 2: Send to Python voice pipeline (intent classification + KB store + response)
-            // Same pipeline as /voice/stream — ensures DICTATION/INSTRUCTION content
-            // is stored in KB, not just answered as chat.
-            val chatResponse = collectVoicePipelineResponse(transcription, source)
-
-            logger.info { "VOICE_CHAT_RESPONSE | complete=${chatResponse.complete} | text=${chatResponse.text.take(100)}" }
-
-            // Step 3: Build response text
-            val responseText = when {
-                chatResponse.complete && chatResponse.text.isNotBlank() -> chatResponse.text
-                chatResponse.text.isNotBlank() -> "${chatResponse.text} ...detaily v aplikaci."
-                else -> "Rozumím: ${transcription.take(80)}. Zpracovávám, výsledek najdete v aplikaci."
+            // Step 2: Fire-and-forget — send to Python voice pipeline in background
+            // Watch needs immediate response, processing happens async.
+            // Python pipeline handles: intent classify → KB store → orchestrator.
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
+                    val payload = """{"text":"${transcription.replace("\"", "\\\"").replace("\n", " ")}","source":"$source","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":false}"""
+                    val bgClient = io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO) {
+                        install(io.ktor.client.plugins.HttpTimeout) {
+                            requestTimeoutMillis = 60_000
+                            connectTimeoutMillis = 5_000
+                        }
+                    }
+                    try {
+                        val resp = bgClient.post("$orchestratorUrl/voice/process") {
+                            contentType(ContentType.Application.Json)
+                            setBody(payload)
+                        }
+                        // Drain the SSE stream to ensure pipeline completes
+                        val channel = resp.bodyAsChannel()
+                        while (!channel.isClosedForRead) {
+                            channel.readUTF8Line() ?: break
+                        }
+                        logger.info { "VOICE_BG_COMPLETE | source=$source | text=${transcription.take(60)}" }
+                    } finally {
+                        bgClient.close()
+                    }
+                } catch (e: Exception) {
+                    logger.warn(e) { "VOICE_BG_PIPELINE_ERROR | source=$source" }
+                }
             }
 
-            logger.info { "VOICE_CHAT_FINAL | responseText=${responseText.take(100)}" }
-
-            // Step 4: Generate TTS audio (best effort)
+            // Step 3: Immediate response — confirm receipt + TTS
+            val responseText = "Rozumím. ${transcription.take(80)}"
             val ttsAudioBase64 = try {
                 generateTtsAudio(responseText.take(300))
             } catch (e: Exception) {
@@ -221,12 +241,14 @@ fun Routing.installVoiceChatApi(
                 null
             }
 
+            logger.info { "VOICE_CHAT_IMMEDIATE | text=${responseText.take(80)}" }
+
             call.respondText(
                 Json.encodeToString(VoiceChatResponse.serializer(), VoiceChatResponse(
                     response = responseText,
                     transcription = transcription,
                     ttsAudio = ttsAudioBase64,
-                    complete = chatResponse.complete,
+                    complete = true,
                 )),
                 ContentType.Application.Json,
             )
