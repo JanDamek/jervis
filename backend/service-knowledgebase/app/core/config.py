@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     ARANGO_PASSWORD: str = ""
 
     # -- Microservice endpoints -------------------------------------------------
+    DOCUMENT_EXTRACTION_URL: str = "http://jervis-document-extraction:8080"  # Dedicated text extraction service
     KOTLIN_SERVER_URL: str = ""                              # Kotlin server for progress callbacks (e.g. http://jervis-server:5500)
 
     # -- Model configuration ----------------------------------------------------
