@@ -19,4 +19,7 @@ interface EmailMessageIndexRepository : CoroutineCrudRepository<EmailMessageInde
     fun findByThreadIdOrderBySentDateAsc(threadId: String): Flow<EmailMessageIndexDocument>
 
     suspend fun existsByThreadIdAndDirection(threadId: String, direction: EmailDirection): Boolean
+
+    /** Cross-connection dedup: check if message exists by RFC 2822 Message-ID (for Gmail API vs IMAP). */
+    suspend fun existsByMessageId(messageId: String): Boolean
 }

@@ -21,5 +21,6 @@ enum class TaskTypeEnum(val sourceKey: String) {
     USER_TASK("user_task"),
     SCHEDULED_TASK("scheduled"),
     IDLE_REVIEW("idle_review"),
+    CALENDAR_PROCESSING("calendar"),
     ;
 }

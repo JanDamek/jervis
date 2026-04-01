@@ -149,6 +149,17 @@ value class SourceUrn(
                 }",
             )
 
+        fun calendar(
+            connectionId: ConnectionId,
+            eventId: String,
+            calendarId: String? = null,
+        ): SourceUrn =
+            SourceUrn(
+                "calendar::conn:$connectionId,eventId:${encodeValue(eventId)}${
+                    calendarId?.let { ",calId:${encodeValue(it)}" } ?: ""
+                }",
+            )
+
         fun mergeRequest(
             projectId: ProjectId,
             provider: String,

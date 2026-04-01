@@ -179,8 +179,8 @@ class CentralPoller(
             val handler = handlersByProvider[connectionDocument.provider]
 
             if (handler == null) {
-                logger.debug {
-                    "No handler found for connection '${connectionDocument.name}' (provider: ${connectionDocument.provider}) — skipping until implemented"
+                logger.warn {
+                    "No handler found for connection '${connectionDocument.name}' (provider: ${connectionDocument.provider})"
                 }
                 return
             }

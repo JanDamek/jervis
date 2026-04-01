@@ -24,6 +24,7 @@ class SourceType(str, Enum):
     SLACK = "slack"
     DISCORD = "discord"
     IDLE_REVIEW = "idle_review"
+    CALENDAR = "calendar"
 
 
 class SourceCredibility(str, Enum):
@@ -74,6 +75,7 @@ SOURCE_TYPE_DEFAULT_CREDIBILITY: dict[str, SourceCredibility] = {
     SourceType.SLACK: SourceCredibility.INFERRED,
     SourceType.DISCORD: SourceCredibility.INFERRED,
     SourceType.IDLE_REVIEW: SourceCredibility.LLM_EXTRACTED,
+    SourceType.CALENDAR: SourceCredibility.STRUCTURED_DATA,
 }
 
 # Branch role boost: default/protected branches are more authoritative than feature branches.
