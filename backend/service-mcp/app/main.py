@@ -411,9 +411,8 @@ import base64
 
 @mcp.tool
 async def kb_document_upload(
-    file_path: str = "",
-    file_content: str = "",
-    file_name: str = "",
+    file_content: str,
+    file_name: str,
     client_id: str = "",
     project_id: str = "",
     title: str = "",
@@ -423,18 +422,15 @@ async def kb_document_upload(
 ) -> str:
     """Upload a document to the Knowledge Base.
 
-    Stores the file on shared FS, extracts text (via VLM/Tika), and indexes
-    the content into RAG + knowledge graph. Supports PDF, DOCX, TXT, images, etc.
+    Accepts base64-encoded file content. Extracts text (via VLM for images/scans,
+    pymupdf for PDFs, etc.) and indexes into RAG + knowledge graph.
+    Supports PDF, DOCX, DOC, XLSX, XLS, TXT, CSV, images, and more.
 
-    Two ways to provide the file:
-      A) file_path — absolute path on Jervis PVC (server-side upload)
-      B) file_content (base64) + file_name — direct upload from client
-         Use this when a user attaches a file in the chat.
+    Returns immediately — extraction and indexing run in background.
 
     Args:
-        file_path: Absolute path to the file on local disk or shared PVC
-        file_content: Base64-encoded file content (alternative to file_path)
-        file_name: Original filename when using file_content (e.g. "smlouva.pdf")
+        file_content: Base64-encoded file content (the raw document bytes)
+        file_name: Original filename with extension (e.g. "faktura.pdf", "report.docx")
         client_id: Client ID (leave empty for default)
         project_id: Project ID (leave empty for default)
         title: Human-readable document title (defaults to filename)
@@ -448,40 +444,33 @@ async def kb_document_upload(
     cid = client_id or settings.default_client_id
     pid = project_id or settings.default_project_id or None
 
-    # Resolve file bytes from either file_path or file_content+file_name
-    if file_path:
-        if not os.path.exists(file_path):
-            return f"Error: File not found: {file_path}"
-        filename = os.path.basename(file_path)
-        mime_type, _ = mimetypes.guess_type(file_path)
-        mime_type = mime_type or "application/octet-stream"
-        with open(file_path, "rb") as f:
-            file_bytes = f.read()
-    elif file_content and file_name:
-        # Validate filename extension (whitelist)
-        allowed_extensions = {
-            '.pdf', '.docx', '.doc', '.xlsx', '.xls',
-            '.txt', '.csv', '.png', '.jpg', '.jpeg',
-            '.md', '.json', '.xml', '.html',
-        }
-        ext = os.path.splitext(file_name)[1].lower()
-        if ext not in allowed_extensions:
-            return f"Error: File extension '{ext}' not allowed. Supported: {', '.join(sorted(allowed_extensions))}"
+    if not file_content or not file_name:
+        return "Error: Both file_content (base64) and file_name are required."
 
-        try:
-            file_bytes = base64.b64decode(file_content)
-        except Exception as e:
-            return f"Error: Invalid base64 content: {e}"
+    # Validate filename extension
+    allowed_extensions = {
+        '.pdf', '.docx', '.doc', '.xlsx', '.xls', '.pptx',
+        '.txt', '.csv', '.png', '.jpg', '.jpeg', '.webp',
+        '.md', '.json', '.xml', '.html', '.htm',
+        '.odt', '.ods', '.odp', '.rtf', '.epub',
+        '.msg', '.eml',
+    }
+    ext = os.path.splitext(file_name)[1].lower()
+    if ext not in allowed_extensions:
+        return f"Error: File extension '{ext}' not allowed. Supported: {', '.join(sorted(allowed_extensions))}"
 
-        max_size = 20 * 1024 * 1024  # 20 MB
-        if len(file_bytes) > max_size:
-            return f"Error: File too large ({len(file_bytes)} bytes). Max: {max_size} bytes (20 MB)"
+    try:
+        file_bytes = base64.b64decode(file_content)
+    except Exception as e:
+        return f"Error: Invalid base64 content: {e}"
 
-        filename = file_name
-        mime_type, _ = mimetypes.guess_type(file_name)
-        mime_type = mime_type or "application/octet-stream"
-    else:
-        return "Error: Provide either file_path OR (file_content + file_name)"
+    max_size = 50 * 1024 * 1024  # 50 MB
+    if len(file_bytes) > max_size:
+        return f"Error: File too large ({len(file_bytes)} bytes). Max: {max_size} bytes (50 MB)"
+
+    filename = file_name
+    mime_type, _ = mimetypes.guess_type(file_name)
+    mime_type = mime_type or "application/octet-stream"
 
     # Upload to KB service — returns immediately, extraction runs in background
     async with httpx.AsyncClient(timeout=60) as client:
