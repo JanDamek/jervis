@@ -195,9 +195,15 @@ class CzechKeyboardNormalizer {
     private fun isInWordContext(s: String, idx: Int): Boolean {
         val before = idx - 1
         val after = idx + 1
-        val prevIsLetter = before >= 0 && s[before].isLetter()
-        val nextIsLetter = after < s.length && s[after].isLetter()
-        return prevIsLetter || nextIsLetter
+        // A character is "in word context" if it's adjacent to a letter OR
+        // adjacent to a mappable digit (which would become a letter after conversion).
+        // This handles sequences like "48st" where 4 is next to 8 (both mappable).
+        fun isWordChar(i: Int): Boolean {
+            if (i < 0 || i >= s.length) return false
+            val c = s[i]
+            return c.isLetter() || digitToCzLower.containsKey(c)
+        }
+        return isWordChar(before) || isWordChar(after)
     }
 
     private fun inferUppercaseContext(s: String, idx: Int): Boolean {
