@@ -31,6 +31,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.response.respondTextWriter
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.post
+import io.ktor.server.websocket.webSocket
 import io.ktor.utils.io.readRemaining
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +94,17 @@ fun Routing.installVoiceChatApi(
 ) {
     // Set TTS URL from configmap (not hardcoded)
     TTS_URL = "${ttsProperties.url}/tts"
+
+    // ── WebSocket Continuous Voice Session ────────────────────────────────
+    // All platforms (Watch, iOS, Android, Desktop) use this single endpoint.
+    // Client sends PCM 16kHz chunks (binary) + JSON control (text).
+    // Server detects speech boundaries (VAD), transcribes (Whisper GPU),
+    // classifies intent, responds (TTS), stores to KB. Session persists.
+    val voiceHandler = com.jervis.voice.VoiceWebSocketHandler(whisperRestClient, whisperProperties, ttsProperties)
+    webSocket("/api/v1/voice/ws") {
+        voiceHandler.handleSession(this)
+    }
+
     // Text query endpoint (Siri / Google Assistant)
     post("/api/v1/chat/siri") {
         try {
