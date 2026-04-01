@@ -47,12 +47,12 @@ async def parse_agent_result(raw_response: Any) -> dict:
             "raw": text,
         }
 
-    # LLM summarization first; if that fails, use LLM-based reduction (not blind truncation)
+    # LLM summarization — model decides appropriate length (no hard truncation)
     try:
-        summary = await _summarize_with_llm(text, max_tokens=200)
+        summary = await _summarize_with_llm(text)
     except Exception as e:
         logger.warning("LLM summarization failed, using content reduction: %s", e)
-        summary = await reduce_for_prompt(text, 500, "summary")
+        summary = await reduce_for_prompt(text, 2000, "summary")
 
     return {
         "success": True,  # If agent didn't crash, consider it success
@@ -62,12 +62,15 @@ async def parse_agent_result(raw_response: Any) -> dict:
     }
 
 
-async def _summarize_with_llm(text: str, max_tokens: int = 200) -> str:
-    """Summarize text using local LLM."""
+async def _summarize_with_llm(text: str) -> str:
+    """Summarize text using local LLM. Model decides appropriate length."""
     messages = [
         {
             "role": "system",
-            "content": "Summarize the following agent output in 2-3 sentences. Focus on what was done and the outcome.",
+            "content": (
+                "Summarize the following agent output. Focus on what was done and the outcome. "
+                "Be as concise or detailed as the content requires — no hard length limit."
+            ),
         },
         {
             "role": "user",
@@ -78,7 +81,6 @@ async def _summarize_with_llm(text: str, max_tokens: int = 200) -> str:
     response = await llm_provider.completion(
         messages=messages,
         tier=ModelTier.LOCAL_COMPACT,
-        max_tokens=max_tokens,
         temperature=0.1,
     )
 

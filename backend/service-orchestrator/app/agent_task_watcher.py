@@ -240,7 +240,7 @@ class AgentTaskWatcher:
                         title=task_title,
                         completed=job_success,
                         failed=not job_success,
-                        result_summary=result.get("summary", "")[:500],
+                        result_summary=result.get("summary", ""),
                         client_id=str(task_data.get("clientId", "")),
                         project_id=str(task_data.get("projectId", "")) if task_data.get("projectId") else None,
                     )
@@ -310,7 +310,7 @@ class AgentTaskWatcher:
                 task_id=task_id,
                 thread_id="",
                 status="done" if result.get("success") else "error",
-                summary=result.get("summary", "Review completed")[:500],
+                summary=result.get("summary", "Review completed"),
                 error=None if result.get("success") else result.get("summary"),
             )
         except Exception as e:
