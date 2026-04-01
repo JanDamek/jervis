@@ -71,61 +71,21 @@ class CzechKeyboardNormalizer {
         // from digits or +caron (prevents corrupting code snippets).
         val allowPunctMapping = suspDigitsPlusBefore > 0
 
-        val candidates = mutableListOf<String>()
-
-        // Base candidate: digits + plus (+ optional punct when allowed), no YZ swap
-        candidates += convertInternal(
-            input,
-            enableYzSwap = false,
-            enablePunctuation = allowPunctMapping,
-        )
-
-        // Variant with YZ swap
-        candidates += convertInternal(
-            input,
-            enableYzSwap = (suspDigitsPlusBefore > 0),
-            enablePunctuation = allowPunctMapping,
-        )
-
-        // If none mapping changed anything, exit early
-        val anyChanged = candidates.any { it != input }
-        if (!anyChanged) return input
-
-        // Score candidates and pick the best improvement
-        val beforeSuspiciousTotal = countSuspiciousTotal(input, allowPunctMapping)
-
-        val scored = candidates.distinct().map { cand ->
-            val afterSuspicious = countSuspiciousTotal(cand, allowPunctMapping)
-            val diacriticsAfter = countDiacritics(cand)
-            val edits = countEdits(input, cand)
-            CandidateScore(
-                text = cand,
-                suspicious = afterSuspicious,
-                diacritics = diacriticsAfter,
-                edits = edits,
+        // If we detected layout evidence (digits in words, +caron), apply full conversion
+        // including YZ swap. When someone types on EN keyboard, Y and Z are always swapped.
+        // No candidate scoring — just apply all conversions when evidence is present.
+        if (suspDigitsPlusBefore > 0) {
+            return convertInternal(
+                input,
+                enableYzSwap = true,
+                enablePunctuation = allowPunctMapping,
             )
         }
 
-        val best = scored.minWith(compareBy<CandidateScore> {
-            // Prefer fewer suspicious patterns
-            it.suspicious
-        }.thenBy {
-            // Prefer more diacritics (negative to sort descending)
-            -it.diacritics
-        }.thenBy {
-            // Prefer fewer edits (be conservative)
-            it.edits
-        })
-
-        // Accept conversion if it clearly improves the text
-        val improvesSuspicious = best.suspicious < beforeSuspiciousTotal
-        val improvesDiacritics = best.diacritics > diacriticsBefore
-
-        return if (beforeSuspiciousTotal > 0 && (improvesSuspicious || improvesDiacritics)) {
-            best.text
-        } else {
-            input
-        }
+        // No layout evidence from digits/plus — try without YZ swap (conservative)
+        val converted = convertInternal(input, enableYzSwap = false, enablePunctuation = false)
+        val diacriticsAfter = countDiacritics(converted)
+        return if (diacriticsAfter > diacriticsBefore) converted else input
     }
 
     private fun convertInternal(
