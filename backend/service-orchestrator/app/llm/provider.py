@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import AsyncIterator
 
 import litellm
@@ -37,7 +37,7 @@ _gemini_count_date: str = ""
 def check_gemini_available() -> bool:
     """Check if Gemini daily limit not exceeded."""
     global _gemini_daily_count, _gemini_count_date
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with _gemini_lock:
         if _gemini_count_date != today:
             _gemini_daily_count = 0
@@ -48,7 +48,7 @@ def check_gemini_available() -> bool:
 def increment_gemini_counter():
     """Increment Gemini daily counter after a call."""
     global _gemini_daily_count, _gemini_count_date
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with _gemini_lock:
         if _gemini_count_date != today:
             _gemini_daily_count = 0
@@ -305,18 +305,14 @@ class LLMProvider:
         return result
 
     @staticmethod
-    async def _call_with_retry(fn, kwargs: dict, model: str, max_retries: int = 2) -> object:
+    async def _call_with_retry(fn, kwargs: dict, model: str, max_retries: int = 3) -> object:
         """Call LLM function with retry for transient errors.
 
-        Retries on: connection errors, "Operation not allowed", 503 status.
-        Uses exponential backoff: 2s, 4s.
-
-        429 (rate limit) from OpenRouter cloud models is NOT retried here —
-        _retry_with_next_model handles it by switching to a different model,
-        which is faster than waiting and retrying the same rate-limited model.
-        Local models (Ollama) still retry on 429 since there's no alternative.
+        Retries on: connection errors, "Operation not allowed", 503, AND 429 rate limit.
+        429 rate limit: wait and retry same model (FREE models are all rate-limited,
+        switching to another model just hits another rate limit).
+        Uses exponential backoff: 5s, 10s, 20s for rate limits.
         """
-        is_cloud = model.startswith("openrouter/") or ":" in model  # OpenRouter models have provider/name or :free suffix
         last_exc: Exception | None = None
         for attempt in range(1 + max_retries):
             try:
@@ -328,15 +324,30 @@ class LLMProvider:
             except Exception as e:
                 err_str = str(e).lower()
                 is_rate_limit = "rate limit" in err_str or "429" in err_str
-                # Cloud 429: don't retry — let _retry_with_next_model switch models
-                if is_rate_limit and is_cloud:
-                    logger.warning("LLM cloud rate limit (model=%s) — not retrying, escalating to model fallback", model)
-                    raise
+
+                # Rate limit: wait and retry (don't switch models — all FREE models are rate-limited)
+                if is_rate_limit:
+                    if attempt >= max_retries:
+                        raise
+                    # Parse Retry-After if available, default 5s * (attempt+1)
+                    retry_after = 5 * (attempt + 1)
+                    try:
+                        if hasattr(e, 'response') and hasattr(e.response, 'headers'):
+                            ra = e.response.headers.get('retry-after') or e.response.headers.get('Retry-After')
+                            if ra:
+                                retry_after = min(int(ra), 30)
+                    except Exception:
+                        pass
+                    logger.info("LLM rate limit (model=%s), waiting %ds before retry %d/%d",
+                                model, retry_after, attempt + 1, max_retries)
+                    last_exc = e
+                    await asyncio.sleep(retry_after)
+                    continue
+
                 retryable = (
                     "operation not allowed" in err_str
                     or "service unavailable" in err_str
                     or "503" in err_str
-                    or (is_rate_limit and not is_cloud)  # Local 429 still retried
                 )
                 if not retryable or attempt >= max_retries:
                     raise
