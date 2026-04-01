@@ -767,7 +767,7 @@ def _synthesize_from_tool_results(tool_summaries: list[str], original_question: 
     if not tool_summaries:
         return f"Omlouvám se, nepodařilo se najít odpověď na: {original_question[:100]}"
 
-    parts = [f"Na základě hledání k dotazu „{original_question[:80]}":\n"]
+    parts = [f"Na základě hledání k dotazu '{original_question[:80]}':\n"]
     for summary in tool_summaries[-5:]:  # Last 5 tool results
         parts.append(f"• {summary}")
     parts.append("\n(Odpověď sestavena z výsledků nástrojů — model nedokázal shrnout.)")
