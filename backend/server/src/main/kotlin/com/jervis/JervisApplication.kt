@@ -30,6 +30,7 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
     CodingToolsProperties::class,
     PollingProperties::class,
     WhisperProperties::class,
+    com.jervis.infrastructure.config.properties.TtsProperties::class,
 )
 class JervisApplication
 

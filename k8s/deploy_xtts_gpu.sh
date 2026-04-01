@@ -99,12 +99,32 @@ else
     echo "  speaker reference found: $HAS_SPEAKER"
 fi
 
-# Start the service (nohup for now, systemd setup separate)
+# Start as systemd service (auto-restart on failure, survives reboot)
 echo ""
-echo "Starting XTTS v2 service..."
-ssh_cmd "cd $INSTALL_DIR && nohup $INSTALL_DIR/venv/bin/python3 -m uvicorn xtts_server:app --host 0.0.0.0 --port 8787 --workers 1 > /opt/jervis/data/tts/xtts.log 2>&1 &"
+echo "Setting up systemd service..."
+ssh_cmd "cat << 'SVCEOF' | sudo tee /etc/systemd/system/$SERVICE_NAME.service > /dev/null
+[Unit]
+Description=Jervis XTTS v2 TTS Service (GPU)
+After=network.target
 
-echo "Waiting for model to load (this takes ~30s on first request)..."
+[Service]
+Type=simple
+User=$GPU_USER
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/venv/bin/python3 $INSTALL_DIR/xtts_server.py
+Restart=on-failure
+RestartSec=10
+Environment=TTS_PORT=8787
+Environment=CUDA_VISIBLE_DEVICES=0
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+sudo systemctl daemon-reload
+sudo systemctl enable $SERVICE_NAME
+sudo systemctl restart $SERVICE_NAME"
+
+echo "Waiting for model to load (~30-120s)..."
 sleep 5
 
 # Health check (retry a few times as model loads lazily)

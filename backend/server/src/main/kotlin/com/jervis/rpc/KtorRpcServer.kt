@@ -128,9 +128,11 @@ class KtorRpcServer(
     private val bugTrackerService: com.jervis.bugtracker.BugTrackerService,
     private val whisperRestClient: com.jervis.meeting.WhisperRestClient,
     private val whisperProperties: com.jervis.infrastructure.config.properties.WhisperProperties,
+    private val ttsProperties: com.jervis.infrastructure.config.properties.TtsProperties,
     private val connectionRepository: com.jervis.connection.ConnectionRepository,
     private val fcmPushService: com.jervis.infrastructure.notification.FcmPushService,
     private val apnsPushService: com.jervis.infrastructure.notification.ApnsPushService,
+    private val preferenceService: com.jervis.preferences.PreferenceService,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -154,12 +156,12 @@ class KtorRpcServer(
 
                         routing {
                             // Public API (Watch / voice queries + recording)
-                            installVoiceChatApi(taskRepository, taskService, whisperRestClient, whisperProperties, chatService)
+                            installVoiceChatApi(taskRepository, taskService, whisperRestClient, whisperProperties, chatService, ttsProperties)
                             installWatchMeetingApi(meetingRpcImpl)
 
                             // Internal REST API modules (Python orchestrator → Kotlin)
-                            installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl)
-                            installInternalTaskApi(taskRepository, taskService, userTaskService)
+                            installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl, preferenceService)
+                            installInternalTaskApi(taskRepository, taskService, userTaskService, preferenceService)
                             installInternalGuidelinesApi(guidelinesService)
                             installInternalFilterRulesApi(filteringRulesService)
                             installInternalEnvironmentApi(environmentService, environmentK8sService)

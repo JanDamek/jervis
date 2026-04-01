@@ -112,6 +112,11 @@ data:
       timeout-multiplier: 5
       min-timeout-seconds: 600
 
+    # -- TTS (XTTS v2 GPU on VD) ------------------------------------------------
+    tts:
+      url: http://ollama.lan.mazlusek.com:8787
+      speed: 1.2
+
     # -- Coding tools (Aider, OpenHands, Claude, Junie) ------------------------
     coding-tools:
       aider:

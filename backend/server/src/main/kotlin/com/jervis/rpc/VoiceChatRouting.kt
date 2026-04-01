@@ -67,8 +67,8 @@ private val activeSessions = ConcurrentHashMap<String, VoiceSession>()
 private const val DEFAULT_CLIENT_ID = "68a332361b04695a243e5ae8"
 private const val DEFAULT_PROJECT_ID = "68a3318f1b04695a243e5adf"
 
-// TTS service — XTTS v2 (Coqui) on P40 GPU VM, voice cloning, Czech + English
-private const val TTS_URL = "http://ollama.lan.mazlusek.com:8787/tts"
+// TTS URL resolved at runtime from ttsProperties (configmap)
+private var TTS_URL = "http://ollama.lan.mazlusek.com:8787/tts"  // overridden in installVoiceChatApi
 
 private val ttsClient = HttpClient(CIO) {
     install(HttpTimeout) {
@@ -89,7 +89,10 @@ fun Routing.installVoiceChatApi(
     whisperRestClient: WhisperRestClient,
     whisperProperties: WhisperProperties,
     chatService: ChatService,
+    ttsProperties: com.jervis.infrastructure.config.properties.TtsProperties,
 ) {
+    // Set TTS URL from configmap (not hardcoded)
+    TTS_URL = "${ttsProperties.url}/tts"
     // Text query endpoint (Siri / Google Assistant)
     post("/api/v1/chat/siri") {
         try {
@@ -157,26 +160,14 @@ fun Routing.installVoiceChatApi(
             val tempFile = Files.createTempFile("voice_", ".wav")
             Files.write(tempFile, audio)
 
-            // Watch uses CPU Whisper (K8s internal, always available) with medium model.
+            // GPU Whisper on VD — fail-fast, no CPU fallback.
             // vad_filter=false for short recordings (watch audio is typically 2-10s).
-            // Falls back to GPU Whisper if CPU service is unavailable.
-            val cpuWhisperUrl = "http://jervis-whisper-cpu:8786"
-            val whisperOptions = """{"model":"medium","beam_size":1,"vad_filter":false,"language":"cs"}"""
-            val gpuWhisperOptions = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":true,"language":"cs"}"""
+            val whisperOptions = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":false,"language":"cs"}"""
             val whisperResult = try {
-                // Try CPU Whisper first (always available, no GPU contention)
-                whisperRestClient.transcribe(
-                    baseUrl = cpuWhisperUrl,
-                    audioFilePath = tempFile.toString(),
-                    optionsJson = whisperOptions,
-                )
-            } catch (cpuError: Exception) {
-                logger.warn { "VOICE_WHISPER_CPU_FAILED: ${cpuError.message}, falling back to GPU" }
-                // Fallback to GPU Whisper
                 whisperRestClient.transcribe(
                     baseUrl = whisperProperties.restRemoteUrl,
                     audioFilePath = tempFile.toString(),
-                    optionsJson = gpuWhisperOptions,
+                    optionsJson = whisperOptions,
                 )
             } finally {
                 Files.deleteIfExists(tempFile)
@@ -316,19 +307,11 @@ fun Routing.installVoiceChatApi(
                 val tempFile = Files.createTempFile("voice_stream_", ".wav")
                 Files.write(tempFile, audio)
 
-                val cpuWhisperUrl = "http://jervis-whisper-cpu:8786"
-                val whisperOpts = """{"model":"medium","beam_size":1,"vad_filter":false,"language":"cs"}"""
-                val gpuWhisperOpts = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":false,"language":"cs"}"""
+                // GPU Whisper on VD — fail-fast, no CPU fallback.
+                val whisperOpts = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":false,"language":"cs"}"""
 
                 val whisperResult = try {
-                    whisperRestClient.transcribe(cpuWhisperUrl, tempFile.toString(), whisperOpts) { percent, segments, elapsed, lastText ->
-                        if (lastText != null && lastText.isNotBlank()) {
-                            sse("transcribing", """{"text":"${lastText.escapeJson()}","percent":$percent}""")
-                        }
-                    }
-                } catch (cpuError: Exception) {
-                    logger.warn { "VOICE_STREAM_CPU_FAILED: ${cpuError.message}, fallback GPU" }
-                    whisperRestClient.transcribe(whisperProperties.restRemoteUrl, tempFile.toString(), gpuWhisperOpts) { percent, _, _, lastText ->
+                    whisperRestClient.transcribe(whisperProperties.restRemoteUrl, tempFile.toString(), whisperOpts) { percent, segments, elapsed, lastText ->
                         if (lastText != null && lastText.isNotBlank()) {
                             sse("transcribing", """{"text":"${lastText.escapeJson()}","percent":$percent}""")
                         }
@@ -601,14 +584,13 @@ fun Routing.installVoiceChatApi(
 
         logger.info { "VOICE_CHUNK | session=$sessionId | chunk=$chunkIndex | bytes=${audio.size}" }
 
-        // Transcribe chunk via CPU Whisper
+        // GPU Whisper on VD — fail-fast, no CPU fallback.
         val tempFile = Files.createTempFile("chunk_${sessionId}_", ".wav")
         Files.write(tempFile, audio)
 
         try {
-            val cpuWhisperUrl = "http://jervis-whisper-cpu:8786"
-            val opts = """{"model":"small","beam_size":1,"vad_filter":false,"language":"cs"}"""
-            val result = whisperRestClient.transcribe(cpuWhisperUrl, tempFile.toString(), opts)
+            val opts = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":false,"language":"cs"}"""
+            val result = whisperRestClient.transcribe(whisperProperties.restRemoteUrl, tempFile.toString(), opts)
             val chunkText = result.text.trim()
 
             if (chunkText.isNotBlank()) {
