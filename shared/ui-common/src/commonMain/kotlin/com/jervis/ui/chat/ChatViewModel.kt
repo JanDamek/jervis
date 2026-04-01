@@ -636,6 +636,7 @@ class ChatViewModel(
                     contextTaskId = taskContext,
                     attachments = attachmentDtos,
                     tierOverride = _tierOverride.value,
+                    clientTimezone = kotlinx.datetime.TimeZone.currentSystemDefault().id,
                 )
                 println("=== Message sent successfully (RPC) ===")
 
@@ -1327,394 +1328,84 @@ class ChatViewModel(
         }
     }
 
-    // ── Voice Recording ──────────────────────────────────────────────────
+    // ── Voice Session (WebSocket) ───────────────────────────────────────
 
-    private val voiceRecorder = AudioRecorder()
-    private var voiceJob: Job? = null
-    private var chunkJob: Job? = null
-    private var voiceSessionId: String? = null
-    private var chunkIndex = 0
+    private val voiceSessionManager = com.jervis.ui.voice.VoiceSessionManager(scope)
 
-    // Session-based streaming: use chunks when recording > 5s
-    private val useStreamingChunks = true
-    private val chunkIntervalMs = 5_000L
+    init {
+        // Observe voice session state → update ChatViewModel state
+        scope.launch {
+            voiceSessionManager.state.collect { state ->
+                _isRecordingVoice.value = state != com.jervis.ui.voice.VoiceSessionState.IDLE
+                        && state != com.jervis.ui.voice.VoiceSessionState.ERROR
+            }
+        }
+        scope.launch {
+            voiceSessionManager.statusText.collect { _voiceStatus.value = it }
+        }
+        scope.launch {
+            voiceSessionManager.transcript.collect { transcript ->
+                if (transcript.isNotBlank()) {
+                    _chatMessages.update { msgs ->
+                        msgs.mapIndexed { i, m ->
+                            if (i == msgs.lastIndex && m.source != null) m.copy(text = transcript) else m
+                        }
+                    }
+                }
+            }
+        }
+        scope.launch {
+            voiceSessionManager.responseText.collect { response ->
+                if (response.isNotBlank()) {
+                    // Remove progress hints, add final response
+                    _chatMessages.update { msgs ->
+                        msgs.filter { it.messageType != ChatMessage.MessageType.PROGRESS } + ChatMessage(
+                            from = ChatMessage.Sender.Assistant,
+                            text = response,
+                            messageType = ChatMessage.MessageType.FINAL,
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     fun toggleVoiceRecording() {
         if (_isRecordingVoice.value) {
-            if (voiceSessionId != null) {
-                stopSessionAndProcess()
-            } else {
-                stopVoiceAndSend()
-            }
+            voiceSessionManager.stop()
         } else {
-            startVoiceRecording()
+            startVoiceSession()
         }
     }
 
     fun cancelVoiceRecording() {
-        if (_isRecordingVoice.value) {
-            chunkJob?.cancel()
-            chunkJob = null
-            voiceSessionId = null
-            chunkIndex = 0
-            voiceRecorder.stopRecording() // discard audio
-            _isRecordingVoice.value = false
-            _voiceStatus.value = ""
-        }
+        voiceSessionManager.cancel()
     }
 
-    private var micRetryPending = false
+    private fun startVoiceSession() {
+        // Add voice message placeholder
+        _chatMessages.value = _chatMessages.value + ChatMessage(
+            from = ChatMessage.Sender.Me,
+            text = "Hlasová zpráva",
+            messageType = ChatMessage.MessageType.USER_MESSAGE,
+            source = currentVoiceSource,
+        )
 
-    private fun startVoiceRecording() {
-        println("ChatViewModel: startVoiceRecording()")
-        val started = voiceRecorder.startRecording()
-        println("ChatViewModel: AudioRecorder.startRecording() = $started")
-        if (started) {
-            _isRecordingVoice.value = true
-            _voiceStatus.value = "Nahrávám..."
-            micRetryPending = false
+        // Build WebSocket URL from HTTP base URL
+        val httpUrl = connectionManager.baseUrl.trimEnd('/')
+        val wsUrl = httpUrl
+            .replace("https://", "wss://")
+            .replace("http://", "ws://") + "/api/v1/voice/ws"
 
-            // Add voice message placeholder
-            _chatMessages.value = _chatMessages.value + ChatMessage(
-                from = ChatMessage.Sender.Me,
-                text = "Hlasová zpráva",
-                messageType = ChatMessage.MessageType.USER_MESSAGE,
-                source = currentVoiceSource,
-            )
-
-            // Start session-based streaming with 5s chunks
-            if (useStreamingChunks) {
-                startChunkStreaming()
-            }
-        } else {
-            // First attempt may trigger permission dialog — retry after short delay
-            if (!micRetryPending) {
-                micRetryPending = true
-                _voiceStatus.value = "Povolte mikrofon..."
-                scope.launch {
-                    delay(1500) // Wait for permission dialog
-                    val retried = voiceRecorder.startRecording()
-                    if (retried) {
-                        _isRecordingVoice.value = true
-                        _voiceStatus.value = "Nahrávám..."
-                        if (useStreamingChunks) startChunkStreaming()
-                    } else {
-                        _voiceStatus.value = ""
-                    }
-                    micRetryPending = false
-                }
-            }
-        }
+        voiceSessionManager.start(
+            wsUrl = wsUrl,
+            source = currentVoiceSource ?: "app",
+            clientId = activeClientId?.toString() ?: "",
+            projectId = activeProjectId?.toString() ?: "",
+        )
     }
 
-    @OptIn(ExperimentalEncodingApi::class)
-    private fun startChunkStreaming() {
-        chunkIndex = 0
-        voiceSessionId = null
-
-        chunkJob = scope.launch {
-            try {
-                val serverUrl = connectionManager.baseUrl.trimEnd('/')
-
-                // Start SSE session
-                val sessionBody = """{"source":"app_chat","tts":true}"""
-                postSseStream(
-                    url = "$serverUrl/api/v1/voice/session",
-                    bodyBytes = sessionBody.encodeToByteArray(),
-                    contentType = "application/json",
-                ) { event ->
-                    when (event.event) {
-                        "session_started" -> {
-                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
-                            voiceSessionId = json?.get("session_id")?.jsonPrimitive?.content
-                            println("Voice session started: $voiceSessionId")
-
-                            // Start sending chunks in a separate coroutine
-                            voiceSessionId?.let { sid ->
-                                scope.launch {
-                                    sendChunksLoop(serverUrl, sid)
-                                }
-                            }
-                        }
-                        "chunk_transcribed" -> {
-                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
-                            val fullText = json?.get("full_text")?.jsonPrimitive?.content ?: ""
-                            if (fullText.isNotBlank()) {
-                                _voiceStatus.value = "Rozpoznáno: ${fullText.takeLast(40)}"
-                                // Update the voice message placeholder with partial transcript
-                                _chatMessages.update { msgs ->
-                                    msgs.mapIndexed { i, m ->
-                                        if (i == msgs.lastIndex && m.source != null) m.copy(text = fullText) else m
-                                    }
-                                }
-                            }
-                        }
-                        "hint" -> {
-                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
-                            val hintText = json?.get("text")?.jsonPrimitive?.content
-                            if (!hintText.isNullOrBlank()) {
-                                // Show hint as a light preliminary bubble
-                                _chatMessages.value = _chatMessages.value + ChatMessage(
-                                    from = ChatMessage.Sender.Assistant,
-                                    text = hintText,
-                                    messageType = ChatMessage.MessageType.PROGRESS,
-                                )
-                            }
-                        }
-                        "transcribed" -> {
-                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
-                            val text = json?.get("text")?.jsonPrimitive?.content ?: ""
-                            _voiceStatus.value = "Zpracovávám..."
-                            // Update voice message with final transcript
-                            if (text.isNotBlank()) {
-                                _chatMessages.update { msgs ->
-                                    msgs.mapIndexed { i, m ->
-                                        if (i == msgs.lastIndex && m.source != null) m.copy(text = text) else m
-                                    }
-                                }
-                            }
-                        }
-                        "responding" -> _voiceStatus.value = "Generuji odpověď..."
-                        "token" -> {
-                            // Tokens from final response — accumulate for final message
-                            // (handled in processSseEvent already via session SSE)
-                        }
-                        "tts_audio" -> {
-                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
-                            val audioB64 = json?.get("data")?.jsonPrimitive?.content
-                            if (!audioB64.isNullOrBlank()) {
-                                try {
-                                    AudioPlayer().play(Base64.decode(audioB64))
-                                } catch (e: Exception) {
-                                    println("TTS chunk playback error: ${e.message}")
-                                }
-                            }
-                        }
-                        "response" -> {
-                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
-                            val text = json?.get("text")?.jsonPrimitive?.content ?: ""
-                            if (text.isNotBlank()) {
-                                // Remove preliminary PROGRESS hints, add final response
-                                _chatMessages.update { msgs ->
-                                    msgs.filter { it.messageType != ChatMessage.MessageType.PROGRESS } + ChatMessage(
-                                        from = ChatMessage.Sender.Assistant,
-                                        text = text,
-                                        messageType = ChatMessage.MessageType.FINAL,
-                                    )
-                                }
-                            }
-                        }
-                        "done" -> {
-                            _voiceStatus.value = ""
-                            _isLoading.value = false
-                        }
-                        "error" -> {
-                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
-                            val errText = json?.get("text")?.jsonPrimitive?.content ?: "Chyba"
-                            println("Voice session error: $errText")
-                        }
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                println("Voice session error: ${e.message}")
-            } finally {
-                voiceSessionId = null
-                _isLoading.value = false
-                _voiceStatus.value = ""
-            }
-        }
-    }
-
-    @OptIn(ExperimentalEncodingApi::class)
-    private suspend fun sendChunksLoop(serverUrl: String, sessionId: String) {
-        var idx = 0
-        while (_isRecordingVoice.value && voiceSessionId == sessionId) {
-            delay(chunkIntervalMs)
-            if (!_isRecordingVoice.value) break
-
-            val chunkPcm = voiceRecorder.getAndClearBuffer() ?: continue
-            if (chunkPcm.isEmpty()) continue
-
-            val chunkWav = wrapInWav(chunkPcm)
-            val (ct, body) = buildMultipartBody(
-                fileFieldName = "file",
-                fileName = "chunk_$idx.wav",
-                fileContentType = "audio/wav",
-                fileBytes = chunkWav,
-                fields = mapOf("chunk" to idx.toString()),
-            )
-
-            try {
-                postSseStream(
-                    url = "$serverUrl/api/v1/voice/session/chunk?sessionId=$sessionId",
-                    bodyBytes = body,
-                    contentType = ct,
-                ) { /* chunk response events are on session SSE */ }
-            } catch (e: Exception) {
-                println("Chunk $idx send error: ${e.message}")
-            }
-            idx++
-        }
-    }
-
-    /** Stop session-based recording and trigger final processing. */
-    @OptIn(ExperimentalEncodingApi::class)
-    private fun stopSessionAndProcess() {
-        _isRecordingVoice.value = false
-        val remainingPcm = voiceRecorder.stopRecording()
-        val sid = voiceSessionId ?: return
-
-        _isLoading.value = true
-        _voiceStatus.value = "Zpracovávám..."
-
-        scope.launch {
-            try {
-                val serverUrl = connectionManager.baseUrl.trimEnd('/')
-
-                // Send remaining audio as final chunk
-                if (remainingPcm != null && remainingPcm.isNotEmpty()) {
-                    val chunkWav = wrapInWav(remainingPcm)
-                    val (ct, body) = buildMultipartBody(
-                        fileFieldName = "file",
-                        fileName = "chunk_final.wav",
-                        fileContentType = "audio/wav",
-                        fileBytes = chunkWav,
-                        fields = mapOf("chunk" to chunkIndex.toString()),
-                    )
-                    try {
-                        postSseStream(
-                            url = "$serverUrl/api/v1/voice/session/chunk?sessionId=$sid",
-                            bodyBytes = body,
-                            contentType = ct,
-                        ) { /* handled on session SSE */ }
-                    } catch (e: Exception) {
-                        println("Final chunk send error: ${e.message}")
-                    }
-                }
-
-                // Signal session stop — triggers intent classification + response
-                val stopBody = """{"sessionId":"$sid"}"""
-                postSseStream(
-                    url = "$serverUrl/api/v1/voice/session/stop?sessionId=$sid",
-                    bodyBytes = stopBody.encodeToByteArray(),
-                    contentType = "application/json",
-                ) { /* handled on session SSE */ }
-            } catch (e: Exception) {
-                println("Session stop error: ${e.message}")
-            }
-        }
-    }
-
-    @OptIn(ExperimentalEncodingApi::class)
-    private fun processSseEvent(event: String, data: String, responseBuilder: StringBuilder) {
-        val json = try { Json.parseToJsonElement(data).jsonObject } catch (_: Exception) { return }
-        val text = json["text"]?.jsonPrimitive?.content ?: ""
-
-        when (event) {
-            "transcribing" -> _voiceStatus.value = "Přepisuji řeč..."
-            "transcribed" -> {
-                _voiceStatus.value = "Rozpoznáno: ${text.take(40)}"
-                _chatMessages.update { msgs ->
-                    msgs.mapIndexed { i, m ->
-                        if (i == msgs.lastIndex && m.source != null) m.copy(text = text) else m
-                    }
-                }
-            }
-            "responding" -> _voiceStatus.value = "Generuji odpověď..."
-            "token" -> responseBuilder.append(text)
-            "response" -> { if (responseBuilder.isEmpty()) responseBuilder.append(text) }
-            "tts_audio" -> {
-                val audioB64 = json["data"]?.jsonPrimitive?.content
-                if (!audioB64.isNullOrBlank()) {
-                    try {
-                        AudioPlayer().play(Base64.decode(audioB64))
-                    } catch (e: Exception) {
-                        println("TTS playback error: ${e.message}")
-                    }
-                }
-            }
-            "error" -> { if (responseBuilder.isEmpty()) responseBuilder.append(text) }
-        }
-    }
-
-    /** Wrap raw PCM bytes in a WAV header (16-bit mono 16kHz). */
-    private fun wrapInWav(pcm: ByteArray, sampleRate: Int = 16000, channels: Int = 1, bitsPerSample: Int = 16): ByteArray {
-        val dataSize = pcm.size
-        val byteRate = sampleRate * channels * bitsPerSample / 8
-        val blockAlign = channels * bitsPerSample / 8
-        val header = ByteArray(44)
-        fun writeInt(offset: Int, value: Int) { for (i in 0..3) header[offset + i] = (value shr (i * 8)).toByte() }
-        fun writeShort(offset: Int, value: Int) { header[offset] = value.toByte(); header[offset + 1] = (value shr 8).toByte() }
-        // RIFF header
-        header[0] = 'R'.code.toByte(); header[1] = 'I'.code.toByte(); header[2] = 'F'.code.toByte(); header[3] = 'F'.code.toByte()
-        writeInt(4, 36 + dataSize)
-        header[8] = 'W'.code.toByte(); header[9] = 'A'.code.toByte(); header[10] = 'V'.code.toByte(); header[11] = 'E'.code.toByte()
-        // fmt chunk
-        header[12] = 'f'.code.toByte(); header[13] = 'm'.code.toByte(); header[14] = 't'.code.toByte(); header[15] = ' '.code.toByte()
-        writeInt(16, 16); writeShort(20, 1) // PCM
-        writeShort(22, channels); writeInt(24, sampleRate); writeInt(28, byteRate); writeShort(32, blockAlign); writeShort(34, bitsPerSample)
-        // data chunk
-        header[36] = 'd'.code.toByte(); header[37] = 'a'.code.toByte(); header[38] = 't'.code.toByte(); header[39] = 'a'.code.toByte()
-        writeInt(40, dataSize)
-        return header + pcm
-    }
-
-    private fun stopVoiceAndSend() {
-        _isRecordingVoice.value = false
-        val rawPcm = voiceRecorder.stopRecording() ?: return
-        val audioData = wrapInWav(rawPcm)
-        _voiceStatus.value = "Odesílám..."
-        _isLoading.value = true
-
-        voiceJob?.cancel()
-        voiceJob = scope.launch {
-            try {
-                val serverUrl = connectionManager.baseUrl.trimEnd('/')
-                _voiceStatus.value = "Odesílám na server..."
-
-                val (ct, body) = buildMultipartBody(
-                    fileFieldName = "file",
-                    fileName = "voice.wav",
-                    fileContentType = "audio/wav",
-                    fileBytes = audioData,
-                    fields = mapOf("source" to "app_chat"),
-                )
-
-                val responseBuilder = StringBuilder()
-
-                postSseStream(
-                    url = "$serverUrl/api/v1/voice/stream",
-                    bodyBytes = body,
-                    contentType = ct,
-                ) { event ->
-                    processSseEvent(event.event, event.data, responseBuilder)
-                }
-
-                val finalResponse = responseBuilder.toString().trim()
-                if (finalResponse.isNotBlank()) {
-                    _chatMessages.value = _chatMessages.value + ChatMessage(
-                        from = ChatMessage.Sender.Assistant,
-                        text = finalResponse,
-                        messageType = ChatMessage.MessageType.FINAL,
-                    )
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                println("Voice chat error: ${e.message}")
-                _chatMessages.value = _chatMessages.value + ChatMessage(
-                    from = ChatMessage.Sender.Assistant,
-                    text = "Chyba hlasoveho vstupu: ${e.message}",
-                    messageType = ChatMessage.MessageType.ERROR,
-                )
-            } finally {
-                _isLoading.value = false
-                _voiceStatus.value = ""
-            }
-        }
-    }
+    // Old HTTP-based voice methods removed — replaced by WebSocket VoiceSessionManager above.
 
     // ── TTS Playback for chat bubbles ────────────────────────────────────
 
