@@ -22,6 +22,7 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
+import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.time.ZoneId
@@ -53,7 +54,7 @@ class CalendarService(
     ): List<CalendarEvent> {
         logger.info { "Fetching calendar events: connection=$connectionId, from=$from, to=$to" }
 
-        val connection = connectionService.findById(com.jervis.common.types.ConnectionId(ObjectId(connectionId))) ?: run {
+        val connection = connectionService.findById(com.jervis.common.types.ConnectionId(org.bson.types.ObjectId(connectionId))) ?: run {
             logger.warn { "Calendar connection not found: $connectionId" }
             return emptyList()
         }
@@ -148,7 +149,7 @@ class CalendarService(
     ): CalendarEvent {
         logger.info { "Creating calendar event: ${request.title}" }
 
-        val connection = connectionService.findById(com.jervis.common.types.ConnectionId(ObjectId(connectionId))) ?: run {
+        val connection = connectionService.findById(com.jervis.common.types.ConnectionId(org.bson.types.ObjectId(connectionId))) ?: run {
             throw IllegalStateException("Calendar connection not found: $connectionId")
         }
 
@@ -161,8 +162,9 @@ class CalendarService(
             append("\"summary\":\"${request.title.replace("\"", "\\\"")}\",")
             append("\"start\":{\"dateTime\":\"${request.startTime}\"},")
             append("\"end\":{\"dateTime\":\"${request.endTime}\"}")
-            if (!request.description.isNullOrBlank()) {
-                append(",\"description\":\"${request.description.replace("\"", "\\\"")}\"")
+            val desc = request.description
+            if (!desc.isNullOrBlank()) {
+                append(",\"description\":\"${desc.replace("\"", "\\\"")}\"")
             }
             if (request.attendees.isNotEmpty()) {
                 val attendeesJson = request.attendees.joinToString(",") { "{ \"email\": \"$it\" }" }
