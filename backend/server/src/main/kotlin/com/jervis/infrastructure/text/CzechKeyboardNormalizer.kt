@@ -1,195 +1,230 @@
 package com.jervis.infrastructure.text
 
+import mu.KotlinLogging
 import org.springframework.stereotype.Component
+import java.io.InputStreamReader
+import java.util.zip.GZIPInputStream
+import jakarta.annotation.PostConstruct
 
 /**
- * Detects and fixes Czech text typed on English (US QWERTY) keyboard layout.
+ * Intelligent Czech text normalizer with two independent corrections:
  *
- * Approach: Complete physical key mapping between US QWERTY and CZ QWERTZ layouts.
- * Each physical key produces a different character depending on which layout is active.
- * When evidence of wrong layout is detected (digits inside words, missing diacritics),
- * the entire text is converted from EN→CZ layout mapping.
+ * 1. **CZ-digit sequences**: Detects sequences of CZ-layout digit characters
+ *    (ě=2, š=3, č=4, ř=5, ž=6, ý=7, á=8, í=9, é=0) and converts them to digits.
+ *    Only applies when the sequence looks numeric (3+ consecutive CZ-digit chars).
  *
- * Detection heuristic:
- * - Count digits (2-9,0) adjacent to letters (would be ě,š,č,ř,ž,ý,á,í,é on CZ)
- * - Count +letter caron sequences (+d→ď, +t→ť, +n→ň)
- * - If evidence found → apply full layout conversion including Y↔Z swap
+ * 2. **Y↔Z word correction**: Per-word check using Czech dictionary (cs_CZ Hunspell).
+ *    If a word is not in dictionary but the Y↔Z swapped version IS → correct it.
+ *    Never does global Y↔Z swap — only per-word with dictionary validation.
+ *
+ * These are independent — text can have CZ-digit bank data AND normal Czech words.
+ * The normalizer handles both without breaking either.
  */
 @Component
 class CzechKeyboardNormalizer {
 
-    // ── Physical key layout maps ────────────────────────────────────────
-    // Maps: what EN keyboard produces → what CZ keyboard produces on the same physical key
+    private val logger = KotlinLogging.logger {}
 
-    // Number row (unshifted): EN digits → CZ diacritics
-    private val numberRow: Map<Char, Char> = mapOf(
-        '1' to '+',   // CZ: + (dead key for háčky)
-        '2' to 'ě',
-        '3' to 'š',
-        '4' to 'č',
-        '5' to 'ř',
-        '6' to 'ž',
-        '7' to 'ý',
-        '8' to 'á',
-        '9' to 'í',
-        '0' to 'é',
+    // Czech dictionary (loaded from cs_words.txt.gz resource)
+    private var czechWords: Set<String> = emptySet()
+
+    // CZ keyboard number row: diacritic → digit
+    private val czDigitMap: Map<Char, Char> = mapOf(
+        '+' to '1',   // dead key position
+        'ě' to '2',
+        'š' to '3',
+        'č' to '4',
+        'ř' to '5',
+        'ž' to '6',
+        'ý' to '7',
+        'á' to '8',
+        'í' to '9',
+        'é' to '0',
     )
 
-    // Mappable digits (2-9,0 produce CZ diacritics; 1 produces + which is a dead key)
-    private val mappableDigits: Set<Char> = setOf('2', '3', '4', '5', '6', '7', '8', '9', '0')
+    // Characters that can appear in CZ-layout numeric sequences
+    private val czDigitChars: Set<Char> = czDigitMap.keys + setOf(' ', ',', '.', '-', '/', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0')
 
-    // Number row (shifted): EN shifted → CZ shifted
-    private val numberRowShifted: Map<Char, Char> = mapOf(
-        '!' to '1',
-        '@' to '2',
-        '#' to '3',
-        '$' to '4',
-        '%' to '5',
-        '^' to '6',
-        '&' to '7',
-        '*' to '8',
-        '(' to '9',
-        ')' to '0',
-    )
-
-    // Punctuation keys: EN → CZ (unshifted)
-    private val punctuation: Map<Char, Char> = mapOf(
-        ';' to 'ů',   // Key right of L
-        '[' to 'ú',   // Key right of P
-        '=' to ')',   // Key right of 0 (dead acute on CZ)
-    )
-
-    // Punctuation keys: EN shifted → CZ shifted
-    private val punctuationShifted: Map<Char, Char> = mapOf(
-        ':' to '"',   // Shift+; on EN = Shift+ů on CZ
-        '{' to '/',   // Shift+[ on EN
-        '<' to '?',   // Shift+, on EN = ? on CZ
-        '>' to ':',   // Shift+. on EN = : on CZ
-    )
-
-    // Y↔Z swap (QWERTY vs QWERTZ)
-    // CZ uses QWERTZ layout — Z and Y are swapped compared to US QWERTY
-
-    // Caron dead key sequences: +letter → háček letter
-    private val caronMap: Map<Char, Char> = mapOf(
-        'd' to 'ď',
-        't' to 'ť',
-        'n' to 'ň',
-        'e' to 'ě',   // Alternative to number row ě
-    )
-
-    private val czechDiacritics: Set<Char> =
-        "ěščřžýáíéďťňůúóĚŠČŘŽÝÁÍÉĎŤŇŮÚÓ".toSet()
+    @PostConstruct
+    fun loadDictionary() {
+        try {
+            val resource = javaClass.classLoader.getResourceAsStream("cs_words.txt.gz")
+            if (resource != null) {
+                val words = mutableSetOf<String>()
+                val reader = java.io.BufferedReader(InputStreamReader(GZIPInputStream(resource), Charsets.UTF_8))
+                reader.use { r ->
+                    r.lineSequence().forEach { line ->
+                        val word = line.trim().lowercase()
+                        if (word.isNotEmpty()) words.add(word)
+                    }
+                }
+                czechWords = words
+                logger.info { "Czech dictionary loaded: ${words.size} words" }
+            } else {
+                logger.warn { "Czech dictionary not found (cs_words.txt.gz)" }
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to load Czech dictionary" }
+        }
+    }
 
     // ── Public API ──────────────────────────────────────────────────────
 
     fun convertIfMistyped(input: String): String {
         if (input.isEmpty()) return input
 
-        // Detect layout evidence: digits inside words (would be diacritics on CZ layout)
-        val evidence = countLayoutEvidence(input)
-        if (evidence == 0) return input
+        var result = input
 
-        // Evidence found → apply full EN→CZ conversion
-        return convert(input)
+        // Step 1: Convert CZ-digit sequences (bank statements, IDs, amounts)
+        result = convertCzDigitSequences(result)
+
+        // Step 2: Per-word Y↔Z correction with dictionary check
+        if (czechWords.isNotEmpty()) {
+            result = correctYZPerWord(result)
+        }
+
+        if (result != input) {
+            logger.debug { "Normalized: '${input.take(80)}' → '${result.take(80)}'" }
+        }
+        return result
     }
 
-    // ── Conversion ──────────────────────────────────────────────────────
+    // ── CZ-digit sequence conversion ────────────────────────────────────
 
-    private fun convert(s: String): String {
-        val out = StringBuilder(s.length)
+    /**
+     * Find sequences of CZ-layout digit characters and convert to real digits.
+     * A "numeric sequence" = 3+ chars that are all CZ-digit mappable.
+     * Converts: "ěšé1řšžčžř" → "2301567890", "7 ééé,éé" → "7 000,00"
+     */
+    private fun convertCzDigitSequences(input: String): String {
+        // Split by lines — bank statements are often line-by-line
+        return input.lines().joinToString("\n") { line ->
+            convertCzDigitsInLine(line)
+        }
+    }
+
+    private fun convertCzDigitsInLine(line: String): String {
+        // Look for segments after common label patterns: "Částka:", "VS:", "Protiúčet:" etc.
+        // Or standalone sequences of CZ-digit chars
+        val result = StringBuilder()
         var i = 0
+        while (i < line.length) {
+            // Try to match a CZ-digit sequence starting here
+            val seqEnd = findCzDigitSequenceEnd(line, i)
+            if (seqEnd > i && seqEnd - i >= 3) {
+                // Convert the sequence
+                for (j in i until seqEnd) {
+                    val ch = line[j]
+                    result.append(czDigitMap[ch] ?: ch)
+                }
+                i = seqEnd
+            } else {
+                result.append(line[i])
+                i++
+            }
+        }
+        return result.toString()
+    }
+
+    /**
+     * Find end of a CZ-digit sequence starting at pos.
+     * Sequence must have at least 2 CZ-diacritic digits (ě,š,č,ř,ž,ý,á,í,é).
+     */
+    private fun findCzDigitSequenceEnd(s: String, start: Int): Int {
+        var i = start
+        var czDigitCount = 0
         while (i < s.length) {
             val ch = s[i]
+            if (ch in czDigitChars) {
+                if (ch in czDigitMap) czDigitCount++
+                i++
+            } else {
+                break
+            }
+        }
+        // Only convert if there are enough CZ-diacritic digits (not just regular digits/spaces)
+        return if (czDigitCount >= 2) i else start
+    }
 
-            // 1. Caron dead key: +letter → háček
-            if (ch == '+' && i + 1 < s.length) {
-                val next = s[i + 1]
-                val mapped = caronMap[next.lowercaseChar()]
-                if (mapped != null) {
-                    out.append(if (next.isUpperCase()) mapped.uppercaseChar() else mapped)
-                    i += 2
-                    continue
+    // ── Y↔Z per-word correction ─────────────────────────────────────────
+
+    /**
+     * For each word: if it's not in Czech dictionary but the Y↔Z swapped version is → swap.
+     * Only swaps Y↔Z within the word, nothing else.
+     */
+    private fun correctYZPerWord(input: String): String {
+        val wordPattern = Regex("""[\p{L}]+""")
+        return wordPattern.replace(input) { match ->
+            val word = match.value
+            correctWordYZ(word)
+        }
+    }
+
+    private fun correctWordYZ(word: String): String {
+        val lower = word.lowercase()
+
+        // Already valid Czech word → don't touch
+        if (lower in czechWords) return word
+
+        // Try Y↔Z swap variants
+        if ('y' !in lower && 'z' !in lower) return word // No Y or Z to swap
+
+        val swapped = lower.map { ch ->
+            when (ch) {
+                'y' -> 'z'
+                'z' -> 'y'
+                else -> ch
+            }
+        }.joinToString("")
+
+        if (swapped in czechWords) {
+            // Swapped version is valid Czech — apply swap preserving case
+            return word.mapIndexed { i, ch ->
+                when {
+                    ch == 'y' -> if (swapped[i] == 'z') 'z' else ch
+                    ch == 'Y' -> if (swapped[i] == 'z') 'Z' else ch
+                    ch == 'z' -> if (swapped[i] == 'y') 'y' else ch
+                    ch == 'Z' -> if (swapped[i] == 'y') 'Y' else ch
+                    else -> ch
+                }
+            }.joinToString("")
+        }
+
+        // Try partial swaps (only Y→Z or only Z→Y at each position)
+        if (lower.count { it == 'y' || it == 'z' } <= 3) {
+            val bestVariant = generateYZVariants(lower).firstOrNull { it in czechWords }
+            if (bestVariant != null) {
+                return word.mapIndexed { i, ch ->
+                    val target = bestVariant[i]
+                    when {
+                        ch.lowercaseChar() != target -> if (ch.isUpperCase()) target.uppercaseChar() else target
+                        else -> ch
+                    }
+                }.joinToString("")
+            }
+        }
+
+        return word // No valid variant found
+    }
+
+    /**
+     * Generate all Y↔Z variants of a word (up to 8 variants for 3 Y/Z positions).
+     */
+    private fun generateYZVariants(word: String): List<String> {
+        val positions = word.indices.filter { word[it] == 'y' || word[it] == 'z' }
+        if (positions.isEmpty() || positions.size > 3) return emptyList()
+
+        val variants = mutableListOf<String>()
+        val chars = word.toCharArray()
+        for (mask in 1 until (1 shl positions.size)) {
+            val variant = chars.copyOf()
+            for ((bit, pos) in positions.withIndex()) {
+                if (mask and (1 shl bit) != 0) {
+                    variant[pos] = if (variant[pos] == 'y') 'z' else 'y'
                 }
             }
-
-            // 2. Number row digits → diacritics (only in word context)
-            if (ch in mappableDigits && isInWordContext(s, i)) {
-                val mapped = numberRow[ch]!!
-                val uppercase = inferUppercaseContext(s, i)
-                out.append(if (uppercase) mapped.uppercaseChar() else mapped)
-                i++
-                continue
-            }
-
-            // 3. Shifted number row (!, @, #, etc.) → digits
-            val shiftedNum = numberRowShifted[ch]
-            if (shiftedNum != null) {
-                out.append(shiftedNum)
-                i++
-                continue
-            }
-
-            // 4. Punctuation → CZ equivalents (in word context or at word boundary)
-            val punctMapped = punctuation[ch]
-            if (punctMapped != null && isInWordContext(s, i)) {
-                val uppercase = inferUppercaseContext(s, i)
-                out.append(if (uppercase) punctMapped.uppercaseChar() else punctMapped)
-                i++
-                continue
-            }
-
-            // 5. Shifted punctuation → CZ equivalents (anywhere, these are sentence-level)
-            val shiftedPunct = punctuationShifted[ch]
-            if (shiftedPunct != null) {
-                out.append(shiftedPunct)
-                i++
-                continue
-            }
-
-            // 6. Y↔Z swap (QWERTY vs QWERTZ)
-            when (ch) {
-                'y' -> { out.append('z'); i++; continue }
-                'Y' -> { out.append('Z'); i++; continue }
-                'z' -> { out.append('y'); i++; continue }
-                'Z' -> { out.append('Y'); i++; continue }
-            }
-
-            // 7. Pass through unchanged
-            out.append(ch)
-            i++
+            variants.add(String(variant))
         }
-        return out.toString()
-    }
-
-    // ── Helpers ─────────────────────────────────────────────────────────
-
-    private fun isInWordContext(s: String, idx: Int): Boolean {
-        fun isWordChar(i: Int): Boolean {
-            if (i < 0 || i >= s.length) return false
-            val c = s[i]
-            return c.isLetter() || c in mappableDigits
-        }
-        return isWordChar(idx - 1) || isWordChar(idx + 1)
-    }
-
-    private fun inferUppercaseContext(s: String, idx: Int): Boolean {
-        val before = idx - 1
-        if (before >= 0 && s[before].isLetter() && s[before].isUpperCase()) return true
-        val after = idx + 1
-        if (after < s.length && s[after].isLetter() && s[after].isUpperCase()) return true
-        return false
-    }
-
-    private fun countLayoutEvidence(s: String): Int {
-        var count = 0
-        for (i in s.indices) {
-            val ch = s[i]
-            // Digit in word context → would be diacritic on CZ layout
-            if (ch in mappableDigits && isInWordContext(s, i)) count++
-            // +letter caron sequence
-            if (ch == '+' && i + 1 < s.length && caronMap.containsKey(s[i + 1].lowercaseChar())) count++
-        }
-        return count
+        return variants
     }
 }

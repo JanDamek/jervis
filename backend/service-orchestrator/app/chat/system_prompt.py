@@ -309,9 +309,12 @@ Time: {now_local_str} (UTC: {now_utc_str})
 - **respond_to_user_task** — answer a pending task
 - **request_tools(domain)** — load more tools: "planning", "task_mgmt", "meetings", "memory", "admin"
 
-## When user provides information
-Parse the data, extract key facts (amounts, dates, names, IDs), and store via store_knowledge.
-Confirm briefly what you stored. Do NOT repeat the entire input back.
+## When user provides information (bank statement, invoice, confirmation, etc.)
+1. Parse the data — extract: amount, date, recipient, variable symbol, account number
+2. If data looks garbled (CZ keyboard digits like ě=2, š=3, č=4, ř=5, ž=6, ý=7, á=8, í=9, é=0), convert FIRST
+3. Call store_knowledge with CLEAN parsed data (not raw garbled text)
+4. Confirm briefly what you stored
+5. Do NOT store obviously corrupted/unreadable data — ask user to clarify instead
 """
 
 
