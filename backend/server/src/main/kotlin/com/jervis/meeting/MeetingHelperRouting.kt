@@ -26,7 +26,7 @@ private val json = Json { ignoreUnknownKeys = true }
  * WebSocket endpoint for Meeting Helper device connections + internal REST API.
  *
  * WebSocket: /ws/meeting-helper/{meetingId} — device connects to receive helper messages
- * Internal REST: /internal/meeting-helper/* — Python orchestrator pushes results
+ * Internal REST: /internal/meeting-helper/... — Python orchestrator pushes results
  */
 fun Routing.installMeetingHelperApi(
     helperService: MeetingHelperService,
