@@ -143,24 +143,44 @@ def extract_tool_calls(message) -> tuple[list, str | None]:
             return [], cleaned
         return [], None  # Entire content was unparseable XML — return None, not raw XML
 
-    # Plain JSON tool call formats produced by FREE models:
-    # Format 1: {"action": "kb_search", "parameters": {"query": "..."}}
-    # Format 2: {"tool": "kb_search", "arguments": {"query": "..."}}
-    # Format 3: {"name": "kb_search", "parameters": {"query": "..."}}
-    for name_key, args_key in [("action", "parameters"), ("tool", "arguments"), ("name", "parameters"), ("action", "arguments"), ("tool", "parameters"), ("name", "arguments")]:
-        pattern = r'\{\s*"' + name_key + r'"\s*:\s*"(\w+)".*?"' + args_key + r'"\s*:\s*(\{[^}]*\})'
-        action_match = re.search(pattern, content, re.DOTALL)
-        if action_match:
-            try:
-                func_name = action_match.group(1)
-                params = json.loads(action_match.group(2))
-                calls = [OllamaToolCall({"function": {"name": func_name, "arguments": params}})]
-                remaining = content[:action_match.start()] + content[action_match.end():]
-                # Clean up trailing braces/whitespace from the JSON
-                remaining = re.sub(r'^\s*\}\s*', '', remaining).strip() or None
-                logger.info("JSON tool workaround (%s/%s): extracted tool call '%s'", name_key, args_key, func_name)
-                return calls, remaining
-            except (json.JSONDecodeError, KeyError):
-                continue
+    # Generic JSON tool call detection — models produce various formats:
+    # {"action": "kb_search", "parameters": {...}}
+    # {"tool": "kb_search", "arguments": {...}}
+    # {"name": "kb_search", "input": {...}}
+    # ... any key whose value matches a known tool name
+    #
+    # Strategy: find all JSON objects in text, check if any value matches
+    # a known tool name, then extract the arguments from the nested dict.
+    from app.chat.tools import TOOL_DOMAINS
+    known_tools = set(TOOL_DOMAINS.keys())
+
+    # Find JSON objects in content (greedy match of outermost braces)
+    for json_match in re.finditer(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content):
+        try:
+            obj = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            continue
+
+        # Find the tool name — any string value that matches a known tool
+        func_name = None
+        params = {}
+        for key, value in obj.items():
+            if isinstance(value, str) and value in known_tools:
+                func_name = value
+            elif isinstance(value, dict):
+                params = value  # Assume first dict value is arguments
+
+        if func_name:
+            # If we found a tool name but no dict args, check for flat args
+            if not params:
+                params = {k: v for k, v in obj.items() if k != next(
+                    (k2 for k2, v2 in obj.items() if v2 == func_name), None
+                ) and not isinstance(v, dict)}
+
+            calls = [OllamaToolCall({"function": {"name": func_name, "arguments": params}})]
+            remaining = content[:json_match.start()] + content[json_match.end():]
+            remaining = remaining.strip() or None
+            logger.info("Generic JSON tool call: extracted '%s' with args %s", func_name, list(params.keys()))
+            return calls, remaining
 
     return [], content
