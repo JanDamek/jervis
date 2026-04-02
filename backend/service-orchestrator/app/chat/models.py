@@ -60,6 +60,9 @@ class ChatRequest(BaseModel):
     # Cloud routing policy (from CloudModelPolicy)
     max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID" / "PREMIUM" (compat: "PAID_LOW" / "PAID_HIGH")
 
+    # Client timezone (from device, e.g. "Europe/Prague", "Europe/London")
+    client_timezone: str | None = None
+
     # Attachments (base64-encoded file content from UI)
     attachments: list[dict] = Field(default_factory=list)
     # Each attachment: {"filename": str, "mime_type": str, "size_bytes": int, "content_base64": str | None}

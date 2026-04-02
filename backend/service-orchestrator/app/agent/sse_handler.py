@@ -47,8 +47,12 @@ async def handle_chat_sse(
     _live_vertex_id: str | None = None
     try:
         # ── 1. Load context ──────────────────────────────────────────
+        # FREE tier: smaller context budget (10k tokens) so model focuses on current message
+        max_tier = getattr(request, "max_openrouter_tier", "FREE")
+        context_budget = 10_000 if max_tier in ("FREE", "NONE") else None  # None = default
         context = await chat_context_assembler.assemble_context(
             conversation_id=request.session_id,
+            **({"context_budget": context_budget} if context_budget else {}),
         )
         runtime_ctx = await load_runtime_context(
             query=request.message,
@@ -56,6 +60,12 @@ async def handle_chat_sse(
             project_id=request.active_project_id,
             group_id=getattr(request, "active_group_id", None),
         )
+
+        # User timezone from client device (fallback to last known from server)
+        user_timezone = request.client_timezone
+        if not user_timezone:
+            from app.tools.kotlin_client import kotlin_client
+            user_timezone = await kotlin_client.get_user_timezone()
 
         # ── 2. Load Paměťový graf ────────────────────────────────────
         map_ctx = ""
@@ -93,6 +103,7 @@ async def handle_chat_sse(
                 active_project_id=request.active_project_id,
                 runtime_context=runtime_ctx,
                 session_id=request.session_id,
+                user_timezone=user_timezone,
             )
             messages = await build_messages(system_prompt, context, None, request.message,
                                            attachments=request.attachments or None,
@@ -132,6 +143,7 @@ async def handle_chat_sse(
         if request.context_task_id:
             task_context_msg = await load_task_context_message(request.context_task_id)
 
+        max_tier = getattr(request, "max_openrouter_tier", "FREE")
         system_prompt = await build_system_prompt(
             active_client_id=request.active_client_id,
             active_project_id=request.active_project_id,
@@ -139,6 +151,8 @@ async def handle_chat_sse(
             active_project_name=request.active_project_name,
             runtime_context=runtime_ctx,
             session_id=request.session_id,
+            user_timezone=user_timezone,
+            model_tier=max_tier,
         )
         messages = await build_messages(system_prompt, context, task_context_msg, request.message,
                                         attachments=request.attachments or None,

@@ -13,6 +13,7 @@ The graph execution reuses the existing LangGraph runner infrastructure.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -131,12 +132,15 @@ async def detect_and_decompose(
             "content": user_message,
         })
 
-        response = await call_llm(
-            messages=decompose_messages,
-            tier=tier,
-            max_tokens=1024,
-            route=route,
-            max_tier=max_openrouter_tier,
+        response = await asyncio.wait_for(
+            call_llm(
+                messages=decompose_messages,
+                tier=tier,
+                max_tokens=1024,
+                route=route,
+                max_tier=max_openrouter_tier,
+            ),
+            timeout=30.0,  # Decomposer is simple classification — 30s is plenty
         )
 
         if not response.choices:

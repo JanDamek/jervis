@@ -44,6 +44,7 @@ interface IChatService {
         contextTaskId: String? = null,
         attachments: List<AttachmentDto> = emptyList(),
         tierOverride: String? = null,
+        clientTimezone: String? = null,
     )
 
     /**

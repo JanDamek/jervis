@@ -1,6 +1,7 @@
 package com.jervis.service.preferences
 
 import com.jervis.dto.openrouter.ModelErrorDto
+import com.jervis.dto.openrouter.ModelStatsDto
 import com.jervis.dto.openrouter.ModelTestResultDto
 import com.jervis.dto.openrouter.OpenRouterCatalogModelDto
 import com.jervis.dto.openrouter.OpenRouterFiltersDto
@@ -30,4 +31,7 @@ interface IOpenRouterSettingsService {
 
     /** Test a specific model by sending a tiny completion request. Verifies model actually responds. */
     suspend fun testModel(modelId: String): ModelTestResultDto
+
+    /** Get usage statistics for all models (call count, avg response time). */
+    suspend fun getModelStats(): List<ModelStatsDto>
 }

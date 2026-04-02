@@ -185,6 +185,16 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     ): Flow<TaskDocument>
 
     /**
+     * Find all scheduled tasks that follow user timezone (personal reminders).
+     * Scheduler recalculates their scheduledAt based on current user timezone.
+     */
+    fun findByFollowUserTimezoneAndTypeAndState(
+        followUserTimezone: Boolean,
+        type: TaskTypeEnum,
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    /**
      * Find recent tasks ordered by creation date (newest first).
      * Used by chat tool list_recent_tasks.
      */

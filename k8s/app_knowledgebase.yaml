@@ -28,6 +28,9 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            # Timezone — all backend services MUST run in UTC
+            - name: TZ
+              value: "UTC"
             - name: KB_MODE
               value: "read"
             - name: UVICORN_WORKERS
@@ -112,6 +115,9 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            # Timezone — all backend services MUST run in UTC
+            - name: TZ
+              value: "UTC"
             - name: KB_MODE
               value: "write"
             - name: UVICORN_WORKERS

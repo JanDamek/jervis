@@ -297,6 +297,19 @@ async def _escalate_to_cloud(
     auto_tier = _suggest_cloud_tier(context_tokens, auto_providers_set, task_type)
     if auto_tier:
         logger.info("Auto-escalating to %s (auto_providers=%s)", auto_tier.value, auto_providers_set)
+        # For OpenRouter, get a specific model via route_request (not "openrouter/auto")
+        if auto_tier == ModelTier.CLOUD_OPENROUTER:
+            route = await route_request(
+                capability="chat", max_tier="FREE",
+                estimated_tokens=context_tokens, processing_mode="BACKGROUND",
+                require_tools=bool(tools),
+            )
+            if route.target == "openrouter" and route.model:
+                return await llm_provider.completion(
+                    messages=messages, tier=auto_tier,
+                    max_tokens=max_tokens, temperature=temperature, tools=tools,
+                    model_override=route.model, api_key_override=route.api_key,
+                )
         return await llm_provider.completion(
             messages=messages, tier=auto_tier,
             max_tokens=max_tokens, temperature=temperature, tools=tools,

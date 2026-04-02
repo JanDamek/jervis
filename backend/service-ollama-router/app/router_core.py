@@ -159,6 +159,7 @@ class OllamaRouter:
         self, capability: str, max_tier: str, estimated_tokens: int,
         processing_mode: str = "FOREGROUND",
         skip_models: list[str] | None = None,
+        require_tools: bool = False,
     ) -> dict:
         """Capability-based routing decision.
 
@@ -169,6 +170,7 @@ class OllamaRouter:
         5. No cloud model fits → local fallback
 
         skip_models: model IDs to skip (already tried and failed in this request).
+        require_tools: if True, only cloud models with supportsTools=True are eligible.
         Returns: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
         """
         max_tier = normalize_tier(max_tier)  # backward compat: PAID_LOW→PAID, PAID_HIGH→PREMIUM
@@ -191,7 +193,7 @@ class OllamaRouter:
 
         # Rule 2: FOREGROUND + FREE+ → always OpenRouter (with rate limiting)
         if not is_background:
-            cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level, skip_models, capability=capability)
+            cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level, skip_models, capability=capability, require_tools=require_tools)
             if cloud_model:
                 # Determine queue for rate limiting (free models end with :free)
                 queue = "FREE" if cloud_model.endswith(":free") else "PAID"
@@ -225,7 +227,7 @@ class OllamaRouter:
             return local_result
 
         # Rule 4: BG >48k OR GPU busy → OpenRouter (with rate limiting)
-        cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level, skip_models, capability=capability)
+        cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level, skip_models, capability=capability, require_tools=require_tools)
         if cloud_model:
             queue = "FREE" if cloud_model.endswith(":free") else "PAID"
             slot_ok = await acquire_openrouter_slot(queue, timeout=65.0)
@@ -341,13 +343,33 @@ class OllamaRouter:
         prompt = body.get("prompt", "")
         return max(len(prompt) // 4, 100)
 
-    @staticmethod
-    def _find_local_model_for_capability(capability: str) -> str | None:
-        """Find a local model that has the requested capability."""
-        for model, caps in LOCAL_MODEL_CAPABILITIES.items():
-            if capability in caps:
-                return model
-        return None
+    def _find_local_model_for_capability(self, capability: str) -> str | None:
+        """Find a local model that has the requested capability.
+
+        When multiple models support the capability, prefer the one on a free GPU.
+        This enables load balancing: 30b on p40-1 + 14b on p40-2 both handle 'chat'.
+        """
+        candidates = [
+            model for model, caps in LOCAL_MODEL_CAPABILITIES.items()
+            if capability in caps
+        ]
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+
+        # Multiple candidates — prefer the one on a free GPU
+        whisper_busy = self.check_whisper_busy()
+        for model in candidates:
+            for backend in self.gpu_pool.all_backends:
+                if model in GPU_MODEL_SETS.get(backend.name, []):
+                    if backend.healthy and backend.active_request_count() == 0:
+                        if not (backend.name == VLM_GPU and whisper_busy):
+                            logger.debug("Model %s selected (GPU %s is free)", model, backend.name)
+                            return model
+
+        # All busy — return first candidate (will queue)
+        return candidates[0]
 
     # ── Main routing entry point ────────────────────────────────────────
 

@@ -11,7 +11,7 @@ Action log entries are stored as KB chunks in a dedicated
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 
@@ -47,7 +47,7 @@ async def log_action(
     Returns:
         True if logged successfully
     """
-    timestamp = datetime.now().isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
     source_urn = f"action-log:{action}:{timestamp}"
 
     content = (

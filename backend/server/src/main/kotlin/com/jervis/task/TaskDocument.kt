@@ -136,6 +136,20 @@ data class TaskDocument(
     val attachments: List<AttachmentMetadata> = emptyList(),
     val scheduledAt: Instant? = null,
     val cronExpression: String? = null,
+    /** Timezone in which cronExpression was defined (e.g. "Europe/Prague"). Immutable after creation. */
+    val cronTimezone: String? = null,
+    /**
+     * If true, scheduledAt is recalculated from scheduledLocalTime + user's CURRENT timezone
+     * before each dispatch check. Used for personal reminders that follow the user across timezones.
+     * If false (default), scheduledAt is a fixed UTC instant.
+     */
+    val followUserTimezone: Boolean = false,
+    /**
+     * User-intended local time (ISO LocalDateTime, e.g. "2026-03-31T16:00").
+     * Only meaningful when followUserTimezone=true. Scheduler resolves to UTC
+     * using the user's current timezone from preference.
+     */
+    val scheduledLocalTime: String? = null,
     // NEW: Agent session persistence for continuous conversation
     val agentCheckpointJson: String? = null,
     // Python orchestrator thread ID for async dispatch (state = PROCESSING)

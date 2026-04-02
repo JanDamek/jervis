@@ -2,6 +2,8 @@ package com.jervis.rpc
 
 import com.jervis.dto.openrouter.ModelErrorDto
 import com.jervis.dto.openrouter.ModelErrorEntryDto
+import com.jervis.dto.openrouter.ModelCallStatsDto
+import com.jervis.dto.openrouter.ModelStatsDto
 import com.jervis.dto.openrouter.ModelTestResultDto
 import com.jervis.dto.openrouter.OpenRouterCatalogModelDto
 import com.jervis.dto.openrouter.OpenRouterFallbackStrategy
@@ -15,6 +17,7 @@ import com.jervis.dto.openrouter.QueueModelEntryDto
 import com.jervis.infrastructure.llm.ModelQueue
 import com.jervis.infrastructure.llm.OpenRouterFilters
 import com.jervis.infrastructure.llm.OpenRouterModelEntry
+import com.jervis.infrastructure.llm.ModelCallStats
 import com.jervis.infrastructure.llm.OpenRouterSettingsDocument
 import com.jervis.infrastructure.llm.QueueModelEntry
 import com.jervis.infrastructure.llm.OpenRouterSettingsRepository
@@ -73,6 +76,11 @@ class OpenRouterSettingsRpcImpl(
         val existing = repository.findById(OpenRouterSettingsDocument.SINGLETON_ID)
             ?: OpenRouterSettingsDocument()
 
+        // Build stats lookup from existing queues (modelId → stats)
+        val existingStats = existing.modelQueues
+            .flatMap { q -> q.models.map { it.modelId to it.stats } }
+            .toMap()
+
         val updated = existing.copy(
             apiKey = request.apiKey ?: existing.apiKey,
             apiBaseUrl = request.apiBaseUrl ?: existing.apiBaseUrl,
@@ -81,7 +89,14 @@ class OpenRouterSettingsRpcImpl(
             models = request.models?.map { it.toEntity() } ?: existing.models,
             monthlyBudgetUsd = request.monthlyBudgetUsd ?: existing.monthlyBudgetUsd,
             fallbackStrategy = request.fallbackStrategy?.name ?: existing.fallbackStrategy,
-            modelQueues = request.modelQueues?.map { it.toEntity() } ?: existing.modelQueues,
+            // Preserve stats from existing entries when UI saves config
+            modelQueues = request.modelQueues?.map { qDto ->
+                qDto.toEntity().copy(
+                    models = qDto.models.map { mDto ->
+                        mDto.toEntity().copy(stats = existingStats[mDto.modelId] ?: ModelCallStats())
+                    },
+                )
+            } ?: existing.modelQueues,
         )
 
         repository.save(updated)
@@ -222,6 +237,67 @@ class OpenRouterSettingsRpcImpl(
         }
     }
 
+    override suspend fun getModelStats(): List<ModelStatsDto> {
+        return try {
+            val baseUrl = routerUrl.trimEnd('/')
+            val response: JsonObject = httpClient.get("$baseUrl/route-decision/model-stats").body()
+            response.entries.map { (modelId, value) ->
+                val obj = value.jsonObject
+                ModelStatsDto(
+                    modelId = modelId,
+                    callCount = obj["call_count"]?.jsonPrimitive?.int ?: 0,
+                    avgResponseS = obj["avg_response_s"]?.jsonPrimitive?.double ?: 0.0,
+                    totalTimeS = obj["total_time_s"]?.jsonPrimitive?.double ?: 0.0,
+                    totalInputTokens = obj["total_input_tokens"]?.jsonPrimitive?.int ?: 0,
+                    totalOutputTokens = obj["total_output_tokens"]?.jsonPrimitive?.int ?: 0,
+                    tokensPerS = obj["tokens_per_s"]?.jsonPrimitive?.double ?: 0.0,
+                    lastCall = obj["last_call"]?.jsonPrimitive?.double ?: 0.0,
+                )
+            }.sortedByDescending { it.callCount }
+        } catch (e: Exception) {
+            logger.warn { "Failed to fetch model stats from router: ${e.message}" }
+            emptyList()
+        }
+    }
+
+    /**
+     * Persist model stats from router into MongoDB queue entries.
+     * Called by POST /internal/openrouter-model-stats.
+     * Merges stats into existing QueueModelEntry.stats fields.
+     */
+    suspend fun persistModelStats(statsJson: kotlinx.serialization.json.JsonObject) {
+        val doc = repository.findById(OpenRouterSettingsDocument.SINGLETON_ID) ?: return
+        var changed = false
+
+        val updatedQueues = doc.modelQueues.map { queue ->
+            queue.copy(
+                models = queue.models.map { entry ->
+                    val modelStats = statsJson[entry.modelId]?.jsonObject
+                    if (modelStats != null) {
+                        changed = true
+                        entry.copy(
+                            stats = ModelCallStats(
+                                callCount = modelStats["call_count"]?.jsonPrimitive?.int ?: entry.stats.callCount,
+                                totalTimeS = modelStats["total_time_s"]?.jsonPrimitive?.double ?: entry.stats.totalTimeS,
+                                totalInputTokens = modelStats["total_input_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: entry.stats.totalInputTokens,
+                                totalOutputTokens = modelStats["total_output_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: entry.stats.totalOutputTokens,
+                                tokensPerS = modelStats["tokens_per_s"]?.jsonPrimitive?.double ?: entry.stats.tokensPerS,
+                                lastCall = modelStats["last_call"]?.jsonPrimitive?.double ?: entry.stats.lastCall,
+                            ),
+                        )
+                    } else {
+                        entry
+                    }
+                },
+            )
+        }
+
+        if (changed) {
+            repository.save(doc.copy(modelQueues = updatedQueues))
+            logger.info { "Model stats persisted for ${statsJson.size} models" }
+        }
+    }
+
     private fun applyFilters(model: OpenRouterModelData, filters: OpenRouterFilters): Boolean {
         val provider = model.id.substringBefore("/", "")
 
@@ -345,6 +421,14 @@ class OpenRouterSettingsRpcImpl(
             outputPricePerMillion = this.outputPricePerMillion,
             supportsTools = this.supportsTools,
             provider = this.provider,
+            stats = ModelCallStatsDto(
+                callCount = this.stats.callCount,
+                totalTimeS = this.stats.totalTimeS,
+                totalInputTokens = this.stats.totalInputTokens,
+                totalOutputTokens = this.stats.totalOutputTokens,
+                tokensPerS = this.stats.tokensPerS,
+                lastCall = this.stats.lastCall,
+            ),
         )
 
     private fun ModelQueueDto.toEntity(): ModelQueue =
@@ -366,6 +450,7 @@ class OpenRouterSettingsRpcImpl(
             outputPricePerMillion = this.outputPricePerMillion,
             supportsTools = this.supportsTools,
             provider = this.provider,
+            // stats are NOT overwritten from DTO — preserved in MongoDB
         )
 }
 

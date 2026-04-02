@@ -62,10 +62,6 @@ class ImapPollingHandler(
         withContext(Dispatchers.IO) {
             logger.debug { "Polling IMAP ${connectionDocument.name} for client ${client.name}" }
 
-            // Determine which folders to poll based on resource filter
-            val foldersToIndex = getFoldersToPoll(connectionDocument, resourceFilter)
-            logger.debug { "IMAP folders to poll: ${foldersToIndex.joinToString(", ")}" }
-
             // Connect to IMAP server
             val properties =
                 Properties().apply {
@@ -106,6 +102,10 @@ class ImapPollingHandler(
                     }
                 }
 
+                // Determine folders to poll (needs connected store for sent folder auto-detection)
+                val foldersToIndex = getFoldersToPoll(store, connectionDocument, resourceFilter)
+                logger.debug { "IMAP folders to poll: ${foldersToIndex.joinToString(", ")}" }
+
                 // Poll each folder and aggregate results
                 var totalDiscovered = 0
                 var totalCreated = 0
@@ -133,6 +133,7 @@ class ImapPollingHandler(
      * Auto-includes SENT folder for thread context (user replies from mobile etc.).
      */
     private fun getFoldersToPoll(
+        store: Store,
         connectionDocument: ConnectionDocument,
         resourceFilter: ResourceFilter,
     ): List<String> {
@@ -146,14 +147,30 @@ class ImapPollingHandler(
         // Auto-add SENT folder if not already included
         val hasSentFolder = baseFolders.any { isSentFolder(it) }
         if (hasSentFolder) return baseFolders
-        val sentFolder = connectionDocument.sentFolderName ?: "Sent"
-        return baseFolders + sentFolder
+
+        // Try configured sent folder name, then auto-detect from IMAP
+        val sentFolder = connectionDocument.sentFolderName ?: detectSentFolder(store)
+        return if (sentFolder != null) baseFolders + sentFolder else baseFolders
+    }
+
+    /**
+     * Auto-detect sent folder from IMAP server.
+     * Different providers use different names: "Sent", "[Gmail]/Sent Mail", "Sent Items", "Odeslané" etc.
+     */
+    private fun detectSentFolder(store: Store): String? {
+        return try {
+            val folders = store.defaultFolder.list("*")
+            folders.firstOrNull { isSentFolder(it.fullName) }?.fullName
+        } catch (e: Exception) {
+            logger.debug { "Could not list IMAP folders for sent detection: ${e.message}" }
+            null
+        }
     }
 
     private fun isSentFolder(name: String): Boolean {
         val sentNames = setOf(
             "sent", "inbox.sent", "sent items", "sent messages",
-            "[gmail]/sent mail", "odeslané", "odeslane",
+            "[gmail]/sent mail", "odeslané", "odeslane", "odeslaná pošta",
         )
         return sentNames.any { name.equals(it, ignoreCase = true) }
     }

@@ -163,6 +163,7 @@ async def _retry_with_next_model(
             estimated_tokens=estimated_tokens,
             processing_mode=processing_mode,
             skip_models=skip_models,
+            require_tools=bool(tools),
         )
         if fallback.target != "openrouter" or not fallback.model or fallback.model in skip_models:
             logger.warning("No more cloud models available after %s failed (skip=%s)",

@@ -11,7 +11,7 @@ task completion.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 
@@ -113,7 +113,7 @@ async def ingest_outcome_to_kb(
         "metadata": {
             "task_id": task_id,
             "task_query": task_query[:500],
-            "ingested_at": datetime.now().isoformat(),
+            "ingested_at": datetime.now(timezone.utc).isoformat(),
             "source": "task_completion",
         },
     }

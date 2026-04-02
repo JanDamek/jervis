@@ -37,6 +37,7 @@ async def route_request(
     estimated_tokens: int = 0,
     processing_mode: str = "FOREGROUND",
     skip_models: list[str] | None = None,
+    require_tools: bool = False,
 ) -> RouteDecision:
     """Ask router for routing decision based on capability.
 
@@ -46,6 +47,7 @@ async def route_request(
         estimated_tokens: estimated context size in tokens
         processing_mode: "FOREGROUND" (chat → always cloud) or "BACKGROUND" (local, cloud >48k)
         skip_models: model IDs to skip (already tried and failed in this request)
+        require_tools: if True, only models with supportsTools=True are eligible
 
     Returns:
         RouteDecision with target, model, and optional api_base.
@@ -60,6 +62,8 @@ async def route_request(
         }
         if skip_models:
             payload["skip_models"] = skip_models
+        if require_tools:
+            payload["require_tools"] = True
         # Timeout 90s: router waits max 65s for rate limit slot + 25s margin
         async with httpx.AsyncClient(timeout=90.0) as client:
             resp = await client.post(url, json=payload)
@@ -96,12 +100,22 @@ async def report_model_error(model_id: str, error_message: str = "") -> dict:
         return {}
 
 
-async def report_model_success(model_id: str) -> None:
-    """Report successful model call to router (resets error counter)."""
+async def report_model_success(
+    model_id: str, duration_s: float = 0.0,
+    input_tokens: int = 0, output_tokens: int = 0,
+) -> None:
+    """Report successful model call to router (resets error counter + records stats)."""
     url = f"{_router_base_url()}/route-decision/model-success"
     try:
+        payload: dict = {"model_id": model_id}
+        if duration_s > 0:
+            payload["duration_s"] = round(duration_s, 2)
+        if input_tokens > 0:
+            payload["input_tokens"] = input_tokens
+        if output_tokens > 0:
+            payload["output_tokens"] = output_tokens
         async with httpx.AsyncClient(timeout=3.0) as client:
-            await client.post(url, json={"model_id": model_id})
+            await client.post(url, json=payload)
     except Exception as e:
         logger.warning("Failed to report model success: %s", e)
 

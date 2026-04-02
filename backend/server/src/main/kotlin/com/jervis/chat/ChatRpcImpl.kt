@@ -48,6 +48,7 @@ class ChatRpcImpl(
     private val taskRepository: TaskRepository,
     private val taskGraphExistsService: TaskGraphExistsService,
     private val unifiedTimelineService: UnifiedTimelineService,
+    private val preferenceService: com.jervis.preferences.PreferenceService,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -110,12 +111,16 @@ class ChatRpcImpl(
         contextTaskId: String?,
         attachments: List<com.jervis.dto.chat.AttachmentDto>,
         tierOverride: String?,
+        clientTimezone: String?,
     ) {
         // Validate ObjectId format — reject placeholder values like "client_123"
         val safeClientId = activeClientId?.takeIf { ObjectId.isValid(it) }
         val safeProjectId = activeProjectId?.takeIf { ObjectId.isValid(it) }
         val safeGroupId = activeGroupId?.takeIf { ObjectId.isValid(it) }
-        logger.info { "CHAT_SEND | text='${text.take(80)}' | clientId=$safeClientId | projectId=$safeProjectId | groupId=$safeGroupId" }
+        logger.info { "CHAT_SEND | text='${text.take(80)}' | clientId=$safeClientId | projectId=$safeProjectId | groupId=$safeGroupId | tz=$clientTimezone" }
+
+        // Persist client timezone as last-known for scheduler/calendar (fire-and-forget)
+        val resolvedTimezone = clientTimezone ?: "Europe/Prague"
 
         // Start processing in background — results arrive via chatEventStream
         backgroundScope.launch {
@@ -155,6 +160,19 @@ class ChatRpcImpl(
                     } catch (_: Exception) { null }
                 }
 
+                // Update last-known timezone for scheduler/calendar (non-blocking)
+                try {
+                    preferenceService.setPreference(
+                        key = com.jervis.preferences.PreferenceService.KEY_TIMEZONE,
+                        value = resolvedTimezone,
+                        source = com.jervis.preferences.PreferenceSource.USER_IMPLICIT,
+                        confidence = 1.0,
+                        description = "Auto-updated from client device timezone",
+                    )
+                } catch (e: Exception) {
+                    logger.warn { "Failed to persist client timezone: ${e.message}" }
+                }
+
                 // Persistence-first: sendMessage() saves USER_MESSAGE to DB before returning the Flow
                 val eventFlow = chatService.sendMessage(
                     text = text,
@@ -168,6 +186,7 @@ class ChatRpcImpl(
                     contextTaskId = contextTaskId,
                     maxOpenRouterTier = maxOpenRouterTier,
                     attachments = attachments,
+                    clientTimezone = resolvedTimezone,
                 )
 
                 // Emit user message AFTER DB save (persistence-first) for reliable reconnect

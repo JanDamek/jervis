@@ -88,6 +88,7 @@ class PythonChatClient(
         contextTaskId: String? = null,
         maxOpenRouterTier: String = "NONE",
         attachments: List<com.jervis.dto.chat.AttachmentDto> = emptyList(),
+        clientTimezone: String? = null,
     ): Flow<ChatStreamEvent> = flow {
         val apiUrl = "${orchestratorBaseUrl.trimEnd('/')}/chat"
         val request = PythonChatRequest(
@@ -104,6 +105,7 @@ class PythonChatClient(
             contextTaskId = contextTaskId,
             maxOpenRouterTier = maxOpenRouterTier,
             attachments = attachments.map { PythonAttachment(filename = it.filename, mimeType = it.mimeType, sizeBytes = it.sizeBytes, contentBase64 = it.contentBase64) },
+            clientTimezone = clientTimezone,
         )
 
         logger.info { "PYTHON_CHAT_START | session=$sessionId | message=${message.take(80)}" }
@@ -274,4 +276,5 @@ private data class PythonChatRequest(
     @SerialName("context_task_id") val contextTaskId: String? = null,
     @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "NONE",
     val attachments: List<PythonAttachment> = emptyList(),
+    @SerialName("client_timezone") val clientTimezone: String? = null,
 )

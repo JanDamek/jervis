@@ -2,6 +2,7 @@ package com.jervis.rpc.internal
 
 import com.jervis.meeting.MeetingRpcImpl
 import com.jervis.client.ClientService
+import com.jervis.preferences.PreferenceService
 import com.jervis.project.ProjectService
 import com.jervis.task.UserTaskService
 import io.ktor.http.ContentType
@@ -30,6 +31,7 @@ fun Routing.installInternalChatContextApi(
     projectService: ProjectService,
     userTaskService: UserTaskService,
     meetingRpcImpl: MeetingRpcImpl,
+    preferenceService: PreferenceService,
 ) {
     // List clients with their projects (id, name) — for LLM scope resolution
     get("/internal/clients-projects") {
@@ -101,6 +103,20 @@ fun Routing.installInternalChatContextApi(
         } catch (e: Exception) {
             logger.warn(e) { "INTERNAL_API_ERROR | endpoint=unclassified-meetings/count" }
             call.respondText("""{"count":0}""", ContentType.Application.Json)
+        }
+    }
+
+    // User timezone from GLOBAL preference — for system prompt and scheduler
+    get("/internal/user-timezone") {
+        try {
+            val tz = preferenceService.getUserTimezone()
+            call.respondText(
+                """{"timezone":"${tz.id}"}""",
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=user-timezone" }
+            call.respondText("""{"timezone":"Europe/Prague"}""", ContentType.Application.Json)
         }
     }
 }

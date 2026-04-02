@@ -47,6 +47,9 @@ spec:
             - configMapRef:
                 name: jervis-config
           env:
+            # Timezone — all backend services MUST run in UTC
+            - name: TZ
+              value: "UTC"
             - name: MONGODB_PASSWORD
               valueFrom:
                 secretKeyRef:

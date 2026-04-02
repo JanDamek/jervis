@@ -232,6 +232,22 @@ data class QueueModelEntryDto(
 
     /** Provider name (e.g. "nvidia", "stepfun", "openrouter") */
     val provider: String = "",
+
+    /** Runtime usage statistics (persisted by router → Kotlin → MongoDB) */
+    val stats: ModelCallStatsDto = ModelCallStatsDto(),
+)
+
+/**
+ * Usage statistics for a single model, embedded in the queue entry.
+ */
+@Serializable
+data class ModelCallStatsDto(
+    val callCount: Int = 0,
+    val totalTimeS: Double = 0.0,
+    val totalInputTokens: Long = 0,
+    val totalOutputTokens: Long = 0,
+    val tokensPerS: Double = 0.0,
+    val lastCall: Double = 0.0,
 )
 
 /**
@@ -289,4 +305,20 @@ data class ModelTestResultDto(
     val responsePreview: String = "",
     /** Error message if test failed */
     val error: String = "",
+)
+
+/**
+ * Usage statistics for a cloud model, tracked by the ollama-router.
+ * Includes call count, average response time, and pricing info.
+ */
+@Serializable
+data class ModelStatsDto(
+    val modelId: String,
+    val callCount: Int = 0,
+    val avgResponseS: Double = 0.0,
+    val totalTimeS: Double = 0.0,
+    val totalInputTokens: Int = 0,
+    val totalOutputTokens: Int = 0,
+    val tokensPerS: Double = 0.0,
+    val lastCall: Double = 0.0,
 )

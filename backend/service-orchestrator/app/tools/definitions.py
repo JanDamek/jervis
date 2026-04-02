@@ -485,6 +485,18 @@ TOOL_CREATE_SCHEDULED_TASK: dict = {
                     "enum": ["urgent", "normal"],
                     "default": "normal",
                 },
+                "is_personal_reminder": {
+                    "type": "boolean",
+                    "description": (
+                        "Set to true for personal reminders/notifications directed at the user "
+                        "(e.g., 'připomeň mi v 16:00', 'napiš mi 5 min před meetingem'). "
+                        "These follow the user's CURRENT timezone — if user travels, the reminder "
+                        "fires at the intended local time wherever they are. "
+                        "Set to false (default) for automated tasks like reports, deploys, cron jobs — "
+                        "these use a fixed timezone from creation and don't change when user travels."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["title", "description", "reason"],
         },

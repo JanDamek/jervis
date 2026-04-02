@@ -24,6 +24,7 @@ from .models import (
     EMBEDDING_MODELS,
     EMBEDDING_PATHS,
     GPU_MODEL_SETS,
+    MODEL_EQUIVALENTS,
     Priority,
     RequestState,
     TrackedRequest,
@@ -35,6 +36,14 @@ if TYPE_CHECKING:
     from .gpu_state import GpuPool
 
 logger = logging.getLogger("ollama-router.queue")
+
+
+def _find_equivalent_in_set(model: str, gpu_set: list[str]) -> str | None:
+    """Find an equivalent model that exists in the GPU's model set."""
+    for equiv in MODEL_EQUIVALENTS.get(model, []):
+        if equiv in gpu_set:
+            return equiv
+    return None
 
 
 @dataclass
@@ -274,22 +283,40 @@ class RequestQueue:
             # For NORMAL, skip reserved GPUs
             if not is_critical and b.reserved_by:
                 continue
-            # Only route to GPUs that have this model in their model set.
-            # This prevents sending 30b to p40-2 (embedding+VLM only), etc.
+            # Only route to GPUs that have this model (or an equivalent) in their model set.
             gpu_set = GPU_MODEL_SETS.get(b.name, [])
             if request.model not in gpu_set:
+                # Check model equivalents — e.g. qwen3:14b can run on 30b GPU
+                equiv_model = _find_equivalent_in_set(request.model, gpu_set)
+                if equiv_model is None:
+                    continue
+                # Tag the backend with the equivalent model for proxy to use
+                gpu_candidates.append((b, equiv_model))
                 continue
-            gpu_candidates.append(b)
+            gpu_candidates.append((b, None))
 
-        # Prefer GPU that already has the model
-        with_model = [b for b in gpu_candidates if b.has_model(request.model)]
-        if with_model:
-            best = self._pick_least_busy_rr(with_model)
+        if not gpu_candidates:
+            return None
+
+        # Prefer GPU that has the exact requested model
+        exact = [(b, eq) for b, eq in gpu_candidates if eq is None and b.has_model(request.model)]
+        if exact:
+            best, _ = self._pick_least_busy_rr_pair(exact)
             return f"gpu:{best.name}"
 
-        # GPU without model but available (will need load)
+        # Next: GPU with equivalent model (model redirect)
+        equiv = [(b, eq) for b, eq in gpu_candidates if eq is not None and b.has_model(eq)]
+        if equiv:
+            best, equiv_model = self._pick_least_busy_rr_pair(equiv)
+            # Redirect: swap model in request body so it runs on the equivalent
+            request.body["model"] = equiv_model
+            request.model = equiv_model
+            logger.info("MODEL_REDIRECT: %s → %s on GPU %s", request.original_model or "?", equiv_model, best.name)
+            return f"gpu:{best.name}"
+
+        # GPU available but model needs loading
         if gpu_candidates:
-            best = self._pick_least_busy_rr(gpu_candidates)
+            best, _ = self._pick_least_busy_rr_pair(gpu_candidates)
             return f"gpu:{best.name}"
 
         return None
@@ -298,6 +325,14 @@ class RequestQueue:
         """Pick least busy GPU. Round-robin tie-break when equal load."""
         min_count = min(b.active_request_count() for b in candidates)
         tied = [b for b in candidates if b.active_request_count() == min_count]
+        pick = tied[self._rr_counter % len(tied)]
+        self._rr_counter += 1
+        return pick
+
+    def _pick_least_busy_rr_pair(self, candidates: list[tuple[GpuBackend, str | None]]) -> tuple[GpuBackend, str | None]:
+        """Pick least busy GPU from (backend, equiv_model) pairs."""
+        min_count = min(b.active_request_count() for b, _ in candidates)
+        tied = [(b, eq) for b, eq in candidates if b.active_request_count() == min_count]
         pick = tied[self._rr_counter % len(tied)]
         self._rr_counter += 1
         return pick

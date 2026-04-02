@@ -639,6 +639,18 @@ class KotlinServerClient:
             logger.warning("Failed to count unclassified meetings: %s", e)
             return 0
 
+    async def get_user_timezone(self) -> str:
+        """Get user timezone from GLOBAL preference (default: Europe/Prague)."""
+        try:
+            client = await self._get_client()
+            resp = await client.get("/internal/user-timezone")
+            if resp.status_code == 200:
+                return resp.json().get("timezone", "Europe/Prague")
+            return "Europe/Prague"
+        except Exception as e:
+            logger.warning("Failed to get user timezone: %s", e)
+            return "Europe/Prague"
+
     # ------------------------------------------------------------------
     # Task tools (for chat agent)
     # ------------------------------------------------------------------

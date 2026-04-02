@@ -556,7 +556,7 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
                 update_fields = {
                     "relevanceScore": score,
                     "relevanceReason": reason,
-                    "updatedAt": __import__("datetime").datetime.utcnow(),
+                    "updatedAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
                 }
 
                 # Upload to KB if relevant (score >= 0.7)

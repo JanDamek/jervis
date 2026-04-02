@@ -12,7 +12,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 
@@ -213,6 +213,7 @@ async def execute_tool(
                 schedule=arguments.get("schedule", "manual"),
                 scheduled_at=arguments.get("scheduled_at"),
                 urgency=arguments.get("urgency", "normal"),
+                is_personal_reminder=arguments.get("is_personal_reminder", False),
                 client_id=client_id,
                 project_id=project_id,
             )
@@ -1193,7 +1194,7 @@ async def _execute_store_knowledge(
     url = f"{kb_write_url}/api/v1/ingest"
 
     # Generate unique sourceUrn for user-provided knowledge
-    timestamp = datetime.now().isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
     source_urn = f"user-knowledge:{category}:{subject}:{timestamp}"
 
     payload = {
@@ -1298,6 +1299,7 @@ async def _execute_create_scheduled_task(
     schedule: str = "manual",
     scheduled_at: str | None = None,
     urgency: str = "normal",
+    is_personal_reminder: bool = False,
     client_id: str = "",
     project_id: str | None = None,
 ) -> str:
@@ -1311,17 +1313,32 @@ async def _execute_create_scheduled_task(
     if not description.strip():
         return "Error: Task description cannot be empty."
 
+    # Resolve user timezone for scheduling
+    from app.tools.kotlin_client import kotlin_client
+    user_timezone = "Europe/Prague"
+    try:
+        user_timezone = await kotlin_client.get_user_timezone()
+    except Exception:
+        pass
+
     # Resolve scheduling: explicit ISO time takes precedence
     scheduled_at_iso = None
+    scheduled_local_time = None  # For personal reminders (followUserTimezone)
     if scheduled_at:
         # Validate and normalize ISO-8601 datetime
         from datetime import datetime, timezone
+        import zoneinfo
         try:
             dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
             if dt.tzinfo is None:
-                # Assume local timezone (CET/CEST)
-                import zoneinfo
-                dt = dt.replace(tzinfo=zoneinfo.ZoneInfo("Europe/Prague"))
+                # Assume user's current timezone
+                dt = dt.replace(tzinfo=zoneinfo.ZoneInfo(user_timezone))
+
+            if is_personal_reminder:
+                # Store local time for floating-timezone resolution
+                local_dt = dt.astimezone(zoneinfo.ZoneInfo(user_timezone))
+                scheduled_local_time = local_dt.strftime("%Y-%m-%dT%H:%M:%S")
+
             scheduled_at_iso = dt.astimezone(timezone.utc).isoformat()
         except (ValueError, KeyError) as e:
             return f"Error: Invalid scheduled_at format '{scheduled_at}': {e}"
@@ -1337,7 +1354,12 @@ async def _execute_create_scheduled_task(
         days_offset = schedule_map.get(schedule)
         if days_offset:
             from datetime import datetime, timedelta, timezone
-            scheduled_at_iso = (datetime.now(timezone.utc) + timedelta(days=days_offset)).isoformat()
+            import zoneinfo
+            utc_dt = datetime.now(timezone.utc) + timedelta(days=days_offset)
+            scheduled_at_iso = utc_dt.isoformat()
+            if is_personal_reminder:
+                local_dt = utc_dt.astimezone(zoneinfo.ZoneInfo(user_timezone))
+                scheduled_local_time = local_dt.strftime("%Y-%m-%dT%H:%M:%S")
 
     # Use Kotlin server's internal task creation endpoint
     kotlin_url = settings.kotlin_server_url or "http://jervis-server:8080"
@@ -1355,6 +1377,9 @@ async def _execute_create_scheduled_task(
         "description": task_description,
         "schedule": schedule if not scheduled_at else "custom",
         "scheduledAt": scheduled_at_iso,
+        "cronTimezone": user_timezone if not is_personal_reminder else None,
+        "followUserTimezone": is_personal_reminder,
+        "scheduledLocalTime": scheduled_local_time,
         "createdBy": "orchestrator_agent",
         "metadata": {
             "reason": reason,
@@ -2501,7 +2526,7 @@ async def _execute_memory_store(
             lqm.store_affair(active)
 
         # Buffer KB write
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         kind_map = {
             "fact": "user_knowledge_fact",
             "decision": "user_knowledge_preference",

@@ -41,7 +41,7 @@ result = {
     'summary': os.environ.get("_JERVIS_SUMMARY", ""),
     'agentType': sys.argv[2],
     'changedFiles': [],
-    'timestamp': datetime.datetime.now().isoformat()
+    'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
 }
 with open(sys.argv[3], 'w') as f:
     json.dump(result, f, indent=2)
@@ -159,7 +159,7 @@ result = {
     'agentType': sys.argv[3],
     'changedFiles': json.loads(sys.argv[5]) if len(sys.argv) > 5 else [],
     'branch': os.environ.get("_JERVIS_BRANCH", ""),
-    'timestamp': datetime.datetime.now().isoformat()
+    'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
 }
 with open(sys.argv[4], 'w') as f:
     json.dump(result, f, indent=2)

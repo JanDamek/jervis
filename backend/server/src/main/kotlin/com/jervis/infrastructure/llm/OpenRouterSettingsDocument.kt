@@ -70,4 +70,15 @@ data class QueueModelEntry(
     val supportsTools: Boolean = false,
     /** Provider name (e.g. "nvidia", "stepfun", "openrouter") */
     val provider: String = "",
+    /** Runtime usage statistics (persisted, updated by router) */
+    val stats: ModelCallStats = ModelCallStats(),
+)
+
+data class ModelCallStats(
+    val callCount: Int = 0,
+    val totalTimeS: Double = 0.0,
+    val totalInputTokens: Long = 0,
+    val totalOutputTokens: Long = 0,
+    val tokensPerS: Double = 0.0,
+    val lastCall: Double = 0.0,
 )

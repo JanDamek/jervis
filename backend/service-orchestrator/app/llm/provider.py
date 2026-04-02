@@ -11,8 +11,9 @@ Timeout strategy:
 - Blocking calls (tool calls): tier-based timeout via TIER_TIMEOUT_SECONDS.
 
 Rate limiting:
-- OpenRouter FREE: 20 RPM account-wide. Orchestrator calls OpenRouter directly
-  (not via ollama-router proxy), so rate limiting must happen here.
+- OpenRouter: account is non-free-tier (unlimited at account level).
+  Upstream provider rate limits cause 429s — handled by router's per-model
+  pause/disable. Orchestrator rate limiter is a safety ceiling (200 RPM).
 - Sliding window tracks request timestamps; waits for slot when at capacity.
 """
 
@@ -72,7 +73,7 @@ class _OpenRouterRateLimiter:
             await asyncio.sleep(min(wait_time, 5.0))
 
 
-_openrouter_limiter = _OpenRouterRateLimiter(max_rpm=20)
+_openrouter_limiter = _OpenRouterRateLimiter(max_rpm=200)
 
 # ── Gemini daily counter ──────────────────────────────────────────────────
 _gemini_lock = threading.Lock()
@@ -290,6 +291,7 @@ class LLMProvider:
         messages: list[dict],
         tier: ModelTier = ModelTier.LOCAL_STANDARD,
         tools: list[dict] | None = None,
+        tool_choice: str | None = None,
         temperature: float = 0.1,
         max_tokens: int = 8192,
         extra_headers: dict[str, str] | None = None,
@@ -500,6 +502,7 @@ class LLMProvider:
         logger.info("LLM blocking call (tools): model=%s tier=%s timeout=%ds tools=%s",
                      config["model"], tier.value, timeout, tool_names)
         logger.debug("LLM request kwargs: %s", {k: v for k, v in kwargs.items() if k not in ["messages"]})
+        _call_start = time.monotonic()
         try:
             response = await asyncio.wait_for(
                 self._call_with_retry(litellm.acompletion, kwargs, config["model"]),
@@ -548,7 +551,12 @@ class LLMProvider:
                 has_content = bool((getattr(msg, "content", None) or "").strip())
                 has_tools = bool(getattr(msg, "tool_calls", None))
                 if has_content or has_tools:
-                    _report_success_bg(config["model"])
+                    usage = getattr(response, "usage", None)
+                    _report_success_bg(
+                        config["model"], time.monotonic() - _call_start,
+                        input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+                        output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+                    )
 
         # Log response summary
         try:
@@ -674,10 +682,10 @@ def _report_error_bg(model: str, error: Exception | str = "") -> None:
     asyncio.ensure_future(_report_error_async(model_id, error_message))
 
 
-def _report_success_bg(model: str) -> None:
-    """Fire-and-forget: report model success to router."""
+def _report_success_bg(model: str, duration_s: float = 0.0, input_tokens: int = 0, output_tokens: int = 0) -> None:
+    """Fire-and-forget: report model success to router (with duration + token stats)."""
     model_id = model.removeprefix("openrouter/")
-    asyncio.ensure_future(_report_success_async(model_id))
+    asyncio.ensure_future(_report_success_async(model_id, duration_s, input_tokens, output_tokens))
 
 
 async def _report_error_async(model_id: str, error_message: str = "") -> None:
@@ -691,10 +699,10 @@ async def _report_error_async(model_id: str, error_message: str = "") -> None:
         logger.debug("Failed to report model error: %s", e)
 
 
-async def _report_success_async(model_id: str) -> None:
+async def _report_success_async(model_id: str, duration_s: float = 0.0, input_tokens: int = 0, output_tokens: int = 0) -> None:
     try:
         from app.llm.router_client import report_model_success
-        await report_model_success(model_id)
+        await report_model_success(model_id, duration_s, input_tokens, output_tokens)
     except Exception as e:
         logger.debug("Failed to report model success: %s", e)
 

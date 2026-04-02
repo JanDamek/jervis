@@ -82,6 +82,7 @@ class BackgroundEngine(
     private val projectRepository: com.jervis.project.ProjectRepository,
     private val idleTaskRegistry: IdleTaskRegistry,
     private val kbMaintenanceService: com.jervis.maintenance.KbMaintenanceService,
+    private val preferenceService: com.jervis.preferences.PreferenceService,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -828,6 +829,30 @@ class BackgroundEngine(
 
         while (scope.isActive) {
             try {
+                // Recalculate scheduledAt for floating-timezone reminders (followUserTimezone=true)
+                try {
+                    val userZone = preferenceService.getUserTimezone()
+                    taskRepository.findByFollowUserTimezoneAndTypeAndState(
+                        followUserTimezone = true,
+                        type = com.jervis.dto.task.TaskTypeEnum.SCHEDULED_TASK,
+                        state = TaskStateEnum.NEW,
+                    ).collect { task ->
+                        val localTimeStr = task.scheduledLocalTime ?: return@collect
+                        try {
+                            val localTime = java.time.LocalDateTime.parse(localTimeStr)
+                            val newScheduledAt = localTime.atZone(userZone).toInstant()
+                            if (newScheduledAt != task.scheduledAt) {
+                                taskRepository.save(task.copy(scheduledAt = newScheduledAt))
+                                logger.debug { "SCHEDULER_TZ_RECALC: task ${task.id} → $newScheduledAt (tz=${userZone.id})" }
+                            }
+                        } catch (e: Exception) {
+                            logger.warn { "SCHEDULER_TZ_RECALC_ERROR: task ${task.id} localTime=$localTimeStr: ${e.message}" }
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.warn { "SCHEDULER_TZ_RECALC_FAILED: ${e.message}" }
+                }
+
                 val dispatchThreshold = java.time.Instant.now().plus(schedulerAdvance)
 
                 val dueTasks = taskRepository.findByScheduledAtLessThanEqualAndTypeAndStateOrderByScheduledAtAsc(
@@ -909,14 +934,20 @@ class BackgroundEngine(
                 "SCHEDULED_DISPATCH: one-shot task ${task.id} '${task.taskName}' → INDEXING"
             }
         } else {
-            // Recurring: calculate next run time and create execution copy
+            // Recurring: calculate next run time in the timezone where cron was defined
+            val cronZone = try {
+                task.cronTimezone?.let { java.time.ZoneId.of(it) }
+                    ?: preferenceService.getUserTimezone()
+            } catch (_: Exception) {
+                preferenceService.getUserTimezone()
+            }
             val nextRun = try {
                 val cronExpr = org.springframework.scheduling.support.CronExpression.parse(cron)
                 val next = cronExpr.next(java.time.LocalDateTime.ofInstant(
                     java.time.Instant.now(),
-                    java.time.ZoneId.systemDefault(),
+                    cronZone,
                 ))
-                next?.atZone(java.time.ZoneId.systemDefault())?.toInstant()
+                next?.atZone(cronZone)?.toInstant()
             } catch (e: Exception) {
                 logger.warn { "Invalid cron expression '$cron' for task ${task.id}, treating as one-shot" }
                 null

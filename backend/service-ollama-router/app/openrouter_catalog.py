@@ -27,9 +27,55 @@ _OPENROUTER_SETTINGS_TTL = 60.0  # 1 minute
 _model_errors: dict[str, dict] = {}
 _MAX_CONSECUTIVE_ERRORS = 3   # Disable after N consecutive failures
 _MAX_ERROR_HISTORY = 10       # Keep last N error messages per model
-_RATE_LIMIT_PAUSE_S = 30.0    # Initial pause on first 429 (short — proactive limiter should prevent most)
-_RATE_LIMIT_MAX_PAUSE_S = 300.0  # Max pause: 5 min (proactive limiter handles the rest)
-_AUTO_RECOVERY_S = 300.0      # Auto re-enable disabled model after 5 min
+_RATE_LIMIT_PAUSE_S = 60.0    # Each 429 → pause model for 60s
+_RATE_LIMIT_DISABLE_AFTER = 3  # After N consecutive 429s → disable (needs probe to re-enable)
+_PROBE_COOLDOWN_S = 300.0     # First probe after 5 min
+_PROBE_COOLDOWN_ESCALATION = 6.0  # Each failed probe multiplies cooldown (5m → 30m → 3h)
+_PROBE_MAX_FAILURES = 3       # After N failed probes → permanently disabled (manual reset only)
+_AUTO_RECOVERY_S = 300.0      # Non-429 errors: auto re-enable after 5 min
+
+# ── Model usage statistics ───────────────────────────────────────────
+# model_id → {"call_count": int, "total_time_s": float, "last_call": float}
+_model_stats: dict[str, dict] = {}
+
+
+def record_model_call(
+    model_id: str, duration_s: float,
+    input_tokens: int = 0, output_tokens: int = 0,
+) -> None:
+    """Record a model call for statistics (tokens from litellm usage)."""
+    stats = _model_stats.get(model_id)
+    if not stats:
+        stats = {
+            "call_count": 0, "total_time_s": 0.0, "last_call": 0.0,
+            "total_input_tokens": 0, "total_output_tokens": 0,
+        }
+        _model_stats[model_id] = stats
+    stats["call_count"] += 1
+    stats["total_time_s"] += duration_s
+    stats["total_input_tokens"] += input_tokens
+    stats["total_output_tokens"] += output_tokens
+    stats["last_call"] = time.time()
+
+
+def get_model_stats() -> dict[str, dict]:
+    """Get usage statistics for all models (for API/UI)."""
+    result = {}
+    for model_id, stats in _model_stats.items():
+        count = stats["call_count"]
+        total_out = stats.get("total_output_tokens", 0)
+        total_time = stats["total_time_s"]
+        result[model_id] = {
+            "call_count": count,
+            "avg_response_s": round(total_time / count, 2) if count > 0 else 0,
+            "total_time_s": round(total_time, 1),
+            "total_input_tokens": stats.get("total_input_tokens", 0),
+            "total_output_tokens": total_out,
+            "tokens_per_s": round(total_out / total_time, 1) if total_time > 0 else 0,
+            "last_call": stats["last_call"],
+        }
+    return result
+
 
 # ── Round-robin state for FREE queue ─────────────────────────────────
 # Tracks which model was used last per queue, so we rotate evenly
@@ -99,25 +145,27 @@ async def get_queue(queue_name: str) -> list[dict]:
 async def find_cloud_model_for_context(
     estimated_tokens: int, tier_level: int, skip_models: list[str] | None = None,
     capability: str | None = None,
+    require_tools: bool = False,
 ) -> str | None:
     """Find first cloud model that fits the context, iterating queues by tier.
 
     Tries FREE -> PAID -> PREMIUM in order, respecting tier_level limit.
     capability: if set, only models with matching capability (or empty capabilities = all).
+    require_tools: if True, only models with supportsTools=True are eligible.
     skip_models: model IDs to skip (already tried and failed in this request).
     Returns modelId or None.
     """
-    cloud_model = await _first_cloud_model("FREE", estimated_tokens, skip_models, capability)
+    cloud_model = await _first_cloud_model("FREE", estimated_tokens, skip_models, capability, require_tools)
     if cloud_model:
         return cloud_model
 
     if tier_level >= TIER_LEVELS["PAID"]:
-        cloud_model = await _first_cloud_model("PAID", estimated_tokens, skip_models, capability)
+        cloud_model = await _first_cloud_model("PAID", estimated_tokens, skip_models, capability, require_tools)
         if cloud_model:
             return cloud_model
 
     if tier_level >= TIER_LEVELS["PREMIUM"]:
-        cloud_model = await _first_cloud_model("PREMIUM", estimated_tokens, skip_models, capability)
+        cloud_model = await _first_cloud_model("PREMIUM", estimated_tokens, skip_models, capability, require_tools)
         if cloud_model:
             return cloud_model
 
@@ -127,6 +175,7 @@ async def find_cloud_model_for_context(
 async def _first_cloud_model(
     queue_name: str, estimated_tokens: int, skip_models: list[str] | None = None,
     capability: str | None = None,
+    require_tools: bool = False,
 ) -> str | None:
     """Get next available cloud model from a queue using round-robin rotation.
 
@@ -135,6 +184,7 @@ async def _first_cloud_model(
 
     Skips models marked as error (3+ consecutive failures) and skip_models list.
     capability: if set, model must have matching capability in its capabilities list.
+    require_tools: if True, only models with supportsTools=True are eligible.
     Models with empty capabilities list are compatible with all capabilities (backward compat).
     """
     skip_set = set(skip_models) if skip_models else set()
@@ -149,6 +199,9 @@ async def _first_cloud_model(
         if model_id in skip_set:
             logger.debug("Skipping model %s (explicitly excluded)", model_id)
             continue
+        if require_tools and not entry.get("supportsTools", False):
+            logger.debug("Skipping model %s (require_tools=True but supportsTools=False)", model_id)
+            continue
         if capability:
             model_caps = entry.get("capabilities", [])
             if model_caps and capability not in model_caps:
@@ -159,13 +212,27 @@ async def _first_cloud_model(
         if error_info:
             now = time.monotonic()
             disabled_until = error_info.get("disabled_until", 0.0)
+
+            # Permanently disabled (failed too many probes) → manual reset only
+            if error_info.get("permanently_disabled"):
+                logger.debug("Skipping model %s (permanently disabled — manual reset required)", model_id)
+                continue
+
+            # Still in cooldown
             if disabled_until > now:
                 remaining = int(disabled_until - now)
                 logger.debug("Skipping model %s (paused for %ds)", model_id, remaining)
                 continue
-            if error_info.get("disabled") and disabled_until <= now and disabled_until > 0:
+
+            # Cooldown expired for non-429 errors → auto-recover
+            if error_info.get("disabled") and not error_info.get("needs_probe"):
                 logger.info("Model %s auto-recovered after cooldown", model_id)
                 del _model_errors[model_id]
+            # Cooldown expired for 429 errors → needs probe before re-enabling
+            elif error_info.get("needs_probe") and disabled_until <= now and disabled_until > 0:
+                error_info["probe_ready"] = True
+                logger.debug("Skipping model %s (probe ready, awaiting test)", model_id)
+                continue
             elif error_info.get("disabled"):
                 logger.debug("Skipping error model %s (%d consecutive errors)",
                              model_id, error_info.get("count", 0))
@@ -179,16 +246,9 @@ async def _first_cloud_model(
     if not candidates:
         return None
 
-    # PAID/PREMIUM: always use first-fit (priority order matters for cost)
-    if queue_name != "FREE":
-        return candidates[0]
-
-    # FREE: round-robin rotation to distribute load evenly
-    last_idx = _round_robin_index.get(queue_name, -1)
-    next_idx = (last_idx + 1) % len(candidates)
-    selected = candidates[next_idx]
-    _round_robin_index[queue_name] = next_idx
-    logger.info("FREE round-robin: selected %s (index %d/%d)", selected, next_idx, len(candidates))
+    # All queues: first-fit (priority order). Next model only if first is disabled/skipped.
+    selected = candidates[0]
+    logger.info("Queue %s: selected %s (first of %d candidates)", queue_name, selected, len(candidates))
     return selected
 
 
@@ -217,21 +277,30 @@ def report_model_error(model_id: str, error_message: str = "") -> bool:
         if len(errors) > _MAX_ERROR_HISTORY:
             info["errors"] = errors[-_MAX_ERROR_HISTORY:]
 
-    # Rate limit detection — exponential backoff, don't count as regular error.
-    # First 429: pause 60s. Each consecutive 429 doubles the pause.
-    # Sequence: 60s → 2min → 4min → 8min → 16min → 32min → 1h → 2h → 4h → 8h → 12h (cap)
+    # Rate limit (429): pause for 60s each time, disable after N consecutive 429s.
+    # Upstream provider rate limits can't be controlled — fast disable is better
+    # than wasting time retrying a model that's going to 429 again.
     is_rate_limit = "429" in msg_lower or "rate limit" in msg_lower or "too many" in msg_lower
     if is_rate_limit:
         consecutive_429 = info.get("consecutive_429", 0) + 1
         info["consecutive_429"] = consecutive_429
-        pause = min(_RATE_LIMIT_PAUSE_S * (2 ** (consecutive_429 - 1)), _RATE_LIMIT_MAX_PAUSE_S)
-        info["disabled_until"] = now + pause
-        if pause >= 3600:
-            logger.warning("Model %s RATE LIMITED (429 #%d) — paused for %.1fh",
-                            model_id, consecutive_429, pause / 3600)
-        else:
-            logger.warning("Model %s RATE LIMITED (429 #%d) — paused for %ds",
-                            model_id, consecutive_429, int(pause))
+
+        if consecutive_429 >= _RATE_LIMIT_DISABLE_AFTER:
+            # 3rd consecutive 429 → disable, needs probe to re-enable
+            info["count"] = _MAX_CONSECUTIVE_ERRORS
+            info["disabled"] = True
+            info["needs_probe"] = True
+            info["probe_failures"] = info.get("probe_failures", 0)
+            cooldown = _PROBE_COOLDOWN_S * (_PROBE_COOLDOWN_ESCALATION ** info["probe_failures"])
+            info["disabled_until"] = now + cooldown
+            logger.warning("Model %s DISABLED after %d consecutive 429s (probe in %ds)",
+                            model_id, consecutive_429, int(cooldown))
+            return True
+
+        # Pause for 60s
+        info["disabled_until"] = now + _RATE_LIMIT_PAUSE_S
+        logger.warning("Model %s RATE LIMITED (429 #%d/%d) — paused for %ds",
+                        model_id, consecutive_429, _RATE_LIMIT_DISABLE_AFTER, int(_RATE_LIMIT_PAUSE_S))
         return False
 
     # Context overflow — skip for this request but don't disable the model.
@@ -279,6 +348,84 @@ def reset_model_error(model_id: str) -> bool:
         logger.info("Model %s re-enabled by user", model_id)
         return True
     return False
+
+
+def get_models_needing_probe() -> list[str]:
+    """Get model IDs that have expired cooldown and need a probe test."""
+    return [
+        model_id for model_id, info in _model_errors.items()
+        if info.get("probe_ready") and not info.get("permanently_disabled")
+    ]
+
+
+def handle_probe_success(model_id: str) -> None:
+    """Probe test succeeded — re-enable the model."""
+    if model_id in _model_errors:
+        logger.info("Model %s PROBE OK — re-enabled", model_id)
+        del _model_errors[model_id]
+
+
+def handle_probe_failure(model_id: str) -> None:
+    """Probe test failed (still 429) — escalate cooldown or permanently disable."""
+    info = _model_errors.get(model_id)
+    if not info:
+        return
+
+    info["probe_ready"] = False
+    probe_failures = info.get("probe_failures", 0) + 1
+    info["probe_failures"] = probe_failures
+
+    if probe_failures >= _PROBE_MAX_FAILURES:
+        info["permanently_disabled"] = True
+        logger.warning("Model %s PERMANENTLY DISABLED after %d failed probes (manual reset required)",
+                        model_id, probe_failures)
+        return
+
+    # Escalate cooldown: 5min → 30min → 3h
+    cooldown = _PROBE_COOLDOWN_S * (_PROBE_COOLDOWN_ESCALATION ** probe_failures)
+    info["disabled_until"] = time.monotonic() + cooldown
+    logger.warning("Model %s PROBE FAILED (#%d/%d) — next probe in %ds",
+                    model_id, probe_failures, _PROBE_MAX_FAILURES, int(cooldown))
+
+
+async def load_persisted_stats() -> None:
+    """Load stats from settings on startup (stats are embedded in queue model entries)."""
+    or_settings = await _fetch_openrouter_settings()
+    if not or_settings:
+        return
+    count = 0
+    for queue in or_settings.get("modelQueues", []):
+        for entry in queue.get("models", []):
+            model_id = entry.get("modelId", "")
+            stats = entry.get("stats")
+            if stats and stats.get("callCount", 0) > 0:
+                _model_stats[model_id] = {
+                    "call_count": stats.get("callCount", 0),
+                    "total_time_s": stats.get("totalTimeS", 0.0),
+                    "total_input_tokens": stats.get("totalInputTokens", 0),
+                    "total_output_tokens": stats.get("totalOutputTokens", 0),
+                    "last_call": stats.get("lastCall", 0.0),
+                }
+                count += 1
+    if count > 0:
+        logger.info("Loaded persisted stats for %d models", count)
+
+
+async def persist_stats() -> None:
+    """Send in-memory stats to Kotlin server for MongoDB persistence."""
+    stats = get_model_stats()
+    if not stats:
+        return
+    url = f"{settings.kotlin_server_url.rstrip('/')}/internal/openrouter-model-stats"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=stats)
+            if resp.status_code == 200:
+                logger.info("Persisted stats for %d models to MongoDB", len(stats))
+            else:
+                logger.warning("Failed to persist stats: HTTP %d", resp.status_code)
+    except Exception as e:
+        logger.warning("Failed to persist stats: %s", e)
 
 
 async def get_max_context_tokens(max_tier: str = "NONE") -> int:

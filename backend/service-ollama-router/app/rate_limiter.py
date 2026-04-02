@@ -144,7 +144,11 @@ class SlidingWindowRateLimiter:
 # ── Global rate limiter instances ──────────────────────────────────────
 
 # OpenRouter account-level limits (configurable via update_limits())
-_free_limiter = SlidingWindowRateLimiter(max_requests=20, window_seconds=60.0, name="free-models")
+# Account is non-free-tier (is_free_tier=false, requests=-1 unlimited).
+# Free models still have upstream provider rate limits (per-model),
+# but account-level OpenRouter limit is not the bottleneck.
+# 200 RPM is a safe ceiling — actual limits come from provider 429s.
+_free_limiter = SlidingWindowRateLimiter(max_requests=200, window_seconds=60.0, name="free-models")
 _paid_limiter = SlidingWindowRateLimiter(max_requests=200, window_seconds=60.0, name="paid-models")
 
 

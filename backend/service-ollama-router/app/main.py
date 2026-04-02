@@ -66,11 +66,96 @@ async def lifespan(app: FastAPI):
     gpu_pool = GpuPool(backends)
     router = OllamaRouter(gpu_pool)
     await router.startup()
+    # Load persisted stats from MongoDB (via Kotlin server)
+    from .openrouter_catalog import load_persisted_stats, persist_stats
+    await load_persisted_stats()
+    probe_task = asyncio.create_task(_model_probe_loop())
+    persist_task = asyncio.create_task(_stats_persist_loop())
     yield
+    # Persist stats before shutdown
+    await persist_stats()
+    probe_task.cancel()
+    persist_task.cancel()
     await router.shutdown()
 
 
 app = FastAPI(title="Ollama Router", lifespan=lifespan)
+
+
+# ── Model probe loop ──────────────────────────────────────────────────
+
+async def _model_probe_loop():
+    """Periodically test disabled models to check if they're back online.
+
+    Runs every 60s. For models with probe_ready=True (cooldown expired after 429),
+    sends a tiny test call. On success → re-enable. On failure → escalate cooldown.
+    After 3 failed probes → permanently disable (manual reset only).
+    """
+    from .openrouter_catalog import (
+        get_models_needing_probe, handle_probe_success, handle_probe_failure, get_api_key,
+    )
+
+    await asyncio.sleep(30)  # Initial delay
+    while True:
+        try:
+            models = get_models_needing_probe()
+            if models:
+                api_key = await get_api_key()
+                if api_key:
+                    for model_id in models:
+                        ok = await _probe_model(model_id, api_key)
+                        if ok:
+                            handle_probe_success(model_id)
+                        else:
+                            handle_probe_failure(model_id)
+                        await asyncio.sleep(5)  # Space out probes
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            logger.debug("Probe loop error: %s", e)
+        await asyncio.sleep(60)
+
+
+async def _probe_model(model_id: str, api_key: str) -> bool:
+    """Send a tiny test call to check if model responds (not 429)."""
+    body = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": "Reply: OK"}],
+        "max_tokens": 5,
+        "temperature": 0.0,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                json=body, headers=headers,
+            )
+            if resp.status_code == 200:
+                logger.info("PROBE %s: OK (%d)", model_id, resp.status_code)
+                return True
+            logger.info("PROBE %s: FAILED (%d)", model_id, resp.status_code)
+            return False
+    except Exception as e:
+        logger.info("PROBE %s: ERROR %s", model_id, e)
+        return False
+
+
+async def _stats_persist_loop():
+    """Periodically persist model stats to MongoDB (every 5 min)."""
+    from .openrouter_catalog import persist_stats
+    await asyncio.sleep(300)  # First persist after 5 min
+    while True:
+        try:
+            await persist_stats()
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            logger.debug("Stats persist error: %s", e)
+        await asyncio.sleep(300)
 
 
 # ── Helper ──────────────────────────────────────────────────────────────
@@ -364,10 +449,12 @@ async def router_status():
 async def route_decision(request: Request):
     """Capability-based routing decision endpoint.
 
-    Input: {"capability": "chat", "max_tier": "FREE", "estimated_tokens": 5000, "processing_mode": "FOREGROUND"}
+    Input: {"capability": "chat", "max_tier": "FREE", "estimated_tokens": 5000,
+            "processing_mode": "FOREGROUND", "require_tools": false}
     Output: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
 
     processing_mode: "FOREGROUND" (chat, always cloud) or "BACKGROUND" (local GPU, cloud >48k)
+    require_tools: if true, only models with supportsTools=true are eligible
     """
     body = await request.json()
     decision = await router.decide_route(
@@ -376,6 +463,7 @@ async def route_decision(request: Request):
         estimated_tokens=body.get("estimated_tokens", 0),
         processing_mode=body.get("processing_mode", "FOREGROUND"),
         skip_models=body.get("skip_models"),
+        require_tools=body.get("require_tools", False),
     )
     return JSONResponse(content=decision)
 
@@ -413,11 +501,19 @@ async def report_model_error_endpoint(request: Request):
 
 @app.post("/route-decision/model-success")
 async def report_model_success_endpoint(request: Request):
-    """Report a successful model call (resets error counter)."""
+    """Report a successful model call (resets error counter + records stats).
+
+    Input: {"model_id": "...", "duration_s": 2.5, "input_tokens": 500, "output_tokens": 200}
+    """
     body = await request.json()
     model_id = body.get("model_id", "")
-    from .openrouter_catalog import report_model_success
+    duration_s = body.get("duration_s", 0.0)
+    input_tokens = body.get("input_tokens", 0)
+    output_tokens = body.get("output_tokens", 0)
+    from .openrouter_catalog import report_model_success, record_model_call
     report_model_success(model_id)
+    if duration_s > 0:
+        record_model_call(model_id, duration_s, input_tokens, output_tokens)
     return JSONResponse(content={"model_id": model_id, "reset": True})
 
 
@@ -426,6 +522,13 @@ async def get_model_errors_endpoint():
     """Get current model error state (for UI monitoring)."""
     from .openrouter_catalog import get_model_errors
     return JSONResponse(content=get_model_errors())
+
+
+@app.get("/route-decision/model-stats")
+async def get_model_stats_endpoint():
+    """Get usage statistics for all models (call count, avg response time)."""
+    from .openrouter_catalog import get_model_stats
+    return JSONResponse(content=get_model_stats())
 
 
 @app.post("/route-decision/model-reset")

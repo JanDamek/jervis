@@ -40,6 +40,7 @@ fun Routing.installInternalTaskApi(
     taskRepository: TaskRepository,
     taskService: TaskService,
     userTaskService: UserTaskService,
+    preferenceService: com.jervis.preferences.PreferenceService,
 ) {
     // Create a background task — for chat tool create_background_task / scheduled tasks
     post("/internal/tasks/create") {
@@ -106,6 +107,9 @@ fun Routing.installInternalTaskApi(
                 state = taskState,
                 taskName = taskName,
                 scheduledAt = scheduledInstant,
+                cronTimezone = body.cronTimezone,
+                followUserTimezone = body.followUserTimezone ?: false,
+                scheduledLocalTime = body.scheduledLocalTime,
             )
             call.respondText(
                 Json.encodeToString(mapOf(
@@ -392,7 +396,8 @@ fun Routing.installInternalTaskApi(
             val since = call.request.queryParameters["since"] ?: "today"
             val clientIdStr = call.request.queryParameters["clientId"]
 
-            val sinceInstant = parseSince(since)
+            val userZone = preferenceService.getUserTimezone()
+            val sinceInstant = parseSince(since, userZone)
 
             val tasks = when {
                 clientIdStr != null -> taskRepository.findByClientIdAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
@@ -630,13 +635,13 @@ fun Routing.installInternalTaskApi(
     }
 }
 
-private fun parseSince(since: String): Instant = when (since) {
-    "today" -> Instant.now().atZone(ZoneId.systemDefault())
-        .toLocalDate().atStartOfDay(ZoneId.systemDefault()).toInstant()
+private fun parseSince(since: String, userZone: ZoneId): Instant = when (since) {
+    "today" -> Instant.now().atZone(userZone)
+        .toLocalDate().atStartOfDay(userZone).toInstant()
     "this_week" -> Instant.now().minus(Duration.ofDays(7))
     "this_month" -> Instant.now().minus(Duration.ofDays(30))
-    else -> Instant.now().atZone(ZoneId.systemDefault())
-        .toLocalDate().atStartOfDay(ZoneId.systemDefault()).toInstant()
+    else -> Instant.now().atZone(userZone)
+        .toLocalDate().atStartOfDay(userZone).toInstant()
 }
 
 // --- DTOs for internal task endpoints ---
@@ -651,6 +656,9 @@ data class InternalCreateTaskRequest(
     val schedule: String? = null,
     val daysOffset: Int? = null,
     val scheduledAt: String? = null,
+    val cronTimezone: String? = null,
+    val followUserTimezone: Boolean? = null,
+    val scheduledLocalTime: String? = null,
     val createdBy: String? = null,
     val metadata: Map<String, String>? = null,
     val priority: Int? = null,

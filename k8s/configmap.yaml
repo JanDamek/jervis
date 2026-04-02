@@ -117,29 +117,13 @@ data:
       url: http://ollama.lan.mazlusek.com:8787
       speed: 1.2
 
-    # -- Coding tools (Aider, OpenHands, Claude, Junie) ------------------------
+    # -- Coding tools (Claude Code only) ----------------------------------------
     coding-tools:
-      aider:
-        default-provider: ollama     # GPU instance (:11434)
-        default-model: "qwen3-coder-tool:30b"
-        paid-provider: anthropic
-        paid-model: "claude-3-5-sonnet-20241022"
-      openhands:
-        default-provider: ollama
-        default-model: "qwen3-coder-tool:30b"
-        paid-provider: anthropic
-        paid-model: "claude-3-5-sonnet-20241022"
-        ollama-base-url: http://jervis-ollama-router:11430  # Via Ollama Router
       claude:
-        default-provider: anthropic  # Claude Code always uses cloud
+        default-provider: anthropic
         default-model: "claude-sonnet-4-20250514"
         paid-provider: anthropic
         paid-model: "claude-sonnet-4-20250514"
-      junie:
-        default-provider: anthropic  # Junie coding agent
-        default-model: "claude-3-5-sonnet-20241022"
-        paid-provider: anthropic
-        paid-model: "claude-3-5-sonnet-20241022"
 
     # -- Microservice endpoints (K8s service names) -----------------------------
     # Ollama endpoints are in models-config.yaml, not here.
@@ -226,7 +210,7 @@ data:
   ROUTER_PORT: "11430"
   GPU_BACKENDS: '[{"url":"http://nas.lan.mazlusek.com:11434","vram_gb":24,"name":"p40-1"},{"url":"http://ollama.lan.mazlusek.com:11434","vram_gb":24,"name":"p40-2"}]'
   ORCHESTRATOR_MODEL: "qwen3-coder-tool:30b"
-  GPU_MODEL_SETS: '{"p40-1":["qwen3-coder-tool:30b"],"p40-2":["bge-m3","qwen3:14b","qwen3-vl-tool:latest"]}'
+  GPU_MODEL_SETS: '{"p40-1":["bge-m3","qwen3-coder-tool:30b"],"p40-2":["bge-m3","qwen3:14b","qwen3-vl-tool:latest"]}'
   ORCHESTRATOR_RESERVATION_TIMEOUT_S: "600"
   ORCHESTRATOR_IDLE_TIMEOUT_S: "60"
   MODEL_LOAD_TIMEOUT_S: "300"

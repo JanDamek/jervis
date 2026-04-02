@@ -89,6 +89,9 @@ class TaskService(
         hasAttachments: Boolean = false,
         attachmentCount: Int = 0,
         scheduledAt: java.time.Instant? = null,
+        cronTimezone: String? = null,
+        followUserTimezone: Boolean = false,
+        scheduledLocalTime: String? = null,
         mentionsJervis: Boolean = false,
     ): TaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
@@ -109,6 +112,9 @@ class TaskService(
                 hasAttachments = hasAttachments,
                 attachmentCount = attachmentCount,
                 scheduledAt = scheduledAt,
+                cronTimezone = cronTimezone,
+                followUserTimezone = followUserTimezone,
+                scheduledLocalTime = scheduledLocalTime,
                 mentionsJervis = mentionsJervis,
             )
 

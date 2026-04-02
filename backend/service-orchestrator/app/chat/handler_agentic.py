@@ -201,6 +201,7 @@ async def run_agentic_loop(
             max_tier=max_tier,
             estimated_tokens=estimated,
             skip_models=_skip_models or None,
+            require_tools=bool(selected_tools),
         )
         logger.info("Chat: estimated_tokens=%d → tier=%s, route=%s/%s (max_tier=%s)",
                      estimated, tier.value, route.target, route.model or tier.value, max_tier)
@@ -214,8 +215,23 @@ async def run_agentic_loop(
             except Exception as e:
                 logger.warning("Failed to register foreground start: %s", e)
 
+        # For FREE models: inject tool-forcing reminder as last system message
+        # Small models ignore system prompt at 29k context — this reminder is close to the end
+        call_messages = messages
+        if max_tier in ("FREE", "NONE") and iteration == 0 and selected_tools:
+            tool_reminder = {
+                "role": "system",
+                "content": (
+                    "REMINDER: You MUST call tools before answering. "
+                    "Use kb_search to check existing data. "
+                    "Use store_knowledge to save new facts from the user. "
+                    "Do NOT answer from memory — call a tool first."
+                ),
+            }
+            call_messages = messages + [tool_reminder]
+
         response = await call_llm(
-            messages=messages, tier=tier, tools=selected_tools, route=route,
+            messages=call_messages, tier=tier, tools=selected_tools, route=route,
             max_tier=max_tier, estimated_tokens=estimated,
         )
 
@@ -243,7 +259,7 @@ async def run_agentic_loop(
                 promise_detected = is_empty_promise(final_text)
                 no_access_claim = claims_no_web_access(final_text)
 
-                if (retry_reason or promise_detected or no_access_claim) and _guard_retries < 5:
+                if (retry_reason or promise_detected or no_access_claim) and _guard_retries < 1:
                     _guard_retries += 1
                     _reason = retry_reason or ("no_web_access_claim" if no_access_claim else "empty_promise")
                     logger.warning("HALLUCINATION_GUARD | retry %d: %s — skipping model, clean retry",
@@ -274,9 +290,9 @@ async def run_agentic_loop(
                     logger.info("HALLUCINATION_GUARD | clean retry — discarding failed response (%d chars), "
                                 "sending original messages to next model", len(final_text))
                     continue  # retry — router will pick next model via skip_models
-                elif (retry_reason or promise_detected) and _guard_retries >= 5:
-                    # Final fallback: all models in queue refused tools
-                    logger.warning("HALLUCINATION_GUARD | all models refused tools after %d retries", _guard_retries)
+                elif (retry_reason or promise_detected) and _guard_retries >= 1:
+                    # Already retried once — send with warning, don't loop
+                    logger.warning("HALLUCINATION_GUARD | sending unverified after %d retries", _guard_retries)
                     if _guard_fallback_text:
                         final_text = (
                             "⚠️ Následující informace nejsou ověřené vyhledáváním:\n\n"

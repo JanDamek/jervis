@@ -33,12 +33,12 @@ async def build_system_prompt(
     runtime_context: RuntimeContext | None = None,
     session_id: str | None = None,
     user_timezone: str = "Europe/Prague",
+    model_tier: str = "FREE",
 ) -> str:
     """Build the system prompt for Jervis chat.
 
     The prompt defines Jervis's personality, capabilities, and rules.
-    Scope info from UI is included as context hints.
-    Runtime context provides live data (clients, pending tasks, meetings).
+    model_tier: FREE uses compact prompt (~2k tokens), PAID/PREMIUM uses full prompt.
     """
     now_utc = datetime.now(timezone.utc)
     try:
@@ -67,6 +67,13 @@ async def build_system_prompt(
     thought_section = f"\n## Aktivní kontext (Thought Map)\n{ctx.thought_context}\n" if ctx.thought_context else ""
     rag_section = f"\n## Relevantní znalosti (KB)\n{ctx.rag_context}\n" if ctx.rag_context else ""
     active_graph_section = await _build_active_graph_section(session_id)
+
+    # Compact prompt for FREE models (~2k tokens vs ~8k full)
+    if model_tier == "FREE":
+        return _build_compact_prompt(
+            now_utc_str, now_local_str, user_timezone, scope_info,
+            clients_section, pending_section, thought_section, rag_section,
+        )
 
     return f"""You are Jervis — a personal AI assistant and project manager for Jan Damek.
 
@@ -264,6 +271,47 @@ When you learn a new procedure or convention from user:
 - Store via `memory_store` with `category: "procedure"`.
 - Follow procedures listed in "Learned procedures" section above.
 - New procedures take effect on next chat start (automatic KB loading).
+"""
+
+
+def _build_compact_prompt(
+    now_utc_str: str, now_local_str: str, user_timezone: str, scope_info: str,
+    clients_section: str, pending_section: str, thought_section: str, rag_section: str,
+) -> str:
+    """Compact system prompt for FREE/small models. ~2k tokens.
+
+    Focus: tool usage rules, no fluff. FREE models need VERY clear, short instructions.
+    """
+    return f"""You are Jervis — personal AI assistant for Jan Damek.
+Respond in the same language as the user. User writes Czech with typos — interpret liberally.
+Be concise. No filler phrases.
+
+Time: {now_local_str} (UTC: {now_utc_str})
+{scope_info}
+{clients_section}{pending_section}{thought_section}{rag_section}
+## CRITICAL RULES
+
+1. **ALWAYS use tools.** You have tools — USE THEM. Never answer factual questions from memory.
+2. **kb_search FIRST** — before answering ANY question, search the knowledge base.
+3. **store_knowledge** — when user tells you a fact, store it immediately.
+4. **web_search + web_fetch** — for real-world info (prices, contacts, businesses). NEVER guess.
+5. **NEVER hallucinate** — no phone numbers, addresses, prices, URLs unless from a tool result.
+6. If user provides data (bank statement, invoice) — parse it, store key facts via store_knowledge.
+7. If user asks about something you don't know — search, don't guess.
+8. Respond in user's language (Czech). Be brief.
+
+## Tools available
+- **kb_search** — search internal knowledge base
+- **store_knowledge** — save facts to KB
+- **web_search** — search the internet
+- **web_fetch** — read a web page
+- **create_background_task** — queue background work
+- **respond_to_user_task** — answer a pending task
+- **request_tools(domain)** — load more tools: "planning", "task_mgmt", "meetings", "memory", "admin"
+
+## When user provides information
+Parse the data, extract key facts (amounts, dates, names, IDs), and store via store_knowledge.
+Confirm briefly what you stored. Do NOT repeat the entire input back.
 """
 
 

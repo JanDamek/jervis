@@ -157,7 +157,7 @@ def _write_result(result_file, task_id, success, summary, changed_files, branch=
         "agentType": "claude",
         "changedFiles": changed_files,
         "branch": branch,
-        "timestamp": datetime.datetime.now().isoformat(),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
     Path(result_file).parent.mkdir(parents=True, exist_ok=True)
     Path(result_file).write_text(json.dumps(result, indent=2))

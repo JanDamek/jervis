@@ -243,7 +243,7 @@ async def _index_attachment_to_kb(
     """Fire-and-forget: index extracted attachment text into KB for graph/map integration."""
     import httpx
     from app.config import settings
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
     try:
@@ -251,7 +251,7 @@ async def _index_attachment_to_kb(
             await client.post(f"{kb_write_url}/api/v1/ingest-queue", json={
                 "clientId": client_id or "",
                 "projectId": project_id or "",
-                "sourceUrn": f"chat-attachment:{filename}:{datetime.now().isoformat()[:19]}",
+                "sourceUrn": f"chat-attachment:{filename}:{datetime.now(timezone.utc).isoformat()[:19]}",
                 "kind": "document",
                 "content": f"# Příloha z chatu: {filename}\n\n{text}",
                 "metadata": {
@@ -259,7 +259,7 @@ async def _index_attachment_to_kb(
                     "mimeType": mime_type,
                     "source": "chat_attachment",
                     "sessionId": session_id or "",
-                    "indexedAt": datetime.now().isoformat(),
+                    "indexedAt": datetime.now(timezone.utc).isoformat(),
                 },
             })
         logger.info("Attachment indexed to KB: %s (%d chars, client=%s)", filename, len(text), client_id)

@@ -64,17 +64,27 @@ VLM_GPU = "p40-2"
 
 # Local model capabilities — used by /route-decision to find model for capability.
 # _find_local_model_for_capability() returns FIRST match, so order matters.
+# Both LLM models handle all text capabilities — 30b is preferred for complex tasks,
+# 14b is faster for simple ones. Router picks based on GPU availability.
 LOCAL_MODEL_CAPABILITIES: dict[str, list[str]] = {
-    "qwen3-coder-tool:30b": ["thinking", "coding", "chat"],
-    "qwen3:14b": ["extraction"],   # KB extraction + qualification (GPU-2, permanent)
+    "qwen3-coder-tool:30b": ["thinking", "coding", "chat", "extraction"],
+    "qwen3:14b": ["chat", "extraction", "thinking", "coding"],
     "bge-m3": ["embedding"],
     "qwen3-vl-tool:latest": ["visual"],
 }
 
 # Local model context limits (fixed num_ctx per GPU Modelfile)
 LOCAL_MODEL_CONTEXT: dict[str, int] = {
-    "p40-1": 48_000,
-    "p40-2": 32_000,  # Extraction 14b + embedding. 2 permanent models in VRAM.
+    "p40-1": 48_000,  # 30b model, full VRAM
+    "p40-2": 32_000,  # 14b + embedding + VL on-demand
+}
+
+# Model equivalence — when a requested model is busy, the router can redirect
+# to an equivalent model on a different GPU. Both models must handle the same tasks.
+# Format: requested_model → list of equivalent models (tried in order)
+MODEL_EQUIVALENTS: dict[str, list[str]] = {
+    "qwen3:14b": ["qwen3-coder-tool:30b"],         # 30b handles everything 14b can
+    "qwen3-coder-tool:30b": ["qwen3:14b"],          # 14b can handle simpler 30b tasks
 }
 
 
@@ -147,6 +157,7 @@ class TrackedRequest:
     created_at: float = field(default_factory=time.monotonic)
     state: str = RequestState.QUEUED
     target_gpu: str | None = None      # gpu backend name
+    original_model: str | None = None  # original model before redirect
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     def __lt__(self, other: TrackedRequest) -> bool:

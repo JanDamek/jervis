@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Instant
+import java.time.ZoneId
 
 /**
  * Service for managing agent preferences with scope-based lookup.
@@ -169,6 +170,24 @@ class PreferenceService(
                 lastUsedAt = Instant.now(),
             )
         preferenceRepository.save(updated)
+    }
+
+    companion object {
+        const val KEY_TIMEZONE = "timezone"
+        val DEFAULT_TIMEZONE: ZoneId = ZoneId.of("Europe/Prague")
+    }
+
+    /**
+     * Get user timezone from GLOBAL preference, fallback to Europe/Prague.
+     */
+    suspend fun getUserTimezone(): ZoneId {
+        val tzString = getPreference(KEY_TIMEZONE) ?: return DEFAULT_TIMEZONE
+        return try {
+            ZoneId.of(tzString)
+        } catch (e: Exception) {
+            logger.warn { "Invalid timezone preference '$tzString', using default ${DEFAULT_TIMEZONE.id}" }
+            DEFAULT_TIMEZONE
+        }
     }
 
     private fun getScopeString(
