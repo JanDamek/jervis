@@ -6,18 +6,15 @@ import com.jervis.dto.timetracking.TimeEntryCreateDto
 import com.jervis.dto.timetracking.TimeEntryDto
 import com.jervis.dto.timetracking.TimeSourceDto
 import com.jervis.dto.timetracking.TimeSummaryDto
-import com.jervis.rpc.BaseRpcImpl
 import com.jervis.service.timetracking.ITimeTrackingService
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
-import kotlin.coroutines.CoroutineContext
 
 class TimeTrackingRpcImpl(
     private val service: TimeTrackingService,
-    override val coroutineContext: CoroutineContext,
-) : ITimeTrackingService, BaseRpcImpl() {
+) : ITimeTrackingService {
 
-    override suspend fun logTime(request: TimeEntryCreateDto): TimeEntryDto = rpc {
+    override suspend fun logTime(request: TimeEntryCreateDto): TimeEntryDto {
         val entry = TimeEntryDocument(
             clientId = request.clientId,
             projectId = request.projectId,
@@ -27,15 +24,15 @@ class TimeTrackingRpcImpl(
             source = TimeSource.valueOf(request.source.name),
             billable = request.billable,
         )
-        service.logTime(entry).toDto()
+        return service.logTime(entry).toDto()
     }
 
-    override suspend fun getTimeSummary(clientId: String?, fromDate: String?, toDate: String?): TimeSummaryDto = rpc {
+    override suspend fun getTimeSummary(clientId: String?, fromDate: String?, toDate: String?): TimeSummaryDto {
         val from = fromDate?.let { LocalDate.parse(it) }
             ?: LocalDate.now().with(TemporalAdjusters.firstDayOfMonth())
         val to = toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
         val summary = service.getTimeSummary("jan", from, to, clientId)
-        TimeSummaryDto(
+        return TimeSummaryDto(
             totalHours = summary.totalHours,
             billableHours = summary.billableHours,
             byClient = summary.byClient,
@@ -43,9 +40,9 @@ class TimeTrackingRpcImpl(
         )
     }
 
-    override suspend fun getCapacity(): CapacitySnapshotDto = rpc {
+    override suspend fun getCapacity(): CapacitySnapshotDto {
         val snapshot = service.getCapacitySnapshot()
-        CapacitySnapshotDto(
+        return CapacitySnapshotDto(
             totalHoursPerWeek = snapshot.totalHoursPerWeek,
             committed = snapshot.committed.values.map { CommittedCapacityDto(it.clientId, it.counterparty, it.hoursPerWeek) },
             actualThisWeek = snapshot.actualThisWeek,
@@ -53,12 +50,12 @@ class TimeTrackingRpcImpl(
         )
     }
 
-    override suspend fun getTodayEntries(): List<TimeEntryDto> = rpc {
-        service.getEntriesForDate("jan", LocalDate.now()).map { it.toDto() }
+    override suspend fun getTodayEntries(): List<TimeEntryDto> {
+        return service.getEntriesForDate("jan", LocalDate.now()).map { it.toDto() }
     }
 
-    override suspend fun deleteTimeEntry(id: String): Boolean = rpc {
-        service.deleteEntry(id)
+    override suspend fun deleteTimeEntry(id: String): Boolean {
+        return service.deleteEntry(id)
     }
 
     private fun TimeEntryDocument.toDto() = TimeEntryDto(

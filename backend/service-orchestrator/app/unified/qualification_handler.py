@@ -720,7 +720,38 @@ async def _pre_classify_email(request: QualifyRequest) -> str:
         except Exception as e:
             logger.warning("Invoice processing failed: %s", e)
 
+    # VIP sender detection — send immediate push notification
+    if sender and request.client_id:
+        try:
+            await _check_vip_sender(sender, subject, request.client_id)
+        except Exception as e:
+            logger.debug("VIP check skipped: %s", e)
+
     return "\n".join(context_parts)
+
+
+async def _check_vip_sender(sender: str, subject: str, client_id: str) -> None:
+    """Check if sender is VIP and send push notification if so."""
+    import httpx
+    from app.settings import settings
+
+    # Search KB for VIP sender conventions
+    try:
+        from app.tools.kb_client import kb_search
+        results = await kb_search(f"VIP sender {sender}", client_id=client_id, max_results=3)
+        is_vip = any("vip" in (r.get("content", "") + r.get("kind", "")).lower() for r in (results or []))
+    except Exception:
+        is_vip = False
+
+    if is_vip:
+        url = f"{settings.kotlin_server_url}/internal/proactive/vip-alert"
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(url, json={
+                "clientId": client_id,
+                "senderName": sender,
+                "subject": subject,
+            })
+        logger.info("VIP_SENDER_ALERT | sender=%s | client=%s", sender, client_id)
 
 
 async def _record_incoming_vertex(request: QualifyRequest, decision: dict) -> None:

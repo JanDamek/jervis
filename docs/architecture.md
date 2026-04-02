@@ -885,6 +885,34 @@ Available hours = 40h/week - sum(committed hours from contracts)
 
 ---
 
+## Proactive Communication
+
+### Overview
+
+Proactive system that generates briefings, alerts, and summaries on schedule. Triggered by Python orchestrator's scheduled tasks, results pushed as BACKGROUND chat messages and push notifications.
+
+### Scheduled Tasks
+
+| Task | Schedule | Endpoint |
+|------|----------|----------|
+| Morning briefing | Daily 7:00 | `POST /internal/proactive/morning-briefing` |
+| Invoice overdue check | Daily 9:00 | `POST /internal/proactive/overdue-check` |
+| Weekly summary | Monday 8:00 | `POST /internal/proactive/weekly-summary` |
+
+### Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `ProactiveScheduler` | `backend/server/.../proactive/ProactiveScheduler.kt` | Generates briefings, checks overdue, sends alerts |
+| `InternalProactiveRouting` | `backend/server/.../rpc/internal/InternalProactiveRouting.kt` | REST API for triggering from orchestrator |
+| Proactive routes | `backend/service-orchestrator/app/proactive/routes.py` | FastAPI router for scheduled triggers |
+
+### VIP Sender Detection
+
+When an email arrives, the qualification handler checks KB for VIP sender conventions. If sender is VIP, an immediate push notification is sent via APNs/FCM.
+
+---
+
 ## GPU Model Routing
 
 ### Overview

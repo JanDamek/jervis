@@ -66,11 +66,11 @@ class TimeTrackingService(
 
     suspend fun getCapacitySnapshot(userId: String = "jan"): CapacitySnapshot {
         // Get active contracts to determine committed hours
-        val contracts = contractRepo.findByStatus(ContractStatus.ACTIVE)
+        val contracts = contractRepo.findByStatus(ContractStatus.ACTIVE).toList()
         val committed = contracts.map { c ->
             val hoursPerWeek = when (c.rateUnit) {
                 com.jervis.finance.RateUnit.HOUR -> 0.0 // hourly contracts don't commit specific hours
-                com.jervis.finance.RateUnit.DAY -> c.rate * 5 / c.rate // 5 days/week normalized — use 8h/day
+                com.jervis.finance.RateUnit.DAY -> 8.0 * 5 // daily rate = assume 5 days/week * 8h
                 com.jervis.finance.RateUnit.MONTH -> 40.0 // full-time monthly = 40h/week
             }
             CommittedCapacity(

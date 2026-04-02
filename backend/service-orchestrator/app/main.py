@@ -250,6 +250,10 @@ app.include_router(chat_router)
 from app.meeting.routes import router as meeting_helper_router
 app.include_router(meeting_helper_router)
 
+# Register proactive communication router (scheduled triggers)
+from app.proactive.routes import router as proactive_router
+app.include_router(proactive_router)
+
 
 # --- Voice Pipeline Endpoint ---
 
