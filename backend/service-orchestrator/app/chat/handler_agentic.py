@@ -168,6 +168,9 @@ async def run_agentic_loop(
     _guard_retries: int = 0  # How many times hallucination guard triggered clean retry
     _guard_failed_models: list[dict] = []  # Track failed models for UI notification
 
+    # Load persistent approval rules (once, lazy)
+    await _ensure_approvals_loaded()
+
     for iteration in range(effective_max_iterations):
         # Check disconnect between iterations
         if disconnect_event and disconnect_event.is_set():
