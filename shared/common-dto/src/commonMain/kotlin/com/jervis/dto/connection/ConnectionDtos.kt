@@ -134,6 +134,10 @@ data class ConnectionResponseDto(
 
     // Whether this connection belongs to Jervis itself (vs. client's human account)
     val isJervisOwned: Boolean = false,
+
+    // Email intelligence: sender/domain → client routing
+    val senderClientMappings: Map<String, String> = emptyMap(),
+    val domainClientMappings: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -188,6 +192,10 @@ data class ConnectionCreateRequestDto(
 
     // Whether this connection belongs to Jervis itself (vs. client's human account)
     val isJervisOwned: Boolean = false,
+
+    // Email intelligence: sender/domain → client routing
+    val senderClientMappings: Map<String, String> = emptyMap(),
+    val domainClientMappings: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -243,6 +251,10 @@ data class ConnectionUpdateRequestDto(
 
     // Whether this connection belongs to Jervis itself (vs. client's human account)
     val isJervisOwned: Boolean? = null,
+
+    // Email intelligence: sender/domain → client routing
+    val senderClientMappings: Map<String, String>? = null,
+    val domainClientMappings: Map<String, String>? = null,
 )
 
 /**

@@ -11,7 +11,8 @@
 2. [Workspace & Directory Architecture](#workspace--directory-architecture)
 3. [GPU Routing & Ollama Router](#gpu-routing--ollama-router)
 4. [Kotlin RPC (kRPC) Architecture](#kotlin-rpc-krpc-architecture)
-5. [Polling & Indexing Pipeline](#polling--indexing-pipeline)
+5. [Email Intelligence & Multi-Client Qualification](#email-intelligence--multi-client-qualification)
+6. [Polling & Indexing Pipeline](#polling--indexing-pipeline)
 6. [Knowledge Graph Design](#knowledge-graph-design)
 7. [Vision Processing Pipeline](#vision-processing-pipeline)
 8. [Transcript Correction Pipeline](#transcript-correction-pipeline)
@@ -266,6 +267,42 @@ The Jervis system uses Kotlin RPC (kRPC) for type-safe, cross-platform communica
 - **UI ↔ Server**: ONLY `@HttpExchange` interfaces in `shared/common-api`
 - **Server ↔ Microservices**: REST via `@HttpExchange` in `backend/common-services`
 - **No UI access** to internal microservice contracts
+
+---
+
+## Email Intelligence & Multi-Client Qualification
+
+### Overview
+Email processing includes a pre-classification step before LLM qualification:
+
+```
+Email → ContentClassifier → ClientResolver → QualificationHandler
+```
+
+### Components
+
+| File | Purpose |
+|------|---------|
+| `backend/server/.../email/ClientResolver.kt` | Multi-step client resolution (sender mapping → domain mapping → thread history → fallback) |
+| `backend/service-orchestrator/app/unified/content_classifier.py` | Rule-based + LLM content type detection (NEWSLETTER, INVOICE, JOB_OFFER, etc.) |
+| `backend/service-orchestrator/app/unified/job_offer_analyzer.py` | Extracts job details, matches skills, scores opportunities |
+| `backend/service-orchestrator/app/unified/invoice_processor.py` | Extracts invoice fields (amount, VS, due date), flags urgent |
+
+### Content Types & Routing
+- **NEWSLETTER** → auto-DONE (no action needed)
+- **JOB_OFFER** → always QUEUED as USER_TASK with skill analysis and scoring
+- **INVOICE** → QUEUED (or URGENT_ALERT if due < 7 days)
+- **CONTRACT, BUG_REPORT, SUPPORT_REQUEST, MEETING_REQUEST** → QUEUED
+- **OTHER** → standard LLM qualification
+
+### Client Resolution Pipeline
+1. **Sender mapping** (exact + pattern): `ConnectionDocument.senderClientMappings`
+2. **Domain mapping**: `ConnectionDocument.domainClientMappings`
+3. **Thread history**: same thread → same client
+4. **Fallback**: connection's default client
+
+### UI
+Connection edit dialog shows sender/domain → client ID mapping editor for email connections.
 
 ---
 

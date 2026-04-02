@@ -22,6 +22,7 @@ import com.jervis.dto.connection.FormFieldType
 import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
+import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.ui.design.JFormDialog
 import com.jervis.ui.design.JSwitch
 import com.jervis.ui.design.JTextField
@@ -166,6 +167,10 @@ internal fun ConnectionEditDialog(
     var provider by remember { mutableStateOf(connection.provider) }
     var isJervisOwned by remember { mutableStateOf(connection.isJervisOwned) }
 
+    // Email intelligence: sender/domain → client mappings
+    val senderMappings = remember { mutableStateMapOf<String, String>().apply { putAll(connection.senderClientMappings) } }
+    val domainMappings = remember { mutableStateMapOf<String, String>().apply { putAll(connection.domainClientMappings) } }
+
     val descriptor = descriptors[provider]
     val authOptions = descriptor?.authOptions ?: emptyList()
     var selectedAuthOption by remember {
@@ -252,6 +257,8 @@ internal fun ConnectionEditDialog(
                 folderName = fieldValues[FormFieldType.FOLDER_NAME]?.takeIf { it.isNotBlank() },
                 o365ClientId = fieldValues[FormFieldType.O365_CLIENT_ID]?.takeIf { it.isNotBlank() },
                 isJervisOwned = isJervisOwned,
+                senderClientMappings = senderMappings.toMap().takeIf { it.isNotEmpty() },
+                domainClientMappings = domainMappings.toMap().takeIf { it.isNotEmpty() },
             )
             onSave(connection.id, request)
         },
@@ -327,6 +334,30 @@ internal fun ConnectionEditDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+
+        // Email intelligence: sender/domain → client mapping (only for email connections)
+        val isEmailConnection = connection.capabilities.any {
+            it == ConnectionCapability.EMAIL_READ || it == ConnectionCapability.EMAIL_SEND
+        } || provider == ProviderEnum.GENERIC_EMAIL || provider == ProviderEnum.GOOGLE_WORKSPACE
+        if (isEmailConnection) {
+            Spacer(modifier = Modifier.height(16.dp))
+            KeyValueMappingSection(
+                title = "Mapování odesílatelů na klienty",
+                description = "Email odesílatele → ID klienta (např. john@acme.com → 68a332...)",
+                keyLabel = "Email/vzor odesílatele",
+                valueLabel = "ID klienta",
+                mappings = senderMappings,
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+            KeyValueMappingSection(
+                title = "Mapování domén na klienty",
+                description = "Doména → ID klienta (např. acme.com → 68a332...)",
+                keyLabel = "Doména",
+                valueLabel = "ID klienta",
+                mappings = domainMappings,
+            )
         }
     }
 }

@@ -120,6 +120,8 @@ class ConnectionRpcImpl(
             // Use connectionId as o365ClientId for browser pool (unique, not name-based)
             o365ClientId = request.o365ClientId,
             isJervisOwned = request.isJervisOwned,
+            senderClientMappings = request.senderClientMappings,
+            domainClientMappings = request.domainClientMappings,
         )
 
         // For Teams browser session without explicit o365ClientId, use the generated connectionId
@@ -200,6 +202,8 @@ class ConnectionRpcImpl(
             gitRemoteUrl = request.gitRemoteUrl ?: existing.gitRemoteUrl,
             o365ClientId = request.o365ClientId ?: existing.o365ClientId,
             isJervisOwned = request.isJervisOwned ?: existing.isJervisOwned,
+            senderClientMappings = request.senderClientMappings ?: existing.senderClientMappings,
+            domainClientMappings = request.domainClientMappings ?: existing.domainClientMappings,
         )
 
         val saved = connectionService.save(updated)
@@ -1536,6 +1540,8 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
         selfId = selfId,
         selfEmail = selfEmail,
         isJervisOwned = isJervisOwned,
+        senderClientMappings = senderClientMappings,
+        domainClientMappings = domainClientMappings,
     )
 
 private fun ConnectionDocument.RateLimitConfig.toDto(): RateLimitConfigDto =

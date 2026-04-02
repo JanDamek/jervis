@@ -92,6 +92,12 @@ data class ConnectionDocument(
     // Whether this connection belongs to Jervis itself (vs. client's human account)
     val isJervisOwned: Boolean = false,
 
+    // Email intelligence: sender/domain → client routing
+    /** Explicit sender email/pattern → clientId mapping (e.g. "john@acme.com" → "clientId123") */
+    val senderClientMappings: Map<String, String> = emptyMap(),
+    /** Domain → clientId mapping (e.g. "acme.com" → "clientId123") */
+    val domainClientMappings: Map<String, String> = emptyMap(),
+
     // Legacy fields (deprecated, kept for backwards compatibility)
     @Deprecated("Use protocol instead")
     val connectionType: ConnectionTypeEnum? = null,

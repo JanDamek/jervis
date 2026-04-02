@@ -5,10 +5,11 @@ Called from /qualify endpoint. Fire-and-forget — reports result to Kotlin via 
 
 Flow:
 1. Receive KB analysis context (summary, entities, urgency, suggested_actions)
-2. Build system prompt for qualification + context preparation
-3. Run LLM with CORE tools (kb_search, web_search, memory)
-4. Agent decides: DONE, QUEUED, or URGENT_ALERT + prepares orchestrator context
-5. POST result to Kotlin /internal/qualification-done
+2. Pre-classify content type (NEWSLETTER→auto-DONE, INVOICE, JOB_OFFER, etc.)
+3. Build system prompt for qualification + context preparation
+4. Run LLM with CORE tools (kb_search, web_search, memory)
+5. Agent decides: DONE, QUEUED, or URGENT_ALERT + prepares orchestrator context
+6. POST result to Kotlin /internal/qualification-done
 """
 
 from __future__ import annotations
@@ -353,15 +354,26 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
         decision, priority_score, reason, alert_message,
         context_summary, suggested_approach, action_type, estimated_complexity.
     """
+    # Phase 1: Pre-classify content type for email sources
+    content_type_info = ""
+    if request.source_urn.startswith("email::"):
+        content_type_info = await _pre_classify_email(request)
+
     from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
 
     # Get CORE tools only
     tools = get_tools(ToolTier.CORE, ALL_RESPOND_TOOLS_FULL)
 
     system_prompt = _build_system_prompt(request)
+
+    # Build user message with content type context
+    user_content = f"Analyzuj a rozhodni o následujícím obsahu:\n\n{request.content}"
+    if content_type_info:
+        user_content = f"{content_type_info}\n\n{user_content}"
+
     messages: list[dict] = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Analyzuj a rozhodni o následujícím obsahu:\n\n{request.content}"},
+        {"role": "user", "content": user_content},
     ]
 
     # Route to extraction model (8b on GPU-2) — frees GPU-1 for orchestrator/chat
@@ -623,6 +635,92 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
     except Exception as e:
         logger.warning("Failed to score attachments for task %s: %s", request.task_id, e)
         return []
+
+
+async def _pre_classify_email(request: QualifyRequest) -> str:
+    """Pre-classify email content type before qualification.
+
+    Returns context string to prepend to qualification prompt.
+    For NEWSLETTER: returns early decision (no LLM needed).
+    For JOB_OFFER: runs analyzer and prepends results.
+    For INVOICE: extracts data and prepends results.
+    """
+    from app.unified.content_classifier import classify_content, classify_with_llm, ContentType
+
+    # Extract email metadata from content
+    subject = ""
+    sender = ""
+    body_text = request.content
+    attachments: list[dict] = []
+
+    # Parse subject and sender from content (format: "# Email: subject\nFrom: sender")
+    for line in request.content.split("\n")[:5]:
+        if line.startswith("# Email:"):
+            subject = line.replace("# Email:", "").strip()
+        elif line.startswith("From:"):
+            parts = line.replace("From:", "").strip().split("|")
+            sender = parts[0].strip()
+
+    # Rule-based classification
+    classification = classify_content(subject, sender, body_text, attachments)
+
+    # LLM fallback for low-confidence rules
+    if classification.confidence < 0.6:
+        classification = await classify_with_llm(
+            subject, sender, body_text, attachments,
+            llm_provider=llm_provider,
+        )
+
+    logger.info(
+        "EMAIL_PRE_CLASSIFY | task=%s | type=%s | confidence=%.2f | reason=%s",
+        request.task_id, classification.content_type.value,
+        classification.confidence, classification.reason,
+    )
+
+    context_parts = [
+        f"## Email Content Classification",
+        f"**Type:** {classification.content_type.value} (confidence: {classification.confidence:.0%})",
+        f"**Detection:** {classification.detected_by} — {classification.reason}",
+    ]
+
+    # Type-specific processing
+    if classification.content_type == ContentType.NEWSLETTER:
+        # Newsletters are auto-DONE, but we still let the agent confirm
+        context_parts.append("\n**Pravidlo:** Newslettery jsou automaticky DONE.")
+
+    elif classification.content_type == ContentType.JOB_OFFER:
+        try:
+            from app.unified.job_offer_analyzer import analyze_job_offer, format_job_offer_for_task
+            analysis = await analyze_job_offer(
+                subject=subject,
+                sender=sender,
+                body_text=body_text,
+                llm_provider=llm_provider,
+            )
+            context_parts.append(f"\n{format_job_offer_for_task(analysis)}")
+            context_parts.append("\n**Pravidlo:** Nabídky práce jsou VŽDY QUEUED jako USER_TASK.")
+        except Exception as e:
+            logger.warning("Job offer analysis failed: %s", e)
+
+    elif classification.content_type == ContentType.INVOICE:
+        try:
+            from app.unified.invoice_processor import process_invoice, format_invoice_for_task
+            invoice = await process_invoice(
+                subject=subject,
+                sender=sender,
+                body_text=body_text,
+                llm_provider=llm_provider,
+                client_id=request.client_id,
+            )
+            context_parts.append(f"\n{format_invoice_for_task(invoice)}")
+            if invoice.is_urgent:
+                context_parts.append(f"\n**URGENTNÍ:** Splatnost za {invoice.days_until_due} dní → URGENT_ALERT")
+            else:
+                context_parts.append("\n**Pravidlo:** Faktury jsou QUEUED jako USER_TASK.")
+        except Exception as e:
+            logger.warning("Invoice processing failed: %s", e)
+
+    return "\n".join(context_parts)
 
 
 async def _record_incoming_vertex(request: QualifyRequest, decision: dict) -> None:
