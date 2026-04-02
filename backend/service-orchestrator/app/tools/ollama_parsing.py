@@ -143,19 +143,24 @@ def extract_tool_calls(message) -> tuple[list, str | None]:
             return [], cleaned
         return [], None  # Entire content was unparseable XML — return None, not raw XML
 
-    # Plain JSON action format: {"action": "kb_search", "parameters": {"query": "..."}}
-    # Some FREE models output tool calls as plain JSON in content text
-    action_match = re.search(r'\{\s*"action"\s*:\s*"(\w+)".*?"parameters"\s*:\s*(\{[^}]*\})', content, re.DOTALL)
-    if action_match:
-        try:
-            func_name = action_match.group(1)
-            params = json.loads(action_match.group(2))
-            calls = [OllamaToolCall({"function": {"name": func_name, "arguments": params}})]
-            remaining = content[:action_match.start()] + content[action_match.end():]
-            remaining = remaining.strip() or None
-            logger.info("Action JSON workaround: extracted tool call '%s'", func_name)
-            return calls, remaining
-        except (json.JSONDecodeError, KeyError):
-            pass
+    # Plain JSON tool call formats produced by FREE models:
+    # Format 1: {"action": "kb_search", "parameters": {"query": "..."}}
+    # Format 2: {"tool": "kb_search", "arguments": {"query": "..."}}
+    # Format 3: {"name": "kb_search", "parameters": {"query": "..."}}
+    for name_key, args_key in [("action", "parameters"), ("tool", "arguments"), ("name", "parameters"), ("action", "arguments"), ("tool", "parameters"), ("name", "arguments")]:
+        pattern = r'\{\s*"' + name_key + r'"\s*:\s*"(\w+)".*?"' + args_key + r'"\s*:\s*(\{[^}]*\})'
+        action_match = re.search(pattern, content, re.DOTALL)
+        if action_match:
+            try:
+                func_name = action_match.group(1)
+                params = json.loads(action_match.group(2))
+                calls = [OllamaToolCall({"function": {"name": func_name, "arguments": params}})]
+                remaining = content[:action_match.start()] + content[action_match.end():]
+                # Clean up trailing braces/whitespace from the JSON
+                remaining = re.sub(r'^\s*\}\s*', '', remaining).strip() or None
+                logger.info("JSON tool workaround (%s/%s): extracted tool call '%s'", name_key, args_key, func_name)
+                return calls, remaining
+            except (json.JSONDecodeError, KeyError):
+                continue
 
     return [], content
