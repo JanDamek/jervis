@@ -7,7 +7,7 @@
 # Required env vars:
 #   WORKSPACE   – path to existing codebase on shared PVC
 #   TASK_ID     – unique task identifier
-#   AGENT_TYPE  – aider | openhands | claude | junie
+#   AGENT_TYPE  – claude | kilo | aider | openhands | junie
 #
 # Optional env vars:
 #   CLAUDE_MODEL    – model override for Claude Code
@@ -189,6 +189,21 @@ case "$AGENT_TYPE" in
         fi
         # Claude Agent SDK (Python) — use venv python explicitly (su may not preserve PATH)
         CMD="/opt/venv/bin/python3 /opt/jervis/claude_sdk_runner.py"
+        ;;
+    kilo)
+        # KILO uses aider-chat with OpenRouter API (free models)
+        # OPENAI_API_BASE and OPENAI_API_KEY must be set via K8s env
+        CMD="aider --yes --no-auto-commits --message \"$INSTRUCTIONS\""
+        if [ -n "$FILES" ]; then
+            CMD="$CMD $FILES"
+        fi
+        if [ -f ".jervis/kb-context.md" ]; then
+            CMD="$CMD --read .jervis/kb-context.md"
+        fi
+        # Model override from environment
+        if [ -n "${KILO_MODEL:-}" ]; then
+            CMD="$CMD --model openrouter/$KILO_MODEL"
+        fi
         ;;
     junie)
         CMD="junie \"$INSTRUCTIONS\""

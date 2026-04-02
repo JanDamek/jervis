@@ -19,7 +19,7 @@
 9. [Smart Model Selector](#smart-model-selector)
 10. [Security Architecture](#security-architecture)
 11. [Resilience Patterns](#resilience-patterns)
-12. [Coding Agents](#coding-agents)
+12. [Coding Agents (Claude + KILO)](#coding-agents)
 13. [Unified Agent (Python)](#unified-agent-python)
 14. [Dual-Queue System & Inline Message Delivery](#dual-queue-system--inline-message-delivery)
 15. [Notification System](#notification-system)
@@ -1052,16 +1052,26 @@ One-tap recording from `PersistentTopBar` — no dialog, no client/project selec
 
 ## Coding Agents
 
-Jervis integrates coding agents running as standalone kRPC microservices. All implement the shared `ICodingClient` interface (`execute(CodingRequest): CodingResult`) and communicate with the server over WebSocket/CBOR.
+Jervis dispatches coding work to external agents running as ephemeral K8s Jobs. The CodingAgent (Python) coordinates workspace preparation, job dispatch, and result collection.
 
 ### Agent Overview
 
-| Agent | Service | Port | Purpose | Default Provider |
-|-------|---------|------|---------|-----------------|
-| **Claude** | `service-claude` | 3400 | Agentic coding with strong reasoning | Anthropic (claude-sonnet-4) |
-| **Kilo** | `service-kilo` | — | Future coding agent (placeholder) | TBD |
+| Agent | Image | Purpose | Provider | Cost |
+|-------|-------|---------|----------|------|
+| **Claude** | `jervis-claude` | Complex coding — architecture, multi-file refactoring, reasoning | Anthropic (claude-sonnet-4) | Paid |
+| **KILO** | `jervis-kilo` | Simple tasks — bug fixes, small features, formatting | OpenRouter (free models) | Free |
 
-Previous agents (Aider, OpenHands, Junie) have been removed.
+### Agent Selection
+- **KILO** preferred for: simple tasks, clients with no paid tier, explicit "use kilo" requests
+- **Claude** preferred for: complex reasoning, architecture decisions, multi-file refactoring
+- **Fallback**: KILO failure → re-dispatch to Claude with same task context
+
+### KILO Agent (`service-kilo`)
+- **Container**: Python 3.12 + aider-chat + Node.js 20
+- **LLM**: OpenRouter free models (`qwen/qwen3-coder:free`, fallback: `nvidia/llama-3.3-nemotron-super-49b-v1:free`)
+- **Config**: `k8s/configmap.yaml` → `coding-tools.kilo`
+- **Build**: `k8s/build_kilo.sh`
+- **Entrypoint**: Shared `entrypoint-job.sh` with `AGENT_TYPE=kilo`
 
 ### Claude Agent (`service-claude`)
 

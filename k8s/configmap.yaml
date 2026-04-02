@@ -124,6 +124,11 @@ data:
         default-model: "claude-sonnet-4-20250514"
         paid-provider: anthropic
         paid-model: "claude-sonnet-4-20250514"
+      kilo:
+        model: "qwen/qwen3-coder:free"
+        fallback-model: "nvidia/llama-3.3-nemotron-super-49b-v1:free"
+        timeout-seconds: 1800
+        api-base: "https://openrouter.ai/api/v1"
 
     # -- Microservice endpoints (K8s service names) -----------------------------
     # Ollama endpoints are in models-config.yaml, not here.

@@ -552,6 +552,27 @@ class JobRunner:
         if effective_email:
             env_vars.append(client.V1EnvVar(name="GIT_USER_EMAIL", value=effective_email))
 
+        # KILO-specific: OpenRouter API for free models
+        if agent_type == "kilo":
+            env_vars.append(client.V1EnvVar(
+                name="OPENAI_API_BASE",
+                value="https://openrouter.ai/api/v1",
+            ))
+            env_vars.append(client.V1EnvVar(
+                name="OPENAI_API_KEY",
+                value_from=client.V1EnvVarSource(
+                    secret_key_ref=client.V1SecretKeySelector(
+                        name="jervis-secrets",
+                        key="OPENROUTER_API_KEY",
+                        optional=True,
+                    )
+                ),
+            ))
+            env_vars.append(client.V1EnvVar(
+                name="KILO_MODEL",
+                value=settings.kilo_model,
+            ))
+
         # K8s namespace access for coding agents (kubectl)
         if kube_namespaces:
             env_vars.append(client.V1EnvVar(
