@@ -11,6 +11,9 @@ data class DeviceTokenDto(
     val token: String,
     val platform: String,
     val deviceId: String,
+    val deviceName: String = "",
+    val deviceType: String = "UNKNOWN",
+    val capabilities: List<String> = emptyList(),
 )
 
 /**

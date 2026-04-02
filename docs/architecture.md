@@ -743,6 +743,62 @@ When user answers "Nevím" (I don't know) to correction questions, the system re
 
 ---
 
+## Meeting Helper (Real-Time Assistance)
+
+Real-time translation and answer suggestions pushed to a separate device (iPhone) during active recording. Requires live assist (real-time Whisper transcription) to be active.
+
+### Architecture
+
+```
+Desktop (recording)                    iPhone (helper device)
+    |                                       |
+    | audio chunks                          | WebSocket
+    v                                       | /ws/meeting-helper/{meetingId}
+Kotlin Server                               |
+    | POST /api/v1/voice/session/chunk      |
+    | → Whisper GPU (VD)                    |
+    | → transcript text                     |
+    |                                       |
+    | POST /meeting-helper/chunk            |
+    v                                       |
+Python Orchestrator                         |
+    | live_helper.py                        |
+    | → Translation (LLM)                  |
+    | → Answer suggestions (LLM)           |
+    |                                       |
+    | POST /internal/meeting-helper/push    |
+    v                                       |
+Kotlin Server ──────── WebSocket push ──────┘
+```
+
+### Components
+
+| File | Role |
+|------|------|
+| `backend/service-orchestrator/app/meeting/live_helper.py` | Core pipeline: rolling context window, parallel LLM translation + suggestions |
+| `backend/service-orchestrator/app/meeting/routes.py` | FastAPI routes: start/stop/chunk processing |
+| `backend/server/.../meeting/MeetingHelperService.kt` | Session management, WebSocket connection registry, message broadcast |
+| `backend/server/.../meeting/MeetingHelperRouting.kt` | WebSocket endpoint for devices, internal REST for Python callbacks |
+| `shared/common-dto/.../meeting/MeetingHelperDtos.kt` | HelperMessageDto, HelperSessionStartDto, DeviceInfoDto |
+| `shared/common-api/.../meeting/IMeetingHelperService.kt` | RPC interface: startHelper, stopHelper, listHelperDevices |
+| `shared/ui-common/.../meeting/MeetingHelperView.kt` | Compose UI: color-coded messages, auto-scroll, copy-to-clipboard |
+| `shared/ui-common/.../meeting/RecordingSetupDialog.kt` | Device picker when Meeting Helper is enabled |
+
+### WebSocket Protocol (Server → Device)
+
+```json
+{"type": "TRANSLATION", "text": "...", "fromLang": "en", "toLang": "cs", "timestamp": "..."}
+{"type": "SUGGESTION", "text": "Suggest saying: ...", "context": "...", "timestamp": "..."}
+{"type": "QUESTION_PREDICT", "text": "They might ask: ...", "timestamp": "..."}
+{"type": "STATUS", "text": "Asistence zahájena", "timestamp": "..."}
+```
+
+### Device Registry
+
+Devices register via `IDeviceTokenService.registerToken()` with extended fields: `deviceName`, `deviceType` (IPHONE, IPAD, WATCH, etc.), `capabilities` (e.g., "helper"). The Meeting Helper lists devices with helper capability or iPhone/iPad type as targets.
+
+---
+
 ## GPU Model Routing
 
 ### Overview

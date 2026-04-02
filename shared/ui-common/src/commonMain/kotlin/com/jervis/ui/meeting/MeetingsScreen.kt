@@ -463,6 +463,14 @@ fun MeetingsScreen(
         }
     }
 
+    // Load helper devices when setup dialog opens
+    val helperDevices by viewModel.helperDevices.collectAsState()
+    LaunchedEffect(showSetupDialog) {
+        if (showSetupDialog && selectedClientId != null) {
+            viewModel.loadHelperDevices(selectedClientId!!)
+        }
+    }
+
     // Setup dialog — still has its own client/project selectors for choosing recording target
     if (showSetupDialog) {
         RecordingSetupDialog(
@@ -472,7 +480,8 @@ fun MeetingsScreen(
             selectedProjectId = selectedProjectId,
             audioDevices = audioRecorder.getAvailableInputDevices(),
             systemAudioCapability = audioRecorder.getSystemAudioCapabilities(),
-            onStart = { clientId, projectId, audioInputType, selectedDevice, title, meetingType, liveAssist ->
+            helperDevices = helperDevices,
+            onStart = { clientId, projectId, audioInputType, selectedDevice, title, meetingType, liveAssist, helperDeviceId ->
                 showSetupDialog = false
                 viewModel.startRecording(
                     clientId = clientId,
@@ -486,6 +495,7 @@ fun MeetingsScreen(
                     title = title,
                     meetingType = meetingType,
                     liveAssist = liveAssist,
+                    helperDeviceId = helperDeviceId,
                 )
             },
             onDismiss = { showSetupDialog = false },

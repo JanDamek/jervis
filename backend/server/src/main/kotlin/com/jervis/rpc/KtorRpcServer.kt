@@ -46,6 +46,7 @@ import com.jervis.git.rpc.GitConfigurationRpcImpl
 import com.jervis.git.rpc.GpgCertificateRpcImpl
 import com.jervis.git.rpc.JobLogsRpcImpl
 import com.jervis.guidelines.GuidelinesRpcImpl
+import com.jervis.meeting.installMeetingHelperApi
 import com.jervis.meeting.installWatchMeetingApi
 import com.jervis.preferences.DeviceTokenRpcImpl
 import com.jervis.preferences.SystemConfigRpcImpl
@@ -129,6 +130,7 @@ class KtorRpcServer(
     private val whisperRestClient: com.jervis.meeting.WhisperRestClient,
     private val whisperProperties: com.jervis.infrastructure.config.properties.WhisperProperties,
     private val ttsProperties: com.jervis.infrastructure.config.properties.TtsProperties,
+    private val meetingHelperService: com.jervis.meeting.MeetingHelperService,
     private val connectionRepository: com.jervis.connection.ConnectionRepository,
     private val fcmPushService: com.jervis.infrastructure.notification.FcmPushService,
     private val apnsPushService: com.jervis.infrastructure.notification.ApnsPushService,
@@ -158,6 +160,7 @@ class KtorRpcServer(
                             // Public API (Watch / voice queries + recording)
                             installVoiceChatApi(taskRepository, taskService, whisperRestClient, whisperProperties, chatService, ttsProperties)
                             installWatchMeetingApi(meetingRpcImpl)
+                            installMeetingHelperApi(meetingHelperService)
 
                             // Internal REST API modules (Python orchestrator → Kotlin)
                             installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl, preferenceService)
@@ -1324,6 +1327,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.kb.IKbDocumentService> { kbDocumentRpcImpl }
                                 registerService<com.jervis.service.preferences.IOpenRouterSettingsService> { openRouterSettingsRpcImpl }
                                 registerService<com.jervis.service.meeting.ISpeakerService> { speakerRpcImpl }
+                                registerService<com.jervis.service.meeting.IMeetingHelperService> { meetingHelperService }
                                 registerService<com.jervis.service.task.ITaskGraphService> { taskGraphRpcImpl }
                                 registerService<com.jervis.service.meeting.IJobLogsService> { jobLogsRpcImpl }
                                 registerService<com.jervis.service.agent.IAgentQuestionService> { agentQuestionRpcImpl }

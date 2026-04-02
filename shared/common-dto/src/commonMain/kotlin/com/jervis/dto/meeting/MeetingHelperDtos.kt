@@ -1,0 +1,53 @@
+package com.jervis.dto.meeting
+
+import kotlinx.serialization.Serializable
+
+/**
+ * DTOs for Meeting Helper — real-time translation + suggestions
+ * pushed to a separate device during active recording.
+ */
+
+@Serializable
+enum class HelperMessageType {
+    TRANSLATION,
+    SUGGESTION,
+    QUESTION_PREDICT,
+    STATUS,
+}
+
+@Serializable
+data class HelperMessageDto(
+    val type: HelperMessageType,
+    val text: String,
+    val context: String = "",
+    val fromLang: String = "",
+    val toLang: String = "",
+    val timestamp: String = "",
+)
+
+@Serializable
+data class HelperSessionStartDto(
+    val meetingId: String,
+    val deviceId: String,
+    val sourceLang: String = "en",
+    val targetLang: String = "cs",
+)
+
+@Serializable
+data class HelperSessionDto(
+    val meetingId: String,
+    val deviceId: String,
+    val sourceLang: String,
+    val targetLang: String,
+    val active: Boolean,
+)
+
+@Serializable
+data class DeviceInfoDto(
+    val deviceId: String,
+    val deviceName: String,
+    val deviceType: String,
+    val platform: String,
+    val capabilities: List<String> = emptyList(),
+    val lastSeen: String = "",
+)

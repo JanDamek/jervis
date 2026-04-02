@@ -159,6 +159,19 @@ class MeetingViewModel(
     private val _loadingGroups = MutableStateFlow<Set<String>>(emptySet())
     val loadingGroups: StateFlow<Set<String>> = _loadingGroups.asStateFlow()
 
+    // Meeting Helper state
+    private val _helperDevices = MutableStateFlow<List<com.jervis.dto.meeting.DeviceInfoDto>>(emptyList())
+    val helperDevices: StateFlow<List<com.jervis.dto.meeting.DeviceInfoDto>> = _helperDevices.asStateFlow()
+
+    private val _helperMessages = MutableStateFlow<List<com.jervis.dto.meeting.HelperMessageDto>>(emptyList())
+    val helperMessages: StateFlow<List<com.jervis.dto.meeting.HelperMessageDto>> = _helperMessages.asStateFlow()
+
+    private val _helperConnected = MutableStateFlow(false)
+    val helperConnected: StateFlow<Boolean> = _helperConnected.asStateFlow()
+
+    private var helperWsJob: Job? = null
+    private var activeHelperDeviceId: String? = null
+
     private val platformRecordingService = PlatformRecordingService()
     private var audioRecorder: AudioRecorder? = null
     private var audioPlayer: AudioPlayer? = null
@@ -193,6 +206,16 @@ class MeetingViewModel(
         scope.launch {
             RecordingServiceBridge.stopRequested.collect {
                 stopRecording()
+            }
+        }
+    }
+
+    fun loadHelperDevices(clientId: String) {
+        scope.launch {
+            try {
+                _helperDevices.value = repository.deviceTokens.listDevices(clientId)
+            } catch (e: Exception) {
+                println("[MeetingVM] Failed to load helper devices: ${e.message}")
             }
         }
     }
@@ -393,6 +416,7 @@ class MeetingViewModel(
         title: String? = null,
         meetingType: MeetingTypeEnum? = null,
         liveAssist: Boolean = false,
+        helperDeviceId: String? = null,
     ) {
         if (clientId != null) lastClientId = clientId
         if (projectId != null) lastProjectId = projectId
@@ -427,24 +451,43 @@ class MeetingViewModel(
             )
             uploadService.registerSession(session)
 
-            println("[Meeting] Recording started: localId=$localId, liveAssist=$liveAssist")
+            println("[Meeting] Recording started: localId=$localId, liveAssist=$liveAssist, helper=${helperDeviceId != null}")
             platformRecordingService.startBackgroundRecording(title ?: "Nahravani")
             startDurationUpdate()
             startChunkSaveJob(localId)
 
             // Start live assist dual pipeline — voice session for KB hints during recording
-            if (liveAssist) {
-                startLiveAssistSession(localId, clientId, projectId)
+            if (liveAssist || helperDeviceId != null) {
+                startLiveAssistSession(localId, clientId, projectId, helperDeviceId)
+            }
+
+            // Start meeting helper session on server
+            if (helperDeviceId != null) {
+                activeHelperDeviceId = helperDeviceId
+                scope.launch {
+                    try {
+                        repository.meetingHelper.startHelper(
+                            com.jervis.dto.meeting.HelperSessionStartDto(
+                                meetingId = localId,
+                                deviceId = helperDeviceId,
+                            )
+                        )
+                        println("[Meeting] Helper session started for device=$helperDeviceId")
+                    } catch (e: Exception) {
+                        println("[Meeting] Failed to start helper session: ${e.message}")
+                    }
+                }
             }
         }
     }
 
     @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
-    private fun startLiveAssistSession(meetingLocalId: String, clientId: String?, projectId: String?) {
+    private fun startLiveAssistSession(meetingLocalId: String, clientId: String?, projectId: String?, helperDeviceId: String? = null) {
         liveAssistJob = scope.launch {
             try {
                 val serverUrl = connectionManager.baseUrl.trimEnd('/')
-                val sessionBody = """{"source":"meeting_assist","tts":false,"liveAssist":true,"meetingId":"$meetingLocalId","wearableNotify":true}"""
+                val helperFlag = helperDeviceId != null
+                val sessionBody = """{"source":"meeting_assist","tts":false,"liveAssist":true,"meetingId":"$meetingLocalId","wearableNotify":true,"helperEnabled":$helperFlag}"""
 
                 postSseStream(
                     url = "$serverUrl/api/v1/voice/session",
@@ -553,6 +596,24 @@ class MeetingViewModel(
             }
         }
         _liveHints.value = emptyList()
+
+        // Stop meeting helper session
+        val helperMeetingId = _currentMeetingId.value
+        if (activeHelperDeviceId != null && helperMeetingId != null) {
+            scope.launch {
+                try {
+                    repository.meetingHelper.stopHelper(helperMeetingId)
+                    println("[Meeting] Helper session stopped")
+                } catch (e: Exception) {
+                    println("[Meeting] Helper stop error: ${e.message}")
+                }
+            }
+            activeHelperDeviceId = null
+            _helperMessages.value = emptyList()
+            _helperConnected.value = false
+            helperWsJob?.cancel()
+            helperWsJob = null
+        }
 
         val recorder = audioRecorder ?: return
         audioRecorder = null

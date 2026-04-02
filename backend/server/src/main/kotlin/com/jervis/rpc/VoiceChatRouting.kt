@@ -59,6 +59,7 @@ private data class VoiceSession(
     val liveAssist: Boolean,
     val meetingId: String?,
     val wearableNotify: Boolean,
+    val helperEnabled: Boolean = false,
     val transcript: StringBuilder = StringBuilder(),
     val events: Channel<String> = Channel(Channel.UNLIMITED), // raw SSE strings
 )
@@ -535,6 +536,7 @@ fun Routing.installVoiceChatApi(
             liveAssist = body.liveAssist ?: false,
             meetingId = body.meetingId,
             wearableNotify = body.wearableNotify ?: false,
+            helperEnabled = body.helperEnabled ?: false,
         )
         activeSessions[sessionId] = session
         logger.info { "VOICE_SESSION_START | id=$sessionId | source=${session.source} | liveAssist=${session.liveAssist}" }
@@ -633,6 +635,27 @@ fun Routing.installVoiceChatApi(
                         }
                     } catch (e: Exception) {
                         logger.warn { "VOICE_HINT_ERROR: ${e.message}" }
+                    }
+                }
+
+                // Meeting Helper: forward transcript to helper pipeline for translation + suggestions
+                if (session.helperEnabled && !session.meetingId.isNullOrBlank()) {
+                    try {
+                        val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
+                        val helperPayload = """{"meetingId":"${session.meetingId}","text":"${chunkText.escapeJson()}","speaker":""}"""
+                        val helperClient = HttpClient(io.ktor.client.engine.cio.CIO) {
+                            install(HttpTimeout) { requestTimeoutMillis = 30_000; connectTimeoutMillis = 3_000 }
+                        }
+                        try {
+                            helperClient.post("$orchestratorUrl/meeting-helper/chunk") {
+                                contentType(ContentType.Application.Json)
+                                setBody(helperPayload)
+                            }
+                        } finally {
+                            helperClient.close()
+                        }
+                    } catch (e: Exception) {
+                        logger.warn { "MEETING_HELPER_CHUNK_ERROR: ${e.message}" }
                     }
                 }
             }
@@ -750,6 +773,7 @@ data class VoiceSessionRequest(
     val liveAssist: Boolean? = null,
     val meetingId: String? = null,
     val wearableNotify: Boolean? = null,
+    val helperEnabled: Boolean? = null,
 )
 
 @Serializable

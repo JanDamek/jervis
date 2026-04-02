@@ -246,6 +246,10 @@ app = FastAPI(
 # Register chat context router (prepare-chat-context, compress-chat endpoints)
 app.include_router(chat_router)
 
+# Register meeting helper router (real-time translation + suggestions)
+from app.meeting.routes import router as meeting_helper_router
+app.include_router(meeting_helper_router)
+
 
 # --- Voice Pipeline Endpoint ---
 

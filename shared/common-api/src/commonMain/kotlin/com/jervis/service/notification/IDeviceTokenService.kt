@@ -2,6 +2,7 @@ package com.jervis.service.notification
 
 import com.jervis.dto.notification.DeviceTokenDto
 import com.jervis.dto.notification.DeviceTokenRegistrationResult
+import com.jervis.dto.meeting.DeviceInfoDto
 import kotlinx.rpc.annotations.Rpc
 
 /**
@@ -22,4 +23,10 @@ interface IDeviceTokenService {
      * Remove a device token (e.g. on logout or app uninstall).
      */
     suspend fun unregisterToken(deviceId: String): DeviceTokenRegistrationResult
+
+    /**
+     * List all registered devices for a client.
+     * Used by Meeting Helper to show available target devices.
+     */
+    suspend fun listDevices(clientId: String): List<DeviceInfoDto>
 }
