@@ -141,8 +141,8 @@ TOOL_SEARCH_TASKS: dict = {
                 },
                 "max_results": {
                     "type": "integer",
-                    "description": "Maximální počet výsledků (default 5).",
-                    "default": 5,
+                    "description": "Maximum results (default 10).",
+                    "default": 10,
                 },
             },
             "required": ["query"],

@@ -948,6 +948,21 @@ async def _execute_kb_search(
     if merged:
         # Sort by score descending, take top max_results
         merged.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+        # If project-scoped results have low confidence, also search at client scope
+        # (emails, documents often indexed at client level, not project level)
+        top_score = merged[0].get("score", 0) if merged else 0
+        if project_id and client_id and top_score < 0.5:
+            logger.info("kb_search: low confidence (top=%.2f), adding client-scope search...", top_score)
+            client_rag = await _kb_rag_search(query, max_results, client_id, None, None, headers)
+            seen_sources_client = {item.get("sourceUrn", "") for item in merged}
+            for item in client_rag:
+                source = item.get("sourceUrn", "")
+                if source and source not in seen_sources_client:
+                    merged.append(item)
+                    seen_sources_client.add(source)
+            merged.sort(key=lambda x: x.get("score", 0), reverse=True)
+
         merged = merged[:max_results]
         result_summary = "; ".join(
             f"[{it.get('score', 0):.2f}] {it.get('sourceUrn', '?')[:80]}"
