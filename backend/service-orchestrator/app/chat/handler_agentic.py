@@ -88,6 +88,119 @@ async def _persist_approval_rule(action: str):
         logger.warning("Failed to persist approval rule %s: %s", action, e)
 
 
+async def _persist_pending_approval(
+    session_id: str, action: str, tool_name: str, arguments: dict,
+    preview: str, client_id: str | None, project_id: str | None,
+    group_id: str | None,
+) -> str:
+    """Persist pending approval to MongoDB so it survives orchestrator restart."""
+    from datetime import datetime, timezone
+    approval_id = str(ObjectId())
+    try:
+        from app.agent.persistence import agent_store
+        coll = await agent_store._ensure_collection()
+        db = coll.database
+        await db["pending_approvals"].insert_one({
+            "_id": approval_id,
+            "session_id": session_id,
+            "action": action,
+            "tool_name": tool_name,
+            "arguments": arguments,
+            "preview": preview[:500],
+            "client_id": client_id,
+            "project_id": project_id,
+            "group_id": group_id,
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc),
+        })
+    except Exception as e:
+        logger.warning("Failed to persist pending approval: %s", e)
+    return approval_id
+
+
+async def _resolve_pending_approval(approval_id: str, approved: bool) -> None:
+    """Mark a pending approval as resolved in MongoDB."""
+    try:
+        from app.agent.persistence import agent_store
+        coll = await agent_store._ensure_collection()
+        db = coll.database
+        await db["pending_approvals"].update_one(
+            {"_id": approval_id},
+            {"$set": {"status": "approved" if approved else "denied",
+                      "resolved_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc)}},
+        )
+    except Exception as e:
+        logger.warning("Failed to resolve pending approval %s: %s", approval_id, e)
+
+
+async def recover_pending_approvals() -> list[dict]:
+    """Find pending approvals from before a restart and auto-execute them.
+
+    Called on first chat request after restart. Finds approvals that were pending
+    when orchestrator crashed, checks if they're auto-approvable, and executes them.
+    Returns list of recovered tool executions for user notification.
+    """
+    recovered = []
+    try:
+        from app.agent.persistence import agent_store
+        coll = await agent_store._ensure_collection()
+        db = coll.database
+        approvals_coll = db["pending_approvals"]
+
+        # Find stale pending approvals (older than 30s = orchestrator restarted)
+        from datetime import datetime, timezone, timedelta
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=30)
+        stale = await approvals_coll.find({
+            "status": "pending",
+            "created_at": {"$lt": cutoff},
+        }).to_list(10)
+
+        for doc in stale:
+            action = doc.get("action", "")
+            tool_name = doc.get("tool_name", "")
+            arguments = doc.get("arguments", {})
+
+            # Only auto-recover if action is in global auto-approvals
+            await _ensure_approvals_loaded()
+            if action in _global_auto_approvals:
+                logger.info("APPROVAL_RECOVERY: auto-executing %s (tool=%s, stale approval %s)",
+                            action, tool_name, doc["_id"])
+                try:
+                    from app.tools.executor import execute_tool
+                    result = await execute_tool(
+                        tool_name=tool_name,
+                        arguments=arguments,
+                        client_id=doc.get("client_id", ""),
+                        project_id=doc.get("project_id"),
+                        processing_mode="FOREGROUND",
+                        skip_approval=True,
+                        group_id=doc.get("group_id"),
+                    )
+                    await approvals_coll.update_one(
+                        {"_id": doc["_id"]},
+                        {"$set": {"status": "recovered", "result": str(result)[:500]}},
+                    )
+                    recovered.append({"tool": tool_name, "action": action, "result": result[:200]})
+                    logger.info("APPROVAL_RECOVERY: %s completed successfully", tool_name)
+                except Exception as e:
+                    logger.warning("APPROVAL_RECOVERY: %s failed: %s", tool_name, e)
+                    await approvals_coll.update_one(
+                        {"_id": doc["_id"]},
+                        {"$set": {"status": "recovery_failed", "error": str(e)[:500]}},
+                    )
+            else:
+                # Not auto-approvable — mark as expired, user will need to retry
+                logger.info("APPROVAL_RECOVERY: expiring non-auto-approvable %s (tool=%s)", action, tool_name)
+                await approvals_coll.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"status": "expired"}},
+                )
+
+    except Exception as e:
+        logger.warning("APPROVAL_RECOVERY failed: %s", e)
+    return recovered
+
+
 def resolve_pending_approval(session_id: str, approved: bool, always: bool = False, action: str | None = None):
     """Called from /chat/approve endpoint to resolve a pending approval."""
     future = _pending_approvals.get(session_id)
@@ -168,8 +281,15 @@ async def run_agentic_loop(
     _guard_retries: int = 0  # How many times hallucination guard triggered clean retry
     _guard_failed_models: list[dict] = []  # Track failed models for UI notification
 
-    # Load persistent approval rules (once, lazy)
+    # Load persistent approval rules (once, lazy) + recover stale approvals from before restart
     await _ensure_approvals_loaded()
+    recovered = await recover_pending_approvals()
+    if recovered:
+        recovery_msg = "Dokončeny přerušené operace z předchozí session:\n" + "\n".join(
+            f"- {r['tool']}: {r['result'][:100]}" for r in recovered
+        )
+        yield ChatStreamEvent(type="tool_result", content=recovery_msg)
+        logger.info("APPROVAL_RECOVERY: notified user about %d recovered operations", len(recovered))
 
     for iteration in range(effective_max_iterations):
         # Check disconnect between iterations
@@ -581,8 +701,21 @@ async def run_agentic_loop(
                             session_id=request.session_id,
                         )
                     else:
+                        # Persist pending approval to MongoDB (survives restart)
+                        approval_id = await _persist_pending_approval(
+                            session_id=request.session_id,
+                            action=approval_exc.action,
+                            tool_name=tool_name,
+                            arguments=arguments,
+                            preview=approval_exc.preview,
+                            client_id=effective_client_id,
+                            project_id=effective_project_id,
+                            group_id=getattr(request, "active_group_id", None),
+                        )
+
                         # Emit approval request and wait for user response
-                        logger.info("Chat: approval required for %s, emitting SSE event", approval_exc.action)
+                        logger.info("Chat: approval required for %s (id=%s), emitting SSE event",
+                                    approval_exc.action, approval_id)
                         yield ChatStreamEvent(
                             type="approval_request",
                             content=approval_exc.preview,
@@ -590,9 +723,9 @@ async def run_agentic_loop(
                                 "action": approval_exc.action,
                                 "tool": tool_name,
                                 "args": str(arguments)[:500],
+                                "approval_id": approval_id,
                             },
                         )
-                        logger.info("Chat: approval_request SSE event yielded, now waiting for user response")
 
                         # Create future and wait for /chat/approve response
                         loop = asyncio.get_event_loop()
@@ -608,7 +741,6 @@ async def run_agentic_loop(
 
                         if approval_result.get("approved"):
                             logger.info("Chat: user approved %s (always=%s)", approval_exc.action, approval_result.get("always"))
-                            # Re-execute with approval bypass
                             from app.tools.executor import execute_tool
                             result = await execute_tool(
                                 tool_name=tool_name,
@@ -619,9 +751,12 @@ async def run_agentic_loop(
                                 skip_approval=True,
                                 group_id=getattr(request, "active_group_id", None),
                             )
+                            # Mark approval as resolved in MongoDB
+                            await _resolve_pending_approval(approval_id, approved=True)
                         else:
                             result = f"Akce {tool_name} byla zamítnuta uživatelem."
                             logger.info("Chat: user denied %s", approval_exc.action)
+                            await _resolve_pending_approval(approval_id, approved=False)
 
                 used_tools.append(tool_name)
                 tool_summaries.append(f"{tool_name}: {result}")
