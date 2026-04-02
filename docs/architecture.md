@@ -913,6 +913,34 @@ When an email arrives, the qualification handler checks KB for VIP sender conven
 
 ---
 
+## Active Opportunity Search
+
+### Overview
+
+Job opportunity scoring system that evaluates incoming job offers from email intelligence (Phase 1) against user skill profile, rate expectations, and available capacity (Phase 5).
+
+### Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `opportunity_scorer.py` | `backend/service-orchestrator/app/unified/opportunity_scorer.py` | Weighted scoring (skill + rate + capacity) |
+| `job_offer_analyzer.py` | `backend/service-orchestrator/app/unified/job_offer_analyzer.py` | LLM extraction of job details |
+
+### Scoring Model
+
+Total score (0-100) = weighted combination:
+- **Skill match** (40%): percentage of required skills in user profile
+- **Rate score** (30%): offered rate vs minimum acceptable per platform
+- **Capacity score** (30%): available hours vs estimated project hours
+
+### Integration
+
+JOB_OFFER email → `job_offer_analyzer` → `opportunity_scorer` → USER_TASK with score and recommendation.
+
+Minimum rates per platform (CZK/hour): guru.com=800, upwork=900, toptal=1200, freelancer=700.
+
+---
+
 ## GPU Model Routing
 
 ### Overview

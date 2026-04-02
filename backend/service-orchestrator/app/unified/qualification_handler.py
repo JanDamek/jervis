@@ -698,6 +698,21 @@ async def _pre_classify_email(request: QualifyRequest) -> str:
                 llm_provider=llm_provider,
             )
             context_parts.append(f"\n{format_job_offer_for_task(analysis)}")
+
+            # Opportunity scoring with capacity check
+            try:
+                from app.unified.opportunity_scorer import score_opportunity, format_opportunity_score
+                score = await score_opportunity(
+                    skill_match_pct=analysis.skill_match_pct,
+                    estimated_rate_czk=analysis.estimated_rate_czk,
+                    estimated_hours=analysis.estimated_hours,
+                    platform=analysis.platform_source,
+                )
+                context_parts.append(f"\n{format_opportunity_score(score)}")
+                analysis.score = score["total_score"]
+            except Exception as e2:
+                logger.warning("Opportunity scoring failed: %s", e2)
+
             context_parts.append("\n**Pravidlo:** Nabídky práce jsou VŽDY QUEUED jako USER_TASK.")
         except Exception as e:
             logger.warning("Job offer analysis failed: %s", e)
