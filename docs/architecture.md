@@ -850,6 +850,41 @@ Email → Invoice Processor → POST /internal/finance/record → FinancialServi
 
 ---
 
+## Time & Capacity Management
+
+### Overview
+
+Time tracking and capacity management module. Logs work hours per client, calculates weekly capacity from active contracts, provides summary reports.
+
+### Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `TimeEntryDocument` | `backend/server/.../timetracking/TimeEntryDocument.kt` | MongoDB document for time entries |
+| `TimeTrackingService` | `backend/server/.../timetracking/TimeTrackingService.kt` | Time logging, summary, capacity calculation |
+| `TimeTrackingRpcImpl` | `backend/server/.../timetracking/TimeTrackingRpcImpl.kt` | kRPC implementation |
+| `InternalTimeTrackingRouting` | `backend/server/.../rpc/internal/InternalTimeTrackingRouting.kt` | REST API for Python orchestrator |
+| `TimeTrackingScreen` | `shared/ui-common/.../screens/finance/TimeTrackingScreen.kt` | Compose UI — today, summary, capacity |
+| Chat tools | `handler_tools.py` | `log_time`, `check_capacity`, `time_summary` |
+
+### Time Sources
+
+- `MANUAL` — user logs via chat or UI
+- `MEETING` — auto-logged from meeting duration
+- `TASK` — auto-logged from task completion
+- `CALENDAR` — auto-logged from calendar events
+
+### Capacity Model
+
+Capacity is calculated from active contracts:
+- Monthly contracts = 40h/week (full-time)
+- Daily contracts = normalized to weekly hours
+- Hourly contracts = no committed hours (on-demand)
+
+Available hours = 40h/week - sum(committed hours from contracts)
+
+---
+
 ## GPU Model Routing
 
 ### Overview

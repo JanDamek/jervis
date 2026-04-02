@@ -31,6 +31,7 @@ import com.jervis.service.task.IPendingTaskService
 import com.jervis.service.task.ITaskGraphService
 import com.jervis.service.task.ITaskSchedulingService
 import com.jervis.service.task.IUserTaskService
+import com.jervis.service.timetracking.ITimeTrackingService
 
 /**
  * Main repository facade for Jervis application.
@@ -72,4 +73,5 @@ class JervisRepository(
     val jobLogs: IJobLogsService get() = servicesProvider().jobLogsService
     val agentQuestions: IAgentQuestionService get() = servicesProvider().agentQuestionService
     val autoResponseSettings: IAutoResponseSettingsService get() = servicesProvider().autoResponseSettingsService
+    val timeTracking: ITimeTrackingService get() = servicesProvider().timeTrackingService
 }

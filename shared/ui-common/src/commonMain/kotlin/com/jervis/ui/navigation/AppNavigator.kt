@@ -41,6 +41,9 @@ sealed class Screen {
     // Finance
     object Finance : Screen()
 
+    // Time Tracking
+    object TimeTracking : Screen()
+
     // Debug console (WebSocket)
     object DebugConsole : Screen()
 }

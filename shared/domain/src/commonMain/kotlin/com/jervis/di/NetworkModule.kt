@@ -16,6 +16,7 @@ import com.jervis.service.git.IGpgCertificateService
 import com.jervis.service.guidelines.IGuidelinesService
 import com.jervis.service.kb.IKbDocumentService
 import com.jervis.service.finance.IFinancialService
+import com.jervis.service.timetracking.ITimeTrackingService
 import com.jervis.service.meeting.IJobLogsService
 import com.jervis.service.meeting.IMeetingHelperService
 import com.jervis.service.meeting.IMeetingService
@@ -166,6 +167,7 @@ object NetworkModule {
             jobLogsService = rpcClient.withService<IJobLogsService>(),
             agentQuestionService = rpcClient.withService<IAgentQuestionService>(),
             autoResponseSettingsService = rpcClient.withService<IAutoResponseSettingsService>(),
+            timeTrackingService = rpcClient.withService<ITimeTrackingService>(),
         )
 
     /**
@@ -206,9 +208,10 @@ object NetworkModule {
         val jobLogsService: IJobLogsService,
         val agentQuestionService: IAgentQuestionService,
         val autoResponseSettingsService: IAutoResponseSettingsService,
+        val timeTrackingService: ITimeTrackingService,
     ) {
         /** Number of service stubs in this container. */
-        fun countServices(): Int = 33
+        fun countServices(): Int = 34
 
         override fun toString() = "Services(${countServices()} stubs)"
     }

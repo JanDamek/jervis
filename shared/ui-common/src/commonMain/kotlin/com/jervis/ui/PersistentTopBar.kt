@@ -77,6 +77,7 @@ private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val 
     USER_TASKS(Icons.AutoMirrored.Filled.List, "Uživatelské úlohy", 0),
     MEETINGS(Icons.Default.Mic, "Meetingy", 0),
     FINANCE(Icons.Default.AccountBalance, "Finance", 0),
+    TIME_TRACKING(Icons.Default.Schedule, "Čas a kapacita", 0),
     // Group 1: Management
     PENDING_TASKS(Icons.Default.MoveToInbox, "Fronta úloh", 1),
     SCHEDULER(Icons.Default.CalendarMonth, "Kalendář", 1),
@@ -93,6 +94,7 @@ private fun TopBarMenuItem.toScreen(): Screen = when (this) {
     TopBarMenuItem.USER_TASKS -> Screen.UserTasks()
     TopBarMenuItem.MEETINGS -> Screen.Meetings
     TopBarMenuItem.FINANCE -> Screen.Finance
+    TopBarMenuItem.TIME_TRACKING -> Screen.TimeTracking
     TopBarMenuItem.PENDING_TASKS -> Screen.PendingTasks
     TopBarMenuItem.SCHEDULER -> Screen.Scheduler
     TopBarMenuItem.INDEXING_QUEUE -> Screen.IndexingQueue

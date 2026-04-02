@@ -915,6 +915,88 @@ TOOL_RECORD_PAYMENT: dict = {
     },
 }
 
+TOOL_LOG_TIME: dict = {
+    "type": "function",
+    "function": {
+        "name": "log_time",
+        "description": (
+            "Zapiš odpracovaný čas. Příklad: 'dnes 6h MMB' → log_time(client_id='...', hours=6). "
+            "Pokud neuvedeš datum, použije se dnešek."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "hours": {
+                    "type": "number",
+                    "description": "Počet hodin.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Popis práce.",
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Datum (YYYY-MM-DD). Default: dnes.",
+                },
+            },
+            "required": ["client_id", "hours"],
+        },
+    },
+}
+
+TOOL_CHECK_CAPACITY: dict = {
+    "type": "function",
+    "function": {
+        "name": "check_capacity",
+        "description": (
+            "Kapacitní snapshot — kolik hodin týdně je k dispozici, kolik je commitováno ze smluv, "
+            "kolik odpracováno tento týden. Odpovídá na otázky typu 'Mám kapacitu na nový projekt?'"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "hours_needed": {
+                    "type": "number",
+                    "description": "Kolik hodin týdně je potřeba (volitelné, pro porovnání s dostupnou kapacitou).",
+                },
+            },
+        },
+    },
+}
+
+TOOL_TIME_SUMMARY: dict = {
+    "type": "function",
+    "function": {
+        "name": "time_summary",
+        "description": (
+            "Přehled odpracovaného času za období. Celkové hodiny, fakturovatelné hodiny, "
+            "rozpad po klientech."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID (volitelné, pro filtr na jednoho klienta).",
+                },
+                "from_date": {
+                    "type": "string",
+                    "description": "Počátek období (YYYY-MM-DD). Default: první den měsíce.",
+                },
+                "to_date": {
+                    "type": "string",
+                    "description": "Konec období (YYYY-MM-DD). Default: dnes.",
+                },
+            },
+        },
+    },
+}
+
+
 TOOL_LIST_CONTRACTS: dict = {
     "type": "function",
     "function": {
@@ -1009,6 +1091,7 @@ class ToolCategory(str, Enum):
     FILTERING = "filtering"
     ADMIN = "admin"
     FINANCE = "finance"
+    TIME_TRACKING = "time_tracking"
 
 
 # Meta-tool: model calls this to get additional tools
@@ -1027,14 +1110,15 @@ TOOL_REQUEST_TOOLS: dict = {
             "- memory: paměť a znalosti (memory_store, memory_recall, list_affairs, get_kb_stats, kb_delete)\n"
             "- filtering: filtrační pravidla (set_filter_rule, list_filter_rules, remove_filter_rule)\n"
             "- admin: pravidla a konfigurace (get_guidelines, update_guideline, switch_context, query_action_log)\n"
-            "- finance: faktury, platby, smlouvy, finanční přehledy"
+            "- finance: faktury, platby, smlouvy, finanční přehledy\n"
+            "- time_tracking: logování času, kapacita, přehledy"
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "category": {
                     "type": "string",
-                    "enum": ["planning", "task_mgmt", "meetings", "memory", "filtering", "admin"],
+                    "enum": ["planning", "task_mgmt", "meetings", "memory", "filtering", "admin", "finance", "time_tracking"],
                     "description": "Kategorie nástrojů k načtení.",
                 },
             },
@@ -1107,6 +1191,11 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_RECORD_PAYMENT,
         TOOL_LIST_CONTRACTS,
     ],
+    ToolCategory.TIME_TRACKING: [
+        TOOL_LOG_TIME,
+        TOOL_CHECK_CAPACITY,
+        TOOL_TIME_SUMMARY,
+    ],
 }
 
 
@@ -1119,6 +1208,7 @@ TOOL_CATEGORY_DESCRIPTIONS: dict[ToolCategory, str] = {
     ToolCategory.FILTERING: "Filtrační pravidla — nastavení automatického zpracování",
     ToolCategory.ADMIN: "Administrace — pravidla, přepínání kontextu, akční log",
     ToolCategory.FINANCE: "Finance — faktury, platby, smlouvy, finanční přehledy",
+    ToolCategory.TIME_TRACKING: "Čas a kapacita — logování času, kapacitní přehledy",
 }
 
 # Domain mapping for drift detection (tool name → semantic domain)
@@ -1145,6 +1235,7 @@ TOOL_DOMAINS: dict[str, str] = {
     "query_action_log": "memory",
     "finance_summary": "finance", "list_invoices": "finance",
     "record_payment": "finance", "list_contracts": "finance",
+    "log_time": "time", "check_capacity": "time", "time_summary": "time",
 }
 
 # Tool name → tool definition lookup (for intent router)

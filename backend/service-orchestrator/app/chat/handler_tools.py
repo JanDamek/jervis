@@ -68,6 +68,9 @@ _TOOL_DESCRIPTIONS = {
     "list_invoices": lambda a: f"Seznam faktur: {a.get('client_id', '')}",
     "record_payment": lambda a: f"Zaznamenávám platbu: {a.get('amount', 0)} CZK",
     "list_contracts": lambda a: f"Seznam smluv{' pro ' + a.get('client_id', '') if a.get('client_id') else ''}",
+    "log_time": lambda a: f"Zapisuji čas: {a.get('hours', 0)}h",
+    "check_capacity": lambda _: "Kontroluji kapacitu",
+    "time_summary": lambda a: f"Přehled času{' pro ' + a.get('client_id', '') if a.get('client_id') else ''}",
 }
 
 
@@ -115,6 +118,9 @@ _CHAT_SPECIFIC_TOOLS = {
     "list_invoices",
     "record_payment",
     "list_contracts",
+    "log_time",
+    "check_capacity",
+    "time_summary",
 }
 
 
@@ -628,6 +634,54 @@ async def _handle_list_contracts(args, client_id, _project_id, kotlin_client):
     return await kotlin_client.get("/internal/finance/contracts", params=params)
 
 
+async def _handle_log_time(args, client_id, _project_id, kotlin_client):
+    """Log time entry."""
+    cid = args.get("client_id") or client_id
+    if not cid:
+        return "Chyba: client_id je povinný."
+    hours = args.get("hours")
+    if not hours:
+        return "Chyba: hours je povinný."
+    payload = {
+        "clientId": cid,
+        "hours": float(hours),
+        "description": args.get("description", ""),
+        "date": args.get("date"),
+        "source": "MANUAL",
+    }
+    return await kotlin_client.post("/internal/time/log", json=payload)
+
+
+async def _handle_check_capacity(args, _client_id, _project_id, kotlin_client):
+    """Check capacity snapshot."""
+    resp = await kotlin_client.get("/internal/time/capacity")
+    hours_needed = args.get("hours_needed")
+    if hours_needed and resp:
+        try:
+            import json as _json
+            data = _json.loads(resp) if isinstance(resp, str) else resp
+            available = data.get("availableHours", 0)
+            needed = float(hours_needed)
+            if needed > available:
+                return f"{resp}\n\n⚠️ Kapacita nedostačuje: potřeba {needed}h/týden, dostupné {available}h/týden."
+        except Exception:
+            pass
+    return resp
+
+
+async def _handle_time_summary(args, client_id, _project_id, kotlin_client):
+    """Time summary for period."""
+    params = {}
+    cid = args.get("client_id") or client_id
+    if cid:
+        params["client_id"] = cid
+    if args.get("from_date"):
+        params["from"] = args["from_date"]
+    if args.get("to_date"):
+        params["to"] = args["to_date"]
+    return await kotlin_client.get("/internal/time/summary", params=params)
+
+
 _TOOL_HANDLER_MAP = {
     "create_background_task": _handle_create_background_task,
     "create_thinking_graph": _handle_create_thinking_graph,
@@ -660,6 +714,9 @@ _TOOL_HANDLER_MAP = {
     "list_invoices": _handle_list_invoices,
     "record_payment": _handle_record_payment,
     "list_contracts": _handle_list_contracts,
+    "log_time": _handle_log_time,
+    "check_capacity": _handle_check_capacity,
+    "time_summary": _handle_time_summary,
 }
 
 
