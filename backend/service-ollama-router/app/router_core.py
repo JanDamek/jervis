@@ -191,24 +191,38 @@ class OllamaRouter:
             logger.info("Route decision: max_tier=NONE → local (tokens=%d)", estimated_tokens)
             return local_result
 
-        # Rule 2: FOREGROUND + FREE+ → always OpenRouter (with rate limiting)
+        # Rule 2: FOREGROUND + FREE+ → prefer local GPU, OpenRouter as fallback
+        # Local GPU models (30b, 14b) are much better at following tool instructions
+        # than FREE OpenRouter models. Use cloud only when GPU is busy or context > 48k.
         if not is_background:
+            # Try local GPU first (if context fits and GPU is free)
+            whisper_busy = self.check_whisper_busy()
+            gpu_free = any(
+                b.healthy and b.active_request_count() == 0
+                and not (b.name == VLM_GPU and whisper_busy)
+                for b in self.gpu_pool.all_backends
+                if local_model in GPU_MODEL_SETS.get(b.name, [])
+            )
+            if estimated_tokens <= 48_000 and gpu_free:
+                logger.info("Route decision: FG tier=%s → local GPU (free, tokens=%d)",
+                            max_tier, estimated_tokens)
+                return local_result
+
+            # GPU busy or context too large → fall back to OpenRouter
             cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level, skip_models, capability=capability, require_tools=require_tools)
             if cloud_model:
-                # Determine queue for rate limiting (free models end with :free)
                 queue = "FREE" if cloud_model.endswith(":free") else "PAID"
-                # Proactive rate limiting — wait for slot instead of hitting 429
                 slot_ok = await acquire_openrouter_slot(queue, timeout=65.0)
                 if not slot_ok:
                     logger.warning("Route decision: FG rate limit timeout for %s queue → local fallback", queue)
                     return local_result
-                logger.info("Route decision: FG tier=%s → cloud %s (tokens=%d, skip=%s)",
+                logger.info("Route decision: FG tier=%s, GPU busy → cloud %s (tokens=%d, skip=%s)",
                             max_tier, cloud_model, estimated_tokens, skip_models or [])
                 api_key = await get_api_key()
                 return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
-            # No cloud model → local fallback
-            logger.info("Route decision: FG tier=%s, no cloud model → local fallback (tokens=%d, skip=%s)",
-                        max_tier, estimated_tokens, skip_models or [])
+            # No cloud model → local fallback (queue behind current GPU work)
+            logger.info("Route decision: FG tier=%s, no cloud model → local fallback (tokens=%d)",
+                        max_tier, estimated_tokens)
             return local_result
 
         # Rule 3: BACKGROUND + FREE+ — local only if ≤48k AND GPU free
