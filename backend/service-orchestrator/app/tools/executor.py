@@ -946,13 +946,18 @@ async def _execute_kb_search(
             thought_added += 1
 
     if merged:
-        # Sort by score descending, take top max_results
-        merged.sort(key=lambda x: x.get("score", 0), reverse=True)
+        # Sort: RAG items first (have actual content), thought-anchors second (metadata only).
+        # Within each group, sort by score descending.
+        # Thought-anchors (sourceUrn starts with "thought-anchor:") are supplementary context,
+        # not primary results — they should never push out actual documents.
+        def _sort_key(item):
+            is_thought = item.get("sourceUrn", "").startswith("thought-anchor:")
+            return (1 if is_thought else 0, -item.get("score", 0))
+        merged.sort(key=_sort_key)
 
-        # If project-scoped results have low confidence, also search at client scope
-        # (emails, documents often indexed at client level, not project level)
-        top_score = merged[0].get("score", 0) if merged else 0
-        if project_id and client_id and top_score < 0.5:
+        # If project-scoped RAG results have low confidence, also search at client scope
+        rag_top_score = max((it.get("score", 0) for it in rag_items), default=0)
+        if project_id and client_id and rag_top_score < 0.5:
             logger.info("kb_search: low confidence (top=%.2f), adding client-scope search...", top_score)
             client_rag = await _kb_rag_search(query, max_results, client_id, None, None, headers)
             seen_sources_client = {item.get("sourceUrn", "") for item in merged}
