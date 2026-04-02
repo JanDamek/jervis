@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.filled.Refresh
@@ -75,6 +76,7 @@ private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val 
     // Group 0: Daily
     USER_TASKS(Icons.AutoMirrored.Filled.List, "Uživatelské úlohy", 0),
     MEETINGS(Icons.Default.Mic, "Meetingy", 0),
+    FINANCE(Icons.Default.AccountBalance, "Finance", 0),
     // Group 1: Management
     PENDING_TASKS(Icons.Default.MoveToInbox, "Fronta úloh", 1),
     SCHEDULER(Icons.Default.CalendarMonth, "Kalendář", 1),
@@ -90,6 +92,7 @@ private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val 
 private fun TopBarMenuItem.toScreen(): Screen = when (this) {
     TopBarMenuItem.USER_TASKS -> Screen.UserTasks()
     TopBarMenuItem.MEETINGS -> Screen.Meetings
+    TopBarMenuItem.FINANCE -> Screen.Finance
     TopBarMenuItem.PENDING_TASKS -> Screen.PendingTasks
     TopBarMenuItem.SCHEDULER -> Screen.Scheduler
     TopBarMenuItem.INDEXING_QUEUE -> Screen.IndexingQueue

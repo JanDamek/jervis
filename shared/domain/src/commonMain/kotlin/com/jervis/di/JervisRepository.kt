@@ -13,6 +13,7 @@ import com.jervis.service.environment.IEnvironmentService
 import com.jervis.service.error.IErrorLogService
 import com.jervis.service.git.IGpgCertificateService
 import com.jervis.service.guidelines.IGuidelinesService
+import com.jervis.service.finance.IFinancialService
 import com.jervis.service.meeting.IJobLogsService
 import com.jervis.service.meeting.IMeetingHelperService
 import com.jervis.service.meeting.IMeetingService
@@ -66,6 +67,7 @@ class JervisRepository(
     val openRouterSettings: IOpenRouterSettingsService get() = servicesProvider().openRouterSettingsService
     val speakers: ISpeakerService get() = servicesProvider().speakerService
     val meetingHelper: IMeetingHelperService get() = servicesProvider().meetingHelperService
+    val finance: IFinancialService get() = servicesProvider().financialService
     val taskGraphs: ITaskGraphService get() = servicesProvider().taskGraphService
     val jobLogs: IJobLogsService get() = servicesProvider().jobLogsService
     val agentQuestions: IAgentQuestionService get() = servicesProvider().agentQuestionService

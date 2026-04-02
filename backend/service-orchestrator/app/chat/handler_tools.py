@@ -64,6 +64,10 @@ _TOOL_DESCRIPTIONS = {
     "update_guideline": lambda a: f"Aktualizuji pravidla: {a.get('category', '?')} ({a.get('scope', 'GLOBAL')})",
     "check_task_graph": lambda a: f"Kontroluji graf úkolu: {a.get('task_id', '')}",
     "answer_blocked_vertex": lambda a: f"Odpovídám na otázku v grafu: {a.get('vertex_id', '')}",
+    "finance_summary": lambda a: f"Finanční přehled{' pro ' + a.get('client_id', '') if a.get('client_id') else ''}",
+    "list_invoices": lambda a: f"Seznam faktur: {a.get('client_id', '')}",
+    "record_payment": lambda a: f"Zaznamenávám platbu: {a.get('amount', 0)} CZK",
+    "list_contracts": lambda a: f"Seznam smluv{' pro ' + a.get('client_id', '') if a.get('client_id') else ''}",
 }
 
 
@@ -107,6 +111,10 @@ _CHAT_SPECIFIC_TOOLS = {
     "query_action_log",
     "check_task_graph",
     "answer_blocked_vertex",
+    "finance_summary",
+    "list_invoices",
+    "record_payment",
+    "list_contracts",
 }
 
 
@@ -553,6 +561,73 @@ async def _handle_answer_blocked_vertex(args, _client_id, _project_id, _kotlin_c
     return f"Nepodařilo se odemknout vertex {vertex_id} — buď neexistuje nebo není blokovaný."
 
 
+async def _handle_finance_summary(args, client_id, _project_id, kotlin_client):
+    """Get financial summary for a client."""
+    cid = args.get("client_id") or client_id
+    if not cid:
+        return "Chyba: client_id je povinný."
+    from_date = args.get("from_date")
+    to_date = args.get("to_date")
+    params = {"client_id": cid}
+    if from_date:
+        params["from"] = from_date
+    if to_date:
+        params["to"] = to_date
+    return await kotlin_client.get("/internal/finance/summary", params=params)
+
+
+async def _handle_list_invoices(args, _client_id, _project_id, kotlin_client):
+    """List financial records for a client."""
+    cid = args.get("client_id")
+    if not cid:
+        return "Chyba: client_id je povinný."
+    status = args.get("status")
+    type_ = args.get("type")
+    params = {"client_id": cid}
+    if status:
+        params["status"] = status
+    if type_:
+        params["type"] = type_
+    return await kotlin_client.get("/internal/finance/records", params=params)
+
+
+async def _handle_record_payment(args, client_id, _project_id, kotlin_client):
+    """Record a payment and attempt auto-matching."""
+    import datetime
+
+    cid = args.get("client_id") or client_id
+    if not cid:
+        return "Chyba: client_id je povinný."
+    amount = args.get("amount")
+    if not amount:
+        return "Chyba: amount je povinný."
+    payload = {
+        "clientId": cid,
+        "type": "PAYMENT",
+        "amount": float(amount),
+        "amountCzk": float(amount),
+        "variableSymbol": args.get("variable_symbol"),
+        "counterpartyName": args.get("counterparty_name"),
+        "counterpartyAccount": args.get("counterparty_account"),
+        "paymentDate": args.get("payment_date") or datetime.date.today().isoformat(),
+        "sourceUrn": "chat",
+        "description": args.get("description", ""),
+    }
+    return await kotlin_client.post("/internal/finance/record", json=payload)
+
+
+async def _handle_list_contracts(args, client_id, _project_id, kotlin_client):
+    """List contracts for a client."""
+    cid = args.get("client_id") or client_id
+    active_only = args.get("active_only", True)
+    params = {}
+    if cid:
+        params["client_id"] = cid
+    if active_only:
+        params["active_only"] = "true"
+    return await kotlin_client.get("/internal/finance/contracts", params=params)
+
+
 _TOOL_HANDLER_MAP = {
     "create_background_task": _handle_create_background_task,
     "create_thinking_graph": _handle_create_thinking_graph,
@@ -581,6 +656,10 @@ _TOOL_HANDLER_MAP = {
     "query_action_log": _handle_query_action_log,
     "check_task_graph": _handle_check_task_graph,
     "answer_blocked_vertex": _handle_answer_blocked_vertex,
+    "finance_summary": _handle_finance_summary,
+    "list_invoices": _handle_list_invoices,
+    "record_payment": _handle_record_payment,
+    "list_contracts": _handle_list_contracts,
 }
 
 

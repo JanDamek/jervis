@@ -810,6 +810,137 @@ TOOL_UPDATE_GUIDELINE: dict = {
 
 
 # ---------------------------------------------------------------------------
+# Financial tools
+# ---------------------------------------------------------------------------
+
+TOOL_FINANCE_SUMMARY: dict = {
+    "type": "function",
+    "function": {
+        "name": "finance_summary",
+        "description": (
+            "Finanční přehled pro klienta — příjmy, výdaje, nezaplacené faktury, po splatnosti. "
+            "Vrací celkový souhrn za dané období."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID. Pokud neuvedeno, použije aktuální kontext.",
+                },
+                "from_date": {
+                    "type": "string",
+                    "description": "Počátek období (YYYY-MM-DD). Volitelné.",
+                },
+                "to_date": {
+                    "type": "string",
+                    "description": "Konec období (YYYY-MM-DD). Volitelné.",
+                },
+            },
+        },
+    },
+}
+
+TOOL_LIST_INVOICES: dict = {
+    "type": "function",
+    "function": {
+        "name": "list_invoices",
+        "description": (
+            "Seznam faktur a finančních záznamů. Lze filtrovat podle stavu (NEW, MATCHED, PAID, OVERDUE) "
+            "nebo typu (INVOICE_IN, INVOICE_OUT, PAYMENT, EXPENSE)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Filtr podle stavu: NEW, MATCHED, PAID, OVERDUE, CANCELLED.",
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Filtr podle typu: INVOICE_IN, INVOICE_OUT, PAYMENT, EXPENSE, RECEIPT.",
+                },
+            },
+            "required": ["client_id"],
+        },
+    },
+}
+
+TOOL_RECORD_PAYMENT: dict = {
+    "type": "function",
+    "function": {
+        "name": "record_payment",
+        "description": (
+            "Zaznamenej platbu. Jervis se pokusí automaticky spárovat s existující fakturou "
+            "podle variabilního symbolu nebo částky + protistrany."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "amount": {
+                    "type": "number",
+                    "description": "Částka v CZK.",
+                },
+                "variable_symbol": {
+                    "type": "string",
+                    "description": "Variabilní symbol (pro párování s fakturou).",
+                },
+                "counterparty_name": {
+                    "type": "string",
+                    "description": "Název protistrany.",
+                },
+                "counterparty_account": {
+                    "type": "string",
+                    "description": "Číslo účtu protistrany.",
+                },
+                "payment_date": {
+                    "type": "string",
+                    "description": "Datum platby (YYYY-MM-DD). Default: dnes.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Popis platby.",
+                },
+            },
+            "required": ["client_id", "amount"],
+        },
+    },
+}
+
+TOOL_LIST_CONTRACTS: dict = {
+    "type": "function",
+    "function": {
+        "name": "list_contracts",
+        "description": (
+            "Seznam smluv pro klienta — aktivní kontrakty, sazby, data. "
+            "Pokud active_only=true, vrací pouze aktivní smlouvy."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID. Pokud neuvedeno, vrací smlouvy všech klientů.",
+                },
+                "active_only": {
+                    "type": "boolean",
+                    "description": "Pouze aktivní smlouvy. Default: true.",
+                },
+            },
+        },
+    },
+}
+
+
+# ---------------------------------------------------------------------------
 # Combined tool lists for chat handler
 # ---------------------------------------------------------------------------
 
@@ -877,6 +1008,7 @@ class ToolCategory(str, Enum):
     MEMORY = "memory"
     FILTERING = "filtering"
     ADMIN = "admin"
+    FINANCE = "finance"
 
 
 # Meta-tool: model calls this to get additional tools
@@ -894,7 +1026,8 @@ TOOL_REQUEST_TOOLS: dict = {
             "- meetings: nahrávky a meetingy (classify_meeting, list_meetings, get_meeting_transcript)\n"
             "- memory: paměť a znalosti (memory_store, memory_recall, list_affairs, get_kb_stats, kb_delete)\n"
             "- filtering: filtrační pravidla (set_filter_rule, list_filter_rules, remove_filter_rule)\n"
-            "- admin: pravidla a konfigurace (get_guidelines, update_guideline, switch_context, query_action_log)"
+            "- admin: pravidla a konfigurace (get_guidelines, update_guideline, switch_context, query_action_log)\n"
+            "- finance: faktury, platby, smlouvy, finanční přehledy"
         ),
         "parameters": {
             "type": "object",
@@ -968,6 +1101,12 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_UPDATE_GUIDELINE,
         TOOL_QUERY_ACTION_LOG,
     ],
+    ToolCategory.FINANCE: [
+        TOOL_FINANCE_SUMMARY,
+        TOOL_LIST_INVOICES,
+        TOOL_RECORD_PAYMENT,
+        TOOL_LIST_CONTRACTS,
+    ],
 }
 
 
@@ -979,6 +1118,7 @@ TOOL_CATEGORY_DESCRIPTIONS: dict[ToolCategory, str] = {
     ToolCategory.MEMORY: "Paměť a znalosti — ukládání, vyhledávání, statistiky KB",
     ToolCategory.FILTERING: "Filtrační pravidla — nastavení automatického zpracování",
     ToolCategory.ADMIN: "Administrace — pravidla, přepínání kontextu, akční log",
+    ToolCategory.FINANCE: "Finance — faktury, platby, smlouvy, finanční přehledy",
 }
 
 # Domain mapping for drift detection (tool name → semantic domain)
@@ -1003,6 +1143,8 @@ TOOL_DOMAINS: dict[str, str] = {
     "set_filter_rule": "filtering", "list_filter_rules": "filtering",
     "remove_filter_rule": "filtering",
     "query_action_log": "memory",
+    "finance_summary": "finance", "list_invoices": "finance",
+    "record_payment": "finance", "list_contracts": "finance",
 }
 
 # Tool name → tool definition lookup (for intent router)

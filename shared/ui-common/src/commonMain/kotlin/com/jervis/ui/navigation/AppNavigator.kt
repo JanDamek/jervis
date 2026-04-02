@@ -38,6 +38,9 @@ sealed class Screen {
     // Environment manager (full CRUD + K8s inspection)
     data class EnvironmentManager(val initialEnvironmentId: String? = null) : Screen()
 
+    // Finance
+    object Finance : Screen()
+
     // Debug console (WebSocket)
     object DebugConsole : Screen()
 }

@@ -799,6 +799,57 @@ Devices register via `IDeviceTokenService.registerToken()` with extended fields:
 
 ---
 
+## Financial Module
+
+### Overview
+
+Financial tracking module with auto-matching of invoices to payments. Integrates with Email Intelligence (Phase 1) for automatic invoice extraction.
+
+```
+Email → Invoice Processor → POST /internal/finance/record → FinancialService
+                                                                  │
+                                    ┌──────────────────────────────┤
+                                    ▼                              ▼
+                              Auto-Match                    Manual via UI
+                        (VS or amount+counter)         (FinanceScreen in Compose)
+                                    │
+                                    ▼
+                            Status: MATCHED/PAID
+```
+
+### Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `FinancialDocument` | `backend/server/.../finance/FinancialDocument.kt` | MongoDB document — invoices, payments, expenses |
+| `ContractDocument` | `backend/server/.../finance/ContractDocument.kt` | MongoDB document — contracts with rates |
+| `FinancialService` | `backend/server/.../finance/FinancialService.kt` | Auto-matching, overdue detection, summary |
+| `FinancialRpcImpl` | `backend/server/.../finance/FinancialRpcImpl.kt` | kRPC implementation |
+| `InternalFinanceRouting` | `backend/server/.../rpc/internal/InternalFinanceRouting.kt` | REST API for Python orchestrator |
+| `InvoiceProcessor` | `backend/service-orchestrator/.../invoice_processor.py` | LLM extraction + POST to financial module |
+| `FinanceScreen` | `shared/ui-common/.../screens/finance/FinanceScreen.kt` | Compose UI — summary, records, contracts |
+| Chat tools | `handler_tools.py` | `finance_summary`, `list_invoices`, `record_payment`, `list_contracts` |
+
+### Auto-Matching Logic
+
+1. **By Variable Symbol (VS):** Exact match of incoming payment VS against existing invoice VS
+2. **By Amount + Counterparty:** Fuzzy match — same amount within tolerance and counterparty name contains match
+3. On match: both documents get status `MATCHED` with cross-reference via `matchedDocumentId`
+
+### Financial Types
+
+- `INVOICE_IN` — received invoice (expense)
+- `INVOICE_OUT` — issued invoice (income)
+- `PAYMENT` — payment received or sent
+- `EXPENSE` — direct expense
+- `RECEIPT` — income receipt
+
+### Overdue Detection
+
+`detectOverdueInvoices()` finds all `NEW` invoices with `dueDate` before today and updates their status to `OVERDUE`.
+
+---
+
 ## GPU Model Routing
 
 ### Overview

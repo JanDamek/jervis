@@ -172,6 +172,13 @@ async def process_invoice(
         except Exception as e:
             logger.warning(f"Failed to store invoice in KB: {e}")
 
+    # POST to Financial Module for auto-matching and tracking
+    if client_id and invoice.amount is not None:
+        try:
+            await _post_financial_record(invoice, client_id, sender)
+        except Exception as e:
+            logger.warning(f"Failed to post financial record: {e}")
+
     logger.info(
         f"Invoice processed: #{invoice.invoice_number}, "
         f"amount={invoice.amount} {invoice.currency}, "
@@ -200,6 +207,40 @@ def format_invoice_for_kb(invoice: InvoiceData, sender: str | None = None) -> st
     if invoice.description:
         lines.append(f"Description: {invoice.description}")
     return "\n".join(lines)
+
+
+async def _post_financial_record(invoice: InvoiceData, client_id: str, sender: str | None = None) -> None:
+    """POST extracted invoice data to Kotlin Financial Module for auto-matching."""
+    import httpx
+    from app.settings import settings
+
+    payload = {
+        "clientId": client_id,
+        "type": "INVOICE_IN",
+        "amount": invoice.amount,
+        "currency": invoice.currency,
+        "invoiceNumber": invoice.invoice_number or None,
+        "variableSymbol": invoice.variable_symbol or None,
+        "counterpartyName": invoice.counterparty_name or sender or None,
+        "counterpartyIco": invoice.counterparty_ico or None,
+        "counterpartyAccount": invoice.counterparty_account or None,
+        "issueDate": invoice.issue_date,
+        "dueDate": invoice.due_date,
+        "sourceUrn": f"email:invoice:{invoice.invoice_number or 'unknown'}",
+        "description": invoice.description or "",
+    }
+    if invoice.vat_rate:
+        payload["vatRate"] = invoice.vat_rate
+    if invoice.vat_amount:
+        payload["vatAmount"] = invoice.vat_amount
+
+    url = f"{settings.kotlin_server_url}/internal/finance/record"
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(url, json=payload)
+        data = resp.json()
+        matched = data.get("matched", False)
+        record_id = data.get("id", "?")
+        logger.info(f"Financial record created: {record_id}, matched={matched}")
 
 
 def format_invoice_for_task(invoice: InvoiceData) -> str:

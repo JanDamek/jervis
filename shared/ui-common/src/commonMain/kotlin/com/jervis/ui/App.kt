@@ -262,6 +262,14 @@ fun App(
                 )
             }
 
+            Screen.Finance -> {
+                com.jervis.ui.screens.finance.FinanceScreen(
+                    repository = repository,
+                    selectedClientId = selectedClientId,
+                    onBack = { appNavigator.goBack() },
+                )
+            }
+
             // Debug console removed - server does not publish debug WebSocket
             Screen.DebugConsole -> {
                 // No debug window - navigate back to main
