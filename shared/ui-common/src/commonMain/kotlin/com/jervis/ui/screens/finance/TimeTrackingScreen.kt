@@ -121,7 +121,7 @@ private fun TodaySection(repository: JervisRepository, clientId: String?) {
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                JButton(
+                JPrimaryButton(
                     text = "Zapsat čas",
                     icon = Icons.Default.Add,
                     onClick = { showLogDialog = true },

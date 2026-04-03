@@ -68,7 +68,7 @@ fun MeetingHelperView(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(JervisSpacing.screenPadding),
+            .padding(JervisSpacing.outerPadding),
     ) {
         // Header
         Row(

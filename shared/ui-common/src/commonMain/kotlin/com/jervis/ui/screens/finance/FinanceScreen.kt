@@ -154,7 +154,7 @@ private fun SummarySection(repository: JervisRepository, clientId: String?) {
 
                 // Detect overdue button
                 JActionBar {
-                    JButton(
+                    JPrimaryButton(
                         text = "Detekovat po splatnosti",
                         onClick = {
                             scope.launch {
@@ -294,7 +294,7 @@ private fun RecordsSection(repository: JervisRepository, clientId: String?) {
 
                     Spacer(modifier = Modifier.weight(1f))
 
-                    JButton(
+                    JPrimaryButton(
                         text = "Nový záznam",
                         icon = Icons.Default.Add,
                         onClick = { showCreateDialog = true },
@@ -416,13 +416,13 @@ private fun RecordCard(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (record.status == FinancialStatusDto.NEW) {
-                        JButton(text = "Zaplaceno", onClick = { onStatusChange(FinancialStatusDto.PAID) })
-                        JButton(text = "Zrušit", onClick = { onStatusChange(FinancialStatusDto.CANCELLED) })
+                        JPrimaryButton(text = "Zaplaceno", onClick = { onStatusChange(FinancialStatusDto.PAID) })
+                        JPrimaryButton(text = "Zrušit", onClick = { onStatusChange(FinancialStatusDto.CANCELLED) })
                     }
                     if (record.status == FinancialStatusDto.OVERDUE) {
-                        JButton(text = "Zaplaceno", onClick = { onStatusChange(FinancialStatusDto.PAID) })
+                        JPrimaryButton(text = "Zaplaceno", onClick = { onStatusChange(FinancialStatusDto.PAID) })
                     }
-                    JButton(text = "Smazat", onClick = onDelete)
+                    JPrimaryButton(text = "Smazat", onClick = onDelete)
                 }
             }
         }
@@ -570,7 +570,7 @@ private fun ContractsSection(repository: JervisRepository, clientId: String?) {
             Column {
                 JActionBar {
                     Spacer(modifier = Modifier.weight(1f))
-                    JButton(
+                    JPrimaryButton(
                         text = "Nová smlouva",
                         icon = Icons.Default.Add,
                         onClick = { showCreateDialog = true },
@@ -698,8 +698,8 @@ private fun ContractCard(
             if (showActions && contract.status == ContractStatusDto.ACTIVE) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    JButton(text = "Upravit", onClick = onEdit)
-                    JButton(text = "Ukončit", onClick = onTerminate)
+                    JPrimaryButton(text = "Upravit", onClick = onEdit)
+                    JPrimaryButton(text = "Ukončit", onClick = onTerminate)
                 }
             }
         }
