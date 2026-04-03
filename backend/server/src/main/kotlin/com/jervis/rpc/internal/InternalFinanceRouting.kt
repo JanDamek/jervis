@@ -1,5 +1,10 @@
 package com.jervis.rpc.internal
 
+import com.jervis.finance.ContractDocument
+import com.jervis.finance.ContractType
+import com.jervis.finance.ContractStatus
+import com.jervis.finance.RateUnit
+import com.jervis.finance.ContractRepository
 import com.jervis.finance.FinancialService
 import com.jervis.finance.FinancialDocument
 import com.jervis.finance.FinancialType
@@ -29,6 +34,7 @@ private val json = Json { ignoreUnknownKeys = true }
  */
 fun Routing.installInternalFinanceApi(
     financialService: FinancialService,
+    contractRepository: ContractRepository,
 ) {
     post("/internal/finance/record") {
         try {
@@ -180,6 +186,37 @@ fun Routing.installInternalFinanceApi(
         }
     }
 
+    post("/internal/finance/contract") {
+        try {
+            val body = call.receive<InternalContractRequest>()
+            val doc = ContractDocument(
+                clientId = body.clientId,
+                projectId = body.projectId,
+                counterparty = body.counterparty,
+                type = ContractType.valueOf(body.type),
+                startDate = body.startDate?.let { LocalDate.parse(it) } ?: LocalDate.now(),
+                endDate = body.endDate?.let { LocalDate.parse(it) },
+                rate = body.rate,
+                rateUnit = RateUnit.valueOf(body.rateUnit),
+                currency = body.currency ?: "CZK",
+                terms = body.terms ?: "",
+                status = body.status?.let { ContractStatus.valueOf(it) } ?: ContractStatus.ACTIVE,
+            )
+            val saved = contractRepository.save(doc)
+            call.respondText(
+                """{"status":"ok","id":"${saved.id.toHexString()}"}""",
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "INTERNAL_FINANCE_CONTRACT_CREATE_ERROR" }
+            call.respondText(
+                """{"status":"error","error":"${e.message?.take(200)}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
     post("/internal/finance/overdue") {
         try {
             val overdueCount = financialService.detectOverdueInvoices().size
@@ -218,6 +255,21 @@ data class InternalFinancialRecordRequest(
     val paymentDate: String? = null,
     val sourceUrn: String? = null,
     val description: String? = null,
+)
+
+@Serializable
+data class InternalContractRequest(
+    val clientId: String,
+    val projectId: String? = null,
+    val counterparty: String,
+    val type: String,    // EMPLOYMENT, FREELANCE, SERVICE
+    val startDate: String? = null,
+    val endDate: String? = null,
+    val rate: Double,
+    val rateUnit: String, // HOUR, DAY, MONTH
+    val currency: String? = null,
+    val terms: String? = null,
+    val status: String? = null, // ACTIVE, EXPIRED, TERMINATED
 )
 
 @Serializable

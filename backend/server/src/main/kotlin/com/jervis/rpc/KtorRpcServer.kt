@@ -147,6 +147,7 @@ class KtorRpcServer(
     private val apnsPushService: com.jervis.infrastructure.notification.ApnsPushService,
     private val preferenceService: com.jervis.preferences.PreferenceService,
     private val pythonOrchestratorClient: com.jervis.agent.PythonOrchestratorClient,
+    private val contractRepository: com.jervis.finance.ContractRepository,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -173,7 +174,7 @@ class KtorRpcServer(
                             installVoiceChatApi(taskRepository, taskService, whisperRestClient, whisperProperties, chatService, ttsProperties)
                             installWatchMeetingApi(meetingRpcImpl)
                             installMeetingHelperApi(meetingHelperService)
-                            installInternalFinanceApi(financialService)
+                            installInternalFinanceApi(financialService, contractRepository)
                             installInternalTimeTrackingApi(timeTrackingService)
                             installInternalProactiveApi(proactiveScheduler)
                             installInternalAttachmentApi(emailMessageIndexRepository, directoryStructureService)

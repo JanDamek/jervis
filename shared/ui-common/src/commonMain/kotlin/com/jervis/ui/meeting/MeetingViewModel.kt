@@ -210,6 +210,19 @@ class MeetingViewModel(
         }
     }
 
+    /** Disconnect the active meeting helper session. */
+    fun disconnectHelper() {
+        val meetingId = _currentMeetingId.value ?: return
+        scope.launch {
+            try {
+                repository.meetingHelper.stopHelper(meetingId)
+            } catch (_: Exception) {}
+        }
+        activeHelperDeviceId = null
+        _helperMessages.value = emptyList()
+        _helperConnected.value = false
+    }
+
     fun loadHelperDevices(clientId: String) {
         scope.launch {
             try {
@@ -319,6 +332,7 @@ class MeetingViewModel(
                     is JervisEvent.MeetingStateChanged -> handleMeetingStateChanged(event)
                     is JervisEvent.MeetingTranscriptionProgress -> handleTranscriptionProgress(event)
                     is JervisEvent.MeetingCorrectionProgress -> handleCorrectionProgress(event)
+                    is JervisEvent.MeetingHelperMessage -> handleHelperMessage(event)
                     else -> {}
                 }
             }
@@ -393,6 +407,37 @@ class MeetingViewModel(
                 tokensGenerated = event.tokensGenerated,
             )
         )
+    }
+
+    private fun handleHelperMessage(event: JervisEvent.MeetingHelperMessage) {
+        // Only process messages for the currently active recording/helper session
+        val currentId = _currentMeetingId.value ?: return
+        if (event.meetingId != currentId) return
+
+        // Mark as connected on first message
+        if (!_helperConnected.value) {
+            _helperConnected.value = true
+        }
+
+        // Convert event to HelperMessageDto and append
+        val type = try {
+            com.jervis.dto.meeting.HelperMessageType.valueOf(event.type.uppercase())
+        } catch (_: Exception) {
+            com.jervis.dto.meeting.HelperMessageType.STATUS
+        }
+
+        // Skip empty non-status messages
+        if (event.text.isBlank() && type != com.jervis.dto.meeting.HelperMessageType.STATUS) return
+
+        val dto = com.jervis.dto.meeting.HelperMessageDto(
+            type = type,
+            text = event.text,
+            context = event.context,
+            fromLang = event.fromLang,
+            toLang = event.toLang,
+            timestamp = event.timestamp,
+        )
+        _helperMessages.value = _helperMessages.value + dto
     }
 
     fun startQuickRecording() {

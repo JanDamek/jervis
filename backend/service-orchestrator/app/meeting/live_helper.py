@@ -62,6 +62,7 @@ class HelperSession:
     # Track last analysis timestamps to avoid duplicate processing
     last_translation_at: float = 0.0
     last_suggestion_at: float = 0.0
+    last_qa_predict_at: float = 0.0
 
 
 # Active helper sessions: meeting_id -> HelperSession
@@ -169,7 +170,7 @@ async def process_transcript_chunk(
         logger.debug("No LLM provider for meeting helper, skipping analysis")
         return messages
 
-    # Run translation and suggestions in parallel
+    # Run translation, suggestions, and Q&A prediction in parallel
     tasks = []
 
     # Translation (every chunk)
@@ -183,6 +184,13 @@ async def process_transcript_chunk(
     if now - session.last_suggestion_at > 30:
         session.last_suggestion_at = now
         tasks.append(_suggest_answers(
+            context_text, session.target_lang, timestamp, llm_provider,
+        ))
+
+    # Q&A prediction (every 45 seconds — anticipate upcoming questions)
+    if now - session.last_qa_predict_at > 45 and len(session.context_window) >= 5:
+        session.last_qa_predict_at = now
+        tasks.append(_predict_questions(
             context_text, session.target_lang, timestamp, llm_provider,
         ))
 
@@ -273,5 +281,54 @@ async def _suggest_answers(
         type="suggestion",
         text=suggestion,
         context="Based on recent conversation",
+        timestamp=timestamp,
+    )
+
+
+async def _predict_questions(
+    context: str,
+    target_lang: str,
+    timestamp: str,
+    llm_provider,
+) -> HelperMessage:
+    """Predict upcoming questions based on conversation flow.
+
+    Analyzes the conversation context to anticipate what questions
+    the other participants are likely to ask next, giving the user
+    time to prepare answers.
+    """
+    from app.llm.provider import ModelTier
+
+    lang_instruction = "Respond in Czech." if target_lang == "cs" else f"Respond in {target_lang}."
+
+    response = await llm_provider.completion(
+        messages=[{
+            "role": "user",
+            "content": (
+                f"You are a meeting analyst. Based on this conversation, predict "
+                f"the most likely NEXT question someone will ask the user.\n\n"
+                f"Rules:\n"
+                f"- Analyze the conversation flow and topics being discussed\n"
+                f"- Predict 1 specific question that is likely coming next\n"
+                f"- If you also know a good answer, include it briefly\n"
+                f"- If no question is likely, respond with 'OK'\n\n"
+                f"{lang_instruction}\n"
+                f"Format: 'Question: ... | Answer hint: ...'\n\n"
+                f"Conversation:\n{context}"
+            ),
+        }],
+        model_tier=ModelTier.LOCAL_STANDARD,
+        max_tokens=300,
+        temperature=0.5,
+    )
+
+    prediction = response.choices[0].message.content.strip()
+    if prediction.upper() in ("OK", "OK.", "N/A", "-"):
+        return HelperMessage(type="question_predict", text="", timestamp=timestamp)
+
+    return HelperMessage(
+        type="question_predict",
+        text=prediction,
+        context="Anticipated based on conversation flow",
         timestamp=timestamp,
     )

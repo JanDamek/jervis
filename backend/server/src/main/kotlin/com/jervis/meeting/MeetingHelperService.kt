@@ -1,5 +1,6 @@
 package com.jervis.meeting
 
+import com.jervis.dto.events.JervisEvent
 import com.jervis.dto.meeting.DeviceInfoDto
 import com.jervis.dto.meeting.HelperMessageDto
 import com.jervis.dto.meeting.HelperMessageType
@@ -7,6 +8,7 @@ import com.jervis.dto.meeting.HelperSessionDto
 import com.jervis.dto.meeting.HelperSessionStartDto
 import com.jervis.preferences.DeviceTokenRepository
 import com.jervis.preferences.DeviceType
+import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.meeting.IMeetingHelperService
 import io.ktor.websocket.DefaultWebSocketSession
 import io.ktor.websocket.Frame
@@ -31,6 +33,7 @@ private val logger = KotlinLogging.logger {}
 @Component
 class MeetingHelperService(
     private val deviceTokenRepository: DeviceTokenRepository,
+    private val notificationRpc: NotificationRpcImpl,
 ) : IMeetingHelperService {
 
     /** Active helper sessions: meetingId → session info */
@@ -121,10 +124,21 @@ class MeetingHelperService(
         logger.info { "WebSocket disconnected from meeting helper: meeting=$meetingId" }
     }
 
-    /** Push a helper message to all connected WebSocket sessions for a meeting. */
+    /** Push a helper message to all connected WebSocket sessions for a meeting
+     *  AND emit as a JervisEvent so desktop/mobile apps receive it via RPC event stream. */
     suspend fun pushMessage(meetingId: String, message: HelperMessageDto) {
-        val connections = wsConnections[meetingId] ?: return
-        if (connections.isEmpty()) return
+        // Skip empty suggestion/prediction messages (non-actionable)
+        if (message.text.isBlank() && message.type != HelperMessageType.STATUS) return
+
+        // Emit via RPC event stream — works for all platforms (desktop, mobile) identically
+        notificationRpc.emitMeetingHelperMessage(
+            meetingId = meetingId,
+            message = message,
+        )
+
+        // Also push via WebSocket for direct device connections (watches, secondary devices)
+        val connections = wsConnections[meetingId]
+        if (connections.isNullOrEmpty()) return
 
         val json = Json.encodeToString(message)
         val deadConnections = mutableListOf<DefaultWebSocketSession>()

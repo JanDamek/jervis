@@ -2,7 +2,9 @@ package com.jervis.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -102,6 +104,10 @@ fun App(
         val recordingDurationGlobal by meetingViewModel.recordingDuration.collectAsState()
         val uploadStateGlobal by meetingViewModel.uploadState.collectAsState()
 
+        // Meeting helper state
+        val helperMessages by meetingViewModel.helperMessages.collectAsState()
+        val helperConnected by meetingViewModel.helperConnected.collectAsState()
+
         // Environment
         val environments by viewModel.environment.environments.collectAsState()
 
@@ -156,6 +162,17 @@ fun App(
                 onNavigateToMeetings = { appNavigator.navigateTo(Screen.Meetings) },
                 isOnMeetingsScreen = currentScreen == Screen.Meetings,
             )
+
+            // Meeting helper panel — shown below recording bar when helper messages arrive
+            if (helperMessages.isNotEmpty() || helperConnected) {
+                com.jervis.ui.meeting.MeetingHelperView(
+                    messages = helperMessages,
+                    meetingTitle = null,
+                    isConnected = helperConnected,
+                    onDisconnect = { meetingViewModel.disconnectHelper() },
+                    modifier = androidx.compose.ui.Modifier.heightIn(max = 200.dp),
+                )
+            }
         }
 
         when (val screen = currentScreen) {

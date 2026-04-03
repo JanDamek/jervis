@@ -277,6 +277,25 @@ class NotificationRpcImpl : INotificationService {
         emitEvent(clientId, event)
     }
 
+    suspend fun emitMeetingHelperMessage(
+        meetingId: String,
+        message: com.jervis.dto.meeting.HelperMessageDto,
+    ) {
+        val event = JervisEvent.MeetingHelperMessage(
+            meetingId = meetingId,
+            type = message.type.name.lowercase(),
+            text = message.text,
+            context = message.context,
+            fromLang = message.fromLang,
+            toLang = message.toLang,
+            timestamp = message.timestamp,
+        )
+        // Broadcast to all connected clients (meeting helper is user-global)
+        eventStreams.keys().asSequence().forEach { id ->
+            emitEvent(id, event)
+        }
+    }
+
     /**
      * Emit a generic event to a client.
      */

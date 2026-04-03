@@ -154,4 +154,19 @@ sealed class JervisEvent {
         val riskLevel: String = "MEDIUM",
         override val timestamp: String,
     ) : JervisEvent()
+
+    /**
+     * Meeting helper message — real-time translation, suggestion, or Q&A prediction
+     * pushed to the device during an active meeting helper session.
+     */
+    @Serializable
+    data class MeetingHelperMessage(
+        val meetingId: String,
+        val type: String,          // "translation", "suggestion", "question_predict", "status"
+        val text: String,
+        val context: String = "",
+        val fromLang: String = "",
+        val toLang: String = "",
+        override val timestamp: String,
+    ) : JervisEvent()
 }

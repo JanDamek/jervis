@@ -477,8 +477,16 @@ def select_agent(
 ) -> AgentType:
     """Select coding agent based on task complexity and project rules.
 
-    Only two agents: Claude CLI (default for everything) and Kilo (placeholder).
+    Routing logic:
+    - Explicit user preference always wins (claude/kilo).
+    - KILO selected when ALL of:
+        a) complexity is SIMPLE
+        b) project has max_openrouter_tier == "FREE" or "NONE"
+           (i.e. no paid cloud budget → use free KILO)
+    - Claude selected for MEDIUM/COMPLEX/CRITICAL or when paid tier available.
+    - If KILO fails, caller should retry with preference="claude" (fallback).
     """
+    # Explicit preference overrides automatic selection
     if preference and preference != "auto":
         try:
             return AgentType(preference)
@@ -486,5 +494,14 @@ def select_agent(
             logger.warning("Unknown agent preference %r, falling back to Claude", preference)
             return AgentType.CLAUDE
 
-    # Claude handles all complexities
+    # Auto-select based on complexity and project tier
+    tier = (rules.max_openrouter_tier if rules else "NONE").upper()
+
+    # KILO for simple tasks on free/no-budget projects
+    if complexity == Complexity.SIMPLE and tier in ("NONE", "FREE"):
+        logger.info("AUTO_AGENT_SELECT | kilo | complexity=%s, tier=%s", complexity.value, tier)
+        return AgentType.KILO
+
+    # Claude for everything else (medium+, or paid projects where quality matters)
+    logger.info("AUTO_AGENT_SELECT | claude | complexity=%s, tier=%s", complexity.value, tier)
     return AgentType.CLAUDE

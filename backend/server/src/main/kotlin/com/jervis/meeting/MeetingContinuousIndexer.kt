@@ -60,6 +60,7 @@ class MeetingContinuousIndexer(
     private val taskService: TaskService,
     private val directoryStructureService: DirectoryStructureService,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
+    private val timeTrackingService: com.jervis.timetracking.TimeTrackingService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -433,7 +434,45 @@ class MeetingContinuousIndexer(
         notificationRpc.emitMeetingStateChanged(
             meeting.id.toHexString(), effectiveClientId.toString(), MeetingStateEnum.INDEXED.name, meeting.title,
         )
+
+        // Auto-log time from meeting duration (only for classified meetings with known client)
+        if (clientId != null && meeting.durationSeconds != null && meeting.durationSeconds > 0) {
+            autoLogMeetingTime(meeting, clientId)
+        }
+
         logger.info { "Indexed meeting (raw transcript): ${meeting.title ?: meeting.id}, qualified=$isQualified, unclassified=${clientId == null}" }
+    }
+
+    // ===== Auto Time Logging =====
+
+    /**
+     * Automatically log time entry from meeting duration.
+     * Called once when a meeting is first indexed with a known clientId.
+     * Source = MEETING — distinguishes auto-logged from manual entries.
+     */
+    private suspend fun autoLogMeetingTime(meeting: MeetingDocument, clientId: ClientId) {
+        try {
+            val durationHours = (meeting.durationSeconds ?: 0L) / 3600.0
+            if (durationHours < 0.05) return // Skip meetings shorter than ~3 minutes
+
+            val meetingDate = meeting.startedAt.atZone(java.time.ZoneId.of("Europe/Prague")).toLocalDate()
+            val description = meeting.title ?: "Meeting ${meeting.id.toHexString().takeLast(6)}"
+
+            timeTrackingService.logTime(
+                com.jervis.timetracking.TimeEntryDocument(
+                    clientId = clientId.toString(),
+                    projectId = meeting.projectId?.toString(),
+                    date = meetingDate,
+                    hours = kotlin.math.round(durationHours * 100) / 100.0, // round to 2 decimals
+                    description = description,
+                    source = com.jervis.timetracking.TimeSource.MEETING,
+                    billable = true,
+                ),
+            )
+            logger.info { "AUTO_TIME_LOG | meeting=${meeting.id} | client=$clientId | hours=${"%.2f".format(durationHours)} | date=$meetingDate" }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to auto-log time for meeting ${meeting.id}" }
+        }
     }
 
     // ===== Pipeline 3: LLM Correction (after qualification) =====

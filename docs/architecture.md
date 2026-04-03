@@ -753,14 +753,14 @@ When user answers "Nevím" (I don't know) to correction questions, the system re
 
 ## Meeting Helper (Real-Time Assistance)
 
-Real-time translation and answer suggestions pushed to a separate device (iPhone) during active recording. Requires live assist (real-time Whisper transcription) to be active.
+Real-time translation, answer suggestions, and Q&A prediction pushed to a separate device (iPhone) or shown in-app during active recording. Requires live assist (real-time Whisper transcription) to be active. Works identically on Desktop, Android, and iOS.
 
 ### Architecture
 
 ```
-Desktop (recording)                    iPhone (helper device)
+Desktop/Mobile (recording)             iPhone (helper device)
     |                                       |
-    | audio chunks                          | WebSocket
+    | audio chunks                          | WebSocket / RPC events
     v                                       | /ws/meeting-helper/{meetingId}
 Kotlin Server                               |
     | POST /api/v1/voice/session/chunk      |
@@ -771,25 +771,35 @@ Kotlin Server                               |
     v                                       |
 Python Orchestrator                         |
     | live_helper.py                        |
-    | → Translation (LLM)                  |
-    | → Answer suggestions (LLM)           |
+    | → Translation (LLM, every chunk)     |
+    | → Answer suggestions (LLM, 30s)      |
+    | → Q&A prediction (LLM, 45s)          |
     |                                       |
     | POST /internal/meeting-helper/push    |
     v                                       |
-Kotlin Server ──────── WebSocket push ──────┘
+Kotlin Server ─── WebSocket push ───────────┘
+    └── JervisEvent.MeetingHelperMessage ──→ RPC event stream (desktop/mobile)
 ```
+
+### Dual Delivery
+
+Helper messages are delivered via two channels simultaneously:
+1. **WebSocket** (`/ws/meeting-helper/{meetingId}`) — for dedicated helper devices (iPhone, iPad)
+2. **RPC Event Stream** (`JervisEvent.MeetingHelperMessage`) — for in-app display on desktop/mobile via `MeetingViewModel.handleHelperMessage()` → `MeetingHelperView` shown below `RecordingBar`
 
 ### Components
 
 | File | Role |
 |------|------|
-| `backend/service-orchestrator/app/meeting/live_helper.py` | Core pipeline: rolling context window, parallel LLM translation + suggestions |
+| `backend/service-orchestrator/app/meeting/live_helper.py` | Core pipeline: rolling context window, parallel LLM translation + suggestions + Q&A prediction |
 | `backend/service-orchestrator/app/meeting/routes.py` | FastAPI routes: start/stop/chunk processing |
-| `backend/server/.../meeting/MeetingHelperService.kt` | Session management, WebSocket connection registry, message broadcast |
+| `backend/server/.../meeting/MeetingHelperService.kt` | Session management, WebSocket connection registry, message broadcast + RPC event emission |
 | `backend/server/.../meeting/MeetingHelperRouting.kt` | WebSocket endpoint for devices, internal REST for Python callbacks |
 | `shared/common-dto/.../meeting/MeetingHelperDtos.kt` | HelperMessageDto, HelperSessionStartDto, DeviceInfoDto |
+| `shared/common-dto/.../events/JervisEvent.kt` | MeetingHelperMessage event for RPC delivery |
 | `shared/common-api/.../meeting/IMeetingHelperService.kt` | RPC interface: startHelper, stopHelper, listHelperDevices |
 | `shared/ui-common/.../meeting/MeetingHelperView.kt` | Compose UI: color-coded messages, auto-scroll, copy-to-clipboard |
+| `shared/ui-common/.../meeting/MeetingViewModel.kt` | Handles MeetingHelperMessage events, manages helper state flows |
 | `shared/ui-common/.../meeting/RecordingSetupDialog.kt` | Device picker when Meeting Helper is enabled |
 
 ### WebSocket Protocol (Server → Device)
@@ -877,9 +887,17 @@ Time tracking and capacity management module. Logs work hours per client, calcul
 ### Time Sources
 
 - `MANUAL` — user logs via chat or UI
-- `MEETING` — auto-logged from meeting duration
+- `MEETING` — auto-logged from meeting duration when meeting is indexed with a known clientId (`MeetingContinuousIndexer.autoLogMeetingTime()`)
 - `TASK` — auto-logged from task completion
 - `CALENDAR` — auto-logged from calendar events
+
+### Auto-Logging: Meetings
+
+When `MeetingContinuousIndexer` completes indexing a meeting (TRANSCRIBED → INDEXED), if the meeting has a `clientId` and `durationSeconds > 3 minutes`, it automatically creates a time entry:
+- Source: `TimeSource.MEETING`
+- Hours: `durationSeconds / 3600` (rounded to 2 decimals)
+- Date: meeting start date (Europe/Prague timezone)
+- Description: meeting title or meeting ID suffix
 
 ### Capacity Model
 
@@ -1268,10 +1286,16 @@ Jervis dispatches coding work to external agents running as ephemeral K8s Jobs. 
 | **Claude** | `jervis-claude` | Complex coding — architecture, multi-file refactoring, reasoning | Anthropic (claude-sonnet-4) | Paid |
 | **KILO** | `jervis-kilo` | Simple tasks — bug fixes, small features, formatting | OpenRouter (free models) | Free |
 
-### Agent Selection
-- **KILO** preferred for: simple tasks, clients with no paid tier, explicit "use kilo" requests
-- **Claude** preferred for: complex reasoning, architecture decisions, multi-file refactoring
-- **Fallback**: KILO failure → re-dispatch to Claude with same task context
+### Agent Selection (`select_agent()` in `_helpers.py`)
+
+Automatic routing based on task complexity and project rules:
+
+- **KILO** auto-selected when ALL conditions met:
+  - Task complexity is `SIMPLE`
+  - Project `max_openrouter_tier` is `NONE` or `FREE` (no paid cloud budget)
+- **Claude** auto-selected for: `MEDIUM`/`COMPLEX`/`CRITICAL` complexity, or paid-tier projects
+- **Explicit preference**: User can force `claude` or `kilo` via `agent_preference` field
+- **Fallback**: KILO failure → caller retries with `preference="claude"`
 
 ### KILO Agent (`service-kilo`)
 - **Container**: Python 3.12 + aider-chat + Node.js 20
