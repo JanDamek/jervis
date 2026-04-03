@@ -63,6 +63,40 @@ Respond with ONLY the JSON object.
 """
 
 
+async def _fetch_attachment_text(email_id: str, index: int) -> str:
+    """Download attachment from Kotlin server and extract text via document-extraction."""
+    import httpx
+    from app.config import settings
+
+    try:
+        # Download binary from Kotlin server
+        download_url = f"{settings.kotlin_server_url}/internal/attachments/email/{email_id}/{index}"
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(download_url)
+            if resp.status_code != 200:
+                logger.warning(f"Attachment download failed: {resp.status_code}")
+                return ""
+            binary_data = resp.content
+            content_type = resp.headers.get("content-type", "application/octet-stream")
+
+        # Send to document-extraction service for text extraction
+        extract_url = f"{settings.document_extraction_url}/extract"
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                extract_url,
+                files={"file": ("attachment", binary_data, content_type)},
+            )
+            if resp.status_code == 200:
+                result = resp.json()
+                return result.get("text", "")
+            else:
+                logger.warning(f"Document extraction failed: {resp.status_code}")
+                return ""
+    except Exception as e:
+        logger.warning(f"Attachment text extraction failed: {e}")
+        return ""
+
+
 async def process_invoice(
     subject: str | None,
     sender: str | None,
@@ -71,14 +105,30 @@ async def process_invoice(
     llm_provider=None,
     kb_store_fn=None,
     client_id: str | None = None,
+    email_id: str | None = None,
 ) -> InvoiceData:
     """
     Process an invoice email and extract structured data.
 
     Uses LLM for extraction with regex fallback for common patterns.
+    When email_id is provided, downloads and extracts text from PDF attachments.
     """
     invoice = InvoiceData()
     body = body_text or ""
+
+    # Extract text from PDF/document attachments if available
+    if email_id and attachments:
+        for att in attachments:
+            att_idx = att.get("index", 0)
+            att_type = att.get("contentType", "")
+            # Extract text from PDFs and office documents
+            if any(t in att_type for t in ["pdf", "spreadsheet", "wordprocessing", "msword"]):
+                try:
+                    att_text = await _fetch_attachment_text(email_id, att_idx)
+                    if att_text:
+                        body = body + "\n\n--- ATTACHMENT: " + att.get("filename", "unknown") + " ---\n" + att_text
+                except Exception as e:
+                    logger.warning(f"Failed to extract attachment text: {e}")
 
     # Try LLM extraction first
     if llm_provider:

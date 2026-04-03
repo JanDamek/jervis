@@ -276,6 +276,35 @@ class PythonOrchestratorClient(baseUrl: String) {
     // Qualification endpoint: LLM agent for smarter routing decisions
     // -----------------------------------------------------------------------
 
+    /**
+     * Dispatch qualification request to Python orchestrator — POST /qualify.
+     *
+     * Fire-and-forget: returns thread_id immediately.
+     * Python runs qualification LLM agent with CORE tools, then pushes result
+     * to Kotlin via POST /internal/qualification-done.
+     *
+     * @return QualifyResponseDto with thread_id, or null on error
+     */
+    suspend fun qualify(request: QualifyRequestDto): QualifyResponseDto? {
+        logger.info { "PYTHON_QUALIFY_START: taskId=${request.taskId}" }
+        return try {
+            val response = client.post("$apiBaseUrl/qualify") {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }
+            if (response.status.value == 200) {
+                circuitBreaker.recordSuccess()
+                response.body()
+            } else {
+                logger.warn { "PYTHON_QUALIFY_FAIL: status=${response.status}" }
+                null
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "PYTHON_QUALIFY_ERROR: taskId=${request.taskId}" }
+            null
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Background orchestration endpoint
     // -----------------------------------------------------------------------
@@ -427,4 +456,51 @@ data class ChatSummaryBlockDto(
     @SerialName("checkpoint_reason") val checkpointReason: String? = null,
 )
 
+// --- Qualification DTOs ---
 
+@Serializable
+data class QualifyRequestDto(
+    @SerialName("task_id") val taskId: String,
+    @SerialName("client_id") val clientId: String,
+    @SerialName("project_id") val projectId: String? = null,
+    @SerialName("group_id") val groupId: String? = null,
+    @SerialName("client_name") val clientName: String? = null,
+    @SerialName("project_name") val projectName: String? = null,
+    @SerialName("source_urn") val sourceUrn: String = "",
+    @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "FREE",
+    // KB extraction results
+    val summary: String = "",
+    val entities: List<String> = emptyList(),
+    @SerialName("suggested_actions") val suggestedActions: List<String> = emptyList(),
+    val urgency: String = "normal",
+    @SerialName("action_type") val actionType: String? = null,
+    @SerialName("estimated_complexity") val estimatedComplexity: String? = null,
+    @SerialName("is_assigned_to_me") val isAssignedToMe: Boolean = false,
+    @SerialName("has_future_deadline") val hasFutureDeadline: Boolean = false,
+    @SerialName("suggested_deadline") val suggestedDeadline: String? = null,
+    // Attachment metadata
+    @SerialName("has_attachments") val hasAttachments: Boolean = false,
+    @SerialName("attachment_count") val attachmentCount: Int = 0,
+    val attachments: List<QualifyAttachmentDto> = emptyList(),
+    // KB extra fields
+    @SerialName("suggested_agent") val suggestedAgent: String? = null,
+    @SerialName("affected_files") val affectedFiles: List<String> = emptyList(),
+    @SerialName("related_kb_nodes") val relatedKbNodes: List<String> = emptyList(),
+    // Original content
+    val content: String = "",
+    // Mention detection
+    @SerialName("mentions_jervis") val mentionsJervis: Boolean = false,
+)
+
+@Serializable
+data class QualifyAttachmentDto(
+    val filename: String,
+    @SerialName("contentType") val contentType: String = "",
+    val size: Long = 0,
+    val index: Int = 0,
+)
+
+@Serializable
+data class QualifyResponseDto(
+    @SerialName("thread_id") val threadId: String,
+)

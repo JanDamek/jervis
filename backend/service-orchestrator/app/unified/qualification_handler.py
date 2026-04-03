@@ -52,6 +52,11 @@ class QualifyRequest(BaseModel):
     has_future_deadline: bool = False
     suggested_deadline: str | None = None
 
+    # Attachment metadata (from email)
+    has_attachments: bool = False
+    attachment_count: int = 0
+    attachments: list[dict] = Field(default_factory=list)  # [{filename, contentType, size, index}]
+
     # KB extra fields
     suggested_agent: str | None = None
     affected_files: list[str] = Field(default_factory=list)
@@ -62,10 +67,6 @@ class QualifyRequest(BaseModel):
 
     # Original content (from Kotlin as "content")
     content: str = ""
-
-    # Attachment tracking
-    has_attachments: bool = False
-    attachment_count: int = 0
 
     # Active tasks for consolidation check
     active_tasks: list[dict[str, str | None]] = Field(default_factory=list)
@@ -720,12 +721,22 @@ async def _pre_classify_email(request: QualifyRequest) -> str:
     elif classification.content_type == ContentType.INVOICE:
         try:
             from app.unified.invoice_processor import process_invoice, format_invoice_for_task
+            # Extract email ID from source_urn (format: "email:{emailDocId}")
+            _email_id = None
+            if request.source_urn.startswith("email:"):
+                _email_id = request.source_urn.split(":", 1)[1]
+            # Combine email body with KB-extracted summary (which includes attachment text)
+            _invoice_text = body_text
+            if request.summary and request.summary != body_text:
+                _invoice_text = body_text + "\n\n--- KB EXTRACTED (includes attachments) ---\n" + request.summary
             invoice = await process_invoice(
                 subject=subject,
                 sender=sender,
-                body_text=body_text,
+                body_text=_invoice_text,
+                attachments=request.attachments if request.has_attachments else None,
                 llm_provider=llm_provider,
                 client_id=request.client_id,
+                email_id=_email_id,
             )
             context_parts.append(f"\n{format_invoice_for_task(invoice)}")
             if invoice.is_urgent:

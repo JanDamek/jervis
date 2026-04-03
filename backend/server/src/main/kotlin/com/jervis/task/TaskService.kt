@@ -424,6 +424,28 @@ class TaskService(
     }
 
     /**
+     * Save qualification agent result fields to task document.
+     * Called from /internal/qualification-done callback after Python LLM agent finishes.
+     */
+    suspend fun saveQualificationResult(
+        taskId: TaskId,
+        priorityScore: Int,
+        priorityReason: String,
+        actionType: String,
+        estimatedComplexity: String,
+        qualifierContext: String,
+    ) {
+        val query = Query(Criteria.where("_id").`is`(taskId.value))
+        val update = Update()
+            .set("priorityScore", priorityScore)
+            .set("priorityReason", priorityReason)
+            .set("actionType", actionType)
+            .set("estimatedComplexity", estimatedComplexity)
+            .set("qualifierPreparedContext", qualifierContext)
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+    }
+
+    /**
      * Mark the task as ERROR with an error message, without requiring the expected state.
      * This is used for fatal errors where we need to ensure a task is marked as failed.
      */

@@ -49,6 +49,7 @@ import com.jervis.guidelines.GuidelinesRpcImpl
 import com.jervis.meeting.installMeetingHelperApi
 import com.jervis.rpc.internal.installInternalFinanceApi
 import com.jervis.rpc.internal.installInternalTimeTrackingApi
+import com.jervis.rpc.internal.installInternalAttachmentApi
 import com.jervis.rpc.internal.installInternalProactiveApi
 import com.jervis.meeting.installWatchMeetingApi
 import com.jervis.preferences.DeviceTokenRpcImpl
@@ -139,10 +140,13 @@ class KtorRpcServer(
     private val timeTrackingRpcImpl: com.jervis.timetracking.TimeTrackingRpcImpl,
     private val timeTrackingService: com.jervis.timetracking.TimeTrackingService,
     private val proactiveScheduler: com.jervis.proactive.ProactiveScheduler,
+    private val emailMessageIndexRepository: com.jervis.email.EmailMessageIndexRepository,
+    private val directoryStructureService: com.jervis.infrastructure.storage.DirectoryStructureService,
     private val connectionRepository: com.jervis.connection.ConnectionRepository,
     private val fcmPushService: com.jervis.infrastructure.notification.FcmPushService,
     private val apnsPushService: com.jervis.infrastructure.notification.ApnsPushService,
     private val preferenceService: com.jervis.preferences.PreferenceService,
+    private val pythonOrchestratorClient: com.jervis.agent.PythonOrchestratorClient,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -172,6 +176,7 @@ class KtorRpcServer(
                             installInternalFinanceApi(financialService)
                             installInternalTimeTrackingApi(timeTrackingService)
                             installInternalProactiveApi(proactiveScheduler)
+                            installInternalAttachmentApi(emailMessageIndexRepository, directoryStructureService)
 
                             // Internal REST API modules (Python orchestrator → Kotlin)
                             installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl, preferenceService)
@@ -969,11 +974,57 @@ class KtorRpcServer(
                                                 }
                                             }
 
-                                            // Actionable → QUEUED (orchestrator classifies as first step)
-                                            taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
-                                            logger.info {
-                                                "KB_DONE_CALLBACK: taskId=${body.taskId} → QUEUED " +
-                                                    "actionable=${r.hasActionableContent} urgency=${r.urgency}"
+                                            // Actionable → dispatch to Python /qualify for LLM classification
+                                            // Qualification agent decides: QUEUED, DONE, or URGENT_ALERT
+                                            try {
+                                                val qualifyRequest = com.jervis.agent.QualifyRequestDto(
+                                                    taskId = body.taskId,
+                                                    clientId = body.clientId,
+                                                    sourceUrn = task.sourceUrn.value,
+                                                    summary = r.summary.take(2000),
+                                                    entities = r.entities,
+                                                    suggestedActions = r.suggestedActions,
+                                                    urgency = r.urgency,
+                                                    actionType = r.actionType,
+                                                    estimatedComplexity = r.estimatedComplexity,
+                                                    isAssignedToMe = r.isAssignedToMe,
+                                                    hasFutureDeadline = r.hasFutureDeadline,
+                                                    suggestedDeadline = r.suggestedDeadline,
+                                                    suggestedAgent = r.suggestedAgent,
+                                                    affectedFiles = r.affectedFiles,
+                                                    relatedKbNodes = r.relatedKbNodes,
+                                                    hasAttachments = task.hasAttachments,
+                                                    attachmentCount = task.attachmentCount,
+                                                    attachments = task.attachments.mapIndexed { idx, att ->
+                                                        com.jervis.agent.QualifyAttachmentDto(
+                                                            filename = att.filename,
+                                                            contentType = att.mimeType,
+                                                            size = att.sizeBytes,
+                                                            index = idx,
+                                                        )
+                                                    },
+                                                    content = task.content.take(3000),
+                                                    mentionsJervis = task.mentionsJervis,
+                                                )
+                                                val qualifyResponse = pythonOrchestratorClient.qualify(qualifyRequest)
+                                                if (qualifyResponse != null) {
+                                                    logger.info {
+                                                        "KB_DONE_CALLBACK: taskId=${body.taskId} → dispatched to /qualify " +
+                                                            "threadId=${qualifyResponse.threadId}"
+                                                    }
+                                                } else {
+                                                    // Fallback: if /qualify fails, go straight to QUEUED
+                                                    taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
+                                                    logger.warn {
+                                                        "KB_DONE_CALLBACK: taskId=${body.taskId} → /qualify failed, fallback to QUEUED"
+                                                    }
+                                                }
+                                            } catch (e: Exception) {
+                                                // Fallback: if /qualify fails, go straight to QUEUED
+                                                logger.warn(e) {
+                                                    "KB_DONE_CALLBACK: taskId=${body.taskId} → /qualify dispatch failed, fallback to QUEUED"
+                                                }
+                                                taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
                                             }
                                         } catch (e: Exception) {
                                             logger.error(e) { "KB_DONE_CALLBACK: failed to process result taskId=${body.taskId}" }
@@ -983,6 +1034,78 @@ class KtorRpcServer(
                                     call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
                                 } catch (e: Exception) {
                                     logger.warn(e) { "Failed to process KB completion callback" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Internal endpoint: Python qualification agent reports result
+                            post("/internal/qualification-done") {
+                                try {
+                                    val body = call.receive<QualificationDoneCallback>()
+                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} decision=${body.decision} priority=${body.priorityScore}" }
+
+                                    launch {
+                                        try {
+                                            val taskId = com.jervis.common.types.TaskId(ObjectId(body.taskId))
+                                            val task = taskRepository.getById(taskId)
+
+                                            if (task == null) {
+                                                logger.error { "QUALIFICATION_DONE: task not found taskId=${body.taskId}" }
+                                                return@launch
+                                            }
+
+                                            // Save qualification results to task
+                                            taskService.saveQualificationResult(
+                                                taskId = taskId,
+                                                priorityScore = body.priorityScore,
+                                                priorityReason = body.reason,
+                                                actionType = body.actionType,
+                                                estimatedComplexity = body.estimatedComplexity,
+                                                qualifierContext = body.contextSummary + "\n\n" + body.suggestedApproach,
+                                            )
+
+                                            when (body.decision) {
+                                                "DONE" -> {
+                                                    taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
+                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → DONE (${body.reason})" }
+                                                }
+                                                "URGENT_ALERT" -> {
+                                                    taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
+                                                    // Push urgent alert
+                                                    if (chatRpcImpl.isUserOnline()) {
+                                                        try {
+                                                            chatRpcImpl.pushUrgentAlert(
+                                                                sourceUrn = task.sourceUrn.value,
+                                                                taskId = task.id.toString(),
+                                                                taskName = task.taskName,
+                                                                summary = body.alertMessage ?: body.reason,
+                                                                suggestedAction = null,
+                                                                taskContent = task.content,
+                                                            )
+                                                        } catch (e: Exception) {
+                                                            logger.warn(e) { "QUALIFICATION_DONE: failed to push urgent alert" }
+                                                        }
+                                                    }
+                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → QUEUED (URGENT)" }
+                                                }
+                                                else -> {
+                                                    // QUEUED (default)
+                                                    taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
+                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → QUEUED (priority=${body.priorityScore})" }
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            logger.error(e) { "QUALIFICATION_DONE: failed to process taskId=${body.taskId}" }
+                                        }
+                                    }
+
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to process qualification-done callback" }
                                     call.respondText(
                                         "{\"ok\":false}",
                                         io.ktor.http.ContentType.Application.Json,
@@ -1443,6 +1566,21 @@ data class KbCompletionResult(
     @kotlinx.serialization.SerialName("suggested_agent") val suggestedAgent: String? = null,
     @kotlinx.serialization.SerialName("affected_files") val affectedFiles: List<String> = emptyList(),
     @kotlinx.serialization.SerialName("related_kb_nodes") val relatedKbNodes: List<String> = emptyList(),
+)
+
+@kotlinx.serialization.Serializable
+data class QualificationDoneCallback(
+    @kotlinx.serialization.SerialName("task_id") val taskId: String,
+    @kotlinx.serialization.SerialName("client_id") val clientId: String,
+    val decision: String = "QUEUED", // QUEUED, DONE, URGENT_ALERT, CONSOLIDATE
+    @kotlinx.serialization.SerialName("priority_score") val priorityScore: Int = 5,
+    val reason: String = "",
+    @kotlinx.serialization.SerialName("alert_message") val alertMessage: String? = null,
+    @kotlinx.serialization.SerialName("target_task_id") val targetTaskId: String? = null,
+    @kotlinx.serialization.SerialName("context_summary") val contextSummary: String = "",
+    @kotlinx.serialization.SerialName("suggested_approach") val suggestedApproach: String = "",
+    @kotlinx.serialization.SerialName("action_type") val actionType: String = "",
+    @kotlinx.serialization.SerialName("estimated_complexity") val estimatedComplexity: String = "",
 )
 
 @kotlinx.serialization.Serializable
