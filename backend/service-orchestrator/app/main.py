@@ -209,7 +209,14 @@ async def lifespan(app: FastAPI):
     from app.agent_task_watcher import agent_task_watcher
     await agent_task_watcher.start()
 
+    # Start proactive scheduler (morning briefing, overdue check, weekly summary)
+    from app.proactive import scheduler as proactive_scheduler
+    await proactive_scheduler.start()
+
     yield
+
+    # Stop proactive scheduler
+    await proactive_scheduler.stop()
 
     # Stop AgentTaskWatcher
     await agent_task_watcher.stop()
