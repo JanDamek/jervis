@@ -5,11 +5,14 @@ Called from /qualify endpoint. Fire-and-forget — reports result to Kotlin via 
 
 Flow:
 1. Receive KB analysis context (summary, entities, urgency, suggested_actions)
-2. Pre-classify content type (NEWSLETTER→auto-DONE, INVOICE, JOB_OFFER, etc.)
-3. Build system prompt for qualification + context preparation
-4. Run LLM with CORE tools (kb_search, web_search, memory)
-5. Agent decides: DONE, QUEUED, or URGENT_ALERT + prepares orchestrator context
-6. POST result to Kotlin /internal/qualification-done
+2. Build system prompt for qualification + context preparation
+3. Run LLM with CORE tools (kb_search, web_search, memory)
+4. Agent decides: DONE, QUEUED, or URGENT_ALERT + prepares orchestrator context
+5. POST result to Kotlin /internal/qualification-done
+
+Design principle: NO content-type-specific handlers. The LLM model decides
+what type of content it is (invoice, job offer, medical report, anything)
+and how to handle it — using KB conventions, tools, and general reasoning.
 """
 
 from __future__ import annotations
@@ -116,9 +119,26 @@ The system is already processing these tasks:
 reply to same matter, new information for ongoing work), choose CONSOLIDATE and specify
 the target task_id. Do not create duplicates — new information joins the existing task."""
 
-    return f"""You are the qualification agent for the Jervis system. You analyze incoming data
-after KB indexing and prepare context for the orchestrator — you don't just decide,
-you also summarize what you know and suggest an approach.
+    attachment_context = ""
+    if request.has_attachments and request.attachments:
+        att_lines = "\n".join(
+            f"  - {a.get('filename', '?')} ({a.get('contentType', '?')}, {a.get('size', 0)} bytes)"
+            for a in request.attachments
+        )
+        attachment_context = f"""
+
+## Attachments ({request.attachment_count} files)
+{att_lines}
+Attachment text has been extracted and included in the KB summary.
+If you need the original binary (e.g. to store as a document), use the appropriate tool."""
+
+    return f"""You are the qualification agent for the Jervis AI assistant system.
+You analyze ALL types of incoming content after KB indexing — emails, documents,
+notifications, messages, scans, attachments — and decide what to do with them.
+
+You are GENERIC: you handle invoices, job offers, medical reports, legal documents,
+personal messages, system alerts, or anything else the same way — by analyzing the
+content, checking KB for conventions and related items, and making a decision.
 
 ## LANGUAGE RULES
 - All internal reasoning and prompt instructions are in English.
@@ -133,11 +153,12 @@ Apply ALL learned rules from KB:
 - "invoices from X = always urgent" → respect it
 - "topic Y = do not monitor" → choose DONE
 - "emails from Z = always notify" → respect it
+- "newsletters = auto-done" → respect it
 If no conventions found, proceed with default rules below.
 
 ## Urgency rules (default, overridden by KB conventions)
 **ALWAYS URGENT_ALERT:**
-- Invoices with immediate or near-term payment deadlines
+- Documents with immediate or near-term payment deadlines (< 7 days)
 - Direct questions/mentions addressed to the user (someone asks ME specifically)
 - Deadlines within 48 hours
 - Security incidents, production outages
@@ -147,12 +168,14 @@ If no conventions found, proceed with default rules below.
 - Action items assigned to the user
 - Requests for review, approval, feedback
 - New issues/tickets assigned to user's projects
-- Emails requiring a response
+- Emails/messages requiring a response
+- Documents requiring user decision (invoices to approve, contracts to sign, etc.)
 
 **ALWAYS DONE:**
 - Newsletters, marketing emails, automated notifications
 - System logs, CI/CD notifications (unless failure)
 - Items matching "do not monitor" conventions in KB
+- Purely informational content with no action needed
 
 ## Input data
 - **Source**: {request.source_urn}
@@ -167,7 +190,7 @@ If no conventions found, proceed with default rules below.
 - **Assigned to me**: {'yes' if request.is_assigned_to_me else 'no'}
 - **Future deadline**: {'yes' if request.has_future_deadline else 'no'}{f' ({request.suggested_deadline})' if request.suggested_deadline else ''}
 - **@Jervis mention**: {'⚠️ YES — direct mention' if request.mentions_jervis else 'no'}
-{mention_context}{topic_context}{active_tasks_context}
+{mention_context}{topic_context}{active_tasks_context}{attachment_context}
 
 ## Your task
 1. **Check KB conventions** (`kb_search` with "conventions rules") — apply learned rules FIRST.
@@ -355,11 +378,6 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
         decision, priority_score, reason, alert_message,
         context_summary, suggested_approach, action_type, estimated_complexity.
     """
-    # Phase 1: Pre-classify content type for email sources
-    content_type_info = ""
-    if request.source_urn.startswith("email::"):
-        content_type_info = await _pre_classify_email(request)
-
     from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
 
     # Get CORE tools only
@@ -367,10 +385,7 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
 
     system_prompt = _build_system_prompt(request)
 
-    # Build user message with content type context
     user_content = f"Analyzuj a rozhodni o následujícím obsahu:\n\n{request.content}"
-    if content_type_info:
-        user_content = f"{content_type_info}\n\n{user_content}"
 
     messages: list[dict] = [
         {"role": "system", "content": system_prompt},
@@ -636,148 +651,6 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
     except Exception as e:
         logger.warning("Failed to score attachments for task %s: %s", request.task_id, e)
         return []
-
-
-async def _pre_classify_email(request: QualifyRequest) -> str:
-    """Pre-classify email content type before qualification.
-
-    Returns context string to prepend to qualification prompt.
-    For NEWSLETTER: returns early decision (no LLM needed).
-    For JOB_OFFER: runs analyzer and prepends results.
-    For INVOICE: extracts data and prepends results.
-    """
-    from app.unified.content_classifier import classify_content, classify_with_llm, ContentType
-
-    # Extract email metadata from content
-    subject = ""
-    sender = ""
-    body_text = request.content
-    attachments: list[dict] = []
-
-    # Parse subject and sender from content (format: "# Email: subject\nFrom: sender")
-    for line in request.content.split("\n")[:5]:
-        if line.startswith("# Email:"):
-            subject = line.replace("# Email:", "").strip()
-        elif line.startswith("From:"):
-            parts = line.replace("From:", "").strip().split("|")
-            sender = parts[0].strip()
-
-    # Rule-based classification
-    classification = classify_content(subject, sender, body_text, attachments)
-
-    # LLM fallback for low-confidence rules
-    if classification.confidence < 0.6:
-        classification = await classify_with_llm(
-            subject, sender, body_text, attachments,
-            llm_provider=llm_provider,
-        )
-
-    logger.info(
-        "EMAIL_PRE_CLASSIFY | task=%s | type=%s | confidence=%.2f | reason=%s",
-        request.task_id, classification.content_type.value,
-        classification.confidence, classification.reason,
-    )
-
-    context_parts = [
-        f"## Email Content Classification",
-        f"**Type:** {classification.content_type.value} (confidence: {classification.confidence:.0%})",
-        f"**Detection:** {classification.detected_by} — {classification.reason}",
-    ]
-
-    # Type-specific processing
-    if classification.content_type == ContentType.NEWSLETTER:
-        # Newsletters are auto-DONE, but we still let the agent confirm
-        context_parts.append("\n**Pravidlo:** Newslettery jsou automaticky DONE.")
-
-    elif classification.content_type == ContentType.JOB_OFFER:
-        try:
-            from app.unified.job_offer_analyzer import analyze_job_offer, format_job_offer_for_task
-            analysis = await analyze_job_offer(
-                subject=subject,
-                sender=sender,
-                body_text=body_text,
-                llm_provider=llm_provider,
-            )
-            context_parts.append(f"\n{format_job_offer_for_task(analysis)}")
-
-            # Opportunity scoring with capacity check
-            try:
-                from app.unified.opportunity_scorer import score_opportunity, format_opportunity_score
-                score = await score_opportunity(
-                    skill_match_pct=analysis.skill_match_pct,
-                    estimated_rate_czk=analysis.estimated_rate_czk,
-                    estimated_hours=analysis.estimated_hours,
-                    platform=analysis.platform_source,
-                )
-                context_parts.append(f"\n{format_opportunity_score(score)}")
-                analysis.score = score["total_score"]
-            except Exception as e2:
-                logger.warning("Opportunity scoring failed: %s", e2)
-
-            context_parts.append("\n**Pravidlo:** Nabídky práce jsou VŽDY QUEUED jako USER_TASK.")
-        except Exception as e:
-            logger.warning("Job offer analysis failed: %s", e)
-
-    elif classification.content_type == ContentType.INVOICE:
-        try:
-            from app.unified.invoice_processor import process_invoice, format_invoice_for_task
-            # Extract email ID from source_urn (format: "email:{emailDocId}")
-            _email_id = None
-            if request.source_urn.startswith("email:"):
-                _email_id = request.source_urn.split(":", 1)[1]
-            # Combine email body with KB-extracted summary (which includes attachment text)
-            _invoice_text = body_text
-            if request.summary and request.summary != body_text:
-                _invoice_text = body_text + "\n\n--- KB EXTRACTED (includes attachments) ---\n" + request.summary
-            invoice = await process_invoice(
-                subject=subject,
-                sender=sender,
-                body_text=_invoice_text,
-                attachments=request.attachments if request.has_attachments else None,
-                llm_provider=llm_provider,
-                client_id=request.client_id,
-                email_id=_email_id,
-            )
-            context_parts.append(f"\n{format_invoice_for_task(invoice)}")
-            if invoice.is_urgent:
-                context_parts.append(f"\n**URGENTNÍ:** Splatnost za {invoice.days_until_due} dní → URGENT_ALERT")
-            else:
-                context_parts.append("\n**Pravidlo:** Faktury jsou QUEUED jako USER_TASK.")
-        except Exception as e:
-            logger.warning("Invoice processing failed: %s", e)
-
-    # VIP sender detection — send immediate push notification
-    if sender and request.client_id:
-        try:
-            await _check_vip_sender(sender, subject, request.client_id)
-        except Exception as e:
-            logger.debug("VIP check skipped: %s", e)
-
-    return "\n".join(context_parts)
-
-
-async def _check_vip_sender(sender: str, subject: str, client_id: str) -> None:
-    """Check if sender is VIP and send push notification if so."""
-    import httpx
-    from app.config import settings
-
-    # Search KB for VIP sender conventions
-    try:
-        from app.tools.kb_client import kb_search
-        results = await kb_search(f"VIP sender {sender}", client_id=client_id, max_results=3)
-        is_vip = any("vip" in (r.get("content", "") + r.get("kind", "")).lower() for r in (results or []))
-    except Exception:
-        is_vip = False
-
-    if is_vip:
-        url = f"{settings.kotlin_server_url}/internal/proactive/vip-alert"
-        async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(url, json={
-                "clientId": client_id,
-                "senderName": sender,
-                "subject": subject,
-            })
-        logger.info("VIP_SENDER_ALERT | sender=%s | client=%s", sender, client_id)
 
 
 async def _record_incoming_vertex(request: QualifyRequest, decision: dict) -> None:
