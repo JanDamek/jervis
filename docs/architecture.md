@@ -273,27 +273,35 @@ The Jervis system uses Kotlin RPC (kRPC) for type-safe, cross-platform communica
 ## Email Intelligence & Multi-Client Qualification
 
 ### Overview
-Email processing includes a pre-classification step before LLM qualification:
+Email processing uses a fully LLM-driven qualification pipeline — no hardcoded content-type
+handlers. The qualification agent (LLM with CORE tools) analyzes ALL content types generically
+and decides what to do based on KB conventions, cross-source matching, and reasoning.
 
 ```
-Email → ContentClassifier → ClientResolver → QualificationHandler
+Email → KB Indexing → ClientResolver → QualificationAgent (LLM + tools)
 ```
+
+### Design Principle
+
+**NO content-type-specific code.** The LLM model decides what type of content it is
+(invoice, job offer, medical report, contract, anything) and how to handle it.
+Business rules (e.g., "newsletters = auto-DONE", "invoices from X = urgent") are stored
+in KB as conventions, not hardcoded in code.
 
 ### Components
 
 | File | Purpose |
 |------|---------|
 | `backend/server/.../email/ClientResolver.kt` | Multi-step client resolution (sender mapping → domain mapping → thread history → fallback) |
-| `backend/service-orchestrator/app/unified/content_classifier.py` | Rule-based + LLM content type detection (NEWSLETTER, INVOICE, JOB_OFFER, etc.) |
-| `backend/service-orchestrator/app/unified/job_offer_analyzer.py` | Extracts job details, matches skills, scores opportunities |
-| `backend/service-orchestrator/app/unified/invoice_processor.py` | Extracts invoice fields (amount, VS, due date), flags urgent |
+| `backend/service-orchestrator/app/unified/qualification_handler.py` | Generic LLM qualification agent — analyzes any content type, uses KB conventions and tools |
 
-### Content Types & Routing
-- **NEWSLETTER** → auto-DONE (no action needed)
-- **JOB_OFFER** → always QUEUED as USER_TASK with skill analysis and scoring
-- **INVOICE** → QUEUED (or URGENT_ALERT if due < 7 days)
-- **CONTRACT, BUG_REPORT, SUPPORT_REQUEST, MEETING_REQUEST** → QUEUED
-- **OTHER** → standard LLM qualification
+### Qualification Flow
+1. KB indexes email content (text extraction, entity recognition, summary)
+2. Kotlin dispatches to Python `/qualify` endpoint with KB results
+3. Qualification agent checks KB conventions first (`kb_search "conventions rules"`)
+4. Agent performs cross-source matching (find related KB entities)
+5. Agent decides: DONE / QUEUED / URGENT_ALERT / CONSOLIDATE + priority score
+6. Agent calls back to Kotlin `/internal/qualification-done` with decision
 
 ### Client Resolution Pipeline
 1. **Sender mapping** (exact + pattern): `ConnectionDocument.senderClientMappings`
@@ -803,18 +811,18 @@ Devices register via `IDeviceTokenService.registerToken()` with extended fields:
 
 ### Overview
 
-Financial tracking module with auto-matching of invoices to payments. Integrates with Email Intelligence (Phase 1) for automatic invoice extraction.
+Financial tracking module with auto-matching of invoices to payments. Financial data is created via orchestrator tools (not hardcoded handlers) — the LLM agent uses `record_payment`, `list_invoices` etc. tools when processing any content it identifies as financial.
 
 ```
-Email → Invoice Processor → POST /internal/finance/record → FinancialService
-                                                                  │
-                                    ┌──────────────────────────────┤
-                                    ▼                              ▼
-                              Auto-Match                    Manual via UI
-                        (VS or amount+counter)         (FinanceScreen in Compose)
-                                    │
-                                    ▼
-                            Status: MATCHED/PAID
+Any content → Qualification Agent (LLM) → decides financial action
+                                              │
+           ┌──────────────────────────────────┤
+           ▼                                   ▼
+    Orchestrator tools                    Manual via UI
+  (record_payment, etc.)              (FinanceScreen in Compose)
+           │
+           ▼
+    FinancialService → Auto-Match (VS or amount+counterparty)
 ```
 
 ### Components
@@ -826,7 +834,6 @@ Email → Invoice Processor → POST /internal/finance/record → FinancialServi
 | `FinancialService` | `backend/server/.../finance/FinancialService.kt` | Auto-matching, overdue detection, summary |
 | `FinancialRpcImpl` | `backend/server/.../finance/FinancialRpcImpl.kt` | kRPC implementation |
 | `InternalFinanceRouting` | `backend/server/.../rpc/internal/InternalFinanceRouting.kt` | REST API for Python orchestrator |
-| `InvoiceProcessor` | `backend/service-orchestrator/.../invoice_processor.py` | LLM extraction + POST to financial module |
 | `FinanceScreen` | `shared/ui-common/.../screens/finance/FinanceScreen.kt` | Compose UI — summary, records, contracts |
 | Chat tools | `handler_tools.py` | `finance_summary`, `list_invoices`, `record_payment`, `list_contracts` |
 
@@ -922,27 +929,24 @@ When an email arrives, the qualification handler checks KB for VIP sender conven
 
 ### Overview
 
-Job opportunity scoring system that evaluates incoming job offers from email intelligence (Phase 1) against user skill profile, rate expectations, and available capacity (Phase 5).
+The qualification agent evaluates any incoming content it identifies as a work opportunity
+(job offers, freelance inquiries, project proposals) using KB data — user skill profile,
+rate expectations, and available capacity. No hardcoded scoring — the LLM agent uses
+KB conventions and tools to analyze and score opportunities.
 
-### Components
+### How It Works
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| `opportunity_scorer.py` | `backend/service-orchestrator/app/unified/opportunity_scorer.py` | Weighted scoring (skill + rate + capacity) |
-| `job_offer_analyzer.py` | `backend/service-orchestrator/app/unified/job_offer_analyzer.py` | LLM extraction of job details |
+1. Qualification agent identifies content as a potential opportunity
+2. Agent searches KB for user skill profile (`kb_search "user-skill-profile"`)
+3. Agent checks capacity via `check_capacity` tool
+4. Agent evaluates match, rate, and availability
+5. Agent creates USER_TASK with analysis and recommendation
 
-### Scoring Model
+### KB Data Required
 
-Total score (0-100) = weighted combination:
-- **Skill match** (40%): percentage of required skills in user profile
-- **Rate score** (30%): offered rate vs minimum acceptable per platform
-- **Capacity score** (30%): available hours vs estimated project hours
-
-### Integration
-
-JOB_OFFER email → `job_offer_analyzer` → `opportunity_scorer` → USER_TASK with score and recommendation.
-
-Minimum rates per platform (CZK/hour): guru.com=800, upwork=900, toptal=1200, freelancer=700.
+- **User skill profile** (stored in KB): skills, domains, roles, languages, min rates
+- **Active contracts** (stored in KB + FinancialModule): current commitments
+- **Capacity data** (from TimeTrackingService): available hours
 
 ---
 

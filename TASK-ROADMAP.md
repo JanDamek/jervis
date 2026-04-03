@@ -15,6 +15,20 @@
 - **CRITICAL:** Never create v1/v2/phases/deprecated markers. Full final implementation only.
 - **CRITICAL:** KB search FIRST before any implementation. `kb_search("phase1-email-intelligence")` etc.
 
+## Core Design Principle
+
+**The LLM model decides everything.** No hardcoded content-type handlers, no if/elif
+dispatchers for specific document types. The qualification agent (LLM with tools) analyzes
+ALL content generically — invoices, job offers, medical reports, contracts, anything —
+using KB conventions, cross-source matching, and reasoning.
+
+Business rules are stored in KB as conventions (e.g., "newsletters = auto-DONE",
+"invoices from X = urgent"), not hardcoded in code.
+
+Specialized agents (coding, financial, communication, etc.) handle specific CAPABILITIES,
+not specific CONTENT TYPES. The orchestrator's decomposer routes work to the right agent
+based on what needs to be done, not what type of document triggered it.
+
 ## Pre-implementation
 
 1. Read `CLAUDE.md` for project conventions
@@ -59,69 +73,44 @@ Jan Damek — CEO & Senior Software Architect, Mazlušek s.r.o.
 - Add: `senderClientMappings: Map<String, String>` (email/pattern → clientId)
 - Add: `domainClientMappings: Map<String, String>` (domain → clientId)
 
-#### 1.2 Content-Type Classifier
-**New file:** `backend/service-orchestrator/app/unified/content_classifier.py`
+#### 1.2 LLM-Driven Qualification Pipeline
 
-Classify email content BEFORE qualification into:
-- `JOB_OFFER` — freelance opportunity, project inquiry, recruitment
-- `INVOICE` — invoice, payment request, receipt, bank statement
-- `CONTRACT` — contract, NDA, agreement, terms
-- `BUG_REPORT` — error, bug, incident report
-- `SUPPORT_REQUEST` — help request, question
-- `MEETING_REQUEST` — calendar invite, meeting proposal
-- `NEWSLETTER` — bulk mail, marketing (auto-DONE)
-- `PERSONAL` — personal communication
-- `OTHER` — unclassified
+**Design principle:** NO content-type enum, NO hardcoded handlers. The qualification
+agent (LLM with CORE tools) handles ALL content types generically.
 
-Detection:
-1. Rule-based fast check: sender patterns (noreply@, newsletter@), subject keywords, attachment names
-2. LLM classification for ambiguous: use LOCAL_COMPACT model (14b), structured JSON output
-3. Attachment analysis: filename contains "faktura/invoice" → INVOICE
+**File:** `backend/service-orchestrator/app/unified/qualification_handler.py`
 
-#### 1.3 Job Offer Analyzer
-**New file:** `backend/service-orchestrator/app/unified/job_offer_analyzer.py`
+The qualification agent:
+1. Receives KB analysis results (summary, entities, urgency, suggested_actions)
+2. Checks KB conventions (`kb_search "conventions rules"`) — applies learned rules
+3. Performs cross-source matching (search KB for related entities, invoices, threads)
+4. Decides: DONE / QUEUED / URGENT_ALERT / CONSOLIDATE + priority score
+5. Prepares context and suggested approach for the orchestrator
 
-When content_type == JOB_OFFER:
-1. Extract: title, description, required skills, budget/rate, timeline, platform source
-2. Match against user skill profile (KB: `kb_search("user-skill-profile")`)
-3. Estimate complexity (hours)
-4. Calculate financial benefit (rate × hours)
-5. Check capacity (simple heuristic initially — Phase 5 will add real tracking)
-6. Return structured analysis for USER_TASK creation
+Business rules (what to do with newsletters, invoices, job offers) are stored in KB
+as conventions, not in code. The model reads them via `kb_search` and applies them.
 
-#### 1.4 Invoice Processor
-**New file:** `backend/service-orchestrator/app/unified/invoice_processor.py`
+#### 1.3 Kotlin→Python /qualify Wiring
 
-When content_type == INVOICE:
-1. Extract from attachment via document-extraction service: invoice number, amount, VAT, due date, VS
-2. Resolve client (sender → ClientResolver)
-3. Create financial record (KB entry initially, Phase 4 adds proper module)
-4. If due date < 7 days → USER_TASK with urgency
+**Modify:** `KtorRpcServer.kt` `/internal/kb-done` callback
+- After KB processing completes, dispatch to Python `/qualify` endpoint
+- Python qualification agent analyzes and calls back to `/internal/qualification-done`
 
-#### 1.5 Qualification Handler Enhancement
-**Modify:** `backend/service-orchestrator/app/unified/qualification_handler.py`
+**Modify:** `PythonOrchestratorClient.kt`
+- Add `qualify(QualifyRequestDto)` method
 
-Change flow from: email → qualify → DONE/QUEUED
-To: email → classify content → resolve client(s) → qualify per client → route by type
-
-- Call ContentClassifier before LLM qualification
-- Call ClientResolver to determine target client(s)
-- Pass content_type to qualification prompt
-- JOB_OFFER → always QUEUED, attach analyzer output
-- INVOICE → store financial data, alert if due
-- NEWSLETTER → auto-DONE
-
-#### 1.6 Seed KB Data
+#### 1.4 Seed KB Conventions
 Store via `kb_store`:
 - User skill profile: Kotlin, KMP, Spring Boot, Python, TypeScript, AI/ML, Architecture
 - Known sender→client mappings for existing contacts
-- Qualification conventions per content type
+- Qualification conventions (newsletters=DONE, VIP senders=URGENT, etc.)
+- Active contracts and rates
 
 ### Testing checklist
 - [ ] Multi-client email → correct client resolution
-- [ ] guru.com job offer → USER_TASK with requirements + financial estimate
-- [ ] Invoice PDF → extraction + financial record
-- [ ] Newsletter → auto-DONE
+- [ ] Job offer email → qualification agent creates USER_TASK with analysis (from KB conventions)
+- [ ] Invoice PDF → qualification agent flags urgency based on due date (from content analysis)
+- [ ] Newsletter → auto-DONE (from KB convention, not hardcoded)
 - [ ] Unknown sender → default client fallback
 
 ---
@@ -335,27 +324,26 @@ data class ContractDocument(
 - Overdue detection: daily check, create USER_TASK for overdue invoices
 - Reports: per-client summary, monthly totals, outstanding invoices
 
-#### 4.3 Invoice Extraction (Orchestrator)
-Integrate with Phase 1 invoice_processor.py:
-- When email classified as INVOICE → extract fields → POST to FinancialService
-- Bank statement from chat → parse → create PAYMENT document → auto-match
+#### 4.3 Orchestrator Tools for Financial Data
+**Design:** The orchestrator creates financial records via tools, NOT via hardcoded
+invoice processors. When the qualification agent or orchestrator identifies financial
+content (invoice, payment, receipt), it uses financial tools to create records.
 
-#### 4.4 Chat Tools
-**Modify:** `backend/service-orchestrator/app/chat/tools.py`
-Add tools:
+Chat tools:
 - `finance_summary(client_id?, period?)` — income/expense/outstanding
 - `list_invoices(client_id?, status?)` — list financial documents
 - `record_payment(amount, vs, account?)` — manual payment entry
+- `record_invoice(data)` — create invoice record from extracted data
 - `list_contracts(client_id?)` — active contracts
 
-#### 4.5 Seed Data
+#### 4.4 Seed Data
 Store initial contracts:
 - MMB: monthly 115k CZK net, employment type
 - Commerzbank/Titan: MD 6k CZK K4, freelance, daily rate
 
 ### Testing checklist
-- [ ] Invoice email → extracted → stored as FinancialDocument
-- [ ] Bank statement pasted in chat → parsed → payment created → matched to invoice
+- [ ] Orchestrator agent extracts invoice data → creates FinancialDocument via tool
+- [ ] Bank statement pasted in chat → agent parses → payment created → matched to invoice
 - [ ] Overdue invoice → USER_TASK alert
 - [ ] "přehled financí za březen" → correct summary
 - [ ] Per-client profitability report
@@ -431,12 +419,11 @@ Add tools:
 ### What to build
 
 #### 6.1 Proactive Scheduler
-**New file:** `backend/server/src/main/kotlin/com/jervis/proactive/ProactiveScheduler.kt`
+**File:** `backend/service-orchestrator/app/proactive/scheduler.py` (asyncio background task)
 
-Scheduled tasks (using existing ScheduledTaskService):
-- **Morning briefing** (daily 7:00): calendar, pending tasks, overdue invoices, unread VIP emails
-- **Invoice check** (daily 9:00): scan for overdue invoices → USER_TASK
-- **Follow-up check** (daily 14:00): sent emails without response > N days → remind
+Scheduled triggers (Europe/Prague timezone):
+- **Morning briefing** (daily 7:00 Mon-Fri): calendar, pending tasks, overdue invoices, unread VIP emails
+- **Invoice check** (daily 9:00 Mon-Fri): scan for overdue invoices → USER_TASK
 - **Weekly summary** (Monday 8:00): time, finance, task completion
 
 #### 6.2 Notification Types
@@ -452,7 +439,6 @@ Scheduled tasks (using existing ScheduledTaskService):
 ### Testing checklist
 - [ ] Morning briefing appears in chat at 7:00
 - [ ] Overdue invoice → push notification
-- [ ] Sent email without response for 7 days → reminder
 - [ ] Email from VIP sender → immediate alert
 
 ---
@@ -465,7 +451,10 @@ Scheduled tasks (using existing ScheduledTaskService):
 
 ### What to build
 
-#### 7.1 User Skill Profile
+**Design principle:** No hardcoded scoring. The qualification agent uses KB data
+(skill profile, rates, capacity) to evaluate opportunities via LLM reasoning.
+
+#### 7.1 User Skill Profile (KB Convention)
 Seed KB entry with:
 - Skills: Kotlin, KMP, Compose Multiplatform, Spring Boot, Java, Python, TypeScript, AI/ML
 - Domains: Architecture, System Design, DevOps, K8s, Mobile (iOS/Android)
@@ -473,24 +462,28 @@ Seed KB entry with:
 - Languages: Czech (native), English (fluent), German (basic)
 - Min rates: configurable per platform
 
-#### 7.2 Opportunity Scoring
-**New file:** `backend/service-orchestrator/app/unified/opportunity_scorer.py`
+#### 7.2 Qualification Agent Convention
+Store KB convention: "When content looks like a work opportunity (job offer, freelance
+inquiry, project proposal), analyze against user skill profile, check capacity via
+check_capacity tool, evaluate rate, and create USER_TASK with recommendation."
 
-Score = weighted combination of:
-- Skill match (0-100): % of required skills in profile
-- Rate score (0-100): offered rate vs minimum acceptable
-- Capacity score (0-100): available hours vs required (from Phase 5)
-- Combined → priority for USER_TASK
+The qualification agent reads this convention from KB and applies it — no hardcoded
+opportunity scoring module needed. The LLM reasoning handles skill matching,
+rate evaluation, and capacity checking natively.
 
-#### 7.3 Integration with Phase 1
-JOB_OFFER emails → job_offer_analyzer → opportunity_scorer → USER_TASK with:
-- Title: "Nabídka: [title] — [platform] — score [X]/100"
-- Body: requirements, matching skills, rate analysis, capacity check, recommendation
+#### 7.3 Integration
+Any content identified as an opportunity by the qualification agent:
+- Agent searches KB for skill profile and rates
+- Agent checks capacity via `check_capacity` tool
+- Agent creates USER_TASK with:
+  - Title describing the opportunity
+  - Analysis: skill match, rate evaluation, capacity status
+  - Recommendation: accept/decline/negotiate
 
 ### Testing checklist
-- [ ] guru.com job email → scored USER_TASK
-- [ ] High-score opportunity → high priority task
-- [ ] Low capacity → task includes warning
+- [ ] guru.com job email → qualification agent creates scored USER_TASK
+- [ ] High-match opportunity → high priority task
+- [ ] Low capacity → task includes capacity warning
 
 ---
 
