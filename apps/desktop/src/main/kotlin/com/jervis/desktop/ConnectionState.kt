@@ -164,6 +164,9 @@ class ConnectionManager(
                 println("Connection state changed: ${event.connectionName} → ${event.newState}")
                 MacOSUtils.showNotification("Připojení", event.message)
             }
+
+            is JervisEvent.MeetingHelperMessage -> { // handled by MeetingViewModel
+            }
         }
     }
 
