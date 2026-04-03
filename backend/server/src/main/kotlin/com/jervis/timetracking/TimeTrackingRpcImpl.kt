@@ -7,9 +7,11 @@ import com.jervis.dto.timetracking.TimeEntryDto
 import com.jervis.dto.timetracking.TimeSourceDto
 import com.jervis.dto.timetracking.TimeSummaryDto
 import com.jervis.service.timetracking.ITimeTrackingService
+import org.springframework.stereotype.Component
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 
+@Component
 class TimeTrackingRpcImpl(
     private val service: TimeTrackingService,
 ) : ITimeTrackingService {

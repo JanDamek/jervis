@@ -906,6 +906,11 @@ Proactive system that generates briefings, alerts, and summaries on schedule. Tr
 | `ProactiveScheduler` | `backend/server/.../proactive/ProactiveScheduler.kt` | Generates briefings, checks overdue, sends alerts |
 | `InternalProactiveRouting` | `backend/server/.../rpc/internal/InternalProactiveRouting.kt` | REST API for triggering from orchestrator |
 | Proactive routes | `backend/service-orchestrator/app/proactive/routes.py` | FastAPI router for scheduled triggers |
+| Proactive scheduler | `backend/service-orchestrator/app/proactive/scheduler.py` | Asyncio cron loop — fires triggers at configured times (Europe/Prague TZ) |
+
+### Scheduling Architecture
+
+The scheduler runs as an asyncio background task in the Python orchestrator (started in FastAPI lifespan). It calculates the next trigger time, sleeps until then, and POSTs to the local proactive FastAPI routes, which forward to Kotlin's ProactiveScheduler via internal REST API. No external cron or APScheduler dependency needed.
 
 ### VIP Sender Detection
 
