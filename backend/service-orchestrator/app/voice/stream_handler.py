@@ -22,10 +22,26 @@ import httpx
 
 from app.config import settings
 from app.voice.models import VoiceIntent, VoiceStreamEvent, VoiceStreamRequest
-from app.voice.intent_classifier import classify_intent
 from app.voice.quick_responder import quick_respond
+from app.voice.conversation_agent import ConversationContextAgent, SpeakerProfile
 
 logger = logging.getLogger(__name__)
+
+# ── Conversation agent registry (one per session/source) ──────────────
+_conversation_agents: dict[str, ConversationContextAgent] = {}
+
+
+def _get_or_create_agent(request: VoiceStreamRequest) -> ConversationContextAgent:
+    """Get or create a ConversationContextAgent for this session."""
+    key = f"{request.source}:{request.client_id}:{request.project_id}"
+    if key not in _conversation_agents:
+        _conversation_agents[key] = ConversationContextAgent(
+            client_id=request.client_id or "",
+            project_id=request.project_id or "",
+            group_id=request.group_id or "",
+        )
+        logger.info("VOICE: created new ConversationContextAgent for %s", key)
+    return _conversation_agents[key]
 
 
 async def handle_voice_stream(request: VoiceStreamRequest) -> AsyncIterator[VoiceStreamEvent]:
@@ -33,6 +49,8 @@ async def handle_voice_stream(request: VoiceStreamRequest) -> AsyncIterator[Voic
 
     This is called AFTER Whisper STT — receives text, not audio.
     The Kotlin server handles STT and forwards text here.
+
+    Uses ConversationContextAgent for multi-turn dialog with KB context.
     """
 
     text = request.text.strip()
@@ -41,47 +59,17 @@ async def handle_voice_stream(request: VoiceStreamRequest) -> AsyncIterator[Voic
         yield VoiceStreamEvent(event="done", data={})
         return
 
-    # Step 1: Classify intent
-    intent_result = await classify_intent(text)
-    logger.info(
-        "VOICE_INTENT | intent=%s | confidence=%.2f | query=%s | reason=%s",
-        intent_result.intent.value,
-        intent_result.confidence,
-        intent_result.extracted_query[:60],
-        intent_result.reason,
-    )
+    logger.info("VOICE_PROCESS | text=%s | source=%s | client=%s", text[:80], request.source, request.client_id)
 
-    # Step 2: Route based on intent
-    if intent_result.intent == VoiceIntent.NOISE:
-        yield VoiceStreamEvent(event="done", data={})
-        return
+    # Use conversation agent for contextual multi-turn dialog
+    agent = _get_or_create_agent(request)
+    agent.add_fragment(text)
+    agent.mark_silence()
 
-    if intent_result.intent == VoiceIntent.DICTATION:
-        async for event in _handle_dictation(intent_result.extracted_query, request):
-            yield event
-        return
-
-    if intent_result.intent == VoiceIntent.COMMAND:
-        # Commands go through the orchestrator for now (tool execution)
-        async for event in _handle_via_orchestrator(text, request):
-            yield event
-        return
-
-    if intent_result.intent == VoiceIntent.SIMPLE_QUERY:
-        # Quick KB + FREE LLM response
-        async for event in quick_respond(
-            query=intent_result.extracted_query,
-            client_id=request.client_id,
-            project_id=request.project_id,
-            group_id=request.group_id,
-        ):
-            yield event
-        yield VoiceStreamEvent(event="done", data={})
-        return
-
-    # COMPLEX_TASK → full orchestrator
-    async for event in _handle_via_orchestrator(text, request):
+    # Generate contextual response using conversation history + KB
+    async for event in agent.generate_response():
         yield event
+    yield VoiceStreamEvent(event="done", data={})
 
 
 async def _handle_dictation(text: str, request: VoiceStreamRequest) -> AsyncIterator[VoiceStreamEvent]:

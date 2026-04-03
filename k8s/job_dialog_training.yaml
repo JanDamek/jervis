@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dialog-training
+  namespace: jervis
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400  # Clean up after 24h
+  template:
+    metadata:
+      labels:
+        app: dialog-training
+    spec:
+      serviceAccountName: jervis-orchestrator
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      restartPolicy: Never
+      containers:
+        - name: training
+          image: registry.damek-soft.eu/jandamek/jervis-orchestrator:latest
+          imagePullPolicy: Always
+          command: ["python", "-m", "app.voice.training.run_dialog_training", "1000"]
+          envFrom:
+            - configMapRef:
+                name: jervis-config
+          env:
+            - name: TZ
+              value: "UTC"
+            - name: MONGODB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: MONGODB_URL
+                  optional: true
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: OPENROUTER_API_KEY
+                  optional: true
+          volumeMounts:
+            - name: jervis-data
+              mountPath: /opt/jervis/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+      volumes:
+        - name: jervis-data
+          persistentVolumeClaim:
+            claimName: jervis-data-pvc

@@ -4,10 +4,8 @@ import com.jervis.infrastructure.config.properties.TtsProperties
 import com.jervis.infrastructure.config.properties.WhisperProperties
 import com.jervis.meeting.WhisperRestClient
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
@@ -38,25 +36,25 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 private val logger = KotlinLogging.logger {}
 
 /**
  * WebSocket handler for continuous voice sessions.
  *
+ * DESIGN PRINCIPLES:
+ * - Mic NEVER stops — always accepting and processing audio
+ * - All processing in background coroutines — frame loop never blocks
+ * - Semantic boundary detection — understands from content when to respond, not from silence
+ * - TTS is interruptible — if user speaks during TTS, it stops
+ * - Parallel Whisper transcription — 5s segments transcribed while user speaks
+ *
  * Protocol:
  * - Client → Server Binary: PCM 16kHz mono 16-bit (100ms chunks, 3200 bytes)
- * - Client → Server Text: JSON control {"type":"start"|"tts_playing"|"tts_finished"|"stop", ...}
- * - Server → Client Text: JSON events {"type":"listening"|"transcribing"|"transcribed"|"token"|"response"|"stored"|"done", ...}
+ * - Client → Server Text: JSON control messages
+ * - Server → Client Text: JSON events
  * - Server → Client Binary: TTS audio (WAV)
- *
- * Pipeline per utterance:
- * 1. PCM chunks → SegmentAccumulator (5s) → Whisper GPU (parallel)
- * 2. EnergyVad detects SPEECH_END → flush accumulator → intent check
- * 3. Three-tier response:
- *    - Tier 1 (< 3s): KB + FREE LLM answer
- *    - Tier 2 (< 1s): "Zaznamenáno" (dictation → KB store)
- *    - Tier 3 (< 2s): "Odpovím na telefonu" (complex → orchestrator background)
  */
 class VoiceWebSocketHandler(
     private val whisperRestClient: WhisperRestClient,
@@ -65,10 +63,7 @@ class VoiceWebSocketHandler(
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    /**
-     * Known Whisper v3 hallucination phrases produced on silence/noise.
-     * These are artifacts of the model, not real speech.
-     */
+    /** Known Whisper v3 hallucination phrases produced on silence/noise. */
     private val whisperHallucinations = setOf(
         "titulky vytvořil johnnyx",
         "titulky vytvořil johnyx",
@@ -85,7 +80,6 @@ class VoiceWebSocketHandler(
         "amara.org",
     )
 
-    /** Returns true if text is a known Whisper hallucination artifact. */
     private fun isWhisperHallucination(text: String): Boolean {
         val normalized = text.trim().lowercase()
         if (normalized.length < 3) return true
@@ -115,13 +109,24 @@ class VoiceWebSocketHandler(
         var ttsEnabled = true
         var started = false
 
-        val vad = EnergyVad()
+        val vad = EnergyVad(
+            silenceTimeoutMs = 1500, // 1.5s — give user time to think
+        )
         val accumulator = SegmentAccumulator()
         val transcriptBuilder = StringBuilder()
-        val ttsPlaying = AtomicBoolean(false)
+        val transcriptLock = Any()
         val scope = CoroutineScope(Dispatchers.IO)
+
+        // Track active background jobs — never block main loop
         var whisperJob: Job? = null
+        var processingJob: Job? = null
+        var ttsJob: Job? = null
         var idleTimeoutJob: Job? = null
+
+        val ttsPlaying = AtomicBoolean(false)
+
+        // Track whether we've already started processing current utterance
+        val utteranceProcessed = AtomicBoolean(false)
 
         val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
 
@@ -132,6 +137,119 @@ class VoiceWebSocketHandler(
                 logger.info { "VOICE_WS: idle timeout, closing session" }
                 session.sendJsonEvent("error", "Session timeout — 5 minut bez aktivity")
                 session.close()
+            }
+        }
+
+        fun getAndClearTranscript(): String {
+            synchronized(transcriptLock) {
+                val text = transcriptBuilder.toString().trim()
+                transcriptBuilder.clear()
+                return text
+            }
+        }
+
+        fun appendTranscript(text: String) {
+            synchronized(transcriptLock) {
+                transcriptBuilder.append(text).append(" ")
+            }
+        }
+
+        fun currentTranscript(): String {
+            synchronized(transcriptLock) {
+                return transcriptBuilder.toString().trim()
+            }
+        }
+
+        /**
+         * Check if accumulated transcript is a complete thought worth processing.
+         *
+         * Uses content-based heuristics — understands from the text when to respond,
+         * not just from silence. User can pause to think without triggering processing.
+         *
+         * Called after VAD detects extended silence AND we have accumulated text.
+         */
+        fun isCompleteThought(text: String): Boolean {
+            val trimmed = text.trim()
+            if (trimmed.length < 5) return false
+
+            // Direct question — always complete
+            if (trimmed.endsWith("?")) return true
+
+            // Sentence-ending punctuation with minimum length
+            if (trimmed.length > 15 && (trimmed.endsWith(".") || trimmed.endsWith("!"))) return true
+
+            // Command verbs at the start — likely complete
+            val lower = trimmed.lowercase()
+            val commandStarts = listOf(
+                "udělej", "nastav", "spusť", "vytvoř", "napiš", "pošli", "zapiš",
+                "najdi", "zobraz", "otevři", "zavři", "restartuj", "smaž",
+                "řekni", "odpověz", "vysvětli", "popiš", "shrň",
+            )
+            if (commandStarts.any { lower.startsWith(it) } && trimmed.length > 10) return true
+
+            // If we have enough text (>30 chars) and silence is long, consider it complete
+            if (trimmed.length > 30) return true
+
+            return false
+        }
+
+        /**
+         * Process an utterance in background — NEVER blocks the frame loop.
+         * Handles response generation, TTS, and state transitions.
+         */
+        fun launchUtteranceProcessing(transcript: String) {
+            if (transcript.isBlank()) return
+
+            // Cancel any previous processing + TTS
+            processingJob?.cancel()
+            if (ttsPlaying.get()) {
+                ttsJob?.cancel()
+                ttsPlaying.set(false)
+                scope.launch { session.sendJsonEvent("tts_stop") }
+            }
+
+            utteranceProcessed.set(true)
+
+            processingJob = scope.launch {
+                try {
+                    session.sendJsonEvent("transcribed", transcript)
+
+                    // Proactive acknowledgment
+                    session.sendJsonEvent("thinking", pickAcknowledgment(transcript))
+
+                    // Process utterance
+                    session.sendJsonEvent("responding")
+                    val responseText = processUtterance(
+                        session, transcript, source,
+                        clientId, projectId, groupId, ttsEnabled,
+                        orchestratorUrl,
+                    )
+
+                    // Generate and play TTS in background (non-blocking)
+                    // TTS generation is NOT cancellable — always let HTTP request finish
+                    if (ttsEnabled && responseText.isNotBlank()) {
+                        ttsJob = scope.launch {
+                            try {
+                                val ttsAudio = generateTts(responseText.take(500))
+                                if (ttsAudio != null && ttsAudio.isNotEmpty()) {
+                                    ttsPlaying.set(true)
+                                    session.sendJsonEvent("tts_start")
+                                    session.send(Frame.Binary(true, ttsAudio))
+                                    logger.info { "VOICE_WS: TTS audio sent to client: ${ttsAudio.size} bytes" }
+                                }
+                            } catch (e: Exception) {
+                                logger.warn { "VOICE_WS: TTS failed: ${e.message}" }
+                            }
+                            // ttsPlaying stays true — client will send tts_finished when done
+                        }
+                    }
+
+                    session.sendJsonEvent("done")
+                } catch (e: Exception) {
+                    logger.warn { "VOICE_WS: processing failed: ${e.message}" }
+                    session.sendJsonEvent("error", "Chyba: ${e.message?.take(100)}")
+                    session.sendJsonEvent("done")
+                }
             }
         }
 
@@ -151,7 +269,7 @@ class VoiceWebSocketHandler(
                                 groupId = msg["group_id"]?.jsonPrimitive?.content ?: ""
                                 ttsEnabled = msg["tts"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true
                                 started = true
-                                logger.info { "VOICE_WS: session started source=$source client=$clientId" }
+                                logger.info { "VOICE_WS: session started source=$source client=$clientId tts=$ttsEnabled" }
                                 session.sendJsonEvent("listening")
                                 resetIdleTimeout()
                             }
@@ -159,20 +277,22 @@ class VoiceWebSocketHandler(
                             "tts_playing" -> ttsPlaying.set(true)
                             "tts_finished" -> {
                                 ttsPlaying.set(false)
-                                vad.reset()
-                                accumulator.reset()
+                                // DON'T reset VAD/accumulator — keep listening continuously
                             }
 
                             "stop" -> {
                                 logger.info { "VOICE_WS: client requested stop" }
-                                // Flush any remaining audio
+                                // Process any remaining audio
+                                whisperJob?.join()
                                 val remaining = accumulator.flush()
-                                if (remaining != null && transcriptBuilder.isNotEmpty()) {
-                                    processUtterance(
-                                        session, transcriptBuilder.toString(), source,
-                                        clientId, projectId, groupId, ttsEnabled,
-                                        orchestratorUrl, scope,
-                                    )
+                                if (remaining != null) {
+                                    val text2 = transcribeSegment(remaining)
+                                    if (text2.isNotBlank()) appendTranscript(text2)
+                                }
+                                val finalTranscript = getAndClearTranscript()
+                                if (finalTranscript.isNotBlank()) {
+                                    launchUtteranceProcessing(finalTranscript)
+                                    processingJob?.join() // Wait for final processing on stop
                                 }
                                 break
                             }
@@ -180,48 +300,42 @@ class VoiceWebSocketHandler(
                     }
 
                     is Frame.Binary -> {
-                        if (!started || ttsPlaying.get()) continue
+                        if (!started) continue
                         resetIdleTimeout()
 
                         val pcmBytes = frame.readBytes()
                         val pcm16 = bytesToShorts(pcmBytes)
-                        val chunkMs = (pcmBytes.size.toLong() * 1000) / (16000 * 2) // 16kHz, 16-bit
+                        val chunkMs = (pcmBytes.size.toLong() * 1000) / (16000 * 2)
 
-                        // VAD check
+                        // During TTS playback — skip VAD entirely (mic picks up echo)
+                        // After TTS finishes (client sends tts_finished), VAD resumes
+                        if (ttsPlaying.get()) continue
+
                         val vadEvent = vad.onChunk(pcm16, chunkMs)
 
                         when (vadEvent) {
                             EnergyVad.Event.SPEECH_START -> {
                                 session.sendJsonEvent("speech_start")
-                                accumulator.reset()
-                                transcriptBuilder.clear()
+                                utteranceProcessed.set(false)
                             }
                             else -> {}
                         }
 
-                        // Accumulate audio → emit 5s segments for parallel Whisper
+                        // Accumulate audio for Whisper transcription
                         val segment = accumulator.addAudio(pcmBytes)
                         if (segment != null) {
-                            // Transcribe 5s segment in background (parallel with recording)
                             whisperJob = scope.launch {
                                 val text = transcribeSegment(segment)
                                 if (text.isNotBlank()) {
-                                    transcriptBuilder.append(text).append(" ")
+                                    appendTranscript(text)
                                     session.sendJsonEvent("transcribing", text)
                                 }
                             }
                         }
 
-                        // SPEECH_END → flush remaining audio, process complete utterance
-                        if (vadEvent == EnergyVad.Event.SPEECH_END) {
-                            // Immediately acknowledge to user — proactive reaction
-                            val partialTranscript = transcriptBuilder.toString().trim()
-                            if (partialTranscript.isNotBlank()) {
-                                // Send early acknowledgment so user sees Jervis is working
-                                session.sendJsonEvent("thinking", pickAcknowledgment(partialTranscript))
-                            }
-
-                            // Wait for any in-flight Whisper job
+                        // SPEECH_END — check if we should process
+                        if (vadEvent == EnergyVad.Event.SPEECH_END && !utteranceProcessed.get()) {
+                            // Wait for any in-flight Whisper job (short wait)
                             whisperJob?.join()
 
                             // Flush remaining audio
@@ -229,26 +343,27 @@ class VoiceWebSocketHandler(
                             if (remaining != null) {
                                 val text = transcribeSegment(remaining)
                                 if (text.isNotBlank()) {
-                                    transcriptBuilder.append(text).append(" ")
+                                    appendTranscript(text)
+                                    session.sendJsonEvent("transcribing", text)
                                 }
                             }
 
-                            val fullTranscript = transcriptBuilder.toString().trim()
-                            if (fullTranscript.isNotBlank()) {
-                                session.sendJsonEvent("transcribed", fullTranscript)
+                            val transcript = currentTranscript()
 
-                                processUtterance(
-                                    session, fullTranscript, source,
-                                    clientId, projectId, groupId, ttsEnabled,
-                                    orchestratorUrl, scope,
-                                )
+                            // Semantic check — is this a complete thought?
+                            if (transcript.isNotBlank() && isCompleteThought(transcript)) {
+                                val fullText = getAndClearTranscript()
+                                launchUtteranceProcessing(fullText)
+                            } else if (transcript.isNotBlank()) {
+                                // Not complete yet — keep accumulating, user might continue
+                                logger.info { "VOICE_WS: not a complete thought yet: '${transcript.take(80)}'" }
+                                // Reset VAD to listen for more speech
+                                vad.reset()
                             }
+                            // If transcript is blank — just silence, ignore
 
-                            // Reset for next utterance
-                            transcriptBuilder.clear()
-                            vad.reset()
+                            // DON'T send "listening" state change — we never stopped listening
                             accumulator.reset()
-                            session.sendJsonEvent("listening")
                         }
                     }
 
@@ -260,13 +375,13 @@ class VoiceWebSocketHandler(
         } finally {
             idleTimeoutJob?.cancel()
             whisperJob?.cancel()
+            processingJob?.cancel()
+            ttsJob?.cancel()
             logger.info { "VOICE_WS: session closed source=$source" }
         }
     }
 
-    /**
-     * Transcribe a WAV audio segment via Whisper GPU.
-     */
+    /** Transcribe a WAV audio segment via Whisper GPU. */
     private suspend fun transcribeSegment(wavBytes: ByteArray): String {
         val tempFile = Files.createTempFile("voice_ws_", ".wav")
         try {
@@ -278,8 +393,9 @@ class VoiceWebSocketHandler(
                 optionsJson = opts,
             )
             val text = result.text.trim()
+            logger.info { "VOICE_WS: Whisper result: '${text.take(100)}' (${wavBytes.size} bytes)" }
             if (isWhisperHallucination(text)) {
-                logger.debug { "VOICE_WS: filtered Whisper hallucination: '$text'" }
+                logger.info { "VOICE_WS: filtered hallucination: '$text'" }
                 return ""
             }
             return text
@@ -292,7 +408,10 @@ class VoiceWebSocketHandler(
     }
 
     /**
-     * Process a complete utterance: intent classify → 3-tier response.
+     * Process a complete utterance: send to orchestrator, stream response.
+     * Returns the full response text (for TTS).
+     *
+     * DOES NOT BLOCK the main frame loop — called from background coroutine.
      */
     private suspend fun processUtterance(
         session: DefaultWebSocketSession,
@@ -303,26 +422,20 @@ class VoiceWebSocketHandler(
         groupId: String,
         ttsEnabled: Boolean,
         orchestratorUrl: String,
-        scope: CoroutineScope,
-    ) {
-        session.sendJsonEvent("responding")
-
+    ): String {
         val payload = buildJsonObject {
             put("text", transcript)
             put("source", source)
             put("client_id", clientId)
             put("project_id", projectId)
             put("group_id", groupId)
-            put("tts", false) // We handle TTS ourselves (binary frames)
+            put("tts", false)
         }.toString()
 
-        try {
-            // Call Python voice pipeline with timeout — must respond within 3s
-            val responseText = StringBuilder()
-            var complete = false
-            var stored = false
+        val responseText = StringBuilder()
 
-            withTimeoutOrNull(10_000) { // 10s max for pipeline
+        try {
+            withTimeoutOrNull(15_000) {
                 val resp = orchestratorClient.post("$orchestratorUrl/voice/process") {
                     contentType(ContentType.Application.Json)
                     setBody(payload)
@@ -348,74 +461,63 @@ class VoiceWebSocketHandler(
                                     }
                                     "response" -> {
                                         if (responseText.isEmpty()) responseText.append(text)
-                                        complete = true
                                         session.sendJsonEvent("response", text)
+                                        break
                                     }
                                     "stored" -> {
-                                        stored = true
                                         val summary = data["summary"]?.jsonPrimitive?.content ?: transcript.take(80)
                                         session.sendJsonEvent("stored", summary)
                                         if (responseText.isEmpty()) responseText.append("Zaznamenáno.")
-                                        complete = true
+                                        break
                                     }
                                     "error" -> {
                                         if (responseText.isEmpty()) responseText.append(text)
-                                        complete = true
+                                        break
                                     }
-                                    "done" -> complete = true
+                                    "done" -> break
                                 }
                             } catch (_: Exception) {}
                             currentEvent = ""
                             currentData = ""
                         }
                     }
-                    if (complete) break
                 }
             }
 
-            // If pipeline didn't respond in time → tier 3 redirect
             if (responseText.isEmpty()) {
                 responseText.append("Zpracovávám, odpovím na telefonu.")
                 session.sendJsonEvent("response", responseText.toString())
-                // Fire-and-forget: orchestrator continues in background
             }
-
-            // TTS — send audio back as binary frame
-            if (ttsEnabled && responseText.isNotBlank()) {
-                try {
-                    val ttsAudio = generateTts(responseText.toString().take(500))
-                    if (ttsAudio != null && ttsAudio.isNotEmpty()) {
-                        session.send(Frame.Binary(true, ttsAudio))
-                    }
-                } catch (e: Exception) {
-                    logger.warn { "VOICE_WS: TTS failed: ${e.message}" }
-                }
-            }
-
-            session.sendJsonEvent("done")
 
         } catch (e: Exception) {
             logger.warn { "VOICE_WS: utterance processing failed: ${e.message}" }
             session.sendJsonEvent("error", "Chyba zpracování: ${e.message?.take(100)}")
-            session.sendJsonEvent("done")
         }
+
+        return responseText.toString()
     }
 
     /**
-     * Generate TTS audio via XTTS v2 on VD.
-     * Supports voice cloning via speaker_wav reference.
+     * Generate TTS audio via self-hosted GPU service (XTTS v2 / F5-TTS).
+     * All processing on own GPU — no paid APIs.
      */
     private suspend fun generateTts(text: String): ByteArray? {
-        val escapedText = text.replace("\"", "\\\"").replace("\n", " ")
-        val speakerField = if (ttsProperties.speakerWav != null) {
-            ""","speaker_wav":"${ttsProperties.speakerWav}""""
-        } else ""
-        val body = """{"text":"$escapedText","speed":${ttsProperties.speed},"language":"${ttsProperties.language}"$speakerField}"""
+        val body = buildJsonObject {
+            put("text", text)
+            put("language", ttsProperties.language)
+            put("speed", ttsProperties.speed.toDouble())
+            if (ttsProperties.speakerWav != null) {
+                put("voice", ttsProperties.speakerWav)
+            }
+        }.toString()
+
+        logger.info { "VOICE_WS: TTS request: ${text.take(80)}" }
         val resp = ttsClient.post("${ttsProperties.url}/tts") {
             contentType(ContentType.Application.Json)
             setBody(body)
         }
         val audio = resp.readBytes()
+        logger.info { "VOICE_WS: TTS response: ${audio.size} bytes" }
         return if (audio.isNotEmpty()) audio else null
     }
 
@@ -426,51 +528,25 @@ class VoiceWebSocketHandler(
     }
 }
 
-/**
- * Pick a natural Czech acknowledgment phrase based on partial transcript content.
- * Makes Jervis feel alive — responds in the pause to show it's listening and working.
- */
+/** Pick a natural Czech acknowledgment based on content. */
 private fun pickAcknowledgment(transcript: String): String {
     val lower = transcript.lowercase()
     return when {
         lower.contains("?") || lower.contains("kolik") || lower.contains("jaký") ||
             lower.contains("kdy") || lower.contains("jak") || lower.contains("co ") ->
-            listOf(
-                "Rozumím, podívám se na to.",
-                "Dobře, hned zjistím.",
-                "Moment, hledám odpověď.",
-                "Podívám se do dat.",
-            ).random()
+            listOf("Moment, hledám odpověď.", "Podívám se na to.", "Hned zjistím.").random()
 
-        lower.contains("problém") || lower.contains("chyba") || lower.contains("nefunguje") ||
-            lower.contains("bug") || lower.contains("error") ->
-            listOf(
-                "Rozumím, promyslím to.",
-                "Dobře, analyzuji situaci.",
-                "Chápu, hned se na to podívám.",
-            ).random()
+        lower.contains("problém") || lower.contains("chyba") || lower.contains("nefunguje") ->
+            listOf("Rozumím, analyzuji.", "Podívám se na to.").random()
 
         lower.contains("udělej") || lower.contains("nastav") || lower.contains("spusť") ||
             lower.contains("vytvoř") || lower.contains("napiš") ->
-            listOf(
-                "Jasně, připravím to.",
-                "Rozumím, pracuji na tom.",
-                "Dobře, hned se do toho pustím.",
-            ).random()
+            listOf("Jasně, připravím to.", "Rozumím, pracuji na tom.").random()
 
-        lower.contains("poznámka") || lower.contains("zápis") || lower.contains("zapiš") ->
-            listOf(
-                "Zapisuji.",
-                "Mám to, ukládám.",
-            ).random()
+        lower.contains("poznámka") || lower.contains("zapiš") ->
+            listOf("Zapisuji.", "Mám to.").random()
 
-        else ->
-            listOf(
-                "Rozumím, zpracovávám.",
-                "Dobře, hned dám vědět.",
-                "Chápu, moment.",
-                "Rozumím, pracuji na odpovědi.",
-            ).random()
+        else -> listOf("Rozumím.", "Moment.", "Pracuji na tom.").random()
     }
 }
 
@@ -481,5 +557,9 @@ private suspend fun DefaultWebSocketSession.sendJsonEvent(type: String, text: St
     } else {
         """{"type":"$type"}"""
     }
-    send(Frame.Text(json))
+    try {
+        send(Frame.Text(json))
+    } catch (_: Exception) {
+        // Session might be closed
+    }
 }

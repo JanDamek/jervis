@@ -94,6 +94,10 @@ class ChatViewModel(
     private val _voiceStatus = MutableStateFlow("")
     val voiceStatus: StateFlow<String> = _voiceStatus.asStateFlow()
 
+    /** Real-time audio amplitude from mic (0.0–1.0) for level meter visualization. */
+    private val _voiceAudioLevel = MutableStateFlow(0f)
+    val voiceAudioLevel: StateFlow<Float> = _voiceAudioLevel.asStateFlow()
+
     private val _compressionBoundaries = MutableStateFlow<List<CompressionBoundaryDto>>(emptyList())
     val compressionBoundaries: StateFlow<List<CompressionBoundaryDto>> = _compressionBoundaries.asStateFlow()
 
@@ -1344,6 +1348,9 @@ class ChatViewModel(
             voiceSessionManager.statusText.collect { _voiceStatus.value = it }
         }
         scope.launch {
+            voiceSessionManager.audioLevel.collect { _voiceAudioLevel.value = it }
+        }
+        scope.launch {
             voiceSessionManager.transcript.collect { transcript ->
                 if (transcript.isNotBlank()) {
                     _chatMessages.update { msgs ->
@@ -1357,13 +1364,24 @@ class ChatViewModel(
         scope.launch {
             voiceSessionManager.responseText.collect { response ->
                 if (response.isNotBlank()) {
-                    // Remove progress hints, add final response
+                    // Update existing voice response message in-place, or add new one
                     _chatMessages.update { msgs ->
-                        msgs.filter { it.messageType != ChatMessage.MessageType.PROGRESS } + ChatMessage(
-                            from = ChatMessage.Sender.Assistant,
-                            text = response,
-                            messageType = ChatMessage.MessageType.FINAL,
-                        )
+                        val lastAssistantIdx = msgs.indexOfLast {
+                            it.from == ChatMessage.Sender.Assistant
+                        }
+                        if (lastAssistantIdx >= 0 && lastAssistantIdx == msgs.lastIndex) {
+                            // Update last assistant message (same utterance)
+                            msgs.toMutableList().apply {
+                                set(lastAssistantIdx, get(lastAssistantIdx).copy(text = response))
+                            }
+                        } else {
+                            // Add new assistant response message
+                            msgs + ChatMessage(
+                                from = ChatMessage.Sender.Assistant,
+                                text = response,
+                                messageType = ChatMessage.MessageType.FINAL,
+                            )
+                        }
                     }
                 }
             }

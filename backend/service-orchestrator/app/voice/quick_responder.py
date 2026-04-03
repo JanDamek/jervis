@@ -31,7 +31,7 @@ Question: {query}"""
 
 async def kb_search(query: str, client_id: str | None, project_id: str | None, group_id: str | None) -> str:
     """Search KB for relevant context. Returns concatenated results."""
-    url = f"{settings.knowledgebase_url.rstrip('/')}/retrieve"
+    url = f"{settings.knowledgebase_url.rstrip('/')}/api/v1/retrieve"
     try:
         payload = {
             "query": query,
@@ -47,14 +47,14 @@ async def kb_search(query: str, client_id: str | None, project_id: str | None, g
             resp.raise_for_status()
             data = resp.json()
 
-        results = data.get("evidence", [])
+        results = data.get("items", data.get("evidence", []))
         if not results:
             return "(no relevant results found)"
 
         context_parts = []
         for r in results[:5]:
             content = r.get("content", "")[:500]
-            source = r.get("source_urn", r.get("source", ""))
+            source = r.get("sourceUrn", r.get("source_urn", r.get("source", "")))
             score = r.get("score", 0)
             context_parts.append(f"[{score:.0%}] {source}: {content}")
 

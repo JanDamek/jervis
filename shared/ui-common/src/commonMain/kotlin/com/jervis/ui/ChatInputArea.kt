@@ -82,6 +82,7 @@ internal fun InputArea(
     requestFocus: Boolean = false,
     isRecordingVoice: Boolean = false,
     voiceStatus: String = "",
+    voiceAudioLevel: Float = 0f,
     onMicClick: () -> Unit = {},
     onCancelVoice: () -> Unit = {},
     showAttach: Boolean = true,
@@ -193,38 +194,46 @@ internal fun InputArea(
                     }
                 }
 
-                // Audio level bars when actively listening/recording
+                // Real audio level meter from PCM mic data
                 if (isActive) {
+                    val level = voiceAudioLevel.coerceIn(0f, 1f)
+                    // Amplify for visual effect (mic RMS is usually 0.0-0.1)
+                    val amplified = (level * 10f).coerceIn(0f, 1f)
+                    val barCount = 20
+
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.height(16.dp),
+                        verticalAlignment = Alignment.Bottom,
+                        modifier = Modifier.height(20.dp),
                     ) {
-                        repeat(12) { i ->
-                            val barAlpha by infiniteTransition.animateFloat(
-                                initialValue = 0.2f,
-                                targetValue = 1.0f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(400 + i * 50, easing = FastOutSlowInEasing),
-                                    repeatMode = RepeatMode.Reverse,
-                                ),
-                                label = "bar_$i",
-                            )
+                        repeat(barCount) { i ->
+                            val barThreshold = i.toFloat() / barCount
+                            val barActive = amplified > barThreshold
+                            val barHeight = if (barActive) {
+                                (4 + (amplified - barThreshold) * 16).coerceIn(4f, 20f)
+                            } else {
+                                2f
+                            }
+                            val barColor = when {
+                                i > barCount * 0.8 -> MaterialTheme.colorScheme.error // loud
+                                i > barCount * 0.5 -> MaterialTheme.colorScheme.tertiary // moderate
+                                else -> statusColor // normal
+                            }
                             Box(
                                 modifier = Modifier
-                                    .width(4.dp)
-                                    .height((4 + (barAlpha * 12)).dp)
+                                    .width(3.dp)
+                                    .height(barHeight.dp)
                                     .background(
-                                        statusColor.copy(alpha = barAlpha * 0.7f),
-                                        shape = RoundedCornerShape(2.dp),
+                                        if (barActive) barColor.copy(alpha = 0.85f) else barColor.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(1.dp),
                                     ),
                             )
                         }
                         Spacer(Modifier.weight(1f))
                         Text(
-                            "● LIVE",
+                            if (amplified > 0.05f) "● LIVE" else "○ ...",
                             style = MaterialTheme.typography.labelSmall,
-                            color = statusColor.copy(alpha = pulseAlpha),
+                            color = if (amplified > 0.05f) statusColor else statusColor.copy(alpha = 0.5f),
                         )
                     }
                 }

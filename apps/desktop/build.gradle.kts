@@ -101,6 +101,18 @@ compose.desktop {
                 if (iconFile.exists()) {
                     this.iconFile.set(iconFile)
                 }
+
+                // Required for microphone access on macOS (TCC permission dialog)
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>NSMicrophoneUsageDescription</key>
+                        <string>Jervis needs microphone access for voice assistant and meeting recording.</string>
+                    """.trimIndent()
+                }
+
+                // Entitlements — required for Hardened Runtime to access microphone
+                entitlementsFile.set(project.file("runtime-entitlements.plist"))
+                runtimeEntitlementsFile.set(project.file("runtime-entitlements.plist"))
             }
             windows {
                 val iconFile = project.file("icons/jervis.ico")

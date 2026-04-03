@@ -535,7 +535,7 @@ fun Routing.installVoiceChatApi(
             multipart.forEachPart { part ->
                 when (part) {
                     is PartData.FileItem -> {
-                        audioBytes = part.streamProvider().readBytes()
+                        audioBytes = part.provider().readRemaining().readByteArray()
                     }
                     is PartData.FormItem -> {
                         if (part.name == "name") speakerName = part.value
@@ -567,7 +567,7 @@ fun Routing.installVoiceChatApi(
                         },
                     ))
                 }
-                val result = resp.body<String>()
+                val result = resp.readBytes().decodeToString()
                 logger.info { "VOICE_SPEAKER_UPLOAD | name=$speakerName | size=${audioBytes!!.size} | result=$result" }
                 call.respondText(result, ContentType.Application.Json)
             } finally {

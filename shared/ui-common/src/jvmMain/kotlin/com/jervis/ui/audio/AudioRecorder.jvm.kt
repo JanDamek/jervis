@@ -9,15 +9,10 @@ import javax.sound.sampled.TargetDataLine
 import kotlin.concurrent.thread
 
 /**
- * Desktop (JVM) AudioRecorder using Java Sound API.
- *
- * Mic capture: TargetDataLine from default or selected mixer.
- * System audio: User must select a virtual audio device (e.g., BlackHole on macOS,
- * Stereo Mix on Windows, PulseAudio monitor on Linux) from the device list.
+ * Desktop (JVM) AudioRecorder using Java Sound API (TargetDataLine).
  *
  * Supports incremental upload: [getAndClearBuffer] returns raw PCM accumulated since last call.
  * Server owns the WAV header — clients send only raw PCM data.
- * On [stopRecording], returns only the un-uploaded tail from the chunk buffer.
  */
 actual class AudioRecorder actual constructor() {
 
@@ -84,6 +79,10 @@ actual class AudioRecorder actual constructor() {
     actual fun startRecording(config: AudioRecordingConfig): Boolean {
         if (_isRecording) return false
 
+        return startJavaSoundRecording(config)
+    }
+
+    private fun startJavaSoundRecording(config: AudioRecordingConfig): Boolean {
         val format = JvmAudioFormat(
             config.sampleRate.toFloat(),
             16,
@@ -111,26 +110,28 @@ actual class AudioRecorder actual constructor() {
 
             _isRecording = true
             startTimeMs = System.currentTimeMillis()
-
             synchronized(chunkLock) { chunkBuffer.reset() }
 
-            // No WAV header — server owns the header, clients send raw PCM only.
             recordingThread = thread(name = "AudioRecorder-JVM") {
                 val readBuffer = ByteArray(4096)
+                var totalBytes = 0L
                 while (_isRecording) {
                     val read = targetLine?.read(readBuffer, 0, readBuffer.size) ?: -1
                     if (read > 0) {
+                        totalBytes += read
                         synchronized(chunkLock) {
                             chunkBuffer.write(readBuffer, 0, read)
                         }
+                    } else if (read == -1) {
+                        break
                     }
                 }
+                println("[AudioRecorder.jvm] Java Sound recording ended, total=$totalBytes")
             }
 
             return true
         } catch (e: Exception) {
             println("[AudioRecorder.jvm] startRecording FAILED: ${e::class.simpleName}: ${e.message}")
-            e.printStackTrace()
             targetLine?.close()
             targetLine = null
             _isRecording = false
@@ -149,8 +150,6 @@ actual class AudioRecorder actual constructor() {
         targetLine?.close()
         targetLine = null
 
-        // Return only the remaining un-uploaded tail from the chunk buffer.
-        // The bulk of the recording was already sent incrementally via getAndClearBuffer().
         val remaining = synchronized(chunkLock) {
             val data = chunkBuffer.toByteArray()
             chunkBuffer.reset()

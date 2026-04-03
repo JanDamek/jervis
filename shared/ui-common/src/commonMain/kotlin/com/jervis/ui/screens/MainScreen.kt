@@ -49,6 +49,7 @@ fun MainScreen(
     val activeThoughtContext by viewModel.chat.activeThoughtContext.collectAsState()
     val isRecordingVoice by viewModel.chat.isRecordingVoice.collectAsState()
     val voiceStatus by viewModel.chat.voiceStatus.collectAsState()
+    val voiceAudioLevel by viewModel.chat.voiceAudioLevel.collectAsState()
     val isTtsPlaying by viewModel.chat.isTtsPlaying.collectAsState()
     val tierOverride by viewModel.chat.tierOverride.collectAsState()
 
@@ -121,6 +122,7 @@ fun MainScreen(
         pendingQuestionCount = pendingQuestionCount,
         isRecordingVoice = isRecordingVoice,
         voiceStatus = voiceStatus,
+        voiceAudioLevel = voiceAudioLevel,
         onMicClick = viewModel.chat::toggleVoiceRecording,
         onCancelVoice = viewModel.chat::cancelVoiceRecording,
         onTtsPlay = viewModel.chat::playTts,

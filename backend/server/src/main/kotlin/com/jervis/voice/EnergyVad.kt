@@ -18,7 +18,7 @@ class EnergyVad(
     /** RMS threshold (0.0–1.0) above which audio is considered speech. */
     private val speechThreshold: Double = 0.015,
     /** Milliseconds of silence after speech to trigger SPEECH_END. */
-    private val silenceTimeoutMs: Long = 700,
+    private val silenceTimeoutMs: Long = 1500,
     /** Minimum speech duration to avoid triggering on clicks/pops. */
     private val minSpeechMs: Long = 200,
 ) {
@@ -37,16 +37,25 @@ class EnergyVad(
      * @param chunkDurationMs Duration of this chunk in milliseconds
      * @return VAD event indicating what happened
      */
+    private var logCounter = 0
+
     fun onChunk(pcm16: ShortArray, chunkDurationMs: Long): Event {
         totalElapsedMs += chunkDurationMs
         val rms = calculateRms(pcm16)
         val isSpeech = rms > speechThreshold
+
+        // Log every 10th chunk (~1s) for diagnostics
+        logCounter++
+        if (logCounter % 10 == 0) {
+            println("VAD: rms=%.4f threshold=%.4f isSpeech=$isSpeech state=$state elapsed=${totalElapsedMs}ms".format(rms, speechThreshold))
+        }
 
         return when (state) {
             State.IDLE -> {
                 if (isSpeech) {
                     state = State.SPEECH
                     speechStartMs = totalElapsedMs
+                    println("VAD: SPEECH_START at ${totalElapsedMs}ms rms=%.4f".format(rms))
                     Event.SPEECH_START
                 } else {
                     Event.SILENCE
