@@ -13,7 +13,7 @@ import logging
 import httpx
 from fastapi import APIRouter
 
-from app.settings import settings
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 

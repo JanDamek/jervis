@@ -748,7 +748,7 @@ async def _pre_classify_email(request: QualifyRequest) -> str:
 async def _check_vip_sender(sender: str, subject: str, client_id: str) -> None:
     """Check if sender is VIP and send push notification if so."""
     import httpx
-    from app.settings import settings
+    from app.config import settings
 
     # Search KB for VIP sender conventions
     try:

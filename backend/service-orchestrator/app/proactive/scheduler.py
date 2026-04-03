@@ -16,7 +16,7 @@ from datetime import datetime, time, timedelta
 import httpx
 import zoneinfo
 
-from app.settings import settings
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 

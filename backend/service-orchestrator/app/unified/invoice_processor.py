@@ -212,7 +212,7 @@ def format_invoice_for_kb(invoice: InvoiceData, sender: str | None = None) -> st
 async def _post_financial_record(invoice: InvoiceData, client_id: str, sender: str | None = None) -> None:
     """POST extracted invoice data to Kotlin Financial Module for auto-matching."""
     import httpx
-    from app.settings import settings
+    from app.config import settings
 
     payload = {
         "clientId": client_id,
