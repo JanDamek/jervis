@@ -2984,3 +2984,50 @@ Thought Map adds a navigation layer over the KB graph using **spreading activati
 ### Maintenance
 
 Background scheduler in KB service — light maintenance (decay + merge) on GPU idle, heavy (archive + Louvain hierarchy) during quiet hours (01:00–06:00).
+
+---
+
+## Voice Cloning TTS
+
+### Overview
+
+XTTS-v2 (Coqui) voice cloning pipeline that enables Jervis to respond with the user's own voice. Runs on VD GPU VM (P40).
+
+### Pipeline
+
+```
+Meeting recordings → extract_voice_samples.py (WhisperX diarization)
+    → voice samples (WAV + transcripts)
+    → finetune_xtts.py (XTTS-v2 fine-tuning, Coqui trainer)
+    → custom speaker model (model.pth + speaker_embedding.pt)
+    → deploy to TTS service speakers directory
+```
+
+### Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Voice Sample Extraction | `scripts/extract_voice_samples.py` | WhisperX diarization + segment extraction from meeting recordings |
+| XTTS Fine-tuning | `scripts/finetune_xtts.py` | Fine-tune XTTS-v2 with extracted voice samples |
+| TTS Service | `backend/service-tts/app/xtts_server.py` | XTTS-v2 TTS with multi-speaker support |
+
+### Multi-Speaker Architecture
+
+TTS service supports multiple speakers via the `voice` field in TTS requests:
+
+- `POST /tts {"text": "...", "voice": "jan-damek"}` — use fine-tuned voice
+- `POST /tts {"text": "...", "voice": "default"}` — use default reference voice
+- `POST /tts {"text": "..."}` — auto-select default
+
+Speaker sources (in priority order):
+1. Pre-computed `.pt` embedding files in `speakers/` directory
+2. WAV reference files in `speakers/` directory (computed on-demand, cached)
+3. Default speaker reference (`TTS_SPEAKER_WAV` env)
+
+### Deployment
+
+All scripts run on VD GPU VM (never K8s CPU pods):
+1. Extract samples: `python extract_voice_samples.py --input-dir /recordings --output-dir /samples`
+2. Fine-tune: `python finetune_xtts.py --samples-dir /samples --output-dir /model`
+3. Deploy: copy `speaker_embedding.pt` → `TTS_DATA_DIR/speakers/jan-damek.pt`
+4. Hot-swap: `POST /set_speaker` or restart TTS service

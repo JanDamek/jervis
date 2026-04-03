@@ -48,6 +48,9 @@ _speaker_wav = None
 _gpt_cond_latent = None
 _speaker_embedding = None
 
+# Multi-speaker cache: speaker_name → (gpt_cond_latent, speaker_embedding)
+_speaker_cache: dict[str, tuple] = {}
+
 
 def _find_speaker_wav() -> str:
     """Find speaker reference WAV file."""
@@ -117,8 +120,87 @@ def _precompute_speaker_embedding():
         audio_path=[_speaker_wav]
     )
 
+    # Cache as "default" speaker
+    _speaker_cache["default"] = (_gpt_cond_latent, _speaker_embedding)
+
     elapsed = time.monotonic() - start
     print(f"[TTS] Speaker embedding computed in {elapsed:.1f}s")
+
+    # Pre-load any saved speaker embeddings from speakers directory
+    _load_saved_speakers()
+
+
+def _load_saved_speakers():
+    """Load pre-computed speaker embeddings from .pt files in speakers directory."""
+    speaker_dir = TTS_DATA_DIR / "speakers"
+    if not speaker_dir.exists():
+        return
+
+    for pt_file in speaker_dir.glob("*.pt"):
+        speaker_name = pt_file.stem.replace("_embedding", "").replace("speaker_", "")
+        if speaker_name in _speaker_cache:
+            continue
+        try:
+            data = torch.load(pt_file, map_location=TTS_DEVICE, weights_only=True)
+            if "gpt_cond_latent" in data and "speaker_embedding" in data:
+                _speaker_cache[speaker_name] = (data["gpt_cond_latent"], data["speaker_embedding"])
+                print(f"[TTS] Loaded speaker '{speaker_name}' from {pt_file.name}")
+        except Exception as e:
+            print(f"[TTS] Failed to load speaker from {pt_file}: {e}")
+
+    # Also compute embeddings from WAV files for speakers without .pt
+    for wav_file in speaker_dir.glob("*.wav"):
+        speaker_name = wav_file.stem
+        if speaker_name in _speaker_cache or speaker_name in ("speaker", "default", "reference", "voice"):
+            continue
+        try:
+            model = _tts.synthesizer.tts_model
+            latent, emb = model.get_conditioning_latents(audio_path=[str(wav_file)])
+            _speaker_cache[speaker_name] = (latent, emb)
+            print(f"[TTS] Computed speaker '{speaker_name}' from {wav_file.name}")
+        except Exception as e:
+            print(f"[TTS] Failed to compute speaker from {wav_file}: {e}")
+
+
+def _get_speaker(speaker_name: str | None) -> tuple:
+    """Get speaker conditioning latents by name.
+
+    Returns (gpt_cond_latent, speaker_embedding) or (None, None) for default.
+    """
+    if not speaker_name or speaker_name == "default":
+        return _gpt_cond_latent, _speaker_embedding
+
+    if speaker_name in _speaker_cache:
+        return _speaker_cache[speaker_name]
+
+    # Try loading on-demand from speakers directory
+    speaker_dir = TTS_DATA_DIR / "speakers"
+
+    # Check for .pt file first
+    pt_path = speaker_dir / f"{speaker_name}.pt"
+    if pt_path.exists():
+        try:
+            data = torch.load(pt_path, map_location=TTS_DEVICE, weights_only=True)
+            latent, emb = data["gpt_cond_latent"], data["speaker_embedding"]
+            _speaker_cache[speaker_name] = (latent, emb)
+            return latent, emb
+        except Exception as e:
+            print(f"[TTS] Failed to load speaker '{speaker_name}': {e}")
+
+    # Check for WAV file
+    wav_path = speaker_dir / f"{speaker_name}.wav"
+    if wav_path.exists() and _tts:
+        try:
+            model = _tts.synthesizer.tts_model
+            latent, emb = model.get_conditioning_latents(audio_path=[str(wav_path)])
+            _speaker_cache[speaker_name] = (latent, emb)
+            return latent, emb
+        except Exception as e:
+            print(f"[TTS] Failed to compute speaker '{speaker_name}': {e}")
+
+    # Fallback to default
+    print(f"[TTS] Speaker '{speaker_name}' not found, using default")
+    return _gpt_cond_latent, _speaker_embedding
 
 
 def _detect_language(text: str) -> str:
@@ -186,7 +268,7 @@ def _split_long_text(text: str, max_len: int = XTTS_CHAR_LIMIT) -> list[str]:
     return chunks if chunks else [text]
 
 
-def _synthesize_chunk(text: str, speed: float, language: str) -> bytes:
+def _synthesize_chunk(text: str, speed: float, language: str, speaker: str | None = None) -> bytes:
     """Synthesize a single text chunk (must be within XTTS char limit) to WAV bytes."""
     # Strip trailing punctuation — XTTS reads "." as "teška" in Czech
     text = text.rstrip(".!?…,;:\"'""„‟»«")
@@ -194,14 +276,15 @@ def _synthesize_chunk(text: str, speed: float, language: str) -> bytes:
         return b""
 
     model = _tts.synthesizer.tts_model
+    spk_latent, spk_embedding = _get_speaker(speaker)
 
-    if _gpt_cond_latent is not None and _speaker_embedding is not None:
+    if spk_latent is not None and spk_embedding is not None:
         # Use pre-computed speaker embedding (faster)
         result = model.inference(
             text=text,
             language=language,
-            gpt_cond_latent=_gpt_cond_latent,
-            speaker_embedding=_speaker_embedding,
+            gpt_cond_latent=spk_latent,
+            speaker_embedding=spk_embedding,
             speed=speed,
         )
         wav_array = result["wav"]
@@ -243,14 +326,14 @@ def _synthesize_chunk(text: str, speed: float, language: str) -> bytes:
     return audio_buffer.getvalue()
 
 
-def _synthesize_text(text: str, speed: float = 1.0, language: str = "") -> bytes:
+def _synthesize_text(text: str, speed: float = 1.0, language: str = "", speaker: str | None = None) -> bytes:
     """Synthesize text to WAV bytes, auto-splitting if exceeds XTTS char limit."""
     if not language:
         language = _detect_language(text)
 
     # Short text — single chunk
     if len(text) <= XTTS_CHAR_LIMIT:
-        return _synthesize_chunk(text, speed, language)
+        return _synthesize_chunk(text, speed, language, speaker)
 
     # Long text — split and concatenate raw PCM, wrap in single WAV
     chunks = _split_long_text(text)
@@ -261,7 +344,7 @@ def _synthesize_text(text: str, speed: float = 1.0, language: str = "") -> bytes
         chunk = chunk.strip()
         if not chunk:
             continue
-        wav_bytes = _synthesize_chunk(chunk, speed, language)
+        wav_bytes = _synthesize_chunk(chunk, speed, language, speaker)
         if not wav_bytes:
             continue
         # Extract raw PCM from WAV bytes
@@ -301,7 +384,7 @@ app = FastAPI(title="Jervis TTS Service (XTTS v2)", lifespan=lifespan)
 
 class TtsRequest(BaseModel):
     text: str
-    voice: str | None = None  # reserved for future multi-voice
+    voice: str | None = None  # speaker name: "default" | "jan-damek" | any speaker in speakers dir
     speed: float = 1.0  # speaking rate multiplier
     language: str = ""  # auto-detect if empty
 
@@ -340,10 +423,11 @@ async def synthesize(request: TtsRequest) -> Response:
         await asyncio.get_running_loop().run_in_executor(None, _load_tts)
 
     wav_data = await asyncio.get_running_loop().run_in_executor(
-        None, _synthesize_text, request.text, request.speed, request.language
+        None, _synthesize_text, request.text, request.speed, request.language, request.voice
     )
     elapsed = time.monotonic() - start
-    print(f"[TTS] Synthesized {len(request.text)} chars → {len(wav_data)} bytes in {elapsed:.2f}s (lang={_detect_language(request.text)})")
+    speaker_label = request.voice or "default"
+    print(f"[TTS] Synthesized {len(request.text)} chars → {len(wav_data)} bytes in {elapsed:.2f}s (lang={_detect_language(request.text)}, speaker={speaker_label})")
 
     return Response(
         content=wav_data,
@@ -355,7 +439,7 @@ async def synthesize(request: TtsRequest) -> Response:
     )
 
 
-def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue.Queue):
+def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue.Queue, speaker: str | None = None):
     """True streaming TTS using inference_stream() — yields PCM chunks as they're generated.
 
     Uses XTTS inference_stream() which internally handles crossfading between chunks.
@@ -372,6 +456,9 @@ def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue
         # Send sample rate as first event so client can open audio line
         chunk_queue.put(("header", {"sample_rate": sample_rate}))
 
+        # Get speaker conditioning
+        spk_latent, spk_embedding = _get_speaker(speaker)
+
         # Split text into sentence-level chunks (respecting XTTS char limit)
         text_chunks = _split_long_text(text)
         chunk_idx = 0
@@ -382,13 +469,13 @@ def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue
                 continue
 
             try:
-                if _gpt_cond_latent is not None and _speaker_embedding is not None:
+                if spk_latent is not None and spk_embedding is not None:
                     # Use inference_stream with pre-computed speaker embedding
                     stream_gen = model.inference_stream(
                         text=text_chunk,
                         language=language,
-                        gpt_cond_latent=_gpt_cond_latent,
-                        speaker_embedding=_speaker_embedding,
+                        gpt_cond_latent=spk_latent,
+                        speaker_embedding=spk_embedding,
                         speed=speed,
                         stream_chunk_size=30,  # tokens per chunk — larger = better quality, ~2s first chunk on P40
                     )
@@ -402,7 +489,7 @@ def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue
                         chunk_idx += 1
                 else:
                     # No speaker embedding — fall back to batch synthesis
-                    wav_data = _synthesize_chunk(text_chunk, speed, language)
+                    wav_data = _synthesize_chunk(text_chunk, speed, language, speaker)
                     if wav_data:
                         # Extract raw PCM from WAV
                         with wave.open(io.BytesIO(wav_data), "rb") as wf:
@@ -448,7 +535,7 @@ async def synthesize_stream(request: TtsRequest):
     # Run true streaming inference in background thread
     thread = threading.Thread(
         target=_stream_inference,
-        args=(request.text, request.speed, request.language, chunk_q),
+        args=(request.text, request.speed, request.language, chunk_q, request.voice),
         daemon=True,
     )
     thread.start()
@@ -513,13 +600,17 @@ async def set_speaker(wav_path: str):
 
 @app.get("/speakers")
 async def list_speakers():
-    """List available speaker WAV files."""
+    """List available speakers (from WAV files and cached embeddings)."""
     speaker_dir = TTS_DATA_DIR / "speakers"
-    if not speaker_dir.exists():
-        return {"speakers": [], "active": _speaker_wav}
+    wav_files = []
+    if speaker_dir.exists():
+        wav_files = [f.name for f in speaker_dir.glob("*.wav")]
 
-    wavs = [f.name for f in speaker_dir.glob("*.wav")]
-    return {"speakers": wavs, "active": Path(_speaker_wav).name if _speaker_wav else None}
+    return {
+        "speakers": sorted(_speaker_cache.keys()),
+        "wav_files": wav_files,
+        "active": Path(_speaker_wav).name if _speaker_wav else None,
+    }
 
 
 if __name__ == "__main__":
