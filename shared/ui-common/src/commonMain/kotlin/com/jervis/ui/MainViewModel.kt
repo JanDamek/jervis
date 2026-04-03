@@ -278,6 +278,7 @@ class MainViewModel(
             is JervisEvent.ConnectionStateChanged -> {
                 _errorMessage.value = event.message
             }
+            is JervisEvent.MeetingHelperMessage -> { /* Handled by MeetingViewModel */ }
         }
     }
 
