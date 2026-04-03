@@ -1,6 +1,14 @@
 package com.jervis.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -10,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
@@ -123,26 +132,101 @@ internal fun InputArea(
         }
 
         if (isRecordingVoice) {
-            // Recording mode
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            // Voice session mode — shows pipeline state with animated indicator
+            val isActive = voiceStatus.contains("Poslouchám") || voiceStatus.contains("Mluvíte") || voiceStatus.contains("Nahrávám")
+            val isProcessing = voiceStatus.contains("Přepisuji") || voiceStatus.contains("Zpracovávám") || voiceStatus.contains("Generuji")
+            val statusColor = when {
+                voiceStatus.contains("Mluvíte") -> MaterialTheme.colorScheme.error
+                isProcessing -> MaterialTheme.colorScheme.tertiary
+                isActive -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            val statusIcon = when {
+                voiceStatus.contains("Mluvíte") -> Icons.Default.Mic
+                voiceStatus.contains("Připojuji") -> Icons.Default.Mic
+                isProcessing -> Icons.Default.Mic
+                isActive -> Icons.Default.Mic
+                else -> Icons.Default.Mic
+            }
+
+            // Pulsating dot animation for active states
+            val infiniteTransition = rememberInfiniteTransition(label = "voice_pulse")
+            val pulseAlpha by infiniteTransition.animateFloat(
+                initialValue = 0.3f,
+                targetValue = 1.0f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(600, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "pulse",
+            )
+
+            Column(
                 modifier = Modifier.heightIn(min = 48.dp),
             ) {
-                Icon(Icons.Default.Mic, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(24.dp))
-                Text(
-                    voiceStatus.ifBlank { "Nahrávám..." },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.weight(1f),
-                )
-                // Stop + send
-                IconButton(onClick = onMicClick, modifier = Modifier.size(44.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.Send, "Odeslat", tint = MaterialTheme.colorScheme.primary)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Animated status icon
+                    Icon(
+                        statusIcon, null,
+                        tint = statusColor.copy(alpha = if (isActive || isProcessing) pulseAlpha else 1f),
+                        modifier = Modifier.size(24.dp),
+                    )
+
+                    // Status text
+                    Text(
+                        voiceStatus.ifBlank { "Připojuji..." },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = statusColor,
+                        modifier = Modifier.weight(1f),
+                    )
+
+                    // Stop button
+                    IconButton(onClick = onMicClick, modifier = Modifier.size(44.dp)) {
+                        Icon(Icons.Default.Stop, "Zastavit", tint = MaterialTheme.colorScheme.error)
+                    }
+                    // Cancel
+                    IconButton(onClick = onCancelVoice, modifier = Modifier.size(44.dp)) {
+                        Icon(Icons.Default.Close, "Zrušit")
+                    }
                 }
-                // Cancel
-                IconButton(onClick = onCancelVoice, modifier = Modifier.size(44.dp)) {
-                    Icon(Icons.Default.Close, "Zrušit")
+
+                // Audio level bars when actively listening/recording
+                if (isActive) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.height(16.dp),
+                    ) {
+                        repeat(12) { i ->
+                            val barAlpha by infiniteTransition.animateFloat(
+                                initialValue = 0.2f,
+                                targetValue = 1.0f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(400 + i * 50, easing = FastOutSlowInEasing),
+                                    repeatMode = RepeatMode.Reverse,
+                                ),
+                                label = "bar_$i",
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .width(4.dp)
+                                    .height((4 + (barAlpha * 12)).dp)
+                                    .background(
+                                        statusColor.copy(alpha = barAlpha * 0.7f),
+                                        shape = RoundedCornerShape(2.dp),
+                                    ),
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "● LIVE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = statusColor.copy(alpha = pulseAlpha),
+                        )
+                    }
                 }
             }
         } else {

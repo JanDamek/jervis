@@ -8,4 +8,8 @@ data class TtsProperties(
     val url: String = "http://ollama.lan.mazlusek.com:8787",
     /** Speaking speed multiplier (1.0 = normal, 1.2 = slightly faster) */
     val speed: Float = 1.2f,
+    /** Path to speaker reference WAV on VD for voice cloning (null = default XTTS voice) */
+    val speakerWav: String? = null,
+    /** Language for XTTS v2 (cs = Czech) */
+    val language: String = "cs",
 )

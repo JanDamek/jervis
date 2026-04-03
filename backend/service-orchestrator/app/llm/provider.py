@@ -324,13 +324,9 @@ class LLMProvider:
                 )
 
         # Apply route decision overrides
+        # model_override already has litellm prefix (openrouter/, ollama/) from router_client
         if model_override:
-            if tier == ModelTier.CLOUD_OPENROUTER:
-                config["model"] = f"openrouter/{model_override}"
-            elif tier.value.startswith("local_"):
-                config["model"] = f"ollama/{model_override}"
-            else:
-                config["model"] = model_override
+            config["model"] = model_override
         if api_base_override:
             config["api_base"] = api_base_override
         if api_key_override:

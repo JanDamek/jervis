@@ -524,6 +524,61 @@ fun Routing.installVoiceChatApi(
         }
     }
 
+    // ── Voice sample upload for voice cloning ──────────────────────────────
+    // POST /api/v1/voice/speaker — upload WAV reference for XTTS v2 voice cloning
+    post("/api/v1/voice/speaker") {
+        try {
+            val multipart = call.receiveMultipart()
+            var audioBytes: ByteArray? = null
+            var speakerName = "default"
+
+            multipart.forEachPart { part ->
+                when (part) {
+                    is PartData.FileItem -> {
+                        audioBytes = part.streamProvider().readBytes()
+                    }
+                    is PartData.FormItem -> {
+                        if (part.name == "name") speakerName = part.value
+                    }
+                    else -> {}
+                }
+                part.dispose()
+            }
+
+            if (audioBytes == null || audioBytes!!.isEmpty()) {
+                call.respondText("""{"error":"No audio data"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
+                return@post
+            }
+
+            // Forward to XTTS v2 service on VD for storage
+            val ttsBaseUrl = ttsProperties.url
+            val uploadClient = HttpClient(io.ktor.client.engine.cio.CIO) {
+                install(HttpTimeout) { requestTimeoutMillis = 30_000; connectTimeoutMillis = 5_000 }
+            }
+            try {
+                val resp = uploadClient.post("$ttsBaseUrl/upload_speaker") {
+                    setBody(io.ktor.client.request.forms.MultiPartFormDataContent(
+                        io.ktor.client.request.forms.formData {
+                            append("audio", audioBytes!!, io.ktor.http.Headers.build {
+                                append(io.ktor.http.HttpHeaders.ContentDisposition, "filename=\"$speakerName.wav\"")
+                                append(io.ktor.http.HttpHeaders.ContentType, "audio/wav")
+                            })
+                            append("name", speakerName)
+                        },
+                    ))
+                }
+                val result = resp.body<String>()
+                logger.info { "VOICE_SPEAKER_UPLOAD | name=$speakerName | size=${audioBytes!!.size} | result=$result" }
+                call.respondText(result, ContentType.Application.Json)
+            } finally {
+                uploadClient.close()
+            }
+        } catch (e: Exception) {
+            logger.warn { "VOICE_SPEAKER_UPLOAD_ERROR: ${e.message}" }
+            call.respondText("""{"error":"${e.message?.take(100)}"}""", ContentType.Application.Json, HttpStatusCode.InternalServerError)
+        }
+    }
+
     // ── Session-based voice streaming (5s chunks during recording) ──────────
     // POST /api/v1/voice/session — start SSE session, receive events for chunks
     post("/api/v1/voice/session") {

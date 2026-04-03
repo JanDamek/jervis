@@ -120,7 +120,7 @@ async def _handle_dictation(text: str, request: VoiceStreamRequest) -> AsyncIter
     yield VoiceStreamEvent(event="done", data={})
 
 
-async def generate_hint(text: str, client_id: str = "", project_id: str = "") -> str | None:
+async def generate_hint(text: str, client_id: str = "", project_id: str = "", group_id: str = "") -> str | None:
     """Generate a KB-based hint for live assist mode.
 
     Searches KB for relevant info and returns a concise hint.
@@ -129,30 +129,32 @@ async def generate_hint(text: str, client_id: str = "", project_id: str = "") ->
     from app.voice.quick_responder import kb_search
 
     try:
-        kb_results = await kb_search(text, client_id, project_id)
-        if not kb_results:
+        kb_context = await kb_search(text, client_id, project_id, group_id)
+        if not kb_context or "(no relevant results found)" in kb_context or "(KB search unavailable)" in kb_context:
             return None
 
-        # Build concise hint from KB results (max 2 sentences)
+        # Build concise hint from KB context (max 2 sentences)
         from app.llm.router_client import route_request
         import litellm
 
         route = await route_request(capability="chat", max_tier="FREE", estimated_tokens=300)
-        model = f"openrouter/{route.model}" if route.target == "openrouter" and route.model else settings.default_local_model
+        model = route.model if route.model else settings.default_local_model
 
-        kb_context = "\n".join(r.get("content", "")[:200] for r in kb_results[:3])
-
-        resp = await litellm.acompletion(
-            model=model,
-            messages=[
+        kwargs = {
+            "model": model,
+            "messages": [
                 {"role": "system", "content": "Jsi stručný asistent. Ze znalostní báze vyber nejrelevantnější info k tématu a odpověz MAX 2 věty česky. Pokud nic relevantního, odpověz prázdně."},
-                {"role": "user", "content": f"Téma: {text}\n\nKB:\n{kb_context}"},
+                {"role": "user", "content": f"Téma: {text}\n\nKB:\n{kb_context[:600]}"},
             ],
-            temperature=0.0,
-            max_tokens=150,
-            api_base=route.api_base,
-            api_key=route.api_key,
-        )
+            "temperature": 0.0,
+            "max_tokens": 150,
+        }
+        if route.api_base:
+            kwargs["api_base"] = route.api_base
+        if route.api_key:
+            kwargs["api_key"] = route.api_key
+
+        resp = await litellm.acompletion(**kwargs)
 
         hint = resp.choices[0].message.content.strip()
         if hint and len(hint) > 5:

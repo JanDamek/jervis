@@ -69,9 +69,17 @@ async def route_request(
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
+            target = data.get("target", "local")
+            model = data.get("model")
+            # Add litellm provider prefix: router returns raw model IDs,
+            # litellm needs provider prefix (openrouter/, ollama/, etc.)
+            if model and target == "openrouter" and not model.startswith("openrouter/"):
+                model = f"openrouter/{model}"
+            elif model and target == "local" and not model.startswith("ollama/"):
+                model = f"ollama/{model}"
             return RouteDecision(
-                target=data.get("target", "local"),
-                model=data.get("model"),
+                target=target,
+                model=model,
                 api_base=data.get("api_base"),
                 api_key=data.get("api_key"),
             )

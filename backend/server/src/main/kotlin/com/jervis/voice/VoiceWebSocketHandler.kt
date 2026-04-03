@@ -65,6 +65,33 @@ class VoiceWebSocketHandler(
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
+    /**
+     * Known Whisper v3 hallucination phrases produced on silence/noise.
+     * These are artifacts of the model, not real speech.
+     */
+    private val whisperHallucinations = setOf(
+        "titulky vytvořil johnnyx",
+        "titulky vytvořil johnyx",
+        "titulky vytvoril johnnyx",
+        "titulky vytvoril johnyx",
+        "titulky vytvořil",
+        "subtitles by",
+        "thank you for watching",
+        "děkuji za pozornost",
+        "děkuji za sledování",
+        "napište do komentářů",
+        "překlad:",
+        "www.",
+        "amara.org",
+    )
+
+    /** Returns true if text is a known Whisper hallucination artifact. */
+    private fun isWhisperHallucination(text: String): Boolean {
+        val normalized = text.trim().lowercase()
+        if (normalized.length < 3) return true
+        return whisperHallucinations.any { normalized.contains(it) }
+    }
+
     private val ttsClient = HttpClient(CIO) {
         install(HttpTimeout) {
             requestTimeoutMillis = 60_000
@@ -187,6 +214,13 @@ class VoiceWebSocketHandler(
 
                         // SPEECH_END → flush remaining audio, process complete utterance
                         if (vadEvent == EnergyVad.Event.SPEECH_END) {
+                            // Immediately acknowledge to user — proactive reaction
+                            val partialTranscript = transcriptBuilder.toString().trim()
+                            if (partialTranscript.isNotBlank()) {
+                                // Send early acknowledgment so user sees Jervis is working
+                                session.sendJsonEvent("thinking", pickAcknowledgment(partialTranscript))
+                            }
+
                             // Wait for any in-flight Whisper job
                             whisperJob?.join()
 
@@ -243,7 +277,12 @@ class VoiceWebSocketHandler(
                 audioFilePath = tempFile.toString(),
                 optionsJson = opts,
             )
-            return result.text.trim()
+            val text = result.text.trim()
+            if (isWhisperHallucination(text)) {
+                logger.debug { "VOICE_WS: filtered Whisper hallucination: '$text'" }
+                return ""
+            }
+            return text
         } catch (e: Exception) {
             logger.warn { "VOICE_WS: Whisper failed: ${e.message}" }
             return ""
@@ -364,11 +403,17 @@ class VoiceWebSocketHandler(
 
     /**
      * Generate TTS audio via XTTS v2 on VD.
+     * Supports voice cloning via speaker_wav reference.
      */
     private suspend fun generateTts(text: String): ByteArray? {
+        val escapedText = text.replace("\"", "\\\"").replace("\n", " ")
+        val speakerField = if (ttsProperties.speakerWav != null) {
+            ""","speaker_wav":"${ttsProperties.speakerWav}""""
+        } else ""
+        val body = """{"text":"$escapedText","speed":${ttsProperties.speed},"language":"${ttsProperties.language}"$speakerField}"""
         val resp = ttsClient.post("${ttsProperties.url}/tts") {
             contentType(ContentType.Application.Json)
-            setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":${ttsProperties.speed}}""")
+            setBody(body)
         }
         val audio = resp.readBytes()
         return if (audio.isNotEmpty()) audio else null
@@ -378,6 +423,54 @@ class VoiceWebSocketHandler(
         val shorts = ShortArray(bytes.size / 2)
         ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(shorts)
         return shorts
+    }
+}
+
+/**
+ * Pick a natural Czech acknowledgment phrase based on partial transcript content.
+ * Makes Jervis feel alive — responds in the pause to show it's listening and working.
+ */
+private fun pickAcknowledgment(transcript: String): String {
+    val lower = transcript.lowercase()
+    return when {
+        lower.contains("?") || lower.contains("kolik") || lower.contains("jaký") ||
+            lower.contains("kdy") || lower.contains("jak") || lower.contains("co ") ->
+            listOf(
+                "Rozumím, podívám se na to.",
+                "Dobře, hned zjistím.",
+                "Moment, hledám odpověď.",
+                "Podívám se do dat.",
+            ).random()
+
+        lower.contains("problém") || lower.contains("chyba") || lower.contains("nefunguje") ||
+            lower.contains("bug") || lower.contains("error") ->
+            listOf(
+                "Rozumím, promyslím to.",
+                "Dobře, analyzuji situaci.",
+                "Chápu, hned se na to podívám.",
+            ).random()
+
+        lower.contains("udělej") || lower.contains("nastav") || lower.contains("spusť") ||
+            lower.contains("vytvoř") || lower.contains("napiš") ->
+            listOf(
+                "Jasně, připravím to.",
+                "Rozumím, pracuji na tom.",
+                "Dobře, hned se do toho pustím.",
+            ).random()
+
+        lower.contains("poznámka") || lower.contains("zápis") || lower.contains("zapiš") ->
+            listOf(
+                "Zapisuji.",
+                "Mám to, ukládám.",
+            ).random()
+
+        else ->
+            listOf(
+                "Rozumím, zpracovávám.",
+                "Dobře, hned dám vědět.",
+                "Chápu, moment.",
+                "Rozumím, pracuji na odpovědi.",
+            ).random()
     }
 }
 

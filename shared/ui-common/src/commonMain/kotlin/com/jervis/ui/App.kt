@@ -107,6 +107,7 @@ fun App(
         // Meeting helper state
         val helperMessages by meetingViewModel.helperMessages.collectAsState()
         val helperConnected by meetingViewModel.helperConnected.collectAsState()
+        val liveAssistActive by meetingViewModel.liveAssistActive.collectAsState()
 
         // Environment
         val environments by viewModel.environment.environments.collectAsState()
@@ -161,6 +162,8 @@ fun App(
                 onStop = { meetingViewModel.stopRecording() },
                 onNavigateToMeetings = { appNavigator.navigateTo(Screen.Meetings) },
                 isOnMeetingsScreen = currentScreen == Screen.Meetings,
+                liveAssistActive = liveAssistActive,
+                onToggleLiveAssist = { meetingViewModel.toggleLiveAssist() },
             )
 
             // Meeting helper panel — shown below recording bar when helper messages arrive

@@ -82,8 +82,15 @@ class VoiceSessionManager(
 
         scope.launch {
             try {
-                // Connect WebSocket
+                // Connect WebSocket (suspends until actually connected or timeout)
                 wsClient.connect(wsUrl)
+
+                if (!wsClient.isConnected) {
+                    _statusText.value = "Připojení selhalo"
+                    _state.value = VoiceSessionState.ERROR
+                    return@launch
+                }
+
                 _state.value = VoiceSessionState.LISTENING
 
                 // Send start control message
@@ -188,6 +195,14 @@ class VoiceSessionManager(
             "transcribed" -> {
                 if (content != null) _transcript.value = content
                 _statusText.value = "Zpracovávám..."
+                _state.value = VoiceSessionState.PROCESSING
+            }
+            "thinking" -> {
+                // Proactive acknowledgment — Jervis confirms it heard and is working
+                if (content != null) {
+                    _statusText.value = content
+                    _responseText.value = content
+                }
                 _state.value = VoiceSessionState.PROCESSING
             }
             "responding" -> {

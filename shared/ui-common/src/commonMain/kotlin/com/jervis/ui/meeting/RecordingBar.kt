@@ -10,11 +10,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,6 +42,8 @@ fun RecordingBar(
     onStop: () -> Unit,
     onNavigateToMeetings: () -> Unit,
     isOnMeetingsScreen: Boolean,
+    liveAssistActive: Boolean = false,
+    onToggleLiveAssist: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "recording_bar")
@@ -104,6 +109,21 @@ fun RecordingBar(
                 )
             }
             else -> {}
+        }
+
+        // Live assist toggle chip
+        if (onToggleLiveAssist != null) {
+            Spacer(modifier = Modifier.width(12.dp))
+            FilterChip(
+                selected = liveAssistActive,
+                onClick = onToggleLiveAssist,
+                label = { Text("Asistence", style = MaterialTheme.typography.labelSmall) },
+                modifier = Modifier.height(28.dp),
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            )
         }
 
         Spacer(modifier = Modifier.weight(1f))

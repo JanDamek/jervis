@@ -11,10 +11,12 @@ import io.ktor.websocket.readText
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * JVM/Desktop WebSocket client using Ktor CIO engine.
@@ -27,19 +29,28 @@ actual class VoiceWebSocketClient actual constructor() {
         }
     }
 
-    private val outgoingAudio = Channel<ByteArray>(Channel.BUFFERED)
-    private val outgoingText = Channel<String>(Channel.BUFFERED)
-    private val incoming = Channel<Pair<Boolean, ByteArray>>(Channel.BUFFERED)
+    private var outgoingAudio = Channel<ByteArray>(Channel.BUFFERED)
+    private var outgoingText = Channel<String>(Channel.BUFFERED)
+    private var incoming = Channel<Pair<Boolean, ByteArray>>(Channel.BUFFERED)
     private var sessionJob: Job? = null
+    @Volatile
     private var _isConnected = false
 
     actual val isConnected: Boolean get() = _isConnected
 
     actual suspend fun connect(url: String) {
+        // Reset channels for fresh connection (previous close() may have closed them)
+        outgoingAudio = Channel(Channel.BUFFERED)
+        outgoingText = Channel(Channel.BUFFERED)
+        incoming = Channel(Channel.BUFFERED)
+
+        val connectedSignal = CompletableDeferred<Boolean>()
+
         sessionJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 httpClient.webSocket(url) {
                     _isConnected = true
+                    connectedSignal.complete(true)
 
                     // Sender coroutines
                     val audioSender = launch {
@@ -73,7 +84,15 @@ actual class VoiceWebSocketClient actual constructor() {
             } catch (e: Exception) {
                 println("VoiceWebSocketClient: connection error: ${e.message}")
                 _isConnected = false
+                connectedSignal.complete(false)
             }
+        }
+
+        // Wait for WebSocket to actually connect (max 10s)
+        val connected = withTimeoutOrNull(10_000L) { connectedSignal.await() } ?: false
+        if (!connected) {
+            println("VoiceWebSocketClient: connection timed out or failed")
+            _isConnected = false
         }
     }
 

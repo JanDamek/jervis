@@ -101,6 +101,9 @@ class MeetingViewModel(
     private val _liveHints = MutableStateFlow<List<String>>(emptyList())
     val liveHints: StateFlow<List<String>> = _liveHints.asStateFlow()
 
+    private val _liveAssistActive = MutableStateFlow(false)
+    val liveAssistActive: StateFlow<Boolean> = _liveAssistActive.asStateFlow()
+
     /** Index of the transcript segment currently being played, or -1 for full playback. */
     private val _playingSegmentIndex = MutableStateFlow(-1)
     val playingSegmentIndex: StateFlow<Int> = _playingSegmentIndex.asStateFlow()
@@ -452,6 +455,46 @@ class MeetingViewModel(
     private var liveAssistJob: Job? = null
     private var liveAssistSessionId: String? = null
 
+    /**
+     * Toggle live assist on/off during an active recording.
+     * When turned on, starts SSE session for real-time transcription + KB hints.
+     * When turned off, stops the live assist session.
+     */
+    fun toggleLiveAssist() {
+        if (!_isRecording.value) return
+        val localId = _currentMeetingId.value ?: return
+
+        if (_liveAssistActive.value) {
+            // Stop live assist
+            liveAssistJob?.cancel()
+            liveAssistJob = null
+            val sid = liveAssistSessionId
+            liveAssistSessionId = null
+            _liveAssistActive.value = false
+            _liveHints.value = emptyList()
+            if (sid != null) {
+                scope.launch {
+                    try {
+                        val serverUrl = connectionManager.baseUrl.trimEnd('/')
+                        postSseStream(
+                            url = "$serverUrl/api/v1/voice/session/stop?sessionId=$sid",
+                            bodyBytes = """{}""".encodeToByteArray(),
+                            contentType = "application/json",
+                        ) { /* closing */ }
+                    } catch (e: Exception) {
+                        println("[Meeting] Live assist stop error: ${e.message}")
+                    }
+                }
+            }
+            println("[Meeting] Live assist disabled by user")
+        } else {
+            // Start live assist
+            _liveAssistActive.value = true
+            startLiveAssistSession(localId, lastClientId, lastProjectId)
+            println("[Meeting] Live assist enabled by user")
+        }
+    }
+
     @OptIn(ExperimentalUuidApi::class)
     fun startRecording(
         clientId: String? = null,
@@ -528,6 +571,7 @@ class MeetingViewModel(
 
     @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
     private fun startLiveAssistSession(meetingLocalId: String, clientId: String?, projectId: String?, helperDeviceId: String? = null) {
+        _liveAssistActive.value = true
         liveAssistJob = scope.launch {
             try {
                 val serverUrl = connectionManager.baseUrl.trimEnd('/')
@@ -568,6 +612,7 @@ class MeetingViewModel(
                 println("[Meeting] Live assist error: ${e.message}")
             } finally {
                 liveAssistSessionId = null
+                _liveAssistActive.value = false
             }
         }
     }

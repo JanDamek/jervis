@@ -31,35 +31,32 @@ Question: {query}"""
 
 async def kb_search(query: str, client_id: str | None, project_id: str | None, group_id: str | None) -> str:
     """Search KB for relevant context. Returns concatenated results."""
-    url = f"{settings.knowledgebase_url.rstrip('/')}/search"
+    url = f"{settings.knowledgebase_url.rstrip('/')}/retrieve"
     try:
         payload = {
             "query": query,
-            "max_results": 5,
-            "min_confidence": 0.5,
+            "top_k": 5,
         }
         if client_id:
             payload["client_id"] = client_id
         if project_id:
             payload["project_id"] = project_id
-        if group_id:
-            payload["group_id"] = group_id
 
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
 
-        results = data.get("results", [])
+        results = data.get("evidence", [])
         if not results:
             return "(no relevant results found)"
 
         context_parts = []
         for r in results[:5]:
             content = r.get("content", "")[:500]
-            source = r.get("source_urn", "")
-            confidence = r.get("confidence", 0)
-            context_parts.append(f"[{confidence:.0%}] {source}: {content}")
+            source = r.get("source_urn", r.get("source", ""))
+            score = r.get("score", 0)
+            context_parts.append(f"[{score:.0%}] {source}: {content}")
 
         return "\n---\n".join(context_parts)
 

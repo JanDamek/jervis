@@ -210,6 +210,13 @@ class WatchVoiceSession: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 if let t = content { self.transcript = t }
                 self.statusText = "Zpracovávám..."
                 self.state = .processing
+            case "thinking":
+                // Proactive acknowledgment from Jervis
+                if let t = content {
+                    self.statusText = t
+                    self.responseText = t
+                }
+                self.state = .processing
             case "responding":
                 self.statusText = "Generuji odpověď..."
             case "token":
