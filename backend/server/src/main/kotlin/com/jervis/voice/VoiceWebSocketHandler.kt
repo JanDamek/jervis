@@ -435,7 +435,7 @@ class VoiceWebSocketHandler(
         val responseText = StringBuilder()
 
         try {
-            withTimeoutOrNull(15_000) {
+            withTimeoutOrNull(30_000) {
                 val resp = orchestratorClient.post("$orchestratorUrl/voice/process") {
                     contentType(ContentType.Application.Json)
                     setBody(payload)
@@ -485,7 +485,7 @@ class VoiceWebSocketHandler(
             }
 
             if (responseText.isEmpty()) {
-                responseText.append("Zpracovávám, odpovím na telefonu.")
+                responseText.append("Omlouvám se, nepodařilo se mi získat odpověď.")
                 session.sendJsonEvent("response", responseText.toString())
             }
 

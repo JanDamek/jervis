@@ -1,24 +1,18 @@
 """Conversation Context Agent — continuous dialog handler.
 
-Maintains conversation state, accumulates speech fragments,
-searches KB for relevant context as topics emerge, prepares
-answer candidates, and responds at the right moment.
+Maintains conversation state, searches KB for relevant context,
+and responds with grounded, contextual answers.
 
-Designed for natural dialog: the agent continuously listens,
-thinks while the speaker talks, and responds when there's
-a complete thought AND a good answer ready.
-
-Architecture:
-- ConversationBuffer: accumulates speech fragments into coherent text
-- ContextTracker: identifies topics and searches KB in parallel
-- AnswerBuffer: prepares candidate answers, picks the best one
-- ResponseDecider: determines when to respond (complete thought + good answer)
+Key principles:
+- ALWAYS search KB before responding — no hallucinations
+- If KB has no relevant data, say "Nemám k tomu informace"
+- Czech language, natural voice style (short, direct)
+- Multi-turn context tracking
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -33,7 +27,6 @@ from app.voice.models import VoiceStreamEvent
 
 logger = logging.getLogger(__name__)
 
-# ── Data structures ─────────────────────────────────────────────────────
 
 @dataclass
 class ConversationTurn:
@@ -41,46 +34,23 @@ class ConversationTurn:
     role: str  # "user" or "assistant"
     text: str
     timestamp: float = field(default_factory=time.time)
-    topic: str = ""  # extracted topic/theme
-
-
-@dataclass
-class AnswerCandidate:
-    """A prepared answer candidate."""
-    text: str
-    confidence: float  # 0.0-1.0 — how relevant/good this answer is
-    source: str  # "kb", "llm", "acknowledgment"
-    kb_context: str = ""
-    topic: str = ""
 
 
 @dataclass
 class SpeakerProfile:
-    """Speaking style profile for voice cloning personality."""
+    """Speaking style profile."""
     name: str = "Jervis"
     language: str = "cs"
-    style_notes: str = ""  # How to speak (formal/informal, word choices, etc.)
-    vocabulary: list[str] = field(default_factory=list)  # Characteristic words/phrases
-    sentence_patterns: list[str] = field(default_factory=list)  # How sentences are structured
+    style_notes: str = ""
+    vocabulary: list[str] = field(default_factory=list)
+    sentence_patterns: list[str] = field(default_factory=list)
 
-
-# ── Conversation Agent ──────────────────────────────────────────────────
 
 class ConversationContextAgent:
-    """Stateful conversation agent that continuously tracks dialog context.
+    """Stateful conversation agent with KB grounding.
 
-    Usage:
-        agent = ConversationContextAgent(client_id="...", project_id="...")
-
-        # Feed speech fragments as they arrive (streaming)
-        agent.add_fragment("Potřebuju projít")
-        agent.add_fragment("meeting ze čtvrtku")
-        agent.add_fragment("a rozebrat co přesně se tam mělo")
-
-        # Check if we should respond
-        if agent.should_respond():
-            async for event in agent.generate_response():
-                yield event
+    Each voice session gets one agent instance that tracks
+    conversation history and provides contextual responses.
     """
 
     def __init__(
@@ -97,136 +67,100 @@ class ConversationContextAgent:
 
         # Conversation history (sliding window)
         self.history: list[ConversationTurn] = []
-        self.max_history = 20  # Keep last 20 turns
+        self.max_history = 20
 
-        # Current utterance buffer (accumulates fragments)
-        self.current_fragments: list[str] = []
+        # Current utterance
         self.current_text: str = ""
-        self.last_fragment_time: float = 0
 
-        # KB context cache — searched as topics emerge
+        # KB context — searched for every query
         self.kb_context: str = ""
-        self.kb_search_task: asyncio.Task | None = None
-        self.last_kb_query: str = ""
-
-        # Answer buffer — prepared candidates
-        self.answer_candidates: list[AnswerCandidate] = []
-
-        # Timing
-        self.silence_start: float = 0
-        self.speech_active: bool = False
-
-    # ── Fragment accumulation ───────────────────────────────────────────
 
     def add_fragment(self, text: str) -> None:
-        """Add a speech fragment (from streaming transcription).
-
-        Fragments arrive as Whisper transcribes 5s segments.
-        We accumulate them into coherent text.
-        """
+        """Add transcribed text. Server sends complete utterance text."""
         text = text.strip()
         if not text:
             return
-
-        self.current_fragments.append(text)
-        self.current_text = " ".join(self.current_fragments).strip()
-        self.last_fragment_time = time.time()
-        self.speech_active = True
-        self.silence_start = 0
-
-        logger.info("CONV_AGENT: fragment added, current=%s", self.current_text[:100])
-
-        # Trigger async KB search if topic changed significantly
-        if len(self.current_text) > 20 and self.current_text != self.last_kb_query:
-            self._trigger_kb_search(self.current_text)
+        # Server accumulates fragments and sends complete text
+        # So we just replace (not append)
+        self.current_text = text
+        logger.info("CONV_AGENT: text=%s", self.current_text[:100])
 
     def mark_silence(self) -> None:
-        """Mark that speaker has gone silent."""
-        if self.speech_active:
-            self.speech_active = False
-            self.silence_start = time.time()
+        """Mark that speaker has gone silent — ready to respond."""
+        pass  # Response is triggered by stream_handler calling generate_response()
 
-    # ── Response decision ───────────────────────────────────────────────
+    async def generate_response(self) -> AsyncIterator[VoiceStreamEvent]:
+        """Generate a contextual response.
 
-    def should_respond(self) -> bool:
-        """Determine if we should generate a response now.
-
-        Based on:
-        1. Is there a complete thought? (content analysis)
-        2. Has the speaker paused long enough?
-        3. Do we have relevant KB context?
-
-        NOT based on simple silence threshold — we analyze content.
+        Pipeline:
+        1. Search KB for relevant context (ALWAYS)
+        2. Build conversation context with history
+        3. Generate response grounded in KB data
         """
         text = self.current_text.strip()
-        if not text or len(text) < 5:
-            return False
+        if not text:
+            return
 
-        # If speaker is still talking — don't respond yet
-        if self.speech_active:
-            return False
+        # 1. ALWAYS search KB — this is the foundation
+        await self._search_kb(text)
 
-        # Need at least some silence
-        silence_ms = (time.time() - self.silence_start) * 1000 if self.silence_start > 0 else 0
-        if silence_ms < 800:  # At least 800ms silence
-            return False
+        # 2. Save user turn
+        self.history.append(ConversationTurn(role="user", text=text))
+        if len(self.history) > self.max_history:
+            self.history = self.history[-self.max_history:]
 
-        # Content-based analysis
-        return self._is_complete_thought(text)
+        # 3. Build prompts
+        system_prompt = self._build_system_prompt()
+        messages = self._build_messages()
 
-    def _is_complete_thought(self, text: str) -> bool:
-        """Analyze if text represents a complete thought worth responding to.
+        # 4. Route to LLM — use PAID for quality Czech responses
+        route = await route_request(
+            capability="chat",
+            max_tier="PAID",
+            estimated_tokens=800,
+            processing_mode="FOREGROUND",
+        )
+        model = route.model or "openrouter/auto"
+        logger.info("CONV_AGENT: using model=%s, kb_context=%d chars", model, len(self.kb_context))
 
-        Uses linguistic heuristics for Czech:
-        - Questions (ending with ?)
-        - Commands (imperative verbs)
-        - Complete sentences (ending with . or !)
-        - Sufficient length + silence = probably done
-        """
-        trimmed = text.strip()
-        lower = trimmed.lower()
+        kwargs = {
+            "model": model,
+            "messages": [{"role": "system", "content": system_prompt}] + messages,
+            "temperature": 0.3,
+            "max_tokens": 250,
+            "stream": True,
+        }
+        if route.api_base:
+            kwargs["api_base"] = route.api_base
+        if route.api_key:
+            kwargs["api_key"] = route.api_key
 
-        # Direct question — always respond
-        if trimmed.endswith("?"):
-            return True
+        # 5. Stream response
+        response_text = ""
+        try:
+            response = await litellm.acompletion(**kwargs)
+            async for chunk in response:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    token = delta.content
+                    response_text += token
+                    yield VoiceStreamEvent(event="token", data={"text": token})
+        except Exception as e:
+            logger.error("CONV_AGENT: LLM failed: %s", e)
+            response_text = "Omlouvám se, nepodařilo se mi odpovědět."
+            yield VoiceStreamEvent(event="token", data={"text": response_text})
 
-        # Sentence-ending punctuation
-        if len(trimmed) > 15 and (trimmed.endswith(".") or trimmed.endswith("!")):
-            return True
+        # 6. Save assistant turn
+        self.history.append(ConversationTurn(role="assistant", text=response_text))
 
-        # Command verbs at start
-        command_starts = [
-            "udělej", "nastav", "spusť", "vytvoř", "napiš", "pošli", "zapiš",
-            "najdi", "zobraz", "otevři", "zavři", "restartuj", "smaž",
-            "řekni", "odpověz", "vysvětli", "popiš", "shrň", "projdi",
-            "potřebuju", "potřebuji", "chci", "chtěl bych",
-        ]
-        if any(lower.startswith(cmd) for cmd in command_starts) and len(trimmed) > 15:
-            return True
+        yield VoiceStreamEvent(event="response", data={"text": response_text, "complete": True})
 
-        # Long enough text + silence = probably complete
-        if len(trimmed) > 40:
-            return True
-
-        return False
-
-    # ── KB search ───────────────────────────────────────────────────────
-
-    def _trigger_kb_search(self, query: str) -> None:
-        """Trigger async KB search for the current topic.
-
-        Runs in background — results ready when we need to respond.
-        """
-        self.last_kb_query = query
-
-        # Cancel previous search if still running
-        if self.kb_search_task and not self.kb_search_task.done():
-            self.kb_search_task.cancel()
-
-        self.kb_search_task = asyncio.ensure_future(self._search_kb(query))
+        # Reset for next utterance
+        self.current_text = ""
+        logger.info("CONV_AGENT: response=%s", response_text[:150])
 
     async def _search_kb(self, query: str) -> None:
-        """Search KB for relevant context."""
+        """Search KB for relevant context. ALWAYS runs."""
         url = f"{settings.knowledgebase_url.rstrip('/')}/api/v1/retrieve"
         try:
             payload = {"query": query, "top_k": 5}
@@ -244,163 +178,55 @@ class ConversationContextAgent:
             if items:
                 parts = []
                 for item in items[:5]:
-                    content = item.get("content", "")[:400]
+                    content = item.get("content", "")[:500]
                     source = item.get("sourceUrn", "")
                     score = item.get("score", 0)
-                    if score > 0.05:  # Only include somewhat relevant results
-                        parts.append(f"[{source}] {content}")
+                    if score > 0.03:
+                        parts.append(f"[{source}] (relevance: {score:.0%})\n{content}")
                 self.kb_context = "\n---\n".join(parts) if parts else ""
-                logger.info("CONV_AGENT: KB search found %d relevant items", len(parts))
+                logger.info("CONV_AGENT: KB found %d items (query: %s)", len(parts), query[:60])
             else:
                 self.kb_context = ""
+                logger.info("CONV_AGENT: KB returned 0 items for: %s", query[:60])
 
-        except asyncio.CancelledError:
-            pass
         except Exception as e:
             logger.warning("CONV_AGENT: KB search failed: %s", e)
             self.kb_context = ""
 
-    # ── Response generation ─────────────────────────────────────────────
-
-    async def generate_response(self) -> AsyncIterator[VoiceStreamEvent]:
-        """Generate a contextual response to the current utterance.
-
-        Uses:
-        1. Conversation history for multi-turn context
-        2. KB context (pre-fetched) for factual grounding
-        3. Speaker profile for style matching
-
-        Yields SSE events: token, response, done.
-        """
-        text = self.current_text.strip()
-        if not text:
-            return
-
-        # Wait for KB search to finish (max 2s)
-        if self.kb_search_task and not self.kb_search_task.done():
-            try:
-                await asyncio.wait_for(asyncio.shield(self.kb_search_task), timeout=2.0)
-            except (asyncio.TimeoutError, asyncio.CancelledError):
-                pass
-
-        # Save user turn to history
-        self.history.append(ConversationTurn(role="user", text=text))
-        if len(self.history) > self.max_history:
-            self.history = self.history[-self.max_history:]
-
-        # Build conversation context for LLM
-        system_prompt = self._build_system_prompt()
-        messages = self._build_messages(text)
-
-        # Route to LLM
-        route = await route_request(
-            capability="chat",
-            max_tier="FREE",
-            estimated_tokens=500,
-            processing_mode="FOREGROUND",
-        )
-        model = route.model or "openrouter/auto"
-
-        kwargs = {
-            "model": model,
-            "messages": [{"role": "system", "content": system_prompt}] + messages,
-            "temperature": 0.4,
-            "max_tokens": 300,
-            "stream": True,
-        }
-        if route.api_base:
-            kwargs["api_base"] = route.api_base
-        if route.api_key:
-            kwargs["api_key"] = route.api_key
-
-        response_text = ""
-        try:
-            response = await litellm.acompletion(**kwargs)
-            async for chunk in response:
-                delta = chunk.choices[0].delta
-                if delta and delta.content:
-                    token = delta.content
-                    response_text += token
-                    yield VoiceStreamEvent(event="token", data={"text": token})
-        except Exception as e:
-            logger.warning("CONV_AGENT: LLM response failed: %s", e)
-            response_text = "Omlouvám se, nedokázal jsem odpovědět."
-            yield VoiceStreamEvent(event="token", data={"text": response_text})
-
-        # Save assistant turn to history
-        self.history.append(ConversationTurn(role="assistant", text=response_text))
-
-        yield VoiceStreamEvent(event="response", data={"text": response_text, "complete": True})
-
-        # Reset for next utterance
-        self.current_fragments.clear()
-        self.current_text = ""
-
     def _build_system_prompt(self) -> str:
-        """Build system prompt with KB context and style."""
-        parts = [
-            "Jsi Jervis, osobní AI asistent. Odpovídáš v češtině, stručně a k věci.",
-            "Toto je hlasový dialog — odpovědi čte TTS, takže:",
-            "- MAX 2-3 věty",
-            "- Jasně a přímo k tématu",
-            "- Žádné formátování (markdown, seznamy) — jen plynulý text",
-            "- Pokud nevíš, řekni to upřímně",
-            "- Pokud je to jen zdvořilostní konverzace, odpověz přirozeně a krátce",
-        ]
+        """Build system prompt with KB context."""
+        prompt = """Jsi Jervis, osobní AI asistent Jana Dameka. Komunikuješ v češtině.
 
-        if self.speaker_profile.style_notes:
-            parts.append(f"\nStyl odpovědí: {self.speaker_profile.style_notes}")
+PRAVIDLA PRO HLASOVÝ DIALOG:
+- Odpovídej stručně, MAX 2-3 věty. Toto je hlasový dialog, ne chat.
+- Mluv přirozeně, jako člověk. Žádné seznamy, markdown, hvězdičky.
+- Odpovídej PŘÍMO na otázku. Neodbíhej, neuvádí co "nemůžeš".
+- NIKDY neříkej "zpracovávám", "odpovím na telefonu" ani podobné nesmysly.
+- Pokud máš kontext ze znalostní báze, POUŽIJ ho. Odpověz na základě faktů.
+- Pokud NEMÁŠ relevantní kontext, řekni upřímně: "K tomuto nemám informace."
+- NIKDY nevymýšlej fakta. Buď přesný nebo řekni že nevíš.
+"""
 
         if self.kb_context:
-            parts.append(f"\nRelevantní kontext ze znalostní báze:\n{self.kb_context[:2000]}")
+            prompt += f"""
+KONTEXT ZE ZNALOSTNÍ BÁZE (použij pro odpověď):
+{self.kb_context[:2500]}
+"""
+        else:
+            prompt += """
+ŽÁDNÝ KONTEXT: Znalostní báze nevrátila relevantní výsledky.
+Pokud otázka vyžaduje konkrétní data, řekni že k tomu nemáš informace.
+Na obecné otázky a konverzaci můžeš odpovědět přirozeně.
+"""
 
-        return "\n".join(parts)
+        if self.speaker_profile.style_notes:
+            prompt += f"\nStyl: {self.speaker_profile.style_notes}"
 
-    def _build_messages(self, current_text: str) -> list[dict]:
+        return prompt
+
+    def _build_messages(self) -> list[dict]:
         """Build message list from conversation history."""
         messages = []
-
-        # Include recent history for multi-turn context
-        for turn in self.history[-10:]:  # Last 10 turns
-            if turn.role == "user":
-                messages.append({"role": "user", "content": turn.text})
-            else:
-                messages.append({"role": "assistant", "content": turn.text})
-
-        # Current utterance (if not already in history)
-        if not messages or messages[-1]["content"] != current_text:
-            messages.append({"role": "user", "content": current_text})
-
-        return messages
-
-    # ── Conversation analysis ───────────────────────────────────────────
-
-    def get_conversation_summary(self) -> str:
-        """Get a summary of the conversation so far."""
-        if not self.history:
-            return "(no conversation yet)"
-
-        lines = []
         for turn in self.history[-10:]:
-            role = "Uživatel" if turn.role == "user" else "Asistent"
-            lines.append(f"{role}: {turn.text[:100]}")
-        return "\n".join(lines)
-
-    def detect_topic_shift(self) -> bool:
-        """Detect if the conversation topic has shifted significantly."""
-        if len(self.history) < 2:
-            return False
-
-        last_user = [t for t in self.history if t.role == "user"]
-        if len(last_user) < 2:
-            return False
-
-        # Simple heuristic: if new text shares few words with previous
-        prev_words = set(last_user[-2].text.lower().split())
-        curr_words = set(self.current_text.lower().split())
-
-        if not prev_words or not curr_words:
-            return False
-
-        overlap = len(prev_words & curr_words) / max(len(prev_words), len(curr_words))
-        return overlap < 0.15  # Less than 15% word overlap = topic shift
+            messages.append({"role": turn.role, "content": turn.text})
+        return messages

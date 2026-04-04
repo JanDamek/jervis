@@ -63,10 +63,9 @@ async def handle_voice_stream(request: VoiceStreamRequest) -> AsyncIterator[Voic
 
     # Use conversation agent for contextual multi-turn dialog
     agent = _get_or_create_agent(request)
-    agent.add_fragment(text)
-    agent.mark_silence()
+    agent.add_fragment(text)  # Server sends complete utterance text
 
-    # Generate contextual response using conversation history + KB
+    # Generate contextual response: KB search → LLM → stream
     async for event in agent.generate_response():
         yield event
     yield VoiceStreamEvent(event="done", data={})
