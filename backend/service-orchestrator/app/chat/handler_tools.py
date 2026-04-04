@@ -74,11 +74,24 @@ _TOOL_DESCRIPTIONS = {
 }
 
 
-def describe_tool_call(name: str, args: dict) -> str:
+def describe_tool_call(name: str, args) -> str:
     """Human-readable description of a tool call for thinking events."""
+    # Ensure args is a dict — LLM may return string JSON
+    if isinstance(args, str):
+        try:
+            import json
+            args = json.loads(args)
+        except (json.JSONDecodeError, TypeError):
+            args = {}
+    if not isinstance(args, dict):
+        args = {}
+
     fn = _TOOL_DESCRIPTIONS.get(name)
     if fn:
-        return fn(args)
+        try:
+            return fn(args)
+        except Exception:
+            return f"Zpracovávám: {name}"
     return f"Zpracovávám: {name}"
 
 

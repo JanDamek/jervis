@@ -569,7 +569,12 @@ async def run_agentic_loop(
             tool_name = tool_call.function.name
             try:
                 arguments = json.loads(tool_call.function.arguments)
-            except json.JSONDecodeError:
+                # Some models double-serialize: json.loads returns a string
+                if isinstance(arguments, str):
+                    arguments = json.loads(arguments)
+                if not isinstance(arguments, dict):
+                    arguments = {}
+            except (json.JSONDecodeError, TypeError):
                 logger.warning("Chat: malformed tool arguments for %s: %s",
                                tool_name, tool_call.function.arguments[:200])
                 # Provide error response so assistant message with tool_calls stays valid
