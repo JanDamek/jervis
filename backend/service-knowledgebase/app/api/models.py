@@ -23,6 +23,7 @@ class SourceType(str, Enum):
     TEAMS = "teams"
     SLACK = "slack"
     DISCORD = "discord"
+    WHATSAPP = "whatsapp"
     IDLE_REVIEW = "idle_review"
     CALENDAR = "calendar"
 
@@ -74,6 +75,7 @@ SOURCE_TYPE_DEFAULT_CREDIBILITY: dict[str, SourceCredibility] = {
     SourceType.TEAMS: SourceCredibility.INFERRED,
     SourceType.SLACK: SourceCredibility.INFERRED,
     SourceType.DISCORD: SourceCredibility.INFERRED,
+    SourceType.WHATSAPP: SourceCredibility.INFERRED,
     SourceType.IDLE_REVIEW: SourceCredibility.LLM_EXTRACTED,
     SourceType.CALENDAR: SourceCredibility.STRUCTURED_DATA,
 }
