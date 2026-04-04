@@ -201,7 +201,8 @@ private fun SummaryRow(label: String, value: String, isWarning: Boolean = false)
 }
 
 private fun formatCzk(amount: Double): String {
-    val formatted = String.format("%,.0f", amount).replace(',', ' ')
+    val formatted = kotlin.math.round(amount).toLong().toString()
+        .reversed().chunked(3).joinToString(" ").reversed()
     return "$formatted CZK"
 }
 
@@ -952,8 +953,10 @@ private fun contractStatusLabel(status: ContractStatusDto): String = when (statu
 
 private fun formatRate(rate: Double): String {
     return if (rate == rate.toLong().toDouble()) {
-        String.format("%,.0f", rate).replace(',', ' ')
+        rate.toLong().toString()
+            .reversed().chunked(3).joinToString(" ").reversed()
     } else {
-        String.format("%,.2f", rate).replace(',', ' ')
+        val rounded = kotlin.math.round(rate * 100) / 100.0
+        rounded.toString()
     }
 }

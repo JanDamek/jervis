@@ -413,17 +413,17 @@ private fun QueueModelCard(
                     // Stats line (if any calls recorded)
                     if (entry.stats.callCount > 0) {
                         val avgS = if (entry.stats.callCount > 0) {
-                            "%.1f".format(entry.stats.totalTimeS / entry.stats.callCount)
+                            roundToDecimals(entry.stats.totalTimeS / entry.stats.callCount, 1)
                         } else "?"
                         Text(
                             buildString {
                                 append("${entry.stats.callCount} volání · avg ${avgS}s")
                                 if (entry.stats.tokensPerS > 0) {
-                                    append(" · ${"%.0f".format(entry.stats.tokensPerS)} tok/s")
+                                    append(" · ${kotlin.math.round(entry.stats.tokensPerS).toLong()} tok/s")
                                 }
                                 if (entry.stats.totalOutputTokens > 0) {
                                     val totalK = entry.stats.totalOutputTokens / 1000.0
-                                    append(" · ${"%.1f".format(totalK)}k out tok")
+                                    append(" · ${roundToDecimals(totalK, 1)}k out tok")
                                 }
                             },
                             style = MaterialTheme.typography.labelSmall,
@@ -733,12 +733,19 @@ private fun AddModelFromCatalogDialog(
 
 private fun formatPrice(pricePerMillion: Double): String {
     return if (pricePerMillion >= 1.0) {
-        "%.2f".format(pricePerMillion)
+        roundToDecimals(pricePerMillion, 2)
     } else if (pricePerMillion >= 0.01) {
-        "%.3f".format(pricePerMillion)
+        roundToDecimals(pricePerMillion, 3)
     } else if (pricePerMillion > 0) {
-        "%.4f".format(pricePerMillion)
+        roundToDecimals(pricePerMillion, 4)
     } else {
         "0"
     }
+}
+
+private fun roundToDecimals(value: Double, decimals: Int): String {
+    var factor = 1.0
+    repeat(decimals) { factor *= 10.0 }
+    val rounded = kotlin.math.round(value * factor) / factor
+    return rounded.toString()
 }

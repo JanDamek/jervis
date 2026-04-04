@@ -407,6 +407,6 @@ private fun formatHours(hours: Double): String {
     return if (hours == hours.toLong().toDouble()) {
         "${hours.toLong()}h"
     } else {
-        String.format("%.1fh", hours)
+        "${kotlin.math.round(hours * 10) / 10.0}h"
     }
 }

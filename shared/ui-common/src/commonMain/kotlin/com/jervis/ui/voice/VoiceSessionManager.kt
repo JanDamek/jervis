@@ -58,7 +58,7 @@ class VoiceSessionManager(
     private var receiveJob: Job? = null
 
     // TTS is interruptible — track playing state for server notification only
-    @Volatile
+    @kotlin.concurrent.Volatile
     private var isTtsPlaying = false
 
     // ── Public API ──────────────────────────────────────────────────────
@@ -167,7 +167,7 @@ class VoiceSessionManager(
 
             sendCounter++
             if (sendCounter % 50 == 0) { // Every ~5s
-                println("VoiceSession: sent $sendCounter chunks, rms=${"%.4f".format(rms)} tts=$isTtsPlaying")
+                println("VoiceSession: sent $sendCounter chunks, rms=$rms tts=$isTtsPlaying")
             }
         }
         println("VoiceSession: sendLoop ended")
