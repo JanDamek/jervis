@@ -51,7 +51,7 @@ class WatchVoiceSession: NSObject, ObservableObject, AVAudioPlayerDelegate {
         // Setup audio session for playAndRecord (full-duplex)
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker])
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [])
             try audioSession.setActive(true)
         } catch {
             print("[WatchVoice] Audio session error: \(error)")
@@ -101,7 +101,7 @@ class WatchVoiceSession: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func stop() {
         // Send stop message
-        wsTask?.send(.string("""{"type":"stop"}""")) { _ in }
+        wsTask?.send(.string("{\"type\":\"stop\"}")) { _ in }
 
         cleanup()
     }
@@ -242,7 +242,7 @@ class WatchVoiceSession: NSObject, ObservableObject, AVAudioPlayerDelegate {
         isTtsPlaying = true
         DispatchQueue.main.async { self.state = .playingTts }
 
-        wsTask?.send(.string("""{"type":"tts_playing"}""")) { _ in }
+        wsTask?.send(.string("{\"type\":\"tts_playing\"}")) { _ in }
 
         do {
             audioPlayer = try AVAudioPlayer(data: data)
@@ -263,7 +263,7 @@ class WatchVoiceSession: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func ttsFinished() {
         isTtsPlaying = false
-        wsTask?.send(.string("""{"type":"tts_finished"}""")) { _ in }
+        wsTask?.send(.string("{\"type\":\"tts_finished\"}")) { _ in }
         DispatchQueue.main.async {
             if self.state == .playingTts {
                 self.state = .listening

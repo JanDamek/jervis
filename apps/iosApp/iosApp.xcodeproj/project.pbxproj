@@ -26,6 +26,7 @@
 		W1000016000000000000001 /* WatchConnectivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = W1000008000000000000001 /* WatchConnectivityManager.swift */; };
 		W1000017000000000000001 /* JervisIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = W1000009000000000000001 /* JervisIntents.swift */; };
 		W1000018000000000000001 /* WatchJervisApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = W100000A000000000000001 /* WatchJervisApiClient.swift */; };
+		W100001D000000000000001 /* WatchVoiceSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = W100000D000000000000001 /* WatchVoiceSession.swift */; };
 		W1000019000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = W100000B000000000000001 /* Assets.xcassets */; };
 		W100001A000000000000001 /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = W100001B000000000000001 /* WatchConnectivity.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 		W100001C000000000000001 /* JervisComplication.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = X1000001000000000000001 /* JervisComplication.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -98,6 +99,7 @@
 		W1000006000000000000001 /* WatchAudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchAudioRecorder.swift; sourceTree = "<group>"; };
 		W1000007000000000000001 /* WatchChatManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchChatManager.swift; sourceTree = "<group>"; };
 		W1000008000000000000001 /* WatchConnectivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectivityManager.swift; sourceTree = "<group>"; };
+		W100000D000000000000001 /* WatchVoiceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchVoiceSession.swift; sourceTree = "<group>"; };
 		W1000009000000000000001 /* JervisIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisIntents.swift; sourceTree = "<group>"; };
 		W100000A000000000000001 /* WatchJervisApiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchJervisApiClient.swift; sourceTree = "<group>"; };
 		W100000B000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 				W1000008000000000000001 /* WatchConnectivityManager.swift */,
 				W1000009000000000000001 /* JervisIntents.swift */,
 				W100000A000000000000001 /* WatchJervisApiClient.swift */,
+				W100000D000000000000001 /* WatchVoiceSession.swift */,
 				W100000B000000000000001 /* Assets.xcassets */,
 				W100000C000000000000001 /* Info.plist */,
 			);
@@ -384,6 +387,7 @@
 				W1000016000000000000001 /* WatchConnectivityManager.swift in Sources */,
 				W1000017000000000000001 /* JervisIntents.swift in Sources */,
 				W1000018000000000000001 /* WatchJervisApiClient.swift in Sources */,
+				W100001D000000000000001 /* WatchVoiceSession.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
