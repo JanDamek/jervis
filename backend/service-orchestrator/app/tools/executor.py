@@ -958,7 +958,7 @@ async def _execute_kb_search(
         # If project-scoped RAG results have low confidence, also search at client scope
         rag_top_score = max((it.get("score", 0) for it in rag_items), default=0)
         if project_id and client_id and rag_top_score < 0.5:
-            logger.info("kb_search: low confidence (top=%.2f), adding client-scope search...", top_score)
+            logger.info("kb_search: low confidence (top=%.2f), adding client-scope search...", rag_top_score)
             client_rag = await _kb_rag_search(query, max_results, client_id, None, None, headers)
             seen_sources_client = {item.get("sourceUrn", "") for item in merged}
             for item in client_rag:
