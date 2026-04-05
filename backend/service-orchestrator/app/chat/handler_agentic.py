@@ -392,10 +392,13 @@ async def run_agentic_loop(
             # Guard 1: Zero tool usage on non-trivial query → model ignored instructions.
             # Simple greetings (< 30 chars, no question marks) are exempt.
             if not used_tools and _guard_retries < 2:
+                # Only enforce on first message in conversation (message_sequence <= 1).
+                # Follow-up messages can reasonably synthesize from conversation context.
+                is_first_message = getattr(request, "message_sequence", 1) <= 1
                 is_simple_greeting = len(request.message.strip()) < 30 and "?" not in request.message
-                if not is_simple_greeting:
+                if is_first_message and not is_simple_greeting:
                     _guard_retries += 1
-                    logger.warning("HALLUCINATION_GUARD | zero tools used on substantive query — retrying with next model")
+                    logger.warning("HALLUCINATION_GUARD | zero tools used on first substantive query — retrying with next model")
                     if route and route.model:
                         if route.model not in _skip_models:
                             _skip_models.append(route.model)

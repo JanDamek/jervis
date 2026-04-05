@@ -163,6 +163,9 @@ class OllamaRouter:
     ) -> dict:
         """Capability-based routing decision.
 
+        Note: skip_models may contain litellm provider prefixes (openrouter/, ollama/).
+        We strip them to match against raw model IDs in queues.
+
         1. NONE → always local GPU (FG NONE preempts BG via CRITICAL priority)
         2. FG + FREE+ → always OpenRouter
         3. BG + FREE+ ≤48k + GPU free → local GPU
@@ -176,6 +179,10 @@ class OllamaRouter:
         max_tier = normalize_tier(max_tier)  # backward compat: PAID_LOW→PAID, PAID_HIGH→PREMIUM
         tier_level = TIER_LEVELS.get(max_tier, 0)
         is_background = processing_mode == "BACKGROUND"
+
+        # Strip litellm provider prefixes from skip_models (openrouter/, ollama/)
+        if skip_models:
+            skip_models = [m.removeprefix("openrouter/").removeprefix("ollama/") for m in skip_models]
 
         # Find local model for requested capability
         local_model = self._find_local_model_for_capability(capability)
