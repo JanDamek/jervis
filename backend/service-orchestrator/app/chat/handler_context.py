@@ -203,11 +203,39 @@ async def _prefetch_rag_context(
             )
             resp.raise_for_status()
             data = resp.json()
+
+            results = data.get("results", [])
+
+            # Fallback: if project-scoped search returned 0 or low-confidence results,
+            # retry with client-only scope (same pattern as kb_search tool)
+            top_score = max((r.get("score", 0) for r in results), default=0)
+            if (not results or top_score < 0.5) and project_id and client_id:
+                logger.info("RAG_PREFETCH: project-scoped returned %d results (top=%.2f), trying client-scope fallback...",
+                            len(results), top_score)
+                fallback_payload = {**payload, "projectId": "", "groupId": ""}
+                resp2 = await client.post(
+                    f"{kb_url}/api/v1/retrieve",
+                    json=fallback_payload,
+                    headers={"X-Ollama-Priority": "0"},
+                )
+                resp2.raise_for_status()
+                fallback_results = resp2.json().get("results", [])
+                if fallback_results:
+                    # Merge: keep original results + add unique fallback results
+                    seen = {r.get("sourceUrn", "") for r in results}
+                    for fr in fallback_results:
+                        src = fr.get("sourceUrn", "")
+                        if src and src not in seen:
+                            results.append(fr)
+                            seen.add(src)
+                    results.sort(key=lambda x: x.get("score", 0), reverse=True)
+                    results = results[:5]
+                    logger.info("RAG_PREFETCH: client-scope fallback added %d results, total=%d",
+                                len(fallback_results), len(results))
     except Exception as e:
         logger.warning("RAG_PREFETCH: failed query=%s error=%s", query[:50], e)
         return ""
 
-    results = data.get("results", [])
     if not results:
         return ""
 

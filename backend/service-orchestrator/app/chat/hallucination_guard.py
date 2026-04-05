@@ -111,6 +111,37 @@ _NO_ACCESS_PATTERN = re.compile(
 )
 
 
+def detects_language_mismatch(user_text: str, response_text: str) -> bool:
+    """Detect when model responds in wrong language.
+
+    If user writes in Czech (contains Czech diacritics or common Czech words)
+    but model responds primarily in English, this is a quality failure.
+    Triggers retry with next model.
+    """
+    if not user_text or not response_text or len(response_text) < 100:
+        return False
+
+    # Check if user writes in Czech (diacritics or common Czech words)
+    czech_chars = sum(1 for c in user_text if c in "áčďéěíňóřšťúůýž")
+    czech_words = sum(1 for w in ["co", "se", "na", "mi", "je", "jak", "kde", "posledním", "projektu", "řešilo"] if w in user_text.lower())
+    user_is_czech = czech_chars >= 2 or czech_words >= 2
+
+    if not user_is_czech:
+        return False
+
+    # Check if response is primarily English (first 500 chars)
+    sample = response_text[:500].lower()
+    english_markers = ["the ", " is ", " was ", " were ", " are ", " has ", " have ",
+                       " this ", " that ", " with ", " from ", " about ", " which ",
+                       "following", "discussed", "meeting", "regarding"]
+    english_score = sum(1 for m in english_markers if m in sample)
+
+    if english_score >= 4:
+        logger.info("HALLUCINATION_GUARD | language mismatch: user=Czech, response=English (score=%d)", english_score)
+        return True
+    return False
+
+
 def claims_no_web_access(response_text: str) -> bool:
     """Detect when model falsely claims it cannot access the web.
 

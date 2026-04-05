@@ -17,7 +17,7 @@ from typing import AsyncIterator
 from bson import ObjectId
 
 from app.chat.drift import detect_drift
-from app.chat.hallucination_guard import needs_verification_retry, is_empty_promise, claims_no_web_access
+from app.chat.hallucination_guard import needs_verification_retry, is_empty_promise, claims_no_web_access, detects_language_mismatch
 from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, confidence_badge
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.source_attribution import SourceTracker
@@ -371,18 +371,47 @@ async def run_agentic_loop(
                 final_text = ""  # Will trigger hallucination guard or empty response handling
             logger.info("Chat: final answer after %d iterations (%d chars)", iteration + 1, len(final_text))
 
-            # Pre-processing hallucination guard: if model answered without ANY tool calls
-            # and the response contains URLs or real-world entities, force a retry
-            # so the model actually verifies claims via web_search/web_fetch.
+            # Language mismatch guard: if user wrote Czech but model responded in English,
+            # retry with next model. Applies regardless of tool usage.
+            if final_text and _guard_retries < 2 and detects_language_mismatch(request.message, final_text):
+                _guard_retries += 1
+                logger.warning("HALLUCINATION_GUARD | language mismatch — model responded in wrong language, retrying")
+                if route and route.model:
+                    if route.model not in _skip_models:
+                        _skip_models.append(route.model)
+                    _guard_failed_models.append({"model": route.model, "reason": "language_mismatch", "retry": _guard_retries})
+                    from app.llm.router_client import report_model_error
+                    await report_model_error(route.model, "Language mismatch: responded in English to Czech query")
+                _guard_fallback_text = final_text
+                continue  # retry with next model
+
             # Hallucination guard: clean retry with model fallback.
             # Each failing model gets skipped, next model in queue gets the
             # original clean prompt. Max retries = number of models in queue.
+            #
+            # Guard 1: Zero tool usage on non-trivial query → model ignored instructions.
+            # Simple greetings (< 30 chars, no question marks) are exempt.
+            if not used_tools and _guard_retries < 2:
+                is_simple_greeting = len(request.message.strip()) < 30 and "?" not in request.message
+                if not is_simple_greeting:
+                    _guard_retries += 1
+                    logger.warning("HALLUCINATION_GUARD | zero tools used on substantive query — retrying with next model")
+                    if route and route.model:
+                        if route.model not in _skip_models:
+                            _skip_models.append(route.model)
+                        _guard_failed_models.append({"model": route.model, "reason": "zero_tools", "retry": _guard_retries})
+                        from app.llm.router_client import report_model_error
+                        await report_model_error(route.model, "Zero tool usage: answered factual query without using any tools")
+                    _guard_fallback_text = final_text
+                    continue  # retry with next model
+
+            # Guard 2: Specific unverified claims (URLs, prices, etc.) without tool usage
             if not used_tools:
                 retry_reason = needs_verification_retry(final_text)
                 promise_detected = is_empty_promise(final_text)
                 no_access_claim = claims_no_web_access(final_text)
 
-                if (retry_reason or promise_detected or no_access_claim) and _guard_retries < 1:
+                if (retry_reason or promise_detected or no_access_claim) and _guard_retries < 2:
                     _guard_retries += 1
                     _reason = retry_reason or ("no_web_access_claim" if no_access_claim else "empty_promise")
                     logger.warning("HALLUCINATION_GUARD | retry %d: %s — skipping model, clean retry",
@@ -413,7 +442,7 @@ async def run_agentic_loop(
                     logger.info("HALLUCINATION_GUARD | clean retry — discarding failed response (%d chars), "
                                 "sending original messages to next model", len(final_text))
                     continue  # retry — router will pick next model via skip_models
-                elif (retry_reason or promise_detected) and _guard_retries >= 1:
+                elif (retry_reason or promise_detected) and _guard_retries >= 2:
                     # Already retried once — send with warning, don't loop
                     logger.warning("HALLUCINATION_GUARD | sending unverified after %d retries", _guard_retries)
                     if _guard_fallback_text:

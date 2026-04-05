@@ -18,7 +18,7 @@ THOUGHT_SUMMARY_BUDGET = 2000  # tokens for ThoughtNode summaries
 ANCHORED_KNOWLEDGE_BUDGET = 2000  # tokens for anchored KnowledgeNodes
 RAG_BUDGET = 1000  # tokens for RAG chunks
 
-_TIMEOUT = httpx.Timeout(10.0, connect=3.0)  # Short — don't block chat if GPU is busy
+_TIMEOUT = httpx.Timeout(15.0, connect=5.0)  # Allow more time for GPU embedding queue
 
 
 class ThoughtContext:

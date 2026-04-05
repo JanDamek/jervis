@@ -147,25 +147,28 @@ async def find_cloud_model_for_context(
     capability: str | None = None,
     require_tools: bool = False,
 ) -> str | None:
-    """Find first cloud model that fits the context, iterating queues by tier.
+    """Find best cloud model that fits the context, iterating queues by tier.
 
-    Tries FREE -> PAID -> PREMIUM in order, respecting tier_level limit.
+    Tries highest allowed tier first, falls back to lower tiers.
+    PREMIUM -> PAID -> FREE order ensures best quality when higher tier is allowed.
     capability: if set, only models with matching capability (or empty capabilities = all).
     require_tools: if True, only models with supportsTools=True are eligible.
     skip_models: model IDs to skip (already tried and failed in this request).
     Returns modelId or None.
     """
-    cloud_model = await _first_cloud_model("FREE", estimated_tokens, skip_models, capability, require_tools)
-    if cloud_model:
-        return cloud_model
+    # Try highest tier first for best quality, fall back to lower tiers
+    if tier_level >= TIER_LEVELS["PREMIUM"]:
+        cloud_model = await _first_cloud_model("PREMIUM", estimated_tokens, skip_models, capability, require_tools)
+        if cloud_model:
+            return cloud_model
 
     if tier_level >= TIER_LEVELS["PAID"]:
         cloud_model = await _first_cloud_model("PAID", estimated_tokens, skip_models, capability, require_tools)
         if cloud_model:
             return cloud_model
 
-    if tier_level >= TIER_LEVELS["PREMIUM"]:
-        cloud_model = await _first_cloud_model("PREMIUM", estimated_tokens, skip_models, capability, require_tools)
+    if tier_level >= TIER_LEVELS["FREE"]:
+        cloud_model = await _first_cloud_model("FREE", estimated_tokens, skip_models, capability, require_tools)
         if cloud_model:
             return cloud_model
 
