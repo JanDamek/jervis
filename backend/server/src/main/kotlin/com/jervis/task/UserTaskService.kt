@@ -148,6 +148,60 @@ class UserTaskService(
         logger.info { "TASK_FAILED_ESCALATED: id=${task.id} reason=$reason isError=$isError pendingQuestion=${pendingQuestion != null}" }
     }
 
+    /**
+     * Send push notification + kRPC stream event for a newly created USER_TASK.
+     * Called by AutoTaskCreationService when qualifier creates tasks that need user attention.
+     */
+    suspend fun notifyUserTaskCreated(task: TaskDocument) {
+        // kRPC stream notification
+        notificationRpc.emitUserTaskCreated(
+            clientId = task.clientId.toString(),
+            taskId = task.id.toString(),
+            title = task.taskName ?: "Nová úloha",
+            interruptAction = null,
+            interruptDescription = null,
+            isApproval = false,
+            projectId = task.projectId?.toString(),
+            isError = false,
+            errorDetail = null,
+        )
+
+        val activeCount = countActiveTasksByClient(task.clientId)
+        val pushTitle = "Nová úloha k reakci"
+        val pushBody = task.taskName ?: "Úloha vyžaduje pozornost"
+        val pushData = buildMap {
+            put("taskId", task.id.toString())
+            put("type", "user_task")
+            put("badgeCount", activeCount.toString())
+        }
+
+        // FCM → Android
+        try {
+            fcmPushService.sendPushNotification(
+                clientId = task.clientId.toString(),
+                title = pushTitle,
+                body = pushBody,
+                data = pushData,
+            )
+        } catch (e: Exception) {
+            logger.warn { "FCM push failed for new USER_TASK ${task.id}: ${e.message}" }
+        }
+
+        // APNs → iOS
+        try {
+            apnsPushService.sendPushNotification(
+                clientId = task.clientId.toString(),
+                title = pushTitle,
+                body = pushBody,
+                data = pushData,
+            )
+        } catch (e: Exception) {
+            logger.warn { "APNs push failed for new USER_TASK ${task.id}: ${e.message}" }
+        }
+
+        logger.info { "USER_TASK_NOTIFY: id=${task.id} title=${task.taskName}" }
+    }
+
     companion object {
         /** Human-readable Czech labels for task types. */
         val TASK_TYPE_LABELS = mapOf(

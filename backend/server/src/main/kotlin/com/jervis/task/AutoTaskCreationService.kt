@@ -37,6 +37,7 @@ class AutoTaskCreationService(
     private val taskService: TaskService,
     private val taskRepository: TaskRepository,
     private val priorityCalculator: TaskPriorityCalculator,
+    private val userTaskService: UserTaskService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -175,6 +176,7 @@ class AutoTaskCreationService(
                 )
 
                 updateTaskPriority(task, priority.score)
+                userTaskService.notifyUserTaskCreated(task)
 
                 logger.info {
                     "AUTO_TASK_CREATED: type=CODE_FIX complexity=${inferred.estimatedComplexity} " +
@@ -270,6 +272,7 @@ class AutoTaskCreationService(
         )
 
         updateTaskPriority(task, priority.score)
+        userTaskService.notifyUserTaskCreated(task)
 
         logger.info {
             "AUTO_TASK_CREATED: type=RESPOND_EMAIL mode=USER_TASK taskId=${task.id} priority=${priority.score} original=${originalTask.id}"
@@ -312,6 +315,7 @@ class AutoTaskCreationService(
         )
 
         updateTaskPriority(task, priority.score)
+        userTaskService.notifyUserTaskCreated(task)
 
         logger.info {
             "AUTO_TASK_CREATED: type=CREATE_TICKET mode=USER_TASK taskId=${task.id} priority=${priority.score} original=${originalTask.id}"

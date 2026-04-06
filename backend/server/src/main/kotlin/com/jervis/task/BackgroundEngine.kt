@@ -1588,6 +1588,10 @@ class BackgroundEngine(
                             TaskStateEnum.USER_TASK,
                             "Work plan failed. Failed subtasks: $failedNames",
                         )
+                        // Send push notification for the escalated task
+                        taskRepository.getById(rootTask.id)?.let { updatedRoot ->
+                            userTaskService.notifyUserTaskCreated(updatedRoot)
+                        }
                         logger.warn { "WorkPlan: Root task ${rootTask.id} escalated to USER_TASK — child errors: $failedNames" }
                         continue
                     }

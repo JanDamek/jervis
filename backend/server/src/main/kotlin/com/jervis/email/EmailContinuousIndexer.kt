@@ -2,7 +2,9 @@ package com.jervis.email
 
 import com.jervis.common.types.SourceUrn
 import com.jervis.infrastructure.polling.PollingStatusEnum
+import com.jervis.dto.task.TaskStateEnum
 import com.jervis.dto.task.TaskTypeEnum
+import com.jervis.task.TaskRepository
 import com.jervis.task.TaskService
 import com.jervis.infrastructure.indexing.AttachmentExtractionService
 import com.jervis.infrastructure.indexing.AttachmentInfo
@@ -44,6 +46,7 @@ private val logger = KotlinLogging.logger {}
 class EmailContinuousIndexer(
     private val repository: EmailMessageIndexRepository,
     private val taskService: TaskService,
+    private val taskRepository: TaskRepository,
     private val documentExtractionClient: DocumentExtractionClient,
     private val attachmentKbIndexingService: AttachmentKbIndexingService,
     private val attachmentExtractionService: AttachmentExtractionService,
@@ -185,10 +188,31 @@ class EmailContinuousIndexer(
             }
 
             // New email (standalone or first in thread) → create new task
+            // For standalone emails without threadId, derive topicId from subject
+            // to prevent duplicate tasks when the same notification arrives twice
             val topicId = when {
                 threadContext != null -> threadContext.topicId
                 doc.threadId != null -> "email-thread:${doc.threadId}"
+                doc.subject != null -> "email-subject:${doc.connectionId}:${doc.subject.hashCode()}"
                 else -> null
+            }
+
+            // Dedup check: if topicId already has an active task, consolidate instead of creating new
+            if (topicId != null) {
+                val activeStates = listOf(
+                    TaskStateEnum.INDEXING, TaskStateEnum.QUEUED,
+                    TaskStateEnum.PROCESSING, TaskStateEnum.USER_TASK, TaskStateEnum.BLOCKED,
+                )
+                val existingByTopic = taskRepository.findFirstByTopicIdAndStateIn(topicId, activeStates)
+                if (existingByTopic != null) {
+                    taskService.updateThreadActivity(existingByTopic.id, emailContent)
+                    indexEmailAttachments(doc)
+                    markAsIndexed(doc)
+                    logger.info {
+                        "Duplicate email consolidated into existing task ${existingByTopic.id}: ${doc.subject}"
+                    }
+                    return
+                }
             }
 
             val task = taskService.createTask(

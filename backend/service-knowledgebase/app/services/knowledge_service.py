@@ -1064,23 +1064,24 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             )
 
         prompt = f"""/no_think
-Analyzuj tento {source_type or 'obsah'} a vrať JSON.
-Pole "summary" piš ČESKY.
+Analyze this {source_type or 'content'} and return JSON.
+Write the "summary" field in CZECH language.
 
-Předmět: {subject or 'N/A'}
+Subject: {subject or 'N/A'}
 
-Obsah:
+Content:
 {truncated}
 
-Vrať JSON:
-{{"summary": "2-3 věty česky", "entities": ["klíčové entity"], "hasActionableContent": true/false, "suggestedActions": ["akce"], "hasFutureDeadline": true/false, "suggestedDeadline": "ISO-8601 nebo null", "assignedTo": "osoba nebo null", "urgency": "urgent/normal/low"}}
+Return JSON:
+{{"summary": "2-3 sentences in Czech", "entities": ["key entities"], "hasActionableContent": true/false, "suggestedActions": ["actions"], "hasFutureDeadline": true/false, "suggestedDeadline": "ISO-8601 or null", "assignedTo": "person or null", "urgency": "urgent/normal/low"}}
 
-Pravidla:
-- hasActionableContent = obsah vyžaduje reakci, rozhodnutí, platbu, odpověď, nebo jinou akci od uživatele
-- hasFutureDeadline = obsah zmiňuje jakýkoliv termín, datum, splatnost, deadline, lhůtu
-- urgency: "urgent" pokud deadline < 7 dní nebo finanční/právní dopad, "normal" běžné, "low" informační
-- entities: extrahuj VŠECHNY zmíněné entity (osoby, organizace, částky, data, dokumenty)
-- suggestedDeadline: ISO-8601 pokud nalezen termín, jinak null"""
+Rules:
+- hasActionableContent = content requires a reaction, decision, payment, reply, or other action from the user
+- hasFutureDeadline = content mentions any deadline, due date, expiry, or time limit
+- urgency: "urgent" if deadline < 7 days or financial/legal impact, "normal" for regular, "low" for informational
+- entities: extract ONLY entities that LITERALLY appear in the text (people, organizations, order numbers). NEVER invent prices, amounts, products, or any details not present in the text.
+- suggestedDeadline: ISO-8601 if a deadline is found, otherwise null
+- summary: write ONLY facts from the text. NEVER add information not present in the content (prices, products, details). If the content does not mention a price, do NOT write a price. If it does not mention a product, do NOT write a product."""
 
         try:
             from app.services.llm_router import llm_generate
