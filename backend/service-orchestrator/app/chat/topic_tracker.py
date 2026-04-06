@@ -66,12 +66,12 @@ async def _llm_detect_topics(
     from app.chat.handler_streaming import call_llm
 
     prompt = (
-        "Z následující konverzační výměny extrahuj 1-3 hlavní témata.\n\n"
-        f"UŽIVATEL: {user_message[:500]}\n\n"
-        f"ASISTENT: {assistant_response[:500]}\n\n"
-        "Odpověz POUZE validním JSON polem:\n"
-        '[{"label": "krátký název tématu", "type": "typ"}, ...]\n\n'
-        'Typy: "task", "question", "discussion", "bug_report", '
+        "Extract 1-3 main topics from the following conversation exchange.\n\n"
+        f"USER: {user_message[:500]}\n\n"
+        f"ASSISTANT: {assistant_response[:500]}\n\n"
+        "Respond with ONLY a valid JSON array:\n"
+        '[{"label": "short topic name", "type": "type"}, ...]\n\n'
+        'Types: "task", "question", "discussion", "bug_report", '
         '"code_review", "planning", "admin", "greeting"\n\n'
         "JSON:"
     )
@@ -108,12 +108,12 @@ def _topics_from_tools(used_tools: list[str]) -> list[dict]:
     """Derive topics from tool usage patterns."""
     _TOOL_TOPIC_MAP = {
         "kb_search": ("Knowledge Base", "question"),
-        "create_background_task": ("Správa úkolů", "planning"),
-        "create_thinking_graph": ("Správa úkolů", "planning"),
+        "create_background_task": ("Task Management", "planning"),
+        "create_thinking_graph": ("Task Management", "planning"),
         "dispatch_coding_agent": ("Coding", "task"),
         "store_knowledge": ("Knowledge Base", "admin"),
-        "memory_store": ("Paměť", "admin"),
-        "web_search": ("Výzkum", "question"),
+        "memory_store": ("Memory", "admin"),
+        "web_search": ("Research", "question"),
     }
 
     seen = set()

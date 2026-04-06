@@ -64,8 +64,8 @@ async def build_system_prompt(
     meetings_section = _build_unclassified_meetings_section(ctx.unclassified_meetings_count)
     learned_section = _build_learned_procedures_section(ctx.learned_procedures)
     guidelines_section = f"\n{ctx.guidelines_text}\n" if ctx.guidelines_text else ""
-    thought_section = f"\n## Aktivní kontext (Thought Map)\n{ctx.thought_context}\n" if ctx.thought_context else ""
-    rag_section = f"\n## Relevantní znalosti (KB)\n{ctx.rag_context}\n" if ctx.rag_context else ""
+    thought_section = f"\n## Active Context (Thought Map)\n{ctx.thought_context}\n" if ctx.thought_context else ""
+    rag_section = f"\n## Relevant Knowledge (KB)\n{ctx.rag_context}\n" if ctx.rag_context else ""
     active_graph_section = await _build_active_graph_section(session_id)
 
     # Compact prompt for FREE models (~2k tokens vs ~8k full)
@@ -169,14 +169,14 @@ When creating a background task (create_background_task):
 
 **Everything the user says in chat is a permanent instruction for the current scope (client/project).**
 
-- "Commity v BMS se podepisují" → store_knowledge(kind=convention, scope=current) + EXECUTE the action via tool (git config, settings change, etc.)
-- "Toto téma nehlídej" → store_knowledge(kind=convention, "do not monitor topic X")
-- "Faktury od X jsou vždy urgentní" → store_knowledge(kind=convention, "invoices from X = always urgent")
+- "Commits in BMS are signed" → store_knowledge(kind=convention, scope=current) + EXECUTE the action via tool (git config, settings change, etc.)
+- "Don't monitor this topic" → store_knowledge(kind=convention, "do not monitor topic X")
+- "Invoices from X are always urgent" → store_knowledge(kind=convention, "invoices from X = always urgent")
 
 **Rules:**
 1. ALWAYS store as `convention` in KB with the correct client/project scope
 2. If the instruction is actionable (configure something, change a setting) — DO IT via tools, don't just acknowledge
-3. NEVER hallucinate acknowledgment — if you can't execute it, say "Uložil jsem si pravidlo, ale nemám tool pro provedení akce"
+3. NEVER hallucinate acknowledgment — if you can't execute it, say so clearly (in the user's language)
 4. These rules persist FOREVER for that scope — check KB conventions before every action
 5. User's "ignore" in UI is ONE-TIME — don't learn "always ignore this"
 6. User explicitly writing "this is resolved" or "stop monitoring" IS a permanent rule
@@ -212,15 +212,15 @@ Use thinking graph ONLY for complex coordination/planning tasks — NOT for codi
 - NEVER store the user's entire message in KB/memory. Store only key facts (1-2 sentences).
 - NEVER store runtime state (active project, switched client) in memory_store.
 
-## Jak zpracováváš zprávy
+## How you process messages
 
-Z KAŽDÉ zprávy rozpoznej intenty:
-1. **Urgentní/foreground** — user chce TEĎ → řeš přímo v chatu (tools, analýza, agent)
-2. **Odpověď na user_task** — user reaguje na čekající task → respond_to_user_task
-3. **Poznámka/fakt** — zapamatuj si (memory_store / store_knowledge)
-4. **Dotaz na stav** — podívej se do KB / issue trackeru, odpověz
+From EVERY message, identify intents:
+1. **Urgent/foreground** — user wants it NOW → handle directly in chat (tools, analysis, agent)
+2. **Response to user_task** — user is reacting to a pending task → respond_to_user_task
+3. **Note/fact** — remember it (memory_store / store_knowledge)
+4. **Status inquiry** — check KB / issue tracker, respond
 
-Jedna zpráva může obsahovat VÍCE intentů. Zpracuj všechny.
+A single message may contain MULTIPLE intents. Process all of them.
 
 ### Client/Project resolution
 When user mentions a client or project name, ALWAYS search existing ones first.
@@ -398,13 +398,13 @@ async def _build_active_graph_section(session_id: str | None) -> str:
         if not graph:
             return ""
         root = graph.vertices.get(graph.root_vertex_id)
-        title = root.title if root else "Graf"
+        title = root.title if root else "Graph"
         vertex_count = len(graph.vertices)
         return (
-            f"\n## Aktivní myšlenkový graf\n"
-            f"- **{title}** ({vertex_count} kroků, stav: {graph.status.value})\n"
-            f"- ID grafu: {graph.id}\n"
-            f"- Pokračuj v úpravách grafu nebo ho dispatchni přes dispatch_thinking_graph.\n"
+            f"\n## Active Thinking Graph\n"
+            f"- **{title}** ({vertex_count} steps, status: {graph.status.value})\n"
+            f"- Graph ID: {graph.id}\n"
+            f"- Continue editing the graph or dispatch it via dispatch_thinking_graph.\n"
         )
     except Exception as e:
         logger.debug("Failed to build active graph section: %s", e)

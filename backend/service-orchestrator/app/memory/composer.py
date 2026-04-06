@@ -65,8 +65,8 @@ async def compose_affair_context(
 async def _format_active_affair(affair: Affair, max_tokens: int) -> str:
     """Format the active affair for the LLM context."""
     lines = [
-        f"## Aktuální záležitost: {affair.title}",
-        f"**Stav**: {affair.status.value}",
+        f"## Current Affair: {affair.title}",
+        f"**Status**: {affair.status.value}",
     ]
 
     if affair.summary:
@@ -76,7 +76,7 @@ async def _format_active_affair(affair: Affair, max_tokens: int) -> str:
         budget_third = max_tokens // 3
         if summary_tokens > budget_third:
             summary = await reduce_for_prompt(summary, budget_third, "summary")
-        lines.append(f"**Shrnutí**: {summary}")
+        lines.append(f"**Summary**: {summary}")
 
     if affair.key_facts:
         facts_text = "\n".join(f"- {k}: {v}" for k, v in affair.key_facts.items())
@@ -84,17 +84,17 @@ async def _format_active_affair(affair: Affair, max_tokens: int) -> str:
         budget_quarter = max_tokens // 4
         if facts_tokens > budget_quarter:
             facts_text = await reduce_for_prompt(facts_text, budget_quarter, "key_facts")
-        lines.append("**Klíčové fakta**:")
+        lines.append("**Key Facts**:")
         lines.append(facts_text)
 
     if affair.pending_actions:
         actions = ", ".join(affair.pending_actions)
-        lines.append(f"**Čeká na**: {actions}")
+        lines.append(f"**Pending**: {actions}")
 
     # Add recent messages — budget-aware via reduce_messages_for_prompt
     if affair.messages:
         lines.append("")
-        lines.append("### Poslední zprávy k této záležitosti:")
+        lines.append("### Recent messages for this affair:")
         current_text = "\n".join(lines)
         remaining = max_tokens - estimate_tokens(current_text)
 
@@ -110,15 +110,15 @@ async def _format_active_affair(affair: Affair, max_tokens: int) -> str:
 
 def _format_parked_affairs(affairs: list[Affair], max_tokens: int) -> str:
     """Format parked affairs as a brief overview."""
-    lines = ["## Odložené záležitosti:"]
+    lines = ["## Parked Affairs:"]
 
     for affair in affairs[:10]:  # Cap at 10
-        pending = affair.pending_actions[0] if affair.pending_actions else "žádná akce"
+        pending = affair.pending_actions[0] if affair.pending_actions else "no pending action"
         lines.append(f"- **{affair.title}** ({affair.status.value}): {pending}")
 
         # Check budget
         if estimate_tokens("\n".join(lines)) > max_tokens:
-            lines.append(f"... a dalších {len(affairs) - len(lines) + 1}")
+            lines.append(f"... and {len(affairs) - len(lines) + 1} more")
             break
 
     return "\n".join(lines)
@@ -126,7 +126,7 @@ def _format_parked_affairs(affairs: list[Affair], max_tokens: int) -> str:
 
 async def _format_user_context(preferences: dict, max_tokens: int) -> str:
     """Format user preferences and domain knowledge."""
-    lines = ["## Uživatelský kontext:"]
+    lines = ["## User Context:"]
 
     for key, value in preferences.items():
         value_str = str(value)

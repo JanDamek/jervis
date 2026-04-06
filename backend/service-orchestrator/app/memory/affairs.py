@@ -221,21 +221,21 @@ async def _summarize_affair_for_parking(
         affair.messages, token_budget=6000, state=state,
     )
 
-    facts_json = json.dumps(affair.key_facts, ensure_ascii=False) if affair.key_facts else "(žádná)"
+    facts_json = json.dumps(affair.key_facts, ensure_ascii=False) if affair.key_facts else "(none)"
 
-    prompt = f"""Shrň záležitost pro pozdější obnovení kontextu.
+    prompt = f"""Summarize this affair for later context restoration.
 
-ZÁLEŽITOST: {affair.title}
-DOSAVADNÍ FAKTA: {facts_json}
-POSLEDNÍ ZPRÁVY:
+AFFAIR: {affair.title}
+EXISTING FACTS: {facts_json}
+RECENT MESSAGES:
 {messages_text}
 
-Odpověz POUZE validním JSON:
+Respond with ONLY valid JSON:
 {{
-    "summary": "2-3 věty shrnující aktuální stav záležitosti",
-    "key_facts": {{"klíč": "hodnota", ...}},
-    "pending_actions": ["akce 1", "akce 2"],
-    "topics": ["téma1", "téma2"]
+    "summary": "2-3 sentences summarizing the current state of the affair",
+    "key_facts": {{"key": "value", ...}},
+    "pending_actions": ["action 1", "action 2"],
+    "topics": ["topic1", "topic2"]
 }}"""
 
     response = await llm_with_cloud_fallback(

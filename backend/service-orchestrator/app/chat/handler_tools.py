@@ -91,8 +91,8 @@ def describe_tool_call(name: str, args) -> str:
         try:
             return fn(args)
         except Exception:
-            return f"Zpracovávám: {name}"
-    return f"Zpracovávám: {name}"
+            return f"Processing: {name}"
+    return f"Processing: {name}"
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +173,7 @@ async def _handle_create_background_task(args, client_id, project_id, kotlin_cli
     # Client: context first, then LLM arg
     effective_client_id = client_id or args.get("client_id")
     if effective_client_id and not _OID_RE.match(effective_client_id):
-        return f"Chyba: client_id '{effective_client_id}' není platné ObjectId. Vyber klienta přes UI."
+        return f"Error: client_id '{effective_client_id}' is not a valid ObjectId. Select a client via UI."
 
     # Project: ONLY use if LLM explicitly provides it or task is project-specific.
     # Don't blindly inherit chat context project — personal tasks (reminders, alerts)
@@ -206,7 +206,7 @@ async def _handle_create_thinking_graph(args, client_id, project_id, _kotlin_cli
     # session_id is injected by _execute_chat_specific_tool
     session_id = args.pop("__session_id__", None)
     if not session_id:
-        return "Chyba: interní chyba — chybí session_id."
+        return "Error: internal error — missing session_id."
 
     # Guard: if session already has an active graph, refuse and point to add_graph_vertex
     existing = await get_active_graph(session_id)
@@ -215,9 +215,9 @@ async def _handle_create_thinking_graph(args, client_id, project_id, _kotlin_cli
         existing_title = root.title if root else existing.id
         vertex_count = len(existing.vertices)
         return (
-            f"CHYBA: Už existuje aktivní graf '{existing_title}' ({vertex_count} kroků). "
-            f"NEVYTVÁŘEJ nový — přidej kroky přes add_graph_vertex nebo uprav existující přes update_graph_vertex. "
-            f"Jeden problém = jeden graf."
+            f"ERROR: Active graph '{existing_title}' already exists ({vertex_count} steps). "
+            f"Do NOT create a new one — add steps via add_graph_vertex or edit existing via update_graph_vertex. "
+            f"One problem = one graph."
         )
 
     effective_client_id = client_id or args.get("client_id")
@@ -229,7 +229,7 @@ async def _handle_create_thinking_graph(args, client_id, project_id, _kotlin_cli
         project_id=effective_project_id,
     )
     vertex_count = len(graph.vertices)
-    return f"Myšlenkový graf '{args['title']}' vytvořen ({vertex_count} vrcholů). Přidávej kroky přes add_graph_vertex."
+    return f"Thinking graph '{args['title']}' created ({vertex_count} vertices). Add steps via add_graph_vertex."
 
 
 async def _handle_add_graph_vertex(args, _client_id, _project_id, _kotlin_client):
@@ -237,7 +237,7 @@ async def _handle_add_graph_vertex(args, _client_id, _project_id, _kotlin_client
     from app.chat.thinking_graph import add_vertex
     session_id = args.pop("__session_id__", None)
     if not session_id:
-        return "Chyba: interní chyba — chybí session_id."
+        return "Error: internal error — missing session_id."
     try:
         graph, vertex = await add_vertex(
             session_id=session_id,
@@ -248,12 +248,12 @@ async def _handle_add_graph_vertex(args, _client_id, _project_id, _kotlin_client
         )
         deps = ", ".join(args.get("depends_on", [])) or "root"
         return (
-            f"Krok '{vertex.title}' ({vertex.id}) přidán do grafu. "
-            f"Typ: {vertex.vertex_type.value}, závisí na: {deps}. "
-            f"Celkem {len(graph.vertices)} kroků."
+            f"Step '{vertex.title}' ({vertex.id}) added to graph. "
+            f"Type: {vertex.vertex_type.value}, depends on: {deps}. "
+            f"Total {len(graph.vertices)} steps."
         )
     except ValueError as e:
-        return f"Chyba: {e}"
+        return f"Error: {e}"
 
 
 async def _handle_update_graph_vertex(args, _client_id, _project_id, _kotlin_client):
@@ -261,7 +261,7 @@ async def _handle_update_graph_vertex(args, _client_id, _project_id, _kotlin_cli
     from app.chat.thinking_graph import update_vertex
     session_id = args.pop("__session_id__", None)
     if not session_id:
-        return "Chyba: interní chyba — chybí session_id."
+        return "Error: internal error — missing session_id."
     try:
         graph, vertex = await update_vertex(
             session_id=session_id,
@@ -270,9 +270,9 @@ async def _handle_update_graph_vertex(args, _client_id, _project_id, _kotlin_cli
             description=args.get("description"),
             vertex_type=args.get("vertex_type"),
         )
-        return f"Krok '{vertex.title}' ({vertex.id}) aktualizován."
+        return f"Step '{vertex.title}' ({vertex.id}) updated."
     except ValueError as e:
-        return f"Chyba: {e}"
+        return f"Error: {e}"
 
 
 async def _handle_remove_graph_vertex(args, _client_id, _project_id, _kotlin_client):
@@ -280,15 +280,15 @@ async def _handle_remove_graph_vertex(args, _client_id, _project_id, _kotlin_cli
     from app.chat.thinking_graph import remove_vertex
     session_id = args.pop("__session_id__", None)
     if not session_id:
-        return "Chyba: interní chyba — chybí session_id."
+        return "Error: internal error — missing session_id."
     try:
         graph = await remove_vertex(
             session_id=session_id,
             vertex_id=args["vertex_id"],
         )
-        return f"Krok '{args['vertex_id']}' odebrán. Zbývá {len(graph.vertices)} kroků."
+        return f"Step '{args['vertex_id']}' removed. {len(graph.vertices)} steps remaining."
     except ValueError as e:
-        return f"Chyba: {e}"
+        return f"Error: {e}"
 
 
 async def _handle_dispatch_thinking_graph(args, client_id, project_id, kotlin_client):
@@ -296,7 +296,7 @@ async def _handle_dispatch_thinking_graph(args, client_id, project_id, kotlin_cl
     from app.chat.thinking_graph import dispatch_graph
     session_id = args.pop("__session_id__", None)
     if not session_id:
-        return "Chyba: interní chyba — chybí session_id."
+        return "Error: internal error — missing session_id."
     try:
         task_id = await dispatch_graph(
             session_id=session_id,
@@ -304,9 +304,9 @@ async def _handle_dispatch_thinking_graph(args, client_id, project_id, kotlin_cl
             client_id=client_id or args.get("client_id"),
             project_id=project_id or args.get("project_id"),
         )
-        return f"Myšlenkový graf odeslán k realizaci. Task ID: {task_id}"
+        return f"Thinking graph dispatched for execution. Task ID: {task_id}"
     except ValueError as e:
-        return f"Chyba: {e}"
+        return f"Error: {e}"
 
 
 async def _handle_run_graph_vertex(args, client_id, project_id, kotlin_client):
@@ -314,7 +314,7 @@ async def _handle_run_graph_vertex(args, client_id, project_id, kotlin_client):
     from app.chat.thinking_graph import run_vertex
     session_id = args.pop("__session_id__", None)
     if not session_id:
-        return "Chyba: interní chyba — chybí session_id."
+        return "Error: internal error — missing session_id."
     try:
         task_id = await run_vertex(
             session_id=session_id,
@@ -323,9 +323,9 @@ async def _handle_run_graph_vertex(args, client_id, project_id, kotlin_client):
             client_id=client_id or args.get("client_id"),
             project_id=project_id or args.get("project_id"),
         )
-        return f"Krok '{args['vertex_id']}' spuštěn na pozadí. Task ID: {task_id}. Výsledek se vrátí do grafu."
+        return f"Step '{args['vertex_id']}' dispatched to background. Task ID: {task_id}. Results will flow back to graph."
     except ValueError as e:
-        return f"Chyba: {e}"
+        return f"Error: {e}"
 
 
 async def _handle_dispatch_coding_agent(args, client_id, project_id, kotlin_client):
@@ -334,14 +334,14 @@ async def _handle_dispatch_coding_agent(args, client_id, project_id, kotlin_clie
     effective_project_id = project_id or args.get("project_id")
     # dispatch_coding_agent needs project_id (for git workspace)
     if not effective_project_id:
-        return "Chyba: project_id je povinný pro dispatch coding agenta. Vyber projekt přes UI."
+        return "Error: project_id is required for dispatch coding agent. Select a project via UI."
     # Validate ObjectId format if provided
     import re
     _OID_RE = re.compile(r"^[0-9a-fA-F]{24}$")
     if effective_client_id and not _OID_RE.match(effective_client_id):
-        return f"Chyba: client_id '{effective_client_id}' není platné ObjectId. Vyber klienta přes UI."
+        return f"Error: client_id '{effective_client_id}' is not a valid ObjectId. Select a client via UI."
     if not _OID_RE.match(effective_project_id):
-        return f"Chyba: project_id '{effective_project_id}' není platné ObjectId. Vyber projekt přes UI."
+        return f"Error: project_id '{effective_project_id}' is not a valid ObjectId. Select a project via UI."
     result = await kotlin_client.dispatch_coding_agent(
         task_description=args["task_description"],
         client_id=effective_client_id,
@@ -414,7 +414,7 @@ async def _handle_dismiss_user_tasks(args, _client_id, _project_id, kotlin_clien
 async def _handle_retry_failed_task(args, _client_id, _project_id, kotlin_client):
     task_id = args.get("task_id")
     if not task_id:
-        return "Chyba: task_id je povinný."
+        return "Error: task_id is required."
     result = await kotlin_client.retry_failed_task(task_id)
     return f"Retry result: {result}"
 
@@ -436,7 +436,7 @@ async def _handle_list_unclassified_meetings(_args, _client_id, _project_id, kot
 async def _handle_get_meeting_transcript(args, _client_id, _project_id, kotlin_client):
     meeting_id = args.get("meeting_id")
     if not meeting_id:
-        return "Chyba: meeting_id je povinný."
+        return "Error: meeting_id is required."
     return await kotlin_client.get_meeting_transcript(meeting_id)
 
 
@@ -467,11 +467,11 @@ async def _handle_update_guideline(args, client_id, project_id, kotlin_client):
     effective_project_id = args.get("project_id") or project_id
 
     if not category:
-        return "Chyba: category je povinný parametr."
+        return "Error: category is a required parameter."
     if scope in ("CLIENT", "PROJECT") and not effective_client_id:
-        return "Chyba: client_id je povinný pro CLIENT/PROJECT scope."
+        return "Error: client_id is required for CLIENT/PROJECT scope."
     if scope == "PROJECT" and not effective_project_id:
-        return "Chyba: project_id je povinný pro PROJECT scope."
+        return "Error: project_id is required for PROJECT scope."
 
     return await kotlin_client.update_guideline(
         scope=scope,
@@ -490,7 +490,7 @@ async def _handle_set_filter_rule(args, client_id, project_id, kotlin_client):
     description = args.get("description")
 
     if not condition_type or not condition_value:
-        return "Chyba: condition_type a condition_value jsou povinné."
+        return "Error: condition_type and condition_value are required."
 
     return await kotlin_client.set_filter_rule(
         source_type=source_type,
@@ -513,13 +513,13 @@ async def _handle_list_filter_rules(_args, client_id, project_id, kotlin_client)
 async def _handle_remove_filter_rule(args, _client_id, _project_id, kotlin_client):
     rule_id = args.get("rule_id")
     if not rule_id:
-        return "Chyba: rule_id je povinný."
+        return "Error: rule_id is required."
     return await kotlin_client.remove_filter_rule(rule_id=rule_id)
 
 
 async def _handle_query_action_log(args, client_id, _project_id, _kotlin_client):
     if not client_id:
-        return "Chyba: client_id je povinný pro dotaz na akční log."
+        return "Error: client_id is required for action log queries."
     from app.memory.action_log import query_action_log
     return await query_action_log(
         client_id=client_id,
@@ -537,27 +537,27 @@ async def _handle_check_task_graph(args, _client_id, _project_id, _kotlin_client
 
     task_id = args.get("task_id", "")
     if not task_id:
-        return "Chyba: chybí task_id."
+        return "Error: missing task_id."
 
     # Try RAM cache first, then DB
     graph = agent_store.get_cached_subgraph(task_id)
     if not graph:
         graph = await agent_store.load(task_id)
     if not graph:
-        return f"Graf pro úkol {task_id} nenalezen."
+        return f"Graph for task {task_id} not found."
 
     stats = get_stats(graph)
     blocked = find_blocked_vertices(graph)
 
     parts = [
-        f"Graf úkolu {task_id}:",
-        f"  Stav: {graph.status.value}",
-        f"  Vrcholů: {stats['total_vertices']} (hran: {stats['total_edges']})",
-        f"  Stavy: {stats['vertex_statuses']}",
-        f"  Tokeny: {stats['total_tokens']}, LLM volání: {stats['total_llm_calls']}",
+        f"Task graph {task_id}:",
+        f"  Status: {graph.status.value}",
+        f"  Vertices: {stats['total_vertices']} (edges: {stats['total_edges']})",
+        f"  States: {stats['vertex_statuses']}",
+        f"  Tokens: {stats['total_tokens']}, LLM calls: {stats['total_llm_calls']}",
     ]
     if blocked:
-        parts.append(f"  ČEKÁ NA ODPOVĚĎ ({len(blocked)} vertexů):")
+        parts.append(f"  WAITING FOR ANSWER ({len(blocked)} vertices):")
         for v in blocked:
             parts.append(f"    - [{v.id}] {v.description}")
     return "\n".join(parts)
@@ -572,19 +572,19 @@ async def _handle_answer_blocked_vertex(args, _client_id, _project_id, _kotlin_c
     answer = args.get("answer", "")
 
     if not task_id or not vertex_id or not answer:
-        return "Chyba: chybí task_id, vertex_id nebo answer."
+        return "Error: missing task_id, vertex_id or answer."
 
     success = await agent_store.resume_blocked_vertex(task_id, vertex_id, answer)
     if success:
-        return f"Vertex {vertex_id} odemčen odpovědí. Graf pokračuje ve zpracování."
-    return f"Nepodařilo se odemknout vertex {vertex_id} — buď neexistuje nebo není blokovaný."
+        return f"Vertex {vertex_id} unblocked with answer. Graph continues processing."
+    return f"Failed to unblock vertex {vertex_id} — either it doesn't exist or is not blocked."
 
 
 async def _handle_finance_summary(args, client_id, _project_id, kotlin_client):
     """Get financial summary for a client."""
     cid = args.get("client_id") or client_id
     if not cid:
-        return "Chyba: client_id je povinný."
+        return "Error: client_id is required."
     from_date = args.get("from_date")
     to_date = args.get("to_date")
     params = {"client_id": cid}
@@ -599,7 +599,7 @@ async def _handle_list_invoices(args, _client_id, _project_id, kotlin_client):
     """List financial records for a client."""
     cid = args.get("client_id")
     if not cid:
-        return "Chyba: client_id je povinný."
+        return "Error: client_id is required."
     status = args.get("status")
     type_ = args.get("type")
     params = {"client_id": cid}
@@ -616,10 +616,10 @@ async def _handle_record_payment(args, client_id, _project_id, kotlin_client):
 
     cid = args.get("client_id") or client_id
     if not cid:
-        return "Chyba: client_id je povinný."
+        return "Error: client_id is required."
     amount = args.get("amount")
     if not amount:
-        return "Chyba: amount je povinný."
+        return "Error: amount is required."
     payload = {
         "clientId": cid,
         "type": "PAYMENT",
@@ -651,10 +651,10 @@ async def _handle_log_time(args, client_id, _project_id, kotlin_client):
     """Log time entry."""
     cid = args.get("client_id") or client_id
     if not cid:
-        return "Chyba: client_id je povinný."
+        return "Error: client_id is required."
     hours = args.get("hours")
     if not hours:
-        return "Chyba: hours je povinný."
+        return "Error: hours is required."
     payload = {
         "clientId": cid,
         "hours": float(hours),
@@ -676,7 +676,7 @@ async def _handle_check_capacity(args, _client_id, _project_id, kotlin_client):
             available = data.get("availableHours", 0)
             needed = float(hours_needed)
             if needed > available:
-                return f"{resp}\n\n⚠️ Kapacita nedostačuje: potřeba {needed}h/týden, dostupné {available}h/týden."
+                return f"{resp}\n\nCapacity insufficient: need {needed}h/week, available {available}h/week."
         except Exception:
             pass
     return resp
@@ -782,7 +782,7 @@ def resolve_switch_context(arguments: dict, ctx: RuntimeContext) -> dict:
 
     if not client_name_query:
         available = ", ".join(c.get("name", "?") for c in ctx.clients_projects)
-        return {"message": f"Chybí jméno klienta. Dostupní klienti: {available}"}
+        return {"message": f"Missing client name. Available clients: {available}"}
 
     # Prefer exact match, then substring. Ambiguous → ask user.
     exact_match = None
@@ -803,8 +803,8 @@ def resolve_switch_context(arguments: dict, ctx: RuntimeContext) -> dict:
         ambiguous_names = ", ".join(c.get("name", "?") for c in substring_matches)
         return {
             "message": (
-                f"'{arguments.get('client')}' odpovídá více klientům: {ambiguous_names}. "
-                f"Upřesni, kterého myslíš."
+                f"'{arguments.get('client')}' matches multiple clients: {ambiguous_names}. "
+                f"Please specify which one."
             ),
         }
     else:
@@ -814,14 +814,14 @@ def resolve_switch_context(arguments: dict, ctx: RuntimeContext) -> dict:
         available = ", ".join(c.get("name", "?") for c in ctx.clients_projects)
         return {
             "message": (
-                f"Klient '{arguments.get('client')}' nenalezen. "
-                f"Dostupní klienti: {available}"
+                f"Client '{arguments.get('client')}' not found. "
+                f"Available clients: {available}"
             ),
         }
 
     client_id = matched_client["id"]
     client_name = matched_client.get("name", "")
-    result = {"client_id": client_id, "client_name": client_name, "message": f"Přepnuto na {client_name}"}
+    result = {"client_id": client_id, "client_name": client_name, "message": f"Switched to {client_name}"}
 
     # Resolve project — same exact-then-substring logic
     if project_name_query:
@@ -842,20 +842,20 @@ def resolve_switch_context(arguments: dict, ctx: RuntimeContext) -> dict:
             elif len(project_substring_matches) > 1:
                 ambiguous_projects = ", ".join(p.get("name", "?") for p in project_substring_matches)
                 result["message"] = (
-                    f"Přepnuto na {client_name}, ale '{arguments.get('project')}' odpovídá "
-                    f"více projektům: {ambiguous_projects}. Upřesni, který myslíš."
+                    f"Switched to {client_name}, but '{arguments.get('project')}' matches "
+                    f"multiple projects: {ambiguous_projects}. Please specify which one."
                 )
                 return result
 
         if matched_project:
             result["project_id"] = matched_project["id"]
             result["project_name"] = matched_project.get("name", "")
-            result["message"] = f"Přepnuto na {client_name} / {result['project_name']}"
+            result["message"] = f"Switched to {client_name} / {result['project_name']}"
         else:
             available_projects = ", ".join(p.get("name", "?") for p in projects)
             result["message"] = (
-                f"Přepnuto na {client_name}, ale projekt '{arguments.get('project')}' "
-                f"nenalezen. Dostupné projekty: {available_projects}"
+                f"Switched to {client_name}, but project '{arguments.get('project')}' "
+                f"not found. Available projects: {available_projects}"
             )
 
     return result

@@ -159,15 +159,15 @@ async def _merge_topic_blocks(topic: str, blocks: list[dict]) -> dict:
     decisions_reduced = await reduce_for_prompt(decisions_json, 500, "key_facts")
 
     prompt = (
-        f"Konsoliduj tyto {len(blocks)} souhrnů konverzace pro téma '{topic}' "
-        f"do jednoho uceleného shrnutí.\n\n"
-        f"SOUHRNY:\n{combined_reduced}\n\n"
-        f"KLÍČOVÁ ROZHODNUTÍ: {decisions_reduced}\n\n"
-        "Odpověz POUZE validním JSON:\n"
+        f"Consolidate these {len(blocks)} conversation summaries for topic '{topic}' "
+        f"into a single coherent summary.\n\n"
+        f"SUMMARIES:\n{combined_reduced}\n\n"
+        f"KEY DECISIONS: {decisions_reduced}\n\n"
+        "Respond with ONLY valid JSON:\n"
         '{\n'
-        '  "summary": "2-4 věty shrnující vývoj tématu",\n'
-        '  "key_decisions": ["rozhodnutí 1", "rozhodnutí 2"],\n'
-        '  "timeline": ["co se stalo nejdřív", "pak...", "naposledy..."]\n'
+        '  "summary": "2-4 sentences summarizing the topic evolution",\n'
+        '  "key_decisions": ["decision 1", "decision 2"],\n'
+        '  "timeline": ["what happened first", "then...", "most recently..."]\n'
         '}'
     )
 
@@ -238,11 +238,11 @@ async def consolidate_affair_messages(
     )
 
     prompt = (
-        f"Záležitost: {affair_title}\n"
-        f"Celkem {len(affair_messages)} zpráv ({total_tokens} tokenů).\n\n"
-        f"ZPRÁVY:\n{messages_text}\n\n"
-        "Vytvoř konsolidovaný souhrn celé konverzace k této záležitosti. "
-        "Zachovej klíčové fakta, rozhodnutí a otevřené otázky."
+        f"Affair: {affair_title}\n"
+        f"Total {len(affair_messages)} messages ({total_tokens} tokens).\n\n"
+        f"MESSAGES:\n{messages_text}\n\n"
+        "Create a consolidated summary of the entire conversation for this affair. "
+        "Preserve key facts, decisions and open questions."
     )
 
     try:

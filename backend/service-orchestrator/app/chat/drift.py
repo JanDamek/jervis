@@ -52,7 +52,7 @@ def detect_drift(
     """
     # Signal 1: Identical tool+args in consecutive iterations
     if consecutive_same >= 2:
-        return "opakovaně voláš stejný tool se stejnými argumenty"
+        return "you are repeatedly calling the same tool with the same arguments"
 
     if tool_call_history and len(tool_call_history) >= 2:
         from collections import Counter
@@ -62,13 +62,13 @@ def detect_drift(
         for sig, count in full_sig_counts.items():
             if count >= 2:
                 tool_name = sig.split(":")[0]
-                return f"tool '{tool_name}' volán {count}× se stejnými argumenty — odpověz s tím co máš"
+                return f"tool '{tool_name}' called {count}x with same arguments — respond with what you have"
 
         # Signal 2b: Same tool called 8+ times total (even with different args)
         tool_name_counts = Counter(name for name, _ in tool_call_history)
         for tool_name, count in tool_name_counts.items():
             if count >= 8:
-                return f"tool '{tool_name}' volán {count}× — opakuješ se, odpověz s tím co máš"
+                return f"tool '{tool_name}' called {count}x — you are repeating, respond with what you have"
 
         # Signal 3: Alternating tool pair pattern (A->B->A->B)
         if len(tool_call_history) >= 4:
@@ -77,8 +77,8 @@ def detect_drift(
             if (last_four[0] == last_four[2] and last_four[1] == last_four[3]
                     and last_four[0] != last_four[1]):
                 return (
-                    f"tools '{last_four[0]}' a '{last_four[1]}' se opakují v cyklu "
-                    f"— odpověz s tím co máš"
+                    f"tools '{last_four[0]}' and '{last_four[1]}' are repeating in a cycle "
+                    f"— respond with what you have"
                 )
 
     # Signal 4: Domain drift across iterations
@@ -94,10 +94,10 @@ def detect_drift(
         for d in last_four[1:]:
             common = common & d
         if not common and len(all_domains) >= 3 and not _domains_form_workflow(all_domains):
-            return f"tool calls přeskakují mezi nesouvisejícími oblastmi ({', '.join(sorted(all_domains))})"
+            return f"tool calls jumping between unrelated domains ({', '.join(sorted(all_domains))})"
 
     # Signal 5: Too many distinct tools
     if iteration >= 4 and len(distinct_tools_used) >= 8:
-        return f"použito {len(distinct_tools_used)} různých toolů — příliš rozptýlené"
+        return f"{len(distinct_tools_used)} distinct tools used — too scattered"
 
     return None

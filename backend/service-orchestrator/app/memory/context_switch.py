@@ -20,28 +20,28 @@ from app.memory.models import (
 logger = logging.getLogger(__name__)
 
 
-CONTEXT_SWITCH_PROMPT = """Analyzuj zprávu uživatele v kontextu aktuální konverzace.
+CONTEXT_SWITCH_PROMPT = """Analyze the user's message in the context of the current conversation.
 
-AKTUÁLNÍ ZÁLEŽITOST: {active_affair_title}
-AKTUÁLNÍ KONTEXT: {active_affair_summary}
-ODLOŽENÉ ZÁLEŽITOSTI: {parked_affair_titles}
+CURRENT AFFAIR: {active_affair_title}
+CURRENT CONTEXT: {active_affair_summary}
+PARKED AFFAIRS: {parked_affair_titles}
 
-ZPRÁVA UŽIVATELE: {user_message}
+USER MESSAGE: {user_message}
 
-Urči typ zprávy:
-1. CONTINUE — pokračuje v aktuální záležitosti
-2. SWITCH — přepíná na jinou (existující odloženou) záležitost
-3. AD_HOC — jednorázový dotaz, po odpovědi se vrátí k aktuální záležitosti
-4. NEW_AFFAIR — začíná zcela novou záležitost
+Determine the message type:
+1. CONTINUE — continues the current affair
+2. SWITCH — switches to another (existing parked) affair
+3. AD_HOC — one-off question, returns to current affair after answering
+4. NEW_AFFAIR — starts an entirely new affair
 
-Klíčové signály:
-- "teď něco jiného", "jiná věc", "nové téma" → SWITCH nebo NEW_AFFAIR
-- "mimochodem", "hele", "jen rychle" → AD_HOC
-- Otázka na odloženou záležitost → AD_HOC (odpověz a vrať se)
-- Pokračování v tématu → CONTINUE
+Key signals:
+- Topic change indicators (e.g. "something else", "different thing", "new topic") → SWITCH or NEW_AFFAIR
+- Aside indicators (e.g. "by the way", "just quickly") → AD_HOC
+- Question about a parked affair → AD_HOC (answer and return)
+- Continuation of current topic → CONTINUE
 
-Odpověz POUZE validním JSON (žádný markdown, žádný text okolo):
-{{"type": "CONTINUE|SWITCH|AD_HOC|NEW_AFFAIR", "target_affair": "název existující záležitosti pokud SWITCH, jinak null", "reasoning": "krátké zdůvodnění", "confidence": 0.0, "new_affair_title": "název pokud NEW_AFFAIR, jinak null"}}"""
+Respond with ONLY valid JSON (no markdown, no surrounding text):
+{{"type": "CONTINUE|SWITCH|AD_HOC|NEW_AFFAIR", "target_affair": "name of existing affair if SWITCH, otherwise null", "reasoning": "brief reasoning", "confidence": 0.0, "new_affair_title": "title if NEW_AFFAIR, otherwise null"}}"""
 
 
 async def detect_context_switch(
@@ -101,10 +101,10 @@ async def detect_context_switch(
         )
 
     # LLM path — reduce large content via LLM instead of hard truncation
-    parked_titles = ", ".join(a.title for a in parked_affairs[:10]) or "(žádné)"
+    parked_titles = ", ".join(a.title for a in parked_affairs[:10]) or "(none)"
 
     # Budget: ~500 tokens for summary, ~1000 tokens for user message
-    affair_summary = active_affair.summary or "(žádné shrnutí)"
+    affair_summary = active_affair.summary or "(no summary)"
     affair_summary = await reduce_for_prompt(affair_summary, 500, "summary", state=state)
     user_msg_reduced = await reduce_for_prompt(user_message, 1000, "message_summary", state=state)
 

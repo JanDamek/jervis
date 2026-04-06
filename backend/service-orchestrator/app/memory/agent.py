@@ -201,7 +201,7 @@ class MemoryAgent:
                 status_parts.append(f"Target affair not found: {result.target_affair_id}")
 
         elif result.type == ContextSwitchType.NEW_AFFAIR:
-            title = result.new_affair_title or "Nová záležitost"
+            title = result.new_affair_title or "New affair"
             affair = await create_affair(
                 client_id=self.client_id,
                 project_id=self.project_id,
@@ -228,7 +228,7 @@ class MemoryAgent:
             if query.lower() in searchable.lower():
                 facts = ", ".join(f"{k}: {v}" for k, v in affair.key_facts.items())
                 results.append(
-                    f"[Záležitost: {affair.title}]\n{affair.summary}\nFakta: {facts}"
+                    f"[Affair: {affair.title}]\n{affair.summary}\nFacts: {facts}"
                 )
 
         if results:

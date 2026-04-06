@@ -1,7 +1,7 @@
 """Content reduction via LLM — replaces blind truncation.
 
 CRITICAL RULE (from spec):
-    NIKDY neořezávat zprávy (pre-trim). Veškerý obsah musí být zpracován.
+    NEVER pre-trim messages. All content must be processed.
 
 Three functions:
   reduce_for_prompt()          — async LLM reduction for prompt construction
@@ -244,23 +244,23 @@ async def _multi_pass_reduce(
 
 
 _SYSTEM_INSTRUCTION = (
-    "Zredukuj obsah. Zachovej VŠECHNY klíčové informace, fakta, "
-    "rozhodnutí a požadavky. Odpověz POUZE zredukovaným textem."
+    "Reduce the content. Preserve ALL key information, facts, "
+    "decisions and requirements. Respond with ONLY the reduced text."
 )
 
 _PURPOSE_INSTRUCTIONS = {
-    "general": "Zachovej všechny klíčové informace.",
-    "key_facts": "Zachovej všechna fakta, čísla, jména a rozhodnutí.",
-    "message_summary": "Zachovej hlavní sdělení, požadavky a rozhodnutí.",
-    "context": "Zachovej kontext potřebný pro pochopení situace.",
-    "summary": "Vytvoř strukturovaný souhrn.",
+    "general": "Preserve all key information.",
+    "key_facts": "Preserve all facts, numbers, names and decisions.",
+    "message_summary": "Preserve the main message, requests and decisions.",
+    "context": "Preserve the context needed to understand the situation.",
+    "summary": "Create a structured summary.",
 }
 
 
 def _build_reduction_prompt(content: str, target_chars: int, purpose: str) -> str:
     instruction = _PURPOSE_INSTRUCTIONS.get(purpose, _PURPOSE_INSTRUCTIONS["general"])
     return (
-        f"Zredukuj následující obsah na maximálně {target_chars} znaků.\n"
+        f"Reduce the following content to a maximum of {target_chars} characters.\n"
         f"{instruction}\n\n"
-        f"OBSAH:\n{content}"
+        f"CONTENT:\n{content}"
     )

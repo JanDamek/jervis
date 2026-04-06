@@ -53,29 +53,29 @@ class Affair(BaseModel):
     def to_kb_document(self) -> str:
         """Render affair as structured markdown for KB ingestion."""
         lines = [
-            f"# Záležitost: {self.title}",
+            f"# Affair: {self.title}",
             "",
-            f"## Stav: {self.status.value.upper()}",
+            f"## Status: {self.status.value.upper()}",
             "",
-            "## Shrnutí",
-            self.summary or "(žádné shrnutí)",
+            "## Summary",
+            self.summary or "(no summary)",
             "",
         ]
 
         if self.key_facts:
-            lines.append("## Klíčové fakta")
+            lines.append("## Key Facts")
             for key, value in self.key_facts.items():
                 lines.append(f"- {key}: {value}")
             lines.append("")
 
         if self.pending_actions:
-            lines.append("## Čekající akce")
+            lines.append("## Pending Actions")
             for action in self.pending_actions:
                 lines.append(f"- {action}")
             lines.append("")
 
         if self.topics:
-            lines.append(f"## Témata: {', '.join(self.topics)}")
+            lines.append(f"## Topics: {', '.join(self.topics)}")
             lines.append("")
 
         return "\n".join(lines)
