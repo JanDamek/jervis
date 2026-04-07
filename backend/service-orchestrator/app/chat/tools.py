@@ -27,6 +27,28 @@ from app.tools.definitions import (
     TOOL_LIST_AFFAIRS,
     TOOL_GET_KB_STATS,
     TOOL_GET_INDEXED_ITEMS,
+    # Code / repository read-only tools (lightweight, used directly by chat
+    # without dispatching a heavy coding agent K8s job)
+    TOOL_GIT_STATUS,
+    TOOL_GIT_LOG,
+    TOOL_GIT_DIFF,
+    TOOL_GIT_SHOW,
+    TOOL_GIT_BLAME,
+    TOOL_GIT_BRANCH_LIST,
+    TOOL_GET_RECENT_COMMITS,
+    TOOL_GET_REPOSITORY_INFO,
+    TOOL_GET_REPOSITORY_STRUCTURE,
+    TOOL_GET_TECHNOLOGY_STACK,
+    TOOL_LIST_PROJECT_FILES,
+    TOOL_LIST_FILES,
+    TOOL_READ_FILE,
+    TOOL_FIND_FILES,
+    TOOL_GREP_FILES,
+    TOOL_FILE_INFO,
+    TOOL_CODE_SEARCH,
+    # MongoDB read tools (read-only DB inspection)
+    TOOL_MONGO_LIST_COLLECTIONS,
+    TOOL_MONGO_GET_DOCUMENT,
 )
 
 # Tier system available for future unified handler
@@ -1092,6 +1114,8 @@ class ToolCategory(str, Enum):
     ADMIN = "admin"
     FINANCE = "finance"
     TIME_TRACKING = "time_tracking"
+    CODE = "code"            # Read-only git/file/grep tools — no heavy K8s job
+    DATA = "data"            # Read-only MongoDB inspection
 
 
 # Meta-tool: model calls this to get additional tools
@@ -1100,26 +1124,38 @@ TOOL_REQUEST_TOOLS: dict = {
     "function": {
         "name": "request_tools",
         "description": (
-            "Zažádej o další sadu nástrojů. Máš k dispozici základní nástroje "
+            "Request additional tool sets. You already have core tools "
             "(kb_search, web_search, web_fetch, store_knowledge, dispatch_coding_agent, "
-            "create_background_task, respond_to_user_task). "
-            "Pro pokročilé operace zavolej tento tool s kategorií:\n"
-            "- planning: myšlenkový graf (create_thinking_graph, add/update/remove vertex, dispatch)\n"
-            "- task_mgmt: správa úkolů (search_tasks, get_task_status, list_recent_tasks, retry_failed_task)\n"
-            "- meetings: nahrávky a meetingy (classify_meeting, list_meetings, get_meeting_transcript)\n"
-            "- memory: paměť a znalosti (memory_store, memory_recall, list_affairs, get_kb_stats, kb_delete)\n"
-            "- filtering: filtrační pravidla (set_filter_rule, list_filter_rules, remove_filter_rule)\n"
-            "- admin: pravidla a konfigurace (get_guidelines, update_guideline, switch_context, query_action_log)\n"
-            "- finance: faktury, platby, smlouvy, finanční přehledy\n"
-            "- time_tracking: logování času, kapacita, přehledy"
+            "create_background_task, respond_to_user_task). For advanced operations "
+            "call this tool with one of these categories:\n"
+            "- code: READ-ONLY repository inspection — git_status, git_log, git_show, "
+            "git_diff, git_blame, git_branch_list, get_recent_commits, get_repository_info, "
+            "get_repository_structure, get_technology_stack, list_project_files, list_files, "
+            "read_file, find_files, grep_files, file_info, code_search. USE THIS when the user "
+            "asks about a commit, branch, file content, code structure, or 'last commit'. "
+            "These are LIGHTWEIGHT direct calls — do NOT dispatch_coding_agent for read-only "
+            "questions, request 'code' tools instead.\n"
+            "- data: READ-ONLY MongoDB inspection — mongo_list_collections, mongo_get_document. "
+            "USE THIS when the user asks about DB state, document content, collection contents.\n"
+            "- planning: thinking graph (create_thinking_graph, add/update/remove vertex, dispatch)\n"
+            "- task_mgmt: task management (search_tasks, get_task_status, list_recent_tasks, retry_failed_task)\n"
+            "- meetings: recordings and meetings (classify_meeting, list_meetings, get_meeting_transcript)\n"
+            "- memory: memory and knowledge (memory_store, memory_recall, list_affairs, get_kb_stats, kb_delete)\n"
+            "- filtering: filter rules (set_filter_rule, list_filter_rules, remove_filter_rule)\n"
+            "- admin: rules and configuration (get_guidelines, update_guideline, switch_context, query_action_log)\n"
+            "- finance: invoices, payments, contracts, financial overviews\n"
+            "- time_tracking: time logging, capacity, summaries"
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "category": {
                     "type": "string",
-                    "enum": ["planning", "task_mgmt", "meetings", "memory", "filtering", "admin", "finance", "time_tracking"],
-                    "description": "Kategorie nástrojů k načtení.",
+                    "enum": [
+                        "code", "data", "planning", "task_mgmt", "meetings",
+                        "memory", "filtering", "admin", "finance", "time_tracking",
+                    ],
+                    "description": "Tool category to load.",
                 },
             },
             "required": ["category"],
@@ -1196,6 +1232,29 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_CHECK_CAPACITY,
         TOOL_TIME_SUMMARY,
     ],
+    ToolCategory.CODE: [
+        TOOL_GIT_STATUS,
+        TOOL_GIT_LOG,
+        TOOL_GIT_DIFF,
+        TOOL_GIT_SHOW,
+        TOOL_GIT_BLAME,
+        TOOL_GIT_BRANCH_LIST,
+        TOOL_GET_RECENT_COMMITS,
+        TOOL_GET_REPOSITORY_INFO,
+        TOOL_GET_REPOSITORY_STRUCTURE,
+        TOOL_GET_TECHNOLOGY_STACK,
+        TOOL_LIST_PROJECT_FILES,
+        TOOL_LIST_FILES,
+        TOOL_READ_FILE,
+        TOOL_FIND_FILES,
+        TOOL_GREP_FILES,
+        TOOL_FILE_INFO,
+        TOOL_CODE_SEARCH,
+    ],
+    ToolCategory.DATA: [
+        TOOL_MONGO_LIST_COLLECTIONS,
+        TOOL_MONGO_GET_DOCUMENT,
+    ],
 }
 
 
@@ -1209,6 +1268,8 @@ TOOL_CATEGORY_DESCRIPTIONS: dict[ToolCategory, str] = {
     ToolCategory.ADMIN: "Administrace — pravidla, přepínání kontextu, akční log",
     ToolCategory.FINANCE: "Finance — faktury, platby, smlouvy, finanční přehledy",
     ToolCategory.TIME_TRACKING: "Čas a kapacita — logování času, kapacitní přehledy",
+    ToolCategory.CODE: "Kód a git — read-only inspekce repository (commits, diffs, files, grep)",
+    ToolCategory.DATA: "Databáze — read-only inspekce MongoDB (kolekce, dokumenty)",
 }
 
 # Domain mapping for drift detection (tool name → semantic domain)
@@ -1236,6 +1297,16 @@ TOOL_DOMAINS: dict[str, str] = {
     "finance_summary": "finance", "list_invoices": "finance",
     "record_payment": "finance", "list_contracts": "finance",
     "log_time": "time", "check_capacity": "time", "time_summary": "time",
+    # Code / repository read-only tools
+    "git_status": "code", "git_log": "code", "git_diff": "code",
+    "git_show": "code", "git_blame": "code", "git_branch_list": "code",
+    "get_recent_commits": "code", "get_repository_info": "code",
+    "get_repository_structure": "code", "get_technology_stack": "code",
+    "list_project_files": "code", "list_files": "code",
+    "read_file": "code", "find_files": "code", "grep_files": "code",
+    "file_info": "code", "code_search": "code",
+    # Data / MongoDB read-only tools
+    "mongo_list_collections": "data", "mongo_get_document": "data",
 }
 
 # Tool name → tool definition lookup (for intent router)
