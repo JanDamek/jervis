@@ -2815,6 +2815,7 @@ CentralPoller
 | Platform | PollingHandler | API | Auth | Resource Key |
 |----------|---------------|-----|------|-------------|
 | Microsoft Teams | `O365PollingHandler` | Triple-mode: Graph API (OAuth2) / O365 Gateway (browser token) / VLM scrape (MongoDB) | OAuth2 / Browser session (token) / Browser session (VLM) | `teamId/channelId` or `chatName` |
+| WhatsApp | `WhatsAppPollingHandler` | VLM scrape (MongoDB) from WhatsApp Web browser session | Browser session (QR code) | `chatName` |
 | Slack | `SlackPollingHandler` | Slack Web API (`conversations.list`, `conversations.history`) | Bot Token (`xoxb-...`) via BEARER | `channelId` |
 | Discord | `DiscordPollingHandler` | Discord REST API v10 (`/guilds`, `/channels`, `/messages`) | Bot Token via BEARER (`Bot` prefix) | `guildId/channelId` |
 
@@ -2823,6 +2824,7 @@ CentralPoller
 | Platform | Indexer | Task Type | Topic ID Format |
 |----------|---------|-----------|-----------------|
 | Teams | `TeamsContinuousIndexer` | `CHAT_PROCESSING` | `teams-channel:{teamId}/{channelId}` or `teams-chat:{chatId}` |
+| WhatsApp | `WhatsAppContinuousIndexer` | `WHATSAPP_PROCESSING` | `whatsapp-chat:{chatName}` |
 | Slack | `SlackContinuousIndexer` | `SLACK_PROCESSING` | `slack-channel:{channelId}` |
 | Discord | `DiscordContinuousIndexer` | `DISCORD_PROCESSING` | `discord-channel:{guildId}/{channelId}` |
 
@@ -2835,6 +2837,7 @@ CentralPoller
 ### SourceUrn Factories
 
 - `SourceUrn.teams(connectionId, messageId, channelId?, chatId?)`
+- `SourceUrn.whatsapp(connectionId, messageId, chatName?)`
 - `SourceUrn.slack(connectionId, messageId, channelId)`
 - `SourceUrn.discord(connectionId, messageId, channelId, guildId?)`
 
@@ -2848,6 +2851,12 @@ CentralPoller
 | `backend/server/.../teams/TeamsContinuousIndexer.kt` | Teams NEW→INDEXED pipeline |
 | `backend/server/.../slack/SlackContinuousIndexer.kt` | Slack NEW→INDEXED pipeline |
 | `backend/server/.../discord/DiscordContinuousIndexer.kt` | Discord NEW→INDEXED pipeline |
+| `backend/server/.../whatsapp/WhatsAppPollingHandler.kt` | WhatsApp polling — reads VLM-scraped messages from MongoDB |
+| `backend/server/.../whatsapp/WhatsAppContinuousIndexer.kt` | WhatsApp NEW→INDEXED pipeline |
+| `backend/server/.../whatsapp/WhatsAppMessageIndexDocument.kt` | WhatsApp message tracking in MongoDB |
+| `backend/server/.../whatsapp/WhatsAppScrapeMessageDocument.kt` | VLM-scraped WhatsApp message entity |
+| `backend/server/.../rpc/internal/InternalWhatsAppSessionRouting.kt` | WhatsApp session callback API (session events + capabilities) |
+| `backend/service-whatsapp-browser/` | Python WhatsApp Web browser session (Playwright + VLM scraping) |
 | `backend/server/.../teams/TeamsMessageIndexDocument.kt` | Teams message tracking in MongoDB |
 | `backend/server/.../slack/SlackMessageIndexDocument.kt` | Slack message tracking in MongoDB |
 | `backend/server/.../discord/DiscordMessageIndexDocument.kt` | Discord message tracking in MongoDB |

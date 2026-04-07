@@ -234,6 +234,12 @@ data:
   O365_POOL_MAX_CONTEXTS: "10"
   O365_POOL_NOVNC_ENABLED: "true"
 
+  # ── WHATSAPP BROWSER: WhatsApp Web scraping service ──────────────────
+  WHATSAPP_PORT: "8091"
+  WHATSAPP_HEADLESS: "false"
+  WHATSAPP_NOVNC_ENABLED: "true"
+  WHATSAPP_QR_CHECK_INTERVAL: "5"
+
   # ── CORRECTION: Transcript correction service ────────────────────────
   OLLAMA_URL: "http://jervis-ollama-router:11430"
   DEFAULT_CORRECTION_MODEL: "qwen3-coder-tool:30b"

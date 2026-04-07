@@ -57,6 +57,8 @@ class ConnectionRpcImpl(
     private val o365GatewayUrl: String = "http://jervis-o365-gateway:8080",
     @org.springframework.beans.factory.annotation.Value("\${jervis.o365-browser-pool.url:http://jervis-o365-browser-pool:8090}")
     private val o365BrowserPoolUrl: String = "http://jervis-o365-browser-pool:8090",
+    @org.springframework.beans.factory.annotation.Value("\${jervis.whatsapp-browser.url:http://jervis-whatsapp-browser:8091}")
+    private val whatsAppBrowserUrl: String = "http://jervis-whatsapp-browser:8091",
 ) : IConnectionService {
     private val logger = KotlinLogging.logger {}
 
@@ -124,8 +126,8 @@ class ConnectionRpcImpl(
             domainClientMappings = request.domainClientMappings,
         )
 
-        // For Teams browser session without explicit o365ClientId, use the generated connectionId
-        val toSave = if (provider == ProviderEnum.MICROSOFT_TEAMS && connectionDocument.o365ClientId == null) {
+        // For Teams/WhatsApp browser session without explicit o365ClientId, use the generated connectionId
+        val toSave = if ((provider == ProviderEnum.MICROSOFT_TEAMS || provider == ProviderEnum.WHATSAPP) && connectionDocument.o365ClientId == null) {
             connectionDocument.copy(o365ClientId = connectionDocument.id.toString())
         } else {
             connectionDocument
@@ -137,6 +139,10 @@ class ConnectionRpcImpl(
         // Auto-init browser pool session for Teams Browser Session auth
         if (provider == ProviderEnum.MICROSOFT_TEAMS && authType == com.jervis.dto.connection.AuthTypeEnum.NONE) {
             initBrowserPoolSession(created)
+        }
+        // Auto-init WhatsApp browser session
+        if (provider == ProviderEnum.WHATSAPP && authType == com.jervis.dto.connection.AuthTypeEnum.NONE) {
+            initWhatsAppBrowserSession(created)
         }
 
         val updatedList = connectionService.findAll().map { it.toDto() }.toList()
@@ -287,6 +293,7 @@ class ConnectionRpcImpl(
                 ProviderEnum.GOOGLE_WORKSPACE -> testGoogleConnection(connection)
                 ProviderEnum.SLACK -> testSlackConnection(connection)
                 ProviderEnum.DISCORD -> testDiscordConnection(connection)
+                ProviderEnum.WHATSAPP -> testWhatsAppConnection(connection)
                 else -> ConnectionTestResultDto(false, "Test pro ${connection.provider} není implementován")
             }
         } catch (e: Exception) {
@@ -411,6 +418,33 @@ class ConnectionRpcImpl(
         }
     }
 
+    private suspend fun testWhatsAppConnection(connection: ConnectionDocument): ConnectionTestResultDto {
+        val clientId = connection.o365ClientId
+        if (clientId.isNullOrBlank()) {
+            return ConnectionTestResultDto(false, "Žádné browser session ID")
+        }
+        return try {
+            val response = httpClient.get("$whatsAppBrowserUrl/session/$clientId")
+            if (response.status.isSuccess()) {
+                val body = runCatching { Json.parseToJsonElement(response.bodyAsText()).jsonObject }.getOrNull()
+                val sessionState = body?.get("state")?.jsonPrimitive?.contentOrNull
+                if (sessionState == "ACTIVE") {
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+                    ConnectionTestResultDto(true, "WhatsApp Web session aktivní")
+                } else {
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+                    ConnectionTestResultDto(false, "WhatsApp Web session: $sessionState — naskenujte QR kód")
+                }
+            } else {
+                connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+                ConnectionTestResultDto(false, "WhatsApp browser service nedostupný: ${response.status}")
+            }
+        } catch (e: Exception) {
+            connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+            ConnectionTestResultDto(false, "Chyba: ${e.message}")
+        }
+    }
+
     /**
      * Auto-detect self-identity for registry-based providers (GitHub, GitLab, Atlassian).
      * Calls the provider's user endpoint and stores username/id/displayName/email.
@@ -501,12 +535,20 @@ class ConnectionRpcImpl(
     override suspend fun initBrowserSession(connectionId: String): String {
         val connection = connectionService.findById(ConnectionId.fromString(connectionId))
             ?: throw IllegalArgumentException("Connection not found: $connectionId")
-        return initBrowserPoolSession(connection)
+        return when (connection.provider) {
+            ProviderEnum.WHATSAPP -> initWhatsAppBrowserSession(connection)
+            else -> initBrowserPoolSession(connection)
+        }
     }
 
     override suspend fun getBrowserSessionStatus(connectionId: String): BrowserSessionStatusDto {
         val connection = connectionService.findById(ConnectionId.fromString(connectionId))
             ?: throw IllegalArgumentException("Connection not found: $connectionId")
+
+        // Route WhatsApp to dedicated handler
+        if (connection.provider == ProviderEnum.WHATSAPP) {
+            return getWhatsAppBrowserSessionStatus(connection)
+        }
 
         val clientId = connection.o365ClientId
             ?: return BrowserSessionStatusDto(
@@ -762,6 +804,11 @@ class ConnectionRpcImpl(
         // DISCORD: list guilds/channels via Discord API (no ProviderRegistry)
         if (connection.provider == ProviderEnum.DISCORD) {
             return listDiscordResources(connection, capability)
+        }
+
+        // WHATSAPP: list discovered chats from browser scraper
+        if (connection.provider == ProviderEnum.WHATSAPP) {
+            return listWhatsAppResources(connection, capability)
         }
 
         // Attempt proactive token refresh for OAuth2 connections before making API call
@@ -1469,6 +1516,163 @@ class ConnectionRpcImpl(
         val description: String? = null,
         val primary: Boolean? = null,
     )
+
+    /**
+     * Initialize WhatsApp browser session.
+     * Calls POST /session/{clientId}/init on the WhatsApp browser service.
+     * Returns status message (noVNC must be used to scan QR code).
+     */
+    private suspend fun initWhatsAppBrowserSession(connection: ConnectionDocument): String {
+        val clientId = connection.o365ClientId
+            ?: throw IllegalArgumentException("Connection ${connection.id} has no browser session ID")
+
+        return try {
+            val response = httpClient.post("$whatsAppBrowserUrl/session/$clientId/init") {
+                contentType(ContentType.Application.Json)
+                setBody(buildJsonObject {
+                    put("login_url", "https://web.whatsapp.com")
+                    putJsonArray("capabilities") { add("CHAT_READ") }
+                    connection.username?.takeIf { it.isNotBlank() }?.let { put("phone_number", it) }
+                }.toString())
+            }
+            val responseText = response.bodyAsText()
+            logger.info { "WhatsApp browser session init for $clientId: $responseText" }
+
+            val json = Json { ignoreUnknownKeys = true }
+            val responseJson = json.parseToJsonElement(responseText).jsonObject
+            val state = responseJson["state"]?.jsonPrimitive?.content ?: ""
+
+            when (state) {
+                "ACTIVE" -> {
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
+                    "WhatsApp Web připojeno!"
+                }
+                else -> {
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.NEW))
+                    "WhatsApp Web session inicializována. Naskenujte QR kód."
+                }
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to init WhatsApp browser session for ${connection.id}" }
+            "Chyba inicializace WhatsApp session: ${e.message}"
+        }
+    }
+
+    /**
+     * Get WhatsApp browser session status (simpler than O365 — no MFA, no token capture).
+     */
+    private suspend fun getWhatsAppBrowserSessionStatus(connection: ConnectionDocument): BrowserSessionStatusDto {
+        val clientId = connection.o365ClientId
+            ?: return BrowserSessionStatusDto(
+                state = "ERROR",
+                message = "Připojení nemá nastavený identifikátor session",
+            )
+
+        return try {
+            val response = httpClient.get("$whatsAppBrowserUrl/session/$clientId")
+            if (!response.status.isSuccess()) {
+                return BrowserSessionStatusDto(
+                    state = "ERROR",
+                    message = "WhatsApp browser nedostupný: ${response.status}",
+                )
+            }
+
+            val json = Json { ignoreUnknownKeys = true }
+            val sessionJson = json.parseToJsonElement(response.bodyAsText()).jsonObject
+            val state = sessionJson["state"]?.jsonPrimitive?.content ?: "ERROR"
+
+            // Session expired/error → mark connection INVALID
+            if (state in listOf("EXPIRED", "ERROR") &&
+                connection.state in listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING)
+            ) {
+                connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+                logger.info { "WhatsApp connection ${connection.id} marked INVALID — session $state" }
+            }
+
+            // Session active and logged in → set DISCOVERING (capabilities callback will finalize)
+            if (state == "ACTIVE" &&
+                connection.state != ConnectionStateEnum.VALID &&
+                connection.state != ConnectionStateEnum.DISCOVERING
+            ) {
+                connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
+            }
+
+            // Generate VNC token if not active (needs QR scan)
+            var vncUrl: String? = null
+            if (state != "ACTIVE") {
+                try {
+                    val tokenResponse = httpClient.post("$whatsAppBrowserUrl/vnc-token/$clientId")
+                    if (tokenResponse.status.isSuccess()) {
+                        val tokenJson = json.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
+                        val vncToken = tokenJson["token"]?.jsonPrimitive?.content
+                        if (vncToken != null) {
+                            vncUrl = "https://jervis-whatsapp-vnc.damek-soft.eu/vnc-login?token=$vncToken"
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.warn { "Failed to generate VNC token for WhatsApp $clientId: ${e.message}" }
+                }
+            }
+
+            val message = when (state) {
+                "PENDING_LOGIN" -> "Čeká na naskenování QR kódu ve WhatsApp"
+                "ACTIVE" -> "WhatsApp Web připojeno!"
+                "EXPIRED" -> "WhatsApp session expirovala — naskenujte QR kód znovu"
+                "ERROR" -> "Chyba WhatsApp browser session"
+                else -> state
+            }
+
+            BrowserSessionStatusDto(
+                state = state,
+                hasToken = state == "ACTIVE",
+                vncUrl = vncUrl,
+                message = message,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to get WhatsApp session status for $clientId" }
+            if (connection.state in listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING)) {
+                connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+            }
+            BrowserSessionStatusDto(
+                state = "ERROR",
+                message = "Chyba komunikace s WhatsApp browser: ${e.message}",
+            )
+        }
+    }
+
+    /**
+     * List discovered WhatsApp chats from the browser scraper.
+     */
+    private suspend fun listWhatsAppResources(
+        connection: ConnectionDocument,
+        capability: ConnectionCapability,
+    ): List<ConnectionResourceDto> {
+        val clientId = connection.o365ClientId ?: return emptyList()
+
+        return try {
+            val response = httpClient.get("$whatsAppBrowserUrl/scrape/$clientId/sidebar")
+            if (!response.status.isSuccess()) return emptyList()
+
+            val json = Json { ignoreUnknownKeys = true }
+            val responseJson = json.parseToJsonElement(response.bodyAsText()).jsonObject
+            val chats = responseJson["chats"]?.jsonArray ?: return emptyList()
+
+            chats.mapNotNull { chatElement ->
+                val chat = chatElement.jsonObject
+                val name = chat["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val isGroup = chat["is_group"]?.jsonPrimitive?.booleanOrNull ?: false
+                ConnectionResourceDto(
+                    id = name,
+                    name = name,
+                    description = if (isGroup) "Skupina" else "Chat",
+                    capability = capability,
+                )
+            }
+        } catch (e: Exception) {
+            logger.warn { "Failed to list WhatsApp resources for $clientId: ${e.message}" }
+            emptyList()
+        }
+    }
 }
 
 private fun ConnectionDocument.toTestRequest(): ProviderTestRequest =

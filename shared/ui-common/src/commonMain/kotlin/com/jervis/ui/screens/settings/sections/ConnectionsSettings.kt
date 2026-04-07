@@ -81,6 +81,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
     var showEditDialog by remember { mutableStateOf<ConnectionResponseDto?>(null) }
     var showDeleteDialog by remember { mutableStateOf<ConnectionResponseDto?>(null) }
     var showTeamsLoginDialog by remember { mutableStateOf<ConnectionResponseDto?>(null) }
+    var showWhatsAppLoginDialog by remember { mutableStateOf<ConnectionResponseDto?>(null) }
 
     suspend fun loadConnections() {
         try {
@@ -176,6 +177,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                     }
                                 },
                                 onTeamsLogin = { showTeamsLoginDialog = connection },
+                                onWhatsAppLogin = { showWhatsAppLoginDialog = connection },
                                 onRediscover = {
                                     scope.launch {
                                         try {
@@ -221,6 +223,11 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                 request.authType == AuthTypeEnum.NONE -> {
                                 // Browser Session: server auto-inits browser pool, show login dialog
                                 showTeamsLoginDialog = created
+                            }
+                            request.provider == com.jervis.dto.connection.ProviderEnum.WHATSAPP &&
+                                request.authType == AuthTypeEnum.NONE -> {
+                                // WhatsApp Browser Session: show QR code login dialog
+                                showWhatsAppLoginDialog = created
                             }
                             else -> {
                                 snackbarHostState.showSnackbar("Připojení vytvořeno")
@@ -287,6 +294,17 @@ fun ConnectionsSettings(repository: JervisRepository) {
             },
         )
     }
+
+    showWhatsAppLoginDialog?.let { connection ->
+        WhatsAppLoginDialog(
+            connection = connection,
+            repository = repository,
+            onDismiss = {
+                showWhatsAppLoginDialog = null
+                scope.launch { loadConnections() }
+            },
+        )
+    }
 }
 
 @Composable
@@ -297,6 +315,7 @@ private fun ConnectionItemCard(
     onReauthorize: () -> Unit,
     onReauthorizePrivate: () -> Unit,
     onTeamsLogin: () -> Unit,
+    onWhatsAppLogin: () -> Unit,
     onRediscover: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -336,9 +355,11 @@ private fun ConnectionItemCard(
         if (connection.state == ConnectionStateEnum.AUTH_EXPIRED) {
             val isBrowserSession = connection.provider == com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS &&
                 connection.authType == AuthTypeEnum.NONE
+            val isWhatsApp = connection.provider == com.jervis.dto.connection.ProviderEnum.WHATSAPP
             Text(
                 text = if (isBrowserSession) {
-                    "⚠ Přihlášení vypršelo — klikněte na Přihlásit k Teams"
+                    if (isWhatsApp) "⚠ Session vypršela — naskenujte QR kód znovu"
+                    else "⚠ Přihlášení vypršelo — klikněte na Přihlásit k Teams"
                 } else {
                     "⚠ Token expiroval — obnovte přes Re-auth tlačítko"
                 },
@@ -418,7 +439,8 @@ private fun ConnectionItemCard(
         }
 
         // Action buttons
-        val isBrowserSession = connection.provider == com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS &&
+        val isBrowserSession = (connection.provider == com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS ||
+            connection.provider == com.jervis.dto.connection.ProviderEnum.WHATSAPP) &&
             connection.authType == AuthTypeEnum.NONE
         Spacer(Modifier.height(12.dp))
         Row(
@@ -448,8 +470,9 @@ private fun ConnectionItemCard(
                     connection.state == ConnectionStateEnum.NEW
                 )
             ) {
-                JPrimaryButton(onClick = onTeamsLogin) {
-                    Text("Přihlásit k Teams")
+                val isWhatsAppProvider = connection.provider == com.jervis.dto.connection.ProviderEnum.WHATSAPP
+                JPrimaryButton(onClick = if (isWhatsAppProvider) onWhatsAppLogin else onTeamsLogin) {
+                    Text(if (isWhatsAppProvider) "Připojit WhatsApp" else "Přihlásit k Teams")
                 }
             }
             if (isBrowserSession && (
@@ -765,16 +788,171 @@ private fun TeamsLoginDialog(
     )
 }
 
+/**
+ * WhatsApp Browser Session login dialog.
+ * Guides user through QR code scanning via remote browser (noVNC).
+ * Polls session status and auto-closes when WhatsApp Web connects.
+ */
+@Composable
+private fun WhatsAppLoginDialog(
+    connection: ConnectionResponseDto,
+    repository: JervisRepository,
+    onDismiss: () -> Unit,
+) {
+    var status by remember { mutableStateOf<BrowserSessionStatusDto?>(null) }
+    var vncUrl by remember { mutableStateOf<String?>(null) }
+    var vncOpened by remember { mutableStateOf(false) }
+    var connected by remember { mutableStateOf(false) }
+
+    // Poll session status every 3 seconds
+    LaunchedEffect(connection.id) {
+        while (true) {
+            try {
+                val s = repository.connections.getBrowserSessionStatus(connection.id)
+                status = s
+                if (s.vncUrl != null) vncUrl = s.vncUrl
+                if (s.state == "ACTIVE") {
+                    connected = true
+                    delay(2000)
+                    onDismiss()
+                    return@LaunchedEffect
+                }
+            } catch (_: Exception) {
+                // Ignore polling errors
+            }
+            delay(3000)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Připojení WhatsApp") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                when {
+                    connected -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            JStatusBadge(status = "VALID")
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "WhatsApp Web připojeno!",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        Text(
+                            "Dialog se automaticky zavře.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    vncOpened -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "Čekám na naskenování QR kódu...",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Text(
+                            "Otevřete WhatsApp na telefonu → Nastavení → Propojená zařízení → Propojit zařízení. " +
+                                "Naskenujte QR kód v otevřeném okně prohlížeče. " +
+                                "Po úspěšném připojení se dialog automaticky zavře.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    status?.state == "ERROR" -> {
+                        Text(
+                            status?.message ?: "Chyba připojení",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+
+                    else -> {
+                        Text(
+                            "Klikněte na tlačítko pro otevření WhatsApp Web s QR kódem.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            "Budete potřebovat telefon s nainstalovaným WhatsApp pro naskenování QR kódu.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (status?.state == "EXPIRED") {
+                            Text(
+                                "Předchozí session expirovala — naskenujte QR kód znovu.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        if (status == null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Připravuji session...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (connected) {
+                TextButton(onClick = onDismiss) {
+                    Text("Zavřít")
+                }
+            } else {
+                val url = vncUrl
+                JPrimaryButton(
+                    onClick = {
+                        if (url != null) {
+                            openUrlInBrowser(url)
+                            vncOpened = true
+                        }
+                    },
+                    enabled = url != null,
+                ) {
+                    Text(if (vncOpened) "Otevřít znovu" else "Otevřít QR kód")
+                }
+            }
+        },
+        dismissButton = {
+            if (!connected) {
+                TextButton(onClick = onDismiss) {
+                    Text("Zrušit")
+                }
+            }
+        },
+    )
+}
+
 internal val ConnectionResponseDto.displayUrl: String
     get() = baseUrl?.takeIf { it.isNotBlank() }
         ?: host?.let { "$it${port?.let { port -> ":$port" } ?: ""}" }
-        ?: if (provider == com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS) {
-            when (authType) {
+        ?: when (provider) {
+            com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS -> when (authType) {
                 AuthTypeEnum.OAUTH2 -> "Microsoft Graph API (OAuth2)"
                 AuthTypeEnum.NONE -> "Browser Session (K8s pod)"
                 AuthTypeEnum.BEARER -> "Lokální token"
                 else -> "Microsoft Teams"
             }
-        } else {
-            "Bez adresy"
+            com.jervis.dto.connection.ProviderEnum.WHATSAPP -> "WhatsApp Web (Browser Session)"
+            else -> "Bez adresy"
         }
