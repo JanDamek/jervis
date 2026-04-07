@@ -128,6 +128,41 @@ async def report_model_success(
         logger.warning("Failed to report model success: %s", e)
 
 
+async def wait_for_any_model_recovery(
+    max_tier: str = "NONE", max_wait_s: float = 20.0,
+) -> dict | None:
+    """Block until any cloud model in the tier becomes available again.
+
+    Used as a last-resort step before falling back to local GPU when all
+    cloud models in the queue are temporarily paused (429). Polls the
+    router every second until a model recovers or max_wait_s elapses.
+
+    Returns: {"model": "...", "waited": float_seconds} on success, None on timeout.
+    """
+    import asyncio
+    import time
+
+    deadline = time.monotonic() + max_wait_s
+    poll_interval = 1.0
+
+    while time.monotonic() < deadline:
+        # Try a "soft" route request: if any model is available, router returns it.
+        try:
+            decision = await route_request(
+                capability="chat",
+                max_tier=max_tier,
+                estimated_tokens=1000,  # tiny — just probing availability
+            )
+            if decision.target == "openrouter" and decision.model:
+                waited = max_wait_s - (deadline - time.monotonic())
+                return {"model": decision.model, "waited": waited}
+        except Exception:
+            pass
+        await asyncio.sleep(poll_interval)
+
+    return None
+
+
 async def get_max_context_tokens(max_tier: str = "NONE") -> int:
     """Ask router for max context tokens available for a given tier.
 

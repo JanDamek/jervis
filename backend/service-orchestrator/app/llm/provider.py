@@ -355,8 +355,10 @@ class LLMProvider:
         Retries on: connection errors, "Operation not allowed", 503 status.
         Uses exponential backoff: 2s, 4s.
 
-        429 rate limit: ONE short retry (3s), then escalate to model fallback.
-        Rate limiter proactively prevents most 429s by waiting for slot.
+        429 rate limit: NO same-model retry — raise immediately so the
+        upper layer (handler_streaming._retry_with_next_model) can pick the
+        next model in queue without delay. Only the upper layer waits, and
+        only when there is no other model left.
         """
         # Proactive rate limiting for OpenRouter calls
         if model.startswith("openrouter/"):
@@ -375,14 +377,15 @@ class LLMProvider:
                 is_rate_limit = "rate limit" in err_str or "429" in err_str
 
                 if is_rate_limit:
-                    # One short retry (3s), then escalate to next model
-                    if attempt == 0:
-                        logger.info("LLM rate limit (model=%s), short retry in 3s", model)
-                        last_exc = e
-                        await asyncio.sleep(3)
-                        continue
-                    # Second 429 → escalate to model fallback (don't waste more time)
-                    logger.info("LLM rate limit persists (model=%s), escalating to model fallback", model)
+                    # No same-model retry on 429 — raise immediately so the
+                    # caller can switch to the next model in the queue without
+                    # any wasted seconds. The router pauses this model briefly
+                    # so subsequent requests skip it until the upstream window
+                    # frees up.
+                    logger.info(
+                        "LLM rate limit (model=%s) — raising immediately for fallback",
+                        model,
+                    )
                     raise
 
                 retryable = (

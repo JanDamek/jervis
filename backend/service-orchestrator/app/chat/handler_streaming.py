@@ -209,7 +209,46 @@ async def _retry_with_next_model(
             )
             skip_models.append(fallback.model)
 
-    # All cloud models exhausted → fall back to local GPU as last resort
+    # All cloud models exhausted at this instant. Strategy:
+    # 1. If a paused model can recover within RECOVER_WAIT_S → wait for it
+    #    (preferred over a degraded local fallback for high-quality models).
+    # 2. Otherwise → fall back to local GPU.
+    RECOVER_WAIT_S = 20.0
+    try:
+        from app.llm.router_client import wait_for_any_model_recovery
+        recovered = await wait_for_any_model_recovery(
+            max_tier=max_tier, max_wait_s=RECOVER_WAIT_S,
+        )
+        if recovered:
+            logger.info("Cloud queue empty — waited %.1fs, model %s recovered, retrying",
+                        recovered.get("waited", 0), recovered.get("model"))
+            # Re-enter routing flow now that a model is back
+            fallback = await route_request(
+                capability="chat",
+                max_tier=max_tier,
+                estimated_tokens=estimated_tokens,
+                processing_mode=processing_mode,
+                require_tools=bool(tools),
+            )
+            if fallback.target == "openrouter" and fallback.model:
+                try:
+                    return await llm_provider.completion(
+                        messages=messages,
+                        tier=ModelTier.CLOUD_OPENROUTER,
+                        tools=tools,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        extra_headers=extra_headers,
+                        model_override=fallback.model,
+                        api_key_override=fallback.api_key,
+                    )
+                except Exception as recovered_err:
+                    logger.warning("Recovered model %s failed too: %s",
+                                   fallback.model, recovered_err)
+    except Exception as wait_err:
+        logger.debug("wait_for_any_model_recovery failed: %s", wait_err)
+
+    # Final last-resort fallback to local GPU
     logger.info("All cloud models failed, falling back to local GPU (skip=%s)", skip_models)
     try:
         return await llm_provider.completion(
