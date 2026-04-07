@@ -6,7 +6,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.jervis.di.OfflineException
 import com.jervis.di.RpcConnectionManager
 import com.jervis.di.RpcConnectionState
 import com.jervis.dto.events.JervisEvent
@@ -40,20 +39,18 @@ class ConnectionManager(
     var status by mutableStateOf<ConnectionStatus>(ConnectionStatus.Connecting)
         private set
 
-    // Eager non-nullable repository — services lambda is only called on actual RPC invocations,
-    // not at construction time. If offline, throws OfflineException which callers handle.
-    val repository: JervisRepository =
-        JervisRepository {
-            rpcConnectionManager.getServices() ?: throw OfflineException()
-        }
+    val rpcConnectionManager = RpcConnectionManager(serverBaseUrl)
+
+    // Repository is constructed with the manager so resilient `repository.call { }` works.
+    // Direct accessors (`repository.chat`, `repository.clients`, ...) still throw
+    // OfflineException synchronously when disconnected — callers can catch or use call().
+    val repository: JervisRepository = JervisRepository(rpcConnectionManager)
 
     var taskBadgeCount by mutableStateOf(0)
         private set
 
     var errorNotifications by mutableStateOf<List<JervisEvent.ErrorNotification>>(emptyList())
         private set
-
-    val rpcConnectionManager = RpcConnectionManager(serverBaseUrl)
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var eventJob: kotlinx.coroutines.Job? = null

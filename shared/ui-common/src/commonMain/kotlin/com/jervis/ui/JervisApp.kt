@@ -3,7 +3,6 @@ package com.jervis.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import com.jervis.di.OfflineException
 import com.jervis.di.RpcConnectionManager
 import com.jervis.di.JervisRepository
 
@@ -36,14 +35,12 @@ fun JervisApp(
         connectionManager.connect()
     }
 
-    // Repository uses delegated getters — always returns fresh service instances.
-    // The lambda is only called when an actual RPC method is invoked, not at construction.
-    // If offline, the lambda throws OfflineException which callers handle gracefully.
+    // Repository is constructed with the connection manager so `repository.call { }`
+    // gets transparent wait-for-reconnect + OfflineException semantics.
+    // Direct accessors (`repository.chat.sendMessage`, ...) still throw OfflineException
+    // synchronously when disconnected — callers can catch or upgrade to `repository.call`.
     val repository = remember(connectionManager) {
-        JervisRepository {
-            connectionManager.getServices()
-                ?: throw OfflineException()
-        }
+        JervisRepository(connectionManager)
     }
 
     // Launch main app immediately — no waiting for connection

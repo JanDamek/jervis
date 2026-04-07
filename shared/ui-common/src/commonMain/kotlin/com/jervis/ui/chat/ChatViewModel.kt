@@ -273,6 +273,7 @@ class ChatViewModel(
     private var retryJob: Job? = null
     private var chatJob: Job? = null
     private var scopeWatchJob: Job? = null
+    private var historyReloadJob: Job? = null
     private var progressTimeoutJob: Job? = null
 
     companion object {
@@ -292,6 +293,7 @@ class ChatViewModel(
     fun subscribeToChatStream() {
         println("ChatViewModel: subscribeToChatStream() — global chat")
         chatJob?.cancel()
+        historyReloadJob?.cancel()
 
         // Watch scope changes — reload messages when client/project changes
         scopeWatchJob?.cancel()
@@ -309,22 +311,26 @@ class ChatViewModel(
                 }
         }
 
-        chatJob = scope.launch {
-            connectionManager.resilientFlow { services ->
-                // Return a flow that first loads history, then streams events.
-                // We're inside resilientFlow — services are connected and ready.
-                services.chatService.subscribeToChatEvents().onStart {
+        // (A) Decoupled history reload driven by RpcConnectionManager.generation.
+        //     Every time a successful (re)connect bumps the generation, we re-fetch
+        //     the last 50 chat messages from the server via repository.call — which
+        //     is resilient (waits for Connected state if we're mid-reconnect).
+        //     This replaces the old .onStart { } approach that ran only once.
+        historyReloadJob = scope.launch {
+            connectionManager.generation.collect { gen ->
+                if (gen <= 0L) return@collect  // initial state, manager not connected yet
+                println("ChatViewModel: generation=$gen — reloading history")
+                try {
+                    // Wait for client selection if scope not set yet (first boot)
+                    if (currentFilterClientId == null) {
+                        println("ChatViewModel: waiting for client selection before loading history...")
+                        selectedClientId.first { it != null }
+                        println("ChatViewModel: client selected: ${currentFilterClientId}")
+                    }
                     onConnectionReady()
                     onStatusDetail("stream")
-                    try {
-                        // Wait for client selection before loading history (scope must be set)
-                        if (currentFilterClientId == null) {
-                            println("ChatViewModel: waiting for client selection before loading history...")
-                            selectedClientId.first { it != null }
-                            println("ChatViewModel: client selected: ${currentFilterClientId}")
-                        }
-                        println("ChatViewModel: loading history with scope client=${currentFilterClientId} project=${currentFilterProjectId} group=${currentFilterGroupId}")
-                        val history = services.chatService.getChatHistory(
+                    val history = repository.call { services ->
+                        services.chatService.getChatHistory(
                             limit = 50,
                             showChat = _showChat.value,
                             showTasks = _showTasks.value,
@@ -333,17 +339,30 @@ class ChatViewModel(
                             filterProjectId = currentFilterProjectId,
                             filterGroupId = currentFilterGroupId,
                         )
-                        applyHistory(history)
-                        onStatusDetail("ok")
-                        println("ChatViewModel: history loaded — ${history.messages.size} msgs, hasMore=${history.hasMore}, chat=${_showChat.value}, tasks=${_showTasks.value}, reaction=${_showNeedReaction.value}")
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e
-                        onStatusDetail("history err")
-                        println("ChatViewModel: history load failed: ${e.message}")
                     }
+                    applyHistory(history)
+                    onStatusDetail("ok")
+                    println("ChatViewModel: history loaded (gen=$gen) — ${history.messages.size} msgs, " +
+                        "hasMore=${history.hasMore}, chat=${_showChat.value}, tasks=${_showTasks.value}, " +
+                        "reaction=${_showNeedReaction.value}")
                     // Load master graph on connection ready
                     loadMemoryGraph()
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (e: Exception) {
+                    onStatusDetail("history err")
+                    println("ChatViewModel: history reload failed (gen=$gen): ${e.message}")
+                    // Do NOT rethrow — keep the generation watcher alive for the next bump.
                 }
+            }
+        }
+
+        // (B) Chat event stream subscription via resilientFlow — the loop inside
+        //     RpcConnectionManager auto-rehydrates on every reconnect, so we just
+        //     collect forever. No .onStart, no history load here.
+        chatJob = scope.launch {
+            connectionManager.resilientFlow { services ->
+                services.chatService.subscribeToChatEvents()
             }.collect { response ->
                 handleChatResponse(response)
             }
@@ -411,7 +430,7 @@ class ChatViewModel(
         // Send to server asynchronously (doesn't block chat)
         scope.launch {
             try {
-                repository.userTasks.respondToTask(taskId, trimmed)
+                repository.call { services -> services.userTaskService.respondToTask(taskId, trimmed) }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 println("ChatViewModel: respondToTask failed (task may no longer exist): ${e.message}")
@@ -434,7 +453,7 @@ class ChatViewModel(
 
         scope.launch {
             try {
-                repository.userTasks.dismiss(taskId)
+                repository.call { services -> services.userTaskService.dismiss(taskId) }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 println("ChatViewModel: dismissTask failed: ${e.message}")
@@ -449,7 +468,7 @@ class ChatViewModel(
     fun dismissAllTasks() {
         scope.launch {
             try {
-                val count = repository.userTasks.dismissAll()
+                val count = repository.call { services -> services.userTaskService.dismissAll() }
                 // Remove all urgent alerts and actionable background results from chat
                 _chatMessages.value = _chatMessages.value.filter { msg ->
                     msg.messageType != ChatMessage.MessageType.URGENT_ALERT &&
@@ -631,17 +650,22 @@ class ChatViewModel(
             try {
                 val taskContext = _contextTaskId
                 _contextTaskId = null  // Clear after use
-                repository.chat.sendMessage(
-                    text = originalText,
-                    clientMessageId = clientMessageId,
-                    activeClientId = clientId,
-                    activeProjectId = projectId,
-                    activeGroupId = groupId,
-                    contextTaskId = taskContext,
-                    attachments = attachmentDtos,
-                    tierOverride = _tierOverride.value,
-                    clientTimezone = kotlinx.datetime.TimeZone.currentSystemDefault().id,
-                )
+                // Resilient call: waits up to 10s for Connected state, wraps send in
+                // withTimeout, automatically triggers reconnect on connection-lost errors
+                // and throws OfflineException (caught below → pending queue + retry).
+                repository.call { services ->
+                    services.chatService.sendMessage(
+                        text = originalText,
+                        clientMessageId = clientMessageId,
+                        activeClientId = clientId,
+                        activeProjectId = projectId,
+                        activeGroupId = groupId,
+                        contextTaskId = taskContext,
+                        attachments = attachmentDtos,
+                        tierOverride = _tierOverride.value,
+                        clientTimezone = kotlinx.datetime.TimeZone.currentSystemDefault().id,
+                    )
+                }
                 println("=== Message sent successfully (RPC) ===")
 
                 val progressMsg = ChatMessage(
@@ -718,13 +742,15 @@ class ChatViewModel(
         scope.launch {
             _isLoading.value = true
             try {
-                repository.chat.sendMessage(
-                    text = state.text,
-                    clientMessageId = state.clientMessageId,
-                    activeClientId = clientId,
-                    activeProjectId = projectId,
-                    activeGroupId = groupId,
-                )
+                repository.call { services ->
+                    services.chatService.sendMessage(
+                        text = state.text,
+                        clientMessageId = state.clientMessageId,
+                        activeClientId = clientId,
+                        activeProjectId = projectId,
+                        activeGroupId = groupId,
+                    )
+                }
                 println("=== Retried message sent successfully ===")
                 pendingState = null
                 PendingMessageStorage.save(null)

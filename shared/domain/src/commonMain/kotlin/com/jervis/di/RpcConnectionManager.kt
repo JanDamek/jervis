@@ -5,277 +5,464 @@ import io.ktor.client.request.get
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.rpc.krpc.ktor.client.KtorRpcClient
 import kotlin.math.min
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Connection state exposed to UI and stream consumers.
+ *
+ * Only [runConnectionLoop] writes to the state — all other callers use
+ * [requestReconnect] to enqueue reconnect signals via a CONFLATED channel.
  */
 sealed class RpcConnectionState {
     data object Disconnected : RpcConnectionState()
     data object Connecting : RpcConnectionState()
-    data class Connected(val services: NetworkModule.Services) : RpcConnectionState() {
-        override fun toString() = "Connected(${services.countServices()} services)"
+    data class Connected(
+        val services: NetworkModule.Services,
+        val generation: Long,
+    ) : RpcConnectionState() {
+        override fun toString() = "Connected(gen=$generation, ${services.countServices()} services)"
     }
 }
 
 /**
  * Centralized RPC connection lifecycle manager.
  *
- * Owns HttpClient + KtorRpcClient + Services lifecycle.
- * Provides [resilientFlow] for automatic stream re-subscription on reconnect.
- * Uses [generation] counter to signal all streams to restart via flatMapLatest.
+ * ## Design
  *
- * This is the SINGLE source of truth for connection state — no other component
- * should create or manage RPC clients directly.
+ * - **Single writer of [_state]**: a dedicated [runConnectionLoop] coroutine is the
+ *   sole writer. External callers only enqueue reconnect requests via [requestReconnect],
+ *   which pushes into a CONFLATED channel. The loop consumes signals and transitions
+ *   the FSM. No races, no "state changed mid-reconnect" windows.
+ *
+ * - **Heartbeat** (every [heartbeatInterval] with [heartbeatTimeout]): runs while
+ *   Connected, via a lightweight RPC call. On failure, enqueues a reconnect signal.
+ *
+ * - **Resilient streams**: [resilientFlow] uses an infinite `while (isActive)` loop
+ *   inside a [channelFlow]. The loop's only exit is upstream cancellation — it cannot
+ *   complete silently. On connection loss it waits for state to leave Connected before
+ *   re-subscribing, preventing hot loops on the same dead socket.
+ *
+ * - **Resilient calls**: [rpcCall] wraps one-shot RPC calls with bounded
+ *   `awaitConnected` + `withTimeout` + automatic reconnect on connection-lost errors.
+ *
+ * ## Invariants
+ *
+ * 1. Only [runConnectionLoop] writes [_state].
+ * 2. [_generation] is monotonic, bumped exactly once per `Connected` entry.
+ * 3. [heartbeatJob] is owned by the loop: started on entering Connected, cancelled on leaving.
+ * 4. [resilientFlow] cannot complete silently — only path out is upstream cancellation.
+ * 5. Reconnect signals coalesce via CONFLATED channel — no storm.
+ *
+ * ## Failure mode coverage
+ *
+ * - `kubectl rollout restart` → old pod close frame → `isConnectionLost` → reconnect
+ * - `kubectl delete pod` (no close frame) → heartbeat fails within ≤9s → reconnect
+ * - Wi-Fi off → heartbeat fails within ≤9s → reconnect backoff loop
+ * - Laptop sleep/wake → heartbeat fails on first post-wake tick → reconnect
+ * - Network switch → socket dies → heartbeat fails → reconnect on new IP
+ * - Long idle → heartbeat keeps connection alive
+ * - Server unreachable for minutes → backoff caps at [maxBackoffMs], recovers within that
  */
 class RpcConnectionManager(val baseUrl: String) {
+
+    // ─── Tunables ──────────────────────────────────────────────────
+    private val heartbeatInterval = 5.seconds
+    private val heartbeatTimeout = 4.seconds
+    private val rpcCallDefaultTimeout = 10.seconds
+    private val rpcVerifyTimeout = 8.seconds
+    private val baseBackoffMs = 1_000L
+    private val maxBackoffMs = 15_000L
+    private val postDisconnectCooldown = 200.milliseconds
+    private val safetyLoopNap = 100.milliseconds
+
+    // ─── Public state ─────────────────────────────────────────────
     private val _state = MutableStateFlow<RpcConnectionState>(RpcConnectionState.Disconnected)
     val state: StateFlow<RpcConnectionState> = _state.asStateFlow()
 
-    /**
-     * Generation counter — increments on each reconnect.
-     * resilientFlow uses flatMapLatest on this to restart streams.
-     */
     private val _generation = MutableStateFlow(0L)
     val generation: StateFlow<Long> = _generation.asStateFlow()
 
-    /**
-     * Current reconnect attempt number (0 = not retrying).
-     * Exposed to UI for display in the disconnect overlay.
-     */
     private val _reconnectAttempt = MutableStateFlow(0)
     val reconnectAttempt: StateFlow<Int> = _reconnectAttempt.asStateFlow()
+
+    private val _lastError = MutableStateFlow<String?>(null)
+    val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+    // ─── Internals ────────────────────────────────────────────────
+    private val supervisor = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.Default + supervisor)
+
+    /** CONFLATED: multiple reconnect requests in the same tick coalesce into one. */
+    private val reconnectChannel = Channel<String>(Channel.CONFLATED)
+
+    private var connectionLoopJob: Job? = null
+    private var heartbeatJob: Job? = null
 
     private var httpClient: HttpClient? = null
     private var rpcClient: KtorRpcClient? = null
     private var currentServices: NetworkModule.Services? = null
-    private var healthPingJob: kotlinx.coroutines.Job? = null
 
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val reconnectMutex = Mutex()
+    // ═══════════════════════════════════════════════════════════════
+    // Public API
+    // ═══════════════════════════════════════════════════════════════
 
     /**
-     * Get current services if connected, null otherwise.
+     * Sync accessor for the current services bag. Returns null when not Connected.
+     * Used by [JervisRepository] accessors for backwards compatibility with direct
+     * (non-`rpcCall`) access patterns.
      */
     fun getServices(): NetworkModule.Services? = currentServices
 
     /**
-     * Initial connection. Call once from LaunchedEffect.
-     * If the connection fails, retries with backoff.
+     * Idempotent. Starts the connection loop on first call. Subsequent calls are no-ops.
      */
+    fun start() {
+        if (connectionLoopJob?.isActive == true) return
+        connectionLoopJob = scope.launch { runConnectionLoop() }
+    }
+
+    /** Backwards-compat alias for existing `manager.connect()` call sites. */
     suspend fun connect() {
-        performConnect()
+        start()
     }
 
     /**
-     * Non-suspending reconnect trigger for UI callbacks.
+     * Fire-and-forget reconnect request. Coalesces with concurrent calls via CONFLATED channel.
+     * Safe to call from any coroutine or callback.
      */
-    fun requestReconnect() {
-        scope.launch { reconnect() }
+    fun requestReconnect(reason: String = "manual") {
+        _lastError.value = reason
+        reconnectChannel.trySend(reason)
     }
 
+    /** Legacy alias — some old callers use this name. */
+    fun triggerReconnect(reason: String) = requestReconnect(reason)
+
     /**
-     * Reconnect: close old connections, create new ones, bump generation.
-     * Thread-safe via Mutex — concurrent calls are coalesced.
+     * Suspends until Connected or [timeout] elapses (then throws).
+     * Returns the current services bag.
      */
-    suspend fun reconnect() {
-        reconnectMutex.withLock {
-            // If already connected, skip (connection monitoring will trigger reconnect if needed)
-            if (_state.value is RpcConnectionState.Connected) {
-                return
+    suspend fun awaitConnected(timeout: Duration = rpcCallDefaultTimeout): NetworkModule.Services {
+        val snapshot = state.value
+        if (snapshot is RpcConnectionState.Connected) return snapshot.services
+        return try {
+            withTimeout(timeout) {
+                (
+                    state.first { it is RpcConnectionState.Connected }
+                        as RpcConnectionState.Connected
+                ).services
             }
-
-            println("RpcConnectionManager: Reconnecting to $baseUrl...")
-            _state.value = RpcConnectionState.Connecting
-
-            closeCurrentConnection()
-            performConnect()
+        } catch (e: TimeoutCancellationException) {
+            throw ConnectionTimeoutException("awaitConnected: not connected within $timeout")
         }
     }
 
-    private suspend fun performConnect() {
-        var attempt = 0
-        while (true) {
+    /**
+     * Resilient one-shot RPC call.
+     *
+     * 1. `awaitConnected(timeout)` — bounded wait for Connected state.
+     * 2. `withTimeout(timeout) { block(services) }` — bounded execution.
+     * 3. On `TimeoutCancellationException` → enqueue reconnect, throw [OfflineException].
+     * 4. On any throwable where `isConnectionLost(it) == true` → enqueue reconnect,
+     *    throw [OfflineException]. Real server errors propagate unchanged.
+     *
+     * Use this for any user-initiated action where you want transparent wait-for-reconnect
+     * + fast failure on dead sockets. The existing `repository.chat.sendMessage(...)` accessors
+     * still work for code that doesn't need this behavior.
+     */
+    suspend fun <T> rpcCall(
+        timeout: Duration = rpcCallDefaultTimeout,
+        block: suspend (NetworkModule.Services) -> T,
+    ): T {
+        val services = awaitConnected(timeout)
+        return try {
+            withTimeout(timeout) { block(services) }
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: TimeoutCancellationException) {
+            requestReconnect("rpcCall timeout after $timeout")
+            throw OfflineException("RPC call timed out — reconnecting")
+        } catch (e: Throwable) {
+            if (isConnectionLost(e)) {
+                requestReconnect("rpcCall conn-lost: ${e::class.simpleName}")
+                throw OfflineException("Connection lost during RPC call: ${e.message}")
+            }
+            throw e
+        }
+    }
+
+    /**
+     * Resilient subscription Flow.
+     *
+     * Wraps a server-side subscribe call in an infinite `while (isActive)` loop:
+     *
+     * ```
+     * while (isActive) {
+     *     (services, gen) = state.first { it is Connected } as Connected
+     *     coroutineScope {
+     *         launch { subscribe(services).collect { send(it) } }   // collectJob
+     *         launch { generation.first { it != gen }; cancel }     // watcherJob
+     *     }
+     *     // If we got here: either stream completed, or generation flipped, or error.
+     *     // On error: requestReconnect, then wait for state to leave Connected.
+     * }
+     * ```
+     *
+     * **The loop can NEVER complete silently.** Its only exit is upstream cancellation
+     * (the caller's `collect {}` cancelling us). Every error path re-enters the loop,
+     * waits for the next Connected state (via requestReconnect + state.first), and
+     * re-subscribes with the fresh services.
+     *
+     * Usage:
+     * ```
+     * scope.launch {
+     *     connectionManager.resilientFlow { services ->
+     *         services.chatService.subscribeToChatEvents()
+     *     }.collect { event -> handleEvent(event) }
+     * }
+     * ```
+     */
+    fun <T> resilientFlow(
+        subscribe: (NetworkModule.Services) -> Flow<T>,
+    ): Flow<T> = channelFlow {
+        while (isActive) {
+            val (services, subscribedGen) = try {
+                val c = state.first { it is RpcConnectionState.Connected }
+                        as RpcConnectionState.Connected
+                c.services to c.generation
+            } catch (ce: CancellationException) {
+                throw ce
+            }
+
+            println("RpcConnectionManager.resilientFlow: subscribing (gen=$subscribedGen)")
+
             try {
-                _state.value = RpcConnectionState.Connecting
-                _reconnectAttempt.value = attempt
-
-                // Create fresh HttpClient (critical for iOS Darwin engine after background)
-                val newHttpClient = NetworkModule.createHttpClient()
-
-                // Test basic HTTPS connectivity first
-                try {
-                    newHttpClient.get("${baseUrl.trimEnd('/')}/")
-                } catch (e: Exception) {
-                    println("RpcConnectionManager: HTTP test failed: ${e.message}")
-                    try { newHttpClient.close() } catch (_: Exception) {}
-                    throw e
+                coroutineScope {
+                    val collectJob = launch {
+                        subscribe(services).collect { item -> send(item) }
+                    }
+                    val watcherJob = launch {
+                        // Wait for generation to flip → reconnect happened mid-stream → restart
+                        generation.first { it != subscribedGen }
+                        println("RpcConnectionManager.resilientFlow: generation flipped " +
+                            "(was=$subscribedGen), cancelling inner collect")
+                        collectJob.cancel(CancellationException("generation changed"))
+                    }
+                    collectJob.join()
+                    watcherJob.cancel()
                 }
-
-                // Create RPC client (opens WebSocket to /rpc)
-                val newRpcClient = NetworkModule.createRpcClient(baseUrl, newHttpClient)
-                val newServices = NetworkModule.createServices(newRpcClient)
-
-                // Verify RPC connection with a lightweight call before declaring Connected.
-                // This prevents false "connected" state when server responds to HTTP
-                // but RPC/WebSocket services aren't ready yet (e.g., during server restart).
-                try {
-                    newServices.clientService.getAllClients()
-                } catch (e: Exception) {
-                    println("RpcConnectionManager: RPC verification failed: ${e.message}")
-                    try { newRpcClient.close() } catch (_: Exception) {}
-                    try { newHttpClient.close() } catch (_: Exception) {}
-                    throw e
+            } catch (ce: CancellationException) {
+                // (a) Upstream collector cancelled us → propagate and exit loop
+                // (b) Inner cancelled via generation watcher → continue loop
+                if (!isActive) throw ce
+                println("RpcConnectionManager.resilientFlow: cancelled internally, continuing loop")
+            } catch (e: Throwable) {
+                if (isConnectionLost(e)) {
+                    println("RpcConnectionManager.resilientFlow: conn-lost error " +
+                        "(${e::class.simpleName}: ${e.message}), requesting reconnect")
+                    requestReconnect("stream conn-lost: ${e::class.simpleName}")
+                } else {
+                    println("RpcConnectionManager.resilientFlow: non-conn error " +
+                        "(${e::class.simpleName}: ${e.message}), requesting reconnect")
+                    requestReconnect("stream error: ${e::class.simpleName}")
                 }
+                // Wait for state to leave Connected before re-subscribing,
+                // so we don't immediately re-subscribe on the same dead socket.
+                try {
+                    state.first { it !is RpcConnectionState.Connected }
+                } catch (ce: CancellationException) {
+                    throw ce
+                }
+            }
+            // Safety nap to avoid hot-loops in pathological cases
+            delay(safetyLoopNap)
+        }
+    }
 
-                // Store references
-                httpClient = newHttpClient
-                rpcClient = newRpcClient
-                currentServices = newServices
+    /** Stop everything. After this call, the manager is dead. */
+    fun shutdown() {
+        connectionLoopJob?.cancel()
+        heartbeatJob?.cancel()
+        closeCurrentConnection()
+        supervisor.cancel()
+    }
 
-                // Signal connected
-                _state.value = RpcConnectionState.Connected(newServices)
-                _generation.value++
-                attempt = 0
-                _reconnectAttempt.value = 0
+    // ═══════════════════════════════════════════════════════════════
+    // Connection FSM (single writer of _state)
+    // ═══════════════════════════════════════════════════════════════
 
-                println("RpcConnectionManager: Connected (generation=${_generation.value})")
+    private suspend fun runConnectionLoop() {
+        var attempt = 0
+        while (scope.isActive) {
+            // ── Entering Connecting ──
+            _state.value = RpcConnectionState.Connecting
+            _reconnectAttempt.value = attempt
 
-                // Start active health monitoring
-                monitorConnection(newServices)
-
-                return
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            val ok = tryConnect()
+            if (!ok) {
                 attempt++
                 _reconnectAttempt.value = attempt
-                // Minimum 5s delay between attempts, increasing linearly, capped at 30s
-                val delayMs = min(5000L + 5000L * min(attempt - 1, 5).toLong(), 30_000L)
-                println("RpcConnectionManager: Connection failed (attempt $attempt), retry in ${delayMs}ms: ${e.message}")
+                val delayMs = backoffMs(attempt)
                 _state.value = RpcConnectionState.Disconnected
-                delay(delayMs)
+                println("RpcConnectionManager: connect failed (attempt=$attempt), " +
+                    "retry in ${delayMs}ms — lastError=${_lastError.value}")
+                // Allow a manual reconnect signal to short-circuit the backoff.
+                withTimeoutOrNull(delayMs) { reconnectChannel.receive() }
+                continue
             }
+
+            // ── Entering Connected ──
+            attempt = 0
+            _reconnectAttempt.value = 0
+            _lastError.value = null
+            val gen = _generation.value + 1
+            _generation.value = gen
+            val services = currentServices
+                ?: error("currentServices is null after successful tryConnect — should not happen")
+            _state.value = RpcConnectionState.Connected(services, gen)
+            println("RpcConnectionManager: Connected (gen=$gen)")
+
+            startHeartbeat(services)
+
+            // ── Wait for a reconnect signal ──
+            val reason = try {
+                reconnectChannel.receive()
+            } catch (ce: CancellationException) {
+                stopHeartbeat()
+                closeCurrentConnection()
+                _state.value = RpcConnectionState.Disconnected
+                throw ce
+            }
+            stopHeartbeat()
+            println("RpcConnectionManager: reconnect requested — $reason")
+
+            // ── Transition back to Disconnected ──
+            _state.value = RpcConnectionState.Disconnected
+            closeCurrentConnection()
+            delay(postDisconnectCooldown)
         }
     }
 
-    /**
-     * Active connection health monitoring via periodic ping.
-     * Tests kRPC WebSocket every 30s to detect silent failures.
-     */
-    private fun monitorConnection(services: NetworkModule.Services) {
-        // Cancel previous health ping job to prevent accumulation
-        healthPingJob?.cancel()
-        healthPingJob = scope.launch {
-            while (true) {
-                delay(30_000) // 30s health ping
+    private suspend fun tryConnect(): Boolean = try {
+        val newHttp = NetworkModule.createHttpClient()
 
-                // Only check if we think we're connected
-                if (_state.value !is RpcConnectionState.Connected) {
-                    break
-                }
-
-                try {
-                    // Lightweight health check - just fetch clients (small operation)
-                    services.clientService.getAllClients()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    println("RpcConnectionManager: Health ping failed: ${e.message}")
-                    triggerReconnect("health ping failure")
-                    break
-                }
+        // Phase 1: HTTP probe — fails fast on DNS / firewall / server-down
+        try {
+            withTimeout(rpcVerifyTimeout) {
+                newHttp.get("${baseUrl.trimEnd('/')}/")
             }
+        } catch (ce: CancellationException) {
+            runCatching { newHttp.close() }
+            throw ce
+        } catch (e: Throwable) {
+            runCatching { newHttp.close() }
+            _lastError.value = "HTTP probe failed: ${e::class.simpleName}: ${e.message}"
+            return false
         }
-    }
 
-    /**
-     * Centralized reconnect trigger — prevents cascading reconnects from multiple
-     * dead subscriptions or health ping failures firing simultaneously.
-     * Only the first caller actually triggers reconnect; subsequent calls are no-ops
-     * because state is already Disconnected and reconnect() mutex handles the rest.
-     *
-     * Public so that ChatViewModel can trigger immediate reconnect on "cancelled" errors
-     * instead of waiting 30s for the next health ping to detect the dead connection.
-     */
-    fun triggerReconnect(reason: String) {
-        val wasConnected = _state.value is RpcConnectionState.Connected
-        _state.value = RpcConnectionState.Disconnected
-        if (wasConnected) {
-            println("RpcConnectionManager: Triggering reconnect ($reason)")
-            healthPingJob?.cancel()
-            scope.launch {
-                delay(5000) // 5s cooldown before reconnect
-                _generation.value++
-                reconnect()
+        // Phase 2: kRPC handshake + service creation
+        val newRpc = NetworkModule.createRpcClient(baseUrl, newHttp)
+        val newServices = NetworkModule.createServices(newRpc)
+
+        // Phase 3: RPC verification call — ensures WebSocket + kRPC handshake is live
+        try {
+            withTimeout(rpcVerifyTimeout) {
+                newServices.clientService.getAllClients()
             }
+        } catch (ce: CancellationException) {
+            runCatching { newRpc.close() }
+            runCatching { newHttp.close() }
+            throw ce
+        } catch (e: Throwable) {
+            runCatching { newRpc.close() }
+            runCatching { newHttp.close() }
+            _lastError.value = "RPC verify failed: ${e::class.simpleName}: ${e.message}"
+            return false
         }
+
+        // Store references only after all three phases succeed
+        httpClient = newHttp
+        rpcClient = newRpc
+        currentServices = newServices
+        true
+    } catch (ce: CancellationException) {
+        throw ce
+    } catch (e: Throwable) {
+        _lastError.value = "tryConnect: ${e::class.simpleName}: ${e.message}"
+        false
     }
 
     private fun closeCurrentConnection() {
-        healthPingJob?.cancel()
-        try { rpcClient?.close() } catch (_: Exception) {}
-        try { httpClient?.close() } catch (_: Exception) {}
+        runCatching { rpcClient?.close() }
+        runCatching { httpClient?.close() }
         rpcClient = null
         httpClient = null
         currentServices = null
     }
 
-    /**
-     * Creates a Flow that automatically re-subscribes when the connection changes.
-     *
-     * Uses the [generation] counter — every time the connection is re-established,
-     * generation increments, which causes flatMapLatest to cancel the previous
-     * subscription and start a new one with fresh services.
-     *
-     * If currently disconnected, waits for connection before subscribing.
-     *
-     * Usage:
-     * ```
-     * connectionManager.resilientFlow { services ->
-     *     services.notificationService.subscribeToEvents(clientId)
-     * }.collect { event -> handleEvent(event) }
-     * ```
-     */
-    fun <T> resilientFlow(
-        subscribe: (NetworkModule.Services) -> Flow<T>,
-    ): Flow<T> =
-        generation.flatMapLatest { gen ->
-            flow {
-                println("RpcConnectionManager: resilientFlow restarting (gen=$gen), waiting for Connected state...")
-                // Wait until we're connected
-                val connected = state.first { it is RpcConnectionState.Connected }
-                val services = (connected as RpcConnectionState.Connected).services
-                println("RpcConnectionManager: resilientFlow got Connected (gen=$gen), subscribing...")
-                emitAll(
-                    subscribe(services).catch { e ->
-                        if (e is CancellationException) throw e
-                        // kRPC wraps cancellation as IllegalStateException("RpcClient was cancelled")
-                        // This happens after server restart — treat as disconnect and reconnect
-                        if (e is IllegalStateException && e.message?.contains("cancelled") == true) {
-                            println("RpcConnectionManager: RPC client cancelled (gen=$gen), triggering reconnect")
-                            triggerReconnect("stream cancelled")
-                            return@catch
+    /** Exponential backoff capped at [maxBackoffMs]. 1s, 2s, 4s, 8s, 15s, 15s, ... */
+    private fun backoffMs(attempt: Int): Long {
+        val capped = min(attempt - 1, 4)  // 2^4 = 16 ≈ cap
+        val exp = baseBackoffMs * (1L shl capped)
+        return min(exp, maxBackoffMs)
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Heartbeat (owned by the connection loop)
+    // ═══════════════════════════════════════════════════════════════
+
+    private fun startHeartbeat(services: NetworkModule.Services) {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            try {
+                while (isActive) {
+                    delay(heartbeatInterval)
+                    val ok = try {
+                        withTimeout(heartbeatTimeout) {
+                            // Lightweight RPC — just verify the WebSocket is alive.
+                            services.clientService.getAllClients()
+                            true
                         }
-                        println("RpcConnectionManager: Stream error (gen=$gen): ${e::class.simpleName}: ${e.message}")
-                        triggerReconnect("stream error")
-                    },
-                )
+                    } catch (ce: CancellationException) {
+                        throw ce
+                    } catch (_: Throwable) {
+                        false
+                    }
+
+                    if (!ok) {
+                        println("RpcConnectionManager: heartbeat failed — requesting reconnect")
+                        requestReconnect("heartbeat failed")
+                        return@launch
+                    }
+                }
+            } catch (_: CancellationException) {
+                // Normal lifecycle — loop is transitioning out of Connected
             }
         }
+    }
+
+    private fun stopHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+    }
 }

@@ -86,7 +86,10 @@ object NetworkModule {
             }
 
             install(WebSockets) {
-                pingInterval = 20.seconds
+                // Aligned with server pingPeriodMillis=10_000 (KtorRpcServer.kt).
+                // Both ends ping every 10s so transport-layer death is detected
+                // within ~15s even if the heartbeat RPC itself is wedged.
+                pingInterval = 10.seconds
                 maxFrameSize = Long.MAX_VALUE
             }
 

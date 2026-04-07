@@ -163,8 +163,11 @@ class KtorRpcServer(
                     embeddedServer(Netty, port = port, host = "0.0.0.0") {
                         install(WebSockets) {
                             maxFrameSize = Long.MAX_VALUE
-                            pingPeriodMillis = 30000  // 30 seconds
-                            timeoutMillis = 15000     // 15 seconds
+                            // Aligned with client pingInterval = 10s (NetworkModule.kt).
+                            // Fast detection of dead clients so the server doesn't keep
+                            // stale WebSocket sessions. Max detection window ~15s.
+                            pingPeriodMillis = 10_000  // 10 seconds (was 30s)
+                            timeoutMillis = 5_000      // 5 seconds (was 15s)
                         }
                         install(ContentNegotiation) {
                             json(Json { ignoreUnknownKeys = true })

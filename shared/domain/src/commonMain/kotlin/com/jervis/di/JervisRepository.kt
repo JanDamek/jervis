@@ -1,6 +1,5 @@
 package com.jervis.di
 
-import com.jervis.di.NetworkModule
 import com.jervis.service.agent.IAgentOrchestratorService
 import com.jervis.service.agent.IAgentQuestionService
 import com.jervis.service.agent.IAutoResponseSettingsService
@@ -32,6 +31,8 @@ import com.jervis.service.task.ITaskGraphService
 import com.jervis.service.task.ITaskSchedulingService
 import com.jervis.service.task.IUserTaskService
 import com.jervis.service.timetracking.ITimeTrackingService
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Main repository facade for Jervis application.
@@ -39,10 +40,42 @@ import com.jervis.service.timetracking.ITimeTrackingService
  *
  * After RPC reconnection, [servicesProvider] returns the fresh Services instance,
  * so all service references are always current — no stale references.
+ *
+ * ## Two call styles
+ *
+ * **1. Direct accessor** (backwards-compatible): `repository.chat.sendMessage(...)`
+ *    - Synchronously fetches current services; throws [OfflineException] if disconnected.
+ *    - Fast, zero-overhead. Use for calls that can fail fast without waiting.
+ *
+ * **2. Resilient [call]** (new): `repository.call { services -> services.chatService.sendMessage(...) }`
+ *    - Waits up to [Duration] for Connected state.
+ *    - Wraps the call in a timeout.
+ *    - On connection-lost errors, automatically triggers reconnect and throws [OfflineException].
+ *    - Use for user-initiated actions where you want transparent wait-for-reconnect.
+ *
+ * The resilient flavor requires a [connectionManager] to be supplied. The legacy lambda
+ * constructor remains for backwards compat (e.g., mobile/iOS construction sites that
+ * still use it) — in that mode, [call] falls back to direct invocation without
+ * reconnect semantics.
  */
-class JervisRepository(
+class JervisRepository private constructor(
     private val servicesProvider: () -> NetworkModule.Services,
+    private val connectionManager: RpcConnectionManager?,
 ) {
+    /** Legacy lambda-based constructor — kept for mobile/iOS/test call sites. */
+    constructor(servicesProvider: () -> NetworkModule.Services) :
+        this(servicesProvider, connectionManager = null)
+
+    /**
+     * Preferred constructor — delegates to [RpcConnectionManager] for both service lookup
+     * and resilient [call] behavior.
+     */
+    constructor(connectionManager: RpcConnectionManager) : this(
+        servicesProvider = { connectionManager.getServices() ?: throw OfflineException() },
+        connectionManager = connectionManager,
+    )
+
+    // ─── Direct accessors (34 services) ─────────────────────────────
     val clients: IClientService get() = servicesProvider().clientService
     val projects: IProjectService get() = servicesProvider().projectService
     val projectGroups: IProjectGroupService get() = servicesProvider().projectGroupService
@@ -74,4 +107,30 @@ class JervisRepository(
     val agentQuestions: IAgentQuestionService get() = servicesProvider().agentQuestionService
     val autoResponseSettings: IAutoResponseSettingsService get() = servicesProvider().autoResponseSettingsService
     val timeTracking: ITimeTrackingService get() = servicesProvider().timeTrackingService
+
+    // ─── Resilient call wrapper ─────────────────────────────────────
+
+    /**
+     * Resilient one-shot RPC call. Waits for connection (bounded by [timeout]),
+     * runs [block] under `withTimeout`, on connection-lost errors triggers reconnect
+     * and throws [OfflineException].
+     *
+     * Use for user-initiated actions: `sendMessage`, `respondToTask`, `dismissTask`, etc.
+     *
+     * If this repository was constructed with the legacy lambda constructor (no
+     * [RpcConnectionManager]), falls back to direct invocation — no reconnect semantics,
+     * but the call will throw [OfflineException] from [servicesProvider] if disconnected.
+     */
+    suspend fun <T> call(
+        timeout: Duration = 10.seconds,
+        block: suspend (NetworkModule.Services) -> T,
+    ): T {
+        val manager = connectionManager
+        return if (manager != null) {
+            manager.rpcCall(timeout, block)
+        } else {
+            // Legacy fallback — direct invocation, no wait, no reconnect.
+            block(servicesProvider())
+        }
+    }
 }
