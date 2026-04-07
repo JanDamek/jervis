@@ -47,10 +47,25 @@ async def handle_chat_sse(
     _live_vertex_id: str | None = None
     try:
         # ── 1. Load context ──────────────────────────────────────────
-        # No artificial budget downgrade — even FREE OpenRouter models have
-        # ≥120k tokens, local GPU long-context models go up to 250k. Use the
-        # default CONTEXT_BUDGET from settings (total_context_window minus
-        # system + response reserves).
+        # ROUTER-FIRST FLOW:
+        # 1. Ask router for the largest context window available for this tier
+        #    (FREE → e.g. Gemini Flash 1M; NONE → local 250k; PAID → Sonnet 200k…)
+        # 2. Build context up to that size (no artificial truncation)
+        # 3. Router later picks the actual model based on real estimated_tokens
+        # 4. Reduction kicks in only if no model can fit
+        from app.llm.router_client import get_max_context_tokens
+        max_tier = getattr(request, "max_openrouter_tier", "NONE") or "NONE"
+        try:
+            max_ctx = await get_max_context_tokens(max_tier)
+        except Exception as e:
+            logger.warning("Failed to query max context tokens (%s) — using settings default", e)
+            max_ctx = None
+
+        # Reserve room for system prompt + LLM response (configurable)
+        from app.config import settings as _settings
+        reserve = _settings.system_prompt_reserve + _settings.response_reserve
+        context_budget = (max_ctx - reserve) if max_ctx else None  # None = settings default
+
         # Exclude the just-saved current user message — Kotlin persists it
         # before forwarding to Python, so loading it would cause build_messages
         # to duplicate the current turn.
@@ -58,6 +73,11 @@ async def handle_chat_sse(
         context = await chat_context_assembler.assemble_context(
             conversation_id=request.session_id,
             exclude_sequence=current_seq,
+            **({"context_budget": context_budget} if context_budget else {}),
+        )
+        logger.info(
+            "SSE: tier=%s max_ctx=%s context_budget=%s built_tokens~%d",
+            max_tier, max_ctx, context_budget, context.total_tokens_estimate,
         )
         runtime_ctx = await load_runtime_context(
             query=request.message,

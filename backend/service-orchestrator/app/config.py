@@ -135,11 +135,12 @@ class Settings(BaseSettings):
     token_budget_depth_2: int = 32_000
     token_budget_depth_3: int = 12_000
 
-    # Context budgeting (ChatContextAssembler)
-    # Cloud (FREE/PAID) modely mají reálně 120k+ tokenů. Lokální GPU model
-    # má sice ~40k VRAM, ale streamuje do 250k context window.
-    # Default 200k je bezpečný společný strop pro většinu modelů.
-    total_context_window: int = 200_000       # Sane default for cloud + local long-context models
+    # Context budgeting (ChatContextAssembler) — fallback only.
+    # The real value comes from router.get_max_context_tokens(max_tier) per
+    # request, so the assembler builds context to fit the largest model
+    # available for the request's tier (Gemini 1-2M, Sonnet 200k, local 250k…).
+    # This 1M default is used only when the router is unreachable.
+    total_context_window: int = 1_000_000     # Fallback if router query fails
     system_prompt_reserve: int = 8_000        # System prompt + tools + KB prefetch + thought map
     response_reserve: int = 8_000             # LLM response reserve
     recent_message_count: int = 200           # Max recent verbatim messages to load (budget limits actual inclusion)

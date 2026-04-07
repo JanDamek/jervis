@@ -437,12 +437,16 @@ async def get_max_context_tokens(max_tier: str = "NONE") -> int:
     Used to know when context is too large for any model and needs chunking.
     Returns: max context tokens (e.g. 200_000 for Sonnet, 48_000 for local only).
     """
+    # Local long-context GPU model can stream up to ~250k tokens
+    # (40k VRAM but kv-cache + offload extends effective window).
+    LOCAL_MAX_CTX = 250_000
+
     max_tier = normalize_tier(max_tier)  # backward compat
     tier_level = TIER_LEVELS.get(max_tier, 0)
     if tier_level == 0:
-        return 48_000
+        return LOCAL_MAX_CTX
 
-    max_ctx = 48_000
+    max_ctx = LOCAL_MAX_CTX
     queues_to_check = ["FREE"]
     if tier_level >= TIER_LEVELS["PAID"]:
         queues_to_check.append("PAID")
