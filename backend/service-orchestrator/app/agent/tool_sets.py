@@ -189,51 +189,32 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             _request_tools,
         ]
 
-    # INVESTIGATOR: researches context (KB, web, code metadata, meetings)
-    # Git metadata (branches, commits) = orientation only.
-    # For any code analysis or deep git investigation → dispatch_coding_agent.
+    # INVESTIGATOR: researches context. Minimal default set — everything
+    # else (repo structure, meetings, web, memory) is loaded on-demand via
+    # request_tools(category=...).
     if vertex_type == VertexType.INVESTIGATOR:
         return _base + [
-            TOOL_WEB_SEARCH,
-            TOOL_LIST_PROJECT_FILES,
-            TOOL_GET_REPOSITORY_INFO,
-            TOOL_GET_RECENT_COMMITS,
-            TOOL_GET_TECHNOLOGY_STACK,
-            TOOL_GET_REPOSITORY_STRUCTURE,
-            TOOL_GIT_BRANCH_LIST,
-            TOOL_GET_KB_STATS,
-            TOOL_GET_INDEXED_ITEMS,
-            TOOL_DISPATCH_CODING_AGENT,
-            TOOL_STORE_KNOWLEDGE,
-            TOOL_LIST_MEETINGS,
-            TOOL_GET_MEETING_TRANSCRIPT,
-            TOOL_LIST_UNCLASSIFIED_MEETINGS,
-            TOOL_EXTEND_THINKING_GRAPH,
-            TOOL_DECOMPOSE_TASK,
-            _request_tools,
+            TOOL_DISPATCH_CODING_AGENT,  # code analysis → delegate
+            TOOL_STORE_KNOWLEDGE,         # persist findings
+            TOOL_EXTEND_THINKING_GRAPH,   # dynamic graph expansion
+            TOOL_DECOMPOSE_TASK,          # split if complex
+            _request_tools,               # menu for everything else
         ]
 
-    # EXECUTOR: performs concrete work (coding, tracker, KB write, interactive dialog, O365)
+    # EXECUTOR / TASK: performs concrete work. Minimal default set — NO
+    # O365 / meetings / guidelines / web pre-loaded. The agent calls
+    # request_tools(category=...) to load what it actually needs. This
+    # is the biggest token saving: avoids ~6-8k tokens per LLM call for
+    # tool definitions the vertex will never use.
     if vertex_type in (VertexType.EXECUTOR, VertexType.TASK):
-        return _base + O365_ALL_TOOLS + [
-            TOOL_ASK_USER,
-            TOOL_WEB_SEARCH,
-            TOOL_LIST_PROJECT_FILES,
-            TOOL_GET_REPOSITORY_INFO,
-            TOOL_GET_REPOSITORY_STRUCTURE,
-            TOOL_DISPATCH_CODING_AGENT,
-            TOOL_STORE_KNOWLEDGE,
-            TOOL_MEMORY_STORE,
-            TOOL_CREATE_SCHEDULED_TASK,
-            TOOL_GET_GUIDELINES,
-            TOOL_UPDATE_GUIDELINE,
-            TOOL_CLASSIFY_MEETING,
-            TOOL_LIST_UNCLASSIFIED_MEETINGS,
-            TOOL_LIST_MEETINGS,
-            TOOL_GET_MEETING_TRANSCRIPT,
-            TOOL_EXTEND_THINKING_GRAPH,
-            TOOL_DECOMPOSE_TASK,
-            _request_tools,
+        return _base + [
+            TOOL_DISPATCH_CODING_AGENT,  # any code work → delegate
+            TOOL_CREATE_SCHEDULED_TASK,  # scheduling (frequent)
+            TOOL_STORE_KNOWLEDGE,         # persist results
+            TOOL_MEMORY_STORE,            # persist episodic memory
+            TOOL_EXTEND_THINKING_GRAPH,   # dynamic graph expansion
+            TOOL_DECOMPOSE_TASK,          # split if complex
+            _request_tools,               # menu for everything else
         ]
 
     # VALIDATOR: verifies results (metadata + coding agent for tests/code checks)
@@ -406,28 +387,36 @@ def get_tools_by_category(category: str) -> list[dict]:
 def _build_request_tools_definition() -> dict:
     """Build the meta-tool definition for requesting additional tools.
 
-    This tool lets a vertex request more tools if its default set
-    isn't sufficient for the task.
+    Compact menu format: just category names with ≤ 1-line descriptions.
+    The goal is to minimize the tokens spent on this meta-tool's description
+    in EVERY LLM call (this definition is loaded in the default tool set of
+    every vertex type).
     """
     return {
         "type": "function",
         "function": {
             "name": "request_tools",
             "description": (
-                "Request additional tools if the current set is insufficient. "
-                "Available categories: kb, web, git, code, memory, scheduling, "
-                "interactive, guidelines, meetings, queue, environment, "
-                "project_management, settings, setup, o365, o365_teams, "
-                "o365_mail, o365_calendar, o365_files, all. "
-                "IMPORTANT: 'git' gives basic metadata (branches, recent commits) + dispatch_coding_agent. "
-                "For ANY deep code analysis, git history investigation, file reading, or code changes "
-                "you MUST use dispatch_coding_agent — the orchestrator never investigates code directly. "
-                "Use 'code' for repository metadata + dispatch_coding_agent. "
-                "Use 'interactive' to get ask_user for dialog with the user. "
-                "Use 'guidelines' to read/update project rules. "
-                "Use 'meetings' to classify/list meeting recordings. "
-                "Use 'settings' to read/write MongoDB documents (self-management). "
-                "Use 'all' to get every available tool."
+                "Load additional tools by category. Call this when your "
+                "current tools are insufficient. Categories (name → 1-line):\n"
+                "- kb: knowledge base search/read/write\n"
+                "- web: web search\n"
+                "- code: repo info + dispatch_coding_agent\n"
+                "- memory: episodic memory recall/store\n"
+                "- scheduling: create recurring tasks\n"
+                "- interactive: ask_user (clarification dialog)\n"
+                "- guidelines: read/write project rules\n"
+                "- meetings: list/classify/transcript meetings\n"
+                "- queue: inspect/reorder task queue\n"
+                "- environment: K8s environment management\n"
+                "- project_management: create client/project/connection\n"
+                "- settings: read/write MongoDB documents\n"
+                "- setup: environment + project onboarding bundle\n"
+                "- o365: all O365 tools (mail+teams+calendar+files)\n"
+                "- o365_mail / o365_teams / o365_calendar / o365_files: "
+                "specific O365 subsets\n"
+                "- all: load every tool (last resort)\n"
+                "Use dispatch_coding_agent for any deep code work."
             ),
             "parameters": {
                 "type": "object",
@@ -435,11 +424,11 @@ def _build_request_tools_definition() -> dict:
                     "categories": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Tool categories to add: kb, web, code, memory, scheduling, interactive, guidelines, meetings, queue, environment, project_management, settings, setup, o365, o365_teams, o365_mail, o365_calendar, o365_files, all. NO 'git' category — use dispatch_coding_agent for git.",
+                        "description": "Categories to load",
                     },
                     "reason": {
                         "type": "string",
-                        "description": "Why additional tools are needed",
+                        "description": "Short reason",
                     },
                 },
                 "required": ["categories", "reason"],
