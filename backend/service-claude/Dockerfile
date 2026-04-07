@@ -1,28 +1,51 @@
 # =============================================================================
 # Claude Code Agent Container
 # Persistent Deployment – Kotlin orchestrator + Claude Code CLI + MCP servers
+#
+# IMPORTANT CONVENTION (see KB "service-claude-cli-tools-rule"):
+# Every CLI tool installed here is an AGENT CAPABILITY, not an app dependency.
+# Even if no grep in the source code references mongosh / psql / arangosh /
+# pandoc / helm / …, they MUST stay. The Claude Code agent uses the Bash tool
+# to run arbitrary shell commands on behalf of the user, and removing any of
+# these tools makes the agent blind to that capability. Adding is safe,
+# removing is DESTRUCTIVE.
 # =============================================================================
 
 # --- Run Stage ---
 FROM eclipse-temurin:21-jre-jammy
 
-# === Common agent tools (shell utilities agents invoke via Bash) ===
+# === Common agent tools (shell utilities the agent invokes via Bash) ===
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     # -- basics --
-    git curl wget ca-certificates gnupg lsb-release \
+    git git-lfs curl wget ca-certificates gnupg lsb-release \
     # -- Claude Code internal dependency --
     ripgrep \
-    # -- shell utilities --
-    jq diffutils patch less tree file unzip \
-    procps findutils \
+    # -- search / data processing --
+    jq diffutils patch less tree file \
+    # -- archives --
+    unzip zip tar gzip bzip2 xz-utils p7zip-full \
+    # -- process / file search --
+    procps findutils fd-find fzf \
     # -- build tools --
-    make \
-    # -- network debug --
-    dnsutils iproute2 openssh-client \
-    # -- Python (for MCP servers + entrypoint scripts) --
-    python3 python3-pip python3-venv \
+    make cmake \
+    # -- network debug / HTTP clients --
+    dnsutils iproute2 openssh-client httpie \
+    # -- document / image conversion --
+    pandoc imagemagick \
+    # -- shell linting / pretty diff --
+    shellcheck \
+    # -- Python (for MCP servers + entrypoint scripts + ad-hoc agent scripts) --
+    python3 python3-pip python3-venv python3-dev \
+    # -- lightweight DB (agent may need local scratch DB) --
+    sqlite3 \
+    # -- Redis CLI (Jervis uses Redis for caching + rate limiting) --
+    redis-tools \
     && rm -rf /var/lib/apt/lists/*
+
+# fd-find installs as `fdfind` on Debian/Ubuntu — symlink to `fd` for the
+# expected command name so agents can use `fd` directly.
+RUN ln -s /usr/bin/fdfind /usr/local/bin/fd || true
 
 # === Node.js 20 (required by Claude Code CLI) ===
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
@@ -50,19 +73,26 @@ RUN curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
     apt-get install -y --no-install-recommends mongodb-mongosh && \
     rm -rf /var/lib/apt/lists/*
 
-# === ArangoDB Shell (arangosh) ===
-# Temporarily skipped — ArangoDB's package-signing GPG key (C04AD0FD86FEC04D)
-# expired and their APT repo fails `apt-get update`. Agents don't call arangosh
-# directly (they use MCP tools); re-enable once ArangoDB ships a new signing key
-# or switch to downloading the arangosh binary directly.
-# RUN curl -fsSL https://download.arangodb.com/arangodb311/DEBIAN/Release.key \
-#     | gpg --dearmor -o /usr/share/keyrings/arangodb.gpg && \
-#     echo "deb [signed-by=/usr/share/keyrings/arangodb.gpg] \
-#     https://download.arangodb.com/arangodb311/DEBIAN/ /" \
-#     > /etc/apt/sources.list.d/arangodb.list && \
-#     apt-get update && \
-#     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends arangodb3-client && \
-#     rm -rf /var/lib/apt/lists/*
+# === ArangoDB Shell (arangosh) — direct .deb download ===
+# Historical note: the ArangoDB APT repo signing key (C04AD0FD86FEC04D) expired
+# on 2026-04-07 and covers ALL versions (3.11, 3.12, ...), so adding the apt
+# repo always fails `apt-get update` with EXPKEYSIG. Workaround: download the
+# .deb file directly and install with `dpkg -i`. This bypasses the apt repo
+# entirely and works as long as the .deb itself is reachable.
+#
+# Do NOT comment this out or remove arangosh — agents use it for ad-hoc graph
+# queries when users ask. See KB: service-claude-cli-tools-rule.
+#
+# Pinned version: bump ARANGODB_CLIENT_VERSION when needed.
+# List of available versions: https://download.arangodb.com/arangodb312/DEBIAN/amd64/
+RUN ARANGODB_CLIENT_VERSION="3.12.4.3-1" && \
+    curl -fsSLo /tmp/arangodb3-client.deb \
+    "https://download.arangodb.com/arangodb312/DEBIAN/amd64/arangodb3-client_${ARANGODB_CLIENT_VERSION}_amd64.deb" && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        /tmp/arangodb3-client.deb && \
+    rm -f /tmp/arangodb3-client.deb && \
+    rm -rf /var/lib/apt/lists/*
 
 # === PostgreSQL client (psql) ===
 RUN apt-get update && \
@@ -73,6 +103,29 @@ RUN apt-get update && \
 RUN curl -fsSLo /usr/local/bin/kubectl \
     "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
     chmod +x /usr/local/bin/kubectl
+
+# === Helm (K8s package manager — Jervis uses K8s heavily, agent may need helm charts) ===
+# Install from the official tarball on GitHub releases. Avoids the baltocdn
+# apt repo which has been flaky (HTTP/2 PROTOCOL_ERROR during builds).
+RUN HELM_VERSION="v3.16.3" && \
+    curl -fsSLo /tmp/helm.tar.gz \
+    "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" && \
+    tar -xzf /tmp/helm.tar.gz -C /tmp && \
+    mv /tmp/linux-amd64/helm /usr/local/bin/helm && \
+    chmod +x /usr/local/bin/helm && \
+    rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
+
+# === yq (YAML processor — complement to jq for K8s manifests, configs) ===
+RUN curl -fsSLo /usr/local/bin/yq \
+    "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" && \
+    chmod +x /usr/local/bin/yq
+
+# === git-delta (pretty git diff viewer — standalone binary) ===
+RUN DELTA_VERSION="0.18.2" && \
+    curl -fsSLo /tmp/delta.deb \
+    "https://github.com/dandavison/delta/releases/download/${DELTA_VERSION}/git-delta_${DELTA_VERSION}_amd64.deb" && \
+    dpkg -i /tmp/delta.deb && \
+    rm -f /tmp/delta.deb
 
 # === Claude Code CLI (baked-in fallback — NAS-cached version takes precedence at runtime) ===
 RUN npm install -g @anthropic-ai/claude-code
