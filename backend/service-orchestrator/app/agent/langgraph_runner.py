@@ -412,12 +412,17 @@ async def _execute_single_vertex(
 
         result, summary = await _dispatch_vertex_handler(vertex, context, state, graph=graph)
 
-        # Complete vertex — fills outgoing edge payloads
+        # Complete vertex — fills outgoing edge payloads.
+        # Pass per-vertex metrics so graph-level total_llm_calls / total_token_count
+        # are accurate (they were 0 before because these kwargs were not passed).
         complete_vertex(
             graph, vertex_id,
             result=result,
             result_summary=summary,
             local_context=result,
+            tools_used=vertex.tools_used,
+            token_count=vertex.token_count,
+            llm_calls=vertex.llm_calls,
         )
 
     except DecomposeInterrupt:
@@ -430,9 +435,27 @@ async def _execute_single_vertex(
         agent_store.cache_subgraph(graph)
         await agent_store.save(graph)
 
+    except AskUserInterrupt as e:
+        # ASK_USER interrupt from the vertex tool loop — mark vertex BLOCKED
+        # and store the actual question so it can be surfaced to the user
+        # as a USER_TASK (pending reaction).
+        #
+        # This is the primary escalation path for BACKGROUND tasks that need
+        # human clarification. Previously the interrupt was swallowed in the
+        # inner loop and the task silently completed with a bogus answer.
+        logger.info(
+            "Vertex %s blocked (AskUserInterrupt): %s",
+            vertex_id, e.question,
+        )
+        block_vertex(graph, vertex_id, e.question)
+        agent_store.cache_subgraph(graph)
+        await agent_store.save(graph)
+
     except GraphInterrupt:
-        # ASK_USER interrupt — mark vertex BLOCKED (not FAILED)
-        logger.info("Vertex %s blocked (ASK_USER) — pausing for user input", vertex_id)
+        # LangGraph-level interrupt (e.g. from interrupt() call in a node).
+        # Mark vertex BLOCKED — the graph will transition to BLOCKED status
+        # and the task will be escalated to USER_TASK.
+        logger.info("Vertex %s blocked (GraphInterrupt) — pausing for user input", vertex_id)
         block_vertex(graph, vertex_id, "Waiting for user input")
         agent_store.cache_subgraph(graph)
         await agent_store.save(graph)
@@ -495,6 +518,24 @@ async def node_synthesize(state: GraphAgentState) -> dict:
     else:
         graph.status = GraphStatus.COMPLETED
     graph.completed_at = str(int(time.time()))
+
+    # If the graph is BLOCKED (at least one vertex waiting for user input),
+    # surface the first blocked vertex's question as the graph's final_result
+    # so the background handler / router can forward it to the Kotlin server
+    # as the USER_TASK question. Otherwise the user only sees a generic
+    # "Graph paused" message and has no idea what to answer.
+    if has_blocked:
+        blocked_questions = [
+            v.error for v in graph.vertices.values()
+            if v.status == VertexStatus.BLOCKED and v.error
+        ]
+        if blocked_questions:
+            blocked_summary = "\n\n".join(blocked_questions)
+            logger.info(
+                "SYNTHESIZE | graph BLOCKED — surfacing %d pending question(s) as result",
+                len(blocked_questions),
+            )
+            return {"final_result": blocked_summary, "task_graph": graph.model_dump()}
 
     # Always compute stats (needed for final logging)
     stats = get_stats(graph)
@@ -1365,17 +1406,20 @@ async def _agentic_vertex(
                 )
             except asyncio.TimeoutError:
                 tool_result = f"Error: Tool '{tool_name}' timed out after {_VERTEX_TOOL_TIMEOUT_S}s"
-            except AskUserInterrupt as e:
-                # Agent wants to ask user — in decomposed graph context,
-                # we can't interrupt (no LangGraph runnable context).
-                # Tell the LLM to work with what it has.
-                logger.info("VERTEX %s: ask_user blocked (decomposed context): %s", vertex.id, e.question)
-                tool_result = (
-                    "Cannot ask user in this context — you are running as a "
-                    "parallel research subtask. Work with available information "
-                    "and provide the best answer you can. If critical info is "
-                    "missing, note it in your response."
+            except AskUserInterrupt:
+                # Agent wants to ask user — propagate up to _execute_vertex
+                # which will BLOCK the vertex and escalate the task to USER_TASK
+                # so the user actually sees the question.
+                #
+                # Previously this branch converted AskUserInterrupt into a
+                # "Cannot ask user" tool result, which caused the agent to
+                # continue and eventually complete the vertex with a bogus
+                # "I don't know" answer instead of properly escalating.
+                logger.info(
+                    "VERTEX %s: ask_user raised — propagating to vertex handler",
+                    vertex.id,
                 )
+                raise
             except Exception as e:
                 tool_result = f"Error executing {tool_name}: {e}"
 
