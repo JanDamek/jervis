@@ -351,7 +351,22 @@ async def build_messages(
     """
     messages = [{"role": "system", "content": system_prompt}]
 
-    for msg in context.messages:
+    # Defensive dedup: if the last context message is identical to the current
+    # user message, skip it. This guards against the Kotlin-saves-then-Python-loads
+    # race where the current user message could otherwise appear twice.
+    ctx_msgs = list(context.messages)
+    if ctx_msgs:
+        last = ctx_msgs[-1]
+        last_content = last.get("content") if isinstance(last, dict) else None
+        if (
+            isinstance(last_content, str)
+            and last.get("role") == "user"
+            and last_content.strip() == (current_message or "").strip()
+        ):
+            ctx_msgs = ctx_msgs[:-1]
+            logger.debug("build_messages: skipped duplicated current user message from context")
+
+    for msg in ctx_msgs:
         messages.append(msg)
 
     if task_context_msg:

@@ -157,6 +157,7 @@ class ChatContextAssembler:
         *,
         context_budget: int = CONTEXT_BUDGET,
         memory_context: str = "",
+        exclude_sequence: int | None = None,
     ) -> AssembledContext:
         """Build token-budgeted context for LLM.
 
@@ -169,11 +170,16 @@ class ChatContextAssembler:
             conversation_id: Conversation thread ID (ChatSession._id or TaskDocument._id as string)
             context_budget: Available tokens for context (default: CONTEXT_BUDGET)
             memory_context: Pre-built memory text (from KB/affairs, optional)
+            exclude_sequence: Sequence to exclude (typically the just-saved current
+                user message — Kotlin saves it BEFORE forwarding to Python, so it
+                must NOT be re-added by build_messages as a duplicate).
 
         Returns:
             AssembledContext with LLM-ready messages and metadata.
         """
-        recent_messages = await self._load_recent_messages(conversation_id)
+        recent_messages = await self._load_recent_messages(
+            conversation_id, exclude_sequence=exclude_sequence,
+        )
         summary_blocks = await self._load_summaries(conversation_id)
         total_count = await self._count_messages(conversation_id)
 
@@ -215,10 +221,13 @@ class ChatContextAssembler:
         memory_tokens = estimate_tokens(memory_context) if memory_context else 0
         remaining_budget -= memory_tokens
 
-        # Summaries — newest-first selection, fit max 60% of remaining
+        # Summaries — newest-first selection, fit max 30% of remaining.
+        # Recent verbatim messages are MORE valuable than summaries for short-term
+        # turn coherence, so we cap summaries aggressively (was 60% → caused
+        # context loss after a few exchanges once compression kicked in).
         included_summaries: list[SummaryBlock] = []
         summary_tokens = 0
-        summary_budget = int(remaining_budget * 0.6)
+        summary_budget = int(remaining_budget * 0.3)
 
         for block in reversed(summary_blocks):  # newest first
             block_tokens = estimate_tokens(block.summary)
@@ -228,12 +237,15 @@ class ChatContextAssembler:
             summary_tokens += block_tokens
         remaining_budget -= summary_tokens
 
-        # Recent messages — newest-first selection, fit remaining budget
+        # Recent messages — newest-first selection, fit remaining budget.
+        # +30 per message accounts for chat-completions JSON wrapping
+        # (role field, message structure overhead). Was +10 — too optimistic
+        # and caused budget overflow / premature drop of older messages.
         included_messages: list[ChatMessage] = []
         message_tokens = 0
 
         for msg in reversed(recent_messages):  # newest first
-            msg_tokens = estimate_tokens(msg.content) + 10  # +10 for role/formatting
+            msg_tokens = estimate_tokens(msg.content) + 30  # +30 for role/JSON wrapping
             if message_tokens + msg_tokens > remaining_budget:
                 break
             included_messages.insert(0, msg)  # restore chronological order
@@ -394,13 +406,25 @@ class ChatContextAssembler:
 
     async def _load_recent_messages(
         self, conversation_id: str, limit: int = RECENT_MESSAGE_COUNT,
+        *, exclude_sequence: int | None = None,
     ) -> list[ChatMessage]:
-        """Load last N messages, filter out errors, ordered by sequence ASC."""
+        """Load last N messages, filter out errors, ordered by sequence ASC.
+
+        Args:
+            exclude_sequence: If set, the message with this sequence is excluded
+                from the result. Used to skip the just-saved current user message
+                (Kotlin saves it BEFORE forwarding to Python) so build_messages()
+                doesn't duplicate it.
+        """
         from bson import ObjectId
+
+        query: dict = {"conversationId": ObjectId(conversation_id)}
+        if exclude_sequence is not None:
+            query["sequence"] = {"$ne": exclude_sequence}
 
         cursor = (
             self.db["chat_messages"]
-            .find({"conversationId": ObjectId(conversation_id)})
+            .find(query)
             .sort("sequence", -1)
             .limit(limit)
         )
