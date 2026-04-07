@@ -199,9 +199,9 @@ TOOL_GET_REPOSITORY_INFO: dict = {
     "function": {
         "name": "get_repository_info",
         "description": (
-            "Get information about the project's repository: branches, default branch, "
-            "recent commits, technology stack, and file statistics. Use this to understand "
-            "the overall repository structure and status."
+            "[KB — NO WORKSPACE CLONE NEEDED] Get information about the project's repository "
+            "from the Knowledge Base: branches, default branch, recent commits, technology "
+            "stack, and file statistics. Safe to call even before the repo is cloned."
         ),
         "parameters": {
             "type": "object",
@@ -260,9 +260,11 @@ TOOL_GET_RECENT_COMMITS: dict = {
     "function": {
         "name": "get_recent_commits",
         "description": (
-            "Get recent git commits from the project repository. Returns commit hashes, "
-            "messages, authors, and dates. Use this to understand recent work, avoid "
-            "duplicate implementations, or see project activity."
+            "[KB — NO WORKSPACE CLONE NEEDED] Get recent git commits from the Knowledge Base. "
+            "Returns commit hashes, messages, authors, and dates. "
+            "**USE THIS FIRST when asked about the latest commit / commit history — it works "
+            "even before the repo is cloned.** For file-level changeset / patch of a specific "
+            "commit use git_show (workspace-based) afterwards."
         ),
         "parameters": {
             "type": "object",

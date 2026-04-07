@@ -2001,7 +2001,7 @@ async def _execute_git_status(
     """Get git status of workspace."""
     workspace = await _get_workspace_path(client_id, project_id)
     if not workspace:
-        return "Error: Workspace not found. Repository not cloned yet."
+        return "Error: Workspace for this project is not cloned yet. \n\nTry one of these alternatives that read from the Knowledge Base (no clone needed):\n- get_recent_commits(limit=10) — latest commits with hash, author, message, date\n- get_repository_info() — repo overview with branches\n- git_branch_list() — all branches\n- get_repository_structure() — file tree structure\n- get_technology_stack() — detected languages/frameworks\n\nOr call init_workspace(project_id=\"<id>\") to trigger async clone (takes ~30s-5min for large repos), then retry this tool."
 
     try:
         result = subprocess.run(
@@ -2035,7 +2035,7 @@ async def _execute_git_log(
     """Get git commit history."""
     workspace = await _get_workspace_path(client_id, project_id)
     if not workspace:
-        return "Error: Workspace not found. Repository not cloned yet."
+        return "Error: Workspace for this project is not cloned yet. \n\nTry one of these alternatives that read from the Knowledge Base (no clone needed):\n- get_recent_commits(limit=10) — latest commits with hash, author, message, date\n- get_repository_info() — repo overview with branches\n- git_branch_list() — all branches\n- get_repository_structure() — file tree structure\n- get_technology_stack() — detected languages/frameworks\n\nOr call init_workspace(project_id=\"<id>\") to trigger async clone (takes ~30s-5min for large repos), then retry this tool."
 
     try:
         cmd = ["git", "log", f"--max-count={limit}", "--pretty=format:%h - %an, %ar : %s"]
@@ -2074,7 +2074,7 @@ async def _execute_git_diff(
     """Show git diff between commits or working directory."""
     workspace = await _get_workspace_path(client_id, project_id)
     if not workspace:
-        return "Error: Workspace not found. Repository not cloned yet."
+        return "Error: Workspace for this project is not cloned yet. \n\nTry one of these alternatives that read from the Knowledge Base (no clone needed):\n- get_recent_commits(limit=10) — latest commits with hash, author, message, date\n- get_repository_info() — repo overview with branches\n- git_branch_list() — all branches\n- get_repository_structure() — file tree structure\n- get_technology_stack() — detected languages/frameworks\n\nOr call init_workspace(project_id=\"<id>\") to trigger async clone (takes ~30s-5min for large repos), then retry this tool."
 
     try:
         cmd = ["git", "diff"]
@@ -2120,7 +2120,7 @@ async def _execute_git_show(
     """Show commit details and changes."""
     workspace = await _get_workspace_path(client_id, project_id)
     if not workspace:
-        return "Error: Workspace not found. Repository not cloned yet."
+        return "Error: Workspace for this project is not cloned yet. \n\nTry one of these alternatives that read from the Knowledge Base (no clone needed):\n- get_recent_commits(limit=10) — latest commits with hash, author, message, date\n- get_repository_info() — repo overview with branches\n- git_branch_list() — all branches\n- get_repository_structure() — file tree structure\n- get_technology_stack() — detected languages/frameworks\n\nOr call init_workspace(project_id=\"<id>\") to trigger async clone (takes ~30s-5min for large repos), then retry this tool."
 
     try:
         result = subprocess.run(
@@ -2151,7 +2151,7 @@ async def _execute_git_blame(
     """Show git blame for a file."""
     workspace = await _get_workspace_path(client_id, project_id)
     if not workspace:
-        return "Error: Workspace not found. Repository not cloned yet."
+        return "Error: Workspace for this project is not cloned yet. \n\nTry one of these alternatives that read from the Knowledge Base (no clone needed):\n- get_recent_commits(limit=10) — latest commits with hash, author, message, date\n- get_repository_info() — repo overview with branches\n- git_branch_list() — all branches\n- get_repository_structure() — file tree structure\n- get_technology_stack() — detected languages/frameworks\n\nOr call init_workspace(project_id=\"<id>\") to trigger async clone (takes ~30s-5min for large repos), then retry this tool."
 
     if not file_path:
         return "Error: file_path required for git blame."
@@ -2186,11 +2186,24 @@ async def _execute_git_blame(
         return f"Error: git blame failed: {str(e)[:200]}"
 
 
-async def _get_workspace_path(client_id: str, project_id: str | None) -> str | None:
-    """Get workspace path from KB graph (repository node)."""
+async def _get_workspace_path(
+    client_id: str, project_id: str | None, auto_init: bool = True,
+) -> str | None:
+    """Get workspace path from KB graph (repository node).
+
+    If the workspace is not yet cloned and auto_init=True, triggers the
+    Kotlin server's BLOCKING /internal/git/init-workspace endpoint which
+    clones the repo synchronously and returns the agent workspace path.
+
+    Returns None only when:
+    - project_id is missing
+    - no git resource configured for the project
+    - clone failed (auth / not found / network error)
+    """
     if not project_id:
         return None
 
+    # 1. Try KB graph first (fast path, no clone needed if repo already indexed)
     url = f"{settings.knowledgebase_url}/api/v1/graph/search"
     params = {
         "query": "",
@@ -2205,14 +2218,52 @@ async def _get_workspace_path(client_id: str, project_id: str | None) -> str | N
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             repos = resp.json()
-
-            if not repos:
-                return None
-
-            workspace_path = repos[0].get("properties", {}).get("workspacePath")
-            return workspace_path
+            if repos:
+                workspace_path = repos[0].get("properties", {}).get("workspacePath")
+                if workspace_path:
+                    # Verify the directory actually exists on disk
+                    from pathlib import Path as _P
+                    if _P(workspace_path).exists():
+                        return workspace_path
     except Exception as e:
-        logger.error("Failed to get workspace path: %s", e)
+        logger.warning("KB graph lookup for workspace failed: %s", e)
+
+    # 2. KB didn't have it (or path doesn't exist on disk yet).
+    #    Trigger blocking init on the Kotlin server — it will clone and return
+    #    the workspace path synchronously once READY.
+    if not auto_init:
+        return None
+
+    init_url = f"{settings.kotlin_server_url.rstrip('/')}/internal/git/init-workspace"
+    try:
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            logger.info(
+                "AUTO_INIT_WORKSPACE | project=%s — triggering blocking clone",
+                project_id,
+            )
+            resp = await client.post(init_url, json={"projectId": project_id})
+            if resp.status_code != 200:
+                logger.warning(
+                    "init-workspace returned HTTP %d: %s",
+                    resp.status_code, resp.text[:200],
+                )
+                return None
+            data = resp.json()
+            status = data.get("status", "")
+            path = data.get("workspacePath", "")
+            if data.get("ok") and path:
+                logger.info(
+                    "AUTO_INIT_WORKSPACE | project=%s status=%s path=%s",
+                    project_id, status, path,
+                )
+                return path
+            logger.warning(
+                "AUTO_INIT_WORKSPACE | project=%s FAILED status=%s error=%s",
+                project_id, status, data.get("error", ""),
+            )
+            return None
+    except Exception as e:
+        logger.error("AUTO_INIT_WORKSPACE | project=%s exception: %s", project_id, e)
         return None
 
 
@@ -2228,7 +2279,7 @@ async def _execute_list_files(
     """List files and directories in workspace path."""
     workspace = await _get_workspace_path(client_id, project_id)
     if not workspace:
-        return "Error: Workspace not found. Repository not cloned yet."
+        return "Error: Workspace for this project is not cloned yet. \n\nTry one of these alternatives that read from the Knowledge Base (no clone needed):\n- get_recent_commits(limit=10) — latest commits with hash, author, message, date\n- get_repository_info() — repo overview with branches\n- git_branch_list() — all branches\n- get_repository_structure() — file tree structure\n- get_technology_stack() — detected languages/frameworks\n\nOr call init_workspace(project_id=\"<id>\") to trigger async clone (takes ~30s-5min for large repos), then retry this tool."
 
     try:
         # Security: prevent path traversal
@@ -2281,7 +2332,7 @@ async def _execute_read_file(
     """Read file contents from workspace."""
     workspace = await _get_workspace_path(client_id, project_id)
     if not workspace:
-        return "Error: Workspace not found. Repository not cloned yet."
+        return "Error: Workspace for this project is not cloned yet. \n\nTry one of these alternatives that read from the Knowledge Base (no clone needed):\n- get_recent_commits(limit=10) — latest commits with hash, author, message, date\n- get_repository_info() — repo overview with branches\n- git_branch_list() — all branches\n- get_repository_structure() — file tree structure\n- get_technology_stack() — detected languages/frameworks\n\nOr call init_workspace(project_id=\"<id>\") to trigger async clone (takes ~30s-5min for large repos), then retry this tool."
 
     if not file_path:
         return "Error: file_path required."
@@ -2333,7 +2384,7 @@ async def _execute_find_files(
     """Find files matching pattern in workspace."""
     workspace = await _get_workspace_path(client_id, project_id)
     if not workspace:
-        return "Error: Workspace not found. Repository not cloned yet."
+        return "Error: Workspace for this project is not cloned yet. \n\nTry one of these alternatives that read from the Knowledge Base (no clone needed):\n- get_recent_commits(limit=10) — latest commits with hash, author, message, date\n- get_repository_info() — repo overview with branches\n- git_branch_list() — all branches\n- get_repository_structure() — file tree structure\n- get_technology_stack() — detected languages/frameworks\n\nOr call init_workspace(project_id=\"<id>\") to trigger async clone (takes ~30s-5min for large repos), then retry this tool."
 
     if not pattern:
         return "Error: pattern required."
@@ -2387,7 +2438,7 @@ async def _execute_grep_files(
     """Search for text pattern in files."""
     workspace = await _get_workspace_path(client_id, project_id)
     if not workspace:
-        return "Error: Workspace not found. Repository not cloned yet."
+        return "Error: Workspace for this project is not cloned yet. \n\nTry one of these alternatives that read from the Knowledge Base (no clone needed):\n- get_recent_commits(limit=10) — latest commits with hash, author, message, date\n- get_repository_info() — repo overview with branches\n- git_branch_list() — all branches\n- get_repository_structure() — file tree structure\n- get_technology_stack() — detected languages/frameworks\n\nOr call init_workspace(project_id=\"<id>\") to trigger async clone (takes ~30s-5min for large repos), then retry this tool."
 
     if not pattern:
         return "Error: pattern required."
@@ -2446,7 +2497,7 @@ async def _execute_file_info(
     """Get file/directory metadata."""
     workspace = await _get_workspace_path(client_id, project_id)
     if not workspace:
-        return "Error: Workspace not found. Repository not cloned yet."
+        return "Error: Workspace for this project is not cloned yet. \n\nTry one of these alternatives that read from the Knowledge Base (no clone needed):\n- get_recent_commits(limit=10) — latest commits with hash, author, message, date\n- get_repository_info() — repo overview with branches\n- git_branch_list() — all branches\n- get_repository_structure() — file tree structure\n- get_technology_stack() — detected languages/frameworks\n\nOr call init_workspace(project_id=\"<id>\") to trigger async clone (takes ~30s-5min for large repos), then retry this tool."
 
     if not path:
         return "Error: path required."
@@ -2760,7 +2811,7 @@ async def _execute_command(
     """Execute shell command in workspace."""
     workspace = await _get_workspace_path(client_id, project_id)
     if not workspace:
-        return "Error: Workspace not found. Repository not cloned yet."
+        return "Error: Workspace for this project is not cloned yet. \n\nTry one of these alternatives that read from the Knowledge Base (no clone needed):\n- get_recent_commits(limit=10) — latest commits with hash, author, message, date\n- get_repository_info() — repo overview with branches\n- git_branch_list() — all branches\n- get_repository_structure() — file tree structure\n- get_technology_stack() — detected languages/frameworks\n\nOr call init_workspace(project_id=\"<id>\") to trigger async clone (takes ~30s-5min for large repos), then retry this tool."
 
     if not command.strip():
         return "Error: Empty command."

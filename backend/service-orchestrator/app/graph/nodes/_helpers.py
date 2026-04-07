@@ -23,6 +23,7 @@ from app.config import (
     CONTENT_TRUNCATION_CHARS,
 )
 from app.llm.provider import llm_provider, TIER_CONFIG
+from app.llm.router_client import route_request, report_model_error, report_model_success
 from app.models import (
     CodingTask,
     ModelTier,

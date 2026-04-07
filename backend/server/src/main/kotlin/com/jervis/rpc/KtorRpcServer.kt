@@ -148,6 +148,7 @@ class KtorRpcServer(
     private val preferenceService: com.jervis.preferences.PreferenceService,
     private val pythonOrchestratorClient: com.jervis.agent.PythonOrchestratorClient,
     private val contractRepository: com.jervis.finance.ContractRepository,
+    private val gitRepositoryService: com.jervis.git.service.GitRepositoryService,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -187,7 +188,7 @@ class KtorRpcServer(
                             installInternalEnvironmentApi(environmentService, environmentK8sService)
                             installInternalOpenRouterApi(openRouterSettingsRpcImpl)
                             installInternalProjectManagementApi(clientService, projectService, connectionService, projectTemplateService)
-                            installInternalGitApi(gitRepoCreationService, projectService, applicationEventPublisher)
+                            installInternalGitApi(gitRepoCreationService, projectService, applicationEventPublisher, backgroundEngine, gitRepositoryService)
                             installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)
                             installInternalCacheApi(guidelinesService)
                             installInternalMeetingApi(meetingRpcImpl)
