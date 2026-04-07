@@ -54,8 +54,16 @@ sealed class RpcConnectionState {
  *   which pushes into a CONFLATED channel. The loop consumes signals and transitions
  *   the FSM. No races, no "state changed mid-reconnect" windows.
  *
- * - **Heartbeat** (every [heartbeatInterval] with [heartbeatTimeout]): runs while
- *   Connected, via a lightweight RPC call. On failure, enqueues a reconnect signal.
+ * - **No application-layer heartbeat**. Disconnect detection is handled entirely by:
+ *     1. WebSocket ping frames (Ktor `install(WebSockets) { pingInterval = 10.seconds }`
+ *        on both client and server, server `timeoutMillis = 5_000`). Transport-level
+ *        death is caught within ≤15 s with zero RPC traffic.
+ *     2. Live subscribe streams in [resilientFlow] throw an exception on disconnect,
+ *        which [isConnectionLost] routes to [requestReconnect].
+ *     3. [rpcCall] wraps user-initiated RPC calls with `withTimeout` + automatic
+ *        reconnect on connection-lost errors.
+ *   Heartbeat has been added and removed ~20 times in this codebase. It only adds
+ *   server load without solving any actual reconnect problem.
  *
  * - **Resilient streams**: [resilientFlow] uses an infinite `while (isActive)` loop
  *   inside a [channelFlow]. The loop's only exit is upstream cancellation — it cannot
@@ -69,25 +77,32 @@ sealed class RpcConnectionState {
  *
  * 1. Only [runConnectionLoop] writes [_state].
  * 2. [_generation] is monotonic, bumped exactly once per `Connected` entry.
- * 3. [heartbeatJob] is owned by the loop: started on entering Connected, cancelled on leaving.
- * 4. [resilientFlow] cannot complete silently — only path out is upstream cancellation.
- * 5. Reconnect signals coalesce via CONFLATED channel — no storm.
+ * 3. [resilientFlow] cannot complete silently — only path out is upstream cancellation.
+ * 4. Reconnect signals coalesce via CONFLATED channel — no storm.
  *
  * ## Failure mode coverage
  *
- * - `kubectl rollout restart` → old pod close frame → `isConnectionLost` → reconnect
- * - `kubectl delete pod` (no close frame) → heartbeat fails within ≤9s → reconnect
- * - Wi-Fi off → heartbeat fails within ≤9s → reconnect backoff loop
- * - Laptop sleep/wake → heartbeat fails on first post-wake tick → reconnect
- * - Network switch → socket dies → heartbeat fails → reconnect on new IP
- * - Long idle → heartbeat keeps connection alive
+ * - `kubectl rollout restart` → old pod close frame → stream throws → `isConnectionLost` → reconnect
+ * - `kubectl delete pod` (no close frame) → WebSocket ping timeout (5 s) → stream exception → reconnect
+ * - Wi-Fi off → WebSocket ping timeout → stream exception → reconnect backoff loop
+ * - Laptop sleep/wake → first post-wake ping fails → stream exception → reconnect
+ * - Network switch → socket dies → stream exception → reconnect on new IP
+ * - Long idle with no subscribe streams → transport ping keeps socket alive; if it dies,
+ *   the next rpcCall detects it and triggers reconnect
  * - Server unreachable for minutes → backoff caps at [maxBackoffMs], recovers within that
  */
 class RpcConnectionManager(val baseUrl: String) {
 
     // ─── Tunables ──────────────────────────────────────────────────
-    private val heartbeatInterval = 5.seconds
-    private val heartbeatTimeout = 4.seconds
+    // NOTE: NO application-layer heartbeat. Disconnect detection is handled by:
+    //   1. WebSocket ping frames — client pingInterval=10s, server pingPeriodMillis=10_000,
+    //      timeoutMillis=5_000. Transport-layer death is caught within ≤15s with zero RPC load.
+    //   2. Live subscribe streams (resilientFlow) throw exceptions on disconnect, which
+    //      isConnectionLost() catches and routes to requestReconnect.
+    //   3. rpcCall() wraps user-initiated calls with withTimeout + auto-reconnect.
+    // Heartbeat has been added and removed ~20 times in this codebase. It only spams the
+    // server and solves nothing — the real problems were always elsewhere (silent flow
+    // completion, string-based exception match). See KB: "desktop reconnect no heartbeat".
     private val rpcCallDefaultTimeout = 10.seconds
     private val rpcVerifyTimeout = 8.seconds
     private val baseBackoffMs = 1_000L
@@ -116,7 +131,6 @@ class RpcConnectionManager(val baseUrl: String) {
     private val reconnectChannel = Channel<String>(Channel.CONFLATED)
 
     private var connectionLoopJob: Job? = null
-    private var heartbeatJob: Job? = null
 
     private var httpClient: HttpClient? = null
     private var rpcClient: KtorRpcClient? = null
@@ -302,7 +316,6 @@ class RpcConnectionManager(val baseUrl: String) {
     /** Stop everything. After this call, the manager is dead. */
     fun shutdown() {
         connectionLoopJob?.cancel()
-        heartbeatJob?.cancel()
         closeCurrentConnection()
         supervisor.cancel()
     }
@@ -342,18 +355,18 @@ class RpcConnectionManager(val baseUrl: String) {
             _state.value = RpcConnectionState.Connected(services, gen)
             println("RpcConnectionManager: Connected (gen=$gen)")
 
-            startHeartbeat(services)
-
             // ── Wait for a reconnect signal ──
+            // No heartbeat: disconnect detection is fully handled by
+            //   (a) WebSocket ping frames (10s on both ends) — transport level,
+            //   (b) exceptions from live subscribe streams via resilientFlow,
+            //   (c) rpcCall's withTimeout + isConnectionLost on user-initiated calls.
             val reason = try {
                 reconnectChannel.receive()
             } catch (ce: CancellationException) {
-                stopHeartbeat()
                 closeCurrentConnection()
                 _state.value = RpcConnectionState.Disconnected
                 throw ce
             }
-            stopHeartbeat()
             println("RpcConnectionManager: reconnect requested — $reason")
 
             // ── Transition back to Disconnected ──
@@ -427,42 +440,4 @@ class RpcConnectionManager(val baseUrl: String) {
         return min(exp, maxBackoffMs)
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Heartbeat (owned by the connection loop)
-    // ═══════════════════════════════════════════════════════════════
-
-    private fun startHeartbeat(services: NetworkModule.Services) {
-        heartbeatJob?.cancel()
-        heartbeatJob = scope.launch {
-            try {
-                while (isActive) {
-                    delay(heartbeatInterval)
-                    val ok = try {
-                        withTimeout(heartbeatTimeout) {
-                            // Lightweight RPC — just verify the WebSocket is alive.
-                            services.clientService.getAllClients()
-                            true
-                        }
-                    } catch (ce: CancellationException) {
-                        throw ce
-                    } catch (_: Throwable) {
-                        false
-                    }
-
-                    if (!ok) {
-                        println("RpcConnectionManager: heartbeat failed — requesting reconnect")
-                        requestReconnect("heartbeat failed")
-                        return@launch
-                    }
-                }
-            } catch (_: CancellationException) {
-                // Normal lifecycle — loop is transitioning out of Connected
-            }
-        }
-    }
-
-    private fun stopHeartbeat() {
-        heartbeatJob?.cancel()
-        heartbeatJob = null
-    }
 }
