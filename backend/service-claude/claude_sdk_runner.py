@@ -65,6 +65,16 @@ async def main():
         allowed_tools = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"]
         max_turns = 100
 
+    # Default ClaudeAgentOptions.max_buffer_size is 1 MB which is easily exceeded
+    # by tool results (read_file on large sources, grep_files with many matches,
+    # git diff output, base64-encoded attachments). The SDK then terminates the
+    # subprocess with `CLIJSONDecodeError: JSON message exceeded maximum buffer size
+    # of 1048576 bytes` and the Job fails with no useful output.
+    #
+    # Upstream bug: https://github.com/anthropics/claude-agent-sdk-python/issues/98
+    # Workaround: raise to 64 MB. The buffer is only allocated transiently while
+    # parsing a single JSON frame, so memory overhead is bounded and fits easily
+    # into the Job's 2 GB RAM limit.
     options = ClaudeAgentOptions(
         cwd=workspace,
         allowed_tools=allowed_tools,
@@ -72,6 +82,7 @@ async def main():
         mcp_servers=mcp_servers,
         system_prompt=system_prompt,
         max_turns=max_turns,
+        max_buffer_size=64 * 1024 * 1024,  # 64 MB (was default 1 MB)
     )
 
     print(f"=== Claude SDK Runner: task={task_id} workspace={workspace} ===")

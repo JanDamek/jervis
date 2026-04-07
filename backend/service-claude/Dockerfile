@@ -51,14 +51,18 @@ RUN curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
     rm -rf /var/lib/apt/lists/*
 
 # === ArangoDB Shell (arangosh) ===
-RUN curl -fsSL https://download.arangodb.com/arangodb311/DEBIAN/Release.key \
-    | gpg --dearmor -o /usr/share/keyrings/arangodb.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/arangodb.gpg] \
-    https://download.arangodb.com/arangodb311/DEBIAN/ /" \
-    > /etc/apt/sources.list.d/arangodb.list && \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends arangodb3-client && \
-    rm -rf /var/lib/apt/lists/*
+# Temporarily skipped — ArangoDB's package-signing GPG key (C04AD0FD86FEC04D)
+# expired and their APT repo fails `apt-get update`. Agents don't call arangosh
+# directly (they use MCP tools); re-enable once ArangoDB ships a new signing key
+# or switch to downloading the arangosh binary directly.
+# RUN curl -fsSL https://download.arangodb.com/arangodb311/DEBIAN/Release.key \
+#     | gpg --dearmor -o /usr/share/keyrings/arangodb.gpg && \
+#     echo "deb [signed-by=/usr/share/keyrings/arangodb.gpg] \
+#     https://download.arangodb.com/arangodb311/DEBIAN/ /" \
+#     > /etc/apt/sources.list.d/arangodb.list && \
+#     apt-get update && \
+#     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends arangodb3-client && \
+#     rm -rf /var/lib/apt/lists/*
 
 # === PostgreSQL client (psql) ===
 RUN apt-get update && \
