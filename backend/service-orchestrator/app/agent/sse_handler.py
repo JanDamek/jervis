@@ -47,11 +47,10 @@ async def handle_chat_sse(
     _live_vertex_id: str | None = None
     try:
         # ── 1. Load context ──────────────────────────────────────────
-        # FREE tier: 24k context budget (was 10k — too small, dropped older
-        # messages after just 2 exchanges). With memory ~2k + summaries cap 30%
-        # this leaves ~15k for verbatim recent messages = ~10-15 exchanges.
-        max_tier = getattr(request, "max_openrouter_tier", "FREE")
-        context_budget = 24_000 if max_tier in ("FREE", "NONE") else None  # None = default
+        # No artificial budget downgrade — even FREE OpenRouter models have
+        # ≥120k tokens, local GPU long-context models go up to 250k. Use the
+        # default CONTEXT_BUDGET from settings (total_context_window minus
+        # system + response reserves).
         # Exclude the just-saved current user message — Kotlin persists it
         # before forwarding to Python, so loading it would cause build_messages
         # to duplicate the current turn.
@@ -59,7 +58,6 @@ async def handle_chat_sse(
         context = await chat_context_assembler.assemble_context(
             conversation_id=request.session_id,
             exclude_sequence=current_seq,
-            **({"context_budget": context_budget} if context_budget else {}),
         )
         runtime_ctx = await load_runtime_context(
             query=request.message,

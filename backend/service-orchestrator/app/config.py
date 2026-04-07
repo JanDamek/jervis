@@ -130,18 +130,21 @@ class Settings(BaseSettings):
     delegation_timeout: int = 300
 
     # Token budgets per delegation depth
-    token_budget_depth_0: int = 48000
-    token_budget_depth_1: int = 16000
-    token_budget_depth_2: int = 8000
-    token_budget_depth_3: int = 4000
+    token_budget_depth_0: int = 200_000
+    token_budget_depth_1: int = 80_000
+    token_budget_depth_2: int = 32_000
+    token_budget_depth_3: int = 12_000
 
     # Context budgeting (ChatContextAssembler)
-    total_context_window: int = 48_000        # Model context window (fixed 48k on GPU1)
-    system_prompt_reserve: int = 2_000       # Tokens reserved for system prompt + tools
-    response_reserve: int = 4_000            # Tokens reserved for LLM response
-    recent_message_count: int = 40            # Max recent verbatim messages to load (budget limits actual inclusion)
-    max_summary_blocks: int = 8              # Max compressed summary blocks to load
-    compress_threshold: int = 20             # Compress when >=N unsummarized messages
+    # Cloud (FREE/PAID) modely mají reálně 120k+ tokenů. Lokální GPU model
+    # má sice ~40k VRAM, ale streamuje do 250k context window.
+    # Default 200k je bezpečný společný strop pro většinu modelů.
+    total_context_window: int = 200_000       # Sane default for cloud + local long-context models
+    system_prompt_reserve: int = 8_000        # System prompt + tools + KB prefetch + thought map
+    response_reserve: int = 8_000             # LLM response reserve
+    recent_message_count: int = 200           # Max recent verbatim messages to load (budget limits actual inclusion)
+    max_summary_blocks: int = 16              # Max compressed summary blocks to load
+    compress_threshold: int = 40              # Compress when >=N unsummarized messages
     compress_max_retries: int = 2            # Max compression retries on LLM failure
     max_tool_result_in_msg: int = 2_000      # Max chars for tool results in stored messages
     token_estimate_ratio: int = 4            # Chars-per-token ratio (rough, for cs/en)
