@@ -20,6 +20,17 @@ sealed class JervisEvent {
         // Error mode — task failed, show error detail + retry/discard
         val isError: Boolean = false,
         val errorDetail: String? = null,
+        /**
+         * When set, this event represents a CHAT approval (ephemeral, in-flight
+         * tool call waiting for user consent in the agentic chat loop). The UI
+         * must route approve/deny through [IChatService.approveChatAction]
+         * instead of the real USER_TASK `sendToAgent` flow — `taskId` here is a
+         * synthetic `approvalId`, not a TaskDocument id.
+         *
+         * Value is the approval action type (e.g. `"KB_DELETE"`) used as the
+         * `action` argument so "always" auto-approval rules can be captured.
+         */
+        val chatApprovalAction: String? = null,
     ) : JervisEvent()
 
     @Serializable

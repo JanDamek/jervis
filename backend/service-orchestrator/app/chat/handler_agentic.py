@@ -119,18 +119,44 @@ async def _persist_pending_approval(
 
 
 async def _resolve_pending_approval(approval_id: str, approved: bool) -> None:
-    """Mark a pending approval as resolved in MongoDB."""
+    """Mark a pending approval as resolved in MongoDB + broadcast dismiss to other devices.
+
+    First-wins semantics: the Mongo update is targeted at the approvalId, the
+    asyncio future resolution is idempotent (pops from dict), and the
+    fire-and-forget dismiss broadcast reaches the kRPC streams and FCM/APNs so
+    stale dialogs on other devices close automatically.
+    """
+    resolved_doc: dict | None = None
     try:
         from app.agent.persistence import agent_store
         coll = await agent_store._ensure_collection()
         db = coll.database
-        await db["pending_approvals"].update_one(
-            {"_id": approval_id},
-            {"$set": {"status": "approved" if approved else "denied",
-                      "resolved_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc)}},
+        # find_one_and_update ensures we only dispatch the dismiss broadcast
+        # for the first resolver — subsequent calls see status != "pending".
+        from datetime import datetime, timezone
+        result = await db["pending_approvals"].find_one_and_update(
+            {"_id": approval_id, "status": "pending"},
+            {"$set": {
+                "status": "approved" if approved else "denied",
+                "resolved_at": datetime.now(timezone.utc),
+            }},
         )
+        resolved_doc = result  # None if already resolved by another client
     except Exception as e:
         logger.warning("Failed to resolve pending approval %s: %s", approval_id, e)
+
+    # Best-effort fan-out — only fire if WE were the first resolver.
+    if resolved_doc is not None:
+        try:
+            from app.tools.kotlin_client import kotlin_client
+            await kotlin_client.broadcast_chat_approval_resolved(
+                approval_id=approval_id,
+                approved=approved,
+                action=resolved_doc.get("action", ""),
+                client_id=resolved_doc.get("client_id"),
+            )
+        except Exception as _e:
+            logger.debug("Failed to broadcast chat approval resolved: %s", _e)
 
 
 async def recover_pending_approvals() -> list[dict]:
@@ -763,6 +789,24 @@ async def run_agentic_loop(
                                 "approval_id": approval_id,
                             },
                         )
+
+                        # Also broadcast via the SINGLE remote notification channel
+                        # (NotificationRpcImpl.emitUserTaskCreated with isApproval=true)
+                        # → JervisEvent visible on desktop, iOS, watch. FCM/APNs fallback
+                        # handled by the existing NotificationRpcImpl push path.
+                        try:
+                            from app.tools.kotlin_client import kotlin_client
+                            await kotlin_client.broadcast_chat_approval_request(
+                                approval_id=approval_id,
+                                action=approval_exc.action,
+                                tool=tool_name,
+                                preview=approval_exc.preview,
+                                client_id=effective_client_id,
+                                project_id=effective_project_id,
+                                session_id=request.session_id,
+                            )
+                        except Exception as _e:
+                            logger.debug("Failed to broadcast chat approval: %s", _e)
 
                         # Create future and wait for /chat/approve response
                         loop = asyncio.get_event_loop()

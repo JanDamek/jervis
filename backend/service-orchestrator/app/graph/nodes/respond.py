@@ -26,7 +26,7 @@ from app.models import CodingTask
 from app.graph.nodes._helpers import llm_with_cloud_fallback, is_error_message, detect_tool_loop
 from app.llm.provider import TIER_CONFIG, llm_provider
 from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
-from app.tools.executor import execute_tool, AskUserInterrupt, _TOOL_EXECUTION_TIMEOUT_S
+from app.tools.executor import execute_tool, AskUserInterrupt, ApprovalRequiredInterrupt, _TOOL_EXECUTION_TIMEOUT_S
 from app.tools.kotlin_client import kotlin_client
 from app.tools.ollama_parsing import extract_tool_calls
 
@@ -307,6 +307,12 @@ async def respond(state: dict) -> dict:
 
             # Execute tool — may raise AskUserInterrupt for ask_user tool
             # W-22: Wrap in asyncio.wait_for to prevent hung tools
+            # NOTE: skip_approval=True — approval gate is handled at the chat
+            # handler level (handler_agentic.py) which broadcasts approval via
+            # NotificationRpcImpl remote channel. Graph-level respond runs inside
+            # an already-approved task, so individual tool calls here must not
+            # re-trigger the gate — otherwise the interrupt leaks as a traceback
+            # (fail_vertex path in langgraph_runner).
             try:
                 result = await asyncio.wait_for(
                     execute_tool(
@@ -316,6 +322,7 @@ async def respond(state: dict) -> dict:
                         project_id=project_id,
                         processing_mode=state.get("processing_mode", "FOREGROUND"),
                         group_id=state.get("group_id"),
+                        skip_approval=True,
                     ),
                     timeout=_TOOL_EXECUTION_TIMEOUT_S,
                 )
@@ -325,6 +332,15 @@ async def respond(state: dict) -> dict:
                     tool_name, _TOOL_EXECUTION_TIMEOUT_S,
                 )
                 result = f"Error: Tool '{tool_name}' timed out after {_TOOL_EXECUTION_TIMEOUT_S}s."
+            except ApprovalRequiredInterrupt as e:
+                # Defensive: should not happen with skip_approval=True, but if
+                # something in the execute path still raises, degrade gracefully
+                # instead of failing the vertex with a stack trace.
+                logger.warning(
+                    "Respond: unexpected ApprovalRequiredInterrupt for tool %s (action=%s) — treating as deny",
+                    tool_name, e.action,
+                )
+                result = f"Error: Tool '{tool_name}' requires approval that is not available in graph context."
             except AskUserInterrupt as e:
                 # Agent needs user input — interrupt graph execution
                 logger.info("ASK_USER: tool requested user input: %s", e.question)

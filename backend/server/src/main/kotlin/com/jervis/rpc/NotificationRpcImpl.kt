@@ -62,6 +62,7 @@ class NotificationRpcImpl : INotificationService {
         projectId: String? = null,
         isError: Boolean = false,
         errorDetail: String? = null,
+        chatApprovalAction: String? = null,
     ) {
         emitEvent(clientId, JervisEvent.UserTaskCreated(
             clientId = clientId,
@@ -74,6 +75,7 @@ class NotificationRpcImpl : INotificationService {
             projectId = projectId,
             isError = isError,
             errorDetail = errorDetail,
+            chatApprovalAction = chatApprovalAction,
         ))
     }
 

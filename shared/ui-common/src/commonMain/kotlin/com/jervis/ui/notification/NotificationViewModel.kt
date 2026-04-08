@@ -45,14 +45,29 @@ class NotificationViewModel(
         // Collect notification action results from platform-specific handlers
         scope.launch {
             NotificationActionChannel.actions.collect { result ->
+                // Native mobile push action buttons (iOS actionable category /
+                // Android notification actions) deliver taskId here. If the
+                // currently-displayed event is a chat approval for the same
+                // taskId, route through the chat RPC instead of sendToAgent.
+                val chatApprovalAction = _userTaskDialogEvent.value
+                    ?.takeIf { it.taskId == result.taskId }
+                    ?.chatApprovalAction
                 when (result.action) {
                     NotificationAction.APPROVE -> {
                         try {
-                            repository.userTasks.sendToAgent(
-                                taskId = result.taskId,
-                                routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
-                                additionalInput = null,
-                            )
+                            if (chatApprovalAction != null) {
+                                repository.chat.approveChatAction(
+                                    approved = true,
+                                    always = false,
+                                    action = chatApprovalAction,
+                                )
+                            } else {
+                                repository.userTasks.sendToAgent(
+                                    taskId = result.taskId,
+                                    routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                                    additionalInput = null,
+                                )
+                            }
                             refreshUserTaskCount()
                         } catch (e: Exception) {
                             println("Failed to approve task ${result.taskId}: ${e.message}")
@@ -60,7 +75,20 @@ class NotificationViewModel(
                         _userTaskDialogEvent.value = null
                     }
                     NotificationAction.DENY -> {
-                        // Deny from notification → show in-app dialog for reason input
+                        if (chatApprovalAction != null) {
+                            try {
+                                repository.chat.approveChatAction(
+                                    approved = false,
+                                    always = false,
+                                    action = chatApprovalAction,
+                                )
+                                refreshUserTaskCount()
+                            } catch (e: Exception) {
+                                println("Failed to deny chat approval ${result.taskId}: ${e.message}")
+                            }
+                            _userTaskDialogEvent.value = null
+                        }
+                        // else: real USER_TASK deny — show in-app dialog for reason input
                     }
                     NotificationAction.REPLY -> {
                         // Inline reply (e.g. MFA code from notification RemoteInput)
@@ -100,13 +128,30 @@ class NotificationViewModel(
     }
 
     fun approveTask(taskId: String, onError: (String) -> Unit = {}) {
+        // Branch: chat approvals use IChatService.approveChatAction (ephemeral
+        // in-flight tool call), real USER_TASKs use the sendToAgent flow.
+        val current = _userTaskDialogEvent.value
+        val chatApprovalAction = current
+            ?.takeIf { it.taskId == taskId }
+            ?.chatApprovalAction
         scope.launch {
             try {
-                repository.userTasks.sendToAgent(
-                    taskId = taskId,
-                    routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
-                    additionalInput = null,
-                )
+                if (chatApprovalAction != null) {
+                    // Chat approval path — taskId is a synthetic approvalId,
+                    // not a TaskDocument. Route through chat RPC; Python resolves
+                    // the asyncio future and broadcasts a dismiss to other devices.
+                    repository.chat.approveChatAction(
+                        approved = true,
+                        always = false,
+                        action = chatApprovalAction,
+                    )
+                } else {
+                    repository.userTasks.sendToAgent(
+                        taskId = taskId,
+                        routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                        additionalInput = null,
+                    )
+                }
                 _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
                 refreshUserTaskCount()
@@ -117,13 +162,28 @@ class NotificationViewModel(
     }
 
     fun denyTask(taskId: String, reason: String, onError: (String) -> Unit = {}) {
+        val current = _userTaskDialogEvent.value
+        val chatApprovalAction = current
+            ?.takeIf { it.taskId == taskId }
+            ?.chatApprovalAction
         scope.launch {
             try {
-                repository.userTasks.sendToAgent(
-                    taskId = taskId,
-                    routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
-                    additionalInput = reason,
-                )
+                if (chatApprovalAction != null) {
+                    // Chat approval path — `reason` is lost here because
+                    // approveChatAction has no free-text field. Captured by the
+                    // chat message history; future work: add reason to RPC.
+                    repository.chat.approveChatAction(
+                        approved = false,
+                        always = false,
+                        action = chatApprovalAction,
+                    )
+                } else {
+                    repository.userTasks.sendToAgent(
+                        taskId = taskId,
+                        routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                        additionalInput = reason,
+                    )
+                }
                 _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
                 refreshUserTaskCount()

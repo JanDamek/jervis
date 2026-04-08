@@ -297,6 +297,87 @@ class KotlinServerClient:
     # Chat foreground preemption
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Chat approval — remote notification broadcast
+    # ------------------------------------------------------------------
+
+    async def broadcast_chat_approval_request(
+        self,
+        approval_id: str,
+        action: str,
+        tool: str,
+        preview: str,
+        client_id: str | None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+    ) -> bool:
+        """Broadcast a pending chat approval via Kotlin NotificationRpcImpl.
+
+        Fire-and-forget. Kotlin emits JervisEvent.UserTaskCreated(isApproval=true)
+        on the single remote notification channel, so desktop, iOS, watch — any
+        device subscribed to clientId — will show ApprovalNotificationDialog.
+
+        FCM/APNs fallback kicks in automatically when no active WebSocket
+        subscribers (existing NotificationRpcImpl path).
+        """
+        if not client_id:
+            logger.debug("broadcast_chat_approval_request: no client_id, skipping")
+            return False
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                "/internal/chat/approvals/broadcast",
+                json={
+                    "approvalId": approval_id,
+                    "action": action,
+                    "tool": tool,
+                    "preview": preview,
+                    "clientId": client_id,
+                    "projectId": project_id,
+                    "sessionId": session_id,
+                },
+            )
+            if resp.status_code >= 400:
+                logger.warning(
+                    "broadcast_chat_approval_request non-ok: status=%s body=%s",
+                    resp.status_code, resp.text[:200],
+                )
+                return False
+            return True
+        except Exception as e:
+            logger.warning("broadcast_chat_approval_request failed: %s", e)
+            return False
+
+    async def broadcast_chat_approval_resolved(
+        self,
+        approval_id: str,
+        approved: bool,
+        action: str,
+        client_id: str | None,
+    ) -> bool:
+        """Tell Kotlin that an approval was resolved → dismiss stale dialogs elsewhere.
+
+        Fire-and-forget. Kotlin emits JervisEvent.UserTaskCancelled to the
+        clientId so other devices close their open ApprovalNotificationDialog.
+        """
+        if not client_id:
+            return False
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                "/internal/chat/approvals/resolved",
+                json={
+                    "approvalId": approval_id,
+                    "approved": approved,
+                    "action": action,
+                    "clientId": client_id,
+                },
+            )
+            return resp.status_code < 400
+        except Exception as e:
+            logger.debug("broadcast_chat_approval_resolved failed: %s", e)
+            return False
+
     async def register_foreground_start(self) -> bool:
         """Register foreground chat start — preempts background tasks."""
         try:
