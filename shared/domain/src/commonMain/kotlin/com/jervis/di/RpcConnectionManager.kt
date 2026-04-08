@@ -211,11 +211,15 @@ class RpcConnectionManager(val baseUrl: String) {
         val services = awaitConnected(timeout)
         return try {
             withTimeout(timeout) { block(services) }
-        } catch (ce: CancellationException) {
-            throw ce
         } catch (e: TimeoutCancellationException) {
+            // TimeoutCancellationException extends CancellationException, so it
+            // MUST be caught before the generic CancellationException branch,
+            // otherwise this branch is dead code and timeouts propagate as
+            // regular cancellations, killing the caller coroutine.
             requestReconnect("rpcCall timeout after $timeout")
             throw OfflineException("RPC call timed out — reconnecting")
+        } catch (ce: CancellationException) {
+            throw ce
         } catch (e: Throwable) {
             if (isConnectionLost(e)) {
                 requestReconnect("rpcCall conn-lost: ${e::class.simpleName}")
@@ -379,11 +383,24 @@ class RpcConnectionManager(val baseUrl: String) {
     private suspend fun tryConnect(): Boolean = try {
         val newHttp = NetworkModule.createHttpClient()
 
-        // Phase 1: HTTP probe — fails fast on DNS / firewall / server-down
+        // Phase 1: HTTP probe — fails fast on DNS / firewall / server-down.
+        //
+        // CRITICAL catch order: TimeoutCancellationException MUST come BEFORE
+        // CancellationException, because it extends it. If we catch
+        // CancellationException first, our withTimeout would rethrow timeout
+        // as cancellation and kill the entire connection loop → user sees
+        // "one failed attempt, then silence forever". Treat timeouts as
+        // normal retryable failures (return false), let the loop backoff
+        // and try again. Only a REAL scope cancellation (shutdown) should
+        // propagate.
         try {
             withTimeout(rpcVerifyTimeout) {
                 newHttp.get("${baseUrl.trimEnd('/')}/")
             }
+        } catch (e: TimeoutCancellationException) {
+            runCatching { newHttp.close() }
+            _lastError.value = "HTTP probe timed out after $rpcVerifyTimeout"
+            return false
         } catch (ce: CancellationException) {
             runCatching { newHttp.close() }
             throw ce
@@ -397,11 +414,17 @@ class RpcConnectionManager(val baseUrl: String) {
         val newRpc = NetworkModule.createRpcClient(baseUrl, newHttp)
         val newServices = NetworkModule.createServices(newRpc)
 
-        // Phase 3: RPC verification call — ensures WebSocket + kRPC handshake is live
+        // Phase 3: RPC verification call — ensures WebSocket + kRPC handshake is live.
+        // Same catch order invariant as Phase 1.
         try {
             withTimeout(rpcVerifyTimeout) {
                 newServices.clientService.getAllClients()
             }
+        } catch (e: TimeoutCancellationException) {
+            runCatching { newRpc.close() }
+            runCatching { newHttp.close() }
+            _lastError.value = "RPC verify timed out after $rpcVerifyTimeout"
+            return false
         } catch (ce: CancellationException) {
             runCatching { newRpc.close() }
             runCatching { newHttp.close() }
@@ -418,6 +441,11 @@ class RpcConnectionManager(val baseUrl: String) {
         rpcClient = newRpc
         currentServices = newServices
         true
+    } catch (e: TimeoutCancellationException) {
+        // Safety net — any inner withTimeout that slipped through should
+        // be treated as a retryable failure, not a cancellation.
+        _lastError.value = "tryConnect timed out: ${e.message}"
+        false
     } catch (ce: CancellationException) {
         throw ce
     } catch (e: Throwable) {
