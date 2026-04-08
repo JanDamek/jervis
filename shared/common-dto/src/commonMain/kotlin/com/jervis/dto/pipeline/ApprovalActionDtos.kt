@@ -21,6 +21,13 @@ enum class ApprovalAction {
     KB_STORE,
     DEPLOY,
     CODING_DISPATCH,
+
+    /**
+     * Permission to passively attend (record + transcribe) a single online
+     * meeting. Always per individual occurrence — never granted for a recurring
+     * series. First-version is read-only: no messages, no audio out, no replies.
+     */
+    MEETING_ATTEND,
 }
 
 /**

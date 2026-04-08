@@ -265,6 +265,16 @@ class ActionExecutorService(
                     message = "Coding agent dispatch approved",
                     action = request.action,
                 )
+
+                // Meeting attendance is queued exclusively by
+                // MeetingAttendApprovalService and resolved via the approval
+                // RPC, never via this generic executeAction path. The branch
+                // exists only for `when` exhaustiveness.
+                ApprovalAction.MEETING_ATTEND -> ActionExecutionResult(
+                    success = false,
+                    message = "MEETING_ATTEND must be queued via MeetingAttendApprovalService",
+                    action = request.action,
+                )
             }
         } catch (e: Exception) {
             logger.error(e) { "ACTION_DISPATCH_FAILED: ${request.action}: ${e.message}" }
@@ -352,6 +362,10 @@ class ActionExecutorService(
             ApprovalAction.KB_STORE -> "Store to KB: ${payload["subject"]?.take(80) ?: "N/A"}"
             ApprovalAction.DEPLOY -> "Deploy: ${payload["target"] ?: "N/A"}"
             ApprovalAction.CODING_DISPATCH -> "Dispatch coding agent: ${payload["task"]?.take(80) ?: "N/A"}"
+            // MEETING_ATTEND is queued exclusively by MeetingAttendApprovalService,
+            // never via the generic executeAction → queueForApproval path. The
+            // branch exists only to keep the when() exhaustive.
+            ApprovalAction.MEETING_ATTEND -> "Attend meeting: ${payload["startTime"] ?: "N/A"}"
         }
     }
 

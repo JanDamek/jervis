@@ -94,6 +94,10 @@ data:
         wait-on-startup: 10s         # Delay before BackgroundEngine starts
         wait-on-error: 1m           # Delay after error before retrying
         wait-interval: 30s           # Qualification loop sleep between cycles
+      meeting-attend:
+        enabled: true                  # Master switch for the meeting-attend approval flow
+        preroll-minutes: 10            # How early before startTime to ask for approval
+        poll-interval-seconds: 60      # Approval loop tick rate
       kb-callback-base-url: "http://jervis-server:5500"  # KB progress push callback URL
 
     link:
