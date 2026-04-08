@@ -77,11 +77,17 @@ class GoogleWorkspacePollingHandler(
         var totalResult = PollingResult()
 
         for (client in context.clients) {
+            // Client-level events with no project filter fall back to the
+            // client's defaultProjectId so every indexed item carries a
+            // (clientId, projectId) pair. Downstream features (meeting
+            // approval bubble, scheduler view) require this binding.
+            val clientLevelProjectId = client.defaultProjectId
+
             // Gmail polling
             if (connectionDocument.availableCapabilities.contains(ConnectionCapability.EMAIL_READ)) {
                 val emailFilter = context.getResourceFilter(client.id, ConnectionCapability.EMAIL_READ)
                 if (emailFilter != null) {
-                    val result = pollGmail(connectionDocument, client, null, token, emailFilter)
+                    val result = pollGmail(connectionDocument, client, clientLevelProjectId, token, emailFilter)
                     totalResult = totalResult.merge(result)
                 }
             }
@@ -90,7 +96,7 @@ class GoogleWorkspacePollingHandler(
             if (connectionDocument.availableCapabilities.contains(ConnectionCapability.CALENDAR_READ)) {
                 val calFilter = context.getResourceFilter(client.id, ConnectionCapability.CALENDAR_READ)
                 if (calFilter != null) {
-                    val result = pollCalendar(connectionDocument, client, null, token, calFilter)
+                    val result = pollCalendar(connectionDocument, client, clientLevelProjectId, token, calFilter)
                     totalResult = totalResult.merge(result)
                 }
             }

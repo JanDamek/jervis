@@ -30,6 +30,14 @@ data class ClientDocument(
     val archived: Boolean = false,
     val defaultLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
     val lastSelectedProjectId: ProjectId? = null,
+    /**
+     * Fallback project for client-level events (calendar, mail, ...) that
+     * have no explicit project assignment. Pollers must always emit
+     * (clientId, projectId) — when no project filter matches, this is the
+     * bucket the event lands in. Example: mazlusek → "příprava" project for
+     * cold-call meetings before a real engagement exists.
+     */
+    val defaultProjectId: ProjectId? = null,
     val connectionIds: List<ObjectId> = emptyList(),
     val gitCommitConfig: GitCommitConfig? = null,
     /** Top committers from git history analysis (name <email>) */
