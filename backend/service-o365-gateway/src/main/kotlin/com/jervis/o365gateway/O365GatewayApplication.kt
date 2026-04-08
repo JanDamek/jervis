@@ -24,6 +24,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -243,6 +244,70 @@ fun main() {
                     try {
                         val event = graphApi.createEvent(clientId, body)
                         call.respond(event)
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                // -- Online Meetings (Teams) --
+                // Lookup by joinWebUrl - resolves a calendar event's join URL into
+                // the underlying onlineMeeting resource (with chatInfo.threadId).
+                get("/online-meetings/{clientId}/by-join-url") {
+                    val clientId = call.parameters["clientId"]!!
+                    val joinUrl = call.request.queryParameters["joinUrl"]
+                        ?: return@get call.respond(
+                            HttpStatusCode.BadRequest,
+                            McpToolResponse(error = "Missing 'joinUrl' query parameter"),
+                        )
+                    try {
+                        val meeting = graphApi.getOnlineMeetingByJoinUrl(clientId, joinUrl)
+                        if (meeting != null) {
+                            call.respond(meeting)
+                        } else {
+                            call.respond(HttpStatusCode.NotFound, McpToolResponse(error = "No meeting matches joinUrl"))
+                        }
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                get("/online-meetings/{clientId}/{meetingId}") {
+                    val clientId = call.parameters["clientId"]!!
+                    val meetingId = call.parameters["meetingId"]!!
+                    try {
+                        call.respond(graphApi.getOnlineMeeting(clientId, meetingId))
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                get("/online-meetings/{clientId}/{meetingId}/recordings") {
+                    val clientId = call.parameters["clientId"]!!
+                    val meetingId = call.parameters["meetingId"]!!
+                    try {
+                        call.respond(graphApi.listMeetingRecordings(clientId, meetingId))
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                get("/online-meetings/{clientId}/{meetingId}/transcripts") {
+                    val clientId = call.parameters["clientId"]!!
+                    val meetingId = call.parameters["meetingId"]!!
+                    try {
+                        call.respond(graphApi.listMeetingTranscripts(clientId, meetingId))
+                    } catch (e: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
+                    }
+                }
+
+                get("/online-meetings/{clientId}/{meetingId}/transcripts/{transcriptId}/content") {
+                    val clientId = call.parameters["clientId"]!!
+                    val meetingId = call.parameters["meetingId"]!!
+                    val transcriptId = call.parameters["transcriptId"]!!
+                    try {
+                        val vtt = graphApi.downloadTranscriptVtt(clientId, meetingId, transcriptId)
+                        call.respondBytes(vtt, ContentType.parse("text/vtt"))
                     } catch (e: Exception) {
                         call.respond(HttpStatusCode.BadGateway, McpToolResponse(error = e.message))
                     }
