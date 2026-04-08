@@ -184,13 +184,19 @@ async def _prefetch_rag_context(
     from app.config import settings
 
     kb_url = settings.knowledgebase_url
+    # Base payload — minConfidence lowered from 0.5 → 0.35. The old threshold
+    # silently dropped vague/conversational queries ("co doučování?") where
+    # cosine similarity to any single record is below 0.5, leaving the LLM
+    # with only Thought Map context → hallucinated answers. 0.35 keeps
+    # moderate-confidence RAG hits in the running while still excluding
+    # true noise.
     payload = {
         "query": query,
         "clientId": client_id,
         "projectId": project_id or "",
         "groupId": group_id or "",
-        "maxResults": 5,
-        "minConfidence": 0.5,
+        "maxResults": 8,
+        "minConfidence": 0.35,
         "expandGraph": False,  # Pure RAG, no graph expansion (faster)
     }
 
@@ -206,7 +212,7 @@ async def _prefetch_rag_context(
 
             results = data.get("results", [])
 
-            # Fallback: if project-scoped search returned 0 or low-confidence results,
+            # Fallback 1: if project-scoped search returned 0 or low-confidence results,
             # retry with client-only scope (same pattern as kb_search tool)
             top_score = max((r.get("score", 0) for r in results), default=0)
             if (not results or top_score < 0.5) and project_id and client_id:
@@ -229,9 +235,46 @@ async def _prefetch_rag_context(
                             results.append(fr)
                             seen.add(src)
                     results.sort(key=lambda x: x.get("score", 0), reverse=True)
-                    results = results[:5]
+                    results = results[:8]
                     logger.info("RAG_PREFETCH: client-scope fallback added %d results, total=%d",
                                 len(fallback_results), len(results))
+
+            # Fallback 2 (NEW): cross-client global scope. Personal data (like
+            # "doučování") may be stored under a different client than the one
+            # the user is currently chatting from. Without this, a single-client
+            # scope miss leaves only Thought Map context — which is where the
+            # hallucinated "thought-anchor:xxx" citations were coming from.
+            # Only triggers if both above attempts returned low scores.
+            top_score = max((r.get("score", 0) for r in results), default=0)
+            if (not results or top_score < 0.45) and client_id:
+                logger.info("RAG_PREFETCH: client-scope returned top=%.2f, trying cross-client fallback...",
+                            top_score)
+                global_payload = {**payload, "clientId": "", "projectId": "", "groupId": ""}
+                try:
+                    resp3 = await client.post(
+                        f"{kb_url}/api/v1/retrieve",
+                        json=global_payload,
+                        headers={"X-Ollama-Priority": "0"},
+                    )
+                    resp3.raise_for_status()
+                    global_results = resp3.json().get("results", [])
+                except Exception as _e:
+                    logger.debug("RAG_PREFETCH: cross-client fallback http error: %s", _e)
+                    global_results = []
+                if global_results:
+                    seen = {r.get("sourceUrn", "") for r in results}
+                    for gr in global_results:
+                        src = gr.get("sourceUrn", "")
+                        if src and src not in seen:
+                            # Slightly down-weight cross-client hits so
+                            # same-client results stay on top when present.
+                            gr["score"] = gr.get("score", 0) * 0.85
+                            results.append(gr)
+                            seen.add(src)
+                    results.sort(key=lambda x: x.get("score", 0), reverse=True)
+                    results = results[:8]
+                    logger.info("RAG_PREFETCH: cross-client fallback added %d results, total=%d",
+                                len(global_results), len(results))
     except Exception as e:
         logger.warning("RAG_PREFETCH: failed query=%s error=%s", query[:50], e)
         return ""

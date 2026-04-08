@@ -341,21 +341,22 @@ async def handle_chat_sse(
                     _bg_tools_check = {"create_background_task", "dispatch_coding_agent"}
                     if any(any(t in p for t in _bg_tools_check) for p in _trace_parts if p.startswith("[tool]")):
                         event.metadata["dispatched_tasks"] = "true"
-                    # Post-response Thought Map update (fire-and-forget)
+                    # Post-response Thought Map update (fire-and-forget) — reinforcement only.
+                    #
+                    # PATTERN-BASED EXTRACTION REMOVED (2026-04-08): the previous
+                    # `extract_and_store_response_thoughts` call pattern-matched the
+                    # LLM's own output for Czech words like "problém", "rozhodl",
+                    # "zjistil" and created new ThoughtNodes from hallucinated
+                    # sentences. Those nodes then fed back into the next turn via
+                    # spreading activation, and the LLM invented "thought-anchor:xxx"
+                    # citations from them. Reinforcement of actually-activated
+                    # nodes is still safe (Hebbian: only strengthens real usage).
                     if runtime_ctx.activated_thought_ids or runtime_ctx.activated_edge_ids:
                         import asyncio as _aio
-                        from app.kb.thought_update import reinforce_activated_thoughts, extract_and_store_response_thoughts
-                        full_response = "".join(_response_chunks)
+                        from app.kb.thought_update import reinforce_activated_thoughts
                         _aio.create_task(reinforce_activated_thoughts(
                             runtime_ctx.activated_thought_ids, runtime_ctx.activated_edge_ids,
                         ))
-                        if full_response:
-                            _aio.create_task(extract_and_store_response_thoughts(
-                                full_response,
-                                client_id=request.active_client_id or "",
-                                project_id=request.active_project_id,
-                                group_id=getattr(request, "active_group_id", None),
-                            ))
                 yield event
 
     except Exception as e:
