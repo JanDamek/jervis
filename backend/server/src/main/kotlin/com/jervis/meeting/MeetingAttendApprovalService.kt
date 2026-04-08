@@ -99,6 +99,94 @@ class MeetingAttendApprovalService(
         supervisor.cancel()
     }
 
+    /**
+     * Resolve a meeting-attend approval. Called by UserTaskRpcImpl when the
+     * user taps Approve/Deny on a CALENDAR_PROCESSING task notification.
+     *
+     * Approve path: queue entry → APPROVED, task stays NEW (recording pipeline
+     * — etapa 2 — picks it up via the scheduledAt window). For now this just
+     * marks the queue entry; the recording side is a no-op stub.
+     *
+     * Deny path: queue entry → DENIED, task → DONE. The user will not be
+     * asked again about this same meeting instance, even if the etag changes
+     * (the indexer's upsert preserves the task identity).
+     *
+     * Returns the updated task so callers can serialize it back to the UI.
+     */
+    suspend fun handleApprovalResponse(
+        task: TaskDocument,
+        approved: Boolean,
+        reason: String? = null,
+    ): TaskDocument {
+        val taskIdStr = task.id.toString()
+        val now = Instant.now()
+
+        val queueDoc = approvalQueueRepository.findByTaskId(taskIdStr)
+        if (queueDoc != null) {
+            approvalQueueRepository.save(
+                queueDoc.copy(
+                    status = if (approved) "APPROVED" else "DENIED",
+                    respondedAt = now,
+                ),
+            )
+        } else {
+            logger.warn { "MEETING_ATTEND_RESPONSE_NO_QUEUE: taskId=$taskIdStr — responding without prior queue entry" }
+        }
+
+        // Record the user's decision in the conversation as a USER message so
+        // the bubble timeline shows the resolution next to the original ALERT.
+        runCatching {
+            chatMessageService.addMessage(
+                conversationId = task.id.value,
+                role = MessageRole.USER,
+                content = if (approved) {
+                    "Schváleno: Jervis se připojí jako pasivní posluchač."
+                } else {
+                    val rsn = reason?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
+                    "Zamítnuto$rsn"
+                },
+                correlationId = task.correlationId ?: "meeting_attend:$taskIdStr",
+                metadata = mapOf(
+                    "approvalAction" to ApprovalAction.MEETING_ATTEND.name,
+                    "decision" to if (approved) "APPROVED" else "DENIED",
+                    "taskId" to taskIdStr,
+                ),
+                clientId = task.clientId.toString(),
+                projectId = task.projectId?.toString(),
+            )
+        }.onFailure { logger.warn { "Chat decision write failed for task $taskIdStr: ${it.message}" } }
+
+        // Cancel the in-app notification across devices.
+        notificationRpc.emitUserTaskCancelled(
+            clientId = task.clientId.toString(),
+            taskId = taskIdStr,
+            title = task.taskName,
+        )
+
+        return if (approved) {
+            // The recording dispatch is intentionally a stub for now. We
+            // leave the task in NEW with scheduledAt intact — the future
+            // recording pipeline (etapa 2A/2B) polls the same field. Once
+            // implemented, the queue entry's APPROVED status is the gate.
+            val updated = task.copy(lastActivityAt = now)
+            taskRepository.save(updated)
+            logger.info {
+                "MEETING_ATTEND_APPROVED: taskId=$taskIdStr — recording pipeline pending (etapa 2)"
+            }
+            updated
+        } else {
+            val updated = task.copy(
+                state = TaskStateEnum.DONE,
+                scheduledAt = null,
+                lastActivityAt = now,
+                errorMessage = "Meeting-attend denied by user",
+            )
+            taskRepository.save(updated)
+            logger.info { "MEETING_ATTEND_DENIED: taskId=$taskIdStr reason=$reason" }
+            updated
+        }
+    }
+
     private suspend fun runLoop() {
         while (true) {
             try {

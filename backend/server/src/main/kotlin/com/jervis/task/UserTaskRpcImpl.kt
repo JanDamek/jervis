@@ -41,6 +41,7 @@ class UserTaskRpcImpl(
     private val chatMessageRepository: com.jervis.chat.ChatMessageRepository,
     private val taskRepository: com.jervis.task.TaskRepository,
     private val chatService: com.jervis.chat.ChatService,
+    private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
     private val httpClient: HttpClient,
     @Value("\${jervis.o365-browser-pool.url:http://jervis-o365-browser-pool:8090}")
     private val browserPoolUrl: String,
@@ -116,6 +117,21 @@ class UserTaskRpcImpl(
             additionalInput.trim().length <= 10 // MFA codes are short (4-8 digits)
         ) {
             return handleO365MfaResponse(task, additionalInput.trim())
+        }
+
+        // Meeting-attend approval routing — intercept CALENDAR_PROCESSING tasks
+        // before regular routing. APPROVE = no additionalInput, DENY = reason
+        // forwarded as additionalInput. The meeting service owns the
+        // ApprovalQueue lifecycle and bubble timeline; the regular USER_TASK
+        // path would pollute task state with QUEUED + agent dispatch.
+        if (task.type == TaskTypeEnum.CALENDAR_PROCESSING && task.meetingMetadata != null) {
+            val approved = additionalInput.isNullOrBlank()
+            val updated = meetingAttendApprovalService.handleApprovalResponse(
+                task = task,
+                approved = approved,
+                reason = additionalInput?.takeIf { it.isNotBlank() },
+            )
+            return updated.toUserTaskDto()
         }
 
         try {
