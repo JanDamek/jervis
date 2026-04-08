@@ -3,6 +3,8 @@ package com.jervis.calendar
 import com.jervis.common.types.SourceUrn
 import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.infrastructure.polling.PollingStatusEnum
+import com.jervis.task.MeetingMetadata
+import com.jervis.task.MeetingProvider
 import com.jervis.task.TaskService
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
@@ -84,6 +86,37 @@ class CalendarContinuousIndexer(
     private suspend fun indexEvent(doc: CalendarEventIndexDocument) {
         val content = buildEventContent(doc)
 
+        // Online meetings get scheduledAt + meetingMetadata so the meeting attend
+        // approval flow can pick them up via the scheduler. Past events are still
+        // indexed (KB record), but scheduledAt is omitted — there is nothing to
+        // attend.
+        val now = java.time.Instant.now()
+        val isUpcomingOnlineMeeting = doc.isOnlineMeeting && doc.endTime.isAfter(now)
+        val scheduledAt = if (isUpcomingOnlineMeeting) doc.startTime else null
+
+        val meetingMetadata = if (doc.isOnlineMeeting) {
+            MeetingMetadata(
+                startTime = doc.startTime,
+                endTime = doc.endTime,
+                provider = MeetingProvider.fromJoinUrl(doc.onlineMeetingJoinUrl),
+                joinUrl = doc.onlineMeetingJoinUrl,
+                organizer = doc.organizer,
+                attendees = doc.attendees,
+                location = doc.location,
+                isRecurring = doc.isRecurring,
+            )
+        } else {
+            null
+        }
+
+        // Topic consolidates the recurring series in "K reakci" view; each instance
+        // still gets its own task and its own approval — never a series-wide consent.
+        val topicId = if (doc.isOnlineMeeting) {
+            "calendar-meeting:${doc.calendarId}:${doc.eventId}"
+        } else {
+            null
+        }
+
         val task = taskService.createTask(
             taskType = TaskTypeEnum.CALENDAR_PROCESSING,
             content = content,
@@ -96,10 +129,14 @@ class CalendarContinuousIndexer(
             ),
             projectId = doc.projectId,
             taskName = doc.title.take(120),
+            scheduledAt = scheduledAt,
+            topicId = topicId,
+            meetingMetadata = meetingMetadata,
         )
 
         logger.info {
-            "Calendar event indexed: eventId=${doc.eventId} title='${doc.title}' taskId=${task.id}"
+            "Calendar event indexed: eventId=${doc.eventId} title='${doc.title}' taskId=${task.id} " +
+                "online=${doc.isOnlineMeeting} scheduledAt=$scheduledAt"
         }
 
         markAsIndexed(doc)
@@ -118,6 +155,11 @@ class CalendarContinuousIndexer(
         if (doc.organizer != null) parts.add("Organizer: ${doc.organizer}")
         if (doc.attendees.isNotEmpty()) parts.add("Attendees: ${doc.attendees.joinToString(", ")}")
         if (doc.isRecurring) parts.add("Recurring event")
+        if (doc.isOnlineMeeting) {
+            val provider = MeetingProvider.fromJoinUrl(doc.onlineMeetingJoinUrl)
+            parts.add("Online meeting: $provider")
+            if (doc.onlineMeetingJoinUrl != null) parts.add("Join URL: ${doc.onlineMeetingJoinUrl}")
+        }
         if (!doc.description.isNullOrBlank()) {
             parts.add("")
             parts.add(doc.description)
@@ -130,20 +172,17 @@ class CalendarContinuousIndexer(
     }
 
     private suspend fun markAsIndexed(doc: CalendarEventIndexDocument) {
+        // The index doc's role after INDEXED is purely a dedup marker
+        // (existsByConnectionIdAndEventId). Heavy fields are dropped to keep
+        // storage lean — the live data lives in the created TaskDocument from now on.
         repository.save(
-            CalendarEventIndexDocument(
-                id = doc.id,
-                connectionId = doc.connectionId,
-                clientId = doc.clientId,
-                projectId = doc.projectId,
-                eventId = doc.eventId,
-                calendarId = doc.calendarId,
+            doc.copy(
                 state = PollingStatusEnum.INDEXED,
-                provider = doc.provider,
-                title = doc.title,
-                startTime = doc.startTime,
-                endTime = doc.endTime,
-                createdAt = doc.createdAt,
+                description = null,
+                attendees = emptyList(),
+                location = null,
+                organizer = null,
+                onlineMeetingJoinUrl = null,
             ),
         )
     }

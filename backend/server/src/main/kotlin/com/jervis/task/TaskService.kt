@@ -93,6 +93,8 @@ class TaskService(
         followUserTimezone: Boolean = false,
         scheduledLocalTime: String? = null,
         mentionsJervis: Boolean = false,
+        topicId: String? = null,
+        meetingMetadata: MeetingMetadata? = null,
     ): TaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
@@ -116,6 +118,8 @@ class TaskService(
                 followUserTimezone = followUserTimezone,
                 scheduledLocalTime = scheduledLocalTime,
                 mentionsJervis = mentionsJervis,
+                topicId = topicId,
+                meetingMetadata = meetingMetadata,
             )
 
         val saved = taskRepository.save(task)

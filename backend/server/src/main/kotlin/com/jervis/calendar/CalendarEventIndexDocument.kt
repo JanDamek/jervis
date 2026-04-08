@@ -47,6 +47,13 @@ data class CalendarEventIndexDocument(
     val isAllDay: Boolean = false,
     val isRecurring: Boolean = false,
     val organizer: String? = null,
+    /**
+     * True if the event is an online meeting (Teams/Meet/Zoom/...).
+     * Detected from calendar conference data or join URL on the event.
+     */
+    val isOnlineMeeting: Boolean = false,
+    /** Join URL for the online meeting (Teams `joinWebUrl`, Google Meet `hangoutLink`, ...). */
+    val onlineMeetingJoinUrl: String? = null,
     val createdAt: Instant = Instant.now(),
     val indexingError: String? = null,
 )

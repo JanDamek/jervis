@@ -236,6 +236,12 @@ data class TaskDocument(
     val lastActivityAt: Instant? = null,
     /** Whether Jervis (@selfUsername) was mentioned in comments/discussion. Boosts priority. */
     val mentionsJervis: Boolean = false,
+    /**
+     * Meeting metadata for tasks that represent an upcoming/running online meeting.
+     * Populated by calendar polling indexers (Google, Outlook). Non-null implies the
+     * task is subject to the MEETING_ATTEND approval flow — NEVER triggers auto-join.
+     */
+    val meetingMetadata: MeetingMetadata? = null,
 ) {
     companion object {
         /**
@@ -299,6 +305,7 @@ data class TaskDocument(
             topicId: String?,
             lastActivityAt: Instant?,
             mentionsJervis: Boolean?,
+            meetingMetadata: MeetingMetadata?,
         ): TaskDocument = TaskDocument(
             id = TaskId(id),
             type = type,
@@ -352,6 +359,7 @@ data class TaskDocument(
             topicId = topicId,
             lastActivityAt = lastActivityAt,
             mentionsJervis = mentionsJervis ?: false,
+            meetingMetadata = meetingMetadata,
         )
     }
 }

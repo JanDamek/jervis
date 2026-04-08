@@ -405,6 +405,12 @@ class GoogleWorkspacePollingHandler(
 
             val attendees = event.attendees?.mapNotNull { it.email } ?: emptyList()
 
+            val videoEntryPoint = event.conferenceData?.entryPoints
+                ?.firstOrNull { it.entryPointType.equals("video", ignoreCase = true) }
+                ?.uri
+            val joinUrl = event.hangoutLink ?: videoEntryPoint
+            val isOnline = joinUrl != null
+
             val doc = CalendarEventIndexDocument(
                 connectionId = connection.id,
                 clientId = client.id,
@@ -420,6 +426,8 @@ class GoogleWorkspacePollingHandler(
                 isAllDay = event.start?.date != null,
                 isRecurring = event.recurringEventId != null,
                 organizer = event.organizer?.email,
+                isOnlineMeeting = isOnline,
+                onlineMeetingJoinUrl = joinUrl,
             )
 
             calendarRepository.save(doc)
@@ -530,6 +538,27 @@ private data class GoogleCalendarEventDto(
     val attendees: List<GoogleAttendee>? = null,
     val organizer: GoogleOrganizer? = null,
     val recurringEventId: String? = null,
+    /** Direct Google Meet link (legacy field, still populated for Meet meetings). */
+    val hangoutLink: String? = null,
+    /** Conference data for any provider (Meet, Zoom add-on, etc.). */
+    val conferenceData: GoogleConferenceData? = null,
+)
+
+@Serializable
+private data class GoogleConferenceData(
+    val entryPoints: List<GoogleConferenceEntryPoint>? = null,
+    val conferenceSolution: GoogleConferenceSolution? = null,
+)
+
+@Serializable
+private data class GoogleConferenceEntryPoint(
+    val entryPointType: String? = null,
+    val uri: String? = null,
+)
+
+@Serializable
+private data class GoogleConferenceSolution(
+    val name: String? = null,
 )
 
 @Serializable
