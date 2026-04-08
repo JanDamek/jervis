@@ -1,10 +1,12 @@
 package com.jervis.calendar
 
 import com.jervis.common.types.SourceUrn
+import com.jervis.dto.task.TaskStateEnum
 import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.infrastructure.polling.PollingStatusEnum
 import com.jervis.task.MeetingMetadata
 import com.jervis.task.MeetingProvider
+import com.jervis.task.TaskRepository
 import com.jervis.task.TaskService
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
@@ -33,6 +35,7 @@ import java.time.format.DateTimeFormatter
 class CalendarContinuousIndexer(
     private val repository: CalendarEventIndexRepository,
     private val taskService: TaskService,
+    private val taskRepository: TaskRepository,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -85,13 +88,14 @@ class CalendarContinuousIndexer(
 
     private suspend fun indexEvent(doc: CalendarEventIndexDocument) {
         val content = buildEventContent(doc)
+        val correlationId = "calendar:${doc.eventId}"
 
         // Online meetings get scheduledAt + meetingMetadata so the meeting attend
         // approval flow can pick them up via the scheduler. Past events are still
         // indexed (KB record), but scheduledAt is omitted — there is nothing to
-        // attend.
+        // attend. Cancelled events never get scheduledAt either.
         val now = java.time.Instant.now()
-        val isUpcomingOnlineMeeting = doc.isOnlineMeeting && doc.endTime.isAfter(now)
+        val isUpcomingOnlineMeeting = doc.isOnlineMeeting && !doc.isCancelled && doc.endTime.isAfter(now)
         val scheduledAt = if (isUpcomingOnlineMeeting) doc.startTime else null
 
         val meetingMetadata = if (doc.isOnlineMeeting) {
@@ -117,26 +121,48 @@ class CalendarContinuousIndexer(
             null
         }
 
-        val task = taskService.createTask(
-            taskType = TaskTypeEnum.CALENDAR_PROCESSING,
-            content = content,
-            clientId = doc.clientId,
-            correlationId = "calendar:${doc.eventId}",
-            sourceUrn = SourceUrn.calendar(
-                connectionId = doc.connectionId,
-                eventId = doc.eventId,
-                calendarId = doc.calendarId,
-            ),
-            projectId = doc.projectId,
-            taskName = doc.title.take(120),
-            scheduledAt = scheduledAt,
-            topicId = topicId,
-            meetingMetadata = meetingMetadata,
-        )
-
-        logger.info {
-            "Calendar event indexed: eventId=${doc.eventId} title='${doc.title}' taskId=${task.id} " +
-                "online=${doc.isOnlineMeeting} scheduledAt=$scheduledAt"
+        // Upsert by correlationId — calendar events mutate (reschedule, cancel,
+        // attendee changes) and the upstream poll loops the same eventId back
+        // through this indexer with state=NEW whenever the etag changes.
+        val existing = taskRepository.findByCorrelationId(correlationId)
+        if (existing != null) {
+            val updated = existing.copy(
+                content = content,
+                taskName = doc.title.take(120),
+                scheduledAt = scheduledAt,
+                topicId = topicId,
+                meetingMetadata = meetingMetadata,
+                projectId = doc.projectId ?: existing.projectId,
+                state = if (doc.isCancelled) TaskStateEnum.DONE else existing.state,
+                errorMessage = if (doc.isCancelled) "Calendar event cancelled" else existing.errorMessage,
+                lastActivityAt = now,
+            )
+            taskRepository.save(updated)
+            logger.info {
+                "Calendar event reindexed: eventId=${doc.eventId} taskId=${existing.id} " +
+                    "cancelled=${doc.isCancelled} scheduledAt=$scheduledAt"
+            }
+        } else {
+            val task = taskService.createTask(
+                taskType = TaskTypeEnum.CALENDAR_PROCESSING,
+                content = content,
+                clientId = doc.clientId,
+                correlationId = correlationId,
+                sourceUrn = SourceUrn.calendar(
+                    connectionId = doc.connectionId,
+                    eventId = doc.eventId,
+                    calendarId = doc.calendarId,
+                ),
+                projectId = doc.projectId,
+                taskName = doc.title.take(120),
+                scheduledAt = scheduledAt,
+                topicId = topicId,
+                meetingMetadata = meetingMetadata,
+            )
+            logger.info {
+                "Calendar event indexed: eventId=${doc.eventId} title='${doc.title}' taskId=${task.id} " +
+                    "online=${doc.isOnlineMeeting} scheduledAt=$scheduledAt"
+            }
         }
 
         markAsIndexed(doc)
@@ -172,9 +198,11 @@ class CalendarContinuousIndexer(
     }
 
     private suspend fun markAsIndexed(doc: CalendarEventIndexDocument) {
-        // The index doc's role after INDEXED is purely a dedup marker
-        // (existsByConnectionIdAndEventId). Heavy fields are dropped to keep
-        // storage lean — the live data lives in the created TaskDocument from now on.
+        // The index doc after INDEXED is a dedup + change-tracking marker. We
+        // KEEP `etag` so the next poll can detect upstream updates, and we keep
+        // `isCancelled` so re-emission of an already-cancelled event short
+        // circuits. Heavy fields are dropped to keep storage lean — the live
+        // data lives in the created TaskDocument from now on.
         repository.save(
             doc.copy(
                 state = PollingStatusEnum.INDEXED,

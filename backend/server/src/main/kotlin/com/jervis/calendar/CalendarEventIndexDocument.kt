@@ -16,9 +16,18 @@ import java.time.Instant
  * Index document for calendar events discovered by polling.
  *
  * State machine: NEW → INDEXED (or FAILED)
- * - NEW: Event fetched from Google Calendar API, not yet processed
- * - INDEXED: Task created, event content sent to KB pipeline
+ * - NEW: Event fetched from calendar API, not yet processed (initial insert OR
+ *   update — when the upstream `etag` changes the poller resets state to NEW so
+ *   the indexer reprocesses the event and propagates the update to the
+ *   underlying TaskDocument).
+ * - INDEXED: Task created or updated, event content sent to KB pipeline.
  * - FAILED: Processing error (stored in indexingError)
+ *
+ * Update flow:
+ * The poller compares the current `etag` against the persisted one. On mismatch
+ * it overwrites the document fields and flips state back to NEW so the
+ * CalendarContinuousIndexer picks it up again. The indexer then upserts the
+ * task by `correlationId = "calendar:<eventId>"`.
  */
 @Document(collection = "calendar_event_index")
 @CompoundIndexes(
@@ -54,6 +63,15 @@ data class CalendarEventIndexDocument(
     val isOnlineMeeting: Boolean = false,
     /** Join URL for the online meeting (Teams `joinWebUrl`, Google Meet `hangoutLink`, ...). */
     val onlineMeetingJoinUrl: String? = null,
+    /**
+     * Upstream entity tag (Google Calendar `etag`, Outlook `@odata.etag`).
+     * Compared on every poll cycle to detect updates and trigger reindex.
+     */
+    val etag: String? = null,
+    /** True when the upstream event has been cancelled. Propagated to the task. */
+    val isCancelled: Boolean = false,
     val createdAt: Instant = Instant.now(),
+    /** Last time the document was reindexed because of an upstream update. */
+    val updatedAt: Instant? = null,
     val indexingError: String? = null,
 )

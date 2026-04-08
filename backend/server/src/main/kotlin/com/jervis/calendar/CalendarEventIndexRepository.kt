@@ -14,5 +14,10 @@ interface CalendarEventIndexRepository : CoroutineCrudRepository<CalendarEventIn
         eventId: String,
     ): Boolean
 
+    suspend fun findByConnectionIdAndEventId(
+        connectionId: ConnectionId,
+        eventId: String,
+    ): CalendarEventIndexDocument?
+
     fun findByStateOrderByStartTimeAsc(state: PollingStatusEnum): Flow<CalendarEventIndexDocument>
 }

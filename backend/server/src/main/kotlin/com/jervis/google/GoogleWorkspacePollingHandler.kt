@@ -389,15 +389,11 @@ class GoogleWorkspacePollingHandler(
         if (events.isEmpty()) return 0 to 0
 
         var created = 0
+        var updated = 0
         var skipped = 0
 
         for (event in events) {
             val eventId = event.id ?: continue
-
-            if (calendarRepository.existsByConnectionIdAndEventId(connection.id, eventId)) {
-                skipped++
-                continue
-            }
 
             val startTime = parseGoogleDateTime(event.start)
             val endTime = parseGoogleDateTime(event.end)
@@ -410,6 +406,39 @@ class GoogleWorkspacePollingHandler(
                 ?.uri
             val joinUrl = event.hangoutLink ?: videoEntryPoint
             val isOnline = joinUrl != null
+            val isCancelled = event.status.equals("cancelled", ignoreCase = true)
+
+            val existing = calendarRepository.findByConnectionIdAndEventId(connection.id, eventId)
+            if (existing != null) {
+                // Skip if upstream etag matches what we already indexed.
+                if (existing.etag != null && existing.etag == event.etag) {
+                    skipped++
+                    continue
+                }
+                // Update path: overwrite mutable fields, flip state back to NEW
+                // so the indexer reprocesses and propagates changes to the task.
+                val refreshed = existing.copy(
+                    state = PollingStatusEnum.NEW,
+                    title = event.summary ?: existing.title,
+                    startTime = startTime,
+                    endTime = endTime,
+                    location = event.location,
+                    description = event.description,
+                    attendees = attendees,
+                    isAllDay = event.start?.date != null,
+                    isRecurring = event.recurringEventId != null,
+                    organizer = event.organizer?.email,
+                    isOnlineMeeting = isOnline,
+                    onlineMeetingJoinUrl = joinUrl,
+                    etag = event.etag,
+                    isCancelled = isCancelled,
+                    updatedAt = Instant.now(),
+                    indexingError = null,
+                )
+                calendarRepository.save(refreshed)
+                updated++
+                continue
+            }
 
             val doc = CalendarEventIndexDocument(
                 connectionId = connection.id,
@@ -428,6 +457,8 @@ class GoogleWorkspacePollingHandler(
                 organizer = event.organizer?.email,
                 isOnlineMeeting = isOnline,
                 onlineMeetingJoinUrl = joinUrl,
+                etag = event.etag,
+                isCancelled = isCancelled,
             )
 
             calendarRepository.save(doc)
@@ -437,8 +468,8 @@ class GoogleWorkspacePollingHandler(
         // Update polling state
         pollingStateService.updateWithTimestamp(connection.id, ProviderEnum.GOOGLE_WORKSPACE, Instant.now(), tool)
 
-        logger.info { "CALENDAR: calendar=$calendarId created=$created skipped=$skipped" }
-        return created to skipped
+        logger.info { "CALENDAR: calendar=$calendarId created=$created updated=$updated skipped=$skipped" }
+        return (created + updated) to skipped
     }
 
     private fun parseGoogleDateTime(dt: GoogleDateTime?): Instant? {
@@ -530,6 +561,9 @@ private data class GoogleCalendarEventsResponse(
 @Serializable
 private data class GoogleCalendarEventDto(
     val id: String? = null,
+    val etag: String? = null,
+    /** "confirmed", "tentative" or "cancelled". */
+    val status: String? = null,
     val summary: String? = null,
     val description: String? = null,
     val location: String? = null,
