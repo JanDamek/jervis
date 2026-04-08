@@ -54,10 +54,11 @@ class ApprovalRequiredInterrupt(Exception):
 
 
 # EPIC 4/5: Write tools that require approval gate evaluation
+# POLICY: store_knowledge is AUTO-APPROVED — user rule "VŠE okamžitě do KB" (no friction).
+# kb_delete stays under the gate — "NIKDY mazat bez potvrzení".
+# dispatch_coding_agent does NOT require approval — user gave the task, agent executes.
 _WRITE_TOOLS_TO_APPROVAL_ACTION: dict[str, str] = {
     "kb_delete": "KB_DELETE",
-    # dispatch_coding_agent does NOT require approval — user gave the task, agent executes
-    "store_knowledge": "KB_STORE",
 }
 
 
