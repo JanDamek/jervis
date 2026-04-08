@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.jervis.desktop.meeting.DesktopMeetingRecorder
 import com.jervis.di.RpcConnectionManager
 import com.jervis.di.RpcConnectionState
 import com.jervis.dto.events.JervisEvent
@@ -54,6 +55,15 @@ class ConnectionManager(
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var eventJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Loopback meeting recorder. Listens for `MeetingRecordingTrigger` events
+     * dispatched by the server-side `MeetingRecordingDispatcher` after a user
+     * approves a calendar-discovered Teams/Meet/Zoom meeting. Read-only:
+     * captures system audio loopback only — never auto-joins, never sends
+     * messages into the meeting chat.
+     */
+    private val meetingRecorder = DesktopMeetingRecorder(repository = repository)
 
     /**
      * Initialize connection via RpcConnectionManager and observe its state.
@@ -163,6 +173,17 @@ class ConnectionManager(
             }
 
             is JervisEvent.MeetingHelperMessage -> { // handled by MeetingViewModel
+            }
+
+            is JervisEvent.MeetingRecordingTrigger -> {
+                println("Meeting recording trigger: task=${event.taskId} title='${event.title}'")
+                MacOSUtils.showNotification("Záznam meetingu", "Spouštím záznam: ${event.title}")
+                meetingRecorder.handleEvent(event)
+            }
+
+            is JervisEvent.MeetingRecordingStop -> {
+                println("Meeting recording stop: task=${event.taskId} reason=${event.reason}")
+                meetingRecorder.handleEvent(event)
             }
         }
     }

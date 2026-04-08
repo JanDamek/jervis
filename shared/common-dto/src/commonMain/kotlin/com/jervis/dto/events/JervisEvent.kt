@@ -156,6 +156,42 @@ sealed class JervisEvent {
     ) : JervisEvent()
 
     /**
+     * Meeting recording trigger — server-side MeetingRecordingDispatcher emits this
+     * to the approved client's desktop when an approved CALENDAR_PROCESSING task
+     * enters its start window. The desktop recorder then spawns a loopback capture
+     * (ffmpeg) and streams audio chunks to MeetingRpc.uploadAudioChunk.
+     *
+     * Read-only v1: NO auto-join, NO disclaimer messages — the user is expected to
+     * join the meeting themselves; Jervis only captures the loopback audio their
+     * device is already playing.
+     */
+    @Serializable
+    data class MeetingRecordingTrigger(
+        val taskId: String,
+        val clientId: String,
+        val projectId: String? = null,
+        val title: String,
+        val startTime: String,
+        val endTime: String,
+        val provider: String,           // "MICROSOFT_TEAMS", "GOOGLE_MEET", "ZOOM", ...
+        val joinUrl: String? = null,
+        override val timestamp: String,
+    ) : JervisEvent()
+
+    /**
+     * Meeting recording stop — emitted when the user denies (after approve) or
+     * when the dispatcher detects the scheduled end window has passed. Desktop
+     * recorder terminates ffmpeg and calls MeetingRpc.finalizeRecording.
+     */
+    @Serializable
+    data class MeetingRecordingStop(
+        val taskId: String,
+        val clientId: String,
+        val reason: String,             // "END_TIME", "USER_STOP", "CANCELLED"
+        override val timestamp: String,
+    ) : JervisEvent()
+
+    /**
      * Meeting helper message — real-time translation, suggestion, or Q&A prediction
      * pushed to the device during an active meeting helper session.
      */

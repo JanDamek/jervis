@@ -9,6 +9,7 @@ import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.task.ProcessingMode
 import com.jervis.task.TaskDocument
 import kotlinx.coroutines.flow.Flow
+import org.springframework.data.mongodb.repository.Query
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 import java.time.Instant
@@ -296,4 +297,25 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
         states: List<TaskStateEnum>,
     ): List<TaskDocument>
 
+    /**
+     * Find CALENDAR_PROCESSING tasks whose approved meeting has entered its
+     * live window (startTime ≤ now ≤ endTime) and that have NOT yet been
+     * dispatched to the desktop recorder. Consumed by
+     * `MeetingRecordingDispatcher` — approval is checked separately in the
+     * `ApprovalQueueRepository` so this query stays a pure DB filter.
+     *
+     * Embedded `meetingMetadata` fields are referenced via dotted path. The
+     * `recordingDispatchedAt` predicate acts as the dedupe lock.
+     */
+    @Query(
+        "{ 'type': ?0, " +
+            "'meetingMetadata': { '\$ne': null }, " +
+            "'meetingMetadata.recordingDispatchedAt': null, " +
+            "'meetingMetadata.startTime': { '\$lte': ?1 }, " +
+            "'meetingMetadata.endTime': { '\$gt': ?1 } }"
+    )
+    fun findCalendarTasksReadyForRecordingDispatch(
+        type: TaskTypeEnum,
+        now: Instant,
+    ): Flow<TaskDocument>
 }

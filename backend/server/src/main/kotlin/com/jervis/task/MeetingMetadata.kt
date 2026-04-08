@@ -36,6 +36,21 @@ data class MeetingMetadata(
     val chatThreadId: String? = null,
     /** Whether the underlying calendar event is part of a recurring series. */
     val isRecurring: Boolean = false,
+    /**
+     * Timestamp when `MeetingRecordingDispatcher` emitted the
+     * `MeetingRecordingTrigger` event to the desktop. Used as the dedupe key
+     * so the dispatcher never fires twice for the same approved occurrence.
+     * `null` until dispatch fires.
+     */
+    val recordingDispatchedAt: Instant? = null,
+    /**
+     * `MeetingDocument.id` of the recording that was started on the desktop
+     * in response to the dispatch trigger. Populated when the desktop recorder
+     * calls `MeetingRpc.startRecording` and reports the returned id back.
+     * Lets us link the audio/transcript back to the approving task.
+     * `null` until the desktop confirms recording started.
+     */
+    val recordingMeetingId: String? = null,
 )
 
 /**
