@@ -28,6 +28,7 @@ class WhisperTranscriptionClient(
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val correctionClient: com.jervis.infrastructure.llm.CorrectionClient,
     private val whisperRestClient: WhisperRestClient,
+    private val urgencyDetector: MeetingUrgencyDetector,
 ) {
 
     companion object {
@@ -233,6 +234,18 @@ class WhisperTranscriptionClient(
                 elapsedSeconds = elapsedSeconds,
                 lastSegmentText = lastSegmentText,
             )
+            // Live urgency detection — runs ONLY when a fresh segment text is
+            // available; never throws into the progress hot path. The detector
+            // applies its own per-meeting cooldown to avoid notification floods.
+            runCatching {
+                urgencyDetector.analyzeSegment(
+                    meetingId = meetingId,
+                    clientId = clientId,
+                    segmentText = lastSegmentText,
+                )
+            }.onFailure { e ->
+                logger.warn { "MeetingUrgencyDetector.analyzeSegment failed: ${e.message}" }
+            }
         }
     }
 }
