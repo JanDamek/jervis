@@ -279,6 +279,8 @@ class MainViewModel(
                 _errorMessage.value = event.message
             }
             is JervisEvent.MeetingHelperMessage -> { /* Handled by MeetingViewModel */ }
+            is JervisEvent.MeetingRecordingTrigger -> { /* Handled by desktop ConnectionState */ }
+            is JervisEvent.MeetingRecordingStop -> { /* Handled by desktop ConnectionState */ }
         }
     }
 

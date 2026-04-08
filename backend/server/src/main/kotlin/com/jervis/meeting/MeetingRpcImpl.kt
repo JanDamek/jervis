@@ -46,6 +46,7 @@ class MeetingRpcImpl(
     private val correctionClient: com.jervis.infrastructure.llm.CorrectionClient,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val speakerRepository: SpeakerRepository,
+    private val taskRepository: com.jervis.task.TaskRepository,
 ) : IMeetingService {
 
     override suspend fun startRecording(request: MeetingCreateDto): MeetingDto {
@@ -938,6 +939,26 @@ class MeetingRpcImpl(
         val result = meetings.toList().map { it.toSummaryDto() }
         logger.debug { "listMeetingsByRange returned ${result.size} items" }
         return result
+    }
+
+    override suspend fun linkMeetingToTask(taskId: String, meetingId: String): Boolean {
+        val tid = com.jervis.common.types.TaskId.fromString(taskId)
+        val task = taskRepository.getById(tid) ?: run {
+            logger.warn { "linkMeetingToTask: task not found: $taskId" }
+            return false
+        }
+        val metadata = task.meetingMetadata ?: run {
+            logger.warn { "linkMeetingToTask: task $taskId has no meetingMetadata" }
+            return false
+        }
+        // Already linked → no-op (idempotent on duplicate desktop callbacks).
+        if (metadata.recordingMeetingId == meetingId) return true
+        val updated = task.copy(
+            meetingMetadata = metadata.copy(recordingMeetingId = meetingId),
+        )
+        taskRepository.save(updated)
+        logger.info { "linkMeetingToTask: linked task=$taskId → meeting=$meetingId" }
+        return true
     }
 }
 

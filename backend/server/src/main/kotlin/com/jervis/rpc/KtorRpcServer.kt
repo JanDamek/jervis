@@ -28,6 +28,7 @@ import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalProjectManagementApi
 import com.jervis.rpc.internal.installInternalMeetingApi
 import com.jervis.rpc.internal.installInternalMeetingAttendApi
+import com.jervis.rpc.internal.installInternalMeetingRecordingBridgeApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalBugTrackerApi
 import com.jervis.rpc.internal.installInternalO365CapabilitiesApi
@@ -198,6 +199,7 @@ class KtorRpcServer(
                             installInternalCacheApi(guidelinesService)
                             installInternalMeetingApi(meetingRpcImpl)
                             installInternalMeetingAttendApi(taskRepository, meetingAttendApprovalService)
+                            installInternalMeetingRecordingBridgeApi(meetingRpcImpl)
                             installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
                             installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalO365CapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)

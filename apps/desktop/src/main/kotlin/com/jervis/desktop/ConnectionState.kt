@@ -47,6 +47,12 @@ class ConnectionManager(
     // OfflineException synchronously when disconnected — callers can catch or use call().
     val repository: JervisRepository = JervisRepository(rpcConnectionManager)
 
+    /**
+     * Machine-local settings (audio loopback device, etc.). Exposed so the
+     * UI can show a small dialog for editing them. See [DesktopLocalSettings].
+     */
+    val localSettings: DesktopLocalSettings = DesktopLocalSettings()
+
     var taskBadgeCount by mutableStateOf(0)
         private set
 
@@ -63,7 +69,10 @@ class ConnectionManager(
      * captures system audio loopback only — never auto-joins, never sends
      * messages into the meeting chat.
      */
-    private val meetingRecorder = DesktopMeetingRecorder(repository = repository)
+    private val meetingRecorder = DesktopMeetingRecorder(
+        repository = repository,
+        loopbackDeviceProvider = { localSettings.getAudioLoopbackDevice() },
+    )
 
     /**
      * Initialize connection via RpcConnectionManager and observe its state.

@@ -56,6 +56,7 @@ class MeetingRecordingDispatcher(
     private val taskRepository: TaskRepository,
     private val approvalQueueRepository: ApprovalQueueRepository,
     private val notificationRpc: NotificationRpcImpl,
+    private val attenderClient: MeetingAttenderClient,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val isStarted = AtomicBoolean(false)
@@ -108,7 +109,30 @@ class MeetingRecordingDispatcher(
                 joinUrl = metadata.joinUrl,
                 timestamp = now.toString(),
             )
-            notificationRpc.emitEvent(task.clientId.toString(), event)
+
+            // Prefer the desktop loopback recorder when the user has an
+            // active event-stream subscription (a desktop or mobile app is
+            // online and listening). Otherwise fall back to the K8s
+            // attender pod which captures audio headlessly.
+            val clientIdStr = task.clientId.toString()
+            val dispatchKind: String
+            val dispatchOk: Boolean
+            if (notificationRpc.hasActiveSubscribers(clientIdStr)) {
+                notificationRpc.emitEvent(clientIdStr, event)
+                dispatchKind = "DESKTOP"
+                dispatchOk = true
+            } else {
+                dispatchOk = attenderClient.attend(event)
+                dispatchKind = "ATTENDER_POD"
+            }
+
+            if (!dispatchOk) {
+                logger.warn {
+                    "MeetingRecordingDispatcher: $dispatchKind dispatch failed for task=${task.id} " +
+                        "— leaving recordingDispatchedAt null so the next cycle will retry"
+                }
+                continue
+            }
 
             // Mark the task as dispatched so we never trigger twice. Re-fetch
             // to avoid clobbering concurrent writes from the approval service.
@@ -121,7 +145,7 @@ class MeetingRecordingDispatcher(
             taskRepository.save(updated)
 
             logger.info {
-                "MeetingRecordingDispatcher: dispatched trigger for task=${task.id} " +
+                "MeetingRecordingDispatcher: dispatched ($dispatchKind) trigger for task=${task.id} " +
                     "client=${task.clientId} provider=${metadata.provider} " +
                     "title='${task.taskName}'"
             }

@@ -1871,6 +1871,107 @@ Sources:
 - `backend/server/.../meeting/WhisperTranscriptionClient.kt#buildProgressCallback`
 - `backend/server/.../meeting/MeetingHelperService.kt#pushMessage`
 
+### Meeting Recording End-to-End Wiring (Etapa 2C — gap closure)
+
+The pieces above (dispatcher → desktop / pod → Whisper → urgency detector)
+only become a working pipeline once they are joined up. The closure layer
+adds five thin pieces of glue:
+
+1. **Dispatch routing.** `MeetingRecordingDispatcher` no longer pushes to
+   the desktop unconditionally. It now asks
+   `NotificationRpcImpl.hasActiveSubscribers(clientId)` whether the client
+   has at least one live event-stream collector. If yes → push the
+   `MeetingRecordingTrigger` event (desktop loopback path). If no → call
+   the headless attender pod via `MeetingAttenderClient.attend(trigger)`,
+   which posts to `POST /attend` on the K8s `service-meeting-attender`. The
+   `recordingDispatchedAt` dedupe lock is only set when the chosen path
+   reports success — failures leave the field `null` so the next 15 s cycle
+   retries.
+
+2. **HTTP bridge for the pod.**
+   `installInternalMeetingRecordingBridgeApi(meetingRpcImpl)` exposes
+   `/internal/meeting/{start-recording, upload-chunk, finalize-recording}`
+   and delegates straight to `MeetingRpcImpl`. The `start-recording` body
+   accepts an optional `taskId` so the bridge calls
+   `meetingRpcImpl.linkMeetingToTask(taskId, meeting.id)` on the pod's
+   behalf — no kRPC stubs in Python.
+
+3. **Cross-link `MeetingMetadata.recordingMeetingId`.** A new
+   `IMeetingService.linkMeetingToTask(taskId, meetingId)` is implemented in
+   `MeetingRpcImpl` (looks up the task, copies its `meetingMetadata` with
+   the new `recordingMeetingId`, idempotent on duplicate calls). Both the
+   desktop recorder and the bridge endpoint call it right after their
+   `startRecording`. This is the single edge that lets every later stage
+   resolve "which calendar task produced this meeting" without parsing
+   `deviceSessionId` strings.
+
+4. **Stop on deny-after-approve.** `MeetingAttendApprovalService` now
+   inspects `task.meetingMetadata?.recordingDispatchedAt`. If it's non-null
+   when the user denies, the service fans out a stop signal on **both**
+   channels — `JervisEvent.MeetingRecordingStop` (desktop path, drives
+   `DesktopMeetingRecorder.stopRecording`) and `MeetingAttenderClient.stop`
+   (pod path) — because the original dispatch routing decision is not
+   recorded anywhere. Each channel no-ops on unknown taskId so the fan-out
+   is safe.
+
+5. **Audio loopback device preference (machine-local).** Loopback device
+   names (`BlackHole 2ch`, WASAPI device strings, PulseAudio monitor source)
+   are inherently machine-specific, not client-specific, so they live in a
+   new `DesktopLocalSettings` class on the desktop side, backed by
+   `java.util.prefs.Preferences` with a `JERVIS_AUDIO_LOOPBACK_DEVICE` env
+   override. `ConnectionState` passes `localSettings::getAudioLoopbackDevice`
+   into `DesktopMeetingRecorder` and the desktop `File → Audio Loopback
+   Device…` menu item opens a Swing input dialog that writes through the
+   same class.
+
+### Mid-Recording Live Urgency Probe (Etapa 3 — live transcription)
+
+The original Etapa 3 only fires the urgency detector during the
+`finalizeRecording → transcribe` post-meeting pipeline, which means the
+detector cannot tap the user on the shoulder *during* the meeting itself —
+exactly when it would be useful. `MeetingLiveUrgencyProbe` closes that gap.
+
+It is a Spring `@Service` (`@Order(13)`) that starts a single
+`@PostConstruct` coroutine loop with a 45 s tick. Each tick:
+
+1. Loads all `MeetingDocument`s in state `RECORDING` or `UPLOADING`.
+2. For each one, compares the live WAV file size against an in-memory
+   `probedOffsets` map. If at least 20 s of new audio (≥ 640 000 raw PCM
+   bytes for 16 kHz / 16-bit / mono) has accumulated since the previous
+   probe, the tail is read off disk into a temp file with a freshly built
+   44-byte WAV header (helper `buildWavHeader(dataLen)`).
+3. The temp file is sent to `WhisperTranscriptionClient.transcribe(path,
+   meetingId = null, ...)` — passing `null` meetingId is the explicit "no
+   state mutation" mode of the existing client, so the live probe never
+   touches `MeetingDocument.state`, `transcriptText` or
+   `transcriptSegments`. Those remain owned by the post-meeting
+   `MeetingContinuousIndexer.transcribeContinuously` pipeline.
+4. Every returned `WhisperSegment` is fed to
+   `MeetingUrgencyDetector.analyzeSegment(meetingId, clientId, text)`. The
+   detector's existing 30 s per-meeting cooldown prevents double-firing on
+   the boundary between the live probe and the post-meeting transcription.
+5. The temp file is deleted, the offset is advanced to the current file
+   size, and the next tick begins.
+
+The probe shares GPU budget with the main transcription pipeline through a
+local `Mutex` so two Whisper calls can never overlap inside this service.
+Cross-service contention with `MeetingContinuousIndexer.transcribeContinuously`
+is acceptable because the live probe runs much less frequently and the
+Whisper REST endpoint queues internally.
+
+Sources:
+- `backend/server/.../meeting/MeetingRecordingDispatcher.kt` (routing + retry)
+- `backend/server/.../meeting/MeetingAttenderClient.kt` (HTTP client to pod)
+- `backend/server/.../rpc/internal/InternalMeetingRecordingBridgeRouting.kt`
+  (3-endpoint bridge → `MeetingRpcImpl`)
+- `backend/server/.../meeting/MeetingRpcImpl.kt#linkMeetingToTask`
+- `backend/server/.../meeting/MeetingAttendApprovalService.kt` (deny stop fan-out)
+- `backend/server/.../meeting/MeetingLiveUrgencyProbe.kt`
+- `apps/desktop/.../DesktopLocalSettings.kt` (java.util.prefs-backed)
+- `apps/desktop/.../ConnectionState.kt` (provider wiring)
+- `apps/desktop/.../Main.kt` (File menu dialog)
+- `backend/service-meeting-attender/app/main.py` (sends `taskId` to bridge)
+
 ### Anti-Hallucination Guard (EPIC 14)
 
 Post-processing pipeline for fact-checking LLM responses:

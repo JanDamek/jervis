@@ -118,6 +118,33 @@ fun main() {
                 MenuBar {
                     Menu("File") {
                         Item("Settings", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Settings) })
+                        Item(
+                            "Audio Loopback Device…",
+                            onClick = {
+                                // Machine-local preference — drives
+                                // DesktopMeetingRecorder's ffmpeg input device
+                                // when recording approved Teams/Meet/Zoom meetings.
+                                val current = connectionManager.localSettings.getAudioLoopbackDevice() ?: ""
+                                val input = javax.swing.JOptionPane.showInputDialog(
+                                    null,
+                                    "Enter the loopback device name used by ffmpeg to capture " +
+                                        "system audio during approved meetings.\n\n" +
+                                        "Examples:\n" +
+                                        "  macOS:   BlackHole 2ch\n" +
+                                        "  Windows: (empty = WASAPI default) or a dshow device name\n" +
+                                        "  Linux:   default.monitor\n\n" +
+                                        "Leave blank to use the OS default.",
+                                    "Audio Loopback Device",
+                                    javax.swing.JOptionPane.PLAIN_MESSAGE,
+                                    null,
+                                    null,
+                                    current,
+                                )
+                                if (input != null) {
+                                    connectionManager.localSettings.setAudioLoopbackDevice(input.toString())
+                                }
+                            },
+                        )
                         Separator()
                         Item("Exit", onClick = { exitApplication() })
                     }

@@ -86,4 +86,18 @@ interface IMeetingService {
         fromIso: String,
         toIso: String,
     ): List<MeetingSummaryDto>
+
+    /**
+     * Link a freshly-created MeetingDocument back to the CALENDAR_PROCESSING
+     * task that triggered the recording dispatch (Etapa 2A).
+     *
+     * Called by the desktop loopback recorder right after `startRecording`
+     * succeeds. Writes `meetingMetadata.recordingMeetingId` on the task so
+     * downstream code can resolve from a meeting back to its source calendar
+     * task without relying on the `deviceSessionId` string heuristic.
+     *
+     * Returns `true` if the link was applied, `false` if the task no longer
+     * exists or carries no `meetingMetadata`.
+     */
+    suspend fun linkMeetingToTask(taskId: String, meetingId: String): Boolean
 }

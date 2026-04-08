@@ -267,7 +267,7 @@ internal fun ClientEditForm(
                     Text(
                         "Použito jako fallback pro položky polované na úrovni klienta " +
                             "(kalendář, mailbox), které samy nepatří k žádnému projektu. " +
-                            "Příklad: Teams web meeting Guru → klient mazlusek → projekt „příprava".",
+                            "Příklad: Teams web meeting Guru → klient mazlusek → projekt „příprava\".",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

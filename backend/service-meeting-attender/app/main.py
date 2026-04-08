@@ -313,6 +313,7 @@ class AttenderManager:
             "meetingType": "MEETING",
             "deviceSessionId": f"attender-{request.task_id}",
             "audioInputType": "MIXED",
+            "taskId": request.task_id,  # bridge endpoint links it via meetingMetadata.recordingMeetingId
         }
         headers = {"Authorization": f"Bearer {INTERNAL_AUTH_TOKEN}"} if INTERNAL_AUTH_TOKEN else {}
         try:

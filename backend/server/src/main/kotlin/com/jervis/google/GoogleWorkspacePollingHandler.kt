@@ -2,6 +2,7 @@ package com.jervis.google
 
 import com.jervis.calendar.CalendarEventIndexDocument
 import com.jervis.calendar.CalendarEventIndexRepository
+import com.jervis.infrastructure.polling.PollingStatusEnum
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.ProjectId

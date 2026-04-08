@@ -13,13 +13,20 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import mu.KotlinLogging
 import java.io.InputStream
 import java.time.Instant
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 
-private val logger = KotlinLogging.logger {}
+/** Tiny println shim — desktop has no slf4j/kotlin-logging on the classpath. */
+private object logger {
+    inline fun info(msg: () -> String) = println("INFO  DesktopMeetingRecorder: ${msg()}")
+    inline fun warn(msg: () -> String) = println("WARN  DesktopMeetingRecorder: ${msg()}")
+    inline fun error(t: Throwable?, msg: () -> String) {
+        println("ERROR DesktopMeetingRecorder: ${msg()}")
+        t?.printStackTrace()
+    }
+}
 
 /**
  * Desktop loopback recorder for approved Teams / Meet / Zoom meetings.
@@ -107,6 +114,18 @@ class DesktopMeetingRecorder(
                         deviceSessionId = "desktop-loopback-${trigger.taskId}",
                     ),
                 )
+
+                // Persist the link from the source CALENDAR_PROCESSING task to
+                // this MeetingDocument so the rest of the pipeline can resolve
+                // either direction without parsing deviceSessionId strings.
+                runCatching {
+                    repository.meetings.linkMeetingToTask(
+                        taskId = trigger.taskId,
+                        meetingId = meeting.id,
+                    )
+                }.onFailure { e ->
+                    logger.warn { "DesktopMeetingRecorder: linkMeetingToTask failed: ${e.message}" }
+                }
 
                 val process = spawnFfmpeg()
                 val endTime = parseInstantOrNow(trigger.endTime)

@@ -67,6 +67,7 @@ class MeetingAttendApprovalService(
     private val fcmPushService: FcmPushService,
     private val apnsPushService: ApnsPushService,
     private val chatMessageService: ChatMessageService,
+    private val attenderClient: MeetingAttenderClient,
     @Value("\${jervis.meeting-attend.enabled:true}")
     private val enabled: Boolean,
     @Value("\${jervis.meeting-attend.preroll-minutes:10}")
@@ -175,6 +176,26 @@ class MeetingAttendApprovalService(
             }
             updated
         } else {
+            // If recording dispatch already fired (deny-after-approve), tell
+            // both possible recorders to stop. We don't know which path took
+            // the trigger so we fan out to both — they each no-op on
+            // unknown taskId.
+            val alreadyDispatched = task.meetingMetadata?.recordingDispatchedAt != null
+            if (alreadyDispatched) {
+                runCatching {
+                    notificationRpc.emitEvent(
+                        task.clientId.toString(),
+                        com.jervis.dto.events.JervisEvent.MeetingRecordingStop(
+                            taskId = taskIdStr,
+                            clientId = task.clientId.toString(),
+                            reason = "USER_DENIED_AFTER_APPROVE",
+                            timestamp = now.toString(),
+                        ),
+                    )
+                }.onFailure { logger.warn { "Failed to emit MeetingRecordingStop: ${it.message}" } }
+                runCatching { attenderClient.stop(taskIdStr, "USER_DENIED_AFTER_APPROVE") }
+            }
+
             val updated = task.copy(
                 state = TaskStateEnum.DONE,
                 scheduledAt = null,
@@ -182,7 +203,10 @@ class MeetingAttendApprovalService(
                 errorMessage = "Meeting-attend denied by user",
             )
             taskRepository.save(updated)
-            logger.info { "MEETING_ATTEND_DENIED: taskId=$taskIdStr reason=$reason" }
+            logger.info {
+                "MEETING_ATTEND_DENIED: taskId=$taskIdStr reason=$reason " +
+                    "alreadyDispatched=$alreadyDispatched"
+            }
             updated
         }
     }

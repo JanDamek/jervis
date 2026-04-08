@@ -303,4 +303,5 @@ class NotificationRpcImpl : INotificationService {
         logger.debug { "Emitting event to client $clientId: ${event::class.simpleName}" }
         eventStreams[clientId]?.emit(event)
     }
+
 }
