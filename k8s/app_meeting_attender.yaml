@@ -1,0 +1,89 @@
+# =============================================================================
+# Jervis Meeting Attender — K8s Deployment
+#
+# Read-only headless audio capture for online meetings (Teams / Meet / Zoom).
+# Spawned per-pod virtual PulseAudio sink + Xvfb-hosted Chromium tab. Joins
+# ONLY after the server's MeetingRecordingDispatcher pushes an explicit attend
+# request following user approval. NEVER speaks, NEVER chats.
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-meeting-attender
+  namespace: jervis
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate  # in-flight ffmpeg pumps cannot survive a rolling restart
+  selector:
+    matchLabels:
+      app: jervis-meeting-attender
+  template:
+    metadata:
+      labels:
+        app: jervis-meeting-attender
+    spec:
+      containers:
+        - name: attender
+          image: registry.damek-soft.eu/jandamek/jervis-meeting-attender:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8095
+              name: api
+            - containerPort: 6080
+              name: novnc
+          envFrom:
+            - configMapRef:
+                name: jervis-config
+          env:
+            - name: JERVIS_SERVER_URL
+              value: "http://jervis-server:8084"
+            - name: INTERNAL_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: INTERNAL_AUTH_TOKEN
+                  optional: true
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "3Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8095
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8095
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-meeting-attender
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-meeting-attender
+  ports:
+    - name: api
+      port: 8095
+      targetPort: 8095
+      protocol: TCP
+    - name: novnc
+      port: 6080
+      targetPort: 6080
+      protocol: TCP
