@@ -233,6 +233,89 @@ data class CreateEventRequest(
     val isOnlineMeeting: Boolean = false,
 )
 
+// -- Online Meetings (Microsoft Graph: me/onlineMeetings) ---------------------
+
+/**
+ * Microsoft Graph online meeting resource.
+ * Endpoint: GET /me/onlineMeetings/{id} or filter by joinWebUrl.
+ *
+ * Used by the meeting attend approval flow to resolve the chat thread that
+ * backs a Teams meeting (so notifications can later target the meeting chat).
+ * NEVER used to auto-join — Jervis requires explicit user approval first.
+ */
+@Serializable
+data class GraphOnlineMeeting(
+    val id: String,
+    val joinWebUrl: String? = null,
+    val subject: String? = null,
+    val startDateTime: String? = null,
+    val endDateTime: String? = null,
+    val chatInfo: GraphChatInfo? = null,
+    val participants: GraphMeetingParticipants? = null,
+)
+
+@Serializable
+data class GraphChatInfo(
+    /**
+     * Thread ID of the chat associated with the meeting.
+     * Reusable as `chatId` in `me/chats/{chatId}/messages` endpoints.
+     */
+    val threadId: String? = null,
+    val messageId: String? = null,
+    val replyChainMessageId: String? = null,
+)
+
+@Serializable
+data class GraphMeetingParticipants(
+    val organizer: GraphMeetingParticipant? = null,
+    val attendees: List<GraphMeetingParticipant>? = null,
+)
+
+@Serializable
+data class GraphMeetingParticipant(
+    val identity: GraphIdentitySet? = null,
+    val role: String? = null,
+    val upn: String? = null,
+)
+
+@Serializable
+data class GraphIdentitySet(
+    val user: GraphUser? = null,
+)
+
+/**
+ * Native Teams call recording metadata.
+ *
+ * Endpoint: GET /me/onlineMeetings/{id}/recordings (delegated, requires
+ * `OnlineMeetingRecording.Read.All` admin consent). May return empty for
+ * tenants where the admin has not granted the scope — in that case Jervis
+ * falls back to its own audio capture (desktop loopback or attender pod).
+ */
+@Serializable
+data class GraphCallRecording(
+    val id: String,
+    val meetingId: String? = null,
+    val callId: String? = null,
+    val createdDateTime: String? = null,
+    val recordingContentUrl: String? = null,
+    @SerialName("contentCorrelationId") val contentCorrelationId: String? = null,
+)
+
+/**
+ * Native Teams call transcript metadata.
+ *
+ * Endpoint: GET /me/onlineMeetings/{id}/transcripts (delegated, requires
+ * `OnlineMeetingTranscript.Read.All` admin consent). Transcript content is
+ * fetched separately as VTT via `/transcripts/{id}/content?$format=text/vtt`.
+ */
+@Serializable
+data class GraphCallTranscript(
+    val id: String,
+    val meetingId: String? = null,
+    val createdDateTime: String? = null,
+    val transcriptContentUrl: String? = null,
+)
+
 // -- OneDrive / SharePoint ----------------------------------------------------
 
 @Serializable

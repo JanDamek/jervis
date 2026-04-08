@@ -1,6 +1,8 @@
 package com.jervis.o365gateway.service
 
 import com.jervis.o365gateway.model.CreateEventRequest
+import com.jervis.o365gateway.model.GraphCallRecording
+import com.jervis.o365gateway.model.GraphCallTranscript
 import com.jervis.o365gateway.model.GraphChannel
 import com.jervis.o365gateway.model.GraphChat
 import com.jervis.o365gateway.model.GraphDriveItem
@@ -9,10 +11,13 @@ import com.jervis.o365gateway.model.GraphListResponse
 import com.jervis.o365gateway.model.GraphMailMessage
 import com.jervis.o365gateway.model.GraphMessage
 import com.jervis.o365gateway.model.GraphMessageBody
+import com.jervis.o365gateway.model.GraphOnlineMeeting
 import com.jervis.o365gateway.model.GraphSearchResult
 import com.jervis.o365gateway.model.GraphTeam
 import com.jervis.o365gateway.model.SendMailRequest
 import com.jervis.o365gateway.model.SendMessageRequest
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -218,6 +223,84 @@ class GraphApiService(
             handleGraphError(clientId, response.status.value)
         }
         return response.body<GraphEvent>()
+    }
+
+    // -- Online Meetings ------------------------------------------------------
+
+    /**
+     * Look up an online meeting by its `joinWebUrl`.
+     *
+     * Used after polling calendar events to resolve `chatInfo.threadId` (the
+     * Teams chat thread that backs the meeting). Returns null if no meeting
+     * matches the URL or if the response is empty (e.g. external meetings the
+     * current user does not own).
+     */
+    suspend fun getOnlineMeetingByJoinUrl(clientId: String, joinWebUrl: String): GraphOnlineMeeting? {
+        rateLimiter.acquire(clientId)
+        val encoded = URLEncoder.encode("JoinWebUrl eq '$joinWebUrl'", StandardCharsets.UTF_8)
+        val response = httpClient.get(proxyUrl(clientId, "me/onlineMeetings?\$filter=$encoded"))
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<GraphListResponse<GraphOnlineMeeting>>().value.firstOrNull()
+    }
+
+    /** GET /me/onlineMeetings/{id} — full meeting resource by ID. */
+    suspend fun getOnlineMeeting(clientId: String, meetingId: String): GraphOnlineMeeting {
+        rateLimiter.acquire(clientId)
+        val response = httpClient.get(proxyUrl(clientId, "me/onlineMeetings/$meetingId"))
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<GraphOnlineMeeting>()
+    }
+
+    /**
+     * List native Teams call recordings for a meeting.
+     * Requires `OnlineMeetingRecording.Read.All` (admin consent in tenant).
+     * Falls back to empty list on 403 — caller must use its own audio capture.
+     */
+    suspend fun listMeetingRecordings(clientId: String, meetingId: String): List<GraphCallRecording> {
+        rateLimiter.acquire(clientId)
+        val response = httpClient.get(proxyUrl(clientId, "me/onlineMeetings/$meetingId/recordings"))
+        if (response.status.value == 403) {
+            logger.warn { "Recordings scope not granted for client '$clientId' (admin consent missing)" }
+            return emptyList()
+        }
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<GraphListResponse<GraphCallRecording>>().value
+    }
+
+    /**
+     * List native Teams call transcripts for a meeting.
+     * Requires `OnlineMeetingTranscript.Read.All` (admin consent in tenant).
+     * Same fallback as recordings on 403.
+     */
+    suspend fun listMeetingTranscripts(clientId: String, meetingId: String): List<GraphCallTranscript> {
+        rateLimiter.acquire(clientId)
+        val response = httpClient.get(proxyUrl(clientId, "me/onlineMeetings/$meetingId/transcripts"))
+        if (response.status.value == 403) {
+            logger.warn { "Transcripts scope not granted for client '$clientId' (admin consent missing)" }
+            return emptyList()
+        }
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<GraphListResponse<GraphCallTranscript>>().value
+    }
+
+    /** Download a transcript as Microsoft VTT subtitles. */
+    suspend fun downloadTranscriptVtt(clientId: String, meetingId: String, transcriptId: String): ByteArray {
+        rateLimiter.acquire(clientId)
+        val response = httpClient.get(
+            proxyUrl(clientId, "me/onlineMeetings/$meetingId/transcripts/$transcriptId/content?\$format=text/vtt"),
+        )
+        if (!response.status.isSuccess()) {
+            handleGraphError(clientId, response.status.value)
+        }
+        return response.body<ByteArray>()
     }
 
     // -- OneDrive / SharePoint ------------------------------------------------
