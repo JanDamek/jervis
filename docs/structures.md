@@ -1745,6 +1745,132 @@ Sources:
 - `backend/service-mcp/app/main.py` (`meetings_upcoming`, `meeting_attend_*`)
 - `shared/common-dto/.../pipeline/ApprovalActionDtos.kt` (`MEETING_ATTEND`)
 
+### Meeting Recording Dispatch (Etapa 2A — desktop loopback)
+
+Once a `CALENDAR_PROCESSING` task is `APPROVED` (queue status), recording
+dispatch takes over. Read-only first version: ONLY captures audio that is
+already playing on the user's device — Jervis still does not auto-join.
+
+`MeetingRecordingDispatcher` (`backend/server/.../meeting/`) runs a 15 s
+@PostConstruct loop that calls
+`TaskRepository.findCalendarTasksReadyForRecordingDispatch(now)` — a `@Query`
+matching CALENDAR_PROCESSING tasks with `meetingMetadata.startTime ≤ now ≤
+endTime` and `meetingMetadata.recordingDispatchedAt IS NULL`. For each match:
+
+1. Look up `ApprovalQueueDocument.findByTaskId(...)` — skip unless `status =
+   APPROVED`. Approval is the **gate**; the dispatcher is intentionally
+   independent of the approval prompt loop so the two never deadlock.
+2. Emit `JervisEvent.MeetingRecordingTrigger(taskId, clientId, projectId,
+   title, startTime, endTime, provider, joinUrl)` via
+   `NotificationRpcImpl.emitEvent(clientId, ...)`.
+3. Mark `meetingMetadata.recordingDispatchedAt = now` so the task is never
+   picked up again. Acts as a dedupe lock.
+
+The desktop client (`apps/desktop/.../ConnectionState.handleEvent`) hands
+the trigger to `DesktopMeetingRecorder.handleEvent`, which:
+
+- Calls `MeetingRpc.startRecording(MeetingCreateDto)` to allocate a
+  `MeetingDocument`. The RPC dedupes by `(clientId, meetingType)`, so a
+  duplicate trigger after a process crash cannot create two recordings.
+- Spawns `ffmpeg` with an OS-specific loopback input — `avfoundation
+  :BlackHole 2ch` on macOS, `wasapi loopback` on Windows, `pulse
+  default.monitor` on Linux. The device name is overridable via the
+  `audio.loopback.device` agent preference.
+- Reads raw 16 kHz / 16-bit / mono signed-LE PCM from ffmpeg's stdout in
+  160 000-byte frames (≈5 s of audio), base64-encodes each frame, and
+  POSTs it as `AudioChunkDto(meetingId, chunkIndex, data, mimeType=audio/pcm)`
+  via `MeetingRpc.uploadAudioChunk`. The server appends to the existing WAV
+  file and updates the header on `finalizeRecording`.
+- A watchdog stops the process at the meeting's `endTime`, then calls
+  `MeetingRpc.finalizeRecording(MeetingFinalizeDto(meetingId, durationSeconds,
+  meetingType))`. Stop is also reachable via `JervisEvent.MeetingRecordingStop`
+  for "user revoked approval" / "session cancelled".
+
+`MeetingMetadata` carries two new fields: `recordingDispatchedAt` (the
+dedupe lock above) and `recordingMeetingId` (set later when the desktop
+reports back its `MeetingDocument.id` — used to link transcript artefacts
+to the original calendar task).
+
+Sources:
+- `backend/server/.../meeting/MeetingRecordingDispatcher.kt`
+- `backend/server/.../task/TaskRepository.kt`
+  (`findCalendarTasksReadyForRecordingDispatch`)
+- `backend/server/.../task/MeetingMetadata.kt` (`recordingDispatchedAt`,
+  `recordingMeetingId`)
+- `apps/desktop/.../meeting/DesktopMeetingRecorder.kt`
+- `apps/desktop/.../ConnectionState.kt` (event dispatch)
+- `shared/common-dto/.../events/JervisEvent.kt`
+  (`MeetingRecordingTrigger`, `MeetingRecordingStop`)
+
+### Meeting Attender Pod (Etapa 2B — headless fallback)
+
+When the user is not at their desktop but has approved Jervis to attend a
+meeting on their behalf, the same `MeetingRecordingTrigger` is delivered
+to the `jervis-meeting-attender` K8s pod (`backend/service-meeting-attender/`).
+The pod is intentionally **stateless**: no MongoDB, no scheduler, no
+discovery loop. It exposes `POST /attend`, `POST /stop`, and `GET /sessions`,
+and it acts ONLY when the Kotlin server tells it to.
+
+Per session the pod:
+
+- Loads a per-pod PulseAudio null-sink (`jervis-sink`) so audio playback
+  can be recorded without depending on host audio devices.
+- Spawns Xvfb + Chromium under Playwright (Teams web refuses true headless
+  for guest joins). Microphone permission is **denied**, the meeting URL is
+  loaded, audio plays into the null sink.
+- Spawns `ffmpeg -f pulse -i jervis-sink.monitor` reading raw 16 kHz / 16-bit /
+  mono PCM from stdout in 160 000-byte frames, then base64-encodes each
+  frame and POSTs it to the server's
+  `/internal/meeting/upload-chunk` HTTP bridge (mirroring the desktop's
+  kRPC `uploadAudioChunk` path). `MeetingDocument` is created up-front via
+  `/internal/meeting/start-recording` and finalized via
+  `/internal/meeting/finalize-recording` when the watchdog hits `endTime`.
+
+Read-only v1 invariants are enforced in code: `permissions=[]` in
+Playwright denies mic and camera; the page interaction layer is empty
+(only `goto`); no chat function is imported. The pod is deployed via
+`k8s/build_meeting_attender.sh` and `k8s/app_meeting_attender.yaml` —
+single replica, `Recreate` strategy because in-flight ffmpeg pumps cannot
+survive a rolling restart.
+
+Sources:
+- `backend/service-meeting-attender/app/main.py`
+- `backend/service-meeting-attender/Dockerfile`,
+  `entrypoint.sh`, `requirements.txt`
+- `k8s/app_meeting_attender.yaml`, `k8s/build_meeting_attender.sh`
+
+### Meeting Urgency Detector (Etapa 3 — live nudge)
+
+`MeetingUrgencyDetector` is a Spring `@Component` invoked from
+`WhisperTranscriptionClient.buildProgressCallback` immediately after the
+existing `emitMeetingTranscriptionProgress` call. It runs a regex-only
+fast path on the latest transcribed segment text and looks for three
+signals:
+
+| Kind | Detector | Helper message type |
+|------|----------|---------------------|
+| `NAME_MENTION` | `(jervis|@jervis|jandamek|jan damek)` | `SUGGESTION` |
+| `DIRECT_QUESTION` | `?` AND a 2nd-person Czech/English verb form (`-íš`, `-ete`, `you`) | `QUESTION_PREDICT` |
+| `DECISION_REQUIRED` | `musíme rozhodnout`, `schválíš`, `need (your )?approval`, `sign-off`, ... | `SUGGESTION` |
+
+On a match it pushes a `HelperMessageDto` into `MeetingHelperService.pushMessage`,
+which propagates via `JervisEvent.MeetingHelperMessage` (RPC event stream)
+and any registered helper WebSocket sessions. A 30 s per-meeting cooldown
+prevents notification floods. The detector is wrapped in `runCatching`
+so it can never block the transcription progress hot path. Anything that
+needs an LLM (semantic intent, summary) stays in the offline correction
+pipeline; this detector exists only to "tap the user on the shoulder
+when their name was just said".
+
+Read-only v1 invariants: the detector only emits to the **user's** device.
+It never replies into the meeting chat and never persists transcript text
+(the existing meeting pipeline already does that).
+
+Sources:
+- `backend/server/.../meeting/MeetingUrgencyDetector.kt`
+- `backend/server/.../meeting/WhisperTranscriptionClient.kt#buildProgressCallback`
+- `backend/server/.../meeting/MeetingHelperService.kt#pushMessage`
+
 ### Anti-Hallucination Guard (EPIC 14)
 
 Post-processing pipeline for fact-checking LLM responses:
