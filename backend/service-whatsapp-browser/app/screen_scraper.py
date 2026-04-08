@@ -136,6 +136,22 @@ class WhatsAppScraper:
     def is_scraping(self) -> bool:
         return self._scraping
 
+    async def start(self) -> None:
+        """No-op lifecycle hook.
+
+        WhatsAppScraper has no autonomous loop — scrapes are triggered
+        on-demand from the Kotlin server via POST /scrape/{client_id}/trigger.
+        main.py's FastAPI lifespan still calls start()/stop() for symmetry
+        with the other long-lived components (BrowserManager, SessionMonitor,
+        ScrapeStorage) so that future work can add a background task here
+        without touching the startup sequence.
+        """
+        logger.debug("WhatsAppScraper.start() — on-demand mode, no background loop")
+
+    async def stop(self) -> None:
+        """No-op lifecycle hook — see [start]."""
+        logger.debug("WhatsAppScraper.stop() — on-demand mode, no background loop")
+
     def set_connection_id(self, connection_id: str) -> None:
         self._connection_id = connection_id
 
