@@ -1722,12 +1722,26 @@ Configuration (in `k8s/configmap.yaml` under `jervis.meeting-attend`):
 - `preroll-minutes: 10` — how early before `startTime` to ask
 - `poll-interval-seconds: 60` — loop tick rate
 
+Calendar polling sources (per-provider, etag upsert + `defaultProjectId` fallback):
+- **Google Calendar**: `backend/server/.../google/GoogleWorkspacePollingHandler.kt#pollCalendar`
+- **O365 / Outlook**: `backend/server/.../teams/O365CalendarPoller.kt` (dual mode:
+  Graph API direct via OAuth2 bearer token, or via the o365-gateway browser
+  pool when `authType=NONE` and `o365ClientId` is set). Wired into
+  `O365PollingHandler` after chats/channels — single Spring component owns the
+  `MICROSOFT_TEAMS` provider slot, so calendar polling rides the same cycle as
+  chats. `CalendarEventIndexDocument.provider = MICROSOFT_OUTLOOK` for events
+  produced here. Etag = `@odata.etag` from Microsoft Graph; on mismatch the
+  document is overwritten and reset to `state=NEW` so the indexer re-emits the
+  task update.
+
 Sources:
 - `backend/server/.../meeting/MeetingAttendApprovalService.kt`
 - `backend/server/.../task/UserTaskRpcImpl.kt` (intercept in `sendToAgent`)
 - `backend/server/.../calendar/CalendarContinuousIndexer.kt`
 - `backend/server/.../task/MeetingMetadata.kt`
 - `backend/server/.../rpc/internal/InternalMeetingAttendRouting.kt`
+- `backend/server/.../teams/O365CalendarPoller.kt` + `O365PollingHandler.kt`
+- `backend/service-o365-gateway/.../GraphApiModels.kt` (`@odata.etag` on `GraphEvent`)
 - `backend/service-mcp/app/main.py` (`meetings_upcoming`, `meeting_attend_*`)
 - `shared/common-dto/.../pipeline/ApprovalActionDtos.kt` (`MEETING_ATTEND`)
 

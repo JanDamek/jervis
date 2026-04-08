@@ -176,6 +176,12 @@ data class GraphEvent(
     val recurrence: GraphRecurrence? = null,
     val showAs: String? = null,
     val webLink: String? = null,
+    /**
+     * Microsoft Graph entity tag. Compared on every poll cycle to detect
+     * upstream updates and trigger reindex / task upsert.
+     */
+    @kotlinx.serialization.SerialName("@odata.etag")
+    val odataEtag: String? = null,
 )
 
 @Serializable

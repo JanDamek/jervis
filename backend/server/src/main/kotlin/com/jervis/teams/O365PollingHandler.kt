@@ -58,6 +58,7 @@ class O365PollingHandler(
     private val oauth2Service: OAuth2Service,
     private val connectionService: ConnectionService,
     private val mongoTemplate: ReactiveMongoTemplate,
+    private val o365CalendarPoller: O365CalendarPoller,
     @Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
     private val gatewayUrl: String,
     @Value("\${jervis.o365-browser-pool.url:http://jervis-o365-browser-pool:8090}")
@@ -69,7 +70,7 @@ class O365PollingHandler(
 
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean {
         return connectionDocument.availableCapabilities.any {
-            it == ConnectionCapability.CHAT_READ
+            it == ConnectionCapability.CHAT_READ || it == ConnectionCapability.CALENDAR_READ
         }
     }
 
@@ -127,12 +128,34 @@ class O365PollingHandler(
             }
 
             logger.debug { "O365 Teams polling for '${connectionDocument.name}' (VLM scraping/${o365ClientId})" }
-            return try {
-                pollFromScrapeMessages(connectionDocument, context)
+            var combined = PollingResult()
+            // VLM-scraped chat/channel messages
+            try {
+                val scrapeResult = pollFromScrapeMessages(connectionDocument, context)
+                combined = mergeResults(combined, scrapeResult)
             } catch (e: Exception) {
                 logger.error(e) { "Error polling scrape messages for ${connectionDocument.name}" }
-                PollingResult(errors = 1)
+                combined = mergeResults(combined, PollingResult(errors = 1))
             }
+            // Calendar via O365 Gateway (browser pool tokens) — Graph calendarView is
+            // a regular Graph API call, the browser pool token works exactly the
+            // same as a normal OAuth2 access token. We route through the gateway
+            // so the per-clientId session is reused.
+            if (connectionDocument.availableCapabilities.contains(ConnectionCapability.CALENDAR_READ)) {
+                try {
+                    val calResult = o365CalendarPoller.poll(
+                        connection = connectionDocument,
+                        context = context,
+                        accessToken = null,
+                        o365ClientId = o365ClientId,
+                    )
+                    combined = mergeResults(combined, calResult)
+                } catch (e: Exception) {
+                    logger.error(e) { "Error polling O365 calendar (gateway) for ${connectionDocument.name}" }
+                    combined = mergeResults(combined, PollingResult(errors = 1))
+                }
+            }
+            return combined
         }
 
         // For OAuth2, refresh token if needed
@@ -153,28 +176,52 @@ class O365PollingHandler(
         var totalSkipped = 0
         var totalErrors = 0
 
-        // Poll chats (1:1 and group chats)
-        try {
-            val chatResult = pollChats(connectionDocument, context, o365ClientId, accessToken)
-            totalDiscovered += chatResult.itemsDiscovered
-            totalCreated += chatResult.itemsCreated
-            totalSkipped += chatResult.itemsSkipped
-            totalErrors += chatResult.errors
-        } catch (e: Exception) {
-            logger.error(e) { "Error polling Teams chats for ${connectionDocument.name}" }
-            totalErrors++
+        val hasChatRead = connectionDocument.availableCapabilities.contains(ConnectionCapability.CHAT_READ)
+        val hasCalendarRead = connectionDocument.availableCapabilities.contains(ConnectionCapability.CALENDAR_READ)
+
+        // Poll chats (1:1 and group chats) — only if CHAT_READ enabled
+        if (hasChatRead) {
+            try {
+                val chatResult = pollChats(connectionDocument, context, o365ClientId, accessToken)
+                totalDiscovered += chatResult.itemsDiscovered
+                totalCreated += chatResult.itemsCreated
+                totalSkipped += chatResult.itemsSkipped
+                totalErrors += chatResult.errors
+            } catch (e: Exception) {
+                logger.error(e) { "Error polling Teams chats for ${connectionDocument.name}" }
+                totalErrors++
+            }
+
+            // Poll team channels
+            try {
+                val channelResult = pollChannels(connectionDocument, context, o365ClientId, accessToken)
+                totalDiscovered += channelResult.itemsDiscovered
+                totalCreated += channelResult.itemsCreated
+                totalSkipped += channelResult.itemsSkipped
+                totalErrors += channelResult.errors
+            } catch (e: Exception) {
+                logger.error(e) { "Error polling Teams channels for ${connectionDocument.name}" }
+                totalErrors++
+            }
         }
 
-        // Poll team channels
-        try {
-            val channelResult = pollChannels(connectionDocument, context, o365ClientId, accessToken)
-            totalDiscovered += channelResult.itemsDiscovered
-            totalCreated += channelResult.itemsCreated
-            totalSkipped += channelResult.itemsSkipped
-            totalErrors += channelResult.errors
-        } catch (e: Exception) {
-            logger.error(e) { "Error polling Teams channels for ${connectionDocument.name}" }
-            totalErrors++
+        // Poll calendar (Graph /me/calendarView via OAuth2 token) — only if CALENDAR_READ enabled
+        if (hasCalendarRead) {
+            try {
+                val calResult = o365CalendarPoller.poll(
+                    connection = connectionDocument,
+                    context = context,
+                    accessToken = accessToken,
+                    o365ClientId = null,
+                )
+                totalDiscovered += calResult.itemsDiscovered
+                totalCreated += calResult.itemsCreated
+                totalSkipped += calResult.itemsSkipped
+                totalErrors += calResult.errors
+            } catch (e: Exception) {
+                logger.error(e) { "Error polling O365 calendar for ${connectionDocument.name}" }
+                totalErrors++
+            }
         }
 
         // If all calls failed and nothing was discovered, treat as auth error
@@ -189,6 +236,14 @@ class O365PollingHandler(
             authenticationError = isAuthError,
         )
     }
+
+    private fun mergeResults(a: PollingResult, b: PollingResult) = PollingResult(
+        itemsDiscovered = a.itemsDiscovered + b.itemsDiscovered,
+        itemsCreated = a.itemsCreated + b.itemsCreated,
+        itemsSkipped = a.itemsSkipped + b.itemsSkipped,
+        errors = a.errors + b.errors,
+        authenticationError = a.authenticationError || b.authenticationError,
+    )
 
     /**
      * Read VLM-scraped messages from o365_scrape_messages collection (state=NEW).
