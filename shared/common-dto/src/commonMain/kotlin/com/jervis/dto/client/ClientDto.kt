@@ -15,6 +15,13 @@ data class ClientDto(
     val archived: Boolean = false,
     val defaultLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
     val lastSelectedProjectId: String? = null,
+    /**
+     * Default project ID for items polled at client level (calendars, mailboxes, ...).
+     * Used as a fallback when an indexed item has no obvious project. Example:
+     * a Teams web meeting with the Guru organisation lands under client mazlusek →
+     * defaultProjectId = "příprava".
+     */
+    val defaultProjectId: String? = null,
     // External service connections assigned to this client
     val connectionIds: List<String> = emptyList(),
     // Default Git commit configuration for all projects under this client

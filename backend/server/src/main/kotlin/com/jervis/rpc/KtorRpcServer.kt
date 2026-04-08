@@ -27,6 +27,7 @@ import com.jervis.rpc.internal.installInternalGuidelinesApi
 import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalProjectManagementApi
 import com.jervis.rpc.internal.installInternalMeetingApi
+import com.jervis.rpc.internal.installInternalMeetingAttendApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalBugTrackerApi
 import com.jervis.rpc.internal.installInternalO365CapabilitiesApi
@@ -149,6 +150,7 @@ class KtorRpcServer(
     private val pythonOrchestratorClient: com.jervis.agent.PythonOrchestratorClient,
     private val contractRepository: com.jervis.finance.ContractRepository,
     private val gitRepositoryService: com.jervis.git.service.GitRepositoryService,
+    private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -195,6 +197,7 @@ class KtorRpcServer(
                             installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)
                             installInternalCacheApi(guidelinesService)
                             installInternalMeetingApi(meetingRpcImpl)
+                            installInternalMeetingAttendApi(taskRepository, meetingAttendApprovalService)
                             installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
                             installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalO365CapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)

@@ -1672,6 +1672,65 @@ Sources:
 - `backend/server/.../agent/ActionExecutorService.kt`
 - `shared/common-dto/.../pipeline/ApprovalActionDtos.kt`
 
+### Meeting Attend Approval (Etapa 1)
+
+Per-meeting approval flow for online meetings (Teams, Meet, Zoom). Read-only first
+version: Jervis NEVER joins, sends messages, or speaks — even disclaimer text is
+forbidden in v1. Approval is per individual occurrence; no series-wide consent.
+
+Lifecycle (one CALENDAR_PROCESSING task = one meeting instance):
+
+1. **Indexing.** `CalendarContinuousIndexer.indexEvent()` upserts a `TaskDocument`
+   per calendar event keyed by `correlationId`. For online meetings it sets
+   `meetingMetadata` and `scheduledAt = startTime`. On etag mismatch (event
+   rescheduled), all fields are overwritten and the task is reset to `NEW`.
+   Cancelled events transition the task to `DONE`.
+
+2. **Polling loop.** `MeetingAttendApprovalService` runs a dedicated 60s loop
+   (separate from `BackgroundEngine.runSchedulerLoop` because that one only
+   dispatches `SCHEDULED_TASK`). Each tick:
+   - Picks `CALENDAR_PROCESSING` tasks with `state=NEW` and `scheduledAt ≤ now + prerollMinutes`.
+   - First touch (preroll): creates `ApprovalQueueDocument(PENDING)`, emits push
+     (FCM + APNs broadcast → multi-device "first wins"), and writes an ALERT
+     chat bubble in the meeting task's own conversation
+     (`conversationId = task.id.value`) with `metadata.needsReaction="true"`.
+   - At-start fallback: still-`PENDING` approvals fire a second push + bubble
+     when `now ≥ startTime`, deduped via `lastActivityAt`.
+   - Past `endTime` with no decision → queue entry → `EXPIRED`, task → `DONE`.
+
+3. **Resolution.** User taps Approve / Deny in the in-app dialog or chat bubble.
+   `UserTaskRpcImpl.sendToAgent` intercepts `CALENDAR_PROCESSING` tasks with
+   `meetingMetadata` and calls `MeetingAttendApprovalService.handleApprovalResponse`,
+   which flips queue status, writes a USER decision message, and cancels the
+   notification across devices. Approved tasks stay `NEW` (recording pipeline,
+   etapa 2A/2B, will pick them up); denied tasks → `DONE`.
+
+4. **External entry points.** MCP exposes `meetings_upcoming`,
+   `meeting_attend_approve`, `meeting_attend_deny`, `meeting_attend_status`.
+   Approve/deny tools route through `/internal/meetings/attend/{approve|deny}`
+   so they share exactly the same code path as in-app taps — there is no
+   separate fast path.
+
+5. **Client/project routing.** `ClientDocument.defaultProjectId` is the fallback
+   for items polled at client level (calendars, mailboxes). Calendar polling
+   handlers set `projectId` from this field when the event itself doesn't
+   resolve to a project. Example: a Guru web meeting under client `mazlusek`
+   lands in project `příprava` because `mazlusek.defaultProjectId = příprava`.
+
+Configuration (in `k8s/configmap.yaml` under `jervis.meeting-attend`):
+- `enabled: true` — master switch
+- `preroll-minutes: 10` — how early before `startTime` to ask
+- `poll-interval-seconds: 60` — loop tick rate
+
+Sources:
+- `backend/server/.../meeting/MeetingAttendApprovalService.kt`
+- `backend/server/.../task/UserTaskRpcImpl.kt` (intercept in `sendToAgent`)
+- `backend/server/.../calendar/CalendarContinuousIndexer.kt`
+- `backend/server/.../task/MeetingMetadata.kt`
+- `backend/server/.../rpc/internal/InternalMeetingAttendRouting.kt`
+- `backend/service-mcp/app/main.py` (`meetings_upcoming`, `meeting_attend_*`)
+- `shared/common-dto/.../pipeline/ApprovalActionDtos.kt` (`MEETING_ATTEND`)
+
 ### Anti-Hallucination Guard (EPIC 14)
 
 Post-processing pipeline for fact-checking LLM responses:

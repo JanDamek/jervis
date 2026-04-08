@@ -49,6 +49,7 @@ internal fun ClientEditForm(
     var name by remember { mutableStateOf(client.name) }
     var description by remember { mutableStateOf(client.description ?: "") }
     var archived by remember { mutableStateOf(client.archived) }
+    var defaultProjectId by remember { mutableStateOf(client.defaultProjectId ?: "") }
 
     // Git commit configuration
     var gitCommitMessageFormat by remember { mutableStateOf(client.gitCommitMessageFormat ?: "") }
@@ -215,6 +216,7 @@ internal fun ClientEditForm(
                     autoUseGemini = autoUseGemini,
                     maxOpenRouterTier = maxOpenRouterTier,
                     reviewLanguage = reviewLanguage,
+                    defaultProjectId = defaultProjectId.ifBlank { null },
                 ),
             )
         },
@@ -247,6 +249,27 @@ internal fun ClientEditForm(
                         label = "Archivovat klienta",
                         checked = archived,
                         onCheckedChange = { archived = it },
+                    )
+                    Spacer(androidx.compose.ui.Modifier.height(JervisSpacing.itemGap))
+                    val defaultProjectOptions = remember(projects) {
+                        listOf("") + projects.map { it.id }
+                    }
+                    JDropdown(
+                        items = defaultProjectOptions,
+                        selectedItem = defaultProjectId,
+                        onItemSelected = { defaultProjectId = it },
+                        label = "Výchozí projekt pro klientské polling zdroje",
+                        itemLabel = { id ->
+                            if (id.isBlank()) "(žádný — zdroje bez projektu zůstanou neutrální)"
+                            else projects.firstOrNull { it.id == id }?.name ?: id
+                        },
+                    )
+                    Text(
+                        "Použito jako fallback pro položky polované na úrovni klienta " +
+                            "(kalendář, mailbox), které samy nepatří k žádnému projektu. " +
+                            "Příklad: Teams web meeting Guru → klient mazlusek → projekt „příprava".",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 

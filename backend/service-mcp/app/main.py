@@ -804,6 +804,143 @@ async def get_meeting_transcript(meeting_id: str, corrected: bool = True) -> str
     return header + "(No transcript available yet)"
 
 
+# ── Meeting Attend (approval flow) ──────────────────────────────────────
+
+
+@mcp.tool
+async def meetings_upcoming(
+    client_id: str = "",
+    project_id: str = "",
+    hours_ahead: int = 24,
+    limit: int = 50,
+) -> str:
+    """List upcoming online meetings awaiting attend approval.
+
+    Returns meeting tasks (type=CALENDAR_PROCESSING) whose scheduledAt falls
+    within the next `hours_ahead` hours and have meetingMetadata. These are
+    candidates for `meeting_attend_approve` / `meeting_attend_deny`.
+
+    Args:
+        client_id: Filter by client ID
+        project_id: Filter by project ID
+        hours_ahead: Look-ahead window in hours (default 24)
+        limit: Maximum results (default 50)
+    """
+    params = {"hours_ahead": str(hours_ahead), "limit": str(limit)}
+    if client_id:
+        params["client_id"] = client_id
+    if project_id:
+        params["project_id"] = project_id
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{settings.kotlin_server_url}/internal/meetings/upcoming",
+            params=params,
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        items = resp.json()
+        if not items:
+            return "No upcoming meetings in the requested window."
+        lines = []
+        for m in items:
+            join = f" join={m['joinUrl']}" if m.get("joinUrl") else ""
+            org = f" by {m['organizer']}" if m.get("organizer") else ""
+            lines.append(
+                f"- {m['title']} (id={m['taskId']}) [{m['provider']}]\n"
+                f"  start={m['startTime']} end={m['endTime']}{org}{join}\n"
+                f"  client={m['clientId']} project={m['projectId'] or '-'}"
+            )
+        return "\n".join(lines)
+
+
+@mcp.tool
+async def meeting_attend_approve(task_id: str) -> str:
+    """Approve a meeting-attend request.
+
+    Marks the ApprovalQueue entry as APPROVED, writes a USER decision message
+    into the meeting's chat thread, and cancels the in-app notification across
+    devices. The task stays NEW so the (future) recording pipeline can pick it
+    up via its scheduledAt window. Read-only first version: no audio out, no
+    messages sent into the meeting.
+
+    Args:
+        task_id: TaskDocument ID of the CALENDAR_PROCESSING task
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/meetings/attend/approve",
+            json={"taskId": task_id},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return f"Meeting approved: taskId={data['taskId']} state={data.get('state', '?')}"
+
+
+@mcp.tool
+async def meeting_attend_deny(task_id: str, reason: str = "") -> str:
+    """Deny a meeting-attend request.
+
+    Marks the ApprovalQueue entry as DENIED, transitions the task to DONE, and
+    records the reason in the chat bubble. Jervis will not ask again about this
+    meeting instance.
+
+    Args:
+        task_id: TaskDocument ID of the CALENDAR_PROCESSING task
+        reason: Optional human-readable reason (shown in the chat bubble)
+    """
+    body: dict = {"taskId": task_id}
+    if reason:
+        body["reason"] = reason
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/meetings/attend/deny",
+            json=body,
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return f"Meeting denied: taskId={data['taskId']} state={data.get('state', '?')}"
+
+
+@mcp.tool
+async def meeting_attend_status(task_id: str) -> str:
+    """Get the current approval status of a meeting-attend task.
+
+    Reads the approval_queue collection directly to show PENDING / APPROVED /
+    DENIED / EXPIRED status, plus respondedAt and the original preview/context.
+
+    Args:
+        task_id: TaskDocument ID of the CALENDAR_PROCESSING task
+    """
+    db = await get_db()
+    queue_doc = await db["approval_queue"].find_one({"taskId": task_id})
+    if not queue_doc:
+        return f"No approval queue entry for task '{task_id}'."
+    lines = [
+        f"Task: {task_id}",
+        f"Action: {queue_doc.get('action', '?')}",
+        f"Status: {queue_doc.get('status', '?')}",
+        f"Risk: {queue_doc.get('riskLevel', '?')}",
+        f"Created: {queue_doc.get('createdAt', '?')}",
+    ]
+    if queue_doc.get("respondedAt"):
+        lines.append(f"Responded: {queue_doc['respondedAt']}")
+    if queue_doc.get("preview"):
+        lines.append(f"Preview: {queue_doc['preview']}")
+    if queue_doc.get("payload"):
+        payload = queue_doc["payload"]
+        if payload.get("startTime"):
+            lines.append(f"Start: {payload['startTime']}")
+        if payload.get("endTime"):
+            lines.append(f"End: {payload['endTime']}")
+        if payload.get("provider"):
+            lines.append(f"Provider: {payload['provider']}")
+        if payload.get("joinUrl"):
+            lines.append(f"Join URL: {payload['joinUrl']}")
+    return "\n".join(lines)
+
+
 @mcp.tool
 async def list_tasks(
     client_id: str = "",
