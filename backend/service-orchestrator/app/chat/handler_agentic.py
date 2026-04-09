@@ -481,6 +481,56 @@ async def run_agentic_loop(
                         )
                     # else keep whatever model returned
 
+            # Guard 3: thought-anchor label hallucination.
+            # If the LLM echoes raw thought graph keys (thought-anchor:xxx,
+            # thought-node:xxx, knowledge-node:xxx) it's regurgitating internal
+            # graph labels instead of using kb_search to retrieve real data.
+            # Strip the labels from the response and inject a kb_search call
+            # so the user at least gets a partial real answer.
+            import re as _re
+            _anchor_pattern = r'(?:thought-anchor|thought-node|knowledge-node):[a-zA-Z0-9_:.-]+'
+            _anchor_matches = _re.findall(_anchor_pattern, final_text)
+            if _anchor_matches and _guard_retries < 2:
+                _guard_retries += 1
+                logger.warning(
+                    "HALLUCINATION_GUARD | thought-anchor labels in response (%d matches: %s) — "
+                    "stripping and retrying with forced kb_search",
+                    len(_anchor_matches), _anchor_matches[:3],
+                )
+                # Inject a mandatory kb_search result for the user's query so the
+                # next LLM attempt has real data instead of graph labels.
+                try:
+                    from app.tools.executor import execute_tool
+                    _kb_result = await execute_tool(
+                        tool_name="kb_search",
+                        arguments={"query": request.message},
+                        client_id=effective_client_id or "",
+                        project_id=effective_project_id,
+                        processing_mode="FOREGROUND",
+                        skip_approval=True,
+                    )
+                    messages.append({"role": "tool", "tool_call_id": "forced-kb-search",
+                                     "name": "kb_search", "content": _kb_result})
+                    messages.append({"role": "system",
+                                     "content": "Předchozí odpověď citovala interní thought-anchor labely. "
+                                                 "Výše je výsledek kb_search. Odpověz POUZE na základě těchto dat. "
+                                                 "NIKDY necituj thought-anchor:, thought-node: ani knowledge-node: labels."})
+                except Exception as _e:
+                    logger.warning("HALLUCINATION_GUARD | forced kb_search failed: %s", _e)
+                if route and route.model and route.model not in _skip_models:
+                    _skip_models.append(route.model)
+                continue  # retry with kb_search data injected
+
+            # If still has anchor labels after retry — strip them from final text
+            if _anchor_matches:
+                final_text = _re.sub(
+                    r'\s*[-–—]\s*zdroj:\s*' + _anchor_pattern + r'(?:,\s*' + _anchor_pattern + r')*',
+                    '', final_text,
+                )
+                final_text = _re.sub(_anchor_pattern, '', final_text)
+                final_text = _re.sub(r'\n\s*\n\s*\n', '\n\n', final_text)  # clean up blank lines
+                logger.info("HALLUCINATION_GUARD | stripped %d anchor labels from final response", len(_anchor_matches))
+
             # Fact-check + topic tracking — parallel
             fc_result, topics = await asyncio.gather(
                 run_fact_check(final_text, effective_client_id, effective_project_id,
