@@ -62,6 +62,7 @@ class CentralPoller(
     private val userTaskService: UserTaskService,
     private val pollingIntervalSettingsRepository: PollingIntervalSettingsRepository,
     private val oauth2Service: OAuth2Service,
+    private val notificationRpcImpl: com.jervis.rpc.NotificationRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -72,6 +73,10 @@ class CentralPoller(
     // Mutex per connection to prevent parallel polling of the same connection
     private val connectionLocks = mutableMapOf<String, Mutex>()
 
+    // Track consecutive auth failures per connection for retry-before-INVALID logic
+    private val authFailureCounts = mutableMapOf<String, Int>()
+    private val AUTH_FAILURE_THRESHOLD = 3  // Mark INVALID only after 3 consecutive auth failures
+
     private lateinit var handlersByProvider: Map<ProviderEnum, PollingHandler>
 
     @PostConstruct
@@ -79,8 +84,8 @@ class CentralPoller(
         logger.debug { "Starting CentralPoller..." }
         handlersByProvider = handlers.associateBy { it.provider }
 
+        // Main polling loop — active/valid connections
         scope.launch {
-            // Initial delay to let application fully start
             delay(10_000)
             logger.debug { "CentralPoller initial delay complete, beginning polling loop" }
 
@@ -92,6 +97,89 @@ class CentralPoller(
                 }
 
                 delay(30_000)
+            }
+        }
+
+        // Recovery loop — periodically re-test INVALID connections.
+        // If the provider is back (e.g. network restored, token auto-refreshed),
+        // the connection transitions back to VALID automatically.
+        scope.launch {
+            delay(60_000)  // Start after 1 minute
+            logger.info { "CentralPoller: INVALID connection recovery loop started (5 min interval)" }
+
+            while (isActive) {
+                try {
+                    recoverInvalidConnections()
+                } catch (e: Exception) {
+                    logger.warn { "Error in INVALID recovery loop: ${e.message}" }
+                }
+                delay(300_000)  // Every 5 minutes
+            }
+        }
+    }
+
+    /**
+     * Attempt to recover INVALID connections by re-testing them.
+     *
+     * For OAuth2: try refreshing the token. For BEARER/BASIC: try a lightweight
+     * API call. If successful → mark VALID + emit notification. If still failing →
+     * keep INVALID, no spam notifications (the original one was already sent).
+     */
+    private suspend fun recoverInvalidConnections() {
+        val invalidConnections = connectionService.findByState(ConnectionStateEnum.INVALID).toList()
+        if (invalidConnections.isEmpty()) return
+
+        logger.info { "RECOVERY: testing ${invalidConnections.size} INVALID connection(s)" }
+
+        for (connection in invalidConnections) {
+            try {
+                var recovered = false
+
+                // OAuth2: try token refresh
+                if (connection.authType == AuthTypeEnum.OAUTH2 && connection.refreshToken != null) {
+                    recovered = oauth2Service.refreshAccessToken(connection, force = true)
+                }
+
+                // If OAuth2 refresh worked, or for BEARER/BASIC — try a lightweight poll
+                if (recovered || connection.authType != AuthTypeEnum.OAUTH2) {
+                    val handler = handlersByProvider[connection.provider]
+                    if (handler != null) {
+                        val fresh = connectionService.findById(connection.id) ?: connection
+                        val clients = clientRepository.findByConnectionIdsContaining(connection.id).toList()
+                        val context = PollingContext(clients = clients, projects = emptyList(), connectionId = connection.id)
+
+                        val result = try {
+                            handler.poll(fresh, context)
+                        } catch (e: com.jervis.common.http.ProviderAuthException) {
+                            PollingResult(errors = 1, authenticationError = true)
+                        } catch (e: Exception) {
+                            PollingResult(errors = 1)
+                        }
+
+                        recovered = !result.authenticationError && result.errors == 0
+                    }
+                }
+
+                if (recovered) {
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+                    logger.info { "RECOVERY: '${connection.name}' recovered → VALID" }
+
+                    val clientId = clientRepository.findByConnectionIdsContaining(connection.id)
+                        .toList().firstOrNull()?.id?.toString() ?: ""
+                    if (clientId.isNotBlank()) {
+                        notificationRpcImpl.emitConnectionStateChanged(
+                            clientId = clientId,
+                            connectionId = connection.id.toString(),
+                            connectionName = connection.name,
+                            newState = "VALID",
+                            message = "Spojení '${connection.name}' se obnovilo.",
+                        )
+                    }
+                } else {
+                    logger.debug { "RECOVERY: '${connection.name}' still INVALID" }
+                }
+            } catch (e: Exception) {
+                logger.warn { "RECOVERY: failed for '${connection.name}': ${e.message}" }
             }
         }
     }
@@ -251,18 +339,38 @@ class CentralPoller(
                     "Skipped: ${totalResult.itemsSkipped}, Errors: ${totalResult.errors}"
             }
 
-            // Handle authentication errors — attempt reactive token refresh before escalating
+            // Handle authentication errors — retry before marking INVALID
             if (totalResult.authenticationError) {
                 if (effectiveConnection.authType == AuthTypeEnum.OAUTH2 && effectiveConnection.refreshToken != null) {
                     val refreshed = oauth2Service.refreshAccessToken(effectiveConnection, force = true)
                     if (refreshed) {
                         logger.info { "OAuth2 token refreshed for '${connectionDocument.name}' after auth error, will retry next cycle" }
-                        // Token refreshed — don't mark as invalid, the next poll cycle will use the fresh token
-                        lastPollTimes.remove(connectionId) // Force immediate re-poll in next cycle
+                        authFailureCounts.remove(connectionId)
+                        lastPollTimes.remove(connectionId) // Force immediate re-poll
                         return
                     }
                 }
+                // Increment consecutive failure count — only mark INVALID after threshold
+                val failCount = (authFailureCounts[connectionId] ?: 0) + 1
+                authFailureCounts[connectionId] = failCount
+                if (failCount < AUTH_FAILURE_THRESHOLD) {
+                    logger.warn {
+                        "Auth failure ${failCount}/${AUTH_FAILURE_THRESHOLD} for '${connectionDocument.name}' — " +
+                            "will retry next cycle (NOT marking INVALID yet)"
+                    }
+                    // Force re-poll sooner (halve the interval)
+                    lastPollTimes.remove(connectionId)
+                    return
+                }
+                // Threshold reached — mark INVALID + notify
+                logger.error {
+                    "Auth failure threshold reached (${failCount}/${AUTH_FAILURE_THRESHOLD}) for '${connectionDocument.name}' — marking INVALID"
+                }
                 handlePollingError(connectionDocument, context, totalResult)
+                authFailureCounts.remove(connectionId)
+            } else if (totalResult.errors == 0) {
+                // Successful poll — reset failure counter
+                authFailureCounts.remove(connectionId)
             }
 
             // Update last poll time
@@ -288,6 +396,24 @@ class CentralPoller(
 
         connectionService.save(invalidConnection)
         logger.debug { "ConnectionDocument ${connectionDocument.name} (${connectionDocument.id}) set to INVALID state" }
+
+        // Emit ConnectionStateChanged event via NotificationRpcImpl so ALL connected
+        // clients (desktop, iOS, watch) see the status change immediately. This is the
+        // SINGLE remote notification channel — no silent failures.
+        val clientId = context.clients.firstOrNull()?.id?.toString() ?: ""
+        if (clientId.isNotBlank()) {
+            try {
+                notificationRpcImpl.emitConnectionStateChanged(
+                    clientId = clientId,
+                    connectionId = connectionDocument.id.toString(),
+                    connectionName = connectionDocument.name,
+                    newState = "INVALID",
+                    message = "Spojení '${connectionDocument.name}' selhalo po ${AUTH_FAILURE_THRESHOLD} pokusech. Zkontrolujte přihlašovací údaje.",
+                )
+            } catch (e: Exception) {
+                logger.warn { "Failed to emit ConnectionStateChanged event: ${e.message}" }
+            }
+        }
 
         // Check if UserTask already exists for this connectionDocument
         val clientIdVal =
