@@ -85,6 +85,9 @@ fun Routing.installMeetingHelperApi(
                     "translation" -> HelperMessageType.TRANSLATION
                     "suggestion" -> HelperMessageType.SUGGESTION
                     "question_predict" -> HelperMessageType.QUESTION_PREDICT
+                    "visual_insight" -> HelperMessageType.VISUAL_INSIGHT
+                    "whiteboard_ocr" -> HelperMessageType.WHITEBOARD_OCR
+                    "screen_ocr" -> HelperMessageType.SCREEN_OCR
                     else -> HelperMessageType.STATUS
                 },
                 text = body.text,

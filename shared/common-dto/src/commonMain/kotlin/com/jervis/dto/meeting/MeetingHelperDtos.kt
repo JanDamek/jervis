@@ -13,6 +13,12 @@ enum class HelperMessageType {
     SUGGESTION,
     QUESTION_PREDICT,
     STATUS,
+    /** General visual analysis from IP camera (scene overview, layout). */
+    VISUAL_INSIGHT,
+    /** Whiteboard / paper OCR — text extraction with structure preserved. */
+    WHITEBOARD_OCR,
+    /** Monitor / screen OCR — code-aware text extraction. */
+    SCREEN_OCR,
 }
 
 @Serializable

@@ -247,3 +247,15 @@ data:
   # ── CORRECTION: Transcript correction service ────────────────────────
   OLLAMA_URL: "http://jervis-ollama-router:11430"
   DEFAULT_CORRECTION_MODEL: "qwen3-coder-tool:30b"
+  # ── VISUAL CAPTURE: IP camera RTSP + VLM analysis ──────────────────
+  # Camera: Reolink Trackmix P760, PoE, 4K, ONVIF Profile S
+  # RTSP URL and ONVIF password configured after camera setup on LAN
+  VISUAL_CAPTURE_RTSP_URL: ""
+  VISUAL_CAPTURE_ONVIF_HOST: ""
+  VISUAL_CAPTURE_ONVIF_PORT: "80"
+  VISUAL_CAPTURE_ONVIF_USER: "admin"
+  VISUAL_CAPTURE_INTERVAL_S: "5"
+  VISUAL_CAPTURE_JPEG_QUALITY: "85"
+  VISUAL_CAPTURE_ENABLED: "true"
+  VISUAL_CAPTURE_VLM_MODEL: "qwen3-vl-tool:latest"
+  VISUAL_CAPTURE_URL: "http://jervis-visual-capture:8096"

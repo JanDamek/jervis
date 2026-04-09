@@ -1,0 +1,88 @@
+# =============================================================================
+# Jervis Visual Capture — K8s Deployment
+#
+# IP camera frame capture (RTSP) + VLM analysis for real-time meeting hints
+# and on-demand desk/screen/whiteboard reading. Camera: Reolink Trackmix P760
+# (4K, PoE, ONVIF Profile S). No browser needed — just RTSP + ONVIF SOAP.
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-visual-capture
+  namespace: jervis
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate  # capture loop holds mutable state — no rolling restart
+  selector:
+    matchLabels:
+      app: jervis-visual-capture
+  template:
+    metadata:
+      labels:
+        app: jervis-visual-capture
+    spec:
+      containers:
+        - name: capture
+          image: registry.damek-soft.eu/jandamek/jervis-visual-capture:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8096
+              name: api
+          envFrom:
+            - configMapRef:
+                name: jervis-config
+          env:
+            - name: KOTLIN_SERVER_URL
+              value: "http://jervis-server:8084"
+            - name: INTERNAL_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: INTERNAL_AUTH_TOKEN
+                  optional: true
+            - name: VISUAL_CAPTURE_ONVIF_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: VISUAL_CAPTURE_ONVIF_PASS
+                  optional: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8096
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8096
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-visual-capture
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-visual-capture
+  ports:
+    - name: api
+      port: 8096
+      targetPort: 8096
+      protocol: TCP
