@@ -14,6 +14,7 @@ import io.ktor.http.isSuccess
 import jakarta.mail.Session
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -27,6 +28,7 @@ import java.util.Properties
 class ConnectionService(
     private val repository: ConnectionRepository,
     private val httpClient: HttpClient,
+    private val clientRepository: com.jervis.client.ClientRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -61,11 +63,49 @@ class ConnectionService(
     fun findAll(): Flow<ConnectionDocument> = repository.findAll()
 
     /**
+     * Check which clients and projects reference this connection.
+     * Used before deletion to prevent orphan references.
+     */
+    /**
+     * Check which clients reference this connection.
+     * Connections are assigned at client level (ClientDocument.connectionIds),
+     * not project level.
+     */
+    suspend fun findReferences(id: ConnectionId): ConnectionReferences {
+        val clients = clientRepository.findByConnectionIdsContaining(id).toList()
+        return ConnectionReferences(
+            clientNames = clients.map { it.name },
+        )
+    }
+
+    data class ConnectionReferences(
+        val clientNames: List<String>,
+    ) {
+        val isEmpty get() = clientNames.isEmpty()
+    }
+
+    /**
      * Delete connection by ID.
+     *
+     * @throws IllegalStateException if the connection is still referenced by clients or projects.
+     *   Caller must re-assign references first, or force-delete via [forceDelete].
      */
     suspend fun delete(id: ConnectionId) {
-        // Spring Data MongoDB has issues with @JvmInline value classes as ID
-        // Workaround: find first, then delete
+        val refs = findReferences(id)
+        if (!refs.isEmpty) {
+            val detail = "Klienti: ${refs.clientNames.joinToString()}"
+            throw IllegalStateException(
+                "Spojení nelze smazat — je stále používáno: $detail. " +
+                    "Nejdříve odeberte spojení z těchto klientů/projektů."
+            )
+        }
+        forceDelete(id)
+    }
+
+    /**
+     * Force-delete connection (no reference check). Use for cleanup only.
+     */
+    suspend fun forceDelete(id: ConnectionId) {
         findById(id)?.let { repository.delete(it) }
         logger.info { "Deleted connection: $id" }
     }

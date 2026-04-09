@@ -187,15 +187,21 @@ data class ProviderDescriptor(
                 defaultPollingIntervalSeconds = 120,
                 authOptions = listOf(
                     AuthOption(
-                        authType = AuthTypeEnum.OAUTH2,
-                        displayName = "OAuth 2.0 (přihlásit se jako vy)",
-                        fields = emptyList(),
+                        authType = AuthTypeEnum.BEARER,
+                        displayName = "Bot Token (doporučeno)",
+                        fields = listOf(
+                            FormField(FormFieldType.BASE_URL, "Workspace URL", required = false,
+                                placeholder = "https://vase-firma.slack.com"),
+                            FormField(FormFieldType.BEARER_TOKEN, "Bot Token (xoxb-...)", isSecret = true,
+                                placeholder = "xoxb-1234-5678-abcdef..."),
+                        ),
                     ),
                     AuthOption(
-                        authType = AuthTypeEnum.BEARER,
-                        displayName = "Bot Token (xoxb-...)",
+                        authType = AuthTypeEnum.OAUTH2,
+                        displayName = "OAuth 2.0 (přihlásit se jako vy)",
                         fields = listOf(
-                            FormField(FormFieldType.BEARER_TOKEN, "Bot Token", isSecret = true, placeholder = "xoxb-..."),
+                            FormField(FormFieldType.BASE_URL, "Workspace URL", required = false,
+                                placeholder = "https://vase-firma.slack.com"),
                         ),
                     ),
                 ),

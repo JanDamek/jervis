@@ -11,6 +11,8 @@ import kotlinx.serialization.Serializable
  * - VALID: Connection assigned and successfully validated (can connect)
  * - INVALID: Connection assigned but validation failed (couldn't connect)
  * - AUTH_EXPIRED: OAuth2 token expired or provider returned 401 — user must re-authorize
+ * - PAUSED: Connection temporarily disabled by user — CentralPoller skips it,
+ *   but data is preserved so it can be re-enabled without re-configuration
  */
 @Serializable
 enum class ConnectionStateEnum {
@@ -19,4 +21,5 @@ enum class ConnectionStateEnum {
     INVALID,
     VALID,
     AUTH_EXPIRED,
+    PAUSED,
 }
