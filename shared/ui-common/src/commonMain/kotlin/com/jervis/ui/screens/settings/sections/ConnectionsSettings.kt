@@ -253,8 +253,17 @@ fun ConnectionsSettings(repository: JervisRepository) {
                     try {
                         repository.connections.updateConnection(id, request)
                         showEditDialog = null
+                        // Auto-test connection after save — validates credentials
+                        // and transitions to VALID/INVALID immediately so the user
+                        // sees the result without manually clicking "Test".
+                        try {
+                            val result = repository.connections.testConnection(id)
+                            val statusMsg = if (result.success) "✓ Připojení ověřeno" else "✗ Test selhal: ${result.message}"
+                            snackbarHostState.showSnackbar(statusMsg)
+                        } catch (_: Exception) {
+                            snackbarHostState.showSnackbar("Připojení uloženo (test se nepodařil)")
+                        }
                         loadConnections()
-                        snackbarHostState.showSnackbar("Připojení aktualizováno")
                     } catch (e: Exception) {
                         snackbarHostState.showSnackbar("Chyba: ${e.message}")
                     }
