@@ -21,11 +21,7 @@ x11vnc -display :99 -forever -shared -rfbport 5900 -bg -o /dev/null -passwd "$WH
 # Start websockify on 0.0.0.0:6080 with noVNC web client.
 # --web serves the noVNC HTML/JS from the installed package, so accessing
 # http://host:6080/vnc.html opens the VNC viewer in browser.
-NOVNC_DIR=$(find /usr -path "*/novnc" -type d 2>/dev/null | head -1)
-if [ -z "$NOVNC_DIR" ]; then
-    NOVNC_DIR="/usr/share/novnc"
-fi
-websockify --web="$NOVNC_DIR" 0.0.0.0:6080 localhost:5900 &
+websockify --web=/usr/share/novnc 0.0.0.0:6080 localhost:5900 &
 
 echo "Xvfb on :99, VNC on :5900, websockify on localhost:6080, FastAPI on :8091"
 
