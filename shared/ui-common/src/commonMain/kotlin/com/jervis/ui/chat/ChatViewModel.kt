@@ -305,7 +305,12 @@ class ChatViewModel(
                     if (newClient != lastClient || newProject != lastProject) {
                         lastClient = newClient
                         lastProject = newProject
-                        println("ChatViewModel: scope changed → client=$newClient project=$newProject, reloading")
+                        // Clear messages IMMEDIATELY on scope switch so old-scope
+                        // in-flight messages don't bleed into the new scope. The
+                        // subsequent reloadForCurrentFilter() will populate with
+                        // correctly-scoped messages from the server.
+                        _chatMessages.value = emptyList()
+                        println("ChatViewModel: scope changed → client=$newClient project=$newProject, cleared + reloading")
                         reloadForCurrentFilter()
                     }
                 }
