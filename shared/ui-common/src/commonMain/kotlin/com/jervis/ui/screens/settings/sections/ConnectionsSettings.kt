@@ -191,23 +191,19 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                     }
                                 },
                                 onVnc = {
-                                    val isWhatsApp = connection.provider == com.jervis.dto.connection.ProviderEnum.WHATSAPP
-                                    if (isWhatsApp) {
-                                        openUrlInBrowser("https://jervis-whatsapp-vnc.damek-soft.eu/vnc.html")
-                                    } else {
-                                        // O365: get VNC URL with auth token from session status
-                                        scope.launch {
-                                            try {
-                                                val status = repository.connections.getBrowserSessionStatus(connection.id)
-                                                val url = status.vncUrl
-                                                if (!url.isNullOrBlank()) {
-                                                    openUrlInBrowser(url)
-                                                } else {
-                                                    snackbarHostState.showSnackbar("VNC: session není aktivní (${status.state})")
-                                                }
-                                            } catch (e: Exception) {
-                                                snackbarHostState.showSnackbar("VNC: ${e.message}")
+                                    // Both O365 and WhatsApp: get VNC URL with one-time auth token
+                                    scope.launch {
+                                        try {
+                                            snackbarHostState.showSnackbar("Připojuji k VNC...")
+                                            val status = repository.connections.getBrowserSessionStatus(connection.id)
+                                            val url = status.vncUrl
+                                            if (!url.isNullOrBlank()) {
+                                                openUrlInBrowser(url)
+                                            } else {
+                                                snackbarHostState.showSnackbar("VNC: session není aktivní (${status.state})")
                                             }
+                                        } catch (e: Exception) {
+                                            snackbarHostState.showSnackbar("VNC: ${e.message}")
                                         }
                                     }
                                 },
