@@ -190,6 +190,27 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                         }
                                     }
                                 },
+                                onVnc = {
+                                    val isWhatsApp = connection.provider == com.jervis.dto.connection.ProviderEnum.WHATSAPP
+                                    if (isWhatsApp) {
+                                        openUrlInBrowser("https://jervis-whatsapp-vnc.damek-soft.eu/vnc.html")
+                                    } else {
+                                        // O365: get VNC URL with auth token from session status
+                                        scope.launch {
+                                            try {
+                                                val status = repository.connections.getBrowserSessionStatus(connection.id)
+                                                val url = status.vncUrl
+                                                if (!url.isNullOrBlank()) {
+                                                    openUrlInBrowser(url)
+                                                } else {
+                                                    snackbarHostState.showSnackbar("VNC: session není aktivní (${status.state})")
+                                                }
+                                            } catch (e: Exception) {
+                                                snackbarHostState.showSnackbar("VNC: ${e.message}")
+                                            }
+                                        }
+                                    }
+                                },
                                 onEdit = { showEditDialog = connection },
                                 onDelete = { showDeleteDialog = connection },
                             )
@@ -326,6 +347,7 @@ private fun ConnectionItemCard(
     onTeamsLogin: () -> Unit,
     onWhatsAppLogin: () -> Unit,
     onRediscover: () -> Unit,
+    onVnc: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -496,15 +518,9 @@ private fun ConnectionItemCard(
                     Text("Znovu zjistit služby")
                 }
             }
-            // VNC button for browser-session connections — opens noVNC viewer
+            // VNC button for browser-session connections
             if (isBrowserSession) {
-                val isWhatsAppProvider = connection.provider == com.jervis.dto.connection.ProviderEnum.WHATSAPP
-                val vncUrl = if (isWhatsAppProvider) {
-                    "https://jervis-whatsapp-vnc.damek-soft.eu/vnc.html"
-                } else {
-                    "https://jervis-vnc.damek-soft.eu/vnc.html"
-                }
-                JSecondaryButton(onClick = { openUrlInBrowser(vncUrl) }) {
+                JSecondaryButton(onClick = onVnc) {
                     Text("VNC")
                 }
             }
