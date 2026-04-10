@@ -37,9 +37,18 @@ def create_session_router(
             user_agent=request.user_agent,
         )
 
-        # Open WhatsApp Web
-        page = await context.new_page()
-        await page.goto(request.login_url, wait_until="domcontentloaded", timeout=30000)
+        # Reuse existing page or create one — never open multiple tabs
+        if context.pages:
+            page = context.pages[0]
+            # Close extra tabs if any
+            for extra in context.pages[1:]:
+                await extra.close()
+            # Navigate only if not already on WhatsApp
+            if "whatsapp.com" not in (page.url or ""):
+                await page.goto(request.login_url, wait_until="domcontentloaded", timeout=30000)
+        else:
+            page = await context.new_page()
+            await page.goto(request.login_url, wait_until="domcontentloaded", timeout=30000)
 
         # Set connection ID for storage
         scraper.set_connection_id(client_id)

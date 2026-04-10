@@ -90,8 +90,14 @@ class WhatsAppPollingHandler(
             return PollingResult()
         }
 
+        // DISCOVERING — wait for capabilities callback, don't re-init
+        if (connectionDocument.state == ConnectionStateEnum.DISCOVERING) {
+            logger.debug { "Skipping WhatsApp poll for '${connectionDocument.name}' — DISCOVERING (waiting for callback)" }
+            return PollingResult()
+        }
+
         // Proactive health check: verify browser session is alive, auto-init if expired
-        if (connectionDocument.state in listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING)) {
+        if (connectionDocument.state == ConnectionStateEnum.VALID) {
             try {
                 val statusResponse = httpClient.get("$browserUrl/session/$browserSessionId")
                 if (statusResponse.status.isSuccess()) {
