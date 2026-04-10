@@ -300,22 +300,11 @@ class ChatMessageService(
             andConditions.add(Criteria.where("_id").lt(beforeId))
         }
 
-        // Scope filtering — only when filterClientId is set.
-        // EXCEPTION: "K reakci" items (needsReaction=true or success=false) are
-        // ALWAYS GLOBAL — they bypass scope filtering so the user sees pending
-        // items from ALL clients regardless of which client is currently selected.
+        // Scope filtering — only when filterClientId is set
         if (filterClientId != null) {
             val scopeOr = mutableListOf(
                 Criteria.where("clientId").`is`(filterClientId),                   // direct scope match
                 Criteria.where("affectedScopes.clientId").`is`(filterClientId),    // cross-context master
-                // K reakci items bypass scope filter — always visible
-                Criteria().andOperator(
-                    Criteria.where("role").`in`(MessageRole.BACKGROUND.name, MessageRole.ALERT.name),
-                    Criteria().orOperator(
-                        Criteria.where("metadata.needsReaction").`is`("true"),
-                        Criteria.where("metadata.success").`is`("false"),
-                    ),
-                ),
             )
             if (filterProjectId != null) {
                 scopeOr.clear()

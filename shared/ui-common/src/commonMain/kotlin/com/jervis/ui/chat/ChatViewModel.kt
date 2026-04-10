@@ -236,8 +236,8 @@ class ChatViewModel(
     private val _showTasks = MutableStateFlow(false)
     val showTasks: StateFlow<Boolean> = _showTasks.asStateFlow()
 
-    /** Show actionable items (failed background + USER_TASK). Default ON. */
-    private val _showNeedReaction = MutableStateFlow(true)
+    /** Show actionable items (failed background + USER_TASK). Default OFF per docs. */
+    private val _showNeedReaction = MutableStateFlow(false)
     val showNeedReaction: StateFlow<Boolean> = _showNeedReaction.asStateFlow()
 
     /** Total background messages in session (for filter chip label). */
@@ -305,12 +305,7 @@ class ChatViewModel(
                     if (newClient != lastClient || newProject != lastProject) {
                         lastClient = newClient
                         lastProject = newProject
-                        // Clear messages IMMEDIATELY on scope switch so old-scope
-                        // in-flight messages don't bleed into the new scope. The
-                        // subsequent reloadForCurrentFilter() will populate with
-                        // correctly-scoped messages from the server.
-                        _chatMessages.value = emptyList()
-                        println("ChatViewModel: scope changed → client=$newClient project=$newProject, cleared + reloading")
+                        println("ChatViewModel: scope changed → client=$newClient project=$newProject, reloading")
                         reloadForCurrentFilter()
                     }
                 }
@@ -553,7 +548,7 @@ class ChatViewModel(
         reloadForCurrentFilter()
     }
 
-    /** Toggle "K reakci" filter — independent, triggers server reload. */
+    /** Toggle "K reakci" filter — triggers server reload. DB decides what to return (incl. USER_TASKs). */
     fun toggleNeedReaction() {
         _showNeedReaction.value = !_showNeedReaction.value
         reloadForCurrentFilter()
@@ -1111,7 +1106,8 @@ class ChatViewModel(
             ChatMessage.MessageType.BACKGROUND_RESULT,
             ChatMessage.MessageType.URGENT_ALERT,
             -> {
-                // Always update counters (badge must reflect reality even when hidden)
+                // SSE only informs — update counters, then reload from DB.
+                // DB decides what messages to include based on current filters.
                 if (messageType == ChatMessage.MessageType.BACKGROUND_RESULT) {
                     _backgroundMessageCount.value++
                 }
@@ -1122,34 +1118,14 @@ class ChatViewModel(
                     _userTaskCount.update { it + 1 }
                 }
 
-                // Only add to visible messages if current filter includes this type
-                val showInTasks = _showTasks.value
-                val showInReaction = _showNeedReaction.value && isActionable
-                if (showInTasks || showInReaction) {
-                    // Deduplicate: skip if same taskId + timestamp already exists (SSE replay)
-                    val ts = response.metadata["timestamp"]
-                    val tid = response.metadata["taskId"]
-                    val alreadyExists = messages.any {
-                        it.messageType == messageType &&
-                            it.timestamp == ts &&
-                            it.metadata["taskId"] == tid
-                    }
-                    if (!alreadyExists) {
-                        // Clean up stale progress indicators
-                        messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
-                        thinkingHistory.clear()
-                        messages.add(
-                            ChatMessage(
-                                from = ChatMessage.Sender.Assistant,
-                                text = response.message,
-                                contextId = projectId,
-                                messageType = messageType,
-                                metadata = response.metadata,
-                                timestamp = ts,
-                            ),
-                        )
-                    }
-                }
+                // Clean up stale progress indicators before reload
+                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+                thinkingHistory.clear()
+                _chatMessages.value = messages
+
+                // Reload from DB — server applies correct filter (showChat/showTasks/showNeedReaction)
+                reloadForCurrentFilter()
+
                 // Refresh master graph after background task completion
                 loadMemoryGraph()
             }

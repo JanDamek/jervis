@@ -321,15 +321,9 @@ class ChatRpcImpl(
         val userTaskCount = pendingUserTasks + actionableBackground
         val session = chatService.getOrCreateActiveSession()
 
-        // ── "K reakci" is ALWAYS GLOBAL — no scope filter ──
-        // When only showNeedReaction is active, skip scope filtering entirely
-        val needReactionOnly = showNeedReaction && !showChat && !showTasks
-
-        // ── Inject pending USER_TASKs into K reakci results ──────────
-        // USER_TASKs live in the `tasks` collection, not `chat_messages`.
-        // When showNeedReaction is on, convert them to ChatMessageDto so
-        // they appear in the same list as actionable background messages.
-        // This unifies the badge count source with the displayed content.
+        // ── Load pending USER_TASKs from tasks collection (global, no scope filter) ──
+        // USER_TASKs live in `tasks` not `chat_messages`. When showNeedReaction is on,
+        // query them from DB and merge into the response so they appear in the chat timeline.
         val userTaskDtos = if (showNeedReaction) {
             try {
                 val pendingTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
@@ -364,7 +358,7 @@ class ChatRpcImpl(
         } else emptyList()
 
         // ── Scope-aware path: use ReactiveMongoTemplate with dynamic Criteria ──
-        if (filterClientId != null && !needReactionOnly) {
+        if (filterClientId != null) {
             val groupProjectIds = if (filterGroupId != null) {
                 projectRepository.findByGroupIdAndActiveTrue(com.jervis.common.types.ProjectGroupId.fromString(filterGroupId))
                     .toList()
@@ -387,10 +381,10 @@ class ChatRpcImpl(
                 val outOfScope = filterClientId != null && msg.clientId != null && msg.clientId != filterClientId
                 msg.toChatMessageDto(taskGraphExistsService, isOutOfScope = outOfScope)
             }
-            // Merge USER_TASKs into results (K reakci items always included)
-            val merged = (dtos + userTaskDtos).sortedByDescending { it.timestamp }
+            // Merge USER_TASKs (global) with scoped chat messages, chronological order
+            val merged = (dtos + userTaskDtos).sortedBy { it.timestamp }
             return ChatHistoryDto(
-                messages = merged.take(limit),
+                messages = merged,
                 hasMore = messages.size >= limit,
                 oldestMessageId = messages.firstOrNull()?.timestamp?.toString(),
                 userTaskCount = userTaskCount,
@@ -398,11 +392,10 @@ class ChatRpcImpl(
             )
         }
 
-        // ── needReactionOnly OR no filterClientId ──
-        // Return only USER_TASKs (global, no scope filter needed)
-        if (needReactionOnly && userTaskDtos.isNotEmpty()) {
+        // ── No filterClientId — return only USER_TASKs if K reakci is active ──
+        if (userTaskDtos.isNotEmpty()) {
             return ChatHistoryDto(
-                messages = userTaskDtos,
+                messages = userTaskDtos.sortedBy { it.timestamp },
                 hasMore = false,
                 oldestMessageId = null,
                 userTaskCount = userTaskCount,
@@ -410,6 +403,7 @@ class ChatRpcImpl(
             )
         }
 
+        // ── No filterClientId and no USER_TASKs = empty result ──
         logger.warn { "CHAT_HISTORY_NO_SCOPE | No filterClientId — returning empty. showChat=$showChat showTasks=$showTasks showReaction=$showNeedReaction" }
         return ChatHistoryDto(
             messages = emptyList(),

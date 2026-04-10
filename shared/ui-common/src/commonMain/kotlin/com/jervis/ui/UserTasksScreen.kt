@@ -286,6 +286,7 @@ fun UserTasksScreen(
                         onBack = {
                             selectedListItem = null
                             selectedFullTask = null
+                            loadTasks(filterText)
                         },
                         onTaskSent = { mode ->
                             val clientId = selectedFullTask!!.clientId
