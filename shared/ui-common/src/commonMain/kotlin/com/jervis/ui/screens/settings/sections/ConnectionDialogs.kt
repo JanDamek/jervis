@@ -337,27 +337,39 @@ internal fun ConnectionEditDialog(
         }
 
         // Email intelligence: sender/domain → client mapping (only for email connections)
+        // Advanced: email sender/domain → client mapping.
+        // Hidden behind expandable section — most users don't need this
+        // (Jervis auto-classifies emails via LLM). Only useful when one
+        // inbox serves multiple clients and you need deterministic routing.
         val isEmailConnection = connection.capabilities.any {
             it == ConnectionCapability.EMAIL_READ || it == ConnectionCapability.EMAIL_SEND
         } || provider == ProviderEnum.GENERIC_EMAIL || provider == ProviderEnum.GOOGLE_WORKSPACE
-        if (isEmailConnection) {
-            Spacer(modifier = Modifier.height(16.dp))
-            KeyValueMappingSection(
-                title = "Mapování odesílatelů na klienty",
-                description = "Email odesílatele → ID klienta (např. john@acme.com → 68a332...)",
-                keyLabel = "Email/vzor odesílatele",
-                valueLabel = "ID klienta",
-                mappings = senderMappings,
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-            KeyValueMappingSection(
-                title = "Mapování domén na klienty",
-                description = "Doména → ID klienta (např. acme.com → 68a332...)",
-                keyLabel = "Doména",
-                valueLabel = "ID klienta",
-                mappings = domainMappings,
-            )
+        if (isEmailConnection && (senderMappings.isNotEmpty() || domainMappings.isNotEmpty())) {
+            var showMappings by remember { mutableStateOf(false) }
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.compose.material3.TextButton(onClick = { showMappings = !showMappings }) {
+                androidx.compose.material3.Text(
+                    if (showMappings) "▼ Skrýt mapování odesílatelů" else "▶ Pokročilé: mapování odesílatelů na klienty",
+                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                )
+            }
+            if (showMappings) {
+                KeyValueMappingSection(
+                    title = "Mapování odesílatelů na klienty",
+                    description = "Email odesílatele → ID klienta (např. john@acme.com → 68a332...)",
+                    keyLabel = "Email/vzor odesílatele",
+                    valueLabel = "ID klienta",
+                    mappings = senderMappings,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                KeyValueMappingSection(
+                    title = "Mapování domén na klienty",
+                    description = "Doména → ID klienta (např. acme.com → 68a332...)",
+                    keyLabel = "Doména",
+                    valueLabel = "ID klienta",
+                    mappings = domainMappings,
+                )
+            }
         }
     }
 }
