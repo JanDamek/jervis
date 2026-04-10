@@ -74,6 +74,13 @@ interface IChatService {
     suspend fun updateScope(clientId: String?, projectId: String?, groupId: String? = null)
 
     /**
+     * Dismiss all actionable items (BACKGROUND messages + USER_TASKs).
+     * Marks BACKGROUND messages as dismissed in chat_messages, moves USER_TASKs to DONE.
+     * Returns total count of dismissed items.
+     */
+    suspend fun dismissAllActionable(): Int
+
+    /**
      * Archive current session (starts fresh on next message).
      */
     suspend fun archiveSession()

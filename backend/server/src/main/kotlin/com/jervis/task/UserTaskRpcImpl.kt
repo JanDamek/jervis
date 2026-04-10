@@ -243,7 +243,7 @@ class UserTaskRpcImpl(
         // 1. Try to dismiss as TaskDocument (any active state → DONE)
         try {
             val task = taskRepository.getById(TaskId.fromString(taskId))
-            if (task != null && task.state != TaskStateEnum.DONE && task.state != TaskStateEnum.ERROR) {
+            if (task != null && task.state != TaskStateEnum.DONE) {
                 val updated = task.copy(state = TaskStateEnum.DONE)
                 taskRepository.save(updated)
                 logger.info { "USER_TASK_DISMISSED | taskId=$taskId | previousState=${task.state} | title=${task.taskName}" }
@@ -294,9 +294,10 @@ class UserTaskRpcImpl(
     override suspend fun dismissAll(): Int {
         var count = 0
 
-        // 1. Dismiss all USER_TASK tasks (type=USER_TASK, state=USER_TASK → DONE)
-        val tasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toList()
-        for (task in tasks) {
+        // 1. Dismiss all USER_TASK tasks (type=USER_TASK, state=USER_TASK or ERROR → DONE)
+        val pendingTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toList()
+        val errorTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(TaskTypeEnum.USER_TASK, TaskStateEnum.ERROR).toList()
+        for (task in pendingTasks + errorTasks) {
             val updated = task.copy(state = TaskStateEnum.DONE)
             taskRepository.save(updated)
             notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
@@ -307,7 +308,7 @@ class UserTaskRpcImpl(
         val bgCount = chatService.dismissAllActionableBackground()
         count += bgCount
 
-        logger.info { "USER_TASK_DISMISS_ALL | tasks=${tasks.size} | backgroundMessages=$bgCount | total=$count" }
+        logger.info { "USER_TASK_DISMISS_ALL | pending=${pendingTasks.size} | error=${errorTasks.size} | backgroundMessages=$bgCount | total=$count" }
         return count
     }
 

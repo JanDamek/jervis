@@ -443,17 +443,12 @@ class ChatViewModel(
      * Optimistically removes the alert from chat and decrements badge.
      */
     fun dismissTask(taskId: String) {
-        // Optimistically remove the alert/background result bubble from chat
-        _chatMessages.value = _chatMessages.value.filter { msg ->
-            !((msg.messageType == ChatMessage.MessageType.URGENT_ALERT ||
-                    msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT) &&
-                msg.metadata["taskId"] == taskId)
-        }
         _userTaskCount.update { (it - 1).coerceAtLeast(0) }
-
         scope.launch {
             try {
                 repository.call { services -> services.userTaskService.dismiss(taskId) }
+                // Reload from DB — dismissed item now filtered out by metadata.dismissed
+                reloadForCurrentFilter()
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 println("ChatViewModel: dismissTask failed: ${e.message}")
@@ -468,15 +463,11 @@ class ChatViewModel(
     fun dismissAllTasks() {
         scope.launch {
             try {
-                val count = repository.call { services -> services.userTaskService.dismissAll() }
-                // Remove all urgent alerts and actionable background results from chat
-                _chatMessages.value = _chatMessages.value.filter { msg ->
-                    msg.messageType != ChatMessage.MessageType.URGENT_ALERT &&
-                        !(msg.messageType == ChatMessage.MessageType.BACKGROUND_RESULT &&
-                            msg.metadata["needsReaction"] == "true")
-                }
+                val count = repository.chat.dismissAllActionable()
                 _userTaskCount.value = 0
-                println("ChatViewModel: dismissAll — $count tasks dismissed")
+                // Reload from DB — dismissed items now filtered out
+                reloadForCurrentFilter()
+                println("ChatViewModel: dismissAll — $count items dismissed")
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 println("ChatViewModel: dismissAll failed: ${e.message}")

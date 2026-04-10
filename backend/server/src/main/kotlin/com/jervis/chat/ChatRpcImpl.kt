@@ -481,6 +481,29 @@ class ChatRpcImpl(
         logger.info { "CHAT_SCOPE_UPDATE | clientId=$clientId | projectId=$safeProjectId | groupId=$resolvedGroupId" }
     }
 
+    override suspend fun dismissAllActionable(): Int {
+        var count = 0
+
+        // 1. Dismiss USER_TASKs (state=USER_TASK or ERROR → DONE)
+        val pendingTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
+            TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK,
+        ).toList()
+        val errorTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
+            TaskTypeEnum.USER_TASK, TaskStateEnum.ERROR,
+        ).toList()
+        for (task in pendingTasks + errorTasks) {
+            taskRepository.save(task.copy(state = TaskStateEnum.DONE))
+            count++
+        }
+
+        // 2. Dismiss actionable BACKGROUND messages in chat_messages
+        val bgCount = chatService.dismissAllActionableBackground()
+        count += bgCount
+
+        logger.info { "DISMISS_ALL_ACTIONABLE | userTasks=${pendingTasks.size + errorTasks.size} background=$bgCount total=$count" }
+        return count
+    }
+
     override suspend fun archiveSession() {
         chatService.archiveCurrentSession()
         logger.info { "CHAT_SESSION_ARCHIVED" }

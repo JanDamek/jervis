@@ -354,6 +354,7 @@ class ChatMessageService(
                     Criteria.where("metadata.needsReaction").`is`("true"),
                     Criteria.where("metadata.success").`is`("false"),
                 ),
+                Criteria.where("metadata.dismissed").ne("true"),
             ))
         }
         if (roleFilters.isNotEmpty()) {
