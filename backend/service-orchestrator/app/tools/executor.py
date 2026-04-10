@@ -1214,9 +1214,12 @@ async def _execute_store_knowledge(
     kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
     url = f"{kb_write_url}/api/v1/ingest"
 
-    # Generate unique sourceUrn for user-provided knowledge
+    # Generate STABLE sourceUrn — same subject+category+client deduplicates via
+    # KB upsert (content-hash check). The old "{timestamp}" suffix made every
+    # store unique → 10× duplicates for the same content (e.g., "Řešení
+    # průběžného testu" stored on every retry of a multi-vertex graph).
     timestamp = datetime.now(timezone.utc).isoformat()
-    source_urn = f"user-knowledge:{category}:{subject}:{timestamp}"
+    source_urn = f"user-knowledge:{category}:{subject}"
 
     payload = {
         "clientId": client_id,

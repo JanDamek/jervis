@@ -496,6 +496,18 @@ private fun ConnectionItemCard(
                     Text("Znovu zjistit služby")
                 }
             }
+            // VNC button for browser-session connections — opens noVNC viewer
+            if (isBrowserSession) {
+                val isWhatsAppProvider = connection.provider == com.jervis.dto.connection.ProviderEnum.WHATSAPP
+                val vncUrl = if (isWhatsAppProvider) {
+                    "https://jervis-whatsapp-vnc.damek-soft.eu/vnc.html"
+                } else {
+                    "https://jervis-vnc.damek-soft.eu/vnc.html"
+                }
+                JSecondaryButton(onClick = { openUrlInBrowser(vncUrl) }) {
+                    Text("VNC")
+                }
+            }
             JIconButton(
                 onClick = onEdit,
                 icon = Icons.Default.Edit,

@@ -45,6 +45,7 @@ private const val PAGE_SIZE = 50
 @Composable
 fun PendingTasksScreen(
     repository: JervisRepository,
+    clientId: String? = null,
     onBack: () -> Unit,
 ) {
     var tasks by remember { mutableStateOf<List<PendingTaskDto>>(emptyList()) }
@@ -73,6 +74,7 @@ fun PendingTasksScreen(
                     state = selectedState,
                     page = 0,
                     pageSize = PAGE_SIZE,
+                    clientId = clientId,
                 )
                 tasks = result.items
                 totalTasks = result.totalCount
@@ -98,6 +100,7 @@ fun PendingTasksScreen(
                     state = selectedState,
                     page = nextPage,
                     pageSize = PAGE_SIZE,
+                    clientId = clientId,
                 )
                 tasks = tasks + result.items
                 totalTasks = result.totalCount

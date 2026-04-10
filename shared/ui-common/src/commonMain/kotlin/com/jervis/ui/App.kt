@@ -223,6 +223,7 @@ fun App(
             Screen.PendingTasks -> {
                 PendingTasksScreen(
                     repository = repository,
+                    clientId = viewModel.selectedClientId.value,
                     onBack = { appNavigator.goBack() },
                 )
             }

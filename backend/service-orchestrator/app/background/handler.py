@@ -143,6 +143,26 @@ async def _run_graph_agent_background(
     is_blocked = graph_status == "blocked"
     success = not agent_failed and graph_status not in ("failed", "cancelled", "blocked")
     summary = state.get("final_result", "")
+
+    # If final_result is empty (common for multi-vertex graphs where results
+    # were stored in KB via kb_store tool calls), synthesize a summary from
+    # completed vertex results so the chat message has actual content.
+    if not summary and isinstance(graph_data, dict):
+        vertices = graph_data.get("vertices", {})
+        if isinstance(vertices, dict):
+            completed_results = []
+            for v in vertices.values():
+                if isinstance(v, dict) and v.get("status") == "completed":
+                    result = v.get("result", "") or v.get("result_summary", "")
+                    if result and len(result) > 20:
+                        completed_results.append(result)
+            if completed_results:
+                # Use the longest result (likely the synthesis/final vertex)
+                summary = max(completed_results, key=len)[:3000]
+                logger.info(
+                    "BACKGROUND_SUMMARY_SYNTHESIZED: task=%s from %d vertex results, len=%d",
+                    request.task_id, len(completed_results), len(summary),
+                )
     try:
         await agent_store.link_thinking_graph(
             task_id=request.task_id,

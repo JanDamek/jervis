@@ -15,19 +15,22 @@ class PendingTaskRpcImpl(
     override suspend fun listTasks(
         taskType: String?,
         state: String?,
-    ): List<PendingTaskDto> = pendingTaskService.listTasks(taskType, state)
+        clientId: String?,
+    ): List<PendingTaskDto> = pendingTaskService.listTasks(taskType, state, clientId)
 
     override suspend fun countTasks(
         taskType: String?,
         state: String?,
-    ): Long = pendingTaskService.countTasks(taskType, state)
+        clientId: String?,
+    ): Long = pendingTaskService.countTasks(taskType, state, clientId)
 
     override suspend fun listTasksPaged(
         taskType: String?,
         state: String?,
         page: Int,
         pageSize: Int,
-    ): PagedPendingTasksResult = pendingTaskService.listTasksPaged(taskType, state, page, pageSize)
+        clientId: String?,
+    ): PagedPendingTasksResult = pendingTaskService.listTasksPaged(taskType, state, page, pageSize, clientId)
 
     override suspend fun deletePendingTask(id: String) = pendingTaskService.deletePendingTask(id)
 }

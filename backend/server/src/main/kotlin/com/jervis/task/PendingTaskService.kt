@@ -1,5 +1,6 @@
 package com.jervis.task
 
+import com.jervis.common.types.ClientId
 import com.jervis.common.types.TaskId
 import com.jervis.dto.task.PagedPendingTasksResult
 import com.jervis.dto.task.PendingTaskDto
@@ -12,6 +13,7 @@ import com.jervis.service.task.IPendingTaskService
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.reactor.awaitSingle
+import org.bson.types.ObjectId
 import org.springframework.data.domain.Sort
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate
 import org.springframework.data.mongodb.core.query.Criteria
@@ -26,41 +28,33 @@ class PendingTaskService(
     override suspend fun listTasks(
         taskType: String?,
         state: String?,
+        clientId: String?,
     ): List<PendingTaskDto> {
-        val parsedType = taskType?.let { TaskTypeEnum.valueOf(it) }
-        val parsedState = state?.let { TaskStateEnum.valueOf(it) }
-
-        val tasks = when {
-            parsedType != null && parsedState != null ->
-                taskRepository.findByTypeAndStateOrderByCreatedAtAsc(parsedType, parsedState)
-            parsedType != null ->
-                taskRepository.findByTypeOrderByCreatedAtAsc(parsedType)
-            parsedState != null ->
-                taskRepository.findByStateOrderByCreatedAtAsc(parsedState)
-            else ->
-                taskRepository.findAllByOrderByCreatedAtAsc()
+        // Use MongoDB template for consistent clientId filtering
+        val criteria = Criteria()
+        taskType?.let { criteria.and("type").`is`(it) }
+        state?.let { criteria.and("state").`is`(it) }
+        clientId?.takeIf { it.isNotBlank() }?.let {
+            criteria.and("clientId").`is`(ObjectId(it))
         }
-
-        return tasks.map { it.toPendingTaskDto() }.toList()
+        val query = Query(criteria).with(Sort.by(Sort.Direction.ASC, "createdAt"))
+        val tasks = mongoTemplate.find(query, TaskDocument::class.java, "tasks")
+            .collectList().awaitSingle()
+        return tasks.map { it.toPendingTaskDto() }
     }
 
     override suspend fun countTasks(
         taskType: String?,
         state: String?,
+        clientId: String?,
     ): Long {
-        val parsedType = taskType?.let { TaskTypeEnum.valueOf(it) }
-        val parsedState = state?.let { TaskStateEnum.valueOf(it) }
-
-        return when {
-            parsedType != null && parsedState != null ->
-                taskRepository.countByTypeAndState(parsedType, parsedState)
-            parsedType != null ->
-                taskRepository.countByType(parsedType)
-            parsedState != null ->
-                taskRepository.countByState(parsedState)
-            else ->
-                taskRepository.count()
+        val criteria = Criteria()
+        taskType?.let { criteria.and("type").`is`(it) }
+        state?.let { criteria.and("state").`is`(it) }
+        clientId?.takeIf { it.isNotBlank() }?.let {
+            criteria.and("clientId").`is`(ObjectId(it))
         }
+        return mongoTemplate.count(Query(criteria), "tasks").awaitSingle()
     }
 
     override suspend fun listTasksPaged(
@@ -68,6 +62,7 @@ class PendingTaskService(
         state: String?,
         page: Int,
         pageSize: Int,
+        clientId: String?,
     ): PagedPendingTasksResult {
         val safePage = page.coerceAtLeast(0)
         val safePageSize = pageSize.coerceIn(1, 100)
@@ -75,6 +70,9 @@ class PendingTaskService(
         val criteria = Criteria()
         taskType?.let { criteria.and("type").`is`(it) }
         state?.let { criteria.and("state").`is`(it) }
+        clientId?.takeIf { it.isNotBlank() }?.let {
+            criteria.and("clientId").`is`(ObjectId(it))
+        }
 
         val baseQuery = Query(criteria)
 
@@ -99,6 +97,7 @@ class PendingTaskService(
     }
 
     override suspend fun deletePendingTask(id: String) {
-        taskRepository.deleteById(TaskId.fromString(id))
+        val taskId = TaskId.fromString(id)
+        taskRepository.deleteById(taskId)
     }
 }
