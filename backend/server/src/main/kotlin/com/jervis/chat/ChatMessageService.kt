@@ -300,12 +300,11 @@ class ChatMessageService(
             andConditions.add(Criteria.where("_id").lt(beforeId))
         }
 
-        // Scope filtering — only when filterClientId is set
+        // Build scope criteria for client-scoped messages
+        val scopeOr = mutableListOf<Criteria>()
         if (filterClientId != null) {
-            val scopeOr = mutableListOf(
-                Criteria.where("clientId").`is`(filterClientId),                   // direct scope match
-                Criteria.where("affectedScopes.clientId").`is`(filterClientId),    // cross-context master
-            )
+            scopeOr.add(Criteria.where("clientId").`is`(filterClientId))
+            scopeOr.add(Criteria.where("affectedScopes.clientId").`is`(filterClientId))
             if (filterProjectId != null) {
                 scopeOr.clear()
                 scopeOr.addAll(listOf(
@@ -313,7 +312,6 @@ class ChatMessageService(
                         Criteria.where("clientId").`is`(filterClientId),
                         Criteria.where("projectId").`is`(filterProjectId),
                     ),
-                    // Client-level messages (no project) still visible when project selected
                     Criteria().andOperator(
                         Criteria.where("clientId").`is`(filterClientId),
                         Criteria.where("projectId").`is`(null),
@@ -334,20 +332,32 @@ class ChatMessageService(
                     Criteria.where("affectedScopes.clientId").`is`(filterClientId),
                 ))
             }
-            andConditions.add(Criteria().orOperator(*scopeOr.toTypedArray()))
         }
 
-        // Role filtering (same logic as existing getChatHistory)
+        // Role filtering — scoped messages (Chat/Tasky) + global K reakci
         val roleFilters = mutableListOf<Criteria>()
         if (showChat) {
-            roleFilters.add(Criteria.where("role").`in`(
-                MessageRole.USER.name, MessageRole.ASSISTANT.name, MessageRole.SYSTEM.name
-            ))
+            val chatRole = Criteria.where("role").`in`(
+                MessageRole.USER.name, MessageRole.ASSISTANT.name, MessageRole.SYSTEM.name,
+            )
+            // Chat messages are scoped to client
+            if (scopeOr.isNotEmpty()) {
+                roleFilters.add(Criteria().andOperator(chatRole, Criteria().orOperator(*scopeOr.toTypedArray())))
+            } else {
+                roleFilters.add(chatRole)
+            }
         }
         if (showTasks) {
-            roleFilters.add(Criteria.where("role").`is`(MessageRole.BACKGROUND.name))
+            val tasksRole = Criteria.where("role").`is`(MessageRole.BACKGROUND.name)
+            // Background tasks are scoped to client
+            if (scopeOr.isNotEmpty()) {
+                roleFilters.add(Criteria().andOperator(tasksRole, Criteria().orOperator(*scopeOr.toTypedArray())))
+            } else {
+                roleFilters.add(tasksRole)
+            }
         }
         if (showNeedReaction) {
+            // K reakci items are GLOBAL — no scope filter. Badge is global, display must match.
             roleFilters.add(Criteria().andOperator(
                 Criteria.where("role").`in`(MessageRole.BACKGROUND.name, MessageRole.ALERT.name),
                 Criteria().orOperator(
@@ -360,7 +370,7 @@ class ChatMessageService(
         if (roleFilters.isNotEmpty()) {
             andConditions.add(Criteria().orOperator(*roleFilters.toTypedArray()))
         } else {
-            // All filters OFF → return nothing (no role matches = empty result)
+            // All filters OFF → return nothing
             return emptyList()
         }
 
