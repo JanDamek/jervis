@@ -242,6 +242,47 @@ async def handle_chat_sse(
                 },
             )
 
+        # ── PRE-SEARCH: forced kb_search for factual queries ──────────
+        # If the user's message looks like a factual question (not a greeting
+        # or pure conversational turn), inject kb_search results BEFORE the
+        # LLM runs. This prevents the model from hallucinating from Thought
+        # Map priming when real KB data exists but wasn't in the prefetch.
+        #
+        # Heuristics: message contains a question mark OR is short follow-up
+        # OR contains entity-like words. Skip for image attachments (visual).
+        _msg_stripped = request.message.strip()
+        _has_question = "?" in _msg_stripped
+        _is_followup = len(_msg_stripped) < 80 and not _msg_stripped.startswith("/")
+        _has_attachments = bool(request.attachments)
+        _should_presearch = (_has_question or _is_followup) and not _has_attachments
+
+        if _should_presearch and request.active_client_id:
+            try:
+                from app.tools.executor import execute_tool
+                _presearch_result = await execute_tool(
+                    tool_name="kb_search",
+                    arguments={"query": _msg_stripped},
+                    client_id=request.active_client_id or "",
+                    project_id=request.active_project_id,
+                    processing_mode="FOREGROUND",
+                    skip_approval=True,
+                    group_id=getattr(request, "active_group_id", None),
+                )
+                if _presearch_result and len(_presearch_result) > 50:
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "## Pre-search KB výsledky (automatický vyhledávání PŘED tvou odpovědí)\n"
+                            "Tyto výsledky jsou z kb_search a jsou DŮVĚRYHODNĚJŠÍ než Thought Map kontext výše.\n"
+                            "Pokud odpovídáš na faktický dotaz, PREFERUJ tato data.\n\n"
+                            + _presearch_result[:3000]
+                        ),
+                    })
+                    logger.info("PRE_SEARCH: injected %d chars of kb_search results for: %s",
+                                len(_presearch_result), _msg_stripped[:60])
+            except Exception as e:
+                logger.debug("PRE_SEARCH: failed (non-blocking): %s", e)
+
         yield ChatStreamEvent(type="thinking", content="Připravuji odpověď...")
 
         # ── 4b'. Create RUNNING vertex in memory graph immediately ──
