@@ -273,61 +273,89 @@ class WhatsAppScraper:
             ]
             await self._storage.store_discovered_resources(conn_id, client_id, resources)
 
-        # 2. Scrape unread conversations
-        unread_chats = [c for c in chats if c.get("unread_count", 0) > 0]
+        # 2. Scrape unread conversations — click on DOM elements with unread badges
+        # instead of relying on VLM-extracted chat names (which may be hallucinated).
+        import asyncio
         messages_scraped = 0
+        unread_count = 0
 
-        for chat in unread_chats:
-            chat_name = chat.get("name", "")
-            if not chat_name:
-                continue
+        try:
+            # Find all chat rows with unread badges in sidebar
+            unread_selector = '#pane-side [data-testid="cell-frame-container"]:has([data-testid="icon-unread-count"])'
+            unread_els = await page.query_selector_all(unread_selector)
+            if not unread_els:
+                # Fallback: try aria-label based detection
+                unread_els = await page.query_selector_all('#pane-side div[role="listitem"]:has(span[aria-label*="unread"])')
 
-            try:
-                await self._open_chat(page, chat_name)
-                # Brief wait for conversation to render
-                import asyncio
-                await asyncio.sleep(2)
+            unread_count = len(unread_els)
+            logger.info("Found %d unread chat elements in DOM", unread_count)
 
-                conv_screenshot = await page.screenshot(type="jpeg", quality=80)
-                conv_data = await self._scrape_conversation(client_id, conv_screenshot)
+            for i, el in enumerate(unread_els[:10]):  # Max 10 chats per cycle
+                try:
+                    # Get chat name from the element before clicking
+                    name_el = await el.query_selector('span[title]')
+                    chat_name = await name_el.get_attribute('title') if name_el else f"chat_{i}"
 
-                if conv_data and conv_data.get("messages"):
-                    messages = []
-                    for m in conv_data["messages"]:
-                        messages.append({
-                            "sender": m.get("sender", ""),
-                            "time": m.get("time", ""),
-                            "content": m.get("content", ""),
-                            "chat_name": conv_data.get("conversation_name", chat_name),
-                            "is_group": conv_data.get("is_group", False),
-                            "attachment_type": m.get("attachment_type"),
-                            "attachment_description": m.get("attachment_description"),
-                        })
-                    await self._storage.store_messages(client_id, conn_id, messages)
-                    messages_scraped += len(messages)
+                    await el.click(timeout=5000)
+                    await asyncio.sleep(2)  # Wait for conversation to render
 
-            except Exception as e:
-                logger.warning("Failed to scrape chat '%s': %s", chat_name, e)
+                    conv_screenshot = await page.screenshot(type="jpeg", quality=80)
+                    conv_data = await self._scrape_conversation(client_id, conv_screenshot)
+
+                    if conv_data and conv_data.get("messages"):
+                        messages = []
+                        for m in conv_data["messages"]:
+                            messages.append({
+                                "sender": m.get("sender", ""),
+                                "time": m.get("time", ""),
+                                "content": m.get("content", ""),
+                                "chat_name": conv_data.get("conversation_name", chat_name),
+                                "is_group": conv_data.get("is_group", False),
+                                "attachment_type": m.get("attachment_type"),
+                                "attachment_description": m.get("attachment_description"),
+                            })
+                        await self._storage.store_messages(client_id, conn_id, messages)
+                        messages_scraped += len(messages)
+
+                except Exception as e:
+                    logger.warning("Failed to scrape unread chat %d: %s", i, e)
+        except Exception as e:
+            logger.warning("Failed to enumerate unread chats: %s", e)
 
         return {
             "status": "ok",
             "chats_total": len(chats),
-            "chats_unread": len(unread_chats),
+            "chats_unread": unread_count,
             "messages_scraped": messages_scraped,
         }
 
     async def _open_chat(self, page, chat_name: str) -> None:
-        """Click on a chat in the sidebar by name."""
-        try:
-            chat_el = page.locator(f'span[title="{chat_name}"]').first
-            await chat_el.click(timeout=5000)
-        except Exception:
+        """Click on a chat in the sidebar by name.
+
+        Tries multiple strategies:
+        1. span[title] — exact match (WhatsApp uses title attr on chat name)
+        2. Partial text match in chat list area
+        3. data-testid based selectors
+        """
+        strategies = [
+            # WhatsApp Web uses span[title] for chat names in sidebar
+            lambda: page.locator(f'#pane-side span[title="{chat_name}"]').first,
+            # Partial match — VLM names may not be exact
+            lambda: page.locator(f'#pane-side span[title*="{chat_name[:15]}"]').first,
+            # Text-based search within sidebar only
+            lambda: page.locator('#pane-side').get_by_text(chat_name, exact=False).first,
+            # data-testid cell with matching text
+            lambda: page.locator(f'[data-testid="cell-frame-container"]:has-text("{chat_name[:15]}")').first,
+        ]
+        for strategy in strategies:
             try:
-                chat_el = page.get_by_text(chat_name, exact=True).first
-                await chat_el.click(timeout=5000)
+                el = strategy()
+                await el.click(timeout=5000)
+                return
             except Exception:
-                logger.debug("Could not click on chat '%s'", chat_name)
-                raise
+                continue
+        logger.debug("Could not click on chat '%s' with any strategy", chat_name)
+        raise Exception(f"Chat '{chat_name}' not found in sidebar")
 
     async def _scrape_chat_list(self, client_id: str, screenshot: bytes) -> dict | None:
         """Analyze sidebar screenshot with VLM."""
