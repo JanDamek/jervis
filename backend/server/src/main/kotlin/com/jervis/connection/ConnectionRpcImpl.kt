@@ -1548,8 +1548,8 @@ class ConnectionRpcImpl(
                     "WhatsApp Web připojeno!"
                 }
                 else -> {
-                    connectionService.save(connection.copy(state = ConnectionStateEnum.NEW))
-                    "WhatsApp Web session inicializována. Naskenujte QR kód."
+                    connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
+                    "WhatsApp Web session inicializována. Čekám na přihlášení."
                 }
             }
         } catch (e: Exception) {
