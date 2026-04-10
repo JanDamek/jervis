@@ -42,16 +42,13 @@ def create_vnc_auth_router(vnc_auth: VncAuthManager) -> APIRouter:
 
         vnc_pwd = _get_vnc_password()
 
-        # Serve inline HTML that connects noVNC with password injected via JS.
-        # Password never appears in URL — only in page source (same-origin, HTTPS).
+        # Serve page with hidden iframe — password in iframe src, not in address bar.
+        escaped_pwd = quote(vnc_pwd, safe="")
         html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>VNC</title></head>
-<body style="margin:0;overflow:hidden">
-<script>
-// Set password in sessionStorage before noVNC loads (it reads from there)
-sessionStorage.setItem('vnc_password', '{vnc_pwd}');
-window.location.replace('/vnc.html?autoconnect=true&resize=scale');
-</script>
+<html><head><meta charset="utf-8"><title>WhatsApp VNC</title>
+<style>body{{margin:0;overflow:hidden}}iframe{{border:none;width:100vw;height:100vh}}</style>
+</head><body>
+<iframe src="/vnc.html?autoconnect=true&resize=scale&password={escaped_pwd}"></iframe>
 </body></html>"""
 
         response = Response(content=html, media_type="text/html", status_code=200)
