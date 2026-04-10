@@ -22,6 +22,22 @@ spec:
     - host: jervis-whatsapp-vnc.damek-soft.eu
       http:
         paths:
+          # VNC auth endpoints (token validation, login) → Python API port
+          - path: /vnc-login
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-whatsapp-browser
+                port:
+                  number: 8091
+          - path: /vnc-token
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-whatsapp-browser
+                port:
+                  number: 8091
+          # noVNC web client + websockify → port 6080
           - path: /
             pathType: Prefix
             backend:
