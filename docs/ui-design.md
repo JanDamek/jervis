@@ -634,7 +634,7 @@ iMessage/WhatsApp-style chat with content-based width:
 - Visible when any background messages exist or user task count > 0
 - **"Chat"** (default ON): toggles visibility of regular chat messages (USER_MESSAGE, PROGRESS, FINAL, ERROR)
 - **"Tasky"** (default OFF): toggles visibility of all BACKGROUND_RESULT messages
-- **"K reakci (N)"** (default OFF, shown when N > 0): server merges pending USER_TASKs from `tasks` collection into chat history when active. N = global USER_TASK count from `ChatHistoryDto.userTaskCount` (matches dock badge). USER_TASKs are global (no scope filter — from tasks collection, not chat_messages).
+- **"K reakci (N)"** (default OFF, shown when N > 0): server merges pending USER_TASKs (state=USER_TASK + ERROR) from `tasks` collection into chat history on initial load only (not on pagination). N = `userTaskCount` = pending USER_TASKs (both states) + actionable backgrounds. USER_TASKs are global (no scope filter). All filters OFF → empty result (server returns nothing).
 - **Message ordering**: ALL messages ordered **chronologically** by creation time (server `sortedBy { timestamp }`). Priority determines urgency, not display order. Filters provide quick access without breaking timeline.
 - **ALL filtering is DB-only** — each toggle triggers `reloadForCurrentFilter()` which calls `getChatHistory` with `showChat`/`showTasks`/`showNeedReaction` flags. Server + MongoDB decide what to return. NO client-side filtering.
 - SSE `BACKGROUND_RESULT`/`URGENT_ALERT` events only update counters and trigger DB reload — they do NOT inject messages directly into `_chatMessages`
@@ -1034,7 +1034,7 @@ Full-screen view accessed from hamburger menu ("Uzivatelske ulohy"). Shows escal
 - `ChatBubble` -- Role-labeled message card (User/Agent/System)
 
 **Data flow:**
-- **List**: `repository.userTasks.listAllLightweight(query, offset, limit)` -- server-side paginated with MongoDB $text index (regex fallback), excludes content/attachments/agentCheckpointJson
+- **List**: `repository.userTasks.listAllLightweight(query, offset, limit)` -- server-side paginated with MongoDB $text index (regex fallback), excludes content/attachments/agentCheckpointJson. Filters: `type=USER_TASK AND state IN (USER_TASK, ERROR)` — dismissed tasks (DONE) are excluded
 - **Detail**: `repository.userTasks.getById(taskId)` -- loads full `UserTaskDto` on item selection
 - **Search**: Server-side via `$text` index on `taskName` + `content`, falls back to regex; debounced 300ms
 - Sorted by creation date (newest first)
