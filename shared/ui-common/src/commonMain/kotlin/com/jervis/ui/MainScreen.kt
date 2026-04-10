@@ -435,9 +435,8 @@ private fun ChatContent(
             @OptIn(ExperimentalMaterial3Api::class)
             BadgedBox(
                 badge = {
-                    val totalBadge = userTaskCount + pendingQuestionCount
-                    if (totalBadge > 0) {
-                        Badge { Text("$totalBadge") }
+                    if (userTaskCount > 0) {
+                        Badge { Text("$userTaskCount") }
                     }
                 },
             ) {
