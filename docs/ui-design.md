@@ -632,11 +632,11 @@ iMessage/WhatsApp-style chat with content-based width:
 - Visible when any background messages exist or user task count > 0
 - **"Chat"** (default ON): toggles visibility of regular chat messages (USER_MESSAGE, PROGRESS, FINAL, ERROR)
 - **"Tasky"** (default OFF): toggles visibility of all BACKGROUND_RESULT messages
-- **"K reakci (N)"** (default OFF, shown when N > 0): appends pending user tasks to chat messages (chat stays visible). N = global USER_TASK count from `ChatHistoryDto.userTaskCount` (matches dock badge). User tasks loaded separately via paginated API (`loadPendingUserTasks`, page size 20, offset pagination via `loadMoreUserTasks`)
-- **Message ordering**: ALL messages ordered **chronologically** by creation time. Priority determines urgency, not display order. Filters provide quick access without breaking timeline.
-- Filtering is pure **client-side** via Compose `remember()` in `screens/MainScreen.kt` — no server reload on toggle
-- Server always loads chat-only (`excludeBackground=true`), live-pushed backgrounds (via SSE) are added to `_chatMessages` and filtered client-side
-- `backgroundMessageCount` and `userTaskCount` come from `ChatHistoryDto` (set in `reloadHistory()`)
+- **"K reakci (N)"** (default OFF, shown when N > 0): server merges pending USER_TASKs from `tasks` collection into chat history when active. N = global USER_TASK count from `ChatHistoryDto.userTaskCount` (matches dock badge). USER_TASKs are global (no scope filter — from tasks collection, not chat_messages).
+- **Message ordering**: ALL messages ordered **chronologically** by creation time (server `sortedBy { timestamp }`). Priority determines urgency, not display order. Filters provide quick access without breaking timeline.
+- **ALL filtering is DB-only** — each toggle triggers `reloadForCurrentFilter()` which calls `getChatHistory` with `showChat`/`showTasks`/`showNeedReaction` flags. Server + MongoDB decide what to return. NO client-side filtering.
+- SSE `BACKGROUND_RESULT`/`URGENT_ALERT` events only update counters and trigger DB reload — they do NOT inject messages directly into `_chatMessages`
+- `backgroundMessageCount` and `userTaskCount` come from `ChatHistoryDto` (set in `applyHistory()`)
 
 **Time display format** (`formatMessageTime` in `util/TimeFormatter.kt`):
 - Czech relative format — no "dnes" prefix for today, just time
