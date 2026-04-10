@@ -273,54 +273,29 @@ class WhatsAppScraper:
             ]
             await self._storage.store_discovered_resources(conn_id, client_id, resources)
 
-        # 2. Scrape unread conversations — click on DOM elements with unread badges
-        # instead of relying on VLM-extracted chat names (which may be hallucinated).
-        import asyncio
-        messages_scraped = 0
-        unread_count = 0
+            # Store sidebar preview messages (last message per chat) — no click needed,
+            # no read receipts triggered. This captures content without marking as read.
+            preview_messages = []
+            for c in chats:
+                last_msg = c.get("last_message", "")
+                sender = c.get("last_sender", c.get("name", ""))
+                if last_msg:
+                    preview_messages.append({
+                        "sender": sender,
+                        "time": c.get("time", ""),
+                        "content": last_msg,
+                        "chat_name": c.get("name", ""),
+                        "is_group": c.get("is_group", False),
+                    })
+            if preview_messages:
+                stored = await self._storage.store_messages(client_id, conn_id, preview_messages)
+                messages_scraped += stored
 
-        try:
-            # Find all chat rows with unread badges in sidebar
-            unread_selector = '#pane-side [data-testid="cell-frame-container"]:has([data-testid="icon-unread-count"])'
-            unread_els = await page.query_selector_all(unread_selector)
-            if not unread_els:
-                # Fallback: try aria-label based detection
-                unread_els = await page.query_selector_all('#pane-side div[role="listitem"]:has(span[aria-label*="unread"])')
-
-            unread_count = len(unread_els)
-            logger.info("Found %d unread chat elements in DOM", unread_count)
-
-            for i, el in enumerate(unread_els[:10]):  # Max 10 chats per cycle
-                try:
-                    # Get chat name from the element before clicking
-                    name_el = await el.query_selector('span[title]')
-                    chat_name = await name_el.get_attribute('title') if name_el else f"chat_{i}"
-
-                    await el.click(timeout=5000)
-                    await asyncio.sleep(2)  # Wait for conversation to render
-
-                    conv_screenshot = await page.screenshot(type="jpeg", quality=80)
-                    conv_data = await self._scrape_conversation(client_id, conv_screenshot)
-
-                    if conv_data and conv_data.get("messages"):
-                        messages = []
-                        for m in conv_data["messages"]:
-                            messages.append({
-                                "sender": m.get("sender", ""),
-                                "time": m.get("time", ""),
-                                "content": m.get("content", ""),
-                                "chat_name": conv_data.get("conversation_name", chat_name),
-                                "is_group": conv_data.get("is_group", False),
-                                "attachment_type": m.get("attachment_type"),
-                                "attachment_description": m.get("attachment_description"),
-                            })
-                        await self._storage.store_messages(client_id, conn_id, messages)
-                        messages_scraped += len(messages)
-
-                except Exception as e:
-                    logger.warning("Failed to scrape unread chat %d: %s", i, e)
-        except Exception as e:
-            logger.warning("Failed to enumerate unread chats: %s", e)
+        # NOTE: Clicking on individual chats is disabled to avoid triggering
+        # read receipts (blue checkmarks). Sidebar preview messages (above) are
+        # sufficient for indexing — they capture the last message per chat without
+        # marking anything as read. Full conversation scraping requires a different
+        # approach (WhatsApp Web API / IndexedDB extraction).
 
         return {
             "status": "ok",
