@@ -49,6 +49,7 @@ class ChatRpcImpl(
     private val taskGraphExistsService: TaskGraphExistsService,
     private val unifiedTimelineService: UnifiedTimelineService,
     private val preferenceService: com.jervis.preferences.PreferenceService,
+    private val agentQuestionRepository: com.jervis.agent.PendingAgentQuestionRepository,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -315,18 +316,21 @@ class ChatRpcImpl(
         filterClientId: String?, filterProjectId: String?, filterGroupId: String?,
     ): ChatHistoryDto {
         logger.info { "CHAT_HISTORY | filterClient=$filterClientId filterProject=$filterProjectId filterGroup=$filterGroupId limit=$limit" }
-        // "K reakci" badge = pending USER_TASKs + actionable BACKGROUND messages (failed/needsReaction)
+        // "K reakci" badge = pending USER_TASKs + actionable BACKGROUNDs + pending agent questions
         val pendingUserTasks = taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toInt() +
             taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.ERROR).toInt()
         val actionableBackground = chatService.countActionableBackground().toInt()
-        val userTaskCount = pendingUserTasks + actionableBackground
+        val pendingQuestions = (agentQuestionRepository.countByState(com.jervis.agent.QuestionState.PENDING) +
+            agentQuestionRepository.countByState(com.jervis.agent.QuestionState.PRESENTED)).toInt()
+        val userTaskCount = pendingUserTasks + actionableBackground + pendingQuestions
         val session = chatService.getOrCreateActiveSession()
 
-        // ── Load pending USER_TASKs from tasks collection (global, no scope filter) ──
-        // USER_TASKs live in `tasks` not `chat_messages`. When showNeedReaction is on,
-        // query them from DB and merge into the response so they appear in the chat timeline.
-        // Skip on pagination (beforeMessageId set) — USER_TASKs are always in initial load.
-        val userTaskDtos = if (showNeedReaction && beforeMessageId == null) {
+        // ── Load all K reakci items from DB (global, no scope filter) ──
+        // Skip on pagination (beforeMessageId set) — K reakci items are always in initial load.
+        val kreakciDtos = if (showNeedReaction && beforeMessageId == null) {
+            val items = mutableListOf<ChatMessageDto>()
+
+            // 1. USER_TASKs from tasks collection
             try {
                 val pendingTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
                     TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK,
@@ -334,7 +338,7 @@ class ChatRpcImpl(
                 val errorTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
                     TaskTypeEnum.USER_TASK, TaskStateEnum.ERROR,
                 ).toList()
-                (pendingTasks + errorTasks).map { task ->
+                items.addAll((pendingTasks + errorTasks).map { task ->
                     val isError = task.state == TaskStateEnum.ERROR
                     ChatMessageDto(
                         role = ChatRole.ALERT,
@@ -352,11 +356,37 @@ class ChatRpcImpl(
                             task.projectId?.let { put("projectId", it.toString()) }
                         },
                     )
-                }
+                })
             } catch (e: Exception) {
                 logger.warn(e) { "Failed to load USER_TASKs for K reakci" }
-                emptyList()
             }
+
+            // 2. Pending agent questions
+            try {
+                val activeStates = listOf(com.jervis.agent.QuestionState.PENDING, com.jervis.agent.QuestionState.PRESENTED)
+                val questions = agentQuestionRepository.findByStateIn(activeStates).toList()
+                items.addAll(questions.map { q ->
+                    ChatMessageDto(
+                        role = ChatRole.ALERT,
+                        content = "[K reakci] ${q.question}",
+                        timestamp = q.createdAt.toString(),
+                        messageId = q.id.toString(),
+                        metadata = buildMap {
+                            put("needsReaction", "true")
+                            put("taskId", q.taskId)
+                            put("taskType", "AGENT_QUESTION")
+                            put("questionId", q.id.toString())
+                            put("success", "true")
+                            q.clientId?.let { put("clientId", it) }
+                            q.projectId?.let { put("projectId", it) }
+                        },
+                    )
+                })
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to load agent questions for K reakci" }
+            }
+
+            items
         } else emptyList()
 
         // ── Scope-aware path: use ReactiveMongoTemplate with dynamic Criteria ──
@@ -387,7 +417,7 @@ class ChatRpcImpl(
             // Deduplicate: USER_TASKs from tasks collection may overlap with ALERT messages
             // already in chat_messages (same taskId). Keep the chat_messages version (has sequence).
             val existingTaskIds = dtos.mapNotNull { it.metadata["taskId"] }.toSet()
-            val dedupedUserTasks = userTaskDtos.filter { it.metadata["taskId"] !in existingTaskIds }
+            val dedupedUserTasks = kreakciDtos.filter { it.metadata["taskId"] !in existingTaskIds }
             // Merge: USER_TASKs always included (few items), pagination cursor only for chat_messages.
             val merged = (dtos + dedupedUserTasks).sortedBy { it.timestamp }
             return ChatHistoryDto(
@@ -400,9 +430,9 @@ class ChatRpcImpl(
         }
 
         // ── No filterClientId — return only USER_TASKs if K reakci is active ──
-        if (userTaskDtos.isNotEmpty()) {
+        if (kreakciDtos.isNotEmpty()) {
             return ChatHistoryDto(
-                messages = userTaskDtos.sortedBy { it.timestamp },
+                messages = kreakciDtos.sortedBy { it.timestamp },
                 hasMore = false,
                 oldestMessageId = null,
                 userTaskCount = userTaskCount,
