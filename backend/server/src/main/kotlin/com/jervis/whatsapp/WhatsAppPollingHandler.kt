@@ -15,6 +15,9 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.json.Json
@@ -68,13 +71,32 @@ class WhatsAppPollingHandler(
             return PollingResult(errors = 1, authenticationError = true)
         }
 
-        // Skip if connection is invalid or new (no session yet)
-        if (connectionDocument.state in listOf(ConnectionStateEnum.INVALID, ConnectionStateEnum.NEW)) {
-            logger.debug { "Skipping WhatsApp poll for '${connectionDocument.name}' — state=${connectionDocument.state}" }
+        // Skip only if NEW (never initialized). INVALID connections get auto-recovery via init.
+        if (connectionDocument.state == ConnectionStateEnum.NEW) {
+            logger.debug { "Skipping WhatsApp poll for '${connectionDocument.name}' — state=NEW (needs manual init)" }
             return PollingResult()
         }
 
-        // Proactive health check: verify browser session is alive
+        // INVALID: try auto-init to recover from pod restart
+        if (connectionDocument.state == ConnectionStateEnum.INVALID) {
+            try {
+                val healthResponse = httpClient.get("$browserUrl/health")
+                if (healthResponse.status.isSuccess()) {
+                    logger.info { "WhatsApp INVALID recovery: browser healthy, auto-init for '${connectionDocument.name}'" }
+                    httpClient.post("$browserUrl/session/$browserSessionId/init") {
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"login_url":"https://web.whatsapp.com","capabilities":["CHAT_READ"]}""")
+                    }
+                    // Move to DISCOVERING — capabilities callback will finalize
+                    connectionService.save(connectionDocument.copy(state = ConnectionStateEnum.DISCOVERING))
+                }
+            } catch (e: Exception) {
+                logger.debug { "WhatsApp INVALID recovery failed: ${e.message}" }
+            }
+            return PollingResult()
+        }
+
+        // Proactive health check: verify browser session is alive, auto-init if expired
         if (connectionDocument.state in listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING)) {
             try {
                 val statusResponse = httpClient.get("$browserUrl/session/$browserSessionId")
@@ -83,9 +105,19 @@ class WhatsAppPollingHandler(
                         statusResponse.body<String>()
                     ).jsonObject
                     val sessionState = statusJson["state"]?.jsonPrimitive?.content
-                    if (sessionState in listOf("EXPIRED", "ERROR")) {
-                        logger.warn { "WhatsApp browser session $sessionState for '${connectionDocument.name}' — marking INVALID" }
-                        connectionService.save(connectionDocument.copy(state = ConnectionStateEnum.INVALID))
+                    if (sessionState in listOf("EXPIRED", "ERROR", null)) {
+                        // Auto-init session — browser profile on PVC allows re-login without QR
+                        logger.info { "WhatsApp session $sessionState for '${connectionDocument.name}' — auto-init" }
+                        try {
+                            val initResponse = httpClient.post("$browserUrl/session/$browserSessionId/init") {
+                                contentType(ContentType.Application.Json)
+                                setBody("""{"login_url":"https://web.whatsapp.com","capabilities":["CHAT_READ"]}""")
+                            }
+                            logger.info { "WhatsApp auto-init result: ${initResponse.status}" }
+                        } catch (initEx: Exception) {
+                            logger.warn { "WhatsApp auto-init failed: ${initEx.message}" }
+                        }
+                        // Don't mark INVALID — let next poll cycle check again
                         return PollingResult()
                     }
                 }
