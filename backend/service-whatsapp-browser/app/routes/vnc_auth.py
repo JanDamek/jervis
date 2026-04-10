@@ -41,11 +41,20 @@ def create_vnc_auth_router(vnc_auth: VncAuthManager) -> APIRouter:
         session_id = vnc_auth.create_session()
 
         vnc_pwd = _get_vnc_password()
-        redirect_url = "/vnc.html?autoconnect=true&resize=scale"
-        if vnc_pwd:
-            redirect_url += f"&password={quote(vnc_pwd, safe='')}"
 
-        response = RedirectResponse(url=redirect_url, status_code=302)
+        # Serve inline HTML that connects noVNC with password injected via JS.
+        # Password never appears in URL — only in page source (same-origin, HTTPS).
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>VNC</title></head>
+<body style="margin:0;overflow:hidden">
+<script>
+// Set password in sessionStorage before noVNC loads (it reads from there)
+sessionStorage.setItem('vnc_password', '{vnc_pwd}');
+window.location.replace('/vnc.html?autoconnect=true&resize=scale');
+</script>
+</body></html>"""
+
+        response = Response(content=html, media_type="text/html", status_code=200)
         response.set_cookie(
             key="vnc_session",
             value=session_id,
