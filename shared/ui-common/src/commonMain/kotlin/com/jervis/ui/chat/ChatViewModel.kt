@@ -465,6 +465,9 @@ class ChatViewModel(
             try {
                 val count = repository.chat.dismissAllActionable()
                 _userTaskCount.value = 0
+                // Switch back to Chat view after dismissing all actionable items
+                _showChat.value = true
+                _showNeedReaction.value = false
                 // Reload from DB — dismissed items now filtered out
                 reloadForCurrentFilter()
                 println("ChatViewModel: dismissAll — $count items dismissed")
