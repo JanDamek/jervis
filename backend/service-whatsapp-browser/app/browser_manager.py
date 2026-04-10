@@ -34,25 +34,15 @@ class BrowserManager:
 
     async def startup(self) -> None:
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(
-            headless=settings.headless,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-            ],
-        )
-        logger.info("Playwright Chromium launched (headless=%s)", settings.headless)
+        # Don't launch browser here — persistent context creates its own browser
+        logger.info("Playwright initialized (headless=%s)", settings.headless)
 
     async def shutdown(self) -> None:
-        if self._context and self._client_id:
-            await self.save_state(self._client_id)
+        if self._context:
             try:
                 await self._context.close()
             except Exception:
                 logger.exception("Error closing context")
-        if self._browser:
-            await self._browser.close()
         if self._playwright:
             await self._playwright.stop()
         logger.info("BrowserManager shut down")
@@ -67,36 +57,39 @@ class BrowserManager:
 
         # Close existing context if different client
         if self._context:
-            await self.save_state(self._client_id or "")
             await self._context.close()
 
-        state_path = self._state_path(client_id)
-        storage_state = str(state_path) if state_path.exists() else None
+        # Persistent context stores ENTIRE Chromium profile on PVC (IndexedDB,
+        # cookies, localStorage, Service Workers). WhatsApp Web session survives
+        # pod restarts — no QR rescan needed.
+        profile_dir = Path(settings.profiles_dir) / client_id
+        profile_dir.mkdir(parents=True, exist_ok=True)
 
-        self._context = await self._browser.new_context(
-            storage_state=storage_state,
-            user_agent=user_agent
-            or (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
+        ua = user_agent or (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/131.0.0.0 Safari/537.36"
+        )
+
+        self._context = await self._playwright.chromium.launch_persistent_context(
+            user_data_dir=str(profile_dir),
+            headless=settings.headless,
+            user_agent=ua,
             viewport={"width": 1920, "height": 1080},
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+            ],
         )
         self._client_id = client_id
         self._state = SessionState.PENDING_LOGIN
-        logger.info("Created browser context for client %s", client_id)
+        logger.info("Created persistent browser context for client %s at %s", client_id, profile_dir)
         return self._context
 
     async def save_state(self, client_id: str) -> None:
-        if not self._context:
-            return
-        profile_dir = Path(settings.profiles_dir) / client_id
-        profile_dir.mkdir(parents=True, exist_ok=True)
-        state = await self._context.storage_state()
-        state_path = self._state_path(client_id)
-        state_path.write_text(json.dumps(state))
-        logger.debug("Saved browser state for client %s", client_id)
+        # Persistent context auto-saves to user_data_dir — no manual save needed
+        pass
 
     def get_context(self) -> BrowserContext | None:
         return self._context
