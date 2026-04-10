@@ -71,14 +71,8 @@ class WhatsAppPollingHandler(
             return PollingResult(errors = 1, authenticationError = true)
         }
 
-        // Skip only if NEW (never initialized). INVALID connections get auto-recovery via init.
-        if (connectionDocument.state == ConnectionStateEnum.NEW) {
-            logger.debug { "Skipping WhatsApp poll for '${connectionDocument.name}' — state=NEW (needs manual init)" }
-            return PollingResult()
-        }
-
-        // INVALID: try auto-init to recover from pod restart
-        if (connectionDocument.state == ConnectionStateEnum.INVALID) {
+        // NEW or INVALID: auto-init to recover session from persistent profile on PVC
+        if (connectionDocument.state in listOf(ConnectionStateEnum.NEW, ConnectionStateEnum.INVALID)) {
             try {
                 val healthResponse = httpClient.get("$browserUrl/health")
                 if (healthResponse.status.isSuccess()) {
