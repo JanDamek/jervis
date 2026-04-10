@@ -3350,26 +3350,33 @@ async def report_done(
     except Exception as e:
         logger.warning("report_done KB search failed: %s", e)
 
-    # 2. Create completion notification for user
-    from bson import ObjectId as BsonObjectId
+    # 2. Push completion as BACKGROUND_RESULT into chat (not as pending question).
+    # Completion notifications are informational — user sees them in chat/Tasky.
+    # Only actual blocking questions (agent needs decision) go to pending_agent_questions.
+    kotlin_url = os.environ.get("KOTLIN_SERVER_URL", "http://jervis-server:8080")
+    summary_text = result_summary
+    if convention_hint:
+        summary_text += f"\n\nKonvence z KB: {convention_hint}"
+    if suggested_next_steps:
+        summary_text += f"\n\nAgent navrhuje: {suggested_next_steps}"
 
-    notification = {
-        "_id": BsonObjectId(),
-        "taskId": task_id,
-        "agentType": "coding",
-        "question": f"Agent dokončil úkol.\n\nVýsledek: {result_summary}\n\n"
-                    + (f"Konvence z KB: {convention_hint}\n\n" if convention_hint else "")
-                    + (f"Agent navrhuje: {suggested_next_steps}" if suggested_next_steps else "Co dál?"),
-        "context": result_summary,
-        "priority": "QUESTION",
-        "clientId": client_id or None,
-        "projectId": project_id or None,
-        "state": "PENDING",
-        "createdAt": datetime.now(timezone.utc),
-    }
-    await db["pending_agent_questions"].insert_one(notification)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                f"{kotlin_url}/internal/task-status/background-result",
+                json={
+                    "taskId": task_id,
+                    "taskTitle": f"Dokončeno: {result_summary[:80]}",
+                    "summary": summary_text,
+                    "success": True,
+                    "clientId": client_id or None,
+                    "projectId": project_id or None,
+                },
+            )
+    except Exception as e:
+        logger.warning("report_done: Failed to push background result: %s", e)
 
-    response = f"Completion reported. User will be notified."
+    response = f"Completion reported. User will see it in chat."
     if convention_hint:
         response += f"\nKB convention found: {convention_hint[:200]}"
     return response

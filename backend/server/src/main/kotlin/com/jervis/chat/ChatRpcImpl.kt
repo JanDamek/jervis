@@ -50,6 +50,7 @@ class ChatRpcImpl(
     private val unifiedTimelineService: UnifiedTimelineService,
     private val preferenceService: com.jervis.preferences.PreferenceService,
     private val agentQuestionRepository: com.jervis.agent.PendingAgentQuestionRepository,
+    private val agentQuestionService: com.jervis.agent.AgentQuestionService,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -530,7 +531,17 @@ class ChatRpcImpl(
         val bgCount = chatService.dismissAllActionableBackground()
         count += bgCount
 
-        logger.info { "DISMISS_ALL_ACTIONABLE | userTasks=${pendingTasks.size + errorTasks.size} background=$bgCount total=$count" }
+        // 3. Expire all pending agent questions
+        val expiredQuestions = agentQuestionService.expireOldQuestions()
+        // Also expire non-old questions (dismiss = expire all)
+        val activeStates = listOf(com.jervis.agent.QuestionState.PENDING, com.jervis.agent.QuestionState.PRESENTED)
+        val remaining = agentQuestionRepository.findByStateIn(activeStates).toList()
+        for (q in remaining) {
+            agentQuestionRepository.save(q.copy(state = com.jervis.agent.QuestionState.EXPIRED))
+            count++
+        }
+
+        logger.info { "DISMISS_ALL_ACTIONABLE | userTasks=${pendingTasks.size + errorTasks.size} background=$bgCount expiredQuestions=${expiredQuestions + remaining.size} total=$count" }
         return count
     }
 

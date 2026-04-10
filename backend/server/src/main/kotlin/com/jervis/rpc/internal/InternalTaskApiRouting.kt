@@ -41,6 +41,7 @@ fun Routing.installInternalTaskApi(
     taskService: TaskService,
     userTaskService: UserTaskService,
     preferenceService: com.jervis.preferences.PreferenceService,
+    chatRpcImpl: com.jervis.chat.ChatRpcImpl? = null,
 ) {
     // Create a background task — for chat tool create_background_task / scheduled tasks
     post("/internal/tasks/create") {
@@ -633,6 +634,31 @@ fun Routing.installInternalTaskApi(
             )
         }
     }
+
+    // Push a background result into chat (used by MCP report_done)
+    post("/internal/task-status/background-result") {
+        try {
+            val body = call.receive<InternalBackgroundResultRequest>()
+            if (chatRpcImpl != null) {
+                chatRpcImpl.pushBackgroundResult(
+                    taskTitle = body.taskTitle,
+                    summary = body.summary,
+                    success = body.success,
+                    taskId = body.taskId,
+                    clientId = body.clientId,
+                    projectId = body.projectId,
+                )
+            }
+            call.respondText("""{"ok":true}""", ContentType.Application.Json)
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=task-status/background-result" }
+            call.respondText(
+                """{"ok":false,"error":"${e.message?.replace("\"", "\\\"")}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
 }
 
 private fun parseSince(since: String, userZone: ZoneId): Instant = when (since) {
@@ -695,4 +721,14 @@ data class InternalRespondToTaskRequest(
 @Serializable
 data class InternalSetPriorityRequest(
     val priorityScore: Int,
+)
+
+@Serializable
+data class InternalBackgroundResultRequest(
+    val taskId: String,
+    val taskTitle: String,
+    val summary: String,
+    val success: Boolean = true,
+    val clientId: String? = null,
+    val projectId: String? = null,
 )
