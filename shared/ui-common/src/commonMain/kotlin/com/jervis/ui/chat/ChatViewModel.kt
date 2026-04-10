@@ -1118,16 +1118,16 @@ class ChatViewModel(
                     _userTaskCount.update { it + 1 }
                 }
 
-                // Clean up stale progress indicators before reload
+                // Clean up stale progress indicators
                 messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
                 thinkingHistory.clear()
                 _chatMessages.value = messages
 
-                // Reload from DB — server applies correct filter (showChat/showTasks/showNeedReaction)
+                // Reload from DB — server applies correct filter (showChat/showTasks/showNeedReaction).
+                // Return early so the final _chatMessages.value = messages at the end doesn't overwrite reload results.
                 reloadForCurrentFilter()
-
-                // Refresh master graph after background task completion
                 loadMemoryGraph()
+                return
             }
 
             ChatMessage.MessageType.THINKING_GRAPH_UPDATE -> {

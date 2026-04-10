@@ -381,11 +381,15 @@ class ChatRpcImpl(
                 val outOfScope = filterClientId != null && msg.clientId != null && msg.clientId != filterClientId
                 msg.toChatMessageDto(taskGraphExistsService, isOutOfScope = outOfScope)
             }
-            // Merge USER_TASKs (global) with scoped chat messages, chronological order
-            val merged = (dtos + userTaskDtos).sortedBy { it.timestamp }
+            // Merge USER_TASKs (global) with scoped chat messages, chronological order.
+            // Deduplicate: USER_TASKs from tasks collection may overlap with ALERT messages
+            // already in chat_messages (same taskId). Keep the chat_messages version (has sequence).
+            val existingTaskIds = dtos.mapNotNull { it.metadata["taskId"] }.toSet()
+            val dedupedUserTasks = userTaskDtos.filter { it.metadata["taskId"] !in existingTaskIds }
+            val merged = (dtos + dedupedUserTasks).sortedBy { it.timestamp }.takeLast(limit)
             return ChatHistoryDto(
                 messages = merged,
-                hasMore = messages.size >= limit,
+                hasMore = messages.size >= limit || dedupedUserTasks.isNotEmpty(),
                 oldestMessageId = messages.firstOrNull()?.timestamp?.toString(),
                 userTaskCount = userTaskCount,
                 backgroundMessageCount = 0,

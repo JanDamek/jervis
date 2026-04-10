@@ -358,6 +358,9 @@ class ChatMessageService(
         }
         if (roleFilters.isNotEmpty()) {
             andConditions.add(Criteria().orOperator(*roleFilters.toTypedArray()))
+        } else {
+            // All filters OFF → return nothing (no role matches = empty result)
+            return emptyList()
         }
 
         // Simple find query — no aggregation for now (isOutOfScope computed in-code for reliability)
