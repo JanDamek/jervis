@@ -325,7 +325,8 @@ class ChatRpcImpl(
         // ── Load pending USER_TASKs from tasks collection (global, no scope filter) ──
         // USER_TASKs live in `tasks` not `chat_messages`. When showNeedReaction is on,
         // query them from DB and merge into the response so they appear in the chat timeline.
-        val userTaskDtos = if (showNeedReaction) {
+        // Skip on pagination (beforeMessageId set) — USER_TASKs are always in initial load.
+        val userTaskDtos = if (showNeedReaction && beforeMessageId == null) {
             try {
                 val pendingTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
                     TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK,
