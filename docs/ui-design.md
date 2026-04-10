@@ -546,7 +546,9 @@ ALL SCREEN SIZES:
 +----------------------------------------------+
 | [←] [≡] Client / Project ▾ [🎙] ●REC [⏹] 🤖idle K8s●|  <-- PersistentTopBar (always visible)
 |----------------------------------------------|
-| [Recording bar — if recording]               |  <-- RecordingBar (global)
+| [Recording bar — if recording]               |  <-- RecordingBar (global) + KeepScreenOn
+| [MeetingHelperView — if helper connected]    |  <-- Helper messages from orchestrator
+| [LiveHintsBubble — if liveAssist + hints]    |  <-- KB hints as single bubble
 |----------------------------------------------|
 | Chat messages...                             |  <-- Per-screen content
 |                                              |
