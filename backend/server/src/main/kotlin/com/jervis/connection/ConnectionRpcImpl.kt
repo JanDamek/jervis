@@ -1597,6 +1597,16 @@ class ConnectionRpcImpl(
                 connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
             }
 
+            // Auto-init session if not yet started (black VNC screen = no browser page open)
+            if (state !in listOf("ACTIVE", "PENDING_LOGIN")) {
+                try {
+                    initWhatsAppBrowserSession(connection)
+                    logger.info { "WhatsApp auto-init session for $clientId (was $state)" }
+                } catch (e: Exception) {
+                    logger.warn { "WhatsApp auto-init failed for $clientId: ${e.message}" }
+                }
+            }
+
             // Generate VNC token if not active (needs QR scan)
             var vncUrl: String? = null
             if (state != "ACTIVE") {
