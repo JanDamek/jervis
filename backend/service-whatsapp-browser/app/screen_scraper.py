@@ -159,8 +159,9 @@ class WhatsAppScraper:
         return self._last_sidebar_data
 
     async def check_login_state(self, client_id: str) -> str:
-        """Take screenshot and check WhatsApp Web login state via VLM.
+        """Check WhatsApp Web login state via DOM element detection.
 
+        Uses reliable CSS selectors instead of VLM screenshot analysis.
         Returns: "qr_visible", "phone_disconnected", "logged_in", "loading", "error"
         """
         context = self._bm.get_context()
@@ -168,16 +169,46 @@ class WhatsAppScraper:
             return "error"
 
         page = context.pages[0]
-        screenshot = await page.screenshot(type="jpeg", quality=80)
-        result_text = await analyze_screenshot(screenshot, QR_CHECK_PROMPT)
-        parsed = _parse_vlm_response(result_text)
+        try:
+            url = page.url or ""
+            if "whatsapp.com" not in url:
+                return "error"
 
-        if not parsed:
+            # Check for chat sidebar (logged in) — #pane-side or [data-testid="chat-list"]
+            sidebar = await page.query_selector("#pane-side, [data-testid='chat-list']")
+            if sidebar:
+                logger.info("WhatsApp login state: logged_in (sidebar detected)")
+                return "logged_in"
+
+            # Check for QR code canvas
+            qr = await page.query_selector("canvas[aria-label], [data-testid='qrcode']")
+            if qr:
+                logger.info("WhatsApp login state: qr_visible (QR canvas detected)")
+                return "qr_visible"
+
+            # Check for "Phone not connected" banner
+            disconnected = await page.query_selector("[data-testid='alert-phone']")
+            if disconnected:
+                logger.info("WhatsApp login state: phone_disconnected")
+                return "phone_disconnected"
+
+            # Loading state (progress bar or spinner visible)
+            loading = await page.query_selector("progress, [data-testid='startup']")
+            if loading:
+                logger.info("WhatsApp login state: loading")
+                return "loading"
+
+            # Fallback: page loaded but no known element — try title
+            title = await page.title()
+            if "WhatsApp" in (title or ""):
+                logger.info("WhatsApp login state: loading (title match, no sidebar yet)")
+                return "loading"
+
+            logger.info("WhatsApp login state: error (no known elements)")
             return "error"
-
-        state = parsed.get("state", "error")
-        logger.info("WhatsApp login state: %s (%s)", state, parsed.get("description", ""))
-        return state
+        except Exception as e:
+            logger.warning("WhatsApp login state check failed: %s", e)
+            return "error"
 
     async def scrape_now(self, client_id: str) -> dict:
         """Execute a single scrape cycle (sidebar + unread conversations).
