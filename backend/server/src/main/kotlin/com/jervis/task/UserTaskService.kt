@@ -289,7 +289,10 @@ class UserTaskService(
         limit: Int,
     ): PagedTasks {
         val criteria = Criteria.where("type").`is`(com.jervis.dto.task.TaskTypeEnum.USER_TASK.name)
-            .and("state").`is`(com.jervis.dto.task.TaskStateEnum.USER_TASK.name)
+            .and("state").`in`(
+                com.jervis.dto.task.TaskStateEnum.USER_TASK.name,
+                com.jervis.dto.task.TaskStateEnum.ERROR.name,
+            )
 
         if (!query.isNullOrBlank()) {
             // Try $text search first (requires text index on taskName + content)

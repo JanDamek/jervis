@@ -386,10 +386,11 @@ class ChatRpcImpl(
             // already in chat_messages (same taskId). Keep the chat_messages version (has sequence).
             val existingTaskIds = dtos.mapNotNull { it.metadata["taskId"] }.toSet()
             val dedupedUserTasks = userTaskDtos.filter { it.metadata["taskId"] !in existingTaskIds }
-            val merged = (dtos + dedupedUserTasks).sortedBy { it.timestamp }.takeLast(limit)
+            // Merge: USER_TASKs always included (few items), pagination cursor only for chat_messages.
+            val merged = (dtos + dedupedUserTasks).sortedBy { it.timestamp }
             return ChatHistoryDto(
                 messages = merged,
-                hasMore = messages.size >= limit || dedupedUserTasks.isNotEmpty(),
+                hasMore = messages.size >= limit,
                 oldestMessageId = messages.firstOrNull()?.timestamp?.toString(),
                 userTaskCount = userTaskCount,
                 backgroundMessageCount = 0,
