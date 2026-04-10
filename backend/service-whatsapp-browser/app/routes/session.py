@@ -89,6 +89,36 @@ def create_session_router(
             await browser_manager.save_state(client_id)
         return {"status": "closed", "client_id": client_id}
 
+    @router.get("/session/{client_id}/debug-dom")
+    async def debug_dom(client_id: str) -> dict:
+        """Debug: inspect sidebar DOM for unread badge selectors."""
+        context = browser_manager.get_context()
+        if not context or not context.pages:
+            return {"error": "no context"}
+        page = context.pages[0]
+        try:
+            # Try various unread badge selectors
+            selectors = {
+                "icon-unread-count": await page.query_selector_all('[data-testid="icon-unread-count"]'),
+                "cell-frame-container": await page.query_selector_all('[data-testid="cell-frame-container"]'),
+                "unread-aria": await page.query_selector_all('span[aria-label*="unread"]'),
+                "pane-side-spans": await page.query_selector_all('#pane-side span[title]'),
+                "badge-any": await page.query_selector_all('#pane-side span.aumms1qt, #pane-side span[data-icon]'),
+            }
+            result = {}
+            for name, els in selectors.items():
+                result[name] = len(els)
+                if els and len(els) <= 5:
+                    texts = []
+                    for el in els[:5]:
+                        t = await el.inner_text() if hasattr(el, 'inner_text') else ""
+                        title = await el.get_attribute('title') or ""
+                        texts.append(f"{title or t[:30]}")
+                    result[f"{name}_samples"] = texts
+            return result
+        except Exception as e:
+            return {"error": str(e)}
+
     return router
 
 
