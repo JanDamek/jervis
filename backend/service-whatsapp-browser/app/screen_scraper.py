@@ -259,6 +259,7 @@ class WhatsAppScraper:
         await self._storage.store_scrape_result(client_id, conn_id, sidebar_data)
 
         # Store discovered chats as resources
+        messages_scraped = 0
         chats = sidebar_data.get("chats", [])
         if chats:
             resources = [
@@ -300,7 +301,7 @@ class WhatsAppScraper:
         return {
             "status": "ok",
             "chats_total": len(chats),
-            "chats_unread": unread_count,
+            "chats_unread": len([c for c in chats if c.get("unread_count", 0) > 0]),
             "messages_scraped": messages_scraped,
         }
 
