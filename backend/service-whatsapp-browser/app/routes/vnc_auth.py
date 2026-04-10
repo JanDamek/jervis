@@ -44,11 +44,24 @@ def create_vnc_auth_router(vnc_auth: VncAuthManager) -> APIRouter:
 
         # Serve page with hidden iframe — password in iframe src, not in address bar.
         escaped_pwd = quote(vnc_pwd, safe="")
+        vnc_params = f"autoconnect=true&resize=scale&reconnect=true&password={escaped_pwd}"
         html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>WhatsApp VNC</title>
-<style>body{{margin:0;overflow:hidden}}iframe{{border:none;width:100vw;height:100vh}}</style>
-</head><body>
-<iframe src="/vnc.html?autoconnect=true&resize=scale&password={escaped_pwd}"></iframe>
+<style>
+body{{margin:0;overflow:hidden}}
+iframe{{border:none;width:100vw;height:100vh}}
+</style></head><body>
+<iframe id="vnc" src="/vnc.html?{vnc_params}"></iframe>
+<script>
+// Hide noVNC control bar after connection (runs inside iframe)
+var f=document.getElementById('vnc');
+f.onload=function(){{try{{
+  var d=f.contentDocument;
+  var s=d.createElement('style');
+  s.textContent='#noVNC_control_bar{{display:none!important}}#noVNC_control_bar_anchor{{display:none!important}}';
+  d.head.appendChild(s);
+}}catch(e){{}}}};
+</script>
 </body></html>"""
 
         response = Response(content=html, media_type="text/html", status_code=200)
