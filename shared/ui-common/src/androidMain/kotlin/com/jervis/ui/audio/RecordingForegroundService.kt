@@ -12,6 +12,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -112,6 +113,7 @@ class RecordingForegroundService : Service() {
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -122,12 +124,27 @@ class RecordingForegroundService : Service() {
         val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Nahravani"
         currentTitle = title
         startForeground(NOTIFICATION_ID, buildNotification(this, 0L, title))
+
+        // Acquire WakeLock to keep CPU alive during recording (screen can dim/lock).
+        // PARTIAL_WAKE_LOCK ensures audio capture continues even with screen off.
+        if (wakeLock == null) {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jervis:recording").apply {
+                acquire()
+            }
+        }
+
         // NOT_STICKY: do NOT restart service after crash/kill.
         // START_STICKY caused zombie notification that survives app crash and can't be dismissed.
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        wakeLock?.let {
+            if (it.isHeld) it.release()
+        }
+        wakeLock = null
         serviceScope.cancel()
         super.onDestroy()
     }

@@ -108,6 +108,7 @@ fun App(
         val helperMessages by meetingViewModel.helperMessages.collectAsState()
         val helperConnected by meetingViewModel.helperConnected.collectAsState()
         val liveAssistActive by meetingViewModel.liveAssistActive.collectAsState()
+        val liveHints by meetingViewModel.liveHints.collectAsState()
 
         // Environment
         val environments by viewModel.environment.environments.collectAsState()
@@ -156,6 +157,7 @@ fun App(
 
         // Global recording bar — full controls when recording
         if (isRecordingGlobal) {
+            com.jervis.ui.util.KeepScreenOn()
             com.jervis.ui.meeting.RecordingBar(
                 durationSeconds = recordingDurationGlobal,
                 uploadState = uploadStateGlobal,
@@ -173,6 +175,14 @@ fun App(
                     meetingTitle = null,
                     isConnected = helperConnected,
                     onDisconnect = { meetingViewModel.disconnectHelper() },
+                    modifier = androidx.compose.ui.Modifier.heightIn(max = 200.dp),
+                )
+            }
+
+            // Live assist hints — single bubble with accumulated KB hints
+            if (liveAssistActive && liveHints.isNotEmpty()) {
+                com.jervis.ui.meeting.LiveHintsBubble(
+                    hints = liveHints,
                     modifier = androidx.compose.ui.Modifier.heightIn(max = 200.dp),
                 )
             }
