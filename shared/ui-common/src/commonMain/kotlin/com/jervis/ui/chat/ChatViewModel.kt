@@ -1100,17 +1100,8 @@ class ChatViewModel(
             ChatMessage.MessageType.BACKGROUND_RESULT,
             ChatMessage.MessageType.URGENT_ALERT,
             -> {
-                // SSE only informs — update counters, then reload from DB.
-                // DB decides what messages to include based on current filters.
-                if (messageType == ChatMessage.MessageType.BACKGROUND_RESULT) {
-                    _backgroundMessageCount.value++
-                }
-                val isActionable = response.metadata["success"] == "false" ||
-                    response.metadata["needsReaction"] == "true" ||
-                    messageType == ChatMessage.MessageType.URGENT_ALERT
-                if (isActionable) {
-                    _userTaskCount.update { it + 1 }
-                }
+                // SSE only informs — trigger DB reload. Counters come from server (applyHistory).
+                // No client-side counter increment — prevents phantom badge.
 
                 // Clean up stale progress indicators
                 messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
