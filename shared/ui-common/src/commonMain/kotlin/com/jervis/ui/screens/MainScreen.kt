@@ -199,5 +199,7 @@ fun MainScreen(
         onMainChatSelected = {
             viewModel.chat.switchToMainChat()
         },
+        chatSidebarSplitFraction = viewModel.chat.chatSidebarSplitFraction.collectAsState().value,
+        onChatSidebarSplitChange = viewModel.chat::updateChatSidebarSplitFraction,
     )
 }

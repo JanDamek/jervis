@@ -144,6 +144,8 @@ fun MainScreenView(
     activeChatTaskName: String? = null,
     onChatTaskSelected: (PendingTaskDto) -> Unit = {},
     onMainChatSelected: () -> Unit = {},
+    chatSidebarSplitFraction: Float = 0.22f,
+    onChatSidebarSplitChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
@@ -369,21 +371,26 @@ fun MainScreenView(
                 }
 
                 when {
-                    // Expanded (≥600dp): persistent 240dp left rail + chat
+                    // Expanded (≥600dp): resizable left rail + chat
                     !isCompact && repository != null -> {
-                        Row(modifier = Modifier.fillMaxSize()) {
-                            ChatTaskSidebar(
-                                repository = repository,
-                                activeTaskId = activeChatTaskId,
-                                onTaskSelected = onChatTaskSelected,
-                                onMainChatSelected = onMainChatSelected,
-                                modifier = Modifier.width(240.dp),
-                            )
-                            VerticalDivider()
-                            Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-                                chatComposable()
-                            }
-                        }
+                        JHorizontalSplitLayout(
+                            splitFraction = chatSidebarSplitFraction,
+                            onSplitChange = onChatSidebarSplitChange,
+                            minFraction = 0.15f,
+                            maxFraction = 0.5f,
+                            leftContent = { mod ->
+                                ChatTaskSidebar(
+                                    repository = repository,
+                                    activeTaskId = activeChatTaskId,
+                                    onTaskSelected = onChatTaskSelected,
+                                    onMainChatSelected = onMainChatSelected,
+                                    modifier = mod,
+                                )
+                            },
+                            rightContent = { mod ->
+                                Box(modifier = mod) { chatComposable() }
+                            },
+                        )
                     }
                     // Compact (<600dp, mobile/watch): full-screen chat with
                     // overlay drawer holding the same ChatTaskSidebar.

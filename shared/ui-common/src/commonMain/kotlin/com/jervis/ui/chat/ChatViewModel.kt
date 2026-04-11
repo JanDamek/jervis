@@ -87,6 +87,14 @@ class ChatViewModel(
     private val _activeChatTaskName = MutableStateFlow<String?>(null)
     val activeChatTaskName: StateFlow<String?> = _activeChatTaskName.asStateFlow()
 
+    /** Phase 5 — chat sidebar split fraction (resizable rail). */
+    private val _chatSidebarSplitFraction = MutableStateFlow(0.22f)
+    val chatSidebarSplitFraction: StateFlow<Float> = _chatSidebarSplitFraction.asStateFlow()
+
+    fun updateChatSidebarSplitFraction(fraction: Float) {
+        _chatSidebarSplitFraction.value = fraction.coerceIn(0.15f, 0.5f)
+    }
+
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
 
@@ -420,21 +428,63 @@ class ChatViewModel(
         scope.launch {
             _isLoading.value = true
             try {
+                // Fetch the task itself so we can show its content + metadata
+                // as a synthetic "brief" header in the chat plane. Most tasks
+                // (indexed emails, schedules, scrapes) have NO chat messages
+                // attached, so without this header the user would just see
+                // an empty 'Začněte konverzaci' screen — useless.
+                val task = repository.call { services ->
+                    services.pendingTaskService.getById(taskId)
+                }
                 val history = repository.call { services ->
                     services.chatService.getTaskConversationHistory(taskId, limit = 200)
                 }
-                val mapped = history.messages.map { dto ->
-                    ChatMessage(
-                        from = when (dto.role) {
-                            ChatRole.USER -> ChatMessage.Sender.Me
-                            else -> ChatMessage.Sender.Assistant
-                        },
-                        text = dto.content,
-                        contextId = null,
-                        timestamp = dto.timestamp,
-                        messageType = ChatMessage.MessageType.FINAL,
-                        sequence = dto.sequence,
-                        id = dto.messageId,
+                val mapped = mutableListOf<ChatMessage>()
+                if (task != null) {
+                    val brief = buildString {
+                        appendLine("**${task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" } ?: task.sourceLabel.ifBlank { "Úloha" }}**")
+                        appendLine()
+                        if (task.sourceLabel.isNotBlank()) appendLine("📥 Zdroj: ${task.sourceLabel}")
+                        appendLine("📊 Stav: ${stateLabelCs(task.state)} · pipeline: ${pipelineLabelCs(task.taskType)}")
+                        appendLine("🕐 Vytvořeno: ${task.createdAt}")
+                        if (task.parentTaskId != null) appendLine("↳ Podúloha v rámci ${task.parentTaskId}")
+                        if (task.childCount > 0) appendLine("🌿 Podúlohy: ${task.completedChildCount}/${task.childCount} hotovo")
+                        if (!task.pendingUserQuestion.isNullOrBlank()) {
+                            appendLine()
+                            appendLine("❓ ${task.pendingUserQuestion}")
+                        }
+                        if (task.content.isNotBlank()) {
+                            appendLine()
+                            appendLine("---")
+                            appendLine()
+                            append(task.content)
+                        }
+                    }
+                    mapped.add(
+                        ChatMessage(
+                            from = ChatMessage.Sender.Assistant,
+                            text = brief,
+                            contextId = null,
+                            timestamp = task.createdAt,
+                            messageType = ChatMessage.MessageType.FINAL,
+                            id = "task-brief-${task.id}",
+                        ),
+                    )
+                }
+                history.messages.forEach { dto ->
+                    mapped.add(
+                        ChatMessage(
+                            from = when (dto.role) {
+                                ChatRole.USER -> ChatMessage.Sender.Me
+                                else -> ChatMessage.Sender.Assistant
+                            },
+                            text = dto.content,
+                            contextId = null,
+                            timestamp = dto.timestamp,
+                            messageType = ChatMessage.MessageType.FINAL,
+                            sequence = dto.sequence,
+                            id = dto.messageId,
+                        ),
                     )
                 }
                 _chatMessages.value = mapped
@@ -445,6 +495,26 @@ class ChatViewModel(
                 _isLoading.value = false
             }
         }
+    }
+
+    private fun stateLabelCs(state: String): String = when (state) {
+        "NEW" -> "Nový"
+        "INDEXING" -> "Indexace"
+        "QUEUED" -> "Ve frontě"
+        "PROCESSING" -> "Zpracovává se"
+        "CODING" -> "Kódování"
+        "USER_TASK" -> "K vyřízení"
+        "BLOCKED" -> "Čeká na podúlohy"
+        "DONE" -> "Dokončeno"
+        "ERROR" -> "Chyba"
+        else -> state
+    }
+
+    private fun pipelineLabelCs(type: String): String = when (type) {
+        "INSTANT" -> "Chat"
+        "SCHEDULED" -> "Plán"
+        "SYSTEM" -> "Systém"
+        else -> type
     }
 
     /**
