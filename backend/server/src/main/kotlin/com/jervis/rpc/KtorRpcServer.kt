@@ -1082,10 +1082,40 @@ class KtorRpcServer(
                                                 qualifierContext = body.contextSummary + "\n\n" + body.suggestedApproach,
                                             )
 
+                                            // Phase 3: clear needsQualification flag — the qualifier
+                                            // has produced its decision and the task is no longer
+                                            // pending re-evaluation by the RequalificationLoop.
+                                            taskService.clearNeedsQualification(taskId)
+
                                             when (body.decision) {
                                                 "DONE" -> {
                                                     taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
                                                     logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → DONE (${body.reason})" }
+                                                }
+                                                "ESCALATE" -> {
+                                                    // Phase 3: qualifier wants the user to make a call.
+                                                    // Transition the existing task to USER_TASK with the
+                                                    // qualifier's question/context — never create a wrapper.
+                                                    taskService.transitionToUserTask(
+                                                        task = task,
+                                                        pendingQuestion = body.pendingUserQuestion ?: body.reason,
+                                                        questionContext = body.userQuestionContext ?: body.contextSummary,
+                                                    )
+                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → USER_TASK (ESCALATE: ${body.reason})" }
+                                                }
+                                                "DECOMPOSE" -> {
+                                                    // Phase 3: qualifier broke the work into sub-tasks.
+                                                    // Create child TaskDocuments, set parent → BLOCKED
+                                                    // with blockedByTaskIds = child IDs. When all
+                                                    // children DONE, TaskService.unblockChildrenOfParent
+                                                    // walks up and flags the parent for re-qualification.
+                                                    if (body.subTasks.isEmpty()) {
+                                                        logger.warn { "QUALIFICATION_DONE: DECOMPOSE with empty sub_tasks taskId=${body.taskId}, falling back to QUEUED" }
+                                                        taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
+                                                    } else {
+                                                        taskService.decomposeTask(task, body.subTasks)
+                                                        logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → BLOCKED (DECOMPOSE: ${body.subTasks.size} children)" }
+                                                    }
                                                 }
                                                 "URGENT_ALERT" -> {
                                                     taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
@@ -1586,7 +1616,16 @@ data class KbCompletionResult(
 data class QualificationDoneCallback(
     @kotlinx.serialization.SerialName("task_id") val taskId: String,
     @kotlinx.serialization.SerialName("client_id") val clientId: String,
-    val decision: String = "QUEUED", // QUEUED, DONE, URGENT_ALERT, CONSOLIDATE
+    /**
+     * Phase 3 re-entrant qualifier decisions:
+     *   - QUEUED        — ready for orchestrator pickup (default)
+     *   - DONE          — terminal, no action needed
+     *   - URGENT_ALERT  — push alert + QUEUED
+     *   - CONSOLIDATE   — merge with existing topic task, this one becomes DONE
+     *   - ESCALATE      — needs user input → state=USER_TASK with question/context
+     *   - DECOMPOSE     — break into sub-tasks, parent → BLOCKED until children DONE
+     */
+    val decision: String = "QUEUED",
     @kotlinx.serialization.SerialName("priority_score") val priorityScore: Int = 5,
     val reason: String = "",
     @kotlinx.serialization.SerialName("alert_message") val alertMessage: String? = null,
@@ -1595,6 +1634,27 @@ data class QualificationDoneCallback(
     @kotlinx.serialization.SerialName("suggested_approach") val suggestedApproach: String = "",
     @kotlinx.serialization.SerialName("action_type") val actionType: String = "",
     @kotlinx.serialization.SerialName("estimated_complexity") val estimatedComplexity: String = "",
+    // ESCALATE — populated when decision == "ESCALATE"
+    @kotlinx.serialization.SerialName("pending_user_question") val pendingUserQuestion: String? = null,
+    @kotlinx.serialization.SerialName("user_question_context") val userQuestionContext: String? = null,
+    // DECOMPOSE — populated when decision == "DECOMPOSE"
+    @kotlinx.serialization.SerialName("sub_tasks") val subTasks: List<SubTaskRequest> = emptyList(),
+)
+
+/**
+ * Phase 3: A single sub-task requested by the qualifier when it returns
+ * decision=DECOMPOSE. The Kotlin server creates a child TaskDocument for each
+ * entry, sets `parentTaskId` to the original task, and populates the parent's
+ * `blockedByTaskIds` with the new child IDs. The parent moves to BLOCKED until
+ * all children reach DONE, at which point [TaskService.unblockChildrenOfParent]
+ * flags it for re-qualification.
+ */
+@kotlinx.serialization.Serializable
+data class SubTaskRequest(
+    @kotlinx.serialization.SerialName("task_name") val taskName: String,
+    val content: String,
+    val phase: String? = null,
+    @kotlinx.serialization.SerialName("order_in_phase") val orderInPhase: Int = 0,
 )
 
 @kotlinx.serialization.Serializable

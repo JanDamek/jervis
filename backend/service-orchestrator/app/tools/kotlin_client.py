@@ -169,11 +169,18 @@ class KotlinServerClient:
         suggested_approach: str = "",
         action_type: str = "",
         estimated_complexity: str = "",
+        # Phase 3 — re-entrant qualifier extensions
+        pending_user_question: str | None = None,
+        user_question_context: str | None = None,
+        sub_tasks: list[dict] | None = None,
     ) -> bool:
         """Push qualification agent result to Kotlin server.
 
         Called after qualification LLM agent finishes analyzing KB results.
-        Kotlin updates task state based on decision (DONE, QUEUED, URGENT_ALERT, CONSOLIDATE).
+        Kotlin updates task state based on decision:
+          - DONE / QUEUED / URGENT_ALERT / CONSOLIDATE (legacy)
+          - ESCALATE  (Phase 3) — task → state=USER_TASK with question/context
+          - DECOMPOSE (Phase 3) — break into sub_tasks, parent → BLOCKED
         """
         try:
             client = await self._get_client()
@@ -192,6 +199,12 @@ class KotlinServerClient:
                 payload["alert_message"] = alert_message
             if target_task_id:
                 payload["target_task_id"] = target_task_id
+            if pending_user_question:
+                payload["pending_user_question"] = pending_user_question
+            if user_question_context:
+                payload["user_question_context"] = user_question_context
+            if sub_tasks:
+                payload["sub_tasks"] = sub_tasks
             resp = await client.post(
                 "/internal/qualification-done",
                 json=payload,

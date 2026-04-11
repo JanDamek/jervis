@@ -293,6 +293,13 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     suspend fun countByParentTaskIdAndStateNot(parentTaskId: TaskId, state: TaskStateEnum): Long
 
     /**
+     * Phase 3: Re-entrant qualifier — find tasks that need (re-)qualification.
+     * Picked up by [com.jervis.task.RequalificationLoop]. The loop dispatches
+     * each task to Python `/qualify` and clears the flag once a decision arrives.
+     */
+    fun findByNeedsQualificationTrueOrderByCreatedAtAsc(): Flow<TaskDocument>
+
+    /**
      * Find all BLOCKED tasks ordered by phase order.
      * Used by WorkPlanExecutor to iterate BLOCKED tasks for dependency resolution.
      */

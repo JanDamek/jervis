@@ -39,17 +39,83 @@ import java.time.Instant
 @Service
 class TaskQualificationService(
     private val taskService: TaskService,
+    private val taskRepository: TaskRepository,
     private val knowledgeClient: com.jervis.infrastructure.llm.KnowledgeServiceRestClient,
     private val projectRepository: ProjectRepository,
     private val cloudModelPolicyResolver: CloudModelPolicyResolver,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val emailMessageIndexRepository: com.jervis.email.EmailMessageIndexRepository,
+    private val pythonOrchestratorClient: com.jervis.agent.PythonOrchestratorClient,
 ) {
     private val logger = KotlinLogging.logger {}
 
     private val isQualificationRunning =
         java.util.concurrent.atomic
             .AtomicBoolean(false)
+
+    /**
+     * Phase 3 re-entrant qualifier loop entry point.
+     *
+     * Scans for tasks with `needsQualification=true` and dispatches each to the
+     * Python `/qualify` endpoint. Python's response arrives asynchronously via
+     * `/internal/qualification-done`, where Kotlin clears the flag and applies
+     * the new decision (DONE / QUEUED / URGENT_ALERT / ESCALATE / DECOMPOSE).
+     *
+     * Triggered by lifecycle events:
+     *  - new INDEXING task created (via KB-done callback path)
+     *  - all children of a BLOCKED parent reach DONE → parent unblocks
+     *  - user responds to a USER_TASK and resumes the task
+     */
+    suspend fun requalifyPendingTasks() {
+        var dispatched = 0
+        var skipped = 0
+        try {
+            taskRepository.findByNeedsQualificationTrueOrderByCreatedAtAsc().collect { task ->
+                try {
+                    val request = com.jervis.agent.QualifyRequestDto(
+                        taskId = task.id.toString(),
+                        clientId = task.clientId.toString(),
+                        projectId = task.projectId?.toString(),
+                        sourceUrn = task.sourceUrn.value,
+                        summary = task.kbSummary?.take(2000) ?: task.content.take(2000),
+                        entities = task.kbEntities,
+                        suggestedActions = emptyList(),
+                        urgency = "normal",
+                        actionType = task.actionType,
+                        estimatedComplexity = task.estimatedComplexity,
+                        isAssignedToMe = false,
+                        hasFutureDeadline = task.scheduledAt != null,
+                        suggestedDeadline = task.scheduledAt?.toString(),
+                        suggestedAgent = null,
+                        affectedFiles = emptyList(),
+                        relatedKbNodes = task.kbEntities,
+                        hasAttachments = task.hasAttachments,
+                        attachmentCount = task.attachmentCount,
+                        attachments = emptyList(),
+                        content = task.content.take(3000),
+                        mentionsJervis = task.mentionsJervis,
+                    )
+                    val response = pythonOrchestratorClient.qualify(request)
+                    if (response != null) {
+                        dispatched++
+                    } else {
+                        // Circuit-breaker open or HTTP error → leave the flag set,
+                        // RequalificationLoop will retry on its next tick.
+                        skipped++
+                        logger.debug { "REQUALIFY_SKIPPED: taskId=${task.id} (qualify endpoint unavailable)" }
+                    }
+                } catch (e: Exception) {
+                    skipped++
+                    logger.warn(e) { "REQUALIFY_DISPATCH_FAILED: taskId=${task.id}" }
+                }
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "REQUALIFY_LOOP_ERROR: ${e.message}" }
+        }
+        if (dispatched > 0 || skipped > 0) {
+            logger.info { "REQUALIFY_CYCLE_COMPLETE: dispatched=$dispatched skipped=$skipped" }
+        }
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun processAllQualifications() {

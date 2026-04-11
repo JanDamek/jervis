@@ -89,6 +89,7 @@ class BackgroundEngine(
     private val scope = CoroutineScope(Dispatchers.Default + supervisor)
 
     private var qualificationJob: Job? = null
+    private var requalificationJob: Job? = null
     private var executionJob: Job? = null
     private var schedulerJob: Job? = null
     private var orchestratorResultJob: Job? = null
@@ -160,6 +161,16 @@ class BackgroundEngine(
                     runQualificationLoop()
                 } catch (e: Exception) {
                     logger.error(e) { "Qualification loop FAILED to start!" }
+                }
+            }
+
+        requalificationJob =
+            scope.launch {
+                try {
+                    logger.info { "Re-qualification loop STARTED (Phase 3 — re-entrant qualifier)" }
+                    runRequalificationLoop()
+                } catch (e: Exception) {
+                    logger.error(e) { "Re-qualification loop FAILED to start!" }
                 }
             }
 
@@ -400,6 +411,43 @@ class BackgroundEngine(
         }
 
         logger.warn { "Qualification loop exited - scope is no longer active" }
+    }
+
+    /**
+     * Phase 3 — Re-entrant qualifier loop.
+     *
+     * Periodically scans for tasks with `needsQualification=true` and dispatches
+     * each to the Python `/qualify` endpoint. Runs independently of the
+     * indexing-dispatcher loop because re-qualification can happen at ANY task
+     * state (not just INDEXING):
+     *
+     *  - new INDEXING task created → flag set after KB ingest finishes
+     *  - all children of a BLOCKED parent reach DONE → parent unblocks +
+     *    `needsQualification=true` so the qualifier sees the children's results
+     *  - user responds to a USER_TASK → flag set when task returns to QUEUED
+     *
+     * The actual decision (DONE / QUEUED / URGENT_ALERT / ESCALATE / DECOMPOSE)
+     * arrives asynchronously via `/internal/qualification-done` and clears the
+     * flag.
+     */
+    private suspend fun runRequalificationLoop() {
+        // Stagger startup so we do not hammer the qualifier the moment the pod
+        // is up — the indexing loop usually has work waiting from the previous
+        // crash and we want it to drain first.
+        delay(backgroundProperties.waitOnStartup)
+
+        while (scope.isActive) {
+            try {
+                taskQualificationService.requalifyPendingTasks()
+                delay(backgroundProperties.waitInterval)
+            } catch (e: CancellationException) {
+                logger.info { "Re-qualification loop cancelled" }
+                throw e
+            } catch (e: Exception) {
+                logger.error(e) { "ERROR in re-qualification loop — will retry after backoff" }
+                delay(backgroundProperties.waitOnError)
+            }
+        }
     }
 
     /**

@@ -242,6 +242,22 @@ data class TaskDocument(
      * task is subject to the MEETING_ATTEND approval flow — NEVER triggers auto-join.
      */
     val meetingMetadata: MeetingMetadata? = null,
+    /**
+     * Phase 3: Re-entrant qualifier flag.
+     *
+     * When true, the [com.jervis.task.RequalificationLoop] picks up the task
+     * and dispatches it to the Python `/qualify` endpoint for (re-)reasoning.
+     * Lifecycle events that set this true:
+     *   - new INDEXING task created (set after KB ingest finishes)
+     *   - all children of a BLOCKED parent reach DONE → parent unblocks
+     *   - user responds to a USER_TASK and resumes the task
+     *   - new related evidence indexed (future: topic-based fan-out)
+     *
+     * The loop clears this flag once the new qualifier decision arrives via
+     * `/internal/qualification-done`.
+     */
+    @Indexed
+    val needsQualification: Boolean = false,
 ) {
     companion object {
         /**
@@ -306,6 +322,7 @@ data class TaskDocument(
             lastActivityAt: Instant?,
             mentionsJervis: Boolean?,
             meetingMetadata: MeetingMetadata?,
+            needsQualification: Boolean?,
         ): TaskDocument = TaskDocument(
             id = TaskId(id),
             type = type,
@@ -360,6 +377,7 @@ data class TaskDocument(
             lastActivityAt = lastActivityAt,
             mentionsJervis = mentionsJervis ?: false,
             meetingMetadata = meetingMetadata,
+            needsQualification = needsQualification ?: false,
         )
     }
 }

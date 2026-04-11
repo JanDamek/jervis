@@ -318,11 +318,17 @@ class UserTaskRpcImpl(
         val task = taskRepository.getById(TaskId.fromString(taskId))
             ?: throw IllegalArgumentException("Task not found: $taskId")
 
-        // Queue for orchestrator — extracts behavioral rules from user response, stores in KB
+        // Phase 3: route the user's reply through the re-entrant qualifier.
+        // The qualifier sees the new content + history and decides whether to
+        // QUEUE, escalate again, decompose, or close. This replaces the old
+        // unconditional → QUEUED jump.
         val updated = task.copy(
-            state = TaskStateEnum.QUEUED,
+            state = TaskStateEnum.NEW,
             content = "${task.content}\n\n[User response]: $response",
             pendingUserQuestion = null,
+            userQuestionContext = null,
+            needsQualification = true,
+            lastActivityAt = Instant.now(),
         )
         taskRepository.save(updated)
 

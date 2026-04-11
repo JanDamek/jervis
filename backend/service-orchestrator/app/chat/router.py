@@ -263,6 +263,10 @@ async def qualify(request: dict):
                 suggested_approach=result.get("suggested_approach", ""),
                 action_type=result.get("action_type", ""),
                 estimated_complexity=result.get("estimated_complexity", ""),
+                # Phase 3 — re-entrant qualifier extensions
+                pending_user_question=result.get("pending_user_question"),
+                user_question_context=result.get("user_question_context"),
+                sub_tasks=result.get("sub_tasks"),
             )
         except Exception as e:
             logger.exception("Qualification failed: %s", e)

@@ -384,7 +384,160 @@ class TaskService(
             "TASK_STATE_TRANSITION: id=${task.id} correlationId=${saved.correlationId} from=$fromState to=$next type=${task.type}"
         }
 
+        // Phase 3 re-entrant qualifier: when a task reaches DONE, walk up the
+        // parent chain and unblock any parent whose children are now all DONE.
+        // Unblocked parents are flagged for re-qualification so the qualifier
+        // sees the new evidence.
+        if (next == TaskStateEnum.DONE && saved.parentTaskId != null) {
+            try {
+                unblockChildrenOfParent(saved.parentTaskId)
+            } catch (e: Exception) {
+                logger.warn(e) { "PARENT_UNBLOCK_FAILED: childId=${saved.id} parentId=${saved.parentTaskId}: ${e.message}" }
+            }
+        }
+
         return saved
+    }
+
+    /**
+     * Phase 3 re-entrant qualifier: when one of a parent's children completes,
+     * check whether *all* children are DONE. If so, transition the parent from
+     * BLOCKED back to a re-qualifiable state and set [needsQualification]=true
+     * so the [RequalificationLoop] picks it up with the new context.
+     *
+     * Idempotent — safe to call multiple times. Walks up to the root if the
+     * unblocked parent itself is the child of another BLOCKED parent.
+     */
+    suspend fun unblockChildrenOfParent(parentTaskId: com.jervis.common.types.TaskId) {
+        val parent = taskRepository.getById(parentTaskId) ?: return
+        if (parent.state != TaskStateEnum.BLOCKED) {
+            return
+        }
+        val pendingChildren = taskRepository.countByParentTaskIdAndStateNot(parentTaskId, TaskStateEnum.DONE)
+        if (pendingChildren > 0L) {
+            logger.debug { "PARENT_STILL_BLOCKED: parentId=$parentTaskId pendingChildren=$pendingChildren" }
+            return
+        }
+        // All children DONE → unblock + flag for re-qualification.
+        val query = Query(Criteria.where("_id").`is`(parentTaskId.value))
+        val update = Update()
+            .set("state", TaskStateEnum.NEW.name)
+            .set("needsQualification", true)
+        mongoTemplate.findAndModify(
+            query,
+            update,
+            FindAndModifyOptions.options().returnNew(true),
+            TaskDocument::class.java,
+        ).awaitSingleOrNull()
+        logger.info { "PARENT_UNBLOCKED: parentId=$parentTaskId — all children DONE, flagged for re-qualification" }
+    }
+
+    /**
+     * Phase 3: explicitly mark a task as needing (re-)qualification. Used by
+     * the user-response handler when a USER_TASK comes back with new info.
+     */
+    suspend fun markNeedsQualification(taskId: com.jervis.common.types.TaskId) {
+        val query = Query(Criteria.where("_id").`is`(taskId.value))
+        val update = Update().set("needsQualification", true)
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+        logger.debug { "MARK_NEEDS_QUALIFICATION: id=$taskId" }
+    }
+
+    /**
+     * Phase 3: clear the re-qualification flag once the qualifier has produced
+     * a decision. Called from the `/internal/qualification-done` callback.
+     */
+    suspend fun clearNeedsQualification(taskId: com.jervis.common.types.TaskId) {
+        val query = Query(Criteria.where("_id").`is`(taskId.value))
+        val update = Update().set("needsQualification", false)
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+    }
+
+    /**
+     * Phase 3 ESCALATE decision: transition the existing task to USER_TASK
+     * with the qualifier-supplied question and context. Never creates a wrapper
+     * task — preserves the original task's `type`, `correlationId`, and
+     * `sourceUrn`. Surfaces in K reakci via the state-only query.
+     */
+    suspend fun transitionToUserTask(
+        task: TaskDocument,
+        pendingQuestion: String,
+        questionContext: String?,
+    ): TaskDocument {
+        val query = Query(Criteria.where("_id").`is`(task.id.value))
+        val update = Update()
+            .set("state", TaskStateEnum.USER_TASK.name)
+            .set("pendingUserQuestion", pendingQuestion)
+            .set("userQuestionContext", questionContext)
+            .set("needsQualification", false)
+            .set("lastActivityAt", Instant.now())
+        val saved = mongoTemplate.findAndModify(
+            query,
+            update,
+            FindAndModifyOptions.options().returnNew(true),
+            TaskDocument::class.java,
+        ).awaitSingleOrNull() ?: task.copy(state = TaskStateEnum.USER_TASK)
+        logger.info { "TASK_ESCALATED_TO_USER: id=${task.id} question=${pendingQuestion.take(80)}" }
+        return saved
+    }
+
+    /**
+     * Phase 3 DECOMPOSE decision: create child TaskDocuments under the given
+     * parent and move the parent to BLOCKED. The parent's `blockedByTaskIds`
+     * holds the new child IDs. When the last child reaches DONE,
+     * [unblockChildrenOfParent] flips the parent back to NEW with
+     * `needsQualification=true` so the qualifier sees the children's results
+     * and decides the next step.
+     *
+     * Children inherit the parent's `clientId`, `projectId`, `correlationId`,
+     * and `sourceUrn` so KB graph relationships and the K reakci scope filter
+     * still work. Each child starts in `state=NEW` with
+     * `needsQualification=true` so the loop picks them up immediately.
+     */
+    suspend fun decomposeTask(
+        parent: TaskDocument,
+        subTasks: List<com.jervis.rpc.SubTaskRequest>,
+    ): List<com.jervis.common.types.TaskId> {
+        require(subTasks.isNotEmpty()) { "decomposeTask called with empty sub-task list" }
+        val now = Instant.now()
+        val childIds = subTasks.map { req ->
+            val child = TaskDocument(
+                type = parent.type,
+                taskName = req.taskName.take(200),
+                content = req.content,
+                projectId = parent.projectId,
+                clientId = parent.clientId,
+                createdAt = now,
+                state = TaskStateEnum.NEW,
+                processingMode = parent.processingMode,
+                correlationId = parent.correlationId,
+                sourceUrn = parent.sourceUrn,
+                parentTaskId = parent.id,
+                phase = req.phase,
+                orderInPhase = req.orderInPhase,
+                needsQualification = true,
+            )
+            taskRepository.save(child).id
+        }
+
+        // Transition parent → BLOCKED with the new child IDs.
+        val parentQuery = Query(Criteria.where("_id").`is`(parent.id.value))
+        val parentUpdate = Update()
+            .set("state", TaskStateEnum.BLOCKED.name)
+            .set("blockedByTaskIds", childIds.map { it.value })
+            .set("needsQualification", false)
+            .set("lastActivityAt", now)
+        mongoTemplate.findAndModify(
+            parentQuery,
+            parentUpdate,
+            FindAndModifyOptions.options().returnNew(true),
+            TaskDocument::class.java,
+        ).awaitSingleOrNull()
+
+        logger.info {
+            "TASK_DECOMPOSED: parentId=${parent.id} children=${childIds.size} ids=${childIds.map { it.toString().take(8) }}"
+        }
+        return childIds
     }
 
     /**

@@ -214,7 +214,25 @@ If no conventions found, proceed with default rules below.
    - Unknown payment/transaction → USER_TASK (user must verify)
 5. **Check active tasks** — does incoming data relate to an already active task? If yes → CONSOLIDATE.
 6. **Suggest approach** — 3-5 steps for the orchestrator (if QUEUED).
-7. **Decide** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE + priority.
+7. **Decide** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE/ESCALATE/DECOMPOSE + priority.
+
+## Phase 3 — re-entrant decisions (use sparingly, only when justified)
+
+**ESCALATE** — choose when YOU cannot decide without the user's judgment.
+The task transitions to state=USER_TASK and surfaces in K reakci. Use only when:
+- The content explicitly requires the user to make a business decision
+  (e.g. "approve this contract?", "which option do you want?")
+- The required information is genuinely missing and cannot be derived from KB
+- A constraint is ambiguous and multiple legitimate interpretations exist
+NEVER use ESCALATE just because the work is hard or you are unsure how to start —
+the orchestrator can handle complex/uncertain work via QUEUED.
+
+**DECOMPOSE** — choose when the work is multi-stage and benefits from parallel
+or ordered sub-tasks (e.g. "audit + fix + add tests" or 3 independent fixes).
+The Kotlin server creates child tasks, parent → BLOCKED until all children DONE,
+then the parent re-enters qualification with the children's results. Use only
+when the decomposition is concrete (you can name 2–6 specific sub-tasks).
+NEVER use DECOMPOSE for trivial work or when one orchestrator pass would suffice.
 
 ## Client/Project name matching
 When incoming data mentions a client or project name, ALWAYS search existing ones first.
@@ -290,6 +308,32 @@ APPROACH:
 1. <steps>
 ```
 
+**If you must escalate to the user (Phase 3):**
+```
+DECISION: ESCALATE
+PRIORITY: <1-10>
+REASON: <why the system cannot decide alone>
+PENDING_USER_QUESTION: <the exact question to ask the user — in the user's language>
+USER_QUESTION_CONTEXT: <what the user needs to know to answer>
+```
+
+**If the work decomposes into sub-tasks (Phase 3):**
+```
+DECISION: DECOMPOSE
+PRIORITY: <1-10>
+REASON: <why decomposition is needed>
+
+SUB_TASKS:
+- TASK_NAME: <short title>
+  CONTENT: <what the child task must do>
+  PHASE: <phase name, e.g. analysis|implementation|verification>
+  ORDER: <0-based ordering inside the phase>
+- TASK_NAME: <...>
+  CONTENT: <...>
+  PHASE: <...>
+  ORDER: <...>
+```
+
 Be concise but thorough. Max {MAX_ITERATIONS} iterations (tool calls). Do not start unnecessary conversation — search KB, analyze, and decide."""
 
 
@@ -310,13 +354,16 @@ def _parse_decision(text: str) -> dict[str, Any]:
         "estimated_complexity": "",
     }
 
-    # Parse multi-line sections: CONTEXT and APPROACH
-    # Each section starts with its header and ends at the next section header or end of text
-    section_headers = ("CONTEXT:", "APPROACH:")
-    single_line_prefixes = ("DECISION:", "PRIORITY:", "REASON:", "ALERT:", "ACTION_TYPE:", "COMPLEXITY:", "TARGET_TASK_ID:")
+    # Parse multi-line sections: CONTEXT, APPROACH, SUB_TASKS (Phase 3)
+    section_headers = ("CONTEXT:", "APPROACH:", "SUB_TASKS:")
+    single_line_prefixes = (
+        "DECISION:", "PRIORITY:", "REASON:", "ALERT:",
+        "ACTION_TYPE:", "COMPLEXITY:", "TARGET_TASK_ID:",
+        "PENDING_USER_QUESTION:", "USER_QUESTION_CONTEXT:",
+    )
 
     current_section: str | None = None
-    section_lines: dict[str, list[str]] = {"CONTEXT": [], "APPROACH": []}
+    section_lines: dict[str, list[str]] = {"CONTEXT": [], "APPROACH": [], "SUB_TASKS": []}
 
     for line in text.splitlines():
         stripped = line.strip()
@@ -338,13 +385,12 @@ def _parse_decision(text: str) -> dict[str, Any]:
 
             if stripped.startswith("DECISION:"):
                 decision = stripped.split(":", 1)[1].strip().upper()
-                if decision in ("QUEUED", "DONE", "URGENT_ALERT", "CONSOLIDATE"):
+                if decision in ("QUEUED", "DONE", "URGENT_ALERT", "CONSOLIDATE", "ESCALATE", "DECOMPOSE"):
                     result["decision"] = decision
             elif stripped.startswith("PRIORITY:"):
                 try:
                     raw = int(stripped.split(":", 1)[1].strip())
                     # LLM outputs 1-10, but TaskDocument uses 0-100 scale.
-                    # Scale ×10 so priority 5 → 50 (=default), 10 → 100 (max).
                     result["priority_score"] = min(raw * 10, 100)
                 except ValueError:
                     pass
@@ -358,6 +404,10 @@ def _parse_decision(text: str) -> dict[str, Any]:
                 result["estimated_complexity"] = stripped.split(":", 1)[1].strip()
             elif stripped.startswith("TARGET_TASK_ID:"):
                 result["target_task_id"] = stripped.split(":", 1)[1].strip()
+            elif stripped.startswith("PENDING_USER_QUESTION:"):
+                result["pending_user_question"] = stripped.split(":", 1)[1].strip()
+            elif stripped.startswith("USER_QUESTION_CONTEXT:"):
+                result["user_question_context"] = stripped.split(":", 1)[1].strip()
         elif current_section and stripped:
             # Accumulate multi-line content under current section
             section_lines[current_section].append(stripped)
@@ -367,8 +417,46 @@ def _parse_decision(text: str) -> dict[str, Any]:
         result["context_summary"] = "\n".join(section_lines["CONTEXT"])
     if section_lines["APPROACH"]:
         result["suggested_approach"] = "\n".join(section_lines["APPROACH"])
+    if section_lines["SUB_TASKS"]:
+        result["sub_tasks"] = _parse_sub_tasks(section_lines["SUB_TASKS"])
 
     return result
+
+
+def _parse_sub_tasks(lines: list[str]) -> list[dict[str, Any]]:
+    """Parse SUB_TASKS section into a list of {task_name, content, phase, order_in_phase}.
+
+    Format expected:
+        - TASK_NAME: <name>
+          CONTENT: <text>
+          PHASE: <phase>
+          ORDER: <int>
+        - TASK_NAME: ...
+    """
+    sub_tasks: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for line in lines:
+        s = line.strip().lstrip("-").strip()
+        if not s:
+            continue
+        if s.startswith("TASK_NAME:"):
+            if current and current.get("task_name"):
+                sub_tasks.append(current)
+            current = {"task_name": s.split(":", 1)[1].strip(), "content": "", "phase": None, "order_in_phase": 0}
+        elif current is None:
+            continue
+        elif s.startswith("CONTENT:"):
+            current["content"] = s.split(":", 1)[1].strip()
+        elif s.startswith("PHASE:"):
+            current["phase"] = s.split(":", 1)[1].strip() or None
+        elif s.startswith("ORDER:"):
+            try:
+                current["order_in_phase"] = int(s.split(":", 1)[1].strip())
+            except ValueError:
+                pass
+    if current and current.get("task_name"):
+        sub_tasks.append(current)
+    return sub_tasks
 
 
 async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:

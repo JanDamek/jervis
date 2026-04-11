@@ -484,12 +484,67 @@ When a task needs user attention, the existing task transitions to
 `UserTaskService.failAndEscalateToUserTask()`. K reakci queries the DB
 by `state=USER_TASK` only, type-agnostic.
 
-**Sub-task hierarchy fields** (already on `TaskDocument`, used by Phase 3
-re-entrant qualifier):
+**Sub-task hierarchy fields** on `TaskDocument`:
 - `parentTaskId` — parent task in a decomposition tree
 - `blockedByTaskIds` — list of tasks that must complete before this one is unblocked
 - `phase`, `orderInPhase` — work-plan ordering inside a parent
 - `state=BLOCKED` — parent waiting for children to finish
+
+### Re-entrant qualifier (Phase 3, post-2026-04-11)
+
+The qualifier no longer runs **once** per task — it runs every time the task's
+context changes. The flow:
+
+1. **Indexer creates task** with `state=INDEXING` → `TaskQualificationService`
+   submits to KB `/ingest/full/async`.
+2. **KB callback** `/internal/kb-done` does cheap routing (filtering rules,
+   `hasActionableContent`) and dispatches actionable tasks to Python `/qualify`.
+3. **Python `/qualify`** (`unified/qualification_handler.py`) reasons with KB
+   tools and posts back via `/internal/qualification-done` with one of six
+   decisions:
+   - `DONE` — terminal, no action
+   - `QUEUED` — orchestrator picks it up (default)
+   - `URGENT_ALERT` — push alert + QUEUED
+   - `CONSOLIDATE` — merge into existing topic task, this one → DONE
+   - `ESCALATE` — needs user judgment → `state=USER_TASK` with
+     `pendingUserQuestion` + `userQuestionContext`. **NEVER creates a wrapper
+     task** — the original task transitions in place.
+   - `DECOMPOSE` — qualifier returns 2–6 `sub_tasks`. Kotlin creates child
+     `TaskDocument`s with `parentTaskId` set, parent → `state=BLOCKED` with
+     `blockedByTaskIds` populated. Children inherit parent's `correlationId`,
+     `sourceUrn`, `clientId`, `projectId`.
+
+**Re-entrant triggers** (set `needsQualification=true` so the
+`RequalificationLoop` picks the task up again):
+
+- **Parent unblock**: when a child reaches DONE,
+  `TaskService.updateState()` calls `unblockChildrenOfParent(parentId)`.
+  If all `blockedByTaskIds` are DONE, the parent transitions
+  `BLOCKED → NEW` and is flagged for re-qualification — the qualifier sees
+  the children's results and decides the next step.
+- **User response**: when the user replies to a USER_TASK via
+  `UserTaskRpcImpl.respondToTask()`, the task moves back to NEW with
+  `needsQualification=true` and the user's reply appended to `content`.
+  The qualifier re-reasons with the new info.
+- **External force**: `TaskService.markNeedsQualification(taskId)` is the
+  programmatic API for any future trigger (topic-fan-out, schedule, etc.).
+
+**Background workers** (in `BackgroundEngine`):
+- `runQualificationLoop()` — CPU indexing dispatcher (the one that pushes
+  INDEXING tasks to KB; legacy name).
+- `runRequalificationLoop()` — Phase 3 re-entrant qualifier loop. Every
+  `waitInterval` it scans `findByNeedsQualificationTrueOrderByCreatedAtAsc()`
+  and dispatches each task to Python `/qualify`. The flag is cleared by the
+  `/internal/qualification-done` callback.
+
+**Anti-patterns**:
+- Don't dispatch to `/qualify` directly from a state transition — set
+  `needsQualification=true` and let the loop pick it up. Keeps the qualifier
+  rate-limited and idempotent.
+- Don't create wrapper tasks for ESCALATE — use
+  `TaskService.transitionToUserTask(task, question, context)`.
+- Don't manually populate `blockedByTaskIds` outside of
+  `TaskService.decomposeTask(parent, subTasks)`.
 
 #### 1.1 Attachment Extraction Pipeline
 
