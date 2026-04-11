@@ -204,7 +204,18 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     /**
      * Find all scheduled tasks due for dispatch (scheduledAt <= threshold).
      * Used by BackgroundEngine scheduler loop.
+     *
+     * 2026-04-11: explicit `_id: {$type: 'objectId'}` guard to skip the
+     * 5 legacy "corrupt-id" records that have UUID-shaped string _ids.
+     * Without it, Spring Data MappingMongoConverter crashes during
+     * deserialization. The corrupted docs were migrated to new ObjectId
+     * duplicates and tagged `_corrupt_id=true` — see commit migrating them.
      */
+    @Query(
+        "{ '_id': { '\$type': 'objectId' }, " +
+            "'scheduledAt': { '\$lte': ?0 }, " +
+            "'type': ?1, 'state': ?2 }",
+    )
     suspend fun findByScheduledAtLessThanEqualAndTypeAndStateOrderByScheduledAtAsc(
         scheduledAt: Instant,
         type: TaskTypeEnum,
@@ -214,7 +225,13 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     /**
      * Find all scheduled tasks that follow user timezone (personal reminders).
      * Scheduler recalculates their scheduledAt based on current user timezone.
+     *
+     * Same `_id: {$type: 'objectId'}` guard as above.
      */
+    @Query(
+        "{ '_id': { '\$type': 'objectId' }, " +
+            "'followUserTimezone': ?0, 'type': ?1, 'state': ?2 }",
+    )
     fun findByFollowUserTimezoneAndTypeAndState(
         followUserTimezone: Boolean,
         type: TaskTypeEnum,
