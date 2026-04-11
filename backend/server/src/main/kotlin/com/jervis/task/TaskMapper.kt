@@ -60,4 +60,9 @@ fun TaskDocument.toPendingTaskDto(
         childCount = childCount,
         completedChildCount = completedChildCount,
         phase = this.phase,
+        taskName = this.taskName,
+        sourceLabel = this.sourceUrn.uiLabel(),
+        sourceScheme = this.sourceUrn.scheme(),
+        pendingUserQuestion = this.pendingUserQuestion,
+        needsQualification = this.needsQualification,
     )

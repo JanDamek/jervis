@@ -60,9 +60,22 @@ fun PendingTasksScreen(
 
     var selectedTaskType by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedState by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedSourceScheme by rememberSaveable { mutableStateOf<String?>(null) }
 
     val taskTypes = remember { com.jervis.dto.task.TaskTypeEnum.values().map { it.name } }
     val taskStates = remember { com.jervis.dto.task.TaskStateEnum.values().map { it.name } }
+    // Phase 4: SourceUrn-scheme filter — matches the prefixes returned by
+    // backend SourceUrn.scheme() and the kbSourceType mapping. Keep this list
+    // in sync with SourceUrn.uiLabel() / kbSourceType().
+    val sourceSchemes = remember {
+        listOf(
+            "email", "whatsapp", "slack", "discord", "teams",
+            "jira", "github-issue", "gitlab-issue",
+            "confluence", "git", "merge-request",
+            "meeting", "calendar", "chat", "scheduled",
+            "link", "doc", "idle-review", "user-task",
+        )
+    }
 
     fun load() {
         scope.launch {
@@ -75,6 +88,9 @@ fun PendingTasksScreen(
                     page = 0,
                     pageSize = PAGE_SIZE,
                     clientId = clientId,
+                    sourceScheme = selectedSourceScheme,
+                    parentTaskId = null,
+                    textQuery = null,
                 )
                 tasks = result.items
                 totalTasks = result.totalCount
@@ -101,6 +117,9 @@ fun PendingTasksScreen(
                     page = nextPage,
                     pageSize = PAGE_SIZE,
                     clientId = clientId,
+                    sourceScheme = selectedSourceScheme,
+                    parentTaskId = null,
+                    textQuery = null,
                 )
                 tasks = tasks + result.items
                 totalTasks = result.totalCount
@@ -129,7 +148,7 @@ fun PendingTasksScreen(
         }
     }
 
-    LaunchedEffect(selectedTaskType, selectedState) { load() }
+    LaunchedEffect(selectedTaskType, selectedState, selectedSourceScheme) { load() }
 
     val listState = rememberLazyListState()
 
@@ -149,7 +168,7 @@ fun PendingTasksScreen(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             JTopBar(
-                title = "Fronta úloh ($totalTasks)",
+                title = "Úlohy ($totalTasks)",
                 actions = {
                     RefreshIconButton(onClick = { load() })
                 },
@@ -169,25 +188,37 @@ fun PendingTasksScreen(
         ) {
             // Filters section
             JSection(title = "Filtry") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
+                    ) {
+                        JDropdown(
+                            items = listOf<String?>(null) + taskStates,
+                            selectedItem = selectedState,
+                            onItemSelected = { selectedState = it },
+                            label = "Stav",
+                            itemLabel = { it ?: "Vše" },
+                            modifier = Modifier.weight(1f),
+                        )
+                        JDropdown(
+                            items = listOf<String?>(null) + taskTypes,
+                            selectedItem = selectedTaskType,
+                            onItemSelected = { selectedTaskType = it },
+                            label = "Pipeline",
+                            itemLabel = { it ?: "Vše" },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     JDropdown(
-                        items = listOf<String?>(null) + taskTypes,
-                        selectedItem = selectedTaskType,
-                        onItemSelected = { selectedTaskType = it },
-                        label = "Typ úlohy",
-                        itemLabel = { it ?: "Vše" },
-                        modifier = Modifier.weight(1f),
-                    )
-                    JDropdown(
-                        items = listOf<String?>(null) + taskStates,
-                        selectedItem = selectedState,
-                        onItemSelected = { selectedState = it },
-                        label = "Stav",
-                        itemLabel = { it ?: "Vše" },
-                        modifier = Modifier.weight(1f),
+                        items = listOf<String?>(null) + sourceSchemes,
+                        selectedItem = selectedSourceScheme,
+                        onItemSelected = { selectedSourceScheme = it },
+                        label = "Zdroj",
+                        itemLabel = { it ?: "Vše zdroje" },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -284,22 +315,33 @@ private fun PendingTaskCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header: task type + delete button
+            // Header: task name + source label + delete button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = getTaskTypeLabel(task.taskType),
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" }
+                            ?: task.sourceLabel.ifBlank { task.taskType },
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                    )
+                    if (task.sourceLabel.isNotBlank()) {
+                        Text(
+                            text = task.sourceLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 DeleteIconButton(onClick = onDelete)
             }
 
             Spacer(Modifier.height(8.dp))
 
-            // State chip + project chip
+            // State chip + type chip + sub-task hint
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -314,14 +356,47 @@ private fun PendingTaskCard(
                         )
                     },
                 )
-                task.projectId?.let {
+                SuggestionChip(
+                    onClick = {},
+                    label = {
+                        Text(
+                            getTaskTypeChipLabel(task.taskType),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                )
+                if (task.needsQualification) {
                     SuggestionChip(
                         onClick = {},
                         label = {
                             Text(
-                                "Projekt: ${it.take(8)}",
+                                "Re-kvalifikace",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = MaterialTheme.colorScheme.tertiary,
+                            )
+                        },
+                    )
+                }
+                // Sub-task indicator
+                if (task.parentTaskId != null) {
+                    SuggestionChip(
+                        onClick = {},
+                        label = {
+                            Text(
+                                "↳ podúloha${task.phase?.let { " · $it" } ?: ""}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
+                        },
+                    )
+                } else if (task.childCount > 0) {
+                    SuggestionChip(
+                        onClick = {},
+                        label = {
+                            Text(
+                                "${task.completedChildCount}/${task.childCount} dětí",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary,
                             )
                         },
                     )
@@ -340,14 +415,19 @@ private fun PendingTaskCard(
                 }
             }
 
+            // Pending question — only when state=USER_TASK
+            if (!task.pendingUserQuestion.isNullOrBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "❓ ${task.pendingUserQuestion}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
             Spacer(Modifier.height(8.dp))
 
-            // Client and creation time
-            Text(
-                text = "Klient: ${task.clientId.take(8)}...",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // Created at — drop the cryptic 8-char clientId
             Text(
                 text = "Vytvořeno: ${task.createdAt}",
                 style = MaterialTheme.typography.bodySmall,
@@ -386,16 +466,16 @@ private fun PendingTaskCard(
     }
 }
 
-private fun getTaskTypeLabel(taskType: String): String = when (taskType) {
-    "EMAIL_PROCESSING" -> "Zpracování emailu"
-    "BUGTRACKER_PROCESSING" -> "Zpracování bug trackeru"
-    "LINK_PROCESSING" -> "Zpracování odkazu"
-    "WIKI_PROCESSING" -> "Zpracování wiki"
-    "GIT_PROCESSING" -> "Zpracování gitu"
-    "MEETING_PROCESSING" -> "Zpracování schůzky"
-    "USER_INPUT_PROCESSING" -> "Uživatelský vstup"
-    "USER_TASK" -> "Uživatelská úloha"
-    "SCHEDULED_TASK" -> "Plánovaná úloha"
+/**
+ * After Phase 1 the task type collapsed to INSTANT/SCHEDULED/SYSTEM. This is
+ * still useful as a coarse pipeline indicator alongside the source label.
+ * Source-specific labels (Email, WhatsApp, …) come from `task.sourceLabel`,
+ * which is derived from SourceUrn.uiLabel() on the backend.
+ */
+private fun getTaskTypeChipLabel(taskType: String): String = when (taskType) {
+    "INSTANT" -> "Chat"
+    "SCHEDULED" -> "Plán"
+    "SYSTEM" -> "Systém"
     else -> taskType
 }
 
@@ -405,8 +485,8 @@ private fun getTaskStateLabel(state: String): String = when (state) {
     "QUEUED" -> "Ve frontě"
     "PROCESSING" -> "Zpracovává se"
     "CODING" -> "Kódování"
-    "USER_TASK" -> "Uživatelská úloha"
-    "BLOCKED" -> "Blokován"
+    "USER_TASK" -> "K vyřízení"
+    "BLOCKED" -> "Čeká na podúlohy"
     "DONE" -> "Dokončeno"
     "ERROR" -> "Chyba"
     else -> state

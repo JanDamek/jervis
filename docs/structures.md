@@ -546,6 +546,44 @@ context changes. The flow:
 - Don't manually populate `blockedByTaskIds` outside of
   `TaskService.decomposeTask(parent, subTasks)`.
 
+### Tasks UI (Phase 4, post-2026-04-11)
+
+The user-facing task screen lives in
+`shared/ui-common/.../ui/PendingTasksScreen.kt` (entry name kept for nav
+compatibility — display title is "Úlohy"). It is the **single
+state-agnostic task list** for everything in the `tasks` collection. Any
+attempt to add a second task screen for "USER_TASK only" or "INDEXING
+only" should be redirected here with a state filter.
+
+**Filter axes** (all DB-side, never client-side):
+- `state` — `NEW`, `INDEXING`, `QUEUED`, `PROCESSING`, `CODING`,
+  `USER_TASK`, `BLOCKED`, `DONE`, `ERROR`
+- `taskType` — `INSTANT` / `SCHEDULED` / `SYSTEM` (post-Phase-1)
+- `sourceScheme` — SourceUrn prefix (`email`, `whatsapp`, `jira`,
+  `meeting`, …). Implemented as a regex match `^scheme::` on the
+  stored `sourceUrn` string.
+
+**Backend**: `IPendingTaskService.listTasksPaged(taskType, state,
+clientId, sourceScheme, parentTaskId, textQuery, page, pageSize)` —
+DB-side pagination, sort by `createdAt DESC`. Companion endpoints:
+- `getById(id)` — single task for the detail panel
+- `listChildren(parentTaskId)` — sub-tasks ordered by phase + orderInPhase
+
+**`PendingTaskDto` carries the Phase 4 display fields**:
+- `taskName` — display name from TaskDocument
+- `sourceLabel` — Czech UI label, derived from `SourceUrn.uiLabel()` server-side
+- `sourceScheme` — URN scheme prefix for client-side filter chips
+- `pendingUserQuestion` — populated when state=USER_TASK
+- `needsQualification` — Phase 3 re-entrant flag for the "Re-kvalifikace" badge
+- `parentTaskId`, `childCount`, `completedChildCount`, `phase` — sub-task hierarchy
+
+**Anti-patterns**:
+- Adding a `getTaskTypeLabel()` switch in UI code — use `task.sourceLabel`
+- Filtering tasks client-side (load-then-filter) — extend
+  `listTasksPaged` with the new filter axis instead
+- Hardcoding the source list in the UI dropdown — keep it in sync with
+  `SourceUrn.uiLabel()` / `kbSourceType()`
+
 #### 1.1 Attachment Extraction Pipeline
 
 **Email attachments** are processed through a dual-path pipeline:

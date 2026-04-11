@@ -19,6 +19,20 @@ data class PendingTaskDto(
     val childCount: Int = 0,
     val completedChildCount: Int = 0,
     val phase: String? = null,
+    // Phase 4 — unified TasksScreen fields
+    /** Display name for UI (defaults to "Unnamed Task" on backend). */
+    val taskName: String = "Unnamed Task",
+    /**
+     * Czech UI label derived from sourceUrn.scheme() — "Email", "WhatsApp",
+     * "Schůzka", … See SourceUrn.uiLabel() in common-services.
+     */
+    val sourceLabel: String = "",
+    /** sourceUrn scheme prefix (e.g. "email", "whatsapp") for client-side filter chips. */
+    val sourceScheme: String = "",
+    /** Active question if state=USER_TASK. Null otherwise. */
+    val pendingUserQuestion: String? = null,
+    /** Phase 3 re-entrant qualifier flag — task is awaiting (re-)qualification. */
+    val needsQualification: Boolean = false,
 )
 
 /** Paginated result for PendingTasksScreen — merges listTasks + countTasks into a single RPC call. */

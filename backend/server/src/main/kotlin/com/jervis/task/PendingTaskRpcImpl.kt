@@ -30,7 +30,17 @@ class PendingTaskRpcImpl(
         page: Int,
         pageSize: Int,
         clientId: String?,
-    ): PagedPendingTasksResult = pendingTaskService.listTasksPaged(taskType, state, page, pageSize, clientId)
+        sourceScheme: String?,
+        parentTaskId: String?,
+        textQuery: String?,
+    ): PagedPendingTasksResult = pendingTaskService.listTasksPaged(
+        taskType, state, page, pageSize, clientId, sourceScheme, parentTaskId, textQuery,
+    )
+
+    override suspend fun getById(id: String): PendingTaskDto? = pendingTaskService.getById(id)
+
+    override suspend fun listChildren(parentTaskId: String): List<PendingTaskDto> =
+        pendingTaskService.listChildren(parentTaskId)
 
     override suspend fun deletePendingTask(id: String) = pendingTaskService.deletePendingTask(id)
 }

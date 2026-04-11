@@ -63,6 +63,9 @@ class PendingTaskService(
         page: Int,
         pageSize: Int,
         clientId: String?,
+        sourceScheme: String?,
+        parentTaskId: String?,
+        textQuery: String?,
     ): PagedPendingTasksResult {
         val safePage = page.coerceAtLeast(0)
         val safePageSize = pageSize.coerceIn(1, 100)
@@ -73,15 +76,33 @@ class PendingTaskService(
         clientId?.takeIf { it.isNotBlank() }?.let {
             criteria.and("clientId").`is`(ObjectId(it))
         }
+        // Phase 4: filter by sourceUrn scheme prefix (e.g. "email::", "whatsapp::").
+        // Stored sourceUrn is "scheme::key:val,...", so a prefix regex matches it.
+        sourceScheme?.takeIf { it.isNotBlank() }?.let {
+            val escaped = java.util.regex.Pattern.quote(it)
+            criteria.and("sourceUrn").regex("^$escaped::")
+        }
+        // Phase 4: drill into a parent's sub-tasks. Empty string ⇒ no filter.
+        parentTaskId?.takeIf { it.isNotBlank() }?.let {
+            criteria.and("parentTaskId").`is`(ObjectId(it))
+        }
+        // Phase 4: substring match on taskName + content. Used by the search box.
+        textQuery?.takeIf { it.isNotBlank() }?.let { q ->
+            val escaped = java.util.regex.Pattern.quote(q)
+            criteria.orOperator(
+                Criteria.where("taskName").regex(escaped, "i"),
+                Criteria.where("content").regex(escaped, "i"),
+            )
+        }
 
         val baseQuery = Query(criteria)
 
         // Count total (lightweight)
         val totalCount = mongoTemplate.count(baseQuery, "tasks").awaitSingle()
 
-        // Paginated fetch
+        // Paginated fetch — newest first so the user sees fresh tasks at the top.
         val pagedQuery = Query(criteria)
-            .with(Sort.by(Sort.Direction.ASC, "createdAt"))
+            .with(Sort.by(Sort.Direction.DESC, "createdAt"))
             .skip((safePage * safePageSize).toLong())
             .limit(safePageSize)
 
@@ -94,6 +115,26 @@ class PendingTaskService(
             page = safePage,
             pageSize = safePageSize,
         )
+    }
+
+    override suspend fun getById(id: String): PendingTaskDto? {
+        val taskId = TaskId.fromString(id)
+        val task = taskRepository.getById(taskId) ?: return null
+        // Look up child counts for hierarchy display.
+        val childCount = taskRepository.countByParentTaskIdAndStateNot(taskId, TaskStateEnum.DONE)
+        // (completedChildCount handled by listChildren when the user expands the section)
+        return task.toPendingTaskDto(
+            childCount = (childCount + 0).toInt(),
+            completedChildCount = 0,
+        )
+    }
+
+    override suspend fun listChildren(parentTaskId: String): List<PendingTaskDto> {
+        val pid = TaskId.fromString(parentTaskId)
+        return taskRepository.findByParentTaskId(pid)
+            .toList()
+            .sortedWith(compareBy({ it.phase ?: "" }, { it.orderInPhase }))
+            .map { it.toPendingTaskDto() }
     }
 
     override suspend fun deletePendingTask(id: String) {
