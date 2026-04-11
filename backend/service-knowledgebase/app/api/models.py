@@ -299,23 +299,36 @@ class FullIngestRequest(BaseModel):
 
 
 class FullIngestResult(BaseModel):
-    """Result of full document ingestion"""
+    """Result of full document ingestion.
+
+    2026-04-11 KB-no-qualification refactor:
+        KB returns ONLY extraction outputs (summary, entities, counts).
+        It does NOT make routing decisions. The fields below this comment
+        are LEGACY — they remain in the wire format for backward
+        compatibility with existing /internal/kb-done callback consumers,
+        but they are always populated with neutral defaults and the
+        Kotlin server's qualification flow no longer reads them as
+        authoritative. The JERVIS Qualifier (Python /qualify endpoint)
+        is the single source of truth for routing decisions.
+
+        See memory/architecture-kb-no-qualification.md for the rule.
+    """
     status: str
     chunks_count: int
     nodes_created: int
     edges_created: int
     attachments_processed: int
     attachments_failed: int
-    # Summary for routing decision
+    # === Extraction outputs (KB authority) ===
     summary: str  # 2-3 sentence summary of content
     entities: List[str] = []  # Key entities found (people, projects, etc.)
-    hasActionableContent: bool = False  # Hint for router
-    suggestedActions: List[str] = []  # e.g., ["reply_email", "review_code"]
-    # Scheduling hints (for three-way routing in qualifier)
-    hasFutureDeadline: bool = False  # Content mentions a future deadline
-    suggestedDeadline: Optional[str] = None  # ISO-8601 datetime string
-    isAssignedToMe: bool = False  # Content is assigned to the owning client/team
-    urgency: str = "normal"  # "urgent" | "normal" | "low"
+    # === LEGACY routing hints — always neutral after the 2026-04-11 refactor ===
+    hasActionableContent: bool = False
+    suggestedActions: List[str] = []
+    hasFutureDeadline: bool = False
+    suggestedDeadline: Optional[str] = None
+    isAssignedToMe: bool = False
+    urgency: str = "normal"
 
 
 # === Purge Models ===

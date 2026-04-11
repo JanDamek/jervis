@@ -1063,8 +1063,16 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
                 len(content), max_content_chars, content_budget_tokens,
             )
 
+        # 2026-04-11 KB-no-qualification refactor:
+        # KB MUST NOT make routing decisions. The LLM here only EXTRACTS
+        # facts from the content (summary + entities). Whether the content is
+        # actionable, urgent, has a deadline, who it is assigned to — all of
+        # those are routing decisions that belong to the JERVIS Qualifier
+        # (Python /qualify endpoint, full agent toolset). KB has no tools at
+        # decision time and must not pretend to.
+        # See memory/architecture-kb-no-qualification.md for the rule.
         prompt = f"""/no_think
-Analyze this {source_type or 'content'} and return JSON.
+Extract facts from this {source_type or 'content'} and return JSON.
 Write the "summary" field in CZECH language.
 
 Subject: {subject or 'N/A'}
@@ -1073,15 +1081,12 @@ Content:
 {truncated}
 
 Return JSON:
-{{"summary": "2-3 sentences in Czech", "entities": ["key entities"], "hasActionableContent": true/false, "suggestedActions": ["actions"], "hasFutureDeadline": true/false, "suggestedDeadline": "ISO-8601 or null", "assignedTo": "person or null", "urgency": "urgent/normal/low"}}
+{{"summary": "2-3 sentences in Czech describing what the content is about", "entities": ["literal entity names from the text"]}}
 
 Rules:
-- hasActionableContent = content requires a reaction, decision, payment, reply, or other action from the user
-- hasFutureDeadline = content mentions any deadline, due date, expiry, or time limit
-- urgency: "urgent" if deadline < 7 days or financial/legal impact, "normal" for regular, "low" for informational
-- entities: extract ONLY entities that LITERALLY appear in the text (people, organizations, order numbers). NEVER invent prices, amounts, products, or any details not present in the text.
-- suggestedDeadline: ISO-8601 if a deadline is found, otherwise null
-- summary: write ONLY facts from the text. NEVER add information not present in the content (prices, products, details). If the content does not mention a price, do NOT write a price. If it does not mention a product, do NOT write a product."""
+- summary: write ONLY facts from the text. NEVER add information not present in the content (prices, products, details). If the content does not mention a price, do NOT write a price. If it does not mention a product, do NOT write a product.
+- entities: extract ONLY entities that LITERALLY appear in the text (people, organizations, order numbers, ticket IDs, project names). NEVER invent anything.
+- DO NOT decide whether the content is actionable or urgent — that decision belongs to a separate qualification step that has tools and context this step does not have."""
 
         try:
             from app.services.llm_router import llm_generate
@@ -1110,20 +1115,20 @@ Rules:
                 if idx >= 0:
                     raw_content = raw_content[idx:]
             result = json.loads(raw_content)
-            logger.info("Summary generated entities=%d actionable=%s deadline=%s urgency=%s",
-                        len(result.get("entities", [])),
-                        result.get("hasActionableContent", False),
-                        result.get("hasFutureDeadline", False),
-                        result.get("urgency", "normal"))
+            logger.info("Summary generated entities=%d", len(result.get("entities", [])))
+            # Only extraction outputs. The legacy routing fields are kept in
+            # the dict for now with neutral defaults so any caller still
+            # reading them via .get() does not crash. Callers should switch
+            # to /qualify for any routing decision.
             return {
                 "summary": result.get("summary", "No summary available"),
                 "entities": result.get("entities", []),
-                "hasActionableContent": result.get("hasActionableContent", False),
-                "suggestedActions": result.get("suggestedActions", []),
-                "hasFutureDeadline": result.get("hasFutureDeadline", False),
-                "suggestedDeadline": result.get("suggestedDeadline"),
-                "assignedTo": result.get("assignedTo"),
-                "urgency": result.get("urgency", "normal"),
+                "hasActionableContent": False,
+                "suggestedActions": [],
+                "hasFutureDeadline": False,
+                "suggestedDeadline": None,
+                "assignedTo": None,
+                "urgency": "normal",
             }
         except Exception as e:
             logger.warning("Summary generation failed: %s", e)

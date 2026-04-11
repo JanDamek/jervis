@@ -930,15 +930,24 @@ class KtorRpcServer(
                                                 return@launch
                                             }
 
-                                            // Save KB result fields to task document
+                                            // Save KB extraction outputs (summary + entities) to
+                                            // the task document so the Python /qualify agent has them
+                                            // as input. kbActionable is forced to false here — KB has
+                                            // no authority over actionability.
                                             taskService.saveKbResult(
                                                 taskId,
                                                 kbSummary = r.summary.take(2000),
                                                 kbEntities = r.entities,
-                                                kbActionable = r.hasActionableContent,
+                                                kbActionable = false,
                                             )
 
-                                            // Evaluate filtering rules
+                                            // Evaluate user filtering rules. These are USER-configured
+                                            // rules ("always urgent from X", "ignore newsletters from Y")
+                                            // and are NOT a KB decision — they live in Kotlin and are
+                                            // independent of KB output. We still skip the qualifier on
+                                            // an explicit IGNORE rule because there is no point asking
+                                            // the LLM to re-evaluate something the user said to skip.
+                                            // @mention overrides IGNORE.
                                             val filterAction = try {
                                                 val sourceType = com.jervis.qualifier.KbDoneRouter.extractSourceType(task.sourceUrn)
                                                 filteringRulesService.evaluate(
@@ -952,10 +961,9 @@ class KtorRpcServer(
                                                 null
                                             }
 
-                                            // IGNORE filter → DONE (but @mention overrides IGNORE)
                                             if (filterAction == com.jervis.dto.filtering.FilterAction.IGNORE && !task.mentionsJervis) {
                                                 taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
-                                                logger.info { "KB_DONE_CALLBACK: filtered IGNORE taskId=${body.taskId}" }
+                                                logger.info { "KB_DONE_CALLBACK: filtered IGNORE taskId=${body.taskId} (user rule)" }
                                                 return@launch
                                             }
 
@@ -1577,6 +1585,19 @@ data class KbCompletionCallback(
     val result: KbCompletionResult? = null,
 )
 
+/**
+ * KB ingest completion payload returned by the Python KB service.
+ *
+ * 2026-04-11 KB-no-qualification refactor:
+ *   KB returns ONLY extraction outputs (summary, entities, counts).
+ *   The fields below tagged "LEGACY routing hint" remain in the wire
+ *   format for backward compatibility with persisted callbacks but
+ *   the Kotlin server's qualification flow no longer treats them as
+ *   authoritative. The Python /qualify agent (full toolset) is the
+ *   single source of truth for routing decisions.
+ *
+ *   See memory/architecture-kb-no-qualification.md for the rule.
+ */
 @kotlinx.serialization.Serializable
 data class KbCompletionResult(
     val status: String = "success",
@@ -1585,15 +1606,16 @@ data class KbCompletionResult(
     @kotlinx.serialization.SerialName("edges_created") val edgesCreated: Int = 0,
     @kotlinx.serialization.SerialName("attachments_processed") val attachmentsProcessed: Int = 0,
     @kotlinx.serialization.SerialName("attachments_failed") val attachmentsFailed: Int = 0,
+    // === Extraction outputs (KB authority) ===
     val summary: String = "",
     val entities: List<String> = emptyList(),
+    // === LEGACY routing hints — neutral defaults, do NOT branch on these ===
     val hasActionableContent: Boolean = false,
     val suggestedActions: List<String> = emptyList(),
     val hasFutureDeadline: Boolean = false,
     val suggestedDeadline: String? = null,
     val isAssignedToMe: Boolean = false,
     val urgency: String = "normal",
-    // EPIC 2: Enhanced qualifier output (optional — inferred if not provided by KB)
     @kotlinx.serialization.SerialName("action_type") val actionType: String? = null,
     @kotlinx.serialization.SerialName("estimated_complexity") val estimatedComplexity: String? = null,
     @kotlinx.serialization.SerialName("suggested_agent") val suggestedAgent: String? = null,
