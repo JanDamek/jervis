@@ -612,21 +612,19 @@ class ConnectionRpcImpl(
                 connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
             }
 
-            // Generate one-time VNC token if login is needed (not active = needs login/re-login)
+            // Generate one-time VNC token ALWAYS — VNC accessible regardless of state
             var vncUrl: String? = null
-            if (state != "ACTIVE") {
-                try {
-                    val tokenResponse = httpClient.post("$o365BrowserPoolUrl/vnc-token/$clientId")
-                    if (tokenResponse.status.isSuccess()) {
-                        val tokenJson = json.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
-                        val vncToken = tokenJson["token"]?.jsonPrimitive?.content
-                        if (vncToken != null) {
-                            vncUrl = "https://jervis-vnc.damek-soft.eu/vnc-login?token=$vncToken"
-                        }
+            try {
+                val tokenResponse = httpClient.post("$o365BrowserPoolUrl/vnc-token/$clientId")
+                if (tokenResponse.status.isSuccess()) {
+                    val tokenJson = json.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
+                    val vncToken = tokenJson["token"]?.jsonPrimitive?.content
+                    if (vncToken != null) {
+                        vncUrl = "https://jervis-vnc.damek-soft.eu/vnc-login?token=$vncToken"
                     }
-                } catch (e: Exception) {
-                    logger.warn { "Failed to generate VNC token for $clientId: ${e.message}" }
                 }
+            } catch (e: Exception) {
+                logger.warn { "Failed to generate VNC token for $clientId: ${e.message}" }
             }
 
             // MFA info
@@ -1607,21 +1605,20 @@ class ConnectionRpcImpl(
                 }
             }
 
-            // Generate VNC token if not active (needs QR scan)
+            // Generate VNC token ALWAYS — VNC must be accessible regardless of session state
+            // (for debugging, watching scrape, scanning QR, monitoring)
             var vncUrl: String? = null
-            if (state != "ACTIVE") {
-                try {
-                    val tokenResponse = httpClient.post("$whatsAppBrowserUrl/vnc-token/$clientId")
-                    if (tokenResponse.status.isSuccess()) {
-                        val tokenJson = json.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
-                        val vncToken = tokenJson["token"]?.jsonPrimitive?.content
-                        if (vncToken != null) {
-                            vncUrl = "https://jervis-whatsapp-vnc.damek-soft.eu/vnc-login?token=$vncToken"
-                        }
+            try {
+                val tokenResponse = httpClient.post("$whatsAppBrowserUrl/vnc-token/$clientId")
+                if (tokenResponse.status.isSuccess()) {
+                    val tokenJson = json.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
+                    val vncToken = tokenJson["token"]?.jsonPrimitive?.content
+                    if (vncToken != null) {
+                        vncUrl = "https://jervis-whatsapp-vnc.damek-soft.eu/vnc-login?token=$vncToken"
                     }
-                } catch (e: Exception) {
-                    logger.warn { "Failed to generate VNC token for WhatsApp $clientId: ${e.message}" }
                 }
+            } catch (e: Exception) {
+                logger.warn { "Failed to generate VNC token for WhatsApp $clientId: ${e.message}" }
             }
 
             val message = when (state) {
