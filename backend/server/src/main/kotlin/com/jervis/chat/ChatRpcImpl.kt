@@ -493,7 +493,7 @@ class ChatRpcImpl(
         // task's conversation. The conversationId stored on each
         // ChatMessageDocument equals task.id.value, so we can fetch directly.
         val taskObjectId = try {
-            org.bson.types.ObjectId(taskId)
+            ObjectId(taskId)
         } catch (e: Exception) {
             logger.warn { "TASK_CONV_HISTORY: invalid taskId=$taskId — ${e.message}" }
             return ChatHistoryDto(

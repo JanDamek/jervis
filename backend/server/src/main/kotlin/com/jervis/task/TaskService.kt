@@ -13,6 +13,7 @@ import com.jervis.infrastructure.config.properties.QualifierProperties
 import com.jervis.client.ClientRepository
 import com.jervis.task.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
+import com.jervis.rpc.SubTaskRequest
 import com.jervis.infrastructure.llm.DocumentExtractionClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
@@ -408,7 +409,7 @@ class TaskService(
      * Idempotent — safe to call multiple times. Walks up to the root if the
      * unblocked parent itself is the child of another BLOCKED parent.
      */
-    suspend fun unblockChildrenOfParent(parentTaskId: com.jervis.common.types.TaskId) {
+    suspend fun unblockChildrenOfParent(parentTaskId: TaskId) {
         val parent = taskRepository.getById(parentTaskId) ?: return
         if (parent.state != TaskStateEnum.BLOCKED) {
             return
@@ -436,7 +437,7 @@ class TaskService(
      * Phase 3: explicitly mark a task as needing (re-)qualification. Used by
      * the user-response handler when a USER_TASK comes back with new info.
      */
-    suspend fun markNeedsQualification(taskId: com.jervis.common.types.TaskId) {
+    suspend fun markNeedsQualification(taskId: TaskId) {
         val query = Query(Criteria.where("_id").`is`(taskId.value))
         val update = Update().set("needsQualification", true)
         mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
@@ -447,7 +448,7 @@ class TaskService(
      * Phase 3: clear the re-qualification flag once the qualifier has produced
      * a decision. Called from the `/internal/qualification-done` callback.
      */
-    suspend fun clearNeedsQualification(taskId: com.jervis.common.types.TaskId) {
+    suspend fun clearNeedsQualification(taskId: TaskId) {
         val query = Query(Criteria.where("_id").`is`(taskId.value))
         val update = Update().set("needsQualification", false)
         mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
@@ -496,8 +497,8 @@ class TaskService(
      */
     suspend fun decomposeTask(
         parent: TaskDocument,
-        subTasks: List<com.jervis.rpc.SubTaskRequest>,
-    ): List<com.jervis.common.types.TaskId> {
+        subTasks: List<SubTaskRequest>,
+    ): List<TaskId> {
         require(subTasks.isNotEmpty()) { "decomposeTask called with empty sub-task list" }
         val now = Instant.now()
         val childIds = subTasks.map { req ->

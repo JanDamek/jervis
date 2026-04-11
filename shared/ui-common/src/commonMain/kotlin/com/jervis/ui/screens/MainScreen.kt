@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import com.jervis.di.JervisRepository
 import com.jervis.ui.MainViewModel
 import com.jervis.ui.environment.EnvironmentPanel
 import com.jervis.ui.MainScreenView as MainScreenViewInternal
@@ -11,7 +12,7 @@ import com.jervis.ui.MainScreenView as MainScreenViewInternal
 @Composable
 fun MainScreen(
     viewModel: MainViewModel,
-    repository: com.jervis.di.JervisRepository? = null,
+    repository: JervisRepository? = null,
     onOpenEnvironmentManager: (String) -> Unit = {},
     onNavigateToTask: ((taskId: String) -> Unit)? = null,
 ) {

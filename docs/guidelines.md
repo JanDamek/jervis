@@ -102,6 +102,13 @@ Replace `if/when` with polymorphism/sealed classes/routing tables where code mig
 - Prefer streaming over `List`
 - Extension functions, not utils classes
 - No `@Deprecated` code — refactor immediately
+- **NEVER use fully-qualified class names inline.** Always add an
+  `import` statement at the top of the file and use the short name.
+  Forbidden: `com.jervis.dto.chat.ChatRole.USER`,
+  `org.bson.types.ObjectId(s)`, `java.time.Instant.now()`.
+  Required: add `import com.jervis.dto.chat.ChatRole` and write
+  `ChatRole.USER`. No "single-use exception". When two short names
+  collide, use `import x.y.Foo as XFoo` aliasing — never FQN.
 
 ### 7. Language
 

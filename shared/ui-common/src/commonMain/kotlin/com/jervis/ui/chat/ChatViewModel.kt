@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import com.jervis.dto.chat.ChatResponseType
+import com.jervis.dto.chat.ChatRole
 import com.jervis.dto.chat.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
@@ -425,7 +426,7 @@ class ChatViewModel(
                 val mapped = history.messages.map { dto ->
                     ChatMessage(
                         from = when (dto.role) {
-                            com.jervis.dto.chat.ChatRole.USER -> ChatMessage.Sender.Me
+                            ChatRole.USER -> ChatMessage.Sender.Me
                             else -> ChatMessage.Sender.Assistant
                         },
                         text = dto.content,
@@ -636,6 +637,33 @@ class ChatViewModel(
         scope.launch {
             _isLoadingMore.value = true
             try {
+                // Phase 5 chat-as-primary: when the chat plane is showing a
+                // task's conversation, reload that task's history instead of
+                // the global chat history. Otherwise SSE events from other
+                // tasks (BACKGROUND_RESULT, URGENT_ALERT) would silently
+                // reset the user's view back to the main chat — destroying
+                // their drill-in.
+                val activeTaskId = _activeChatTaskId.value
+                if (activeTaskId != null) {
+                    val history = repository.chat.getTaskConversationHistory(activeTaskId, limit = 200)
+                    val mapped = history.messages.map { dto ->
+                        ChatMessage(
+                            from = when (dto.role) {
+                                ChatRole.USER -> ChatMessage.Sender.Me
+                                else -> ChatMessage.Sender.Assistant
+                            },
+                            text = dto.content,
+                            contextId = null,
+                            timestamp = dto.timestamp,
+                            messageType = ChatMessage.MessageType.FINAL,
+                            sequence = dto.sequence,
+                            id = dto.messageId,
+                        )
+                    }
+                    _chatMessages.value = mapped
+                    onStatusDetail("ok")
+                    return@launch
+                }
                 val history = repository.chat.getChatHistory(
                     limit = 50,
                     showChat = _showChat.value,
@@ -725,7 +753,13 @@ class ChatViewModel(
             _attachments.value = emptyList()
 
             try {
-                val taskContext = _contextTaskId
+                // Phase 5 chat-as-primary: when the chat plane is showing a
+                // task's conversation (sidebar drill-in) AND the user did not
+                // explicitly set a contextTaskId via replyToTask, route the
+                // outgoing message into the active task's thread. The server
+                // already supports contextTaskId — this just plumbs the active
+                // task id through.
+                val taskContext = _contextTaskId ?: _activeChatTaskId.value
                 _contextTaskId = null  // Clear after use
                 // Resilient call: waits up to 10s for Connected state, wraps send in
                 // withTimeout, automatically triggers reconnect on connection-lost errors
@@ -910,21 +944,21 @@ class ChatViewModel(
                     filterGroupId = currentFilterGroupId,
                 )
                 val olderMessages = history.messages.map { msg ->
-                    val sender = if (msg.role == com.jervis.dto.chat.ChatRole.USER) {
+                    val sender = if (msg.role == ChatRole.USER) {
                         ChatMessage.Sender.Me
                     } else {
                         ChatMessage.Sender.Assistant
                     }
                     val msgType = when (msg.role) {
-                        com.jervis.dto.chat.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
-                        com.jervis.dto.chat.ChatRole.BACKGROUND -> {
+                        ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
+                        ChatRole.BACKGROUND -> {
                             if (msg.metadata["sender"] == "thinking_graph") {
                                 ChatMessage.MessageType.THINKING_GRAPH_UPDATE
                             } else {
                                 ChatMessage.MessageType.BACKGROUND_RESULT
                             }
                         }
-                        com.jervis.dto.chat.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
+                        ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
                         else -> ChatMessage.MessageType.FINAL
                     }
                     ChatMessage(
@@ -1276,14 +1310,14 @@ class ChatViewModel(
         _backgroundMessageCount.value = history.backgroundMessageCount
         _userTaskCount.value = history.userTaskCount
         val newMessages = history.messages.map { msg ->
-            val sender = if (msg.role == com.jervis.dto.chat.ChatRole.USER) {
+            val sender = if (msg.role == ChatRole.USER) {
                 ChatMessage.Sender.Me
             } else {
                 ChatMessage.Sender.Assistant
             }
             val msgType = when (msg.role) {
-                com.jervis.dto.chat.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
-                com.jervis.dto.chat.ChatRole.BACKGROUND -> {
+                ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
+                ChatRole.BACKGROUND -> {
                     // Distinguish thinking graph updates from regular background results
                     if (msg.metadata["sender"] == "thinking_graph") {
                         ChatMessage.MessageType.THINKING_GRAPH_UPDATE
@@ -1291,7 +1325,7 @@ class ChatViewModel(
                         ChatMessage.MessageType.BACKGROUND_RESULT
                     }
                 }
-                com.jervis.dto.chat.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
+                ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
                 else -> ChatMessage.MessageType.FINAL
             }
             ChatMessage(

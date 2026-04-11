@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jervis.di.JervisRepository
 import com.jervis.dto.task.PendingTaskDto
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -106,7 +107,7 @@ fun ChatTaskSidebar(
             // Newest first across all states. createdAt is an ISO string;
             // lex-sort works because the prefix is YYYY-MM-DD.
             tasks = merged.sortedByDescending { it.createdAt }.take(50)
-        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             error = e.message

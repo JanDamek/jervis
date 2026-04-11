@@ -33,14 +33,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.di.JervisRepository
 import com.jervis.dto.chat.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
+import com.jervis.dto.task.PendingTaskDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.service.meeting.IJobLogsService
+import com.jervis.ui.chat.ChatTaskSidebar
 import com.jervis.ui.chat.ChatViewModel
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JHorizontalSplitLayout
@@ -125,9 +129,9 @@ fun MainScreenView(
     jobLogsService: IJobLogsService? = null,
     onNavigateToTask: ((taskId: String) -> Unit)? = null,
     // Phase 5 — chat task sidebar (active conversations list)
-    repository: com.jervis.di.JervisRepository? = null,
+    repository: JervisRepository? = null,
     activeChatTaskId: String? = null,
-    onChatTaskSelected: (com.jervis.dto.task.PendingTaskDto) -> Unit = {},
+    onChatTaskSelected: (PendingTaskDto) -> Unit = {},
     onMainChatSelected: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -349,14 +353,14 @@ fun MainScreenView(
 
                 if (!isCompact && repository != null) {
                     Row(modifier = Modifier.fillMaxSize()) {
-                        com.jervis.ui.chat.ChatTaskSidebar(
+                        ChatTaskSidebar(
                             repository = repository,
                             activeTaskId = activeChatTaskId,
                             onTaskSelected = onChatTaskSelected,
                             onMainChatSelected = onMainChatSelected,
                             modifier = Modifier.width(240.dp),
                         )
-                        androidx.compose.material3.VerticalDivider()
+                        VerticalDivider()
                         Box(modifier = Modifier.weight(1f).fillMaxSize()) {
                             chatComposable()
                         }
