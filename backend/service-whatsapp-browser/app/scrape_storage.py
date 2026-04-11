@@ -217,3 +217,40 @@ class ScrapeStorage:
             {"clientId": client_id},
             {"_id": 0},
         )
+
+    # ── Sidebar state (state-aware DOM scraping) ──────────────────────
+
+    async def get_sidebar_state(self, client_id: str) -> dict | None:
+        """Get the last known sidebar state for a client.
+
+        Returns: { _id: client_id, last_scraped_at, chats: { name: {hash, ...} } }
+        or None if no state exists yet.
+        """
+        if self._db is None:
+            return None
+        return await self._db["whatsapp_sidebar_state"].find_one({"_id": client_id})
+
+    async def save_sidebar_state(
+        self,
+        client_id: str,
+        chats: dict[str, dict],
+    ) -> None:
+        """Save current sidebar state.
+
+        Args:
+            client_id: WhatsApp connection client ID.
+            chats: Dict mapping chat name to {hash, last_msg_text, timestamp, ...}
+        """
+        if self._db is None:
+            return
+        now = datetime.now(timezone.utc)
+        await self._db["whatsapp_sidebar_state"].update_one(
+            {"_id": client_id},
+            {
+                "$set": {
+                    "last_scraped_at": now,
+                    "chats": chats,
+                }
+            },
+            upsert=True,
+        )

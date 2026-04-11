@@ -48,6 +48,7 @@ class WhatsAppPollingHandler(
     private val connectionService: ConnectionService,
     private val httpClient: HttpClient,
     private val mongoTemplate: ReactiveMongoTemplate,
+    private val cloudModelPolicyResolver: com.jervis.infrastructure.llm.CloudModelPolicyResolver,
     @Value("\${jervis.whatsapp-browser.url:http://jervis-whatsapp-browser:8091}")
     private val browserUrl: String,
 ) : PollingHandler {
@@ -126,17 +127,22 @@ class WhatsAppPollingHandler(
             }
         }
 
-        // DISCOVERING — wait for capabilities callback
-        if (connectionDocument.state == ConnectionStateEnum.DISCOVERING) {
-            logger.debug { "Skipping WhatsApp poll for '${connectionDocument.name}' — still discovering" }
-            return PollingResult()
-        }
+        logger.debug { "WhatsApp polling for '${connectionDocument.name}' (DOM state-aware/$browserSessionId)" }
 
-        logger.debug { "WhatsApp polling for '${connectionDocument.name}' (VLM scraping/$browserSessionId)" }
+        // Resolve VLM tier policy for this client/project (used only when an
+        // attachment is detected and the VLM is invoked to describe it).
+        val clientId = context.clients.firstOrNull()?.id
+        val policy = cloudModelPolicyResolver.resolve(clientId = clientId, projectId = null)
+        val maxTier = policy.maxOpenRouterTier.name
 
         // Trigger scrape on Python service (fire-and-forget).
         try {
-            httpClient.post("$browserUrl/scrape/$browserSessionId/trigger")
+            httpClient.post("$browserUrl/scrape/$browserSessionId/trigger") {
+                contentType(ContentType.Application.Json)
+                setBody(
+                    """{"max_tier":"$maxTier","processing_mode":"BACKGROUND"}""",
+                )
+            }
         } catch (e: Exception) {
             logger.debug { "WhatsApp scrape trigger for '${connectionDocument.name}': ${e.message}" }
         }

@@ -23,12 +23,20 @@ async def analyze_screenshot(
     image_bytes: bytes,
     prompt: str,
     *,
-    processing_mode: str = "BACKGROUND",
-    max_tier: str = "FREE",
+    processing_mode: str,
+    max_tier: str,
 ) -> str:
     """Send a screenshot to VLM and return the text analysis.
 
     Routes through ollama-router for model selection.
+
+    Args:
+        image_bytes: JPEG/PNG image content.
+        prompt: VLM prompt.
+        processing_mode: REQUIRED. "FOREGROUND" or "BACKGROUND".
+        max_tier: REQUIRED. "NONE", "FREE", "PAID", or "PREMIUM".
+            Determined by client/project tier policy on Kotlin server side
+            and passed via scrape trigger request body.
     """
     image_b64 = base64.b64encode(image_bytes).decode()
     estimated_tokens = 1500 + len(prompt) // 4  # ~1k for image + prompt tokens

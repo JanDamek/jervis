@@ -37,6 +37,20 @@ class Settings(BaseSettings):
     # QR login monitoring interval (seconds) — only used during login flow
     qr_check_interval: int = Field(default=5, validation_alias="WHATSAPP_QR_CHECK_INTERVAL")
 
+    # Sidebar scroll discovery (state-aware DOM scraping)
+    sidebar_scroll_delay_ms: int = Field(
+        default=500,
+        validation_alias="WHATSAPP_SIDEBAR_SCROLL_DELAY_MS",
+    )
+    sidebar_stable_iterations: int = Field(
+        default=3,
+        validation_alias="WHATSAPP_SIDEBAR_STABLE_ITERATIONS",
+    )
+    sidebar_max_scroll_iterations: int = Field(
+        default=50,
+        validation_alias="WHATSAPP_SIDEBAR_MAX_SCROLL_ITERATIONS",
+    )
+
     # Kotlin server callback
     kotlin_server_url: str = "http://jervis-server:5500"
 

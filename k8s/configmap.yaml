@@ -243,6 +243,10 @@ data:
   WHATSAPP_HEADLESS: "false"
   WHATSAPP_NOVNC_ENABLED: "true"
   WHATSAPP_QR_CHECK_INTERVAL: "5"
+  # State-aware DOM scraping: scroll discovery + diff vs DB state
+  WHATSAPP_SIDEBAR_SCROLL_DELAY_MS: "500"
+  WHATSAPP_SIDEBAR_STABLE_ITERATIONS: "3"
+  WHATSAPP_SIDEBAR_MAX_SCROLL_ITERATIONS: "50"
 
   # ── CORRECTION: Transcript correction service ────────────────────────
   OLLAMA_URL: "http://jervis-ollama-router:11430"
