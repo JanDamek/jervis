@@ -98,7 +98,8 @@ async def _call_ollama(route: dict, image_b64: str, prompt: str) -> str:
     if model:
         request_body["model"] = model
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    # Long timeout: VL model swap + image processing can take 5 minutes
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
         resp = await client.post(
             f"{api_base}/api/generate",
             json=request_body,
