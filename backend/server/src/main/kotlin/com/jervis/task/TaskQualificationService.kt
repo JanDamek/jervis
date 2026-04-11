@@ -126,21 +126,23 @@ class TaskQualificationService(
         val groupId = task.projectId?.let { pid ->
             try { projectRepository.getById(pid)?.groupId?.toString() } catch (_: Exception) { null }
         }
+        val urnScheme = task.sourceUrn.scheme()
         val request = FullIngestRequest(
             clientId = task.clientId,
             projectId = task.projectId,
             groupId = groupId,
             sourceUrn = task.correlationId,
-            sourceType = task.type,
+            sourceType = task.sourceUrn.kbSourceType(),
             subject = task.content.lineSequence().firstOrNull()?.take(200),
             content = cleanedContent,
             metadata = buildMap {
                 put("taskId", task.id?.toString() ?: "unknown")
                 put("taskType", task.type.name)
+                put("sourceScheme", urnScheme)
                 put("correlationId", task.correlationId)
                 task.projectId?.let { put("projectId", it.toString()) }
                 // Email threading metadata — enables REPLY_TO edges in KB graph
-                if (task.type == com.jervis.dto.task.TaskTypeEnum.EMAIL_PROCESSING) {
+                if (urnScheme == "email") {
                     try {
                         // correlationId format: "email:{emailDocId}"
                         val emailId = task.correlationId.removePrefix("email:")
@@ -160,7 +162,7 @@ class TaskQualificationService(
                     }
                 }
                 // Meeting metadata — enables meeting-specific graph nodes and search in KB
-                if (task.type == com.jervis.dto.task.TaskTypeEnum.MEETING_PROCESSING) {
+                if (urnScheme == "meeting") {
                     // correlationId format: "meeting:{meetingObjectId}"
                     val meetingId = task.correlationId.removePrefix("meeting:")
                     put("meetingId", meetingId)

@@ -61,7 +61,7 @@ fun Routing.installInternalTaskApi(
             }
             val isScheduled = scheduledInstant != null
             val skipKb = body.skipIndexing == true
-            val taskType = if (isScheduled) TaskTypeEnum.SCHEDULED_TASK else TaskTypeEnum.USER_INPUT_PROCESSING
+            val taskType = if (isScheduled) TaskTypeEnum.SCHEDULED else TaskTypeEnum.INSTANT
             val taskState = when {
                 isScheduled -> TaskStateEnum.NEW
                 skipKb -> TaskStateEnum.QUEUED      // MCP/explicit → skip KB, go straight to orchestrator
@@ -73,7 +73,7 @@ fun Routing.installInternalTaskApi(
             // for the same topic (e.g., invoice follow-ups with different wording).
             if (isScheduled && body.createdBy == "orchestrator_agent") {
                 val recentCutoff = java.time.Instant.now().minus(java.time.Duration.ofHours(24))
-                val recentScheduled = taskRepository.findByClientIdAndType(clientId, TaskTypeEnum.SCHEDULED_TASK)
+                val recentScheduled = taskRepository.findByClientIdAndType(clientId, TaskTypeEnum.SCHEDULED)
                     .toList()
                     .filter { it.createdAt?.isAfter(recentCutoff) == true && it.state != TaskStateEnum.ERROR }
                 if (recentScheduled.size >= 3) {
@@ -296,7 +296,7 @@ fun Routing.installInternalTaskApi(
 
             // 1. Create root task (BLOCKED state)
             val rootTask = taskService.createTask(
-                taskType = TaskTypeEnum.USER_INPUT_PROCESSING,
+                taskType = TaskTypeEnum.INSTANT,
                 content = buildString {
                     appendLine("# Work Plan: ${body.title}")
                     appendLine()
@@ -326,7 +326,7 @@ fun Routing.installInternalTaskApi(
             for ((phaseIndex, phase) in body.phases.withIndex()) {
                 for ((taskIndex, taskReq) in phase.tasks.withIndex()) {
                     val childTask = taskService.createTask(
-                        taskType = TaskTypeEnum.USER_INPUT_PROCESSING,
+                        taskType = TaskTypeEnum.INSTANT,
                         content = taskReq.description,
                         clientId = clientId,
                         correlationId = "$correlationPrefix-p${phaseIndex}-t${taskIndex}",

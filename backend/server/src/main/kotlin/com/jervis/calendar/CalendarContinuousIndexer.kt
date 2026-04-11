@@ -144,7 +144,7 @@ class CalendarContinuousIndexer(
             }
         } else {
             val task = taskService.createTask(
-                taskType = TaskTypeEnum.CALENDAR_PROCESSING,
+                taskType = TaskTypeEnum.SYSTEM,
                 content = content,
                 clientId = doc.clientId,
                 correlationId = correlationId,

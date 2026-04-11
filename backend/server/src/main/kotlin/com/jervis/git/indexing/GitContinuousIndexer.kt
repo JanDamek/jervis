@@ -201,7 +201,7 @@ class GitContinuousIndexer(
         }
 
         taskService.createTask(
-            taskType = TaskTypeEnum.GIT_PROCESSING,
+            taskType = TaskTypeEnum.SYSTEM,
             content = content,
             projectId = ProjectId(project.id.value),
             clientId = ClientId(triggerCommit.clientId),

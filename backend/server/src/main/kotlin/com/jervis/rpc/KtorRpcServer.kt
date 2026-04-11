@@ -1215,7 +1215,7 @@ class KtorRpcServer(
                                     val correlationId = ObjectId().toHexString()
 
                                     val task = taskService.createTask(
-                                        taskType = com.jervis.dto.task.TaskTypeEnum.USER_INPUT_PROCESSING,
+                                        taskType = com.jervis.dto.task.TaskTypeEnum.INSTANT,
                                         content = body.description,
                                         clientId = clientId,
                                         correlationId = correlationId,
@@ -1249,7 +1249,7 @@ class KtorRpcServer(
 
                                     val sourceUrn = body.sourceUrn ?: "chat:coding-agent"
                                     var task = taskService.createTask(
-                                        taskType = com.jervis.dto.task.TaskTypeEnum.USER_INPUT_PROCESSING,
+                                        taskType = com.jervis.dto.task.TaskTypeEnum.INSTANT,
                                         content = body.taskDescription,
                                         clientId = clientId,
                                         correlationId = correlationId,

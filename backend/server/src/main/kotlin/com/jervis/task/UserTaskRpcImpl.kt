@@ -119,12 +119,13 @@ class UserTaskRpcImpl(
             return handleO365MfaResponse(task, additionalInput.trim())
         }
 
-        // Meeting-attend approval routing — intercept CALENDAR_PROCESSING tasks
-        // before regular routing. APPROVE = no additionalInput, DENY = reason
-        // forwarded as additionalInput. The meeting service owns the
-        // ApprovalQueue lifecycle and bubble timeline; the regular USER_TASK
-        // path would pollute task state with QUEUED + agent dispatch.
-        if (task.type == TaskTypeEnum.CALENDAR_PROCESSING && task.meetingMetadata != null) {
+        // Meeting-attend approval routing — intercept calendar tasks with
+        // attached meeting metadata before regular routing. APPROVE = no
+        // additionalInput, DENY = reason forwarded as additionalInput. The
+        // meeting service owns the ApprovalQueue lifecycle and bubble
+        // timeline; the regular USER_TASK path would pollute task state with
+        // QUEUED + agent dispatch.
+        if (task.meetingMetadata != null) {
             val approved = additionalInput.isNullOrBlank()
             val updated = meetingAttendApprovalService.handleApprovalResponse(
                 task = task,
@@ -150,7 +151,7 @@ class UserTaskRpcImpl(
 
                     val updatedTask =
                         task.copy(
-                            type = TaskTypeEnum.USER_INPUT_PROCESSING,
+                            type = TaskTypeEnum.INSTANT,
                             state = TaskStateEnum.QUEUED,
                             processingMode = com.jervis.task.ProcessingMode.FOREGROUND,
                             queuePosition = maxPosition + 1,
@@ -198,7 +199,7 @@ class UserTaskRpcImpl(
                     // Return task to SAME TaskDocument (BACKGROUND mode for autonomous processing)
                     val updatedTask =
                         task.copy(
-                            type = TaskTypeEnum.USER_INPUT_PROCESSING,
+                            type = TaskTypeEnum.INSTANT,
                             state = TaskStateEnum.QUEUED,
                             processingMode = com.jervis.task.ProcessingMode.BACKGROUND,
                             queuePosition = null, // BACKGROUND tasks don't use queuePosition
@@ -294,10 +295,11 @@ class UserTaskRpcImpl(
     override suspend fun dismissAll(): Int {
         var count = 0
 
-        // 1. Dismiss all USER_TASK tasks (type=USER_TASK, state=USER_TASK or ERROR → DONE)
-        val pendingTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toList()
-        val errorTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(TaskTypeEnum.USER_TASK, TaskStateEnum.ERROR).toList()
-        for (task in pendingTasks + errorTasks) {
+        // 1. Dismiss all tasks waiting for the user (state=USER_TASK → DONE).
+        //    State alone is the discriminator — type is irrelevant. ERROR tasks
+        //    are NOT dismissed here; they belong to the retry/escalation path.
+        val pendingTasks = taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.USER_TASK).toList()
+        for (task in pendingTasks) {
             val updated = task.copy(state = TaskStateEnum.DONE)
             taskRepository.save(updated)
             notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
@@ -308,7 +310,7 @@ class UserTaskRpcImpl(
         val bgCount = chatService.dismissAllActionableBackground()
         count += bgCount
 
-        logger.info { "USER_TASK_DISMISS_ALL | pending=${pendingTasks.size} | error=${errorTasks.size} | backgroundMessages=$bgCount | total=$count" }
+        logger.info { "USER_TASK_DISMISS_ALL | pending=${pendingTasks.size} | backgroundMessages=$bgCount | total=$count" }
         return count
     }
 

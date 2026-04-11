@@ -37,7 +37,7 @@ class UserTaskService(
         isApproval: Boolean = false,
     ) {
         val isError = pendingQuestion == null  // no question → it's a failure, not clarification
-        val taskTypeLabel = TASK_TYPE_LABELS[task.type] ?: task.type.name
+        val taskTypeLabel = task.sourceUrn.uiLabel()
         val errorText = errorMessage ?: error?.message
 
         val title = when {
@@ -69,14 +69,17 @@ class UserTaskService(
                 }
             }
 
-        // Update existing task to USER_TASK and refresh its content for UI display.
-        // Default priority 60 for escalated tasks (higher than auto-discovered 50, lower than urgent 70+)
+        // Transition the EXISTING task to state=USER_TASK — never create a
+        // wrapper task. The original `type` (INSTANT/SCHEDULED/SYSTEM) is
+        // preserved; the `state` is the discriminator that surfaces this
+        // task in the K reakci screen.
+        // Default priority 60 for escalated tasks (higher than auto-discovered
+        // 50, lower than urgent 70+).
         val updatedTask =
             task.copy(
                 taskName = title,
                 content = description,
                 state = com.jervis.dto.task.TaskStateEnum.USER_TASK,
-                type = com.jervis.dto.task.TaskTypeEnum.USER_TASK,
                 pendingUserQuestion = pendingQuestion,
                 userQuestionContext = questionContext,
                 priorityScore = task.priorityScore ?: 60,
@@ -202,21 +205,8 @@ class UserTaskService(
         logger.info { "USER_TASK_NOTIFY: id=${task.id} title=${task.taskName}" }
     }
 
-    companion object {
-        /** Human-readable Czech labels for task types. */
-        val TASK_TYPE_LABELS = mapOf(
-            com.jervis.dto.task.TaskTypeEnum.MEETING_PROCESSING to "Zpracování schůzky",
-            com.jervis.dto.task.TaskTypeEnum.EMAIL_PROCESSING to "Zpracování emailu",
-            com.jervis.dto.task.TaskTypeEnum.IDLE_REVIEW to "Pravidelný přehled",
-            com.jervis.dto.task.TaskTypeEnum.BUGTRACKER_PROCESSING to "Zpracování Jira issue",
-            com.jervis.dto.task.TaskTypeEnum.WIKI_PROCESSING to "Zpracování Confluence stránky",
-            com.jervis.dto.task.TaskTypeEnum.GIT_PROCESSING to "Zpracování Git repozitáře",
-            com.jervis.dto.task.TaskTypeEnum.LINK_PROCESSING to "Zpracování odkazu",
-            com.jervis.dto.task.TaskTypeEnum.USER_INPUT_PROCESSING to "Zpracování uživatelského vstupu",
-            com.jervis.dto.task.TaskTypeEnum.SCHEDULED_TASK to "Naplánovaná úloha",
-            com.jervis.dto.task.TaskTypeEnum.USER_TASK to "Uživatelská úloha",
-        )
-    }
+    // Note: Czech labels are derived from the SourceUrn scheme via
+    // SourceUrn.uiLabel() — there is no longer a TaskType→label map.
 
     /**
      * Priority-based sort for "K reakci" display:
@@ -243,11 +233,11 @@ class UserTaskService(
         limit: Int,
         stateFilter: com.jervis.dto.task.TaskStateEnum? = null,
     ): PagedTasks {
+        // K reakci screen: state alone is the discriminator. Type is irrelevant.
         val criteria = if (stateFilter != null) {
             Criteria.where("state").`is`(stateFilter.name)
         } else {
-            Criteria.where("type").`is`(com.jervis.dto.task.TaskTypeEnum.USER_TASK.name)
-                .and("state").`is`(com.jervis.dto.task.TaskStateEnum.USER_TASK.name)
+            Criteria.where("state").`is`(com.jervis.dto.task.TaskStateEnum.USER_TASK.name)
         }
 
         if (!query.isNullOrBlank()) {
@@ -288,11 +278,11 @@ class UserTaskService(
         offset: Int,
         limit: Int,
     ): PagedTasks {
-        val criteria = Criteria.where("type").`is`(com.jervis.dto.task.TaskTypeEnum.USER_TASK.name)
-            .and("state").`in`(
-                com.jervis.dto.task.TaskStateEnum.USER_TASK.name,
-                com.jervis.dto.task.TaskStateEnum.ERROR.name,
-            )
+        // State-only discriminator: K reakci shows tasks waiting for user input.
+        // ERROR tasks are routed through the retry/escalation path elsewhere.
+        val criteria = Criteria.where("state").`is`(
+            com.jervis.dto.task.TaskStateEnum.USER_TASK.name,
+        )
 
         if (!query.isNullOrBlank()) {
             // Try $text search first (requires text index on taskName + content)
@@ -404,12 +394,13 @@ class UserTaskService(
     }
 
     suspend fun findActiveTasksByClient(clientId: ClientId): List<TaskDocument> =
-        userTaskRepository.findByClientIdAndType(clientId, com.jervis.dto.task.TaskTypeEnum.USER_TASK).toList()
+        userTaskRepository.findByClientIdAndStateOrderByCreatedAtAsc(
+            clientId, com.jervis.dto.task.TaskStateEnum.USER_TASK,
+        ).toList()
 
     suspend fun countActiveTasksByClient(clientId: ClientId): Long =
-        userTaskRepository.countByStateAndTypeAndClientId(
+        userTaskRepository.countByStateAndClientId(
             com.jervis.dto.task.TaskStateEnum.USER_TASK,
-            com.jervis.dto.task.TaskTypeEnum.USER_TASK,
             clientId,
         )
 

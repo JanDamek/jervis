@@ -122,7 +122,7 @@ class AutoTaskCreationService(
                 }
 
                 val task = taskService.createTask(
-                    taskType = TaskTypeEnum.SCHEDULED_TASK, // Uses background processing
+                    taskType = TaskTypeEnum.SCHEDULED, // Uses background processing
                     content = content,
                     clientId = ClientId(originalTask.clientId.value),
                     projectId = originalTask.projectId?.let { ProjectId(it.value) },
@@ -164,7 +164,7 @@ class AutoTaskCreationService(
                 }
 
                 val task = taskService.createTask(
-                    taskType = TaskTypeEnum.USER_TASK,
+                    taskType = TaskTypeEnum.SYSTEM,
                     content = content,
                     clientId = ClientId(originalTask.clientId.value),
                     projectId = originalTask.projectId?.let { ProjectId(it.value) },
@@ -218,7 +218,7 @@ class AutoTaskCreationService(
         }
 
         val task = taskService.createTask(
-            taskType = TaskTypeEnum.SCHEDULED_TASK,
+            taskType = TaskTypeEnum.SCHEDULED,
             content = content,
             clientId = ClientId(originalTask.clientId.value),
             projectId = originalTask.projectId?.let { ProjectId(it.value) },
@@ -260,7 +260,7 @@ class AutoTaskCreationService(
         }
 
         val task = taskService.createTask(
-            taskType = TaskTypeEnum.USER_TASK,
+            taskType = TaskTypeEnum.SYSTEM,
             content = content,
             clientId = ClientId(originalTask.clientId.value),
             projectId = originalTask.projectId?.let { ProjectId(it.value) },
@@ -303,7 +303,7 @@ class AutoTaskCreationService(
         }
 
         val task = taskService.createTask(
-            taskType = TaskTypeEnum.USER_TASK,
+            taskType = TaskTypeEnum.SYSTEM,
             content = content,
             clientId = ClientId(originalTask.clientId.value),
             projectId = originalTask.projectId?.let { ProjectId(it.value) },

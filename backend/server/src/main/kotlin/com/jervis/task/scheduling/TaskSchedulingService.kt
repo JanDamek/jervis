@@ -54,11 +54,11 @@ class TaskSchedulingService(
     suspend fun findById(taskId: TaskId): TaskDocument? = scheduledTaskRepository.getById(taskId)
 
     suspend fun listAllTasks(): List<TaskDocument> =
-        scheduledTaskRepository.findByTypeOrderByCreatedAtAsc(TaskTypeEnum.SCHEDULED_TASK).toList()
+        scheduledTaskRepository.findByTypeOrderByCreatedAtAsc(TaskTypeEnum.SCHEDULED).toList()
 
     suspend fun listTasksForProject(projectId: ProjectId): List<TaskDocument> =
-        scheduledTaskRepository.findByProjectIdAndType(projectId, TaskTypeEnum.SCHEDULED_TASK).toList()
+        scheduledTaskRepository.findByProjectIdAndType(projectId, TaskTypeEnum.SCHEDULED).toList()
 
     suspend fun listTasksForClient(clientId: ClientId): List<TaskDocument> =
-        scheduledTaskRepository.findByClientIdAndType(clientId, TaskTypeEnum.SCHEDULED_TASK).toList()
+        scheduledTaskRepository.findByClientIdAndType(clientId, TaskTypeEnum.SCHEDULED).toList()
 }

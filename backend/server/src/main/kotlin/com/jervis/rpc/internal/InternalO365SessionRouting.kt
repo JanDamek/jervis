@@ -158,7 +158,7 @@ private suspend fun createSessionNotification(
         taskName = title,
         content = description,
         state = TaskStateEnum.USER_TASK,
-        type = TaskTypeEnum.USER_TASK,
+        type = TaskTypeEnum.SYSTEM,
         sourceUrn = SourceUrn("o365-browser-pool::event:session-notification"),
         pendingUserQuestion = title,
         userQuestionContext = description,

@@ -174,6 +174,66 @@ value class SourceUrn(
                 .replace(",", "%2C")
                 .replace(":", "%3A")
     }
+
+    /**
+     * Provider/scheme prefix of the URN (the part before "::").
+     * e.g. "email" for `email::conn:abc,msgId:42`.
+     */
+    fun scheme(): String = value.substringBefore("::", missingDelimiterValue = "unknown")
+
+    /**
+     * Wire-format identifier sent to the Knowledge Base service for ingestion.
+     * Mapped from [scheme]; the KB Python service has its own [SourceType] enum
+     * (see backend/service-knowledgebase/app/api/models.py) which we must match.
+     *
+     * Multiple URN schemes can collapse to the same KB source type — e.g. both
+     * `github-issue::` and `gitlab-issue::` map to "jira" because the KB only
+     * tracks "issue tracker" as a credibility tier, not the specific vendor.
+     */
+    fun kbSourceType(): String =
+        when (scheme()) {
+            "email" -> "email"
+            "jira", "github-issue", "gitlab-issue" -> "jira"
+            "confluence" -> "confluence"
+            "git", "merge-request" -> "git"
+            "meeting" -> "meeting"
+            "chat" -> "chat"
+            "scheduled" -> "scheduled"
+            "teams" -> "teams"
+            "slack" -> "slack"
+            "discord" -> "discord"
+            "whatsapp" -> "whatsapp"
+            "calendar" -> "calendar"
+            "doc", "link" -> "link"
+            "idle-review" -> "idle_review"
+            "user-task" -> "user_task"
+            else -> "user_task"
+        }
+
+    /**
+     * Short Czech UI label for this source — used in queue display, K reakci,
+     * task lists, etc. Replaces the previous TaskTypeEnum-based label switches.
+     */
+    fun uiLabel(): String =
+        when (scheme()) {
+            "email" -> "Email"
+            "jira", "github-issue", "gitlab-issue" -> "Bug Tracker"
+            "confluence" -> "Wiki"
+            "git" -> "Git"
+            "merge-request" -> "Merge Request"
+            "meeting" -> "Schůzka"
+            "chat" -> "Asistent"
+            "scheduled" -> "Naplánovaná úloha"
+            "teams" -> "Teams"
+            "slack" -> "Slack"
+            "discord" -> "Discord"
+            "whatsapp" -> "WhatsApp"
+            "calendar" -> "Kalendář"
+            "doc", "link" -> "Dokument"
+            "idle-review" -> "Pravidelný přehled"
+            "user-task" -> "Uživatelská úloha"
+            else -> "Úloha"
+        }
 }
 
 object SourceUrnSerializer : KSerializer<SourceUrn> {

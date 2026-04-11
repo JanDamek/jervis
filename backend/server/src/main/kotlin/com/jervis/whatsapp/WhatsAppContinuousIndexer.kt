@@ -83,7 +83,7 @@ class WhatsAppContinuousIndexer(
         val topicId = "whatsapp-chat:$chatLabel"
 
         val task = taskService.createTask(
-            taskType = TaskTypeEnum.WHATSAPP_PROCESSING,
+            taskType = TaskTypeEnum.SYSTEM,
             content = content,
             clientId = doc.clientId,
             correlationId = "whatsapp:${doc.messageId}",

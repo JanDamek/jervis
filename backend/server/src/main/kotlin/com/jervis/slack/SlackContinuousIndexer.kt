@@ -82,7 +82,7 @@ class SlackContinuousIndexer(
         val topicId = "slack-channel:${doc.channelId}"
 
         val task = taskService.createTask(
-            taskType = TaskTypeEnum.SLACK_PROCESSING,
+            taskType = TaskTypeEnum.SYSTEM,
             content = content,
             clientId = doc.clientId,
             correlationId = "slack:${doc.messageId}",

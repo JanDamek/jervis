@@ -6,7 +6,6 @@ import com.jervis.dto.chat.ChatResponseDto
 import com.jervis.dto.chat.ChatResponseType
 import com.jervis.dto.chat.ChatRole
 import com.jervis.dto.task.TaskStateEnum
-import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.client.ClientRepository
@@ -317,9 +316,10 @@ class ChatRpcImpl(
         filterClientId: String?, filterProjectId: String?, filterGroupId: String?,
     ): ChatHistoryDto {
         logger.info { "CHAT_HISTORY | filterClient=$filterClientId filterProject=$filterProjectId filterGroup=$filterGroupId limit=$limit" }
-        // "K reakci" badge = pending USER_TASKs + actionable BACKGROUNDs + pending agent questions
-        val pendingUserTasks = taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK).toInt() +
-            taskRepository.countByTypeAndState(TaskTypeEnum.USER_TASK, TaskStateEnum.ERROR).toInt()
+        // "K reakci" badge = tasks in state USER_TASK (regardless of type)
+        // + actionable BACKGROUNDs + pending agent questions.
+        // ERROR tasks belong to retry/escalation, NOT to K reakci.
+        val pendingUserTasks = taskRepository.countByState(TaskStateEnum.USER_TASK).toInt()
         val actionableBackground = chatService.countActionableBackground().toInt()
         val pendingQuestions = (agentQuestionRepository.countByState(com.jervis.agent.QuestionState.PENDING) +
             agentQuestionRepository.countByState(com.jervis.agent.QuestionState.PRESENTED)).toInt()
@@ -331,16 +331,11 @@ class ChatRpcImpl(
         val kreakciDtos = if (showNeedReaction && beforeMessageId == null) {
             val items = mutableListOf<ChatMessageDto>()
 
-            // 1. USER_TASKs from tasks collection
+            // 1. Tasks waiting for the user (state=USER_TASK, type-agnostic).
+            //    ERROR tasks belong to retry/escalation, NOT to K reakci.
             try {
-                val pendingTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
-                    TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK,
-                ).toList()
-                val errorTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
-                    TaskTypeEnum.USER_TASK, TaskStateEnum.ERROR,
-                ).toList()
-                items.addAll((pendingTasks + errorTasks).map { task ->
-                    val isError = task.state == TaskStateEnum.ERROR
+                val pendingTasks = taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.USER_TASK).toList()
+                items.addAll(pendingTasks.map { task ->
                     ChatMessageDto(
                         role = ChatRole.ALERT,
                         content = "[K reakci] ${task.taskName ?: "Úloha vyžaduje pozornost"}${
@@ -351,15 +346,16 @@ class ChatRpcImpl(
                         metadata = buildMap {
                             put("needsReaction", "true")
                             put("taskId", task.id.toString())
-                            put("taskType", task.type?.name ?: "USER_TASK")
-                            put("success", if (isError) "false" else "true")
-                            task.clientId?.let { put("clientId", it.toString()) }
+                            put("taskType", task.type.name)
+                            put("sourceLabel", task.sourceUrn.uiLabel())
+                            put("success", "true")
+                            task.clientId.let { put("clientId", it.toString()) }
                             task.projectId?.let { put("projectId", it.toString()) }
                         },
                     )
                 })
             } catch (e: Exception) {
-                logger.warn(e) { "Failed to load USER_TASKs for K reakci" }
+                logger.warn(e) { "Failed to load pending user tasks for K reakci" }
             }
 
             // 2. Pending agent questions
@@ -515,14 +511,11 @@ class ChatRpcImpl(
     override suspend fun dismissAllActionable(): Int {
         var count = 0
 
-        // 1. Dismiss USER_TASKs (state=USER_TASK or ERROR → DONE)
-        val pendingTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
-            TaskTypeEnum.USER_TASK, TaskStateEnum.USER_TASK,
-        ).toList()
-        val errorTasks = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
-            TaskTypeEnum.USER_TASK, TaskStateEnum.ERROR,
-        ).toList()
-        for (task in pendingTasks + errorTasks) {
+        // 1. Dismiss tasks waiting for the user (state=USER_TASK → DONE).
+        //    State alone is the discriminator — type-agnostic. ERROR tasks
+        //    belong to the retry/escalation path and are NOT dismissed here.
+        val pendingTasks = taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.USER_TASK).toList()
+        for (task in pendingTasks) {
             taskRepository.save(task.copy(state = TaskStateEnum.DONE))
             count++
         }
@@ -541,7 +534,7 @@ class ChatRpcImpl(
             count++
         }
 
-        logger.info { "DISMISS_ALL_ACTIONABLE | userTasks=${pendingTasks.size + errorTasks.size} background=$bgCount expiredQuestions=${expiredQuestions + remaining.size} total=$count" }
+        logger.info { "DISMISS_ALL_ACTIONABLE | userTasks=${pendingTasks.size} background=$bgCount expiredQuestions=${expiredQuestions + remaining.size} total=$count" }
         return count
     }
 

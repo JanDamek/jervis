@@ -139,7 +139,7 @@ class KnowledgeServiceRestClient(
                     formData = formData {
                         append("clientId", request.clientId.toString())
                         append("sourceUrn", request.sourceUrn)
-                        append("sourceType", request.sourceType.sourceKey)
+                        append("sourceType", request.sourceType)
                         request.subject?.let { append("subject", it) }
                         append("content", request.content)
                         request.projectId?.let { append("projectId", it.toString()) }
@@ -255,7 +255,7 @@ class KnowledgeServiceRestClient(
             formData = formData {
                 append("clientId", request.clientId.toString())
                 append("sourceUrn", request.sourceUrn)
-                append("sourceType", request.sourceType.sourceKey)
+                append("sourceType", request.sourceType)
                 request.subject?.let { append("subject", it) }
                 append("content", request.content)
                 request.projectId?.let { append("projectId", it.toString()) }

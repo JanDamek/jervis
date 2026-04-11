@@ -92,7 +92,7 @@ class TeamsContinuousIndexer(
         }
 
         val task = taskService.createTask(
-            taskType = TaskTypeEnum.CHAT_PROCESSING,
+            taskType = TaskTypeEnum.SYSTEM,
             content = content,
             clientId = doc.clientId,
             correlationId = "teams:${doc.messageId}",

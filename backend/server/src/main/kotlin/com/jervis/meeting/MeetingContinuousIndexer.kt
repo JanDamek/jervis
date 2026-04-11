@@ -406,7 +406,7 @@ class MeetingContinuousIndexer(
         val meetingContent = buildMeetingContent(meeting)
 
         val task = taskService.createTask(
-            taskType = TaskTypeEnum.MEETING_PROCESSING,
+            taskType = TaskTypeEnum.SYSTEM,
             content = meetingContent,
             clientId = effectiveClientId,
             correlationId = "meeting:${meeting.id}",
@@ -542,7 +542,7 @@ class MeetingContinuousIndexer(
 
         // Create re-indexing task with corrected content
         val task = taskService.createTask(
-            taskType = TaskTypeEnum.MEETING_PROCESSING,
+            taskType = TaskTypeEnum.SYSTEM,
             content = meetingContent,
             clientId = clientId,
             correlationId = "meeting:${meeting.id}",

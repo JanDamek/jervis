@@ -84,7 +84,7 @@ class MeetingRecordingDispatcher(
     private suspend fun runDispatchCycle() {
         val now = Instant.now()
         val candidates: List<TaskDocument> = taskRepository
-            .findCalendarTasksReadyForRecordingDispatch(TaskTypeEnum.CALENDAR_PROCESSING, now)
+            .findCalendarTasksReadyForRecordingDispatch(now)
             .toList()
         if (candidates.isEmpty()) return
 

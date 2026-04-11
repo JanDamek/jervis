@@ -26,6 +26,16 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
 
     suspend fun findByStateOrderByCreatedAtAsc(state: TaskStateEnum): Flow<TaskDocument>
 
+    suspend fun findByClientIdAndStateOrderByCreatedAtAsc(
+        clientId: ClientId,
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    suspend fun countByStateAndClientId(
+        state: TaskStateEnum,
+        clientId: ClientId,
+    ): Long
+
     suspend fun findByTypeAndStateOrderByCreatedAtAsc(
         type: TaskTypeEnum,
         state: TaskStateEnum,
@@ -298,24 +308,25 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     ): List<TaskDocument>
 
     /**
-     * Find CALENDAR_PROCESSING tasks whose approved meeting has entered its
-     * live window (startTime ≤ now ≤ endTime) and that have NOT yet been
-     * dispatched to the desktop recorder. Consumed by
+     * Find tasks with attached meeting metadata whose approved meeting has
+     * entered its live window (startTime ≤ now ≤ endTime) and that have NOT
+     * yet been dispatched to the desktop recorder. Consumed by
      * `MeetingRecordingDispatcher` — approval is checked separately in the
      * `ApprovalQueueRepository` so this query stays a pure DB filter.
      *
-     * Embedded `meetingMetadata` fields are referenced via dotted path. The
-     * `recordingDispatchedAt` predicate acts as the dedupe lock.
+     * The discriminator is `meetingMetadata != null`, NOT a task type — after
+     * Phase 1 the calendar source identity lives in `sourceUrn`, not in
+     * TaskTypeEnum. Embedded `meetingMetadata` fields are referenced via
+     * dotted path. The `recordingDispatchedAt` predicate acts as the dedupe
+     * lock.
      */
     @Query(
-        "{ 'type': ?0, " +
-            "'meetingMetadata': { '\$ne': null }, " +
+        "{ 'meetingMetadata': { '\$ne': null }, " +
             "'meetingMetadata.recordingDispatchedAt': null, " +
-            "'meetingMetadata.startTime': { '\$lte': ?1 }, " +
-            "'meetingMetadata.endTime': { '\$gt': ?1 } }"
+            "'meetingMetadata.startTime': { '\$lte': ?0 }, " +
+            "'meetingMetadata.endTime': { '\$gt': ?0 } }"
     )
     fun findCalendarTasksReadyForRecordingDispatch(
-        type: TaskTypeEnum,
         now: Instant,
     ): Flow<TaskDocument>
 }

@@ -229,7 +229,7 @@ class WikiContinuousIndexer(
 
             // Create WIKI_PROCESSING task with attachments
             taskService.createTask(
-                taskType = TaskTypeEnum.WIKI_PROCESSING,
+                taskType = TaskTypeEnum.SYSTEM,
                 content = pageContent,
                 projectId = doc.projectId,
                 clientId = doc.clientId,

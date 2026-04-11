@@ -82,7 +82,7 @@ class DiscordContinuousIndexer(
         val topicId = "discord-channel:${doc.guildId}/${doc.channelId}"
 
         val task = taskService.createTask(
-            taskType = TaskTypeEnum.DISCORD_PROCESSING,
+            taskType = TaskTypeEnum.SYSTEM,
             content = content,
             clientId = doc.clientId,
             correlationId = "discord:${doc.messageId}",

@@ -240,16 +240,13 @@ class IndexingQueueRpcImpl(
         val kbQueueResponse = kbClient.getExtractionQueue(limit = 200)
         val kbPending = kbQueueResponse.items.filter { it.status == "pending" }
 
-        // Pre-load server tasks for enrichment
-        val indexingTaskTypes = listOf(
-            TaskTypeEnum.EMAIL_PROCESSING, TaskTypeEnum.BUGTRACKER_PROCESSING,
-            TaskTypeEnum.WIKI_PROCESSING, TaskTypeEnum.GIT_PROCESSING,
-            TaskTypeEnum.MEETING_PROCESSING, TaskTypeEnum.LINK_PROCESSING,
-        )
+        // Pre-load server tasks for enrichment.
+        // After Phase 1: indexing tasks are all SYSTEM type — source-specific
+        // discrimination lives in sourceUrn, not type.
         val activeServerTasksList = mongoTemplate.find(
             Query(
                 Criteria.where("state").`in`(listOf(TaskStateEnum.INDEXING, TaskStateEnum.DONE).map { it.name })
-                    .and("type").`in`(indexingTaskTypes.map { it.name }),
+                    .and("type").`is`(TaskTypeEnum.SYSTEM.name),
             ).with(Sort.by(Sort.Direction.DESC, "createdAt")).limit(500),
             TaskDocument::class.java, "tasks",
         ).collectList().awaitSingle()
@@ -279,14 +276,8 @@ class IndexingQueueRpcImpl(
         val safePageSize = pageSize.coerceIn(1, 100)
         val safePage = page.coerceAtLeast(0)
 
-        val indexingTaskTypes = listOf(
-            TaskTypeEnum.EMAIL_PROCESSING, TaskTypeEnum.BUGTRACKER_PROCESSING,
-            TaskTypeEnum.WIKI_PROCESSING, TaskTypeEnum.GIT_PROCESSING,
-            TaskTypeEnum.MEETING_PROCESSING, TaskTypeEnum.LINK_PROCESSING,
-        )
-
         val (items, totalCount) = collectIndexedTasksPaginated(
-            types = indexingTaskTypes,
+            types = listOf(TaskTypeEnum.SYSTEM),
             clientMap = ref.clientMap,
             connectionMap = ref.connectionMap,
             page = safePage,
@@ -407,15 +398,6 @@ class IndexingQueueRpcImpl(
         clientFilterQuery: String,
         projectFilterQuery: String,
     ): PipelineResult {
-        val indexingTaskTypes = listOf(
-            TaskTypeEnum.EMAIL_PROCESSING,
-            TaskTypeEnum.BUGTRACKER_PROCESSING,
-            TaskTypeEnum.WIKI_PROCESSING,
-            TaskTypeEnum.GIT_PROCESSING,
-            TaskTypeEnum.MEETING_PROCESSING,
-            TaskTypeEnum.LINK_PROCESSING,
-        )
-
         // ── KB queue from SQLite (the real processing queue) ──
         val kbQueueResponse = kbClient.getExtractionQueue(limit = 200)
         val kbStats = KbQueueStatsDto(
@@ -435,7 +417,7 @@ class IndexingQueueRpcImpl(
         val activeServerTasksList = mongoTemplate.find(
             Query(
                 Criteria.where("state").`in`(indexingActiveStates.map { it.name })
-                    .and("type").`in`(indexingTaskTypes.map { it.name }),
+                    .and("type").`is`(TaskTypeEnum.SYSTEM.name),
             ).with(Sort.by(Sort.Direction.DESC, "createdAt")).limit(500),
             TaskDocument::class.java, "tasks",
         ).collectList().awaitSingle()
@@ -453,10 +435,13 @@ class IndexingQueueRpcImpl(
             enrichKbItem(item, index, activeServerTasks, clientMap, connectionMap)
         }
 
-        // Execution Waiting: QUEUED (from MongoDB — these are post-KB tasks)
+        // Execution Waiting: QUEUED (from MongoDB — these are post-KB tasks).
+        // Phase 1: indexing tasks all use type=SYSTEM; source-specific routing
+        // is encoded in sourceUrn.
+        val systemTaskTypes = listOf(TaskTypeEnum.SYSTEM)
         val executionWaitingAll = collectTasksByStates(
             states = listOf(TaskStateEnum.QUEUED),
-            types = indexingTaskTypes,
+            types = systemTaskTypes,
             clientMap = clientMap,
             connectionMap = connectionMap,
             pipelineState = "QUEUED",
@@ -465,7 +450,7 @@ class IndexingQueueRpcImpl(
         // Execution Running: PROCESSING
         val executionRunningAll = collectTasksByStates(
             states = listOf(TaskStateEnum.PROCESSING),
-            types = indexingTaskTypes,
+            types = systemTaskTypes,
             clientMap = clientMap,
             connectionMap = connectionMap,
             pipelineState = null,
@@ -489,7 +474,7 @@ class IndexingQueueRpcImpl(
 
         // Indexed: DB-level pagination
         val (pagedKbIndexed, kbIndexedTotalCount) = collectIndexedTasksPaginated(
-            types = indexingTaskTypes,
+            types = systemTaskTypes,
             clientMap = clientMap,
             connectionMap = connectionMap,
             page = kbPage,
@@ -546,7 +531,7 @@ class IndexingQueueRpcImpl(
             }
         }
         val connName = extractConnectionName(kbItem.sourceUrn, connectionMap)
-        val itemType = if (serverTask != null) taskTypeToItemType(serverTask.type) else kindToItemType(kbItem.kind)
+        val itemType = if (serverTask != null) taskToItemType(serverTask) else kindToItemType(kbItem.kind)
 
         val pipelineState = if (kbItem.status == "in_progress") "EXTRACTING" else "WAITING"
 
@@ -620,7 +605,7 @@ class IndexingQueueRpcImpl(
         return tasks.map { task ->
             val clientName = clientMap[task.clientId]?.name ?: task.clientId.value.toHexString()
             val connName = extractConnectionName(task.sourceUrn.value, connectionMap)
-            val itemType = taskTypeToItemType(task.type)
+            val itemType = taskToItemType(task)
 
             // Determine pipeline state
             val state = pipelineState ?: when {
@@ -688,7 +673,7 @@ class IndexingQueueRpcImpl(
             val connName = extractConnectionName(task.sourceUrn.value, connectionMap)
             PipelineItemDto(
                 id = task.id.value.toHexString(),
-                type = taskTypeToItemType(task.type),
+                type = taskToItemType(task),
                 title = extractTaskTitle(task),
                 connectionName = connName,
                 clientName = clientName,
@@ -715,13 +700,19 @@ class IndexingQueueRpcImpl(
         return items to totalCount
     }
 
-    private fun taskTypeToItemType(type: TaskTypeEnum): IndexingItemType = when (type) {
-        TaskTypeEnum.GIT_PROCESSING -> IndexingItemType.GIT_COMMIT
-        TaskTypeEnum.EMAIL_PROCESSING -> IndexingItemType.EMAIL
-        TaskTypeEnum.BUGTRACKER_PROCESSING -> IndexingItemType.BUGTRACKER_ISSUE
-        TaskTypeEnum.WIKI_PROCESSING -> IndexingItemType.WIKI_PAGE
-        else -> IndexingItemType.WIKI_PAGE // fallback for LINK_PROCESSING, MEETING_PROCESSING
-    }
+    /**
+     * Derive UI item type from a task's SourceUrn scheme.
+     * After Phase 1 the TaskTypeEnum is collapsed to INSTANT/SCHEDULED/SYSTEM,
+     * so source-specific routing must use the URN scheme.
+     */
+    private fun taskToItemType(task: TaskDocument): IndexingItemType =
+        when (task.sourceUrn.scheme()) {
+            "git", "merge-request" -> IndexingItemType.GIT_COMMIT
+            "email" -> IndexingItemType.EMAIL
+            "jira", "github-issue", "gitlab-issue" -> IndexingItemType.BUGTRACKER_ISSUE
+            "confluence" -> IndexingItemType.WIKI_PAGE
+            else -> IndexingItemType.WIKI_PAGE
+        }
 
     private fun extractTaskTitle(task: TaskDocument): String {
         // Extract meaningful title from task content (first line or taskName)

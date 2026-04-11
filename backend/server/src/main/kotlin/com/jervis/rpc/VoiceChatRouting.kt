@@ -1011,7 +1011,7 @@ private suspend fun processQuery(
     logger.info { "SIRI_CHAT | source=$source | query=${query.take(100)}" }
 
     val task = taskService.createTask(
-        taskType = com.jervis.dto.task.TaskTypeEnum.USER_INPUT_PROCESSING,
+        taskType = com.jervis.dto.task.TaskTypeEnum.INSTANT,
         content = query,
         clientId = clientId,
         correlationId = "siri-${java.util.UUID.randomUUID().toString().take(8)}",

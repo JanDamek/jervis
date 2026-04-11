@@ -51,7 +51,7 @@ fun Routing.installInternalMeetingAttendApi(
             // We then filter to (a) has meetingMetadata, (b) scheduledAt ≥ now, (c) optional client/project.
             val due = taskRepository.findByScheduledAtLessThanEqualAndTypeAndStateOrderByScheduledAtAsc(
                 scheduledAt = window,
-                type = TaskTypeEnum.CALENDAR_PROCESSING,
+                type = TaskTypeEnum.SYSTEM,
                 state = com.jervis.dto.task.TaskStateEnum.NEW,
             )
 
@@ -94,7 +94,7 @@ fun Routing.installInternalMeetingAttendApi(
                     call.respondText("""{"error":"Task not found"}""", ContentType.Application.Json, HttpStatusCode.NotFound)
                     return@post
                 }
-            if (task.type != TaskTypeEnum.CALENDAR_PROCESSING || task.meetingMetadata == null) {
+            if (task.meetingMetadata == null) {
                 call.respondText(
                     """{"error":"Task is not a meeting-attend task"}""",
                     ContentType.Application.Json,
@@ -129,7 +129,7 @@ fun Routing.installInternalMeetingAttendApi(
                     call.respondText("""{"error":"Task not found"}""", ContentType.Application.Json, HttpStatusCode.NotFound)
                     return@post
                 }
-            if (task.type != TaskTypeEnum.CALENDAR_PROCESSING || task.meetingMetadata == null) {
+            if (task.meetingMetadata == null) {
                 call.respondText(
                     """{"error":"Task is not a meeting-attend task"}""",
                     ContentType.Application.Json,

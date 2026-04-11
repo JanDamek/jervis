@@ -834,7 +834,7 @@ class BackgroundEngine(
                     val userZone = preferenceService.getUserTimezone()
                     taskRepository.findByFollowUserTimezoneAndTypeAndState(
                         followUserTimezone = true,
-                        type = com.jervis.dto.task.TaskTypeEnum.SCHEDULED_TASK,
+                        type = com.jervis.dto.task.TaskTypeEnum.SCHEDULED,
                         state = TaskStateEnum.NEW,
                     ).collect { task ->
                         val localTimeStr = task.scheduledLocalTime ?: return@collect
@@ -857,7 +857,7 @@ class BackgroundEngine(
 
                 val dueTasks = taskRepository.findByScheduledAtLessThanEqualAndTypeAndStateOrderByScheduledAtAsc(
                     scheduledAt = dispatchThreshold,
-                    type = com.jervis.dto.task.TaskTypeEnum.SCHEDULED_TASK,
+                    type = com.jervis.dto.task.TaskTypeEnum.SCHEDULED,
                     state = TaskStateEnum.NEW,
                 )
 
@@ -1191,7 +1191,7 @@ class BackgroundEngine(
      */
     private suspend fun hasExistingIdleTask(): Boolean {
         val existing = taskRepository.findFirstByTypeAndStateIn(
-            type = com.jervis.dto.task.TaskTypeEnum.IDLE_REVIEW,
+            type = com.jervis.dto.task.TaskTypeEnum.SYSTEM,
             states = listOf(
                 TaskStateEnum.NEW,
                 TaskStateEnum.INDEXING,

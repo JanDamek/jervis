@@ -456,7 +456,7 @@ class CentralPoller(
             content = description,
             clientId = clientId,
             correlationId = correlationId,
-            type = TaskTypeEnum.LINK_PROCESSING, // Fallback type
+            type = TaskTypeEnum.SYSTEM, // Fallback type
             sourceUrn = SourceUrn.unknownSource(),
         )
 

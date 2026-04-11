@@ -277,7 +277,7 @@ class MergeRequestContinuousIndexer(
         }
 
         val task = taskService.createTask(
-            taskType = TaskTypeEnum.SCHEDULED_TASK,
+            taskType = TaskTypeEnum.SCHEDULED,
             content = content,
             clientId = ClientId(mr.clientId),
             projectId = ProjectId(mr.projectId),

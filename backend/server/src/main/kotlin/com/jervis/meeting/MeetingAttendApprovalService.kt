@@ -228,7 +228,7 @@ class MeetingAttendApprovalService(
         val window = Instant.now().plus(Duration.ofMinutes(prerollMinutes))
         val due = taskRepository.findByScheduledAtLessThanEqualAndTypeAndStateOrderByScheduledAtAsc(
             scheduledAt = window,
-            type = TaskTypeEnum.CALENDAR_PROCESSING,
+            type = TaskTypeEnum.SYSTEM,
             state = TaskStateEnum.NEW,
         )
         due.collect { task ->

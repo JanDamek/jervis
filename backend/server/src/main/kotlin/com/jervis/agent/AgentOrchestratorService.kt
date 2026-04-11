@@ -67,7 +67,7 @@ class AgentOrchestratorService(
         val normalizedText = czechKeyboardNormalizer.convertIfMistyped(text)
 
         return taskService.createTask(
-            taskType = TaskTypeEnum.USER_INPUT_PROCESSING,
+            taskType = TaskTypeEnum.INSTANT,
             content = normalizedText,
             clientId = clientId,
             projectId = projectId,
@@ -113,7 +113,7 @@ class AgentOrchestratorService(
 
         val taskContext =
             TaskDocument(
-                type = TaskTypeEnum.USER_INPUT_PROCESSING,
+                type = TaskTypeEnum.INSTANT,
                 content = normalizedText,
                 projectId = projectIdTyped,
                 clientId = clientIdTyped,

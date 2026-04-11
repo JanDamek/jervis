@@ -216,7 +216,7 @@ class EmailContinuousIndexer(
             }
 
             val task = taskService.createTask(
-                taskType = TaskTypeEnum.EMAIL_PROCESSING,
+                taskType = TaskTypeEnum.SYSTEM,
                 content = if (threadContext != null) {
                     "$emailContent\n\n${threadContext.threadSummary}"
                 } else {

@@ -50,7 +50,7 @@ class TaskManagementService(
                     cronExpression = cronExpression,
                     correlationId = correlationId ?: ObjectId().toString(),
                     sourceUrn = SourceUrn.scheduled(taskName),
-                    type = TaskTypeEnum.SCHEDULED_TASK,
+                    type = TaskTypeEnum.SCHEDULED,
                 )
 
             val savedTask = scheduledTaskRepository.save(task)

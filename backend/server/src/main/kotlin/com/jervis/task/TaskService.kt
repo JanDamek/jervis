@@ -98,7 +98,7 @@ class TaskService(
     ): TaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
-        val cleanContent = cleanHtmlContent(content, correlationId, taskType)
+        val cleanContent = cleanHtmlContent(content, correlationId, sourceUrn)
 
         val task =
             TaskDocument(
@@ -124,7 +124,7 @@ class TaskService(
 
         val saved = taskRepository.save(task)
 
-        if (saved.type != TaskTypeEnum.USER_TASK) {
+        if (saved.type != TaskTypeEnum.SYSTEM) {
             notificationRpc.emitPendingTaskCreated(saved.id.toString(), saved.type.name)
         }
 
@@ -150,7 +150,7 @@ class TaskService(
             taskRepository
                 .findOneByScheduledAtLessThanAndTypeOrderByScheduledAtAsc(
                     Instant.now(),
-                    TaskTypeEnum.SCHEDULED_TASK,
+                    TaskTypeEnum.SCHEDULED,
                 )?.let {
                     emit(it)
                 }
@@ -555,7 +555,7 @@ class TaskService(
             mongoTemplate.find(retriedQuery, TaskDocument::class.java)
                 .collectList().awaitSingle()
                 .forEach { emit(it) }
-        }.filter { it.type != TaskTypeEnum.USER_TASK }
+        }.filter { it.type != TaskTypeEnum.SYSTEM }
 
     /**
      * Atomically claim an INDEXING task for KB dispatch using MongoDB findAndModify.
@@ -778,20 +778,14 @@ class TaskService(
             logger.warn { "STALE_RECOVERY: Reset $orchestratingCount PROCESSING tasks → QUEUED" }
         }
 
-        // Reset ERROR indexing tasks → INDEXING (KB retry, max 2 recoveries)
+        // Reset ERROR indexing tasks → INDEXING (KB retry, max 2 recoveries).
         // Uses errorRecoveryCount field to prevent infinite ERROR→retry loops.
         // After 2 recoveries the task stays in ERROR for manual review.
-        val indexingTypes = listOf(
-            TaskTypeEnum.EMAIL_PROCESSING.name,
-            TaskTypeEnum.BUGTRACKER_PROCESSING.name,
-            TaskTypeEnum.GIT_PROCESSING.name,
-            TaskTypeEnum.WIKI_PROCESSING.name,
-            TaskTypeEnum.LINK_PROCESSING.name,
-            TaskTypeEnum.MEETING_PROCESSING.name,
-        )
+        // After Phase 1: indexing tasks are all SYSTEM type — source-specific
+        // discrimination lives in sourceUrn, not type.
         val errorIndexingQuery = Query(
             Criteria.where("state").`is`(TaskStateEnum.ERROR.name)
-                .and("type").`in`(indexingTypes)
+                .and("type").`is`(TaskTypeEnum.SYSTEM.name)
                 .orOperator(
                     Criteria.where("errorRecoveryCount").exists(false),
                     Criteria.where("errorRecoveryCount").lt(2),
@@ -825,17 +819,9 @@ class TaskService(
         var count = 0
 
         // 1. ERROR indexing tasks → retry (max 2 recoveries to prevent infinite loops)
-        val indexingTypes = listOf(
-            TaskTypeEnum.EMAIL_PROCESSING.name,
-            TaskTypeEnum.BUGTRACKER_PROCESSING.name,
-            TaskTypeEnum.GIT_PROCESSING.name,
-            TaskTypeEnum.WIKI_PROCESSING.name,
-            TaskTypeEnum.LINK_PROCESSING.name,
-            TaskTypeEnum.MEETING_PROCESSING.name,
-        )
         val errorQuery = Query(
             Criteria.where("state").`is`(TaskStateEnum.ERROR.name)
-                .and("type").`in`(indexingTypes)
+                .and("type").`is`(TaskTypeEnum.SYSTEM.name)
                 .orOperator(
                     Criteria.where("errorRecoveryCount").exists(false),
                     Criteria.where("errorRecoveryCount").lt(2),
@@ -881,16 +867,18 @@ class TaskService(
     private suspend fun cleanHtmlContent(
         content: String,
         correlationId: String,
-        taskType: TaskTypeEnum,
+        sourceUrn: SourceUrn,
     ): String {
-        val mimeType = when (taskType) {
-            TaskTypeEnum.WIKI_PROCESSING -> "application/xml"
-            TaskTypeEnum.BUGTRACKER_PROCESSING -> "text/html"
-            TaskTypeEnum.EMAIL_PROCESSING -> "text/html"
+        // Source-specific MIME type for the document extractor — derived from
+        // SourceUrn scheme (the post-Phase-1 source identifier).
+        val mimeType = when (sourceUrn.scheme()) {
+            "confluence" -> "application/xml"
+            "jira", "github-issue", "gitlab-issue" -> "text/html"
+            "email" -> "text/html"
             else -> "text/plain"
         }
 
-        logger.debug { "Cleaning content for $correlationId (type=$taskType, mime=$mimeType), original length: ${content.length}" }
+        logger.debug { "Cleaning content for $correlationId (scheme=${sourceUrn.scheme()}, mime=$mimeType), original length: ${content.length}" }
         val cleaned = documentExtractionClient.extractText(content, mimeType)
         logger.debug { "Cleaned content for $correlationId, new length: ${cleaned.length}" }
         return cleaned

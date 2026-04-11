@@ -249,13 +249,7 @@ class AgentOrchestratorRpcImpl(
             if (this.content.length > 60) "$it..." else it
         }
 
-        val taskTypeLabel = when (this.type) {
-            com.jervis.dto.task.TaskTypeEnum.USER_INPUT_PROCESSING -> "Asistent"
-            com.jervis.dto.task.TaskTypeEnum.WIKI_PROCESSING -> "Wiki"
-            com.jervis.dto.task.TaskTypeEnum.BUGTRACKER_PROCESSING -> "BugTracker"
-            com.jervis.dto.task.TaskTypeEnum.EMAIL_PROCESSING -> "Email"
-            else -> this.type.toString()
-        }
+        val taskTypeLabel = this.sourceUrn.uiLabel()
 
         return com.jervis.dto.task.PendingTaskItemDto(
             taskId = this.id.toString(),
@@ -313,13 +307,7 @@ class AgentOrchestratorRpcImpl(
             val taskPreview = runningTask.content.take(50).let {
                 if (runningTask.content.length > 50) "$it..." else it
             }
-            val taskTypeLabel = when (runningTask.type) {
-                com.jervis.dto.task.TaskTypeEnum.USER_INPUT_PROCESSING -> "Asistent"
-                com.jervis.dto.task.TaskTypeEnum.WIKI_PROCESSING -> "Wiki"
-                com.jervis.dto.task.TaskTypeEnum.BUGTRACKER_PROCESSING -> "BugTracker"
-                com.jervis.dto.task.TaskTypeEnum.EMAIL_PROCESSING -> "Email"
-                else -> runningTask.type.toString()
-            }
+            val taskTypeLabel = runningTask.sourceUrn.uiLabel()
             mapOf(
                 "runningProjectId" to (runningTask.projectId?.toString() ?: "__background__"),
                 "runningProjectName" to projectName,

@@ -93,7 +93,7 @@ fun Routing.installInternalWhatsAppSessionApi(
                         taskName = title,
                         content = description,
                         state = TaskStateEnum.USER_TASK,
-                        type = TaskTypeEnum.USER_TASK,
+                        type = TaskTypeEnum.SYSTEM,
                         sourceUrn = SourceUrn("whatsapp-browser::event:session-notification"),
                         pendingUserQuestion = title,
                         userQuestionContext = description,

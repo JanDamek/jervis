@@ -173,7 +173,7 @@ class BugTrackerContinuousIndexer(
             )
 
             taskService.createTask(
-                taskType = TaskTypeEnum.BUGTRACKER_PROCESSING,
+                taskType = TaskTypeEnum.SYSTEM,
                 content = issueContent,
                 projectId = doc.projectId,
                 clientId = doc.clientId,
@@ -263,7 +263,7 @@ class BugTrackerContinuousIndexer(
             )
 
             taskService.createTask(
-                taskType = TaskTypeEnum.BUGTRACKER_PROCESSING,
+                taskType = TaskTypeEnum.SYSTEM,
                 content = issueContent,
                 projectId = doc.projectId,
                 clientId = doc.clientId,
@@ -431,7 +431,7 @@ class BugTrackerContinuousIndexer(
 
             // Create BUGTRACKER_PROCESSING task with attachments
             taskService.createTask(
-                taskType = TaskTypeEnum.BUGTRACKER_PROCESSING,
+                taskType = TaskTypeEnum.SYSTEM,
                 content = issueContent,
                 projectId = doc.projectId,
                 clientId = doc.clientId,
