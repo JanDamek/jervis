@@ -34,7 +34,7 @@ async def analyze_screenshot(
     estimated_tokens = 1500 + len(prompt) // 4  # ~1k for image + prompt tokens
 
     route = await _get_route_decision(
-        capability="vlm_screen_analysis",
+        capability="visual",
         estimated_tokens=estimated_tokens,
         processing_mode=processing_mode,
         max_tier=max_tier,
