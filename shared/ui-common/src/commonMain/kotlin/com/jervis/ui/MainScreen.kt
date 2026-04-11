@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Check
@@ -63,6 +64,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 
 /**
  * Main screen for Jervis – chat content area.
@@ -139,6 +141,7 @@ fun MainScreenView(
     // Phase 5 — chat task sidebar (active conversations list)
     repository: JervisRepository? = null,
     activeChatTaskId: String? = null,
+    activeChatTaskName: String? = null,
     onChatTaskSelected: (PendingTaskDto) -> Unit = {},
     onMainChatSelected: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -212,6 +215,8 @@ fun MainScreenView(
                             tierOverride = tierOverride,
                             onTierOverrideChange = onTierOverrideChange,
                             onNavigateToTask = onNavigateToTask,
+                            activeChatTaskName = activeChatTaskName,
+                            onReturnToMainChat = onMainChatSelected,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -286,6 +291,8 @@ fun MainScreenView(
                             tierOverride = tierOverride,
                             onTierOverrideChange = onTierOverrideChange,
                             onNavigateToTask = onNavigateToTask,
+                            activeChatTaskName = activeChatTaskName,
+                            onReturnToMainChat = onMainChatSelected,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -355,6 +362,8 @@ fun MainScreenView(
                         tierOverride = tierOverride,
                         onTierOverrideChange = onTierOverrideChange,
                         onNavigateToTask = onNavigateToTask,
+                        activeChatTaskName = activeChatTaskName,
+                        onReturnToMainChat = onMainChatSelected,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -488,6 +497,9 @@ private fun ChatContent(
     tierOverride: String? = null,
     onTierOverrideChange: (String?) -> Unit = {},
     onNavigateToTask: ((taskId: String) -> Unit)? = null,
+    // Phase 5 — active per-task conversation indicator
+    activeChatTaskName: String? = null,
+    onReturnToMainChat: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -502,6 +514,41 @@ private fun ChatContent(
         // Orchestrator health banner
         if (!orchestratorHealthy) {
             OrchestratorHealthBanner()
+        }
+
+        // Phase 5 — active per-task conversation breadcrumb. Only visible
+        // when the user has drilled into a task's chat from the sidebar.
+        // Tap (anywhere on the bar) returns to the main chat.
+        if (activeChatTaskName != null) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onReturnToMainChat() },
+                color = MaterialTheme.colorScheme.primaryContainer,
+                tonalElevation = 1.dp,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Zpět na hlavní chat",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "↳ $activeChatTaskName",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
 
         // Filter chips — always visible

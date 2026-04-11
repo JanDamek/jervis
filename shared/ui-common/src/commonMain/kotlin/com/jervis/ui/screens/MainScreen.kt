@@ -188,8 +188,13 @@ fun MainScreen(
         // Phase 5 — chat task sidebar wired to per-task conversation switching
         repository = repository,
         activeChatTaskId = viewModel.chat.activeChatTaskId.collectAsState().value,
+        activeChatTaskName = viewModel.chat.activeChatTaskName.collectAsState().value,
         onChatTaskSelected = { task ->
-            viewModel.chat.switchToTaskConversation(task.id, task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" })
+            viewModel.chat.switchToTaskConversation(
+                task.id,
+                task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" }
+                    ?: task.sourceLabel.ifBlank { "Úloha" },
+            )
         },
         onMainChatSelected = {
             viewModel.chat.switchToMainChat()
