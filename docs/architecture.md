@@ -358,7 +358,7 @@ Separate polling loop (120s interval) for merge request / pull request discovery
 1. **Discovery:** Iterates all **active** projects with REPOSITORY resources (`findByActiveTrue()`) → calls GitLab `listOpenMergeRequests` / GitHub `listOpenPullRequests` → deduplicates against `merge_requests` MongoDB collection → saves NEW documents
    - **Filters:** Skips draft MRs/PRs (not ready for review), skips `jervis/*` branches (handled by AgentTaskWatcher to avoid review loops)
    - **Author extraction:** Extracts author name/username from API response (GitLab `author.name`, GitHub `user.login`)
-2. **Task creation (15s):** Picks up NEW MR documents → creates SCHEDULED_TASK in QUEUED state (bypasses KB indexation — MR content IS the task) → marks REVIEW_DISPATCHED
+2. **Task creation (15s):** Picks up NEW MR documents → creates `TaskTypeEnum.SYSTEM` task in QUEUED state with sourceUrn scheme `merge-request` (bypasses KB indexation — MR content IS the task) → marks REVIEW_DISPATCHED
 3. **Orchestrator:** Graph agent picks up task, reasons about code review scope, can delegate to coding agent or use tools directly
 
 **Key files:** `MergeRequestContinuousIndexer.kt`, `MergeRequestDocument.kt`, `MergeRequestRepository.kt`
@@ -2821,12 +2821,17 @@ CentralPoller
 
 ### Continuous Indexers
 
-| Platform | Indexer | Task Type | Topic ID Format |
-|----------|---------|-----------|-----------------|
-| Teams | `TeamsContinuousIndexer` | `CHAT_PROCESSING` | `teams-channel:{teamId}/{channelId}` or `teams-chat:{chatId}` |
-| WhatsApp | `WhatsAppContinuousIndexer` | `WHATSAPP_PROCESSING` | `whatsapp-chat:{chatName}` |
-| Slack | `SlackContinuousIndexer` | `SLACK_PROCESSING` | `slack-channel:{channelId}` |
-| Discord | `DiscordContinuousIndexer` | `DISCORD_PROCESSING` | `discord-channel:{guildId}/{channelId}` |
+After the 2026-04-11 refactor every indexer creates `TaskTypeEnum.SYSTEM`
+tasks; source identity (teams/whatsapp/slack/discord/…) is encoded in
+`SourceUrn.scheme()`, NOT in the task type. See
+[structures.md § TaskTypeEnum](structures.md#tasktypeenum--3-pipeline-categories-post-2026-04-11-refactor).
+
+| Platform | Indexer | sourceUrn scheme | Topic ID Format |
+|----------|---------|------------------|-----------------|
+| Teams | `TeamsContinuousIndexer` | `teams` | `teams-channel:{teamId}/{channelId}` or `teams-chat:{chatId}` |
+| WhatsApp | `WhatsAppContinuousIndexer` | `whatsapp` | `whatsapp-chat:{chatName}` |
+| Slack | `SlackContinuousIndexer` | `slack` | `slack-channel:{channelId}` |
+| Discord | `DiscordContinuousIndexer` | `discord` | `discord-channel:{guildId}/{channelId}` |
 
 ### Resource Routing (same hierarchy as email/git)
 

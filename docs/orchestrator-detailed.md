@@ -204,7 +204,7 @@ Kotlin → UI: via kRPC WebSocket Flow subscriptions
      ↓
 4. Finds/creates TaskDocument for this client+project
    - Reuses existing task with orchestratorThreadId (for resume)
-   - Or creates new FOREGROUND task (type=USER_INPUT_PROCESSING)
+   - Or creates new FOREGROUND task (type=TaskTypeEnum.INSTANT)
      ↓
 5. Task state → QUEUED
      ↓
@@ -3322,7 +3322,7 @@ Background handler dynamically estimates context size before each LLM call
 
 Search tools (`brain_search_issues`, `kb_search`, `web_search`, `brain_search_pages`)
 are limited to max 3 calls per task. After 3 calls, a STOP message forces the LLM
-to conclude with available results. Prevents IDLE_REVIEW loops.
+to conclude with available results. Prevents idle-review loops.
 
 **Key differences from foreground chat:**
 

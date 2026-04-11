@@ -447,26 +447,49 @@ When `ClientDocument.archived = true`, the entire pipeline is blocked for that c
 
 For indexer details see [knowledge-base.md § Continuous Indexers](knowledge-base.md#continuous-indexers).
 
-**TaskTypeEnum values** (each carries a `sourceKey` used as wire-format identifier for KB):
+### TaskTypeEnum — 3 pipeline categories (post-2026-04-11 refactor)
 
-| Enum value | `sourceKey` | Description |
-|------------|-------------|-------------|
-| `EMAIL_PROCESSING` | `email` | Email content from IMAP/POP3 (thread-consolidated via topicId) |
-| `WIKI_PROCESSING` | `confluence` | Confluence pages |
-| `BUGTRACKER_PROCESSING` | `jira` | Jira/GitHub/GitLab issues |
-| `GIT_PROCESSING` | `git` | Git commits, diffs, and merge request code reviews |
-| `USER_INPUT_PROCESSING` | `chat` | User chat messages |
-| `USER_TASK` | `user_task` | User-created tasks |
-| `SCHEDULED_TASK` | `scheduled` | Cron-scheduled tasks |
-| `LINK_PROCESSING` | `link` | URLs extracted from other documents |
-| `MEETING_PROCESSING` | `meeting` | Transcribed meeting recordings |
-| `CHAT_PROCESSING` | `teams` | Microsoft Teams messages (via O365 Gateway) |
-| `SLACK_PROCESSING` | `slack` | Slack channel messages (via Web API) |
-| `DISCORD_PROCESSING` | `discord` | Discord guild/channel messages (via REST API) |
-| `IDLE_REVIEW` | `idle_review` | System-generated proactive review task |
+> **CRITICAL — DO NOT regress to per-source enum values.** Source identity
+> (email vs jira vs whatsapp vs …) lives in `SourceUrn`, NOT in
+> `TaskTypeEnum`. The previous 15-value enum was a misclass that forced
+> indexers/qualifier/router to dispatch on the wrong axis.
 
-The `sourceKey` is sent to KB via multipart form field `sourceType` and stored in graph metadata.
-Python KB service uses matching `SourceType(str, Enum)` in `app/api/models.py`.
+| Enum value | Description |
+|------------|-------------|
+| `INSTANT` | Interactive chat input — user is in front of the screen waiting for the response. FOREGROUND processing. |
+| `SCHEDULED` | Time-triggered work — cron expression or `scheduledAt`. Fires on schedule, then runs as autonomous SYSTEM-style work. |
+| `SYSTEM` | Autonomous background pipeline — every indexer (email/jira/git/wiki/teams/slack/discord/whatsapp/calendar/meeting/link), idle review, qualifier output. May escalate to `state=USER_TASK` when it needs the user. |
+
+**Source identification — SourceUrn is the single source of truth.**
+
+`SourceUrn` is an inline value class (`backend/common-services/.../common/types/SourceUrn.kt`)
+that encodes provider + structured key-value metadata in one URN string,
+e.g. `email::conn:abc123,msgId:42` or `whatsapp::conn:xyz,msgId:wa_5,chat:Katenka`.
+
+Three derivation methods replace all previous TaskTypeEnum-based dispatch:
+
+| Method | Returns | Used for |
+|--------|---------|----------|
+| `scheme()` | `String` (e.g. `"email"`, `"whatsapp"`) | Branching on source-specific behaviour in indexers/qualifier |
+| `kbSourceType()` | `String` matching KB Python `SourceType` enum value | Wire format sent to KB ingest endpoint |
+| `uiLabel()` | Czech UI label (`"Email"`, `"WhatsApp"`, `"Schůzka"`, …) | Queue display, K reakci, task lists |
+
+**KB Python `SourceType` stays at 15 values** (`backend/service-knowledgebase/app/api/models.py`)
+because it carries credibility-tier weights and graph-relationship semantics. The Kotlin side
+sends a String derived from `SourceUrn.kbSourceType()`; the KB enum is the receiver.
+
+**USER_TASK is exclusively a `TaskStateEnum` value, never a TaskTypeEnum value.**
+When a task needs user attention, the existing task transitions to
+`state=USER_TASK` — no wrapper task is created. This is enforced by
+`UserTaskService.failAndEscalateToUserTask()`. K reakci queries the DB
+by `state=USER_TASK` only, type-agnostic.
+
+**Sub-task hierarchy fields** (already on `TaskDocument`, used by Phase 3
+re-entrant qualifier):
+- `parentTaskId` — parent task in a decomposition tree
+- `blockedByTaskIds` — list of tasks that must complete before this one is unblocked
+- `phase`, `orderInPhase` — work-plan ordering inside a parent
+- `state=BLOCKED` — parent waiting for children to finish
 
 #### 1.1 Attachment Extraction Pipeline
 
@@ -654,7 +677,7 @@ data class TaskMemoryDocument(
     val structuredData: Map<String, String>, // Metadata
     val routingDecision: String,         // DONE / QUEUED
     val routingReason: String,
-    val sourceType: TaskTypeEnum?,       // wire value via .sourceKey (email, jira, git, ...)
+    val sourceType: String?,             // KB source type via SourceUrn.kbSourceType() — "email", "jira", "git", ...
     val sourceId: String?
 )
 ```
@@ -743,8 +766,8 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
   │
   ├─ Step 4: hasFutureDeadline=true AND hasActionableContent=true
   │    ├─ deadline < scheduleLeadDays away → QUEUED (too close, do now)
-  │    └─ deadline >= scheduleLeadDays away → create SCHEDULED_TASK copy
-  │         scheduledAt = deadline - scheduleLeadDays
+  │    └─ deadline >= scheduleLeadDays away → create SCHEDULED task copy
+  │         (TaskTypeEnum.SCHEDULED, scheduledAt = deadline - scheduleLeadDays)
   │         original task → DONE (indexed, terminal)
   │
   └─ Step 5: ALL remaining actionable content
@@ -770,9 +793,9 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - Complex actions requiring orchestrator (coding, architecture, decomposition)
 - Requires user action that can't be handled by simple agent
 
-**SCHEDULED_TASK (deferred):**
+**SCHEDULED (deferred):**
 - Has actionable content with a future deadline
-- Scheduled copy created with `scheduledAt = deadline - scheduleLeadDays`
+- Copy created with `type=TaskTypeEnum.SCHEDULED`, `scheduledAt = deadline - scheduleLeadDays`
 - BackgroundEngine scheduler loop picks these up automatically
 
 ### Benefits
@@ -912,12 +935,12 @@ whose backoff has elapsed:
 
 - **Interval:** Configurable via `BackgroundProperties.idleReviewInterval` (default 30 min)
 - **Enabled:** `BackgroundProperties.idleReviewEnabled` (default true)
-- **Preconditions:** No active FG/BG tasks, no existing IDLE_REVIEW task
+- **Preconditions:** No active FG/BG tasks, no existing idle-review task
 - **ProcessingMode:** `IDLE` (lowest priority — preempted by both FOREGROUND and BACKGROUND)
-- **Creates:** At most ONE `IDLE_REVIEW` task at a time with `ProcessingMode.IDLE`
+- **Creates:** At most ONE idle-review task at a time with `ProcessingMode.IDLE`
 - **Task selection:** `IdleTaskRegistry` returns highest-priority due check (priority-ordered, interval-based)
 - **Lifecycle:** Task created → QUEUED → executed → DONE (deleted) → next iteration picks next due check
-- **Task type:** `TaskTypeEnum.IDLE_REVIEW`
+- **Task type:** `TaskTypeEnum.SYSTEM` (post-2026-04-11; idle-review identity is encoded in `sourceUrn` with scheme `idle-review`)
 - **Client resolution:** Uses JERVIS Internal project's client ID
 - **Deadline scan:** Also uses `ProcessingMode.IDLE` (periodic via scheduler loop, every 5 min)
 - **GPU idle callback:** `onGpuIdle()` immediately creates idle task when GPU has been idle ≥5 min
@@ -1632,7 +1655,7 @@ Source: `backend/service-orchestrator/app/background/handler.py`
 1. **Discovery (120s):** Poll GitLab/GitHub for open MRs/PRs on all projects with REPOSITORY resources
    - Filters: skip drafts, skip `jervis/*` branches (avoid review loops)
    - Saves new MRs as `MergeRequestDocument(state=NEW)` in MongoDB
-2. **Task creation (15s):** Pick up NEW MRs → create SCHEDULED_TASK in QUEUED state with MR metadata
+2. **Task creation (15s):** Pick up NEW MRs → create `TaskTypeEnum.SYSTEM` task in QUEUED state with MR metadata
    - Bypasses KB indexation — MR content IS the review task
    - sourceUrn: `merge-request::proj:{projectId},provider:{gitlab|github},mr:{mrId}`
 3. **Graph agent:** Picks up task, reasons about review scope, uses tools (kb_search, web_search)
@@ -1688,8 +1711,9 @@ Lifecycle (one CALENDAR_PROCESSING task = one meeting instance):
 
 2. **Polling loop.** `MeetingAttendApprovalService` runs a dedicated 60s loop
    (separate from `BackgroundEngine.runSchedulerLoop` because that one only
-   dispatches `SCHEDULED_TASK`). Each tick:
-   - Picks `CALENDAR_PROCESSING` tasks with `state=NEW` and `scheduledAt ≤ now + prerollMinutes`.
+   dispatches `TaskTypeEnum.SCHEDULED` cron/scheduledAt tasks). Each tick:
+   - Picks tasks with `meetingMetadata != null`, `state=NEW`, and `scheduledAt ≤ now + prerollMinutes`.
+     (After Phase 1 the discriminator is `meetingMetadata`, NOT a task type — calendar identity is in `sourceUrn` with scheme `calendar`.)
    - First touch (preroll): creates `ApprovalQueueDocument(PENDING)`, emits push
      (FCM + APNs broadcast → multi-device "first wins"), and writes an ALERT
      chat bubble in the meeting task's own conversation
