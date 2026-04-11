@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -25,16 +26,23 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -351,22 +359,70 @@ fun MainScreenView(
                     )
                 }
 
-                if (!isCompact && repository != null) {
-                    Row(modifier = Modifier.fillMaxSize()) {
-                        ChatTaskSidebar(
-                            repository = repository,
-                            activeTaskId = activeChatTaskId,
-                            onTaskSelected = onChatTaskSelected,
-                            onMainChatSelected = onMainChatSelected,
-                            modifier = Modifier.width(240.dp),
-                        )
-                        VerticalDivider()
-                        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-                            chatComposable()
+                when {
+                    // Expanded (≥600dp): persistent 240dp left rail + chat
+                    !isCompact && repository != null -> {
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            ChatTaskSidebar(
+                                repository = repository,
+                                activeTaskId = activeChatTaskId,
+                                onTaskSelected = onChatTaskSelected,
+                                onMainChatSelected = onMainChatSelected,
+                                modifier = Modifier.width(240.dp),
+                            )
+                            VerticalDivider()
+                            Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+                                chatComposable()
+                            }
                         }
                     }
-                } else {
-                    chatComposable()
+                    // Compact (<600dp, mobile/watch): full-screen chat with
+                    // overlay drawer holding the same ChatTaskSidebar.
+                    isCompact && repository != null -> {
+                        val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+                        val coroutineScope = rememberCoroutineScope()
+                        ModalNavigationDrawer(
+                            drawerState = drawerState,
+                            drawerContent = {
+                                ModalDrawerSheet(modifier = Modifier.width(280.dp)) {
+                                    ChatTaskSidebar(
+                                        repository = repository,
+                                        activeTaskId = activeChatTaskId,
+                                        onTaskSelected = { task ->
+                                            onChatTaskSelected(task)
+                                            coroutineScope.launch { drawerState.close() }
+                                        },
+                                        onMainChatSelected = {
+                                            onMainChatSelected()
+                                            coroutineScope.launch { drawerState.close() }
+                                        },
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            // Floating "open drawer" button anchored top-left of the chat
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                chatComposable()
+                                IconButton(
+                                    onClick = { coroutineScope.launch { drawerState.open() } },
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(8.dp),
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.List,
+                                        contentDescription = "Otevřít seznam úloh",
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    // Fallback when no repository (test/preview): plain chat
+                    else -> {
+                        chatComposable()
+                    }
                 }
             }
         }
