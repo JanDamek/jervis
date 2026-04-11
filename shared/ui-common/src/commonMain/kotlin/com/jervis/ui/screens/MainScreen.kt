@@ -11,6 +11,7 @@ import com.jervis.ui.MainScreenView as MainScreenViewInternal
 @Composable
 fun MainScreen(
     viewModel: MainViewModel,
+    repository: com.jervis.di.JervisRepository? = null,
     onOpenEnvironmentManager: (String) -> Unit = {},
     onNavigateToTask: ((taskId: String) -> Unit)? = null,
 ) {
@@ -183,5 +184,14 @@ fun MainScreen(
         },
         jobLogsService = viewModel.chat.jobLogsService,
         onNavigateToTask = onNavigateToTask,
+        // Phase 5 — chat task sidebar wiring (v1: clicking a task opens it
+        // in the existing UserTasks screen until per-task chat conversation
+        // switching is wired in ChatViewModel)
+        repository = repository,
+        activeChatTaskId = null,
+        onChatTaskSelected = { task ->
+            onNavigateToTask?.invoke(task.id)
+        },
+        onMainChatSelected = { /* no-op for v1 */ },
     )
 }

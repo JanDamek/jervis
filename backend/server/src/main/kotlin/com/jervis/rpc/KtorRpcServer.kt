@@ -959,37 +959,26 @@ class KtorRpcServer(
                                                 return@launch
                                             }
 
-                                            // Not actionable → DONE (info only, indexed in KB)
-                                            // BUT: @mention overrides — if Jervis is mentioned, always QUEUE
-                                            if (!r.hasActionableContent && !task.mentionsJervis) {
-                                                taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
-                                                logger.info { "KB_DONE_CALLBACK: not actionable taskId=${body.taskId}" }
-                                                return@launch
-                                            }
-                                            if (task.mentionsJervis && !r.hasActionableContent) {
-                                                logger.info { "KB_DONE_CALLBACK: not actionable BUT mentionsJervis=true → QUEUED taskId=${body.taskId}" }
-                                            }
+                                            // 2026-04-11 — KB MUST NOT make routing decisions.
+                                            // The previous fast-path
+                                            //     if (!r.hasActionableContent && !task.mentionsJervis)
+                                            //         { state=DONE; return }
+                                            // gave the KB extraction layer authority over
+                                            // whether the task gets routed at all. KB has no tools
+                                            // for that decision (no kb_search at decision time, no
+                                            // user history, no active task awareness) — only the
+                                            // Python /qualify agent does. Removed the fast-path.
+                                            // Every KB-done callback now ALWAYS dispatches to /qualify,
+                                            // and the qualifier itself decides DONE/QUEUED/USER_TASK/...
+                                            //
+                                            // The KB-supplied fields (hasActionableContent, urgency,
+                                            // suggestedActions, ...) are passed to /qualify as HINTS
+                                            // only — never as authoritative routing signals. They
+                                            // will be removed from the wire format in a follow-up
+                                            // refactor (see memory: architecture-kb-no-qualification.md).
 
-                                            // Push urgent alert if applicable
-                                            if (filterAction == com.jervis.dto.filtering.FilterAction.URGENT || r.urgency == "urgent") {
-                                                if (chatRpcImpl.isUserOnline()) {
-                                                    try {
-                                                        chatRpcImpl.pushUrgentAlert(
-                                                            sourceUrn = task.sourceUrn.value,
-                                                            taskId = task.id.toString(),
-                                                            taskName = task.taskName,
-                                                            summary = r.summary.take(500),
-                                                            suggestedAction = r.suggestedActions.firstOrNull(),
-                                                            taskContent = task.content,
-                                                        )
-                                                    } catch (e: Exception) {
-                                                        logger.warn(e) { "KB_DONE_CALLBACK: failed to push urgent alert taskId=${body.taskId}" }
-                                                    }
-                                                }
-                                            }
-
-                                            // Actionable → dispatch to Python /qualify for LLM classification
-                                            // Qualification agent decides: QUEUED, DONE, or URGENT_ALERT
+                                            // Always dispatch to Python /qualify — qualifier decides
+                                            // DONE / QUEUED / URGENT_ALERT / ESCALATE / DECOMPOSE.
                                             try {
                                                 val qualifyRequest = com.jervis.agent.QualifyRequestDto(
                                                     taskId = body.taskId,

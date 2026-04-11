@@ -192,6 +192,7 @@ fun App(
             Screen.Main -> {
                 MainScreen(
                     viewModel = viewModel,
+                    repository = repository,
                     onOpenEnvironmentManager = { envId ->
                         viewModel.environment.closePanel()
                         appNavigator.navigateTo(

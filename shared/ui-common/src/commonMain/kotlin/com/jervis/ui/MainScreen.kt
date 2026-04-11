@@ -3,6 +3,7 @@ package com.jervis.ui
 import com.jervis.ui.queue.OrchestratorProgressInfo
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -123,6 +124,11 @@ fun MainScreenView(
     environmentPanelContent: @Composable (isCompact: Boolean) -> Unit = {},
     jobLogsService: IJobLogsService? = null,
     onNavigateToTask: ((taskId: String) -> Unit)? = null,
+    // Phase 5 — chat task sidebar (active conversations list)
+    repository: com.jervis.di.JervisRepository? = null,
+    activeChatTaskId: String? = null,
+    onChatTaskSelected: (com.jervis.dto.task.PendingTaskDto) -> Unit = {},
+    onMainChatSelected: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
@@ -277,63 +283,87 @@ fun MainScreenView(
                 )
             }
             // No panel, no map -> normal chat
+            // Phase 5: on expanded screens, show ChatTaskSidebar (240dp) on
+            // the left + ChatContent on the right. On compact screens, keep
+            // the full-screen chat as before — sidebar comes via overlay
+            // later.
             else -> {
-                ChatContent(
-                    selectedClientId = selectedClientId,
-                    selectedProjectId = selectedProjectId,
-                    chatMessages = chatMessages,
-                    inputText = inputText,
-                    isLoading = isLoading,
-                    hasMore = hasMore,
-                    isLoadingMore = isLoadingMore,
-                    compressionBoundaries = compressionBoundaries,
-                    attachments = attachments,
-                    queueSize = queueSize,
-                    onInputChanged = onInputChanged,
-                    onSendClick = onSendClick,
-                    onEditMessage = onEditMessage,
-                    onReplyToTask = onReplyToTask,
-                    onSendReply = onSendReply,
-                    onDismissTask = onDismissTask,
-                    onDismissAllTasks = onDismissAllTasks,
-                    onLoadMore = onLoadMore,
-                    onAttachFile = onAttachFile,
-                    onRemoveAttachment = onRemoveAttachment,
-                    pendingMessageInfo = pendingMessageInfo,
-                    onRetryPending = onRetryPending,
-                    onCancelPending = onCancelPending,
-                    approvalRequest = approvalRequest,
-                    onApproveOnce = onApproveOnce,
-                    onApproveAlways = onApproveAlways,
-                    onDenyAction = onDenyAction,
-                    workspaceInfo = workspaceInfo,
-                    onRetryWorkspace = onRetryWorkspace,
-                    orchestratorHealthy = orchestratorHealthy,
-                    orchestratorProgress = orchestratorProgress,
-                    taskGraphs = taskGraphs,
-                    onLoadTaskGraph = onLoadTaskGraph,
-                    jobLogsService = jobLogsService,
-                    showChat = showChat,
-                    onToggleChat = onToggleChat,
-                    showTasks = showTasks,
-                    onToggleTasks = onToggleTasks,
-                    showNeedReaction = showNeedReaction,
-                    onToggleNeedReaction = onToggleNeedReaction,
-                    backgroundMessageCount = backgroundMessageCount,
-                    userTaskCount = userTaskCount,
-                    pendingQuestionCount = pendingQuestionCount,
-                    isRecordingVoice = isRecordingVoice,
-                    voiceStatus = voiceStatus,
-                    voiceAudioLevel = voiceAudioLevel,
-                    onMicClick = onMicClick,
-                    onCancelVoice = onCancelVoice,
-                    onTtsPlay = onTtsPlay,
-                    isTtsPlaying = isTtsPlaying,
-                    tierOverride = tierOverride,
-                    onTierOverrideChange = onTierOverrideChange,
-                    onNavigateToTask = onNavigateToTask,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                val chatComposable: @Composable () -> Unit = {
+                    ChatContent(
+                        selectedClientId = selectedClientId,
+                        selectedProjectId = selectedProjectId,
+                        chatMessages = chatMessages,
+                        inputText = inputText,
+                        isLoading = isLoading,
+                        hasMore = hasMore,
+                        isLoadingMore = isLoadingMore,
+                        compressionBoundaries = compressionBoundaries,
+                        attachments = attachments,
+                        queueSize = queueSize,
+                        onInputChanged = onInputChanged,
+                        onSendClick = onSendClick,
+                        onEditMessage = onEditMessage,
+                        onReplyToTask = onReplyToTask,
+                        onSendReply = onSendReply,
+                        onDismissTask = onDismissTask,
+                        onDismissAllTasks = onDismissAllTasks,
+                        onLoadMore = onLoadMore,
+                        onAttachFile = onAttachFile,
+                        onRemoveAttachment = onRemoveAttachment,
+                        pendingMessageInfo = pendingMessageInfo,
+                        onRetryPending = onRetryPending,
+                        onCancelPending = onCancelPending,
+                        approvalRequest = approvalRequest,
+                        onApproveOnce = onApproveOnce,
+                        onApproveAlways = onApproveAlways,
+                        onDenyAction = onDenyAction,
+                        workspaceInfo = workspaceInfo,
+                        onRetryWorkspace = onRetryWorkspace,
+                        orchestratorHealthy = orchestratorHealthy,
+                        orchestratorProgress = orchestratorProgress,
+                        taskGraphs = taskGraphs,
+                        onLoadTaskGraph = onLoadTaskGraph,
+                        jobLogsService = jobLogsService,
+                        showChat = showChat,
+                        onToggleChat = onToggleChat,
+                        showTasks = showTasks,
+                        onToggleTasks = onToggleTasks,
+                        showNeedReaction = showNeedReaction,
+                        onToggleNeedReaction = onToggleNeedReaction,
+                        backgroundMessageCount = backgroundMessageCount,
+                        userTaskCount = userTaskCount,
+                        pendingQuestionCount = pendingQuestionCount,
+                        isRecordingVoice = isRecordingVoice,
+                        voiceStatus = voiceStatus,
+                        voiceAudioLevel = voiceAudioLevel,
+                        onMicClick = onMicClick,
+                        onCancelVoice = onCancelVoice,
+                        onTtsPlay = onTtsPlay,
+                        isTtsPlaying = isTtsPlaying,
+                        tierOverride = tierOverride,
+                        onTierOverrideChange = onTierOverrideChange,
+                        onNavigateToTask = onNavigateToTask,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                if (!isCompact && repository != null) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        com.jervis.ui.chat.ChatTaskSidebar(
+                            repository = repository,
+                            activeTaskId = activeChatTaskId,
+                            onTaskSelected = onChatTaskSelected,
+                            onMainChatSelected = onMainChatSelected,
+                            modifier = Modifier.width(240.dp),
+                        )
+                        androidx.compose.material3.VerticalDivider()
+                        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+                            chatComposable()
+                        }
+                    }
+                } else {
+                    chatComposable()
+                }
             }
         }
     }
