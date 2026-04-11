@@ -184,14 +184,14 @@ fun MainScreen(
         },
         jobLogsService = viewModel.chat.jobLogsService,
         onNavigateToTask = onNavigateToTask,
-        // Phase 5 — chat task sidebar wiring (v1: clicking a task opens it
-        // in the existing UserTasks screen until per-task chat conversation
-        // switching is wired in ChatViewModel)
+        // Phase 5 — chat task sidebar wired to per-task conversation switching
         repository = repository,
-        activeChatTaskId = null,
+        activeChatTaskId = viewModel.chat.activeChatTaskId.collectAsState().value,
         onChatTaskSelected = { task ->
-            onNavigateToTask?.invoke(task.id)
+            viewModel.chat.switchToTaskConversation(task.id, task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" })
         },
-        onMainChatSelected = { /* no-op for v1 */ },
+        onMainChatSelected = {
+            viewModel.chat.switchToMainChat()
+        },
     )
 }

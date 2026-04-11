@@ -68,6 +68,15 @@ interface IChatService {
     ): ChatHistoryDto
 
     /**
+     * Phase 5 chat-as-primary: load the message history of a single task's
+     * conversation. The conversation id is `task.id.value` (every TaskDocument
+     * already maintains its own thread). Used by the chat sidebar when the
+     * user clicks on an active task and wants to continue the dialogue with
+     * Jervis inside that task's thread instead of the main chat.
+     */
+    suspend fun getTaskConversationHistory(taskId: String, limit: Int = 200): ChatHistoryDto
+
+    /**
      * Update active scope (client/project/group) in the chat session.
      * Called when user manually switches client/project/group in the UI dropdown.
      */

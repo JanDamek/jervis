@@ -488,6 +488,34 @@ class ChatRpcImpl(
         )
     }
 
+    override suspend fun getTaskConversationHistory(taskId: String, limit: Int): ChatHistoryDto {
+        // Phase 5 chat-as-primary: load message history scoped to a single
+        // task's conversation. The conversationId stored on each
+        // ChatMessageDocument equals task.id.value, so we can fetch directly.
+        val taskObjectId = try {
+            org.bson.types.ObjectId(taskId)
+        } catch (e: Exception) {
+            logger.warn { "TASK_CONV_HISTORY: invalid taskId=$taskId — ${e.message}" }
+            return ChatHistoryDto(
+                messages = emptyList(),
+                hasMore = false,
+                oldestMessageId = null,
+                userTaskCount = 0,
+                backgroundMessageCount = 0,
+            )
+        }
+        val docs = chatMessageService.getAllMessages(taskObjectId)
+            .takeLast(limit)
+        val messages = docs.map { it.toChatMessageDto(taskGraphExistsService) }
+        return ChatHistoryDto(
+            messages = messages,
+            hasMore = false,
+            oldestMessageId = docs.firstOrNull()?.id?.toString(),
+            userTaskCount = 0,
+            backgroundMessageCount = 0,
+        )
+    }
+
     override suspend fun updateScope(clientId: String?, projectId: String?, groupId: String?) {
         if (clientId.isNullOrBlank()) return
         // Validate ObjectId format — reject placeholder values

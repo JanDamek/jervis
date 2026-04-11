@@ -75,6 +75,17 @@ class ChatViewModel(
     private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
 
+    /**
+     * Phase 5 chat-as-primary: when non-null, the chat plane is showing the
+     * conversation history of one specific task (sidebar drill-in). When null
+     * the chat shows the global "main chat" view.
+     */
+    private val _activeChatTaskId = MutableStateFlow<String?>(null)
+    val activeChatTaskId: StateFlow<String?> = _activeChatTaskId.asStateFlow()
+
+    private val _activeChatTaskName = MutableStateFlow<String?>(null)
+    val activeChatTaskName: StateFlow<String?> = _activeChatTaskName.asStateFlow()
+
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
 
@@ -395,6 +406,78 @@ class ChatViewModel(
 
     fun editMessage(text: String) {
         _inputText.value = text
+    }
+
+    /**
+     * Phase 5 chat-as-primary: switch the chat plane to a specific task's
+     * conversation. Loads the task's full message history and renders it in
+     * place of the main chat. Use [switchToMainChat] to return.
+     */
+    fun switchToTaskConversation(taskId: String, taskName: String?) {
+        _activeChatTaskId.value = taskId
+        _activeChatTaskName.value = taskName
+        scope.launch {
+            _isLoading.value = true
+            try {
+                val history = repository.call { services ->
+                    services.chatService.getTaskConversationHistory(taskId, limit = 200)
+                }
+                val mapped = history.messages.map { dto ->
+                    ChatMessage(
+                        from = when (dto.role) {
+                            com.jervis.dto.chat.ChatRole.USER -> ChatMessage.Sender.Me
+                            else -> ChatMessage.Sender.Assistant
+                        },
+                        text = dto.content,
+                        contextId = null,
+                        timestamp = dto.timestamp,
+                        messageType = ChatMessage.MessageType.FINAL,
+                        sequence = dto.sequence,
+                        id = dto.messageId,
+                    )
+                }
+                _chatMessages.value = mapped
+                _hasMore.value = false
+            } catch (e: Exception) {
+                println("ChatViewModel: switchToTaskConversation failed: ${e.message}")
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Phase 5 chat-as-primary: return to the main (global) chat view.
+     * Reloads global history via the existing getChatHistory path.
+     */
+    fun switchToMainChat() {
+        if (_activeChatTaskId.value == null) return
+        _activeChatTaskId.value = null
+        _activeChatTaskName.value = null
+        // Trigger the existing history reload by bumping connection generation.
+        // The generation watcher (line ~320) will pick it up and reload via
+        // chatService.getChatHistory with current filter scope.
+        scope.launch {
+            _isLoading.value = true
+            try {
+                val history = repository.call { services ->
+                    services.chatService.getChatHistory(
+                        limit = 50,
+                        showChat = _showChat.value,
+                        showTasks = _showTasks.value,
+                        showNeedReaction = _showNeedReaction.value,
+                        filterClientId = currentFilterClientId,
+                        filterProjectId = currentFilterProjectId,
+                        filterGroupId = currentFilterGroupId,
+                    )
+                }
+                applyHistory(history)
+            } catch (e: Exception) {
+                println("ChatViewModel: switchToMainChat failed: ${e.message}")
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 
     /**
