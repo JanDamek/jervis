@@ -45,8 +45,8 @@ async def analyze_screenshot(
             return await _call_ollama(route, image_b64, prompt)
         except Exception as e:
             logger.warning(
-                "VLM call attempt %d failed: %s",
-                attempt + 1, e,
+                "VLM call attempt %d failed: %s: %s (route=%s)",
+                attempt + 1, type(e).__name__, str(e) or repr(e), route,
             )
             if attempt < len(_RETRY_DELAYS) - 1:
                 await asyncio.sleep(delay)
