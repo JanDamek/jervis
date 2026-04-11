@@ -98,8 +98,8 @@ async def _call_ollama(route: dict, image_b64: str, prompt: str) -> str:
     if model:
         request_body["model"] = model
 
-    # Long timeout: VL model swap + image processing can take 5 minutes
-    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
+    # No timeout — router controls concurrency, never hard-timeout VLM calls
+    async with httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10.0)) as client:
         resp = await client.post(
             f"{api_base}/api/generate",
             json=request_body,
