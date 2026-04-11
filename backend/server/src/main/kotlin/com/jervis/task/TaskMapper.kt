@@ -46,8 +46,23 @@ fun TaskDocument.toUserTaskListItemDto(
 fun TaskDocument.toPendingTaskDto(
     childCount: Int = 0,
     completedChildCount: Int = 0,
-): PendingTaskDto =
-    PendingTaskDto(
+): PendingTaskDto {
+    // qualifierPreparedContext is a JSON blob the qualifier dumps. The Kotlin
+    // /internal/qualification-done callback writes it as
+    // "${contextSummary}\n\n${suggestedApproach}". We split on the first \n\n
+    // so the UI can render the two halves under separate headings — without
+    // changing the qualifier's wire format.
+    val rawCtx = this.qualifierPreparedContext
+    val (ctxSummary, ctxApproach) = if (rawCtx.isNullOrBlank()) {
+        null to null
+    } else {
+        val parts = rawCtx.split("\n\n", limit = 2)
+        (parts.getOrNull(0)?.takeIf { it.isNotBlank() }) to
+            (parts.getOrNull(1)?.takeIf { it.isNotBlank() })
+    }
+    val lastStep = this.qualificationSteps.lastOrNull()?.message?.takeIf { it.isNotBlank() }
+
+    return PendingTaskDto(
         id = this.id.toString(),
         taskType = this.type.name,
         content = this.content,
@@ -64,5 +79,16 @@ fun TaskDocument.toPendingTaskDto(
         sourceLabel = this.sourceUrn.uiLabel(),
         sourceScheme = this.sourceUrn.scheme(),
         pendingUserQuestion = this.pendingUserQuestion,
+        userQuestionContext = this.userQuestionContext,
         needsQualification = this.needsQualification,
+        kbSummary = this.kbSummary,
+        kbEntities = this.kbEntities,
+        priorityScore = this.priorityScore,
+        priorityReason = this.priorityReason,
+        actionType = this.actionType,
+        estimatedComplexity = this.estimatedComplexity,
+        qualifierContextSummary = ctxSummary,
+        qualifierSuggestedApproach = ctxApproach,
+        lastQualificationStep = lastStep,
     )
+}

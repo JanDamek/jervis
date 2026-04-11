@@ -31,8 +31,29 @@ data class PendingTaskDto(
     val sourceScheme: String = "",
     /** Active question if state=USER_TASK. Null otherwise. */
     val pendingUserQuestion: String? = null,
+    /** Context that explains the pending question, if any. */
+    val userQuestionContext: String? = null,
     /** Phase 3 re-entrant qualifier flag — task is awaiting (re-)qualification. */
     val needsQualification: Boolean = false,
+    // === Qualifier output (Phase 3 re-entrant qualifier results) ===
+    /** Short LLM-extracted overview of the source content (from KB ingestion). */
+    val kbSummary: String? = null,
+    /** Graph entities extracted by KB during ingestion. */
+    val kbEntities: List<String> = emptyList(),
+    /** Priority score 0–100 assigned by the qualifier. */
+    val priorityScore: Int? = null,
+    /** Human-readable reason for the qualifier's priority decision. */
+    val priorityReason: String? = null,
+    /** Inferred action type (TECHNICAL / ANALYSIS / REVIEW / COMMUNICATION / …). */
+    val actionType: String? = null,
+    /** Inferred complexity (TRIVIAL / SIMPLE / MEDIUM / COMPLEX / CRITICAL). */
+    val estimatedComplexity: String? = null,
+    /** Free-text context the qualifier prepared for the orchestrator. */
+    val qualifierContextSummary: String? = null,
+    /** Free-text approach the qualifier suggests for the orchestrator. */
+    val qualifierSuggestedApproach: String? = null,
+    /** Last qualifier step message (for compact "what is the qualifier doing" hint). */
+    val lastQualificationStep: String? = null,
 )
 
 /** Paginated result for PendingTasksScreen — merges listTasks + countTasks into a single RPC call. */
