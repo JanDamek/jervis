@@ -158,6 +158,22 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
         state: TaskStateEnum,
     ): Flow<TaskDocument>
 
+    /**
+     * Phase 4 fix — derived query replacement for the broken Spring Criteria
+     * call in TaskService.findTasksForIndexing. The Criteria-based query was
+     * silently returning 0 even when tasks existed in the matching state, so
+     * the qualifier loop never picked them up. Derived queries are
+     * well-tested by Spring Data and reliably handle the IsNull semantics.
+     */
+    fun findByStateAndIndexingClaimedAtIsNullAndNextQualificationRetryAtIsNullOrderByCreatedAtAsc(
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    fun findByStateAndIndexingClaimedAtIsNullAndNextQualificationRetryAtLessThanEqualOrderByCreatedAtAsc(
+        state: TaskStateEnum,
+        nextQualificationRetryAt: Instant,
+    ): Flow<TaskDocument>
+
     suspend fun findByStateAndNextQualificationRetryAtLessThanEqualOrderByCreatedAtAsc(
         state: TaskStateEnum,
         now: Instant,

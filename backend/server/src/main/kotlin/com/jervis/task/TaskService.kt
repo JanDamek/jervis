@@ -679,36 +679,36 @@ class TaskService(
     suspend fun findTasksForIndexing(): Flow<TaskDocument> =
         flow {
             val now = Instant.now()
-            // Unclaimed new tasks (never retried)
-            val newQuery = Query(
-                Criteria.where("state").`is`(TaskStateEnum.INDEXING.name)
-                    .and("indexingClaimedAt").`is`(null)
-                    .and("nextQualificationRetryAt").`is`(null),
-            ).with(
-                org.springframework.data.domain.Sort.by(
-                    org.springframework.data.domain.Sort.Order.asc("queuePosition"),
-                    org.springframework.data.domain.Sort.Order.asc("createdAt"),
-                ),
-            )
-            mongoTemplate.find(newQuery, TaskDocument::class.java)
-                .collectList().awaitSingle()
-                .forEach { emit(it) }
+            // Phase 4 fix: derived query replacement for the previous Criteria-
+            // based call which was silently returning 0 even when matching
+            // INDEXING tasks existed. See TaskRepository for the rationale.
+            val newCount = mutableListOf<TaskDocument>()
+            taskRepository.findByStateAndIndexingClaimedAtIsNullAndNextQualificationRetryAtIsNullOrderByCreatedAtAsc(
+                TaskStateEnum.INDEXING,
+            ).collect { newCount.add(it) }
+            if (newCount.isNotEmpty()) {
+                logger.info { "INDEXING_FIND: branch=new found=${newCount.size}" }
+            }
+            newCount.forEach { emit(it) }
 
-            // Unclaimed retried tasks where backoff has elapsed
-            val retriedQuery = Query(
-                Criteria.where("state").`is`(TaskStateEnum.INDEXING.name)
-                    .and("indexingClaimedAt").`is`(null)
-                    .and("nextQualificationRetryAt").lte(now),
-            ).with(
-                org.springframework.data.domain.Sort.by(
-                    org.springframework.data.domain.Sort.Order.asc("queuePosition"),
-                    org.springframework.data.domain.Sort.Order.asc("createdAt"),
-                ),
-            )
-            mongoTemplate.find(retriedQuery, TaskDocument::class.java)
-                .collectList().awaitSingle()
-                .forEach { emit(it) }
-        }.filter { it.type != TaskTypeEnum.SYSTEM }
+            // Phase 4 fix: derived query for backoff-elapsed retried tasks.
+            val retriedCount = mutableListOf<TaskDocument>()
+            taskRepository
+                .findByStateAndIndexingClaimedAtIsNullAndNextQualificationRetryAtLessThanEqualOrderByCreatedAtAsc(
+                    TaskStateEnum.INDEXING,
+                    now,
+                ).collect { retriedCount.add(it) }
+            if (retriedCount.isNotEmpty()) {
+                logger.info { "INDEXING_FIND: branch=retried found=${retriedCount.size}" }
+            }
+            retriedCount.forEach { emit(it) }
+        }
+        // CRITICAL Phase 1 regression fix: previously this flow had
+        //     .filter { it.type != TaskTypeEnum.SYSTEM }
+        // which silently dropped EVERY indexing task because, after Phase 1,
+        // all indexer-created tasks have type=SYSTEM. The filter was a leftover
+        // from the 15-value enum era and made the qualifier loop a no-op for
+        // all real work. The filter is now removed.
 
     /**
      * Atomically claim an INDEXING task for KB dispatch using MongoDB findAndModify.
