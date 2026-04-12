@@ -40,6 +40,7 @@ import java.time.Instant
 class TaskQualificationService(
     private val taskService: TaskService,
     private val taskRepository: TaskRepository,
+    private val clientRepository: com.jervis.client.ClientRepository,
     private val knowledgeClient: com.jervis.infrastructure.llm.KnowledgeServiceRestClient,
     private val projectRepository: ProjectRepository,
     private val cloudModelPolicyResolver: CloudModelPolicyResolver,
@@ -73,9 +74,24 @@ class TaskQualificationService(
         // agent at a time (shared GPU). The loop runs every 30s so throughput
         // is ~2 tasks/min. Bulk re-qualification (1000+ tasks) takes ~8 hours.
         val maxPerCycle = 1
+        // Pre-load archived client IDs so we can skip their tasks entirely.
+        // Archived clients = no longer paying, no work needed, just KB storage.
+        val archivedClientIds = try {
+            val ids = mutableSetOf<com.jervis.common.types.ClientId>()
+            clientRepository.findByArchivedTrue().collect { ids.add(it.id) }
+            ids
+        } catch (_: Exception) { emptySet<com.jervis.common.types.ClientId>() }
+
         try {
             taskRepository.findByNeedsQualificationTrueOrderByCreatedAtAsc().collect { task ->
                 if (dispatched >= maxPerCycle) return@collect
+                // Skip archived clients — mark DONE without qualifying
+                if (task.clientId in archivedClientIds) {
+                    taskService.clearNeedsQualification(task.id)
+                    taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
+                    skipped++
+                    return@collect
+                }
                 try {
                     val request = com.jervis.agent.QualifyRequestDto(
                         taskId = task.id.toString(),
