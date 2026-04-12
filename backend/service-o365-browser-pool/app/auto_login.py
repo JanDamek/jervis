@@ -591,21 +591,25 @@ async def _detect_stage(page: Page) -> LoginStage:
         if pick_account:
             return LoginStage.PICK_ACCOUNT
 
-        # Check for email input
-        email_input = await _find_element(page, [
-            'input[type="email"]',
-            'input[name="loginfmt"]',
-        ])
-        if email_input:
-            return LoginStage.EMAIL_ENTRY
-
-        # Check for password input
+        # Check for password input BEFORE email — Microsoft's password page
+        # still contains a hidden input[name=loginfmt] (aria-hidden=true),
+        # so checking email first would incorrectly return EMAIL_ENTRY.
         password_input = await _find_element(page, [
             'input[type="password"]',
             'input[name="passwd"]',
         ])
         if password_input:
             return LoginStage.PASSWORD_ENTRY
+
+        # Check for email input
+        email_input = await _find_element(page, [
+            'input[type="email"]:not([aria-hidden="true"])',
+            'input[name="loginfmt"]:not([aria-hidden="true"])',
+            'input[type="email"]',
+            'input[name="loginfmt"]',
+        ])
+        if email_input:
+            return LoginStage.EMAIL_ENTRY
 
         # Check for MFA
         mfa_element = await _find_element(page, [
