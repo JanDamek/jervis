@@ -464,7 +464,7 @@ async def submit_mfa_code(page: Page, code: str) -> LoginResult:
             )
 
         await mfa_input.fill(code)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1.5)
 
         # Click verify/submit button
         submit_btn = await _find_element(page, [
@@ -717,7 +717,7 @@ async def _enter_email(page: Page, email: str) -> LoginResult:
     await email_input.click()
     await page.keyboard.press("Control+a")
     await email_input.fill(email)
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(1.5)
 
     # Click Next
     next_btn = await _find_element(page, [
@@ -867,7 +867,7 @@ async def _enter_password(page: Page, password: str) -> LoginResult:
         )
 
     await password_input.fill(password)
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(1.5)
 
     # Click Sign in
     sign_in_btn = await _find_element(page, [
@@ -1012,12 +1012,12 @@ async def _get_error_text(page: Page) -> str:
     return "Unknown error"
 
 
-async def _find_element(page: Page, selectors: list[str]):
+async def _find_element(page: Page, selectors: list[str], timeout_ms: int = 3000):
     """Try multiple selectors, return first match or None."""
     for selector in selectors:
         try:
             el = page.locator(selector).first
-            if await el.is_visible(timeout=500):
+            if await el.is_visible(timeout=timeout_ms):
                 return el
         except Exception:
             continue
