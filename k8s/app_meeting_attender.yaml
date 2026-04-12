@@ -39,7 +39,7 @@ spec:
                 name: jervis-config
           env:
             - name: JERVIS_SERVER_URL
-              value: "http://jervis-server:8084"
+              value: "http://jervis-server:5500"
             - name: INTERNAL_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
