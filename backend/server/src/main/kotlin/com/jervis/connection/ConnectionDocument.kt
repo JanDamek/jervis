@@ -83,6 +83,10 @@ data class ConnectionDocument(
     // O365 Gateway (browser session relay — clientId for browser pool)
     val o365ClientId: String? = null,
 
+    // Browser pool pod assignment — each O365/Teams connection gets its own pod.
+    // Ordinal maps to StatefulSet pod: jervis-o365-browser-pool-{ordinal}
+    val browserPoolPodIndex: Int? = null,
+
     // Jervis self-identity — who this connection authenticates as
     val selfUsername: String? = null,
     val selfDisplayName: String? = null,
