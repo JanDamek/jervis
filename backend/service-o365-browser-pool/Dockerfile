@@ -10,6 +10,8 @@ RUN apt-get update --allow-insecure-repositories || true && \
     x11vnc \
     novnc \
     websockify \
+    pulseaudio \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

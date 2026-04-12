@@ -15,6 +15,11 @@ export DISPLAY=:99
 # Wait for Xvfb to start
 sleep 1
 
+# Start PulseAudio with virtual null sink for meeting audio capture
+pulseaudio --start --exit-idle-time=-1 2>/dev/null || true
+pactl load-module module-null-sink sink_name=jervis-sink sink_properties=device.description="JERVIS_Audio_Capture" 2>/dev/null || true
+pactl set-default-sink jervis-sink 2>/dev/null || true
+
 # Start x11vnc (VNC server) on port 5900, with password
 x11vnc -display :99 -forever -shared -rfbport 5900 -bg -o /dev/null -passwd "$O365_POOL_VNC_PASSWORD"
 

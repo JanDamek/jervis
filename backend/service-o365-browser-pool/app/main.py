@@ -34,6 +34,8 @@ from app.session_monitor import SessionMonitor
 from app.tab_manager import TabManager
 from app.token_extractor import TokenExtractor
 from app.vnc_auth import VncAuthManager
+from app.meeting_recorder import MeetingRecorder
+from app.routes.meeting import create_meeting_router
 from app.vnc_proxy import create_vnc_proxy_router, create_vnc_static_middleware
 
 logging.basicConfig(
@@ -49,6 +51,7 @@ tab_manager = TabManager(token_extractor)
 scrape_storage = ScrapeStorage()
 screen_scraper = ScreenScraper(browser_manager, tab_manager, scrape_storage)
 teams_crawler = TeamsCrawler()
+meeting_recorder = MeetingRecorder(browser_manager)
 session_monitor = SessionMonitor(browser_manager, token_extractor)
 
 
@@ -89,6 +92,7 @@ app.include_router(
     create_scrape_router(screen_scraper, tab_manager, teams_crawler,
                          browser_manager, scrape_storage)
 )
+app.include_router(create_meeting_router(meeting_recorder))
 
 # VNC auth endpoints (vnc-login, vnc-token)
 app.include_router(create_vnc_auth_router(vnc_auth_manager))
