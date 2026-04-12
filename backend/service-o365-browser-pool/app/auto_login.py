@@ -71,6 +71,7 @@ class LoginResult:
 
 # Domains that indicate successful login
 _LOGGED_IN_DOMAINS = [
+    "teams.cloud.microsoft",
     "teams.microsoft.com/v2",
     "teams.microsoft.com/_",
     "teams.live.com",
@@ -81,6 +82,7 @@ _LOGGED_IN_DOMAINS = [
 
 # Teams loading indicators (app loaded but still initializing)
 _TEAMS_LOADING_PATTERNS = [
+    "teams.cloud.microsoft",
     "teams.microsoft.com",
     "teams.live.com",
 ]
