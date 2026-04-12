@@ -44,4 +44,21 @@ interface IPendingTaskService {
     suspend fun listChildren(parentTaskId: String): List<PendingTaskDto>
 
     suspend fun deletePendingTask(id: String)
+
+    /**
+     * Phase 5 — user (or JERVIS itself) marks a task as DONE.
+     * Same action available to both: in the chat task brief there is a
+     * 'Označit jako hotové' button, and the chat agent has a tool that
+     * calls this same endpoint. The task transitions to state=DONE,
+     * lastActivityAt is updated. The task is preserved in the DB.
+     */
+    suspend fun markDone(id: String, note: String? = null): PendingTaskDto?
+
+    /**
+     * Phase 5 — user (or JERVIS itself) reopens a previously DONE task.
+     * The task transitions to state=NEW with needsQualification=true so
+     * the re-entrant qualifier picks it up and decides what to do next.
+     * Used when the user remembers something or wants to revisit.
+     */
+    suspend fun reopen(id: String, note: String? = null): PendingTaskDto?
 }

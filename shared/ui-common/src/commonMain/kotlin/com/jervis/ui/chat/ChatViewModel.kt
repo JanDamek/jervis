@@ -95,6 +95,44 @@ class ChatViewModel(
         _chatSidebarSplitFraction.value = fraction.coerceIn(0.15f, 0.5f)
     }
 
+    /**
+     * Phase 5 — user marks the currently active task as DONE. Same action
+     * the chat agent has via its tools (no privileged path). After mark
+     * done, refresh the chat plane to show the updated state and bounce
+     * back to the main chat (the task is no longer in the active sidebar).
+     */
+    fun markActiveTaskDone(note: String? = null) {
+        val taskId = _activeChatTaskId.value ?: return
+        scope.launch {
+            try {
+                repository.call { services -> services.pendingTaskService.markDone(taskId, note) }
+                println("ChatViewModel: marked task $taskId as DONE")
+                switchToMainChat()
+            } catch (e: Exception) {
+                println("ChatViewModel: markActiveTaskDone failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Phase 5 — user reopens the currently active task. Transitions to
+     * NEW + needsQualification=true. The re-entrant qualifier picks it up.
+     */
+    fun reopenActiveTask(note: String? = null) {
+        val taskId = _activeChatTaskId.value ?: return
+        val taskName = _activeChatTaskName.value
+        scope.launch {
+            try {
+                repository.call { services -> services.pendingTaskService.reopen(taskId, note) }
+                println("ChatViewModel: reopened task $taskId")
+                // Reload the task brief so the new state is visible
+                switchToTaskConversation(taskId, taskName)
+            } catch (e: Exception) {
+                println("ChatViewModel: reopenActiveTask failed: ${e.message}")
+            }
+        }
+    }
+
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
 

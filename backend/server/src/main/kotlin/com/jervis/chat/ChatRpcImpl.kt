@@ -6,8 +6,13 @@ import com.jervis.dto.chat.ChatResponseDto
 import com.jervis.dto.chat.ChatResponseType
 import com.jervis.dto.chat.ChatRole
 import com.jervis.dto.task.TaskStateEnum
+import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
+import com.jervis.common.types.TaskId
+import com.jervis.chat.ChatMessageDocument
+import com.jervis.chat.ChatMessageRepository
+import com.jervis.chat.MessageRole
 import com.jervis.client.ClientRepository
 import com.jervis.project.ProjectRepository
 import com.jervis.task.TaskRepository
@@ -39,6 +44,7 @@ import org.springframework.stereotype.Component
 class ChatRpcImpl(
     private val chatService: ChatService,
     private val chatMessageService: ChatMessageService,
+    private val chatMessageRepository: ChatMessageRepository,
     private val backgroundEngine: BackgroundEngine,
     private val clientRepository: ClientRepository,
     private val projectRepository: ProjectRepository,
@@ -115,10 +121,117 @@ class ChatRpcImpl(
         clientTimezone: String?,
     ) {
         // Validate ObjectId format — reject placeholder values like "client_123"
-        val safeClientId = activeClientId?.takeIf { ObjectId.isValid(it) }
-        val safeProjectId = activeProjectId?.takeIf { ObjectId.isValid(it) }
+        var safeClientId = activeClientId?.takeIf { ObjectId.isValid(it) }
+        var safeProjectId = activeProjectId?.takeIf { ObjectId.isValid(it) }
         val safeGroupId = activeGroupId?.takeIf { ObjectId.isValid(it) }
-        logger.info { "CHAT_SEND | text='${text.take(80)}' | clientId=$safeClientId | projectId=$safeProjectId | groupId=$safeGroupId | tz=$clientTimezone" }
+
+        // Phase 5 chat-as-primary: when the user is replying inside a task's
+        // own conversation thread (contextTaskId set), DO NOT immediately
+        // dispatch to the orchestrator under the dropdown scope. Instead:
+        //   1) override scope with the task's own clientId/projectId so the
+        //      message lives in the right context
+        //   2) for SYSTEM/SCHEDULED tasks, append the message into the task's
+        //      conversation history + flag needsQualification=true and STOP.
+        //      The RequalificationLoop will pick the task up and ask the
+        //      Python /qualify agent to re-decide what to do with the new
+        //      evidence (DONE / QUEUED / USER_TASK / DECOMPOSE / ...).
+        //      The orchestrator only runs if/when the qualifier returns
+        //      QUEUED — it must NEVER run synchronously from sendMessage
+        //      for non-INSTANT tasks.
+        //   3) for INSTANT tasks (the user's main chat / chat-initiated work)
+        //      the orchestrator path is still the right one: user typing IS
+        //      the work, no re-qualification needed.
+        var routeThroughRequalifier = false
+        var taskScopeApplied = false
+        if (!contextTaskId.isNullOrBlank()) {
+            try {
+                val taskId = TaskId.fromString(contextTaskId)
+                val task = taskRepository.getById(taskId)
+                if (task != null) {
+                    val taskClient = task.clientId.toString()
+                    val taskProject = task.projectId?.toString()
+                    if (taskClient != safeClientId || taskProject != safeProjectId) {
+                        logger.info {
+                            "CHAT_SEND_TASK_SCOPE_OVERRIDE | contextTaskId=$contextTaskId | " +
+                                "dropdown=client:$safeClientId/project:$safeProjectId → " +
+                                "task=client:$taskClient/project:$taskProject"
+                        }
+                        safeClientId = taskClient
+                        safeProjectId = taskProject
+                        taskScopeApplied = true
+                    }
+                    if (task.type != com.jervis.dto.task.TaskTypeEnum.INSTANT) {
+                        routeThroughRequalifier = true
+                    }
+                } else {
+                    logger.warn { "CHAT_SEND_TASK_SCOPE: contextTaskId=$contextTaskId not found in DB — keeping dropdown scope" }
+                }
+            } catch (e: Exception) {
+                logger.warn { "CHAT_SEND_TASK_SCOPE: failed to resolve contextTaskId=$contextTaskId: ${e.message}" }
+            }
+        }
+
+        logger.info {
+            "CHAT_SEND | text='${text.take(80)}' | clientId=$safeClientId | projectId=$safeProjectId | groupId=$safeGroupId | " +
+                "contextTaskId=$contextTaskId | route=${if (routeThroughRequalifier) "REQUALIFIER" else "ORCHESTRATOR"} | tz=$clientTimezone"
+        }
+
+        // Phase 5: re-qualifier route — append message to task conversation
+        // + flag needsQualification=true + emit confirmation. Skip orchestrator.
+        if (routeThroughRequalifier && !contextTaskId.isNullOrBlank()) {
+            backgroundScope.launch {
+                try {
+                    val taskId = TaskId.fromString(contextTaskId)
+                    val task = taskRepository.getById(taskId) ?: return@launch
+                    val now = java.time.Instant.now()
+                    val seq = chatMessageRepository.countByConversationId(task.id.value) + 1
+                    chatMessageRepository.save(
+                        ChatMessageDocument(
+                            conversationId = task.id.value,
+                            correlationId = task.correlationId,
+                            role = MessageRole.USER,
+                            content = text,
+                            sequence = seq,
+                            timestamp = now,
+                        ),
+                    )
+                    val updated = task.copy(
+                        content = "${task.content}\n\n[Doplnění od uživatele ${now}]\n$text",
+                        needsQualification = true,
+                        lastActivityAt = now,
+                    )
+                    taskRepository.save(updated)
+                    logger.info { "CHAT_SEND_REQUALIFY: appended user input to task=${task.id}, flagged needsQualification=true" }
+                    // Echo user message into chat stream so UI shows it
+                    chatEventStream.emit(
+                        ChatResponseDto(
+                            message = text,
+                            type = ChatResponseType.USER_MESSAGE,
+                            metadata = buildMap {
+                                put("sender", "user")
+                                put("timestamp", now.toString())
+                                put("contextTaskId", contextTaskId)
+                                put("route", "requalifier")
+                            },
+                        ),
+                    )
+                    // System acknowledgment so the user knows JERVIS heard them
+                    chatEventStream.emit(
+                        ChatResponseDto(
+                            message = "📥 Doplněno k úloze. Kvalifikátor brzy přehodnotí postup.",
+                            type = ChatResponseType.FINAL,
+                            metadata = mapOf(
+                                "contextTaskId" to contextTaskId,
+                                "route" to "requalifier_ack",
+                            ),
+                        ),
+                    )
+                } catch (e: Exception) {
+                    logger.error(e) { "CHAT_SEND_REQUALIFY failed for contextTaskId=$contextTaskId" }
+                }
+            }
+            return
+        }
 
         // Persist client timezone as last-known for scheduler/calendar (fire-and-forget)
         val resolvedTimezone = clientTimezone ?: "Europe/Prague"

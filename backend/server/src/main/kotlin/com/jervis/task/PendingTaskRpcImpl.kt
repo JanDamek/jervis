@@ -43,4 +43,10 @@ class PendingTaskRpcImpl(
         pendingTaskService.listChildren(parentTaskId)
 
     override suspend fun deletePendingTask(id: String) = pendingTaskService.deletePendingTask(id)
+
+    override suspend fun markDone(id: String, note: String?): PendingTaskDto? =
+        pendingTaskService.markDone(id, note)
+
+    override suspend fun reopen(id: String, note: String?): PendingTaskDto? =
+        pendingTaskService.reopen(id, note)
 }

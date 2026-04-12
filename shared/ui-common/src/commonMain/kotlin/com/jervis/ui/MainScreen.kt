@@ -146,6 +146,8 @@ fun MainScreenView(
     onMainChatSelected: () -> Unit = {},
     chatSidebarSplitFraction: Float = 0.22f,
     onChatSidebarSplitChange: (Float) -> Unit = {},
+    onMarkActiveTaskDone: () -> Unit = {},
+    onReopenActiveTask: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
@@ -219,6 +221,8 @@ fun MainScreenView(
                             onNavigateToTask = onNavigateToTask,
                             activeChatTaskName = activeChatTaskName,
                             onReturnToMainChat = onMainChatSelected,
+                            onMarkActiveTaskDone = onMarkActiveTaskDone,
+                            onReopenActiveTask = onReopenActiveTask,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -295,6 +299,8 @@ fun MainScreenView(
                             onNavigateToTask = onNavigateToTask,
                             activeChatTaskName = activeChatTaskName,
                             onReturnToMainChat = onMainChatSelected,
+                            onMarkActiveTaskDone = onMarkActiveTaskDone,
+                            onReopenActiveTask = onReopenActiveTask,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -366,6 +372,8 @@ fun MainScreenView(
                         onNavigateToTask = onNavigateToTask,
                         activeChatTaskName = activeChatTaskName,
                         onReturnToMainChat = onMainChatSelected,
+                        onMarkActiveTaskDone = onMarkActiveTaskDone,
+                        onReopenActiveTask = onReopenActiveTask,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -507,6 +515,8 @@ private fun ChatContent(
     // Phase 5 — active per-task conversation indicator
     activeChatTaskName: String? = null,
     onReturnToMainChat: () -> Unit = {},
+    onMarkActiveTaskDone: () -> Unit = {},
+    onReopenActiveTask: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -525,35 +535,62 @@ private fun ChatContent(
 
         // Phase 5 — active per-task conversation breadcrumb. Only visible
         // when the user has drilled into a task's chat from the sidebar.
-        // Tap (anywhere on the bar) returns to the main chat.
+        // Left side of the bar = back arrow (return to main chat).
+        // Right side = action buttons: mark done / reopen.
         if (activeChatTaskName != null) {
             Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onReturnToMainChat() },
+                modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.primaryContainer,
                 tonalElevation = 1.dp,
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Zpět na hlavní chat",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "↳ $activeChatTaskName",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onReturnToMainChat() }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Zpět na hlavní chat",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "↳ $activeChatTaskName",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    TextButton(
+                        onClick = onReopenActiveTask,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    ) {
+                        Text(
+                            "Otevřít znovu",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                    TextButton(
+                        onClick = onMarkActiveTaskDone,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    ) {
+                        Text(
+                            "Označit hotové",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
                 }
             }
         }

@@ -141,4 +141,46 @@ class PendingTaskService(
         val taskId = TaskId.fromString(id)
         taskRepository.deleteById(taskId)
     }
+
+    override suspend fun markDone(id: String, note: String?): PendingTaskDto? {
+        val taskId = TaskId.fromString(id)
+        val task = taskRepository.getById(taskId) ?: return null
+        val now = java.time.Instant.now()
+        val newContent = if (note.isNullOrBlank()) {
+            task.content
+        } else {
+            "${task.content}\n\n[Hotovo $now] $note"
+        }
+        val updated = task.copy(
+            state = TaskStateEnum.DONE,
+            content = newContent,
+            lastActivityAt = now,
+            needsQualification = false,
+            pendingUserQuestion = null,
+            userQuestionContext = null,
+        )
+        val saved = taskRepository.save(updated)
+        return saved.toPendingTaskDto()
+    }
+
+    override suspend fun reopen(id: String, note: String?): PendingTaskDto? {
+        val taskId = TaskId.fromString(id)
+        val task = taskRepository.getById(taskId) ?: return null
+        val now = java.time.Instant.now()
+        val newContent = if (note.isNullOrBlank()) {
+            task.content
+        } else {
+            "${task.content}\n\n[Reopen $now] $note"
+        }
+        // Reopen → NEW + needsQualification=true so the re-entrant qualifier
+        // picks it up and decides what to do with the (possibly outdated) task.
+        val updated = task.copy(
+            state = TaskStateEnum.NEW,
+            content = newContent,
+            lastActivityAt = now,
+            needsQualification = true,
+        )
+        val saved = taskRepository.save(updated)
+        return saved.toPendingTaskDto()
+    }
 }

@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
@@ -70,6 +72,7 @@ fun ChatTaskSidebar(
     var tasks by remember { mutableStateOf<List<PendingTaskDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var showDone by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     suspend fun loadActive() {
@@ -81,17 +84,15 @@ fun ChatTaskSidebar(
             // server-side listTasksPaged accepts only ONE state filter at a
             // time. After Phase 5 follow-up the server query should accept
             // a list of states; this client merge keeps the v1 simple.
-            val nonTerminalStates = listOf(
-                "USER_TASK",
-                "PROCESSING",
-                "QUEUED",
-                "BLOCKED",
-                "INDEXING",
-                "NEW",
-                "ERROR",
-            )
+            val states = if (showDone) {
+                // Show DONE only — user explicitly switched to history view
+                listOf("DONE")
+            } else {
+                // Default — non-terminal active tasks
+                listOf("USER_TASK", "PROCESSING", "QUEUED", "BLOCKED", "INDEXING", "NEW", "ERROR")
+            }
             val merged = mutableListOf<PendingTaskDto>()
-            for (state in nonTerminalStates) {
+            for (state in states) {
                 val page = repository.pendingTasks.listTasksPaged(
                     taskType = null,
                     state = state,
@@ -116,7 +117,7 @@ fun ChatTaskSidebar(
         }
     }
 
-    LaunchedEffect(Unit) { loadActive() }
+    LaunchedEffect(showDone) { loadActive() }
     LaunchedEffect(Unit) {
         // Periodic refresh — replaces SSE for v1.
         while (true) {
@@ -139,19 +140,31 @@ fun ChatTaskSidebar(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = "Aktivní úlohy (${tasks.size})",
+                    text = if (showDone) "Hotové úlohy (${tasks.size})" else "Aktivní úlohy (${tasks.size})",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
-                IconButton(
-                    onClick = { scope.launch { loadActive() } },
-                    modifier = Modifier.size(28.dp),
-                ) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = "Obnovit",
-                        modifier = Modifier.size(18.dp),
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { showDone = !showDone },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            if (showDone) Icons.Default.CheckCircle else Icons.Default.History,
+                            contentDescription = if (showDone) "Zobrazit aktivní" else "Zobrazit hotové",
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    IconButton(
+                        onClick = { scope.launch { loadActive() } },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Obnovit",
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
 
