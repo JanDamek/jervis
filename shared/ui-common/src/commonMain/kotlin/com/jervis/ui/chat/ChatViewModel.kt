@@ -96,13 +96,21 @@ class ChatViewModel(
 
     /**
      * Phase 5 — draft persistence: unsent text per conversation. Key = null
-     * for main chat, taskId for task conversations. When the user switches
-     * conversations, the current inputText is saved here and the target
-     * conversation's draft is restored. Survives navigation but NOT app
-     * restart (server-side persistence is a follow-up — this keeps the
-     * in-session UX solid without adding an endpoint).
+     * for main chat, taskId for task conversations. Saved to server via
+     * chatService.saveDraft on every conversation switch. Loaded from server
+     * on startup via chatService.loadDrafts. Survives app restart.
      */
     private val drafts = mutableMapOf<String?, String>()
+    private var draftSaveJob: kotlinx.coroutines.Job? = null
+
+    /** Persist draft to server (fire-and-forget, non-blocking). */
+    private fun persistDraftToServer(conversationId: String?, text: String) {
+        scope.launch {
+            try {
+                repository.call { s -> s.chatService.saveDraft(conversationId, text) }
+            } catch (_: Exception) { /* non-critical */ }
+        }
+    }
 
     fun updateChatSidebarSplitFraction(fraction: Float) {
         _chatSidebarSplitFraction.value = fraction.coerceIn(0.15f, 0.5f)
@@ -422,6 +430,16 @@ class ChatViewModel(
                         )
                     }
                     applyHistory(history)
+                    // Load server-side drafts on connection ready
+                    try {
+                        val serverDrafts = repository.call { s -> s.chatService.loadDrafts() }
+                        drafts.clear()
+                        serverDrafts.forEach { (k, v) ->
+                            drafts[if (k == "__main__") null else k] = v
+                        }
+                        // Restore draft for current conversation
+                        _inputText.value = drafts[_activeChatTaskId.value] ?: ""
+                    } catch (_: Exception) { /* non-critical */ }
                     onStatusDetail("ok")
                     println("ChatViewModel: history loaded (gen=$gen) — ${history.messages.size} msgs, " +
                         "hasMore=${history.hasMore}, chat=${_showChat.value}, tasks=${_showTasks.value}, " +
@@ -484,7 +502,7 @@ class ChatViewModel(
      * place of the main chat. Use [switchToMainChat] to return.
      */
     fun switchToTaskConversation(taskId: String, taskName: String?) {
-        // Save current draft before switching
+        // Save current draft before switching (local + server)
         val currentKey = _activeChatTaskId.value
         val currentText = _inputText.value
         if (currentText.isNotBlank()) {
@@ -492,10 +510,10 @@ class ChatViewModel(
         } else {
             drafts.remove(currentKey)
         }
+        persistDraftToServer(currentKey, currentText)
         _activeChatTaskId.value = taskId
         _activeChatTaskName.value = taskName
-        _activeChatTaskState.value = null // will be set after task loads
-        // Restore target conversation's draft
+        _activeChatTaskState.value = null
         _inputText.value = drafts[taskId] ?: ""
         scope.launch {
             _isLoading.value = true
@@ -683,7 +701,7 @@ class ChatViewModel(
      */
     fun switchToMainChat() {
         if (_activeChatTaskId.value == null) return
-        // Save current task draft before switching
+        // Save current task draft before switching (local + server)
         val currentKey = _activeChatTaskId.value
         val currentText = _inputText.value
         if (currentText.isNotBlank()) {
@@ -691,10 +709,10 @@ class ChatViewModel(
         } else {
             drafts.remove(currentKey)
         }
+        persistDraftToServer(currentKey, currentText)
         _activeChatTaskId.value = null
         _activeChatTaskName.value = null
         _activeChatTaskState.value = null
-        // Restore main chat draft
         _inputText.value = drafts[null] ?: ""
         // Trigger the existing history reload by bumping connection generation.
         // The generation watcher (line ~320) will pick it up and reload via

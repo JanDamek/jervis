@@ -42,6 +42,8 @@ fun Routing.installInternalTaskApi(
     userTaskService: UserTaskService,
     preferenceService: com.jervis.preferences.PreferenceService,
     pendingTaskService: com.jervis.task.PendingTaskService,
+    fcmPushService: com.jervis.infrastructure.notification.FcmPushService,
+    apnsPushService: com.jervis.infrastructure.notification.ApnsPushService,
     chatRpcImpl: com.jervis.chat.ChatRpcImpl? = null,
 ) {
     // Create a background task — for chat tool create_background_task / scheduled tasks
@@ -604,6 +606,39 @@ fun Routing.installInternalTaskApi(
         }
     }
 
+    // Phase 5: JERVIS push notification tool — send to all registered devices
+    post("/internal/push-notification") {
+        try {
+            val body = call.receive<InternalPushRequest>()
+            val fcm = try {
+                fcmPushService.sendPushNotification(
+                    clientId = body.clientId,
+                    title = body.title,
+                    body = body.body,
+                    data = body.data ?: emptyMap(),
+                )
+                "ok"
+            } catch (e: Exception) { "fcm_error: ${e.message}" }
+            val apns = try {
+                apnsPushService.sendPushNotification(
+                    clientId = body.clientId,
+                    title = body.title,
+                    body = body.body,
+                    data = body.data ?: emptyMap(),
+                )
+                "ok"
+            } catch (e: Exception) { "apns_error: ${e.message}" }
+            logger.info("PUSH_NOTIFICATION | clientId=${body.clientId} | title=${body.title} | fcm=$fcm | apns=$apns")
+            call.respondText(
+                """{"ok":true,"fcm":"$fcm","apns":"$apns"}""",
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=push-notification" }
+            call.respondText("""{"ok":false,"error":"${e.message}"}""", ContentType.Application.Json, HttpStatusCode.InternalServerError)
+        }
+    }
+
     // Phase 5: Mark task as DONE (available to both user UI and JERVIS agent)
     post("/internal/tasks/{taskId}/done") {
         try {
@@ -759,6 +794,14 @@ data class WorkPlanTask(
 @Serializable
 data class InternalRespondToTaskRequest(
     val response: String,
+)
+
+@Serializable
+data class InternalPushRequest(
+    val clientId: String,
+    val title: String,
+    val body: String,
+    val data: Map<String, String>? = null,
 )
 
 @Serializable

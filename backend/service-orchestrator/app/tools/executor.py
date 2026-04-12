@@ -595,6 +595,14 @@ async def execute_tool(
                 update_doc=arguments.get("update", {}),
                 upsert=arguments.get("upsert", False),
             )
+        # --- Push notification ---
+        elif tool_name == "send_push_notification":
+            result = await kotlin_client.send_push_notification(
+                client_id=client_id,
+                title=arguments.get("title", ""),
+                body=arguments.get("body", ""),
+            )
+            result = json.dumps(result) if isinstance(result, dict) else str(result)
         # --- Task lifecycle (mark done / reopen) ---
         elif tool_name == "mark_task_done":
             result = await kotlin_client.mark_task_done(

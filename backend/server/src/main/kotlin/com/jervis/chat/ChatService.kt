@@ -253,6 +253,13 @@ class ChatService(
      * Update session scope when Python emits scope_change.
      * Called by ChatRpcImpl when it sees a SCOPE_CHANGE event.
      */
+    /** Phase 5 draft persistence — save drafts map to session document. */
+    suspend fun updateDrafts(sessionId: ObjectId, drafts: Map<String, String>) {
+        val session = chatSessionRepository.findById(sessionId) ?: return
+        session.drafts = drafts
+        chatSessionRepository.save(session)
+    }
+
     suspend fun updateSessionScope(userId: String = "jan", clientId: String, projectId: String?, groupId: String? = null) {
         val session = chatSessionRepository.findFirstByUserIdAndArchivedOrderByLastMessageAtDesc(userId, false) ?: return
         session.lastClientId = clientId

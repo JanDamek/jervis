@@ -649,6 +649,25 @@ class ChatRpcImpl(
         )
     }
 
+    // Phase 5 draft persistence — uses the existing chat_session document
+    // to store drafts map (no new collection needed).
+    override suspend fun saveDraft(conversationId: String?, text: String) {
+        val session = chatService.getOrCreateActiveSession()
+        val key = conversationId ?: "__main__"
+        val drafts = session.drafts?.toMutableMap() ?: mutableMapOf()
+        if (text.isBlank()) {
+            drafts.remove(key)
+        } else {
+            drafts[key] = text
+        }
+        chatService.updateDrafts(session.id, drafts)
+    }
+
+    override suspend fun loadDrafts(): Map<String, String> {
+        val session = chatService.getOrCreateActiveSession()
+        return session.drafts ?: emptyMap()
+    }
+
     override suspend fun updateScope(clientId: String?, projectId: String?, groupId: String?) {
         if (clientId.isNullOrBlank()) return
         // Validate ObjectId format — reject placeholder values

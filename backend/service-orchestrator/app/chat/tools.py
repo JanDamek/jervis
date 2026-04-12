@@ -274,6 +274,37 @@ TOOL_DISMISS_USER_TASKS: dict = {
     },
 }
 
+TOOL_SEND_PUSH_NOTIFICATION: dict = {
+    "type": "function",
+    "function": {
+        "name": "send_push_notification",
+        "description": (
+            "Pošli push notifikaci na všechna registrovaná zařízení uživatele "
+            "(Android FCM + iOS APNs). Použij pro:\n"
+            "- Urgentní záležitosti kde uživatel není online v chatu\n"
+            "- MFA/autorizační požadavky (Teams, O365 authenticator kód)\n"
+            "- Testování push připojení ('Zkus mi poslat push')\n"
+            "- Upozornění na důležité události\n\n"
+            "PRAVIDLA: Neposílej push pro běžné informace — jen urgentní. "
+            "Popiš JASNĚ oč jde v title i body (česky)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Titulek notifikace (krátký, česky).",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Text notifikace (stručný, česky).",
+                },
+            },
+            "required": ["title", "body"],
+        },
+    },
+}
+
 TOOL_MARK_TASK_DONE: dict = {
     "type": "function",
     "function": {
@@ -1134,6 +1165,7 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_LIST_RECENT_TASKS,
     TOOL_RESPOND_TO_USER_TASK,
     TOOL_DISMISS_USER_TASKS,
+    TOOL_SEND_PUSH_NOTIFICATION,
     TOOL_MARK_TASK_DONE,
     TOOL_REOPEN_TASK,
     TOOL_RETRY_FAILED_TASK,

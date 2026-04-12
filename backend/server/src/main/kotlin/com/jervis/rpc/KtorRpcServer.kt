@@ -191,7 +191,7 @@ class KtorRpcServer(
 
                             // Internal REST API modules (Python orchestrator → Kotlin)
                             installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl, preferenceService)
-                            installInternalTaskApi(taskRepository, taskService, userTaskService, preferenceService, pendingTaskService, chatRpcImpl)
+                            installInternalTaskApi(taskRepository, taskService, userTaskService, preferenceService, pendingTaskService, fcmPushService, apnsPushService, chatRpcImpl)
                             installInternalGuidelinesApi(guidelinesService)
                             installInternalFilterRulesApi(filteringRulesService)
                             installInternalEnvironmentApi(environmentService, environmentK8sService)

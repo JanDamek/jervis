@@ -570,6 +570,33 @@ class KotlinServerClient:
             logger.warning("Failed to respond to user task: %s", e)
             return f"Error: {e}"
 
+    async def send_push_notification(
+        self,
+        client_id: str,
+        title: str,
+        body: str,
+        data: dict | None = None,
+    ) -> str:
+        """Send push notification to all registered devices for a client.
+        Uses both FCM (Android) and APNs (iOS). Desktop gets kRPC stream."""
+        try:
+            client = await self._get_client()
+            payload = {
+                "clientId": client_id,
+                "title": title,
+                "body": body,
+            }
+            if data:
+                payload["data"] = data
+            resp = await client.post(
+                "/internal/push-notification",
+                json=payload,
+            )
+            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to send push notification: %s", e)
+            return f"Error: {e}"
+
     async def mark_task_done(self, task_id: str, note: str | None = None) -> str:
         """Mark a task as DONE. Available to both user UI and JERVIS agent."""
         try:

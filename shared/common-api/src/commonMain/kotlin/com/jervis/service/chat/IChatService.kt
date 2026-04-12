@@ -77,6 +77,16 @@ interface IChatService {
     suspend fun getTaskConversationHistory(taskId: String, limit: Int = 200): ChatHistoryDto
 
     /**
+     * Phase 5 draft persistence: save unsent text for a conversation.
+     * Key null = main chat, taskId = task conversation.
+     * Auto-saved by client every 10s when dirty. Restored on switch.
+     */
+    suspend fun saveDraft(conversationId: String?, text: String)
+
+    /** Phase 5 draft persistence: load all drafts for restoration on startup. */
+    suspend fun loadDrafts(): Map<String, String>
+
+    /**
      * Update active scope (client/project/group) in the chat session.
      * Called when user manually switches client/project/group in the UI dropdown.
      */
