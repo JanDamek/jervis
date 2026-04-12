@@ -593,23 +593,47 @@ async def _detect_stage(page: Page) -> LoginStage:
         if pick_account:
             return LoginStage.PICK_ACCOUNT
 
-        # Check for password input BEFORE email — Microsoft's password page
-        # still contains a hidden input[name=loginfmt] (aria-hidden=true),
-        # so checking email first would incorrectly return EMAIL_ENTRY.
+        # Microsoft login pages often have BOTH email and password inputs in DOM
+        # simultaneously, with one hidden. Use a page title / heading heuristic
+        # first, then fall back to element detection with short timeouts.
+        page_text = ""
+        try:
+            page_text = await page.text_content("body") or ""
+        except Exception:
+            pass
+
+        # Heading-based detection (most reliable — Microsoft shows different headings)
+        has_password_heading = "Enter password" in page_text or "Zadejte heslo" in page_text
+        has_email_heading = "Sign in" in page_text and ("email" in page_text.lower() or "phone" in page_text.lower())
+
+        if has_password_heading:
+            password_input = await _find_element(page, [
+                'input[type="password"]',
+                'input[name="passwd"]',
+            ], timeout_ms=2000)
+            if password_input:
+                return LoginStage.PASSWORD_ENTRY
+
+        if has_email_heading:
+            email_input = await _find_element(page, [
+                'input[type="email"]:not([aria-hidden="true"])',
+                'input[name="loginfmt"]:not([aria-hidden="true"])',
+            ], timeout_ms=2000)
+            if email_input:
+                return LoginStage.EMAIL_ENTRY
+
+        # Fallback: try both with short timeout (password first)
         password_input = await _find_element(page, [
-            'input[type="password"]',
-            'input[name="passwd"]',
-        ])
+            'input[type="password"]:not([aria-hidden="true"])',
+            'input[name="passwd"]:not([aria-hidden="true"])',
+        ], timeout_ms=1000)
         if password_input:
             return LoginStage.PASSWORD_ENTRY
 
-        # Check for email input
         email_input = await _find_element(page, [
             'input[type="email"]:not([aria-hidden="true"])',
             'input[name="loginfmt"]:not([aria-hidden="true"])',
-            'input[type="email"]',
-            'input[name="loginfmt"]',
-        ])
+        ], timeout_ms=1000)
         if email_input:
             return LoginStage.EMAIL_ENTRY
 
