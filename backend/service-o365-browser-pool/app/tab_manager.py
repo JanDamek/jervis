@@ -174,7 +174,9 @@ class TabManager:
                     # The marketing page has "Sign in" links and "Buy now" buttons.
                     # Wait a bit for the page JS to render before checking.
                     if not is_login_redirect:
-                        await asyncio.sleep(3)
+                        # Teams SPA needs time to load — wait longer for app shell
+                        wait_time = 8 if "teams.cloud.microsoft" in final_url else 3
+                        await asyncio.sleep(wait_time)
                         # Check if the page is a marketing/promo page instead of
                         # the actual Outlook app. Marketing pages don't have the
                         # Outlook app shell elements.
@@ -196,7 +198,9 @@ class TabManager:
                                 'button[aria-label*="Kalendář"]'
                             ).first
                             try:
-                                is_app_loaded = await app_indicator.is_visible(timeout=3000)
+                                # Teams SPA needs more time to render app shell
+                                vis_timeout = 8000 if "teams.cloud.microsoft" in final_url else 3000
+                                is_app_loaded = await app_indicator.is_visible(timeout=vis_timeout)
                             except Exception:
                                 pass
 
