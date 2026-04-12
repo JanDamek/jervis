@@ -546,6 +546,40 @@ context changes. The flow:
 - Don't manually populate `blockedByTaskIds` outside of
   `TaskService.decomposeTask(parent, subTasks)`.
 
+### Graph-based task relationships (Phase 5, post-2026-04-12)
+
+Tasks are independent work items (one concern = one task). Relationships
+between tasks live in the KB graph (ArangoDB) via shared entities —
+person nodes, topic nodes, project nodes. **NOT** in TaskDocument fields,
+**NOT** as chains, **NOT** as parent-child hierarchy.
+
+**`TaskDocument.summary: String?`** — short 2-3 sentence overview set by
+the qualifier after processing. Used for:
+- Graph edge annotations
+- Sidebar card text (instead of truncated content)
+- LLM context: related tasks sent as summaries (50 tokens each)
+- Model requests full content via `get_task_detail` only when needed
+
+**Qualifier step "search related tasks"**: before deciding, qualifier
+searches KB with extracted entity names → finds SUMMARIES of related
+tasks → can decide CONSOLIDATE (merge into existing), REOPEN (reopen
+a DONE task because new evidence arrived), or LINK (new task + graph
+edge to related).
+
+**UI "🔗 Související úlohy" section** in task brief: shows related tasks
+found via shared entities, each with state badge + [Zobrazit] navigate
+button + [Otevřít znovu] for DONE tasks.
+
+**`IPendingTaskService.listRelatedTasks(taskId)`**: searches for tasks
+sharing entities with the given task via content regex matching on
+extracted kbEntities. Returns max 10 results with summaries.
+
+**Anti-patterns:**
+- Mega-task per person (doesn't scale, loses structure)
+- Linear task chains (reality is a graph, not a line)
+- Parent/child for lateral relationships (that's for decomposition)
+- Sending full content of 20 related tasks to LLM (send summaries)
+
 ### Conventions system (Phase 5, post-2026-04-12)
 
 User-defined rules for how JERVIS should handle specific content. Stored

@@ -90,5 +90,6 @@ fun TaskDocument.toPendingTaskDto(
         qualifierContextSummary = ctxSummary,
         qualifierSuggestedApproach = ctxApproach,
         lastQualificationStep = lastStep,
+        summary = this.summary,
     )
 }

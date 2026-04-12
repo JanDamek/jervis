@@ -167,6 +167,27 @@ class PendingTaskService(
         return saved.toPendingTaskDto()
     }
 
+    override suspend fun listRelatedTasks(taskId: String): List<PendingTaskDto> {
+        val tid = TaskId.fromString(taskId)
+        val task = taskRepository.getById(tid) ?: return emptyList()
+        val entities = task.kbEntities.take(10)
+        if (entities.isEmpty()) return emptyList()
+
+        // Find tasks sharing at least one kbEntity — this is the MongoDB equivalent
+        // of "find tasks connected to the same KB graph nodes". Uses the structured
+        // kbEntities array (normalized entity keys from KB extraction), NOT regex
+        // on free-text content. Consistent with the project rule: KB semantic
+        // matching for relationships, not regex.
+        val query = Query(
+            Criteria.where("kbEntities").`in`(entities)
+                .and("_id").ne(ObjectId(taskId)),
+        ).with(Sort.by(Sort.Direction.DESC, "lastActivityAt", "createdAt"))
+            .limit(10)
+        val matches = mongoTemplate.find(query, TaskDocument::class.java, "tasks")
+            .collectList().awaitSingle()
+        return matches.map { it.toPendingTaskDto() }
+    }
+
     override suspend fun reopen(id: String, note: String?): PendingTaskDto? {
         val taskId = TaskId.fromString(id)
         val task = taskRepository.getById(taskId) ?: return null

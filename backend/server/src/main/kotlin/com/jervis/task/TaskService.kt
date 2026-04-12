@@ -454,6 +454,17 @@ class TaskService(
     }
 
     /**
+     * Save qualifier-generated summary to the task document.
+     * Called from the `/internal/qualification-done` callback after the qualifier
+     * produces a context summary or reason. Capped at 500 characters.
+     */
+    suspend fun saveSummary(taskId: TaskId, summary: String) {
+        val query = Query(Criteria.where("_id").`is`(taskId.value))
+        val update = Update().set("summary", summary)
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+    }
+
+    /**
      * Phase 3: clear the re-qualification flag once the qualifier has produced
      * a decision. Called from the `/internal/qualification-done` callback.
      */

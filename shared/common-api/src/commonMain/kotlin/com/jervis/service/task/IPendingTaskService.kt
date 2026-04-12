@@ -61,4 +61,11 @@ interface IPendingTaskService {
      * Used when the user remembers something or wants to revisit.
      */
     suspend fun reopen(id: String, note: String? = null): PendingTaskDto?
+
+    /**
+     * Returns tasks that share KB graph entities with the given task.
+     * Used in the chat brief to surface related context.
+     * Returns at most 10 tasks, excluding the task itself.
+     */
+    suspend fun listRelatedTasks(taskId: String): List<PendingTaskDto>
 }

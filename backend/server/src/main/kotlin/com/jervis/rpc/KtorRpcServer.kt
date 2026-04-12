@@ -1080,6 +1080,13 @@ class KtorRpcServer(
                                                 qualifierContext = body.contextSummary + "\n\n" + body.suggestedApproach,
                                             )
 
+                                            // Save qualifier-generated summary to task
+                                            val qualSummary = body.contextSummary.takeIf { it.isNotBlank() }
+                                                ?: body.reason.takeIf { it.isNotBlank() }
+                                            if (qualSummary != null) {
+                                                taskService.saveSummary(taskId, qualSummary.take(500))
+                                            }
+
                                             // Phase 3: clear needsQualification flag — the qualifier
                                             // has produced its decision and the task is no longer
                                             // pending re-evaluation by the RequalificationLoop.
@@ -1113,6 +1120,19 @@ class KtorRpcServer(
                                                     } else {
                                                         taskService.decomposeTask(task, body.subTasks)
                                                         logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → BLOCKED (DECOMPOSE: ${body.subTasks.size} children)" }
+                                                    }
+                                                }
+                                                "REOPEN" -> {
+                                                    // Qualifier found a related DONE task that should
+                                                    // be reopened because new evidence arrived.
+                                                    val targetId = body.targetTaskId
+                                                    if (targetId.isNullOrBlank()) {
+                                                        logger.warn { "QUALIFICATION_DONE: REOPEN with no target_task_id taskId=${body.taskId}, falling back to QUEUED" }
+                                                        taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
+                                                    } else {
+                                                        pendingTaskService.reopen(targetId, "Reopened by qualifier: ${body.reason}")
+                                                        taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
+                                                        logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → REOPEN target=$targetId (${body.reason})" }
                                                     }
                                                 }
                                                 "URGENT_ALERT" -> {

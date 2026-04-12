@@ -243,6 +243,11 @@ data class TaskDocument(
      */
     val meetingMetadata: MeetingMetadata? = null,
     /**
+     * 2-3 sentence overview of the task content, set by the qualifier agent after KB ingestion.
+     * Used in the chat brief and related-tasks list to give the user a quick summary.
+     */
+    val summary: String? = null,
+    /**
      * Phase 3: Re-entrant qualifier flag.
      *
      * When true, the [com.jervis.task.RequalificationLoop] picks up the task
@@ -322,6 +327,7 @@ data class TaskDocument(
             lastActivityAt: Instant?,
             mentionsJervis: Boolean?,
             meetingMetadata: MeetingMetadata?,
+            summary: String?,
             needsQualification: Boolean?,
         ): TaskDocument = TaskDocument(
             id = TaskId(id),
@@ -377,6 +383,7 @@ data class TaskDocument(
             lastActivityAt = lastActivityAt,
             mentionsJervis = mentionsJervis ?: false,
             meetingMetadata = meetingMetadata,
+            summary = summary,
             needsQualification = needsQualification ?: false,
         )
     }

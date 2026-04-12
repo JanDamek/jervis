@@ -49,4 +49,7 @@ class PendingTaskRpcImpl(
 
     override suspend fun reopen(id: String, note: String?): PendingTaskDto? =
         pendingTaskService.reopen(id, note)
+
+    override suspend fun listRelatedTasks(taskId: String): List<PendingTaskDto> =
+        pendingTaskService.listRelatedTasks(taskId)
 }

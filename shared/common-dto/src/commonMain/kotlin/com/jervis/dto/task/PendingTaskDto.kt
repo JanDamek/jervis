@@ -54,6 +54,8 @@ data class PendingTaskDto(
     val qualifierSuggestedApproach: String? = null,
     /** Last qualifier step message (for compact "what is the qualifier doing" hint). */
     val lastQualificationStep: String? = null,
+    /** 2-3 sentence overview set by the qualifier agent — shown in brief and related-tasks list. */
+    val summary: String? = null,
 )
 
 /** Paginated result for PendingTasksScreen — merges listTasks + countTasks into a single RPC call. */

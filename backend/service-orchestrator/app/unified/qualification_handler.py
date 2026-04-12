@@ -218,15 +218,20 @@ the rule findable by future qualifier runs via the kinds=["convention"] filter.
    - Meeting notes → find related project/client/action items → link
    - Slack/Teams message → find related discussion/task/issue → link
    - ANY content with identifiable references → search KB for ALL of them
-3. **If match found** — create relationship in KB (`store_knowledge`), update status, decide:
+3. **Related tasks** — search for tasks related to the same entities/people/topics:
+   `kb_search(query="{key entities from this content}")`
+   Look for active or recently completed tasks about the SAME people, topics,
+   or issues. If you find a related DONE task and the new content reopens the
+   matter — decide REOPEN or recommend it to the user.
+4. **If match found** — create relationship in KB (`store_knowledge`), update status, decide:
    - Invoice paid → DONE + store "invoice #X paid on date Y"
    - Partial match (amount differs, unknown sender) → QUEUED for user verification
-4. **If no match** — this is genuinely new content. Analyze:
+5. **If no match** — this is genuinely new content. Analyze:
    - Who is affected, what urgency, relation to current work
    - Unknown payment/transaction → USER_TASK (user must verify)
-5. **Check active tasks** — does incoming data relate to an already active task? If yes → CONSOLIDATE.
-6. **Suggest approach** — 3-5 steps for the orchestrator (if QUEUED).
-7. **Decide** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE/ESCALATE/DECOMPOSE + priority.
+6. **Check active tasks** — does incoming data relate to an already active task? If yes → CONSOLIDATE.
+7. **Suggest approach** — 3-5 steps for the orchestrator (if QUEUED).
+8. **Decide** — DONE/QUEUED/URGENT_ALERT/CONSOLIDATE/ESCALATE/DECOMPOSE + priority.
 
 ## Phase 3 — re-entrant decisions (use sparingly, only when justified)
 
@@ -272,7 +277,7 @@ TARGET_TASK_ID: <task_id of existing task>
 REASON: <why it belongs to the existing task>
 
 CONTEXT:
-- <what new information the incoming data brings>
+- <stručný popis záležitosti v češtině pro uživatele — co se řeší, kdo je zapojen>
 ```
 
 **If it requires orchestration (new task):**
@@ -284,15 +289,12 @@ COMPLEXITY: <LOW|MEDIUM|HIGH|CRITICAL>
 REASON: <brief justification>
 
 CONTEXT:
-- <what KB contains on the topic>
-- <related work, commits, issues>
-- <who is affected, what impact>
+- <stručný popis záležitosti v češtině pro uživatele — co se řeší, kdo je zapojen, o co jde>
 
 APPROACH:
 1. <first step for orchestrator>
 2. <second step>
 3. <third step>
-4. <additional steps if needed>
 ```
 
 **If it's just informational content (no action needed):**
@@ -301,7 +303,7 @@ DECISION: DONE
 REASON: <brief justification>
 
 CONTEXT:
-- <what KB contains on the topic>
+- <stručný popis záležitosti v češtině pro uživatele>
 ```
 
 **If urgent and user is online:**
@@ -314,7 +316,7 @@ ALERT: <brief message for the user — in the user's language>
 REASON: <brief justification>
 
 CONTEXT:
-- <context>
+- <stručný popis záležitosti v češtině pro uživatele>
 
 APPROACH:
 1. <steps>
@@ -340,10 +342,17 @@ SUB_TASKS:
   CONTENT: <what the child task must do>
   PHASE: <phase name, e.g. analysis|implementation|verification>
   ORDER: <0-based ordering inside the phase>
-- TASK_NAME: <...>
-  CONTENT: <...>
-  PHASE: <...>
-  ORDER: <...>
+```
+
+**If new evidence reopens a previously closed task (Phase 5):**
+```
+DECISION: REOPEN
+TARGET_TASK_ID: <task_id of the DONE task to reopen>
+PRIORITY: <1-10>
+REASON: <why the closed task should reopen — in the user's language>
+
+CONTEXT:
+- <stručný popis záležitosti>
 ```
 
 Be concise but thorough. Max {MAX_ITERATIONS} iterations (tool calls). Do not start unnecessary conversation — search KB, analyze, and decide."""
@@ -397,7 +406,7 @@ def _parse_decision(text: str) -> dict[str, Any]:
 
             if stripped.startswith("DECISION:"):
                 decision = stripped.split(":", 1)[1].strip().upper()
-                if decision in ("QUEUED", "DONE", "URGENT_ALERT", "CONSOLIDATE", "ESCALATE", "DECOMPOSE"):
+                if decision in ("QUEUED", "DONE", "URGENT_ALERT", "CONSOLIDATE", "ESCALATE", "DECOMPOSE", "REOPEN"):
                     result["decision"] = decision
             elif stripped.startswith("PRIORITY:"):
                 try:

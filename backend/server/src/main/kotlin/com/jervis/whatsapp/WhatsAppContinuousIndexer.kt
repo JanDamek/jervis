@@ -1,8 +1,10 @@
 package com.jervis.whatsapp
 
 import com.jervis.common.types.SourceUrn
+import com.jervis.dto.task.TaskStateEnum
 import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.infrastructure.polling.PollingStatusEnum
+import com.jervis.task.TaskRepository
 import com.jervis.task.TaskService
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
@@ -31,6 +33,7 @@ private val logger = KotlinLogging.logger {}
 class WhatsAppContinuousIndexer(
     private val repository: WhatsAppMessageIndexRepository,
     private val taskService: TaskService,
+    private val taskRepository: TaskRepository,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -76,30 +79,48 @@ class WhatsAppContinuousIndexer(
 
     private suspend fun indexMessage(doc: WhatsAppMessageIndexDocument) {
         val content = buildMessageContent(doc)
-
         val chatLabel = doc.chatName ?: "unknown"
         val taskName = "WhatsApp: $chatLabel - ${doc.from ?: "unknown"}".take(120)
-
         val topicId = "whatsapp-chat:$chatLabel"
 
-        val task = taskService.createTask(
-            taskType = TaskTypeEnum.SYSTEM,
-            content = content,
-            clientId = doc.clientId,
-            correlationId = "whatsapp:${doc.messageId}",
-            sourceUrn = SourceUrn.whatsapp(
-                connectionId = doc.connectionId,
-                messageId = doc.messageId,
-                chatName = doc.chatName,
-            ),
-            projectId = doc.projectId,
-            taskName = taskName,
+        // TopicId merge: check for an existing ACTIVE task with the same topicId
+        // (= same WhatsApp chat). If found, APPEND new message content instead of
+        // creating a separate task. Messages from the same chat are ONE conversation.
+        val activeStates = listOf(
+            TaskStateEnum.NEW, TaskStateEnum.INDEXING, TaskStateEnum.QUEUED,
+            TaskStateEnum.PROCESSING, TaskStateEnum.USER_TASK, TaskStateEnum.BLOCKED,
         )
+        val existing = taskRepository.findFirstByTopicIdAndStateIn(topicId, activeStates)
 
-        taskService.setTopicId(task.id, topicId)
+        if (existing != null) {
+            val now = java.time.Instant.now()
+            val updated = existing.copy(
+                content = "${existing.content}\n\n---\n\n$content",
+                lastActivityAt = now,
+                needsQualification = true,
+                taskName = taskName,
+            )
+            taskRepository.save(updated)
+            logger.debug { "WhatsApp message appended to existing task ${existing.id} (topic=$topicId)" }
+        } else {
+            val task = taskService.createTask(
+                taskType = TaskTypeEnum.SYSTEM,
+                content = content,
+                clientId = doc.clientId,
+                correlationId = "whatsapp:${doc.messageId}",
+                sourceUrn = SourceUrn.whatsapp(
+                    connectionId = doc.connectionId,
+                    messageId = doc.messageId,
+                    chatName = doc.chatName,
+                ),
+                projectId = doc.projectId,
+                taskName = taskName,
+            )
+            taskService.setTopicId(task.id, topicId)
+            logger.debug { "Indexed new WhatsApp message: $taskName (topic=$topicId)" }
+        }
 
         markAsIndexed(doc)
-        logger.debug { "Indexed WhatsApp message: $taskName" }
     }
 
     private fun buildMessageContent(doc: WhatsAppMessageIndexDocument): String = buildString {

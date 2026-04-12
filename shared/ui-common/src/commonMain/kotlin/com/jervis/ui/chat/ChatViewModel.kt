@@ -507,6 +507,12 @@ class ChatViewModel(
                 val history = repository.call { services ->
                     services.chatService.getTaskConversationHistory(taskId, limit = 200)
                 }
+                // Load related tasks via graph entity matching
+                val relatedTasks = try {
+                    repository.call { services ->
+                        services.pendingTaskService.listRelatedTasks(taskId)
+                    }
+                } catch (_: Exception) { emptyList() }
                 val mapped = mutableListOf<ChatMessage>()
                 if (task != null) {
                     val brief = buildString {
@@ -593,6 +599,20 @@ class ChatViewModel(
                             appendLine()
                             appendLine("## 📄 Originální obsah")
                             append(task.content)
+                        }
+
+                        // ── Related tasks ─────────────────────────────────
+                        if (relatedTasks.isNotEmpty()) {
+                            appendLine()
+                            appendLine()
+                            appendLine("## 🔗 Související úlohy")
+                            for (rt in relatedTasks.take(10)) {
+                                val rtState = stateLabelCs(rt.state)
+                                val rtName = rt.summary?.take(80)
+                                    ?: rt.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" }
+                                    ?: rt.sourceLabel.ifBlank { "Úloha" }
+                                appendLine("- [$rtState] $rtName (${rt.sourceLabel})")
+                            }
                         }
                     }
                     mapped.add(
