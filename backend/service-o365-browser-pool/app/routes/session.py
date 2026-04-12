@@ -157,11 +157,11 @@ def create_session_router(
             _mfa_state.pop(client_id, None)
             logger.info("Session activated for %s", client_id)
 
-            # Set up tabs and start scraping (using stored capabilities)
+            # Set up tabs and start scraping — try ALL tabs on first activation
+            # to discover what services are actually available for this account.
             context = browser_manager.get_context(client_id)
             if context:
-                caps = _client_capabilities.get(client_id, [])
-                await tab_manager.setup_tabs(client_id, context, caps)
+                await tab_manager.setup_tabs(client_id, context, None)
                 available = tab_manager.get_available_capabilities(client_id)
                 await notify_capabilities_discovered(client_id, client_id, available)
                 # client_id IS the connectionId (set by Kotlin server)
@@ -443,9 +443,10 @@ def create_session_router(
         # Stop scraping during rediscovery
         screen_scraper.stop_scraping(client_id)
 
-        # Re-run tab setup with stored capabilities
-        caps = _client_capabilities.get(client_id, [])
-        await tab_manager.setup_tabs(client_id, context, caps)
+        # Re-run tab setup with ALL capabilities — rediscovery must try
+        # everything to find what's actually available, not just repeat
+        # the previous (possibly incomplete) set.
+        await tab_manager.setup_tabs(client_id, context, None)
         available = tab_manager.get_available_capabilities(client_id)
         await notify_capabilities_discovered(client_id, client_id, available)
 
