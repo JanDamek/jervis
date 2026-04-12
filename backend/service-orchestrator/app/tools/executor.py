@@ -188,6 +188,7 @@ async def execute_tool(
                 project_id=project_id,
                 processing_mode=processing_mode,
                 group_id=group_id,
+                kinds=arguments.get("kinds"),
             )
         elif tool_name == "kb_delete":
             result = await _execute_kb_delete(
@@ -923,6 +924,7 @@ async def _execute_kb_search(
     project_id: str | None = None,
     processing_mode: str = "FOREGROUND",
     group_id: str | None = None,
+    kinds: list[str] | None = None,
 ) -> str:
     """Search the Knowledge Base via RAG + Thought Map traversal.
 
@@ -932,17 +934,18 @@ async def _execute_kb_search(
 
     Results are merged: Thought Map anchored knowledge boosts or supplements RAG.
     When group_id is provided, KB returns results from all projects in the group.
+    When kinds is set, only chunks of those kinds are returned (e.g. ["user_knowledge_convention"]).
     """
     if not query.strip():
         return "Error: Empty KB search query."
 
-    logger.info("kb_search: query=%r clientId=%s projectId=%s groupId=%s maxResults=%d",
-                query[:120], client_id, project_id, group_id, max_results)
+    logger.info("kb_search: query=%r clientId=%s projectId=%s groupId=%s kinds=%s maxResults=%d",
+                query[:120], client_id, project_id, group_id, kinds, max_results)
 
     headers = foreground_headers(processing_mode)
 
     # Run RAG search and Thought Map traverse in parallel
-    rag_task = asyncio.create_task(_kb_rag_search(query, max_results, client_id, project_id, group_id, headers))
+    rag_task = asyncio.create_task(_kb_rag_search(query, max_results, client_id, project_id, group_id, headers, kinds=kinds))
     thought_task = asyncio.create_task(_kb_thought_search(query, client_id, project_id, group_id, headers))
 
     rag_items = await rag_task
@@ -1039,6 +1042,7 @@ async def _execute_kb_search(
 async def _kb_rag_search(
     query: str, max_results: int, client_id: str,
     project_id: str | None, group_id: str | None, headers: dict,
+    kinds: list[str] | None = None,
 ) -> list[dict]:
     """Flat RAG search via POST /api/v1/retrieve."""
     url = f"{settings.knowledgebase_url}/api/v1/retrieve"
@@ -1052,6 +1056,8 @@ async def _kb_rag_search(
     }
     if group_id:
         payload["groupId"] = group_id
+    if kinds:
+        payload["kinds"] = kinds
 
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_KB_SEARCH) as client:

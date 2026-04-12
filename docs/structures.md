@@ -546,6 +546,40 @@ context changes. The flow:
 - Don't manually populate `blockedByTaskIds` outside of
   `TaskService.decomposeTask(parent, subTasks)`.
 
+### Conventions system (Phase 5, post-2026-04-12)
+
+User-defined rules for how JERVIS should handle specific content. Stored
+in KB as chunks with `kind="user_knowledge_convention"` (created via
+`store_knowledge(category="convention")`). The qualifier loads them via
+`kb_search(kinds=["user_knowledge_convention"])` before every routing
+decision.
+
+**Storage:** KB (Weaviate RAG + ArangoDB graph), NOT a separate MongoDB
+collection. Reason: semantic search handles synonyms ("průzkum" matches
+"survey", "dotazník"), pre-filtered by `clientId` + `kind` in Weaviate,
+top-10 relevance-ranked for the specific task content.
+
+**Write path:** User says "od teď průzkumy zavírej" in chat → JERVIS
+calls `store_knowledge(subject="Pravidlo: průzkumy = zavírat",
+content="...", category="convention")` → KB stores with
+`kind="user_knowledge_convention"`.
+
+**Read path:** Qualifier runs on new task → calls
+`kb_search(query="pravidla konvence {source} {client}", kinds=["user_knowledge_convention"])`
+→ gets top-10 semantically relevant conventions → passes to LLM as context
+→ LLM applies matching rules.
+
+**Maintenance:** JERVIS periodically (idle review) checks old conventions.
+"Máš 5 pravidel z března — platí ještě?" On conflict between rules, qualifier
+escalates to user: "Mám protichůdná pravidla: X říká urgent, Y říká ignore."
+
+**Anti-patterns:**
+- Don't store conventions in a separate MongoDB collection — KB semantic
+  search is the right tool for natural-language rule matching
+- Don't use regex/keyword matching — embedding similarity handles synonyms
+- Don't send all conventions to the LLM — pre-filter by kind + client, then
+  top-10 by relevance to the specific task content
+
 ### Tasks UI (Phase 4, post-2026-04-11)
 
 The user-facing task screen lives in

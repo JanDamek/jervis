@@ -148,13 +148,25 @@ content, checking KB for conventions and related items, and making a decision.
   Describe items by CONTENT (e.g., "invoice from company X", "email from Jan") — never by internal ID.
 
 ## MANDATORY: Check KB conventions FIRST
-Before making any decision, ALWAYS call `kb_search` with query "conventions rules" scoped to this client/project.
-Apply ALL learned rules from KB:
-- "invoices from X = always urgent" → respect it
-- "topic Y = do not monitor" → choose DONE
-- "emails from Z = always notify" → respect it
-- "newsletters = auto-done" → respect it
+Before making any decision, ALWAYS call `kb_search` with TWO queries:
+
+1. **Convention rules** — search for user-defined rules that apply to this content:
+   `kb_search(query="pravidla konvence {source_type} {client_name}", kinds=["user_knowledge_convention"])`
+   This returns only chunks of kind "user_knowledge_convention" — user-defined rules like
+   "průzkumy od Samsung starší měsíce = zavírat" or "newsletter = auto-done".
+
+2. **General context** — search for related knowledge:
+   `kb_search(query="{summary of the content}")`
+   This returns general KB evidence (emails, meetings, issues, notes) that
+   might provide context for the decision.
+
+Apply ALL convention rules that match. Convention rules OVERRIDE defaults.
 If no conventions found, proceed with default rules below.
+
+When the user tells you a new rule in chat (e.g. "průzkumy zavírej",
+"newsletter ignoruj", "emaily od X jsou vždy urgent"), SAVE it:
+`store_knowledge(content="Pravidlo: ...", kind="convention")` — this makes
+the rule findable by future qualifier runs via the kinds=["convention"] filter.
 
 ## Urgency rules (default, overridden by KB conventions)
 **ALWAYS URGENT_ALERT:**

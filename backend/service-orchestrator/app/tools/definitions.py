@@ -68,7 +68,12 @@ TOOL_KB_SEARCH: dict = {
             "Search the internal Knowledge Base for project documentation, "
             "architecture decisions, coding conventions, meeting notes, and other "
             "ingested content. Use this when the user's question relates to their "
-            "projects, codebase, or internal documentation."
+            "projects, codebase, or internal documentation.\n\n"
+            "Use `kinds` to filter by content type:\n"
+            "- kinds=[\"convention\"] — user-defined rules/conventions only "
+            "(e.g. 'průzkumy od Samsung = zavírat', 'newsletter = auto-done')\n"
+            "- kinds=[\"finding\", \"decision\"] — specific knowledge types\n"
+            "- omit kinds for general search across all types"
         ),
         "parameters": {
             "type": "object",
@@ -81,6 +86,14 @@ TOOL_KB_SEARCH: dict = {
                     "type": "integer",
                     "description": "Maximum number of results to return (default 5).",
                     "default": 5,
+                },
+                "kinds": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Filter by chunk kind. Common values: convention, finding, "
+                        "decision, pattern, bug, email, meeting. Omit for all kinds."
+                    ),
                 },
             },
             "required": ["query"],
@@ -381,16 +394,22 @@ TOOL_STORE_KNOWLEDGE: dict = {
                     "type": "string",
                     "description": (
                         "Category of knowledge. Choose the most specific match:\n"
-                        "- specification: project requirement, design decision, feature decision "
-                        "(e.g., 'Platform: Android + iOS', 'Storage: PostgreSQL', 'Auth: OAuth2')\n"
-                        "- preference: coding style, tooling, workflow (e.g., 'preferuji Kotlin idiomaticky')\n"
-                        "- domain: business domain, industry, location (e.g., 'jsme z Palkovic', 'BMS je...')\n"
-                        "- team: people, roles, processes (e.g., 'Jan je tech lead', 'Scrum s 2-week sprinty')\n"
-                        "- tech_stack: frameworks, libraries, patterns (e.g., 'Kotlin Multiplatform', 'MongoDB')\n"
-                        "- personal: personal info about the user (e.g., 'jmenuju se Jan')\n"
+                        "- convention: USER-DEFINED RULE for how JERVIS should handle "
+                        "specific content in the future. Use when user says 'od teď X', "
+                        "'vždy Y', 'ignoruj Z', 'zavírej A'. The qualifier loads these "
+                        "via kb_search(kinds=['user_knowledge_convention']) before every "
+                        "routing decision. Examples: 'průzkumy od Samsung starší měsíce "
+                        "rovnou zavírat', 'newsletter = auto-done', 'emaily od Carlose "
+                        "vždy notifikovat'\n"
+                        "- specification: project requirement, design decision, feature decision\n"
+                        "- preference: coding style, tooling, workflow\n"
+                        "- domain: business domain, industry, location\n"
+                        "- team: people, roles, processes\n"
+                        "- tech_stack: frameworks, libraries, patterns\n"
+                        "- personal: personal info about the user\n"
                         "- general: anything that doesn't fit above categories"
                     ),
-                    "enum": ["specification", "preference", "domain", "team", "tech_stack", "personal", "general"],
+                    "enum": ["convention", "specification", "preference", "domain", "team", "tech_stack", "personal", "general"],
                     "default": "general",
                 },
                 "target_project_name": {

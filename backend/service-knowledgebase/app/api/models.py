@@ -162,6 +162,11 @@ class RetrievalRequest(BaseModel):
     maxResults: int = 10
     # Hybrid retrieval: expand results using graph relationships
     expandGraph: bool = True
+    # Phase 5: filter by chunk kind(s). When set, only chunks whose `kind`
+    # metadata matches one of these values are returned. Used by the qualifier
+    # to load conventions separately from general KB content.
+    # Example: kinds=["convention"] returns only user-defined rules.
+    kinds: Optional[List[str]] = None
 
     @model_validator(mode='after')
     def validate_tenant_hierarchy(self):

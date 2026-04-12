@@ -486,13 +486,23 @@ Document:
                     else project_alternatives[0]
                 )
 
+            # Phase 5: kinds filter — restrict results to specific chunk kinds
+            # (e.g. kinds=["convention"] for qualifier convention lookup).
+            # Uses Weaviate ContainsAny for multi-kind matching.
+            if request.kinds:
+                if len(request.kinds) == 1:
+                    parts.append(wvq.Filter.by_property("kind").equal(request.kinds[0]))
+                else:
+                    parts.append(wvq.Filter.by_property("kind").contains_any(request.kinds))
+
             filters = wvq.Filter.all_of(parts) if len(parts) > 1 else (parts[0] if parts else None)
 
             logger.info(
-                "RAG_READ: QUERY filters: clientId=%s projectId=%s groupId=%s filter_parts=%d",
+                "RAG_READ: QUERY filters: clientId=%s projectId=%s groupId=%s kinds=%s filter_parts=%d",
                 request.clientId if request.clientId else "ANY",
                 request.projectId if request.projectId else "ANY",
                 request.groupId if request.groupId else "ANY",
+                request.kinds or "ANY",
                 len(parts)
             )
 
