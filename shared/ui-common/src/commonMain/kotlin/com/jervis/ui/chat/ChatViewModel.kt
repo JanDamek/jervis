@@ -91,6 +91,16 @@ class ChatViewModel(
     private val _chatSidebarSplitFraction = MutableStateFlow(0.22f)
     val chatSidebarSplitFraction: StateFlow<Float> = _chatSidebarSplitFraction.asStateFlow()
 
+    /**
+     * Phase 5 — draft persistence: unsent text per conversation. Key = null
+     * for main chat, taskId for task conversations. When the user switches
+     * conversations, the current inputText is saved here and the target
+     * conversation's draft is restored. Survives navigation but NOT app
+     * restart (server-side persistence is a follow-up — this keeps the
+     * in-session UX solid without adding an endpoint).
+     */
+    private val drafts = mutableMapOf<String?, String>()
+
     fun updateChatSidebarSplitFraction(fraction: Float) {
         _chatSidebarSplitFraction.value = fraction.coerceIn(0.15f, 0.5f)
     }
@@ -108,6 +118,7 @@ class ChatViewModel(
                 repository.call { services -> services.pendingTaskService.markDone(taskId, note) }
                 println("ChatViewModel: marked task $taskId as DONE")
                 switchToMainChat()
+                _sidebarRefreshTrigger.value++ // force immediate sidebar reload
             } catch (e: Exception) {
                 println("ChatViewModel: markActiveTaskDone failed: ${e.message}")
             }
@@ -125,13 +136,22 @@ class ChatViewModel(
             try {
                 repository.call { services -> services.pendingTaskService.reopen(taskId, note) }
                 println("ChatViewModel: reopened task $taskId")
-                // Reload the task brief so the new state is visible
                 switchToTaskConversation(taskId, taskName)
+                _sidebarRefreshTrigger.value++ // force immediate sidebar reload
             } catch (e: Exception) {
                 println("ChatViewModel: reopenActiveTask failed: ${e.message}")
             }
         }
     }
+
+    /**
+     * Phase 5 — incremented by any action that changes the sidebar content
+     * (markDone, reopen, sendMessage to task). The sidebar composable
+     * observes this and immediately triggers a reload instead of waiting
+     * for the 15s polling cycle.
+     */
+    private val _sidebarRefreshTrigger = MutableStateFlow(0)
+    val sidebarRefreshTrigger: StateFlow<Int> = _sidebarRefreshTrigger.asStateFlow()
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
@@ -461,8 +481,18 @@ class ChatViewModel(
      * place of the main chat. Use [switchToMainChat] to return.
      */
     fun switchToTaskConversation(taskId: String, taskName: String?) {
+        // Save current draft before switching
+        val currentKey = _activeChatTaskId.value
+        val currentText = _inputText.value
+        if (currentText.isNotBlank()) {
+            drafts[currentKey] = currentText
+        } else {
+            drafts.remove(currentKey)
+        }
         _activeChatTaskId.value = taskId
         _activeChatTaskName.value = taskName
+        // Restore target conversation's draft
+        _inputText.value = drafts[taskId] ?: ""
         scope.launch {
             _isLoading.value = true
             try {
@@ -628,8 +658,18 @@ class ChatViewModel(
      */
     fun switchToMainChat() {
         if (_activeChatTaskId.value == null) return
+        // Save current task draft before switching
+        val currentKey = _activeChatTaskId.value
+        val currentText = _inputText.value
+        if (currentText.isNotBlank()) {
+            drafts[currentKey] = currentText
+        } else {
+            drafts.remove(currentKey)
+        }
         _activeChatTaskId.value = null
         _activeChatTaskName.value = null
+        // Restore main chat draft
+        _inputText.value = drafts[null] ?: ""
         // Trigger the existing history reload by bumping connection generation.
         // The generation watcher (line ~320) will pick it up and reload via
         // chatService.getChatHistory with current filter scope.
@@ -1244,6 +1284,14 @@ class ChatViewModel(
                     thoughtCount = thoughtIds.size,
                 )
                 null  // Don't add as chat message — shown in side panel
+            }
+
+            ChatResponseType.TASK_LIST_CHANGED -> {
+                // Phase 5 stream-based sidebar: server pushes this event
+                // after any task state change. Increment the trigger so the
+                // sidebar composable reloads immediately — no 15s polling.
+                _sidebarRefreshTrigger.value++
+                null  // Don't add as chat message
             }
 
             else -> null

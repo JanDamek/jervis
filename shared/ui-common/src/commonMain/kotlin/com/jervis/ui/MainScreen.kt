@@ -148,6 +148,7 @@ fun MainScreenView(
     onChatSidebarSplitChange: (Float) -> Unit = {},
     onMarkActiveTaskDone: () -> Unit = {},
     onReopenActiveTask: () -> Unit = {},
+    sidebarRefreshTrigger: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
@@ -420,6 +421,7 @@ fun MainScreenView(
                                             onMainChatSelected()
                                             coroutineScope.launch { drawerState.close() }
                                         },
+                                        refreshTrigger = sidebarRefreshTrigger,
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }

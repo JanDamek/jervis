@@ -24,6 +24,8 @@ import org.springframework.stereotype.Service
 class PendingTaskService(
     private val taskRepository: TaskRepository,
     private val mongoTemplate: ReactiveMongoTemplate,
+    @org.springframework.context.annotation.Lazy
+    private val chatRpcImpl: com.jervis.chat.ChatRpcImpl,
 ) : IPendingTaskService {
     override suspend fun listTasks(
         taskType: String?,
@@ -160,6 +162,8 @@ class PendingTaskService(
             userQuestionContext = null,
         )
         val saved = taskRepository.save(updated)
+        // Stream-based sidebar push — no polling
+        try { chatRpcImpl.emitTaskListChanged(id, "DONE") } catch (_: Exception) {}
         return saved.toPendingTaskDto()
     }
 
@@ -172,8 +176,6 @@ class PendingTaskService(
         } else {
             "${task.content}\n\n[Reopen $now] $note"
         }
-        // Reopen → NEW + needsQualification=true so the re-entrant qualifier
-        // picks it up and decides what to do with the (possibly outdated) task.
         val updated = task.copy(
             state = TaskStateEnum.NEW,
             content = newContent,
@@ -181,6 +183,8 @@ class PendingTaskService(
             needsQualification = true,
         )
         val saved = taskRepository.save(updated)
+        // Stream-based sidebar push — no polling
+        try { chatRpcImpl.emitTaskListChanged(id, "NEW") } catch (_: Exception) {}
         return saved.toPendingTaskDto()
     }
 }

@@ -41,6 +41,7 @@ class TaskService(
     private val documentExtractionClient: DocumentExtractionClient,
     private val qualifierProperties: QualifierProperties,
     @Lazy private val notificationRpc: NotificationRpcImpl,
+    @Lazy private val chatRpcImpl: com.jervis.chat.ChatRpcImpl,
     private val mongoTemplate: ReactiveMongoTemplate,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -395,6 +396,14 @@ class TaskService(
             } catch (e: Exception) {
                 logger.warn(e) { "PARENT_UNBLOCK_FAILED: childId=${saved.id} parentId=${saved.parentTaskId}: ${e.message}" }
             }
+        }
+
+        // Phase 5 stream-based sidebar: push TASK_LIST_CHANGED so the UI
+        // sidebar refreshes immediately. No polling.
+        try {
+            chatRpcImpl.emitTaskListChanged(taskId = task.id.toString(), newState = next.name)
+        } catch (e: Exception) {
+            logger.debug { "emitTaskListChanged failed (non-critical): ${e.message}" }
         }
 
         return saved

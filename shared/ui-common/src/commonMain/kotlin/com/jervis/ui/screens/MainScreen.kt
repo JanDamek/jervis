@@ -203,5 +203,6 @@ fun MainScreen(
         onChatSidebarSplitChange = viewModel.chat::updateChatSidebarSplitFraction,
         onMarkActiveTaskDone = { viewModel.chat.markActiveTaskDone() },
         onReopenActiveTask = { viewModel.chat.reopenActiveTask() },
+        sidebarRefreshTrigger = viewModel.chat.sidebarRefreshTrigger.collectAsState().value,
     )
 }

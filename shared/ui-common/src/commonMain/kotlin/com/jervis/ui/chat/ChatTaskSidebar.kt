@@ -67,6 +67,7 @@ fun ChatTaskSidebar(
     activeTaskId: String?,
     onTaskSelected: (PendingTaskDto) -> Unit,
     onMainChatSelected: () -> Unit,
+    refreshTrigger: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     var tasks by remember { mutableStateOf<List<PendingTaskDto>>(emptyList()) }
@@ -121,13 +122,13 @@ fun ChatTaskSidebar(
         }
     }
 
+    // Initial load + reload on show/hide DONE toggle
     LaunchedEffect(showDone) { loadActive() }
-    LaunchedEffect(Unit) {
-        // Periodic refresh — replaces SSE for v1.
-        while (true) {
-            delay(15_000)
-            loadActive()
-        }
+    // Stream-based refresh: server pushes TASK_LIST_CHANGED via chatEventStream →
+    // ChatViewModel increments sidebarRefreshTrigger → sidebar reloads immediately.
+    // No 15s polling timer — per guidelines "no polling, use stream".
+    LaunchedEffect(refreshTrigger) {
+        if (refreshTrigger > 0) loadActive()
     }
 
     Surface(
