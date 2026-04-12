@@ -291,8 +291,8 @@ class OAuth2Service(
                     }
 
                     OAuth2Provider.MICROSOFT -> {
-                        // Microsoft Graph: Teams, calendar, mail, files, contacts
-                        return "offline_access User.Read Chat.Read Chat.ReadWrite ChannelMessage.Send Calendars.Read Calendars.ReadWrite Mail.Read Mail.Send Files.ReadWrite.All Contacts.Read People.Read Sites.Read.All"
+                        // Microsoft Graph: Teams, calendar, mail — user-consent only (no admin approval needed)
+                        return "offline_access User.Read Chat.Read Chat.ReadWrite ChannelMessage.Send Calendars.Read Calendars.ReadWrite Mail.Read Mail.Send"
                     }
                 }
 
@@ -313,7 +313,7 @@ class OAuth2Service(
                 OAuth2Provider.BITBUCKET -> "account team repository webhook pullrequest:write issue:write wiki snippet project"
                 OAuth2Provider.SLACK -> "channels:history channels:read groups:history groups:read im:history im:read mpim:history mpim:read chat:write users:read"
                 OAuth2Provider.GMAIL -> "https://mail.google.com/ https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send openid email profile"
-                OAuth2Provider.MICROSOFT -> "offline_access User.Read Chat.Read Chat.ReadWrite ChannelMessage.Send Calendars.Read Calendars.ReadWrite Mail.Read Mail.Send Files.ReadWrite.All Contacts.Read People.Read Sites.Read.All"
+                OAuth2Provider.MICROSOFT -> "offline_access User.Read Chat.Read Chat.ReadWrite ChannelMessage.Send Calendars.Read Calendars.ReadWrite Mail.Read Mail.Send"
             }
         }
     }
