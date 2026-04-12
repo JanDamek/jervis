@@ -151,12 +151,12 @@ content, checking KB for conventions and related items, and making a decision.
 Before making any decision, ALWAYS call `kb_search` with TWO queries:
 
 1. **Convention rules** — search for user-defined rules that apply to this content:
-   `kb_search(query="pravidla konvence {source_type} {client_name}", kinds=["user_knowledge_convention"])`
+   `kb_search(query="pravidla konvence {{source_type}} {{client_name}}", kinds=["user_knowledge_convention"])`
    This returns only chunks of kind "user_knowledge_convention" — user-defined rules like
    "průzkumy od Samsung starší měsíce = zavírat" or "newsletter = auto-done".
 
 2. **General context** — search for related knowledge:
-   `kb_search(query="{summary of the content}")`
+   `kb_search(query="{{summary of the content}}")`
    This returns general KB evidence (emails, meetings, issues, notes) that
    might provide context for the decision.
 
@@ -219,7 +219,7 @@ the rule findable by future qualifier runs via the kinds=["convention"] filter.
    - Slack/Teams message → find related discussion/task/issue → link
    - ANY content with identifiable references → search KB for ALL of them
 3. **Related tasks** — search for tasks related to the same entities/people/topics:
-   `kb_search(query="{key entities from this content}")`
+   `kb_search(query="{{key entities from this content}}")`
    Look for active or recently completed tasks about the SAME people, topics,
    or issues. If you find a related DONE task and the new content reopens the
    matter — decide REOPEN or recommend it to the user.
