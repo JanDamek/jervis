@@ -84,7 +84,29 @@ class SessionMonitor:
 
         # Use VLM to check login state periodically
         login_state = await self._scraper.check_login_state(client_id)
-        if login_state in ("qr_visible", "phone_disconnected"):
-            logger.warning("WhatsApp session expired (VLM detected: %s)", login_state)
+        if login_state == "phone_disconnected":
+            # Phone disconnected (internet outage) — try page reload first.
+            # WhatsApp Web usually reconnects after a brief outage.
+            self._disconnect_count = getattr(self, "_disconnect_count", 0) + 1
+            if self._disconnect_count <= 3:
+                logger.info(
+                    "WhatsApp phone_disconnected (attempt %d/3) — reloading page",
+                    self._disconnect_count,
+                )
+                try:
+                    await page.reload(wait_until="domcontentloaded", timeout=30000)
+                except Exception as e:
+                    logger.warning("Page reload failed: %s", e)
+                return  # Wait for next check cycle
+            # After 3 reload attempts, mark EXPIRED
+            logger.warning("WhatsApp session expired after 3 reconnect attempts")
+            self._disconnect_count = 0
             self._bm.set_state(SessionState.EXPIRED)
             await notify_session_state(client_id, client_id, "EXPIRED")
+        elif login_state == "qr_visible":
+            logger.warning("WhatsApp session expired (QR code visible)")
+            self._bm.set_state(SessionState.EXPIRED)
+            await notify_session_state(client_id, client_id, "EXPIRED")
+        else:
+            # Session OK — reset disconnect counter
+            self._disconnect_count = 0
