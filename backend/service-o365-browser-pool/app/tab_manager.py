@@ -49,7 +49,7 @@ TAB_TO_CAPABILITIES: dict[TabType, list[str]] = {
 
 # O365 web URLs per account type
 _BUSINESS_URLS = {
-    TabType.CHAT: "https://teams.microsoft.com",
+    TabType.CHAT: "https://teams.cloud.microsoft",
     TabType.CALENDAR: "https://outlook.office.com/calendar",
     TabType.EMAIL: "https://outlook.office.com/mail",
 }
@@ -67,6 +67,9 @@ def _detect_urls(context: BrowserContext) -> dict[TabType, str]:
         url = page.url or ""
         if "live.com" in url:
             return dict(_CONSUMER_URLS)
+        # New Teams domain — business account
+        if "teams.cloud.microsoft" in url:
+            return dict(_BUSINESS_URLS)
     return dict(_BUSINESS_URLS)
 
 
@@ -207,9 +210,10 @@ class TabManager:
                             "service not available with current session",
                             tab_type.value, client_id,
                         )
-                        # Close the page — this service is not accessible
+                        # Navigate back to Teams main page instead of closing.
+                        # Never close tabs — VNC must always show a visible browser window.
                         try:
-                            await page.close()
+                            await page.goto(tab_urls.get(TabType.CHAT, "https://teams.cloud.microsoft"), wait_until="domcontentloaded", timeout=15000)
                         except Exception:
                             pass
                         continue
@@ -225,12 +229,19 @@ class TabManager:
 
             tabs[tab_type] = page
 
-        # Close any leftover pages (not assigned to a tab)
+        # Close leftover pages not assigned to any tab — but NEVER close
+        # the last page (browser context dies when all pages are closed).
+        all_pages = context.pages if context else []
+        assigned_pages = set(id(p) for p in tabs.values())
         for extra_page in unassigned_pages:
-            try:
-                await extra_page.close()
-            except Exception:
-                pass
+            remaining = sum(1 for p in all_pages if not p.is_closed())
+            if remaining <= 1:
+                break  # Keep at least one page open
+            if id(extra_page) not in assigned_pages:
+                try:
+                    await extra_page.close()
+                except Exception:
+                    pass
 
         self._tabs[client_id] = tabs
         available = {t for t in tabs if not tabs[t].is_closed()}
