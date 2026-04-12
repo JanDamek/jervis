@@ -730,7 +730,7 @@ class KtorRpcServer(
                                                 "agentJobWorkspacePath" to task.agentJobWorkspacePath,
                                                 "agentJobAgentType" to task.agentJobAgentType,
                                                 "taskName" to task.taskName,
-                                                "content" to task.content.take(500),
+                                                "content" to task.content,
                                                 "clientId" to task.clientId.toString(),
                                                 "projectId" to task.projectId?.toString(),
                                                 "mergeRequestUrl" to task.mergeRequestUrl,
@@ -937,7 +937,7 @@ class KtorRpcServer(
                                             // no authority over actionability.
                                             taskService.saveKbResult(
                                                 taskId,
-                                                kbSummary = r.summary.take(2000),
+                                                kbSummary = r.summary,
                                                 kbEntities = r.entities,
                                                 kbActionable = false,
                                             )
@@ -953,8 +953,8 @@ class KtorRpcServer(
                                                 val sourceType = com.jervis.qualifier.KbDoneRouter.extractSourceType(task.sourceUrn)
                                                 filteringRulesService.evaluate(
                                                     sourceType = sourceType,
-                                                    subject = r.summary.take(200),
-                                                    body = task.content.take(2000),
+                                                    subject = r.summary,
+                                                    body = task.content,
                                                     labels = r.entities,
                                                 )
                                             } catch (e: Exception) {
@@ -993,7 +993,7 @@ class KtorRpcServer(
                                                     taskId = body.taskId,
                                                     clientId = body.clientId,
                                                     sourceUrn = task.sourceUrn.value,
-                                                    summary = r.summary.take(2000),
+                                                    summary = r.summary,
                                                     entities = r.entities,
                                                     suggestedActions = r.suggestedActions,
                                                     urgency = r.urgency,
@@ -1015,7 +1015,7 @@ class KtorRpcServer(
                                                             index = idx,
                                                         )
                                                     },
-                                                    content = task.content.take(3000),
+                                                    content = task.content,
                                                     mentionsJervis = task.mentionsJervis,
                                                 )
                                                 val qualifyResponse = pythonOrchestratorClient.qualify(qualifyRequest)
@@ -1084,7 +1084,7 @@ class KtorRpcServer(
                                             val qualSummary = body.contextSummary.takeIf { it.isNotBlank() }
                                                 ?: body.reason.takeIf { it.isNotBlank() }
                                             if (qualSummary != null) {
-                                                taskService.saveSummary(taskId, qualSummary.take(500))
+                                                taskService.saveSummary(taskId, qualSummary)
                                             }
 
                                             // Phase 3: clear needsQualification flag — the qualifier
@@ -1242,7 +1242,7 @@ class KtorRpcServer(
                                                 .forEach { msg ->
                                                     add(kotlinx.serialization.json.buildJsonObject {
                                                         put("role", kotlinx.serialization.json.JsonPrimitive(msg.role.name.lowercase()))
-                                                        put("content", kotlinx.serialization.json.JsonPrimitive(msg.content.take(200)))
+                                                        put("content", kotlinx.serialization.json.JsonPrimitive(msg.content))
                                                     })
                                                 }
                                         })

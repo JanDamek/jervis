@@ -35,7 +35,7 @@ fun TaskDocument.toUserTaskListItemDto(
         clientId = this.clientId.toString(),
         createdAtEpochMillis = this.createdAt.toEpochMilli(),
         hasPendingQuestion = !this.pendingUserQuestion.isNullOrBlank(),
-        pendingQuestionPreview = this.pendingUserQuestion?.take(120),
+        pendingQuestionPreview = this.pendingUserQuestion,
         parentTaskId = this.parentTaskId?.toString(),
         childCount = childCount,
         completedChildCount = completedChildCount,

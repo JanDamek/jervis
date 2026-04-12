@@ -118,7 +118,7 @@ class AutoTaskCreationService(
                     append(relatedNodesNote)
                     appendLine()
                     appendLine("### Původní obsah")
-                    appendLine(originalTask.content.take(2000))
+                    appendLine(originalTask.content)
                 }
 
                 val task = taskService.createTask(
@@ -129,7 +129,7 @@ class AutoTaskCreationService(
                     correlationId = correlationId,
                     sourceUrn = originalTask.sourceUrn,
                     attachments = originalTask.attachments,
-                    taskName = "Auto: ${result.summary.take(80)}",
+                    taskName = "Auto: ${result.summary}",
                     state = TaskStateEnum.QUEUED, // Skip qualification, go straight to orchestrator
                 )
 
@@ -171,7 +171,7 @@ class AutoTaskCreationService(
                     correlationId = correlationId,
                     sourceUrn = originalTask.sourceUrn,
                     attachments = originalTask.attachments,
-                    taskName = "Ke schválení: ${result.summary.take(60)}",
+                    taskName = "Ke schválení: ${result.summary}",
                     state = TaskStateEnum.USER_TASK,
                 )
 
@@ -214,7 +214,7 @@ class AutoTaskCreationService(
             }
             appendLine()
             appendLine("### Původní obsah")
-            appendLine(originalTask.content.take(2000))
+            appendLine(originalTask.content)
         }
 
         val task = taskService.createTask(
@@ -225,7 +225,7 @@ class AutoTaskCreationService(
             correlationId = correlationId,
             sourceUrn = originalTask.sourceUrn,
             attachments = originalTask.attachments,
-            taskName = "Auto: $label — ${result.summary.take(60)}",
+            taskName = "Auto: $label — ${result.summary}",
             state = TaskStateEnum.QUEUED,
         )
 
@@ -256,7 +256,7 @@ class AutoTaskCreationService(
             appendLine(result.summary)
             appendLine()
             appendLine("### Původní obsah")
-            appendLine(originalTask.content.take(3000))
+            appendLine(originalTask.content)
         }
 
         val task = taskService.createTask(
@@ -267,7 +267,7 @@ class AutoTaskCreationService(
             correlationId = correlationId,
             sourceUrn = originalTask.sourceUrn,
             attachments = originalTask.attachments,
-            taskName = "Odpovědět: ${result.summary.take(70)}",
+            taskName = "Odpovědět: ${result.summary}",
             state = TaskStateEnum.USER_TASK,
         )
 
@@ -299,7 +299,7 @@ class AutoTaskCreationService(
             appendLine(result.summary)
             appendLine()
             appendLine("### Původní obsah")
-            appendLine(originalTask.content.take(2000))
+            appendLine(originalTask.content)
         }
 
         val task = taskService.createTask(
@@ -310,7 +310,7 @@ class AutoTaskCreationService(
             correlationId = correlationId,
             sourceUrn = originalTask.sourceUrn,
             attachments = originalTask.attachments,
-            taskName = "Vytvořit ticket: ${result.summary.take(60)}",
+            taskName = "Vytvořit ticket: ${result.summary}",
             state = TaskStateEnum.USER_TASK,
         )
 

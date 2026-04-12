@@ -538,15 +538,18 @@ class ChatViewModel(
                 } catch (_: Exception) { emptyList() }
                 val mapped = mutableListOf<ChatMessage>()
                 if (task != null) {
+                    // Determine pipeline phase for placeholder logic
+                    val awaitingKb = task.state in setOf("NEW", "INDEXING")
+                    val awaitingQualification = task.needsQualification ||
+                        (task.priorityScore == null && task.state in setOf("NEW", "INDEXING", "QUEUED"))
+
                     val brief = buildString {
-                        // ── Title resolution ─────────────────────────────
-                        // Priority: summary > taskName (if informative) > content first meaningful line > sourceLabel
+                        // ── Title ─────────────────────────────────────────
                         val title = task.summary
                             ?: task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" && it != task.sourceLabel }
                             ?: task.content.lineSequence()
                                 .map { it.removePrefix("# ").removePrefix("## ").trim() }
                                 .firstOrNull { it.isNotBlank() && it.length > 5 && !it.startsWith("**") && it != task.sourceLabel }
-                                ?.take(120)
                             ?: task.sourceLabel.ifBlank { "Uloha" }
                         appendLine("# $title")
                         appendLine()
@@ -566,6 +569,8 @@ class ChatViewModel(
                             append("**Priorita:** $score/100 ($priorityLabel)")
                             if (!task.priorityReason.isNullOrBlank()) append(" — ${task.priorityReason}")
                             appendLine()
+                        } else if (awaitingQualification) {
+                            appendLine("**Priorita:** _bude urcena kvalifikatorem_")
                         }
                         if (!task.actionType.isNullOrBlank() || !task.estimatedComplexity.isNullOrBlank()) {
                             val parts = listOfNotNull(
@@ -573,9 +578,11 @@ class ChatViewModel(
                                 task.estimatedComplexity?.takeIf { it.isNotBlank() }?.let { "komplexita: $it" },
                             )
                             if (parts.isNotEmpty()) appendLine("**Klasifikace:** ${parts.joinToString(" · ")}")
+                        } else if (awaitingQualification) {
+                            appendLine("**Klasifikace:** _bude urcena kvalifikatorem_")
                         }
                         val parentId = task.parentTaskId
-                        if (parentId != null) appendLine("**Poduloha** v ramci ${parentId.take(8)}")
+                        if (parentId != null) appendLine("**Poduloha** v ramci $parentId")
                         if (task.childCount > 0) appendLine("**Podulohy:** ${task.completedChildCount}/${task.childCount} hotovo")
                         if (task.needsQualification) appendLine("**Re-kvalifikace** je naplanovana")
 
@@ -590,48 +597,51 @@ class ChatViewModel(
                             }
                         }
 
-                        // ── KB extraction ─────────────────────────────────
+                        // ── Original content — actual source data ─────────
+                        appendLine()
+                        appendLine("---")
+                        appendLine()
+                        if (task.content.isNotBlank()) {
+                            appendLine("## Puvodni obsah")
+                            append(task.content)
+                        }
+
+                        // ── KB analysis ───────────────────────────────────
+                        appendLine()
+                        appendLine()
+                        appendLine("---")
+                        appendLine()
+                        appendLine("## KB analyza")
                         if (!task.kbSummary.isNullOrBlank()) {
-                            appendLine()
-                            appendLine("## Co o tom JERVIS vi (KB)")
                             appendLine(task.kbSummary)
                             if (task.kbEntities.isNotEmpty()) {
                                 appendLine()
-                                appendLine("_Entity:_ ${task.kbEntities.take(15).joinToString(", ")}")
+                                appendLine("**Entity:** ${task.kbEntities.joinToString(", ")}")
                             }
+                        } else if (awaitingKb) {
+                            appendLine("_Probiha indexace v KB — shrnuti a entity budou doplneny._")
+                        } else {
+                            appendLine("_KB neziskala zadne shrnuti._")
                         }
 
-                        // ── Qualifier research ────────────────────────────
-                        if (!task.qualifierContextSummary.isNullOrBlank()) {
-                            appendLine()
-                            appendLine("## Co JERVIS dohledal (kvalifikator)")
-                            appendLine(task.qualifierContextSummary)
-                        }
-
-                        // ── Qualifier's suggested approach ────────────────
-                        if (!task.qualifierSuggestedApproach.isNullOrBlank()) {
-                            appendLine()
-                            appendLine("## Navrzeny postup")
-                            appendLine(task.qualifierSuggestedApproach)
-                        }
-
-                        // ── Qualification in progress ────────────────────
-                        if (task.kbSummary.isNullOrBlank() &&
-                            task.qualifierContextSummary.isNullOrBlank() &&
-                            task.qualifierSuggestedApproach.isNullOrBlank() &&
-                            !task.lastQualificationStep.isNullOrBlank()) {
-                            appendLine()
-                            appendLine("## Kvalifikator")
+                        // ── Qualifier analysis ───────────────────────────
+                        appendLine()
+                        appendLine("## Kvalifikator")
+                        if (!task.qualifierContextSummary.isNullOrBlank() || !task.qualifierSuggestedApproach.isNullOrBlank()) {
+                            if (!task.qualifierContextSummary.isNullOrBlank()) {
+                                appendLine("**Kontext:** ${task.qualifierContextSummary}")
+                            }
+                            if (!task.qualifierSuggestedApproach.isNullOrBlank()) {
+                                appendLine()
+                                appendLine("**Navrzeny postup:** ${task.qualifierSuggestedApproach}")
+                            }
+                        } else if (!task.lastQualificationStep.isNullOrBlank()) {
+                            appendLine("_Probiha kvalifikace..._")
                             appendLine("Posledni krok: ${task.lastQualificationStep}")
-                        }
-
-                        // ── Original content ──────────────────────────────
-                        if (task.content.isNotBlank()) {
-                            appendLine()
-                            appendLine("---")
-                            appendLine()
-                            appendLine("## Puvodni obsah")
-                            append(task.content)
+                        } else if (awaitingQualification) {
+                            appendLine("_Ceka na kvalifikaci — kontext, priorita a postup budou doplneny._")
+                        } else {
+                            appendLine("_Kvalifikator nedodal analyzu._")
                         }
 
                         // ── Related tasks ─────────────────────────────────

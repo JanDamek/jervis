@@ -98,7 +98,7 @@ class TaskQualificationService(
                         clientId = task.clientId.toString(),
                         projectId = task.projectId?.toString(),
                         sourceUrn = task.sourceUrn.value,
-                        summary = task.kbSummary?.take(2000) ?: task.content.take(2000),
+                        summary = task.kbSummary ?: task.content,
                         entities = task.kbEntities,
                         suggestedActions = emptyList(),
                         urgency = "normal",
@@ -113,7 +113,7 @@ class TaskQualificationService(
                         hasAttachments = task.hasAttachments,
                         attachmentCount = task.attachmentCount,
                         attachments = emptyList(),
-                        content = task.content.take(3000),
+                        content = task.content,
                         mentionsJervis = task.mentionsJervis,
                     )
                     val response = pythonOrchestratorClient.qualify(request)
