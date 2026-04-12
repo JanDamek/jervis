@@ -696,7 +696,7 @@ async def run_agentic_loop(
 
             # Tool result cache — return cached result for duplicate read-only calls
             cache_key = f"{tool_name}:{tool_call.function.arguments}"
-            _WRITE_TOOLS = {"create_background_task", "dispatch_thinking_graph", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "switch_context", *_GRAPH_TOOLS}
+            _WRITE_TOOLS = {"create_background_task", "dispatch_thinking_graph", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "switch_context", "mark_task_done", "reopen_task", *_GRAPH_TOOLS}
             cached_result = tool_result_cache.get(cache_key) if tool_name not in _WRITE_TOOLS else None
             if cached_result is not None:
                 logger.info("Chat: cache hit for %s (skipping execution)", tool_name)

@@ -154,6 +154,7 @@ class KtorRpcServer(
     private val contractRepository: com.jervis.finance.ContractRepository,
     private val gitRepositoryService: com.jervis.git.service.GitRepositoryService,
     private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
+    private val pendingTaskService: com.jervis.task.PendingTaskService,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -190,7 +191,7 @@ class KtorRpcServer(
 
                             // Internal REST API modules (Python orchestrator → Kotlin)
                             installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl, preferenceService)
-                            installInternalTaskApi(taskRepository, taskService, userTaskService, preferenceService, chatRpcImpl)
+                            installInternalTaskApi(taskRepository, taskService, userTaskService, preferenceService, pendingTaskService, chatRpcImpl)
                             installInternalGuidelinesApi(guidelinesService)
                             installInternalFilterRulesApi(filteringRulesService)
                             installInternalEnvironmentApi(environmentService, environmentK8sService)

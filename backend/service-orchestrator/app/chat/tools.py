@@ -274,6 +274,60 @@ TOOL_DISMISS_USER_TASKS: dict = {
     },
 }
 
+TOOL_MARK_TASK_DONE: dict = {
+    "type": "function",
+    "function": {
+        "name": "mark_task_done",
+        "description": (
+            "Označ úlohu jako HOTOVOU (DONE). Stejná akce, kterou uživatel může "
+            "provést v UI. Použij když: uživatel řekne 'je to hotové', 'uzavři to', "
+            "'hotovo', nebo když JERVIS sám rozhodl že není co dělat. "
+            "Volitelně přidej poznámku proč je done."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "ID úlohy k označení jako hotové.",
+                },
+                "note": {
+                    "type": "string",
+                    "description": "Volitelná poznámka proč se úloha uzavírá.",
+                },
+            },
+            "required": ["task_id"],
+        },
+    },
+}
+
+TOOL_REOPEN_TASK: dict = {
+    "type": "function",
+    "function": {
+        "name": "reopen_task",
+        "description": (
+            "Znovu otevři uzavřenou (DONE) úlohu. Vrátí ji do stavu NEW a spustí "
+            "re-kvalifikaci. Použij když: uživatel řekne 'znovu otevři', 'ještě to "
+            "není hotové', 'chci se k tomu vrátit', nebo JERVIS sám zjistí novou "
+            "souvislost s dříve uzavřenou úlohou. Volitelně přidej poznámku."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "ID úlohy k znovuotevření.",
+                },
+                "note": {
+                    "type": "string",
+                    "description": "Volitelná poznámka proč se úloha otevírá znovu.",
+                },
+            },
+            "required": ["task_id"],
+        },
+    },
+}
+
 TOOL_RETRY_FAILED_TASK: dict = {
     "type": "function",
     "function": {
@@ -1062,6 +1116,8 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_LIST_RECENT_TASKS,
     TOOL_RESPOND_TO_USER_TASK,
     TOOL_DISMISS_USER_TASKS,
+    TOOL_MARK_TASK_DONE,
+    TOOL_REOPEN_TASK,
     TOOL_RETRY_FAILED_TASK,
     TOOL_CLASSIFY_MEETING,
     TOOL_LIST_UNCLASSIFIED_MEETINGS,

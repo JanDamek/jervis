@@ -105,9 +105,13 @@ fun ChatTaskSidebar(
                 )
                 merged.addAll(page.items)
             }
-            // Newest first across all states. createdAt is an ISO string;
-            // lex-sort works because the prefix is YYYY-MM-DD.
-            tasks = merged.sortedByDescending { it.createdAt }.take(50)
+            // Sort by priority bucket, then newest first within each bucket.
+            // USER_TASK tasks float to the top (need user attention NOW),
+            // running tasks next, waiting tasks, then errors last.
+            tasks = merged.sortedWith(
+                compareBy<PendingTaskDto> { statePriority(it.state) }
+                    .thenByDescending { it.createdAt }
+            ).take(50)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -317,6 +321,20 @@ private fun ChatSidebarTaskCard(
             }
         }
     }
+}
+
+/** Sidebar sort order: lower number = higher in the list. */
+private fun statePriority(state: String): Int = when (state) {
+    "USER_TASK" -> 0   // needs user attention — always on top
+    "PROCESSING" -> 1  // actively running
+    "CODING" -> 1
+    "QUEUED" -> 2      // waiting for orchestrator
+    "NEW" -> 3         // fresh / being indexed
+    "INDEXING" -> 3
+    "BLOCKED" -> 4     // waiting for children
+    "ERROR" -> 5       // failed — bottom
+    "DONE" -> 6        // only visible in history toggle
+    else -> 5
 }
 
 @Composable

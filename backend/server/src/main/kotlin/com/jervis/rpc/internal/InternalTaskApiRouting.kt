@@ -41,6 +41,7 @@ fun Routing.installInternalTaskApi(
     taskService: TaskService,
     userTaskService: UserTaskService,
     preferenceService: com.jervis.preferences.PreferenceService,
+    pendingTaskService: com.jervis.task.PendingTaskService,
     chatRpcImpl: com.jervis.chat.ChatRpcImpl? = null,
 ) {
     // Create a background task — for chat tool create_background_task / scheduled tasks
@@ -603,6 +604,48 @@ fun Routing.installInternalTaskApi(
         }
     }
 
+    // Phase 5: Mark task as DONE (available to both user UI and JERVIS agent)
+    post("/internal/tasks/{taskId}/done") {
+        try {
+            val taskIdStr = call.parameters["taskId"] ?: ""
+            val body = try { call.receive<InternalNoteRequest>() } catch (_: Exception) { InternalNoteRequest() }
+            val result = pendingTaskService.markDone(taskIdStr, body.note)
+            if (result != null) {
+                logger.info("TASK_MARK_DONE | taskId=$taskIdStr | note=${body.note?.take(80)}")
+                call.respondText(
+                    """{"ok":true,"taskId":"$taskIdStr","state":"DONE"}""",
+                    ContentType.Application.Json,
+                )
+            } else {
+                call.respondText("""{"ok":false,"error":"Task not found"}""", ContentType.Application.Json, HttpStatusCode.NotFound)
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=tasks/done" }
+            call.respondText("""{"ok":false,"error":"${e.message}"}""", ContentType.Application.Json, HttpStatusCode.InternalServerError)
+        }
+    }
+
+    // Phase 5: Reopen a DONE task (available to both user UI and JERVIS agent)
+    post("/internal/tasks/{taskId}/reopen") {
+        try {
+            val taskIdStr = call.parameters["taskId"] ?: ""
+            val body = try { call.receive<InternalNoteRequest>() } catch (_: Exception) { InternalNoteRequest() }
+            val result = pendingTaskService.reopen(taskIdStr, body.note)
+            if (result != null) {
+                logger.info("TASK_REOPEN | taskId=$taskIdStr | note=${body.note?.take(80)}")
+                call.respondText(
+                    """{"ok":true,"taskId":"$taskIdStr","state":"NEW"}""",
+                    ContentType.Application.Json,
+                )
+            } else {
+                call.respondText("""{"ok":false,"error":"Task not found"}""", ContentType.Application.Json, HttpStatusCode.NotFound)
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=tasks/reopen" }
+            call.respondText("""{"ok":false,"error":"${e.message}"}""", ContentType.Application.Json, HttpStatusCode.InternalServerError)
+        }
+    }
+
     // Set priority score for a task — for graph agent LLM prioritization
     post("/internal/tasks/{taskId}/priority") {
         try {
@@ -719,6 +762,10 @@ data class InternalRespondToTaskRequest(
 )
 
 @Serializable
+data class InternalNoteRequest(
+    val note: String? = null,
+)
+
 data class InternalSetPriorityRequest(
     val priorityScore: Int,
 )

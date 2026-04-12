@@ -594,6 +594,19 @@ async def execute_tool(
                 update_doc=arguments.get("update", {}),
                 upsert=arguments.get("upsert", False),
             )
+        # --- Task lifecycle (mark done / reopen) ---
+        elif tool_name == "mark_task_done":
+            result = await kotlin_client.mark_task_done(
+                task_id=arguments.get("task_id", ""),
+                note=arguments.get("note"),
+            )
+            result = json.dumps(result) if isinstance(result, dict) else str(result)
+        elif tool_name == "reopen_task":
+            result = await kotlin_client.reopen_task(
+                task_id=arguments.get("task_id", ""),
+                note=arguments.get("note"),
+            )
+            result = json.dumps(result) if isinstance(result, dict) else str(result)
         # --- Coding agent dispatch (graph agent + chat) ---
         elif tool_name == "dispatch_coding_agent":
             result = await _execute_dispatch_coding_agent(

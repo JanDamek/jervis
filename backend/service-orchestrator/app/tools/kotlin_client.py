@@ -570,6 +570,38 @@ class KotlinServerClient:
             logger.warning("Failed to respond to user task: %s", e)
             return f"Error: {e}"
 
+    async def mark_task_done(self, task_id: str, note: str | None = None) -> str:
+        """Mark a task as DONE. Available to both user UI and JERVIS agent."""
+        try:
+            client = await self._get_client()
+            payload = {}
+            if note:
+                payload["note"] = note
+            resp = await client.post(
+                f"/internal/tasks/{task_id}/done",
+                json=payload,
+            )
+            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to mark task done %s: %s", task_id, e)
+            return f"Error: {e}"
+
+    async def reopen_task(self, task_id: str, note: str | None = None) -> str:
+        """Reopen a DONE task. Transitions to NEW + needsQualification=true."""
+        try:
+            client = await self._get_client()
+            payload = {}
+            if note:
+                payload["note"] = note
+            resp = await client.post(
+                f"/internal/tasks/{task_id}/reopen",
+                json=payload,
+            )
+            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to reopen task %s: %s", task_id, e)
+            return f"Error: {e}"
+
     async def dismiss_user_tasks(self, task_ids: list[str]) -> str:
         """Dismiss user_tasks — move to DONE without processing."""
         try:
