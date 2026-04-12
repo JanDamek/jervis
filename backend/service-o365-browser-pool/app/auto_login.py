@@ -703,7 +703,12 @@ async def _enter_email(page: Page, email: str) -> LoginResult:
     """Enter email address and submit."""
     logger.info("Auto-login: entering email %s", email)
 
+    # Microsoft login has a hidden duplicate input (tabindex=-1, aria-hidden=true)
+    # that Playwright can find but can't click (footer div intercepts pointer).
+    # Use :visible pseudo-class or filter by tabindex to get the real input.
     email_input = await _find_element(page, [
+        'input[type="email"]:not([aria-hidden="true"])',
+        'input[name="loginfmt"]:not([aria-hidden="true"])',
         'input[type="email"]',
         'input[name="loginfmt"]',
     ])
@@ -713,9 +718,7 @@ async def _enter_email(page: Page, email: str) -> LoginResult:
             error="Email input not found on login page",
         )
 
-    # Clear any existing value first
-    await email_input.click()
-    await page.keyboard.press("Control+a")
+    # Use fill() directly — avoids click() which can fail when footer overlaps
     await email_input.fill(email)
     await asyncio.sleep(1.5)
 
