@@ -280,20 +280,31 @@ TOOL_MARK_TASK_DONE: dict = {
         "name": "mark_task_done",
         "description": (
             "Označ úlohu jako HOTOVOU (DONE). Stejná akce, kterou uživatel může "
-            "provést v UI. Použij když: uživatel řekne 'je to hotové', 'uzavři to', "
-            "'hotovo', nebo když JERVIS sám rozhodl že není co dělat. "
-            "Volitelně přidej poznámku proč je done."
+            "provést v UI.\n\n"
+            "PRAVIDLA KOMUNIKACE:\n"
+            "- PŘED voláním tohoto toolu řekni uživateli CO uzavíráš — vždy "
+            "popíš obsah úlohy lidsky (např. 'email od Carlose s přáním k "
+            "Velikonocím', 'schůzka s Mazlušek z 3. dubna', 'WhatsApp zpráva "
+            "od Katěnky'). NIKDY neříkej 'úlohu 69da9bb5...' — interní ID "
+            "jsou pro uživatele nesmysl.\n"
+            "- Pokud uživatel řekne 'uzavři to' a existuje VÍC možných úloh, "
+            "DOPTEJ SE: 'Myslíš email od Carlose nebo WhatsApp od Katěnky?'\n"
+            "- PO uzavření potvrď: 'Hotovo — email od Carlose označen jako "
+            "vyřízený.'\n\n"
+            "Použij když: uživatel řekne 'je to hotové', 'uzavři to', "
+            "'hotovo', 'to nepotřebuji', nebo JERVIS sám rozhodl že není "
+            "co dělat."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "task_id": {
                     "type": "string",
-                    "description": "ID úlohy k označení jako hotové.",
+                    "description": "TaskDocument ID (interní, nesděluji uživateli).",
                 },
                 "note": {
                     "type": "string",
-                    "description": "Volitelná poznámka proč se úloha uzavírá.",
+                    "description": "Volitelná poznámka proč se úloha uzavírá (česky, pro záznam).",
                 },
             },
             "required": ["task_id"],
@@ -306,21 +317,28 @@ TOOL_REOPEN_TASK: dict = {
     "function": {
         "name": "reopen_task",
         "description": (
-            "Znovu otevři uzavřenou (DONE) úlohu. Vrátí ji do stavu NEW a spustí "
-            "re-kvalifikaci. Použij když: uživatel řekne 'znovu otevři', 'ještě to "
-            "není hotové', 'chci se k tomu vrátit', nebo JERVIS sám zjistí novou "
-            "souvislost s dříve uzavřenou úlohou. Volitelně přidej poznámku."
+            "Znovu otevři uzavřenou (DONE) úlohu. Vrátí ji do stavu NEW a "
+            "spustí re-kvalifikaci.\n\n"
+            "PRAVIDLA KOMUNIKACE:\n"
+            "- PŘED voláním popíš uživateli CO otevíráš — 'Znovu otevírám "
+            "email od Carlose.' NIKDY nepoužívej interní ID.\n"
+            "- Pokud je víc kandidátů, doptej se.\n"
+            "- PO otevření potvrď: 'Otevřeno — email od Carlose je zpět "
+            "ve frontě, kvalifikátor ho znovu posoudí.'\n\n"
+            "Použij když: uživatel řekne 'znovu otevři', 'ještě to "
+            "není hotové', 'vrať se k tomu', nebo JERVIS sám zjistí novou "
+            "souvislost s dříve uzavřenou úlohou."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "task_id": {
                     "type": "string",
-                    "description": "ID úlohy k znovuotevření.",
+                    "description": "TaskDocument ID (interní, nesděluji uživateli).",
                 },
                 "note": {
                     "type": "string",
-                    "description": "Volitelná poznámka proč se úloha otevírá znovu.",
+                    "description": "Volitelná poznámka proč se úloha otevírá znovu (česky, pro záznam).",
                 },
             },
             "required": ["task_id"],
