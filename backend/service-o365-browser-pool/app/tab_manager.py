@@ -50,7 +50,7 @@ TAB_TO_CAPABILITIES: dict[TabType, list[str]] = {
 # O365 web URLs per account type
 _BUSINESS_URLS = {
     TabType.CHAT: "https://teams.cloud.microsoft",
-    TabType.CALENDAR: "https://outlook.office.com/calendar",
+    TabType.CALENDAR: "https://teams.cloud.microsoft/calendar",
     TabType.EMAIL: "https://outlook.office.com/mail",
 }
 
@@ -184,10 +184,16 @@ class TabManager:
                                 # Outlook app indicators
                                 '[data-app-section], '
                                 '#LeftRail, '
-                                'div[role="navigation"], '
                                 '#MainModule, '
                                 'div[data-testid="reading-pane"], '
-                                'div[data-testid="folder-list"]'
+                                'div[data-testid="folder-list"], '
+                                # Teams Calendar / Teams app indicators
+                                'div[data-tid="app-layout"], '
+                                'div[data-tid="app-bar"], '
+                                '#app-bar-container, '
+                                'div[role="navigation"], '
+                                'button[aria-label*="Calendar"], '
+                                'button[aria-label*="Kalendář"]'
                             ).first
                             try:
                                 is_app_loaded = await app_indicator.is_visible(timeout=3000)
