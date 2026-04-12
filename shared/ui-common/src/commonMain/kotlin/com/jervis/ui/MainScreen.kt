@@ -397,6 +397,7 @@ fun MainScreenView(
                                     activeTaskId = activeChatTaskId,
                                     onTaskSelected = onChatTaskSelected,
                                     onMainChatSelected = onMainChatSelected,
+                                    refreshTrigger = sidebarRefreshTrigger,
                                     modifier = mod,
                                 )
                             },
@@ -603,67 +604,69 @@ private fun ChatContent(
             }
         }
 
-        // Filter chips — always visible
-        Row(
-            Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FilterChip(
-                selected = showChat,
-                onClick = onToggleChat,
-                modifier = Modifier.height(28.dp),
-                label = { Text("Chat", style = MaterialTheme.typography.labelSmall) },
-            )
-            FilterChip(
-                selected = showTasks,
-                onClick = onToggleTasks,
-                modifier = Modifier.height(28.dp),
-                label = { Text("Tasky", style = MaterialTheme.typography.labelSmall) },
-            )
-            @OptIn(ExperimentalMaterial3Api::class)
-            BadgedBox(
-                badge = {
-                    val totalBadge = userTaskCount + pendingQuestionCount
-                    if (totalBadge > 0) {
-                        Badge { Text("$totalBadge") }
-                    }
-                },
+        // Filter chips — only in main chat, hidden in task drill-in view
+        if (activeChatTaskName == null) {
+            Row(
+                Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 FilterChip(
-                    selected = showNeedReaction,
-                    onClick = onToggleNeedReaction,
+                    selected = showChat,
+                    onClick = onToggleChat,
                     modifier = Modifier.height(28.dp),
-                    label = {
-                        Text("K reakci", style = MaterialTheme.typography.labelSmall)
+                    label = { Text("Chat", style = MaterialTheme.typography.labelSmall) },
+                )
+                FilterChip(
+                    selected = showTasks,
+                    onClick = onToggleTasks,
+                    modifier = Modifier.height(28.dp),
+                    label = { Text("Tasky", style = MaterialTheme.typography.labelSmall) },
+                )
+                @OptIn(ExperimentalMaterial3Api::class)
+                BadgedBox(
+                    badge = {
+                        val totalBadge = userTaskCount + pendingQuestionCount
+                        if (totalBadge > 0) {
+                            Badge { Text("$totalBadge") }
+                        }
                     },
+                ) {
+                    FilterChip(
+                        selected = showNeedReaction,
+                        onClick = onToggleNeedReaction,
+                        modifier = Modifier.height(28.dp),
+                        label = {
+                            Text("K reakci", style = MaterialTheme.typography.labelSmall)
+                        },
+                    )
+                }
+                if (showNeedReaction && userTaskCount > 0) {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(
+                        onClick = onDismissAllTasks,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.VisibilityOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Ignorovat vše", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+
+                // Tier override toggle — right-aligned
+                if (!(showNeedReaction && userTaskCount > 0)) {
+                    Spacer(Modifier.weight(1f))
+                }
+                TierToggle(
+                    selected = tierOverride,
+                    onSelect = onTierOverrideChange,
                 )
             }
-            if (showNeedReaction && userTaskCount > 0) {
-                Spacer(Modifier.weight(1f))
-                TextButton(
-                    onClick = onDismissAllTasks,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.height(28.dp),
-                ) {
-                    Icon(
-                        Icons.Default.VisibilityOff,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text("Ignorovat vše", style = MaterialTheme.typography.labelSmall)
-                }
-            }
-
-            // Tier override toggle — right-aligned
-            if (!(showNeedReaction && userTaskCount > 0)) {
-                Spacer(Modifier.weight(1f))
-            }
-            TierToggle(
-                selected = tierOverride,
-                onSelect = onTierOverrideChange,
-            )
         }
 
         // Chat area

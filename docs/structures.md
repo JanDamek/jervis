@@ -614,11 +614,42 @@ escalates to user: "Mám protichůdná pravidla: X říká urgent, Y říká ign
 - Don't send all conventions to the LLM — pre-filter by kind + client, then
   top-10 by relevance to the specific task content
 
+### Chat Task Sidebar (Phase 5, post-2026-04-12)
+
+The primary task interface is the **chat sidebar** in
+`shared/ui-common/.../ui/chat/ChatTaskSidebar.kt`. It shows all active
+tasks grouped into **collapsible sections** by pipeline stage:
+
+| Section | States | Default |
+|---------|--------|---------|
+| K vyrizeni | USER_TASK | expanded |
+| JERVIS pracuje | PROCESSING, CODING | expanded |
+| Ve fronte | QUEUED | expanded |
+| Nove | NEW, INDEXING | expanded |
+| Ceka na podulohy | BLOCKED | collapsed |
+| Chyby | ERROR | collapsed |
+
+**Stream-based refresh:** Server pushes `TASK_LIST_CHANGED` via SSE →
+`ChatViewModel` increments `sidebarRefreshTrigger` → sidebar reloads.
+No polling timer. Existing task list stays visible during refresh (no
+spinner flash — spinner only on initial empty load).
+
+**Task brief title resolution** (in `ChatViewModel.switchToTaskConversation`):
+`summary` > `taskName` (if not "Unnamed Task") > first line of content > `sourceLabel`
+
+**Filter chips hidden in task view:** When `activeChatTaskName != null`
+(user drilled into a task), Chat/Tasky/K reakci filter chips and tier
+toggle are hidden — they control main chat, not task conversations.
+
+**Layout:**
+- Expanded (>=600dp): `JHorizontalSplitLayout` — sidebar left (22%) + chat right
+- Compact (<600dp): `ModalNavigationDrawer` with floating list button
+
 ### Tasks UI (Phase 4, post-2026-04-11)
 
 The user-facing task screen lives in
 `shared/ui-common/.../ui/PendingTasksScreen.kt` (entry name kept for nav
-compatibility — display title is "Úlohy"). It is the **single
+compatibility — display title is "Ulohy"). It is the **single
 state-agnostic task list** for everything in the `tasks` collection. Any
 attempt to add a second task screen for "USER_TASK only" or "INDEXING
 only" should be redirected here with a state filter.

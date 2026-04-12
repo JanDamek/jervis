@@ -539,12 +539,22 @@ class ChatViewModel(
                 val mapped = mutableListOf<ChatMessage>()
                 if (task != null) {
                     val brief = buildString {
-                        // ── Header ─────────────────────────────────────────
-                        appendLine("# ${task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" } ?: task.sourceLabel.ifBlank { "Úloha" }}")
+                        // ── Title resolution ─────────────────────────────
+                        // Priority: summary > taskName > first content line > sourceLabel
+                        val title = task.summary
+                            ?: task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" }
+                            ?: task.content.lineSequence().firstOrNull()
+                                ?.removePrefix("# ")?.trim()
+                                ?.takeIf { it.isNotBlank() && it.length > 3 }
+                                ?.take(120)
+                            ?: task.sourceLabel.ifBlank { "Uloha" }
+                        appendLine("# $title")
                         appendLine()
-                        if (task.sourceLabel.isNotBlank()) appendLine("📥 **Zdroj:** ${task.sourceLabel}")
-                        appendLine("📊 **Stav:** ${stateLabelCs(task.state)} · pipeline: ${pipelineLabelCs(task.taskType)}")
-                        appendLine("🕐 **Vytvořeno:** ${task.createdAt}")
+
+                        // ── Metadata ─────────────────────────────────────
+                        if (task.sourceLabel.isNotBlank()) appendLine("**Zdroj:** ${task.sourceLabel}")
+                        appendLine("**Stav:** ${stateLabelCs(task.state)} · pipeline: ${pipelineLabelCs(task.taskType)}")
+                        appendLine("**Vytvoreno:** ${task.createdAt}")
                         val score = task.priorityScore
                         if (score != null) {
                             val priorityLabel = when {
@@ -553,7 +563,7 @@ class ChatViewModel(
                                 score >= 40 -> "MEDIUM"
                                 else -> "LOW"
                             }
-                            append("🎯 **Priorita:** $score/100 ($priorityLabel)")
+                            append("**Priorita:** $score/100 ($priorityLabel)")
                             if (!task.priorityReason.isNullOrBlank()) append(" — ${task.priorityReason}")
                             appendLine()
                         }
@@ -562,17 +572,17 @@ class ChatViewModel(
                                 task.actionType?.takeIf { it.isNotBlank() }?.let { "akce: $it" },
                                 task.estimatedComplexity?.takeIf { it.isNotBlank() }?.let { "komplexita: $it" },
                             )
-                            if (parts.isNotEmpty()) appendLine("🤖 **Klasifikace:** ${parts.joinToString(" · ")}")
+                            if (parts.isNotEmpty()) appendLine("**Klasifikace:** ${parts.joinToString(" · ")}")
                         }
                         val parentId = task.parentTaskId
-                        if (parentId != null) appendLine("↳ **Podúloha** v rámci ${parentId.take(8)}")
-                        if (task.childCount > 0) appendLine("🌿 **Podúlohy:** ${task.completedChildCount}/${task.childCount} hotovo")
-                        if (task.needsQualification) appendLine("● **Re-kvalifikace** je naplánovaná")
+                        if (parentId != null) appendLine("**Poduloha** v ramci ${parentId.take(8)}")
+                        if (task.childCount > 0) appendLine("**Podulohy:** ${task.completedChildCount}/${task.childCount} hotovo")
+                        if (task.needsQualification) appendLine("**Re-kvalifikace** je naplanovana")
 
                         // ── Pending question (USER_TASK) ──────────────────
                         if (!task.pendingUserQuestion.isNullOrBlank()) {
                             appendLine()
-                            appendLine("## ❓ Otázka pro tebe")
+                            appendLine("## Otazka pro tebe")
                             appendLine(task.pendingUserQuestion)
                             if (!task.userQuestionContext.isNullOrBlank()) {
                                 appendLine()
@@ -583,7 +593,7 @@ class ChatViewModel(
                         // ── KB extraction ─────────────────────────────────
                         if (!task.kbSummary.isNullOrBlank()) {
                             appendLine()
-                            appendLine("## 📚 Co o tom JERVIS ví (KB)")
+                            appendLine("## Co o tom JERVIS vi (KB)")
                             appendLine(task.kbSummary)
                             if (task.kbEntities.isNotEmpty()) {
                                 appendLine()
@@ -594,46 +604,56 @@ class ChatViewModel(
                         // ── Qualifier research ────────────────────────────
                         if (!task.qualifierContextSummary.isNullOrBlank()) {
                             appendLine()
-                            appendLine("## 🔍 Co JERVIS dohledal (kvalifikátor)")
+                            appendLine("## Co JERVIS dohledal (kvalifikator)")
                             appendLine(task.qualifierContextSummary)
                         }
 
                         // ── Qualifier's suggested approach ────────────────
                         if (!task.qualifierSuggestedApproach.isNullOrBlank()) {
                             appendLine()
-                            appendLine("## 💡 Navržený postup")
+                            appendLine("## Navrzeny postup")
                             appendLine(task.qualifierSuggestedApproach)
                         }
 
-                        // ── Last qualifier step (when nothing else exists) ─
-                        if (task.kbSummary.isNullOrBlank() &&
+                        // ── Qualification in progress ────────────────────
+                        val isUnqualified = task.kbSummary.isNullOrBlank() &&
                             task.qualifierContextSummary.isNullOrBlank() &&
-                            task.qualifierSuggestedApproach.isNullOrBlank() &&
-                            !task.lastQualificationStep.isNullOrBlank()) {
+                            task.qualifierSuggestedApproach.isNullOrBlank()
+                        if (isUnqualified && !task.lastQualificationStep.isNullOrBlank()) {
                             appendLine()
-                            appendLine("## ⏳ Kvalifikátor")
-                            appendLine("Poslední krok: ${task.lastQualificationStep}")
+                            appendLine("## Kvalifikator")
+                            appendLine("Posledni krok: ${task.lastQualificationStep}")
                         }
 
                         // ── Original content ──────────────────────────────
+                        // Show full content only for qualified tasks. For unqualified,
+                        // show just a preview — the raw dump with URLs is not useful.
                         if (task.content.isNotBlank()) {
                             appendLine()
                             appendLine("---")
                             appendLine()
-                            appendLine("## 📄 Originální obsah")
-                            append(task.content)
+                            if (isUnqualified && task.content.length > 500) {
+                                appendLine("## Puvodni obsah (nahled)")
+                                append(task.content.take(500))
+                                appendLine("...")
+                                appendLine()
+                                appendLine("_Plny obsah bude dostupny po kvalifikaci._")
+                            } else {
+                                appendLine("## Puvodni obsah")
+                                append(task.content)
+                            }
                         }
 
                         // ── Related tasks ─────────────────────────────────
                         if (relatedTasks.isNotEmpty()) {
                             appendLine()
                             appendLine()
-                            appendLine("## 🔗 Související úlohy")
+                            appendLine("## Souvisejici ulohy")
                             for (rt in relatedTasks.take(10)) {
                                 val rtState = stateLabelCs(rt.state)
                                 val rtName = rt.summary?.take(80)
                                     ?: rt.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" }
-                                    ?: rt.sourceLabel.ifBlank { "Úloha" }
+                                    ?: rt.sourceLabel.ifBlank { "Uloha" }
                                 appendLine("- [$rtState] $rtName (${rt.sourceLabel})")
                             }
                         }

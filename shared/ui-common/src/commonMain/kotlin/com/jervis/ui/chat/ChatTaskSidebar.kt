@@ -1,5 +1,8 @@
 package com.jervis.ui.chat
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,9 +22,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,23 +49,22 @@ import androidx.compose.ui.unit.dp
 import com.jervis.di.JervisRepository
 import com.jervis.dto.task.PendingTaskDto
 import kotlin.coroutines.cancellation.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Phase 5 — chat-as-primary task sidebar.
+ * Phase 5 — chat-as-primary task sidebar with collapsible sections.
  *
- * Shows all NON-DONE tasks (NEW / INDEXING / QUEUED / PROCESSING / USER_TASK
- * / BLOCKED / ERROR) as cards in the chat view, sorted newest-first. Click a
- * card → triggers [onTaskSelected] which the chat host wires to switch the
- * active conversation to that task's id.
+ * Groups tasks by pipeline stage into collapsible sections:
+ *   K vyřízení (USER_TASK) — always expanded, highest priority
+ *   JERVIS pracuje (PROCESSING/CODING) — expanded by default
+ *   Ve frontě (QUEUED) — expanded by default
+ *   Nové (NEW/INDEXING) — expanded by default
+ *   Čeká na podúlohy (BLOCKED) — collapsed by default
+ *   Chyby (ERROR) — collapsed by default
  *
- * Auto-refresh every 15 s + manual refresh button. Once the chat host wires
- * the existing notification SSE feed in, the timer can be replaced with
- * push-based refresh.
- *
- * Filter chips to come in a follow-up; the v1 keeps all states visible so
- * the user instantly sees what JERVIS is doing across the whole pipeline.
+ * Refresh is stream-based: server pushes TASK_LIST_CHANGED → sidebar
+ * reloads immediately. No polling timer. Existing task list stays
+ * visible during refresh (no spinner flash).
  */
 @Composable
 fun ChatTaskSidebar(
@@ -71,25 +76,30 @@ fun ChatTaskSidebar(
     modifier: Modifier = Modifier,
 ) {
     var tasks by remember { mutableStateOf<List<PendingTaskDto>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(false) }
+    var isInitialLoad by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var showDone by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    // Collapsible section state — key = SidebarSection enum name
+    val expandedSections = remember {
+        mutableStateMapOf(
+            SidebarSection.NEEDS_ATTENTION.name to true,
+            SidebarSection.WORKING.name to true,
+            SidebarSection.QUEUED.name to true,
+            SidebarSection.NEW.name to true,
+            SidebarSection.BLOCKED.name to false,
+            SidebarSection.ERRORS.name to false,
+            SidebarSection.DONE.name to true,
+        )
+    }
+
     suspend fun loadActive() {
-        isLoading = true
         error = null
         try {
-            // Fetch up to 50 most-recent NON-terminal tasks across all states.
-            // We fetch each non-DONE state separately and merge because the
-            // server-side listTasksPaged accepts only ONE state filter at a
-            // time. After Phase 5 follow-up the server query should accept
-            // a list of states; this client merge keeps the v1 simple.
             val states = if (showDone) {
-                // Show DONE only — user explicitly switched to history view
                 listOf("DONE")
             } else {
-                // Default — non-terminal active tasks
                 listOf("USER_TASK", "PROCESSING", "QUEUED", "BLOCKED", "INDEXING", "NEW", "ERROR")
             }
             val merged = mutableListOf<PendingTaskDto>()
@@ -106,29 +116,37 @@ fun ChatTaskSidebar(
                 )
                 merged.addAll(page.items)
             }
-            // Sort by priority bucket, then newest first within each bucket.
-            // USER_TASK tasks float to the top (need user attention NOW),
-            // running tasks next, waiting tasks, then errors last.
             tasks = merged.sortedWith(
                 compareBy<PendingTaskDto> { statePriority(it.state) }
-                    .thenByDescending { it.createdAt }
+                    .thenByDescending { it.createdAt },
             ).take(50)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             error = e.message
         } finally {
-            isLoading = false
+            isInitialLoad = false
         }
     }
 
-    // Initial load + reload on show/hide DONE toggle
-    LaunchedEffect(showDone) { loadActive() }
-    // Stream-based refresh: server pushes TASK_LIST_CHANGED via chatEventStream →
-    // ChatViewModel increments sidebarRefreshTrigger → sidebar reloads immediately.
-    // No 15s polling timer — per guidelines "no polling, use stream".
+    LaunchedEffect(showDone) {
+        isInitialLoad = tasks.isEmpty()
+        loadActive()
+    }
     LaunchedEffect(refreshTrigger) {
         if (refreshTrigger > 0) loadActive()
+    }
+
+    // Group tasks into sections
+    val sections = remember(tasks, showDone) {
+        if (showDone) {
+            listOf(SidebarSection.DONE to tasks)
+        } else {
+            SidebarSection.activeSections.mapNotNull { section ->
+                val sectionTasks = tasks.filter { section.matches(it) }
+                if (sectionTasks.isNotEmpty()) section to sectionTasks else null
+            }
+        }
     }
 
     Surface(
@@ -145,7 +163,7 @@ fun ChatTaskSidebar(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = if (showDone) "Hotové úlohy (${tasks.size})" else "Aktivní úlohy (${tasks.size})",
+                    text = if (showDone) "Hotove ulohy (${tasks.size})" else "Aktivni ulohy (${tasks.size})",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -156,7 +174,7 @@ fun ChatTaskSidebar(
                     ) {
                         Icon(
                             if (showDone) Icons.Default.CheckCircle else Icons.Default.History,
-                            contentDescription = if (showDone) "Zobrazit aktivní" else "Zobrazit hotové",
+                            contentDescription = if (showDone) "Zobrazit aktivni" else "Zobrazit hotove",
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -173,20 +191,23 @@ fun ChatTaskSidebar(
                 }
             }
 
-            // "Hlavní chat" entry — always at the top, returns to general conversation
+            // "Hlavni chat" entry
             MainChatRow(
                 isActive = activeTaskId == null,
                 onClick = onMainChatSelected,
             )
 
-            // Loading / error / empty states
+            // Content
             when {
-                isLoading && tasks.isEmpty() -> {
-                    Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                isInitialLoad && tasks.isEmpty() -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     }
                 }
-                error != null -> {
+                error != null && tasks.isEmpty() -> {
                     Text(
                         text = "Chyba: $error",
                         modifier = Modifier.padding(12.dp),
@@ -196,7 +217,7 @@ fun ChatTaskSidebar(
                 }
                 tasks.isEmpty() -> {
                     Text(
-                        text = "Žádné aktivní úlohy. JERVIS čeká na nový obsah.",
+                        text = "Zadne aktivni ulohy. JERVIS ceka na novy obsah.",
                         modifier = Modifier.padding(12.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -205,19 +226,133 @@ fun ChatTaskSidebar(
                 else -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        items(tasks, key = { it.id }) { task ->
-                            ChatSidebarTaskCard(
-                                task = task,
-                                isActive = task.id == activeTaskId,
-                                onClick = { onTaskSelected(task) },
-                            )
+                        for ((section, sectionTasks) in sections) {
+                            val isExpanded = expandedSections[section.name] != false
+
+                            // Section header
+                            item(key = "header-${section.name}") {
+                                SectionHeader(
+                                    title = section.label,
+                                    count = sectionTasks.size,
+                                    color = section.color,
+                                    isExpanded = isExpanded,
+                                    onClick = {
+                                        expandedSections[section.name] = !isExpanded
+                                    },
+                                )
+                            }
+
+                            // Section content (animated)
+                            if (isExpanded) {
+                                items(sectionTasks, key = { it.id }) { task ->
+                                    ChatSidebarTaskCard(
+                                        task = task,
+                                        isActive = task.id == activeTaskId,
+                                        onClick = { onTaskSelected(task) },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/** Pipeline stage sections for sidebar grouping. */
+private enum class SidebarSection(
+    val label: String,
+    val color: Color,
+    val states: Set<String>,
+) {
+    NEEDS_ATTENTION(
+        label = "K vyrizeni",
+        color = Color(0xFF1976D2),
+        states = setOf("USER_TASK"),
+    ),
+    WORKING(
+        label = "JERVIS pracuje",
+        color = Color(0xFFF57C00),
+        states = setOf("PROCESSING", "CODING"),
+    ),
+    QUEUED(
+        label = "Ve fronte",
+        color = Color(0xFF7B1FA2),
+        states = setOf("QUEUED"),
+    ),
+    NEW(
+        label = "Nove",
+        color = Color(0xFF7B1FA2),
+        states = setOf("NEW", "INDEXING"),
+    ),
+    BLOCKED(
+        label = "Ceka na podulohy",
+        color = Color(0xFF757575),
+        states = setOf("BLOCKED"),
+    ),
+    ERRORS(
+        label = "Chyby",
+        color = Color(0xFFD32F2F),
+        states = setOf("ERROR"),
+    ),
+    DONE(
+        label = "Hotove",
+        color = Color(0xFF388E3C),
+        states = setOf("DONE"),
+    );
+
+    fun matches(task: PendingTaskDto): Boolean = task.state in states
+
+    companion object {
+        /** Sections shown in active (non-DONE) mode, in display order. */
+        val activeSections = listOf(NEEDS_ATTENTION, WORKING, QUEUED, NEW, BLOCKED, ERRORS)
+    }
+}
+
+@Composable
+private fun SectionHeader(
+    title: String,
+    count: Int,
+    color: Color,
+    isExpanded: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(color),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "$title ($count)",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            contentDescription = if (isExpanded) "Sbalit" else "Rozbalit",
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (isExpanded) {
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            thickness = 0.5.dp,
+            color = color.copy(alpha = 0.3f),
+        )
     }
 }
 
@@ -236,7 +371,7 @@ private fun MainChatRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "💬 Hlavní chat",
+            text = "Hlavni chat",
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
         )
@@ -265,13 +400,15 @@ private fun ChatSidebarTaskCard(
                 verticalAlignment = Alignment.Top,
             ) {
                 Text(
-                    text = task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" }
-                        ?: task.sourceLabel.ifBlank { "Úloha" },
+                    text = task.summary
+                        ?: task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" }
+                        ?: task.sourceLabel.ifBlank { "Uloha" },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 2,
                     modifier = Modifier.weight(1f, fill = false),
                 )
+                Spacer(Modifier.width(4.dp))
                 StateBadge(task.state, task.needsQualification)
             }
 
@@ -290,31 +427,31 @@ private fun ChatSidebarTaskCard(
                 }
                 if (task.parentTaskId != null) {
                     Text(
-                        text = "↳ podúloha",
+                        text = "poduloha",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.secondary,
                     )
                 } else if (task.childCount > 0) {
                     Text(
-                        text = "${task.completedChildCount}/${task.childCount} dětí",
+                        text = "${task.completedChildCount}/${task.childCount} deti",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.secondary,
                     )
                 }
                 if (task.needsQualification) {
                     Text(
-                        text = "● re-kvalifikace",
+                        text = "re-kvalifikace",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.tertiary,
                     )
                 }
             }
 
-            // Pending question line — prominent for USER_TASK
+            // Pending question — prominent for USER_TASK
             if (!task.pendingUserQuestion.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "❓ ${task.pendingUserQuestion}",
+                    text = task.pendingUserQuestion!!,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 2,
@@ -326,31 +463,31 @@ private fun ChatSidebarTaskCard(
 
 /** Sidebar sort order: lower number = higher in the list. */
 private fun statePriority(state: String): Int = when (state) {
-    "USER_TASK" -> 0   // needs user attention — always on top
-    "PROCESSING" -> 1  // actively running
+    "USER_TASK" -> 0
+    "PROCESSING" -> 1
     "CODING" -> 1
-    "QUEUED" -> 2      // waiting for orchestrator
-    "NEW" -> 3         // fresh / being indexed
+    "QUEUED" -> 2
+    "NEW" -> 3
     "INDEXING" -> 3
-    "BLOCKED" -> 4     // waiting for children
-    "ERROR" -> 5       // failed — bottom
-    "DONE" -> 6        // only visible in history toggle
+    "BLOCKED" -> 4
+    "ERROR" -> 5
+    "DONE" -> 6
     else -> 5
 }
 
 @Composable
 private fun StateBadge(state: String, needsQualification: Boolean = false) {
     val (label, color) = if (needsQualification) {
-        "Kvalifikátor" to Color(0xFF6A1B9A)
+        "Kvalifikator" to Color(0xFF6A1B9A)
     } else when (state) {
-        "USER_TASK" -> "K vyřízení" to Color(0xFF1976D2)
+        "USER_TASK" -> "K vyrizeni" to Color(0xFF1976D2)
         "ERROR" -> "Chyba" to Color(0xFFD32F2F)
-        "QUEUED" -> "Čeká na JERVIS" to Color(0xFFF57C00)
+        "QUEUED" -> "Ceka na JERVIS" to Color(0xFFF57C00)
         "PROCESSING" -> "JERVIS pracuje" to Color(0xFFF57C00)
-        "CODING" -> "Kódování" to Color(0xFFF57C00)
+        "CODING" -> "Kodovani" to Color(0xFFF57C00)
         "INDEXING" -> "Indexace" to Color(0xFF7B1FA2)
-        "BLOCKED" -> "Čeká na podúlohy" to Color(0xFF757575)
-        "NEW" -> "Nový" to Color(0xFF7B1FA2)
+        "BLOCKED" -> "Ceka na podulohy" to Color(0xFF757575)
+        "NEW" -> "Novy" to Color(0xFF7B1FA2)
         "DONE" -> "Hotovo" to Color(0xFF388E3C)
         else -> state to Color(0xFF757575)
     }
