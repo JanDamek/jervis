@@ -400,9 +400,7 @@ private fun ChatSidebarTaskCard(
                 verticalAlignment = Alignment.Top,
             ) {
                 Text(
-                    text = task.summary
-                        ?: task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" }
-                        ?: task.sourceLabel.ifBlank { "Uloha" },
+                    text = taskDisplayName(task),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 2,
@@ -461,6 +459,30 @@ private fun ChatSidebarTaskCard(
     }
 }
 
+/** Resolve a human-readable display name for a task card.
+ *  Priority: summary > taskName (if informative) > content first meaningful line > sourceLabel */
+private fun taskDisplayName(task: PendingTaskDto): String {
+    task.summary?.let { return it }
+
+    // taskName is useful only if it's not generic placeholders
+    val name = task.taskName
+    if (name.isNotBlank() && name != "Unnamed Task" && name != task.sourceLabel) {
+        return name
+    }
+
+    // Extract first meaningful line from content (skip headers like "# Email")
+    for (line in task.content.lineSequence()) {
+        val cleaned = line.removePrefix("# ").removePrefix("## ").trim()
+        if (cleaned.isNotBlank() && cleaned.length > 5 &&
+            !cleaned.startsWith("**") && cleaned != task.sourceLabel
+        ) {
+            return cleaned.take(120)
+        }
+    }
+
+    return task.sourceLabel.ifBlank { "Uloha" }
+}
+
 /** Sidebar sort order: lower number = higher in the list. */
 private fun statePriority(state: String): Int = when (state) {
     "USER_TASK" -> 0
@@ -477,7 +499,12 @@ private fun statePriority(state: String): Int = when (state) {
 
 @Composable
 private fun StateBadge(state: String, needsQualification: Boolean = false) {
-    val (label, color) = if (needsQualification) {
+    // Show "Kvalifikator" badge only for states BEFORE orchestrator picks up the task.
+    // PROCESSING/CODING means the orchestrator is already working — needsQualification
+    // flag is stale at that point (will be cleared after next qualification cycle).
+    val showQualificationBadge = needsQualification &&
+        state in setOf("NEW", "INDEXING", "QUEUED")
+    val (label, color) = if (showQualificationBadge) {
         "Kvalifikator" to Color(0xFF6A1B9A)
     } else when (state) {
         "USER_TASK" -> "K vyrizeni" to Color(0xFF1976D2)

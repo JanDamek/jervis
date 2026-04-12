@@ -540,12 +540,12 @@ class ChatViewModel(
                 if (task != null) {
                     val brief = buildString {
                         // ── Title resolution ─────────────────────────────
-                        // Priority: summary > taskName > first content line > sourceLabel
+                        // Priority: summary > taskName (if informative) > content first meaningful line > sourceLabel
                         val title = task.summary
-                            ?: task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" }
-                            ?: task.content.lineSequence().firstOrNull()
-                                ?.removePrefix("# ")?.trim()
-                                ?.takeIf { it.isNotBlank() && it.length > 3 }
+                            ?: task.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" && it != task.sourceLabel }
+                            ?: task.content.lineSequence()
+                                .map { it.removePrefix("# ").removePrefix("## ").trim() }
+                                .firstOrNull { it.isNotBlank() && it.length > 5 && !it.startsWith("**") && it != task.sourceLabel }
                                 ?.take(120)
                             ?: task.sourceLabel.ifBlank { "Uloha" }
                         appendLine("# $title")
@@ -616,32 +616,22 @@ class ChatViewModel(
                         }
 
                         // ── Qualification in progress ────────────────────
-                        val isUnqualified = task.kbSummary.isNullOrBlank() &&
+                        if (task.kbSummary.isNullOrBlank() &&
                             task.qualifierContextSummary.isNullOrBlank() &&
-                            task.qualifierSuggestedApproach.isNullOrBlank()
-                        if (isUnqualified && !task.lastQualificationStep.isNullOrBlank()) {
+                            task.qualifierSuggestedApproach.isNullOrBlank() &&
+                            !task.lastQualificationStep.isNullOrBlank()) {
                             appendLine()
                             appendLine("## Kvalifikator")
                             appendLine("Posledni krok: ${task.lastQualificationStep}")
                         }
 
                         // ── Original content ──────────────────────────────
-                        // Show full content only for qualified tasks. For unqualified,
-                        // show just a preview — the raw dump with URLs is not useful.
                         if (task.content.isNotBlank()) {
                             appendLine()
                             appendLine("---")
                             appendLine()
-                            if (isUnqualified && task.content.length > 500) {
-                                appendLine("## Puvodni obsah (nahled)")
-                                append(task.content.take(500))
-                                appendLine("...")
-                                appendLine()
-                                appendLine("_Plny obsah bude dostupny po kvalifikaci._")
-                            } else {
-                                appendLine("## Puvodni obsah")
-                                append(task.content)
-                            }
+                            appendLine("## Puvodni obsah")
+                            append(task.content)
                         }
 
                         // ── Related tasks ─────────────────────────────────
