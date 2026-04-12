@@ -17,6 +17,9 @@ import com.jervis.infrastructure.oauth2.OAuth2Service
 import com.jervis.infrastructure.polling.handler.PollingContext
 import com.jervis.infrastructure.polling.handler.PollingHandler
 import com.jervis.task.UserTaskService
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -326,6 +329,16 @@ class CentralPoller(
                 } catch (e: com.jervis.common.http.ProviderAuthException) {
                     logger.error { "Auth error in handler $handlerName for connection ${effectiveConnection.name}: ${e.message}" }
                     PollingResult(errors = 1, authenticationError = true)
+                } catch (e: ConnectException) {
+                    // Network unreachable — NOT an auth failure, will retry next cycle
+                    logger.debug { "Network error (ConnectException) for '${effectiveConnection.name}': ${e.message}" }
+                    PollingResult(errors = 1, authenticationError = false)
+                } catch (e: SocketTimeoutException) {
+                    logger.debug { "Network timeout for '${effectiveConnection.name}': ${e.message}" }
+                    PollingResult(errors = 1, authenticationError = false)
+                } catch (e: ConnectTimeoutException) {
+                    logger.debug { "Connect timeout for '${effectiveConnection.name}': ${e.message}" }
+                    PollingResult(errors = 1, authenticationError = false)
                 } catch (e: Exception) {
                     logger.error(e) { "Error in handler $handlerName for connection ${effectiveConnection.name}" }
                     PollingResult(errors = 1)
