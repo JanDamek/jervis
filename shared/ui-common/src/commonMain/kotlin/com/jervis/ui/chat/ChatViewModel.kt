@@ -87,6 +87,9 @@ class ChatViewModel(
     private val _activeChatTaskName = MutableStateFlow<String?>(null)
     val activeChatTaskName: StateFlow<String?> = _activeChatTaskName.asStateFlow()
 
+    private val _activeChatTaskState = MutableStateFlow<String?>(null)
+    val activeChatTaskState: StateFlow<String?> = _activeChatTaskState.asStateFlow()
+
     /** Phase 5 — chat sidebar split fraction (resizable rail). */
     private val _chatSidebarSplitFraction = MutableStateFlow(0.22f)
     val chatSidebarSplitFraction: StateFlow<Float> = _chatSidebarSplitFraction.asStateFlow()
@@ -491,6 +494,7 @@ class ChatViewModel(
         }
         _activeChatTaskId.value = taskId
         _activeChatTaskName.value = taskName
+        _activeChatTaskState.value = null // will be set after task loads
         // Restore target conversation's draft
         _inputText.value = drafts[taskId] ?: ""
         scope.launch {
@@ -504,6 +508,7 @@ class ChatViewModel(
                 val task = repository.call { services ->
                     services.pendingTaskService.getById(taskId)
                 }
+                _activeChatTaskState.value = task?.state
                 val history = repository.call { services ->
                     services.chatService.getTaskConversationHistory(taskId, limit = 200)
                 }
@@ -688,6 +693,7 @@ class ChatViewModel(
         }
         _activeChatTaskId.value = null
         _activeChatTaskName.value = null
+        _activeChatTaskState.value = null
         // Restore main chat draft
         _inputText.value = drafts[null] ?: ""
         // Trigger the existing history reload by bumping connection generation.

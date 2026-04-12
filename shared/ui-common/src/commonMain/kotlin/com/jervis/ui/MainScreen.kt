@@ -142,6 +142,7 @@ fun MainScreenView(
     repository: JervisRepository? = null,
     activeChatTaskId: String? = null,
     activeChatTaskName: String? = null,
+    activeChatTaskState: String? = null,
     onChatTaskSelected: (PendingTaskDto) -> Unit = {},
     onMainChatSelected: () -> Unit = {},
     chatSidebarSplitFraction: Float = 0.22f,
@@ -221,6 +222,7 @@ fun MainScreenView(
                             onTierOverrideChange = onTierOverrideChange,
                             onNavigateToTask = onNavigateToTask,
                             activeChatTaskName = activeChatTaskName,
+                            activeChatTaskState = activeChatTaskState,
                             onReturnToMainChat = onMainChatSelected,
                             onMarkActiveTaskDone = onMarkActiveTaskDone,
                             onReopenActiveTask = onReopenActiveTask,
@@ -299,6 +301,7 @@ fun MainScreenView(
                             onTierOverrideChange = onTierOverrideChange,
                             onNavigateToTask = onNavigateToTask,
                             activeChatTaskName = activeChatTaskName,
+                            activeChatTaskState = activeChatTaskState,
                             onReturnToMainChat = onMainChatSelected,
                             onMarkActiveTaskDone = onMarkActiveTaskDone,
                             onReopenActiveTask = onReopenActiveTask,
@@ -372,6 +375,7 @@ fun MainScreenView(
                         onTierOverrideChange = onTierOverrideChange,
                         onNavigateToTask = onNavigateToTask,
                         activeChatTaskName = activeChatTaskName,
+                        activeChatTaskState = activeChatTaskState,
                         onReturnToMainChat = onMainChatSelected,
                         onMarkActiveTaskDone = onMarkActiveTaskDone,
                         onReopenActiveTask = onReopenActiveTask,
@@ -516,6 +520,7 @@ private fun ChatContent(
     onNavigateToTask: ((taskId: String) -> Unit)? = null,
     // Phase 5 — active per-task conversation indicator
     activeChatTaskName: String? = null,
+    activeChatTaskState: String? = null,
     onReturnToMainChat: () -> Unit = {},
     onMarkActiveTaskDone: () -> Unit = {},
     onReopenActiveTask: () -> Unit = {},
@@ -535,10 +540,8 @@ private fun ChatContent(
             OrchestratorHealthBanner()
         }
 
-        // Phase 5 — active per-task conversation breadcrumb. Only visible
-        // when the user has drilled into a task's chat from the sidebar.
-        // Left side of the bar = back arrow (return to main chat).
-        // Right side = action buttons: mark done / reopen.
+        // Phase 5 — active per-task conversation breadcrumb.
+        // DONE task → [Otevřít znovu], active task → [Hotovo]. Never both.
         if (activeChatTaskName != null) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -573,25 +576,28 @@ private fun ChatContent(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    TextButton(
-                        onClick = onReopenActiveTask,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    ) {
-                        Text(
-                            "Otevřít znovu",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
-                    TextButton(
-                        onClick = onMarkActiveTaskDone,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    ) {
-                        Text(
-                            "Označit hotové",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
+                    if (activeChatTaskState == "DONE") {
+                        TextButton(
+                            onClick = onReopenActiveTask,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        ) {
+                            Text(
+                                "Otevřít znovu",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                    } else {
+                        TextButton(
+                            onClick = onMarkActiveTaskDone,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        ) {
+                            Text(
+                                "Hotovo",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
                     }
                 }
             }

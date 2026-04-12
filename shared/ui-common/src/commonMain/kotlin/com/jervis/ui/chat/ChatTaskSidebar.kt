@@ -272,7 +272,7 @@ private fun ChatSidebarTaskCard(
                     maxLines = 2,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                StateBadge(task.state)
+                StateBadge(task.state, task.needsQualification)
             }
 
             // Source label + sub-task hint + needs-qualification
@@ -339,16 +339,19 @@ private fun statePriority(state: String): Int = when (state) {
 }
 
 @Composable
-private fun StateBadge(state: String) {
-    val (label, color) = when (state) {
+private fun StateBadge(state: String, needsQualification: Boolean = false) {
+    val (label, color) = if (needsQualification) {
+        "Kvalifikátor" to Color(0xFF6A1B9A)
+    } else when (state) {
         "USER_TASK" -> "K vyřízení" to Color(0xFF1976D2)
         "ERROR" -> "Chyba" to Color(0xFFD32F2F)
-        "QUEUED" -> "Fronta" to Color(0xFFF57C00)
-        "PROCESSING" -> "Běží" to Color(0xFFF57C00)
+        "QUEUED" -> "Čeká na JERVIS" to Color(0xFFF57C00)
+        "PROCESSING" -> "JERVIS pracuje" to Color(0xFFF57C00)
         "CODING" -> "Kódování" to Color(0xFFF57C00)
         "INDEXING" -> "Indexace" to Color(0xFF7B1FA2)
-        "BLOCKED" -> "Blokován" to Color(0xFF757575)
+        "BLOCKED" -> "Čeká na podúlohy" to Color(0xFF757575)
         "NEW" -> "Nový" to Color(0xFF7B1FA2)
+        "DONE" -> "Hotovo" to Color(0xFF388E3C)
         else -> state to Color(0xFF757575)
     }
     Box(

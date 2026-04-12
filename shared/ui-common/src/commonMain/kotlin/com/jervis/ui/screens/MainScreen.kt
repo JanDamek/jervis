@@ -189,6 +189,7 @@ fun MainScreen(
         repository = repository,
         activeChatTaskId = viewModel.chat.activeChatTaskId.collectAsState().value,
         activeChatTaskName = viewModel.chat.activeChatTaskName.collectAsState().value,
+        activeChatTaskState = viewModel.chat.activeChatTaskState.collectAsState().value,
         onChatTaskSelected = { task ->
             viewModel.chat.switchToTaskConversation(
                 task.id,
