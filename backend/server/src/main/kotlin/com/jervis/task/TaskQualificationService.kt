@@ -69,11 +69,10 @@ class TaskQualificationService(
     suspend fun requalifyPendingTasks() {
         var dispatched = 0
         var skipped = 0
-        // Rate-limit: max 10 tasks per cycle to avoid OOMKilling the Python
-        // orchestrator (each /qualify fires an async LLM agent with tools).
-        // The loop runs every 30s so throughput is ~20 tasks/min — enough for
-        // steady-state. Bulk re-qualification (1000+ tasks) takes ~1 hour.
-        val maxPerCycle = 10
+        // Rate-limit: 1 task per cycle — orchestrator processes ONE qualifier
+        // agent at a time (shared GPU). The loop runs every 30s so throughput
+        // is ~2 tasks/min. Bulk re-qualification (1000+ tasks) takes ~8 hours.
+        val maxPerCycle = 1
         try {
             taskRepository.findByNeedsQualificationTrueOrderByCreatedAtAsc().collect { task ->
                 if (dispatched >= maxPerCycle) return@collect
