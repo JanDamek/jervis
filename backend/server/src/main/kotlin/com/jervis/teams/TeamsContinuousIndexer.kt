@@ -2,7 +2,9 @@ package com.jervis.teams
 
 import com.jervis.common.types.SourceUrn
 import com.jervis.infrastructure.polling.PollingStatusEnum
+import com.jervis.dto.task.TaskStateEnum
 import com.jervis.dto.task.TaskTypeEnum
+import com.jervis.task.TaskRepository
 import com.jervis.task.TaskService
 import com.jervis.infrastructure.llm.DocumentExtractionClient
 import jakarta.annotation.PostConstruct
@@ -32,6 +34,7 @@ private val logger = KotlinLogging.logger {}
 class TeamsContinuousIndexer(
     private val repository: TeamsMessageIndexRepository,
     private val taskService: TaskService,
+    private val taskRepository: TaskRepository,
     private val documentExtractionClient: DocumentExtractionClient,
 ) {
     private val supervisor = SupervisorJob()
@@ -91,6 +94,29 @@ class TeamsContinuousIndexer(
             else -> null
         }
 
+        // TopicId merge: append to existing active task instead of creating new
+        if (topicId != null) {
+            val activeStates = listOf(
+                TaskStateEnum.NEW, TaskStateEnum.INDEXING, TaskStateEnum.QUEUED,
+                TaskStateEnum.PROCESSING, TaskStateEnum.USER_TASK, TaskStateEnum.BLOCKED,
+            )
+            val existing = taskRepository.findFirstByTopicIdAndStateIn(topicId, activeStates)
+
+            if (existing != null) {
+                val now = java.time.Instant.now()
+                val updated = existing.copy(
+                    content = "${existing.content}\n\n---\n\n$content",
+                    lastActivityAt = now,
+                    needsQualification = true,
+                    taskName = taskName,
+                )
+                taskRepository.save(updated)
+                markAsIndexed(doc)
+                logger.debug { "Teams message appended to existing task ${existing.id} (topic=$topicId)" }
+                return
+            }
+        }
+
         val task = taskService.createTask(
             taskType = TaskTypeEnum.SYSTEM,
             content = content,
@@ -111,7 +137,7 @@ class TeamsContinuousIndexer(
         }
 
         markAsIndexed(doc)
-        logger.debug { "Indexed Teams message: $taskName" }
+        logger.debug { "Indexed new Teams message: $taskName (topic=$topicId)" }
     }
 
     private suspend fun buildMessageContent(doc: TeamsMessageIndexDocument): String = buildString {

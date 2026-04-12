@@ -26,7 +26,9 @@ class PendingTaskService(
     private val mongoTemplate: ReactiveMongoTemplate,
     @org.springframework.context.annotation.Lazy
     private val chatRpcImpl: com.jervis.chat.ChatRpcImpl,
+    private val pythonOrchestratorClient: com.jervis.agent.PythonOrchestratorClient,
 ) : IPendingTaskService {
+    private val logger = mu.KotlinLogging.logger {}
     override suspend fun listTasks(
         taskType: String?,
         state: String?,
@@ -147,6 +149,18 @@ class PendingTaskService(
     override suspend fun markDone(id: String, note: String?): PendingTaskDto? {
         val taskId = TaskId.fromString(id)
         val task = taskRepository.getById(taskId) ?: return null
+
+        // Cancel running orchestration if task is actively being processed
+        val threadId = task.orchestratorThreadId
+        if (threadId != null && task.state in setOf(TaskStateEnum.PROCESSING, TaskStateEnum.CODING, TaskStateEnum.QUEUED)) {
+            try {
+                pythonOrchestratorClient.cancelOrchestration(threadId)
+                logger.info { "TASK_CANCEL_ON_DONE: taskId=$id threadId=$threadId" }
+            } catch (e: Exception) {
+                logger.warn(e) { "TASK_CANCEL_ON_DONE_FAILED: taskId=$id threadId=$threadId" }
+            }
+        }
+
         val now = java.time.Instant.now()
         val newContent = if (note.isNullOrBlank()) {
             task.content

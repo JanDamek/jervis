@@ -2,7 +2,9 @@ package com.jervis.slack
 
 import com.jervis.common.types.SourceUrn
 import com.jervis.infrastructure.polling.PollingStatusEnum
+import com.jervis.dto.task.TaskStateEnum
 import com.jervis.dto.task.TaskTypeEnum
+import com.jervis.task.TaskRepository
 import com.jervis.task.TaskService
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
@@ -31,6 +33,7 @@ private val logger = KotlinLogging.logger {}
 class SlackContinuousIndexer(
     private val repository: SlackMessageIndexRepository,
     private val taskService: TaskService,
+    private val taskRepository: TaskRepository,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -79,26 +82,49 @@ class SlackContinuousIndexer(
 
         val taskName = "Slack: #${doc.channelName ?: doc.channelId} - ${doc.from ?: "unknown"}".take(120)
 
-        val topicId = "slack-channel:${doc.channelId}"
+        // Use thread-aware topicId: messages in the same thread share a topic
+        val topicId = if (doc.threadTs != null) {
+            "slack-thread:${doc.channelId}:${doc.threadTs}"
+        } else {
+            "slack-channel:${doc.channelId}"
+        }
 
-        val task = taskService.createTask(
-            taskType = TaskTypeEnum.SYSTEM,
-            content = content,
-            clientId = doc.clientId,
-            correlationId = "slack:${doc.messageId}",
-            sourceUrn = SourceUrn.slack(
-                connectionId = doc.connectionId,
-                messageId = doc.messageId,
-                channelId = doc.channelId,
-            ),
-            projectId = doc.projectId,
-            taskName = taskName,
+        // TopicId merge: append to existing active task instead of creating new
+        val activeStates = listOf(
+            TaskStateEnum.NEW, TaskStateEnum.INDEXING, TaskStateEnum.QUEUED,
+            TaskStateEnum.PROCESSING, TaskStateEnum.USER_TASK, TaskStateEnum.BLOCKED,
         )
+        val existing = taskRepository.findFirstByTopicIdAndStateIn(topicId, activeStates)
 
-        taskService.setTopicId(task.id, topicId)
+        if (existing != null) {
+            val now = java.time.Instant.now()
+            val updated = existing.copy(
+                content = "${existing.content}\n\n---\n\n$content",
+                lastActivityAt = now,
+                needsQualification = true,
+                taskName = taskName,
+            )
+            taskRepository.save(updated)
+            logger.debug { "Slack message appended to existing task ${existing.id} (topic=$topicId)" }
+        } else {
+            val task = taskService.createTask(
+                taskType = TaskTypeEnum.SYSTEM,
+                content = content,
+                clientId = doc.clientId,
+                correlationId = "slack:${doc.messageId}",
+                sourceUrn = SourceUrn.slack(
+                    connectionId = doc.connectionId,
+                    messageId = doc.messageId,
+                    channelId = doc.channelId,
+                ),
+                projectId = doc.projectId,
+                taskName = taskName,
+            )
+            taskService.setTopicId(task.id, topicId)
+            logger.debug { "Indexed new Slack message: $taskName (topic=$topicId)" }
+        }
 
         markAsIndexed(doc)
-        logger.debug { "Indexed Slack message: $taskName" }
     }
 
     private fun buildMessageContent(doc: SlackMessageIndexDocument): String = buildString {
