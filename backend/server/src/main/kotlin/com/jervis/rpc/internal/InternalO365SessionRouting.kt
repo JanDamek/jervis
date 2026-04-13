@@ -13,6 +13,8 @@ import com.jervis.task.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.infrastructure.notification.ApnsPushService
 import com.jervis.infrastructure.notification.FcmPushService
+import com.jervis.preferences.DeviceTokenRepository
+import kotlinx.coroutines.flow.toList
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -42,6 +44,7 @@ fun Routing.installInternalO365SessionApi(
     notificationRpc: NotificationRpcImpl,
     fcmPushService: FcmPushService,
     apnsPushService: ApnsPushService,
+    deviceTokenRepository: DeviceTokenRepository? = null,
 ) {
     post("/internal/o365/session-event") {
         try {
@@ -72,7 +75,15 @@ fun Routing.installInternalO365SessionApi(
                 return@post
             }
 
-            val clientId = com.jervis.common.types.ClientId(org.bson.types.ObjectId("68a332361b04695a243e5ae8")) // Default Jervis clientId
+            // Find all client IDs with registered push devices — MFA is urgent system-level notification
+            val clientIds = try {
+                deviceTokenRepository?.findAll()?.toList()
+                    ?.map { it.clientId }?.distinct()
+                    ?.map { ClientId(ObjectId(it)) }
+                    ?: listOf(ClientId(ObjectId("68a332361b04695a243e5ae8")))
+            } catch (_: Exception) {
+                listOf(ClientId(ObjectId("68a332361b04695a243e5ae8")))
+            }
 
             when (body.state) {
                 "AWAITING_MFA" -> {
@@ -93,13 +104,16 @@ fun Routing.installInternalO365SessionApi(
                         body.vncUrl?.let { appendLine("\n[Otevřít vzdálený přístup k prohlížeči]($it)") }
                     }
 
-                    createSessionNotification(
-                        taskRepository, notificationRpc, fcmPushService, apnsPushService,
-                        clientId, connection.name, title, description,
-                        interruptAction = "o365_mfa",
-                        browserPoolClientId = body.connectionId,
-                        alwaysPush = true, // MFA is urgent — always send push regardless of UI state
-                    )
+                    // Send to ALL clients with devices — MFA is urgent system-level notification
+                    for (cid in clientIds) {
+                        createSessionNotification(
+                            taskRepository, notificationRpc, fcmPushService, apnsPushService,
+                            cid, connection.name, title, description,
+                            interruptAction = "o365_mfa",
+                            browserPoolClientId = body.connectionId,
+                            alwaysPush = true,
+                        )
+                    }
                 }
 
                 "EXPIRED" -> {
@@ -110,12 +124,14 @@ fun Routing.installInternalO365SessionApi(
                         body.vncUrl?.let { appendLine("\n[Otevřít vzdálený přístup k prohlížeči]($it)") }
                     }
 
-                    createSessionNotification(
-                        taskRepository, notificationRpc, fcmPushService, apnsPushService,
-                        clientId, connection.name, title, description,
-                        interruptAction = "o365_relogin",
-                        browserPoolClientId = body.connectionId,
-                    )
+                    for (cid in clientIds) {
+                        createSessionNotification(
+                            taskRepository, notificationRpc, fcmPushService, apnsPushService,
+                            cid, connection.name, title, description,
+                            interruptAction = "o365_relogin",
+                            browserPoolClientId = body.connectionId,
+                        )
+                    }
                 }
 
                 else -> {

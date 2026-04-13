@@ -95,6 +95,7 @@ class KtorRpcServer(
     private val meetingRpcImpl: com.jervis.meeting.MeetingRpcImpl,
     private val transcriptCorrectionRpcImpl: com.jervis.meeting.TranscriptCorrectionRpcImpl,
     private val deviceTokenRpcImpl: DeviceTokenRpcImpl,
+    private val deviceTokenRepository: com.jervis.preferences.DeviceTokenRepository,
     private val indexingQueueRpcImpl: IndexingQueueRpcImpl,
     private val projectGroupRpcImpl: ProjectGroupRpcImpl,
     private val environmentRpcImpl: EnvironmentRpcImpl,
@@ -206,7 +207,7 @@ class KtorRpcServer(
                             installInternalChatApprovalApi(notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalVisualCaptureApi(meetingHelperService)
                             installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
-                            installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
+                            installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService, deviceTokenRepository)
                             installInternalO365CapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalWhatsAppSessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalWhatsAppCapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)
