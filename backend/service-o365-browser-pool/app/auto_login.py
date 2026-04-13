@@ -573,6 +573,15 @@ async def _detect_stage(page: Page) -> LoginStage:
     """Detect current login stage from page URL and DOM content."""
     url = page.url or ""
 
+    # Org info page ("Access to X is monitored") — can appear on ANY domain
+    # including MCAS proxy (*.mcas.ms). Must check before domain-specific logic.
+    org_info = await _find_element(page, [
+        'a:has-text("Continue to Microsoft Teams")',
+        'a:has-text("Pokračovat na Microsoft Teams")',
+    ], timeout_ms=500)
+    if org_info:
+        return LoginStage.ORG_INFO
+
     # On Teams/Outlook domain — check if actually loaded (not just URL redirect)
     is_on_teams = any(d in url for d in _LOGGED_IN_DOMAINS)
     is_on_teams_domain = any(p in url for p in _TEAMS_LOADING_PATTERNS) and "login" not in url
@@ -652,16 +661,6 @@ async def _detect_stage(page: Page) -> LoginStage:
         ], timeout_ms=1000)
         if email_input:
             return LoginStage.EMAIL_ENTRY
-
-        # Check for organizational info page ("Access to X is monitored")
-        # MUST be before MFA check — org info page is on login.microsoftonline.com
-        # and old MFA elements may still be in DOM after approval transition
-        org_info = await _find_element(page, [
-            'a:has-text("Continue to Microsoft Teams")',
-            'a:has-text("Pokračovat na Microsoft Teams")',
-        ])
-        if org_info:
-            return LoginStage.ORG_INFO
 
         # Check for MFA
         mfa_element = await _find_element(page, [
