@@ -205,5 +205,6 @@ fun MainScreen(
         onMarkActiveTaskDone = { viewModel.chat.markActiveTaskDone() },
         onReopenActiveTask = { viewModel.chat.reopenActiveTask() },
         sidebarRefreshTrigger = viewModel.chat.sidebarRefreshTrigger.collectAsState().value,
+        sidebarRemovedTaskIds = viewModel.chat.sidebarRemovedTaskIds.collectAsState().value,
     )
 }

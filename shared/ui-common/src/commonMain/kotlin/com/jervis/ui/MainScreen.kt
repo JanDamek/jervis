@@ -150,6 +150,7 @@ fun MainScreenView(
     onMarkActiveTaskDone: () -> Unit = {},
     onReopenActiveTask: () -> Unit = {},
     sidebarRefreshTrigger: Int = 0,
+    sidebarRemovedTaskIds: Set<String> = emptySet(),
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
@@ -398,6 +399,7 @@ fun MainScreenView(
                                     onTaskSelected = onChatTaskSelected,
                                     onMainChatSelected = onMainChatSelected,
                                     refreshTrigger = sidebarRefreshTrigger,
+                                    removedTaskIds = sidebarRemovedTaskIds,
                                     modifier = mod,
                                 )
                             },
@@ -427,6 +429,7 @@ fun MainScreenView(
                                             coroutineScope.launch { drawerState.close() }
                                         },
                                         refreshTrigger = sidebarRefreshTrigger,
+                                        removedTaskIds = sidebarRemovedTaskIds,
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }

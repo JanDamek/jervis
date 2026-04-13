@@ -73,6 +73,7 @@ fun ChatTaskSidebar(
     onTaskSelected: (PendingTaskDto) -> Unit,
     onMainChatSelected: () -> Unit,
     refreshTrigger: Int = 0,
+    removedTaskIds: Set<String> = emptySet(),
     modifier: Modifier = Modifier,
 ) {
     var tasks by remember { mutableStateOf<List<PendingTaskDto>>(emptyList()) }
@@ -137,13 +138,16 @@ fun ChatTaskSidebar(
         if (refreshTrigger > 0) loadActive()
     }
 
-    // Group tasks into sections
-    val sections = remember(tasks, showDone) {
+    // Group tasks into sections — filter out recently removed tasks (optimistic removal)
+    val visibleTasks = remember(tasks, removedTaskIds) {
+        if (removedTaskIds.isEmpty()) tasks else tasks.filter { it.id !in removedTaskIds }
+    }
+    val sections = remember(visibleTasks, showDone) {
         if (showDone) {
-            listOf(SidebarSection.DONE to tasks)
+            listOf(SidebarSection.DONE to visibleTasks)
         } else {
             SidebarSection.activeSections.mapNotNull { section ->
-                val sectionTasks = tasks.filter { section.matches(it) }
+                val sectionTasks = visibleTasks.filter { section.matches(it) }
                 if (sectionTasks.isNotEmpty()) section to sectionTasks else null
             }
         }
@@ -163,7 +167,7 @@ fun ChatTaskSidebar(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = if (showDone) "Hotove ulohy (${tasks.size})" else "Aktivni ulohy (${tasks.size})",
+                    text = if (showDone) "Hotove ulohy (${visibleTasks.size})" else "Aktivni ulohy (${visibleTasks.size})",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )

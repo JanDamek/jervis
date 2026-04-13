@@ -130,6 +130,22 @@ fun UserTasksScreen(
         }
     }
 
+    // After removing an item, select the next one in the list (or last if it was the last)
+    fun selectNextAfterRemoval(removedId: String) {
+        val idx = listItems.indexOfFirst { it.id == removedId }
+        val remaining = listItems.filter { it.id != removedId }
+        listItems = remaining
+        totalCount = (totalCount - 1).coerceAtLeast(0)
+        if (remaining.isEmpty()) {
+            selectedListItem = null
+            selectedFullTask = null
+        } else {
+            val nextIdx = idx.coerceAtMost(remaining.lastIndex)
+            val nextItem = remaining[nextIdx]
+            selectTask(nextItem)
+        }
+    }
+
     fun handleDelete() {
         val task = taskToDelete ?: return
         scope.launch {
@@ -137,13 +153,7 @@ fun UserTasksScreen(
                 repository.userTasks.cancel(task.id)
                 showDeleteConfirm = false
                 taskToDelete = null
-                // Optimistic removal — task goes DONE after cancel, remove from list immediately
-                if (selectedListItem?.id == task.id) {
-                    selectedListItem = null
-                    selectedFullTask = null
-                }
-                listItems = listItems.filter { it.id != task.id }
-                totalCount = (totalCount - 1).coerceAtLeast(0)
+                selectNextAfterRemoval(task.id)
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -157,13 +167,7 @@ fun UserTasksScreen(
         scope.launch {
             try {
                 repository.userTasks.dismiss(item.id)
-                // Optimistic removal
-                if (selectedListItem?.id == item.id) {
-                    selectedListItem = null
-                    selectedFullTask = null
-                }
-                listItems = listItems.filter { it.id != item.id }
-                totalCount = (totalCount - 1).coerceAtLeast(0)
+                selectNextAfterRemoval(item.id)
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -204,11 +208,11 @@ fun UserTasksScreen(
     // Remove cancelled tasks from list reactively (event from global stream)
     LaunchedEffect(userTaskCancelled) {
         userTaskCancelled?.collect { cancelledId ->
-            listItems = listItems.filter { it.id != cancelledId }
-            totalCount = (totalCount - 1).coerceAtLeast(0)
             if (selectedListItem?.id == cancelledId) {
-                selectedListItem = null
-                selectedFullTask = null
+                selectNextAfterRemoval(cancelledId)
+            } else {
+                listItems = listItems.filter { it.id != cancelledId }
+                totalCount = (totalCount - 1).coerceAtLeast(0)
             }
         }
     }
@@ -566,6 +570,12 @@ private fun UserTaskDetail(
         }
 
         JActionBar(modifier = Modifier.padding(vertical = JervisSpacing.outerPadding)) {
+            JSecondaryButton(
+                onClick = onDismiss,
+                enabled = !isSending,
+            ) {
+                Text("Hotovo")
+            }
             JSecondaryButton(
                 onClick = { sendReply(TaskRoutingMode.DIRECT_TO_AGENT) },
                 enabled = !isSending,

@@ -36,8 +36,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
@@ -94,6 +97,11 @@ class ChatViewModel(
     private val _chatSidebarSplitFraction = MutableStateFlow(0.22f)
     val chatSidebarSplitFraction: StateFlow<Float> = _chatSidebarSplitFraction.asStateFlow()
 
+    /** Task IDs recently marked done — sidebar filters these from its list to prevent flicker.
+     *  Cleared automatically when server confirms the task is no longer in active states. */
+    private val _sidebarRemovedTaskIds = MutableStateFlow<Set<String>>(emptySet())
+    val sidebarRemovedTaskIds: StateFlow<Set<String>> = _sidebarRemovedTaskIds.asStateFlow()
+
     /**
      * Phase 5 — draft persistence: unsent text per conversation. Key = null
      * for main chat, taskId for task conversations. Saved to server via
@@ -124,16 +132,68 @@ class ChatViewModel(
      */
     fun markActiveTaskDone(note: String? = null) {
         val taskId = _activeChatTaskId.value ?: return
+        // Optimistic: add to removed set immediately — sidebar filters this synchronously
+        _sidebarRemovedTaskIds.update { it + taskId }
         scope.launch {
             try {
                 repository.call { services -> services.pendingTaskService.markDone(taskId, note) }
                 println("ChatViewModel: marked task $taskId as DONE")
-                switchToMainChat()
-                _sidebarRefreshTrigger.value++ // force immediate sidebar reload
+                // Find the next active task to navigate to (instead of main chat)
+                val nextTask = findNextActiveTask(taskId)
+                if (nextTask != null) {
+                    switchToTaskConversation(
+                        nextTask.id,
+                        nextTask.summary
+                            ?: nextTask.taskName.takeIf { it.isNotBlank() && it != "Unnamed Task" }
+                            ?: nextTask.sourceLabel.ifBlank { "Úloha" },
+                    )
+                } else {
+                    switchToMainChat()
+                }
+                _sidebarRefreshTrigger.value++ // force sidebar reload from server
             } catch (e: Exception) {
                 println("ChatViewModel: markActiveTaskDone failed: ${e.message}")
+                // On failure, reload sidebar to restore the task
+                _sidebarRefreshTrigger.value++
             }
         }
+    }
+
+    /**
+     * Load active tasks and find the next one after the given taskId.
+     * Returns the next task in sidebar order, or the previous one if it was
+     * the last. Returns null if no active tasks remain.
+     */
+    private suspend fun findNextActiveTask(currentTaskId: String): com.jervis.dto.task.PendingTaskDto? {
+        val activeStates = listOf("USER_TASK", "PROCESSING", "QUEUED", "BLOCKED", "INDEXING", "NEW", "ERROR")
+        val allTasks = mutableListOf<com.jervis.dto.task.PendingTaskDto>()
+        for (state in activeStates) {
+            try {
+                val page = repository.pendingTasks.listTasksPaged(
+                    taskType = null, state = state, page = 0, pageSize = 20,
+                    clientId = null, sourceScheme = null, parentTaskId = null, textQuery = null,
+                )
+                allTasks.addAll(page.items)
+            } catch (_: Exception) { /* skip */ }
+        }
+        // Sort same as sidebar: state priority, then createdAt desc
+        val sorted = allTasks
+            .filter { it.id != currentTaskId }
+            .sortedWith(
+                compareBy<com.jervis.dto.task.PendingTaskDto> { sidebarStatePriority(it.state) }
+                    .thenByDescending { it.createdAt },
+            )
+        return sorted.firstOrNull()
+    }
+
+    private fun sidebarStatePriority(state: String): Int = when (state) {
+        "USER_TASK" -> 0
+        "PROCESSING", "CODING" -> 1
+        "QUEUED" -> 2
+        "NEW", "INDEXING" -> 3
+        "BLOCKED" -> 4
+        "ERROR" -> 5
+        else -> 5
     }
 
     /**
