@@ -1064,12 +1064,23 @@ async def _handle_consent(page: Page) -> None:
 async def _handle_org_info(page: Page) -> None:
     """Handle organizational info page ('Access to X is monitored')."""
     logger.info("Auto-login: handling org info page — clicking Continue")
+    # Wait for page to fully render before searching for Continue
+    await asyncio.sleep(2)
+    # Log frame count for debugging
+    logger.info("Auto-login: ORG_INFO page has %d frames", len(page.frames))
     # Try clicking Continue in all frames (MCAS page uses iframes)
     clicked = False
-    for frame in page.frames:
+    for i, frame in enumerate(page.frames):
         try:
             result = await frame.evaluate("""() => {
-                const els = document.querySelectorAll('a, button, input[type="submit"], span');
+                // Dump all links for debugging
+                const allLinks = document.querySelectorAll('a');
+                const linkTexts = Array.from(allLinks).map(a => a.textContent?.trim()).filter(Boolean);
+                if (linkTexts.length > 0) {
+                    console.log('Frame links:', linkTexts.join(' | '));
+                }
+
+                const els = document.querySelectorAll('a, button, input[type="submit"], span, div[role="link"]');
                 for (const el of els) {
                     if (el.textContent && el.textContent.includes('Continue to Microsoft')) {
                         el.click();
@@ -1083,14 +1094,17 @@ async def _handle_org_info(page: Page) -> None:
                         return 'clicked: ' + el.tagName + ' ' + el.textContent.trim().substring(0, 50);
                     }
                 }
-                return null;
+                // Return diagnostic info
+                return 'no-match: ' + allLinks.length + ' links, body=' + document.body?.textContent?.substring(0, 100);
             }""")
-            if result:
-                logger.info("Auto-login: %s (frame: %s)", result, frame.url[:60])
+            if result and result.startswith("clicked:"):
+                logger.info("Auto-login: %s (frame %d: %s)", result, i, frame.url[:60])
                 clicked = True
                 break
-        except Exception:
-            pass
+            else:
+                logger.info("Auto-login: frame %d (%s): %s", i, frame.url[:40], result[:100] if result else "empty")
+        except Exception as e:
+            logger.info("Auto-login: frame %d error: %s", i, str(e)[:80])
 
     if not clicked:
         # Tab through to Continue link and press Enter
