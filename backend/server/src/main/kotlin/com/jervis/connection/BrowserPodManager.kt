@@ -343,8 +343,8 @@ class BrowserPodManager(
             logger.info { "Browser pod reconciliation complete — init calls will be sent after pods are ready" }
 
             // Background: wait for pods and send init with credentials
-            kotlinx.coroutines.launch(kotlinx.coroutines.Dispatchers.IO) {
-                kotlinx.coroutines.delay(30_000) // Wait 30s for pods to become ready
+            Thread {
+                Thread.sleep(30_000) // Wait 30s for pods to become ready
                 for (conn in connections) {
                     try {
                         initBrowserSession(conn)
@@ -353,7 +353,7 @@ class BrowserPodManager(
                     }
                 }
                 logger.info { "Browser session init complete for ${connections.size} connection(s)" }
-            }
+            }.start()
         }
     }
 
@@ -361,7 +361,7 @@ class BrowserPodManager(
      * Send init request with credentials to a browser pod.
      * Pod will auto-login if credentials are available, or wait for manual VNC login.
      */
-    private suspend fun initBrowserSession(connection: ConnectionDocument) {
+    private fun initBrowserSession(connection: ConnectionDocument) {
         val clientId = connection.o365ClientId ?: connection.id.toString()
         val url = "${serviceUrl(connection.id)}/session/$clientId/init"
 
