@@ -1064,6 +1064,18 @@ async def _handle_consent(page: Page) -> None:
 async def _handle_org_info(page: Page) -> None:
     """Handle organizational info page ('Access to X is monitored')."""
     logger.info("Auto-login: handling org info page — clicking Continue")
+    # Debug: dump HTML around Continue text to understand DOM structure
+    try:
+        html_snippet = await page.evaluate("""() => {
+            const body = document.body.innerHTML;
+            const idx = body.indexOf('Continue');
+            if (idx >= 0) return body.substring(Math.max(0, idx - 200), idx + 200);
+            return 'Continue not found in innerHTML';
+        }""")
+        logger.info("Auto-login: ORG_INFO HTML snippet: %s", html_snippet[:300])
+    except Exception as e:
+        logger.warning("Auto-login: HTML dump failed: %s", e)
+
     continue_btn = await _find_element(page, [
         'a:has-text("Continue to Microsoft Teams")',
         'a:has-text("Pokračovat na Microsoft Teams")',
