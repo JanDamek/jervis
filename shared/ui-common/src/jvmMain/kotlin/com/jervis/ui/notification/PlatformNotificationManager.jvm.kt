@@ -37,6 +37,8 @@ actual class PlatformNotificationManager actual constructor() {
         mfaType: String?,
         mfaNumber: String?,
     ) {
+        val isUrgent = interruptAction in listOf("o365_mfa", "o365_relogin")
+
         try {
             when {
                 isMacOS -> showMacOSNotification(title, body)
@@ -47,8 +49,8 @@ actual class PlatformNotificationManager actual constructor() {
             println("Failed to show desktop notification: ${e.message}")
         }
 
-        // If approval → bring app window to front on macOS
-        if (isApproval && isMacOS) {
+        // Bring app to front for urgent or approval notifications — in-app dialog handles interaction
+        if ((isApproval || isUrgent) && isMacOS) {
             bringToFront()
         }
     }
@@ -58,10 +60,12 @@ actual class PlatformNotificationManager actual constructor() {
     }
 
     private fun showMacOSNotification(title: String, body: String) {
-        // DISABLED: osascript notifications are associated with Script Editor, not Jervis.
-        // Clicking them opens Script Editor instead of bringing Jervis to front.
-        // TODO: Implement using terminal-notifier or native NSUserNotificationCenter for proper app association.
-        return
+        // osascript notification — clicks open Script Editor (no bundle ID fix from JVM),
+        // but the visual alert is useful as a heads-up. Interaction goes through in-app dialog.
+        val escapedTitle = title.replace("\"", "\\\"")
+        val escapedBody = body.replace("\"", "\\\"")
+        val script = """display notification "$escapedBody" with title "$escapedTitle" sound name "default""""
+        ProcessBuilder("osascript", "-e", script).start()
     }
 
     private fun showWindowsNotification(title: String, body: String) {
