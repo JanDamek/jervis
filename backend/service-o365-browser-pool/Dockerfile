@@ -23,7 +23,8 @@ COPY entrypoint.sh /entrypoint.sh
 # Create browser profiles directory
 RUN mkdir -p /browser-profiles && \
     chown -R 1000:1000 /app /browser-profiles && \
-    chmod +x /entrypoint.sh
+    chmod +x /entrypoint.sh && \
+    touch /etc/asound.conf && chown 1000:1000 /etc/asound.conf
 
 USER 1000
 

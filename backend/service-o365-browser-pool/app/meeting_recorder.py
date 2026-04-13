@@ -103,12 +103,17 @@ class MeetingRecorder:
             session.state = "JOINED"
             logger.info("Meeting JOINED: %s (task=%s)", meeting_id, task_id)
 
-            # Start audio capture
-            session.ffmpeg_proc = await self._start_audio_capture()
+            # Force all Chrome audio to our capture sink
+            await self._force_audio_routing()
+            await asyncio.sleep(2)
+
+            # Start audio capture — write directly to PVC for persistence
+            wav_path = f"/browser-profiles/meeting-{meeting_id}.wav"
+            session.ffmpeg_proc = await self._start_audio_capture(wav_path)
             if session.ffmpeg_proc:
                 session.pump_task = asyncio.create_task(self._pump_audio(session))
                 session.state = "RECORDING"
-                logger.info("Meeting RECORDING: audio capture started")
+                logger.info("Meeting RECORDING: audio → %s", wav_path)
 
             # Start screenshot loop
             session.screenshot_task = asyncio.create_task(self._screenshot_loop(session))
@@ -229,21 +234,51 @@ class MeetingRecorder:
 
         logger.warning("Meeting: could not find join button, may be in lobby")
 
-    async def _start_audio_capture(self) -> asyncio.subprocess.Process | None:
-        """Start ffmpeg capturing from PulseAudio virtual sink."""
+    async def _force_audio_routing(self) -> None:
+        """Move all PulseAudio sink-inputs to jervis_audio capture sink."""
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "ffmpeg", "-y",
-                "-f", "pulse",
-                "-i", "jervis-sink.monitor",
-                "-ac", "1",
-                "-ar", str(SAMPLE_RATE),
-                "-f", "s16le",
-                "pipe:1",
+            proc = await asyncio.create_subprocess_shell(
+                "for idx in $(pactl list sink-inputs short | awk '{print $1}'); do "
+                "pactl move-sink-input $idx jervis_audio 2>/dev/null; done",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-            logger.info("ffmpeg audio capture started (PID=%d)", proc.pid)
+            await proc.wait()
+            logger.info("Audio routing: forced all sink-inputs to jervis_audio")
+        except Exception as e:
+            logger.warning("Audio routing failed: %s", e)
+
+    async def _start_audio_capture(self, wav_path: str | None = None) -> asyncio.subprocess.Process | None:
+        """Start ffmpeg capturing from PulseAudio virtual sink.
+
+        If wav_path is given, writes WAV to file (persistent) AND pipes raw PCM
+        to stdout for chunk upload. If not, only pipes to stdout.
+        """
+        try:
+            if wav_path:
+                # Tee: write WAV to file + pipe raw PCM for chunk upload
+                proc = await asyncio.create_subprocess_exec(
+                    "ffmpeg", "-y",
+                    "-f", "pulse",
+                    "-i", "jervis_audio.monitor",
+                    "-ac", "1", "-ar", str(SAMPLE_RATE),
+                    wav_path,
+                    "-ac", "1", "-ar", str(SAMPLE_RATE),
+                    "-f", "s16le", "pipe:1",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+            else:
+                proc = await asyncio.create_subprocess_exec(
+                    "ffmpeg", "-y",
+                    "-f", "pulse",
+                    "-i", "jervis_audio.monitor",
+                    "-ac", "1", "-ar", str(SAMPLE_RATE),
+                    "-f", "s16le", "pipe:1",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+            logger.info("ffmpeg audio capture started (PID=%d, file=%s)", proc.pid, wav_path or "pipe-only")
             return proc
         except Exception as e:
             logger.error("Failed to start ffmpeg audio capture: %s", e)
