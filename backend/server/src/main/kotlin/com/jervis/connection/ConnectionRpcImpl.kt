@@ -75,10 +75,12 @@ class ConnectionRpcImpl(
         return "http://$o365BrowserPoolBaseName-$podIndex.$o365BrowserPoolBaseName.jervis.svc.cluster.local:8090"
     }
 
-    /** Quick lookup by connectionId string — for use in HTTP call sites. */
-    private suspend fun browserPoolUrl(connectionId: String): String {
-        val conn = connectionService.findById(ConnectionId(org.bson.types.ObjectId(connectionId)))
-            ?: return "http://$o365BrowserPoolBaseName-0.$o365BrowserPoolBaseName.jervis.svc.cluster.local:8090"
+    /** Resolve browser pool URL by o365ClientId or connectionId string. */
+    private suspend fun browserPoolUrl(clientId: String): String {
+        // Try to find connection by o365ClientId first (most common call path)
+        val conn = connectionService.findAll().toList().firstOrNull {
+            it.o365ClientId == clientId || it.id.toString() == clientId
+        } ?: return "http://$o365BrowserPoolBaseName-0.$o365BrowserPoolBaseName.jervis.svc.cluster.local:8090"
         return browserPoolUrlFor(conn)
     }
 
