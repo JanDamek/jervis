@@ -1064,51 +1064,32 @@ async def _handle_consent(page: Page) -> None:
 async def _handle_org_info(page: Page) -> None:
     """Handle organizational info page ('Access to X is monitored')."""
     logger.info("Auto-login: handling org info page — clicking Continue")
-    # Wait for page to fully render before searching for Continue
+    # MCAS uses Shadow DOM — Playwright locators can pierce it, JS evaluate cannot
     await asyncio.sleep(2)
-    # Log frame count for debugging
-    logger.info("Auto-login: ORG_INFO page has %d frames", len(page.frames))
-    # Try clicking Continue in all frames (MCAS page uses iframes)
     clicked = False
-    for i, frame in enumerate(page.frames):
-        try:
-            result = await frame.evaluate("""() => {
-                // Dump all links for debugging
-                const allLinks = document.querySelectorAll('a');
-                const linkTexts = Array.from(allLinks).map(a => a.textContent?.trim()).filter(Boolean);
-                if (linkTexts.length > 0) {
-                    console.log('Frame links:', linkTexts.join(' | '));
-                }
-
-                const els = document.querySelectorAll('a, button, input[type="submit"], span, div[role="link"]');
-                for (const el of els) {
-                    if (el.textContent && el.textContent.includes('Continue to Microsoft')) {
-                        el.click();
-                        return 'clicked: ' + el.tagName + ' ' + el.textContent.trim().substring(0, 50);
-                    }
-                }
-                // Try any element with Continue text
-                for (const el of els) {
-                    if (el.textContent && el.textContent.includes('Continue')) {
-                        el.click();
-                        return 'clicked: ' + el.tagName + ' ' + el.textContent.trim().substring(0, 50);
-                    }
-                }
-                // Return diagnostic info
-                return 'no-match: ' + allLinks.length + ' links, body=' + document.body?.textContent?.substring(0, 100);
-            }""")
-            if result and result.startswith("clicked:"):
-                logger.info("Auto-login: %s (frame %d: %s)", result, i, frame.url[:60])
-                clicked = True
-                break
-            else:
-                logger.info("Auto-login: frame %d (%s): %s", i, frame.url[:40], result[:100] if result else "empty")
-        except Exception as e:
-            logger.info("Auto-login: frame %d error: %s", i, str(e)[:80])
+    try:
+        # Playwright locator with text — pierces Shadow DOM
+        loc = page.get_by_text("Continue to Microsoft Teams")
+        if await loc.count() > 0:
+            await loc.first.click()
+            logger.info("Auto-login: clicked 'Continue to Microsoft Teams' via Playwright locator")
+            clicked = True
+    except Exception as e:
+        logger.info("Auto-login: Playwright locator click failed: %s", str(e)[:80])
 
     if not clicked:
-        # Tab through to Continue link and press Enter
-        logger.info("Auto-login: Continue not found in frames, trying Tab+Enter")
+        try:
+            loc = page.get_by_text("Continue")
+            if await loc.count() > 0:
+                await loc.first.click()
+                logger.info("Auto-login: clicked 'Continue' via Playwright locator")
+                clicked = True
+        except Exception as e:
+            logger.info("Auto-login: Continue locator failed: %s", str(e)[:80])
+
+    if not clicked:
+        # Last resort — Tab to Continue link and Enter
+        logger.info("Auto-login: locators failed, trying Tab+Enter")
         for _ in range(5):
             await page.keyboard.press("Tab")
             await asyncio.sleep(0.3)
