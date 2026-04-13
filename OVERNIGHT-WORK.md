@@ -2,6 +2,7 @@
 
 **Schváleno uživatelem:** ano
 **Pořadí:** 1 → 2 → 3 → 4 → 5 → 6
+**Stav:** VŠECH 6 BODŮ IMPLEMENTOVÁNO
 
 ---
 
