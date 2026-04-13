@@ -98,6 +98,7 @@ fun Routing.installInternalO365SessionApi(
                         clientId, connection.name, title, description,
                         interruptAction = "o365_mfa",
                         browserPoolClientId = body.connectionId,
+                        alwaysPush = true, // MFA is urgent — always send push regardless of UI state
                     )
                 }
 
@@ -149,9 +150,10 @@ private suspend fun createSessionNotification(
     description: String,
     interruptAction: String,
     browserPoolClientId: String? = null,
+    alwaysPush: Boolean = false,
 ) {
-    // Check if UI has active subscribers — skip push if app is open
-    val hasActiveUi = notificationRpc.hasActiveSubscribers(clientId.toString())
+    // Check if UI has active subscribers — skip push if app is open (unless alwaysPush)
+    val hasActiveUi = if (alwaysPush) false else notificationRpc.hasActiveSubscribers(clientId.toString())
 
     val task = TaskDocument(
         clientId = clientId,
