@@ -26,6 +26,22 @@ class Settings(BaseSettings):
     token_ttl: int = Field(default=3600, validation_alias="O365_POOL_TOKEN_TTL")  # 1 hour for Graph API tokens
     skype_token_ttl: int = Field(default=86400, validation_alias="O365_POOL_SKYPE_TOKEN_TTL")  # 24 hours for Skype tokens
 
+    # Pod identity (StatefulSet — each connection gets its own pod)
+    pod_name: str = Field(default="jervis-o365-browser-pool-0", validation_alias="POD_NAME")
+    statefulset_service: str = Field(
+        default="jervis-o365-browser-pool",
+        validation_alias="O365_POOL_STATEFULSET_SERVICE",
+    )
+    k8s_namespace: str = Field(default="jervis", validation_alias="O365_POOL_NAMESPACE")
+
+    @property
+    def pod_ordinal(self) -> int:
+        """Extract ordinal from pod name (e.g. 'jervis-o365-browser-pool-2' → 2)."""
+        try:
+            return int(self.pod_name.rsplit("-", 1)[-1])
+        except (ValueError, IndexError):
+            return 0
+
     # noVNC (only used in headed mode)
     novnc_enabled: bool = Field(default=False, validation_alias="O365_POOL_NOVNC_ENABLED")
     novnc_port: int = Field(default=6080, validation_alias="O365_POOL_NOVNC_PORT")
