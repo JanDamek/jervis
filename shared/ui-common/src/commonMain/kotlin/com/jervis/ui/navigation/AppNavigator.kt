@@ -5,47 +5,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Navigation screens available in the app
- * All screens mirror Desktop windows (Desktop = multiple windows, Mobile = navigation)
+ * Navigation screens available in the app.
+ *
+ * Minimal set: Main (chat), Meetings, Calendar, Settings.
+ * All other views are sidebars or inline in chat.
  */
 sealed class Screen {
     object Main : Screen()
-
-    // Settings & Configuration
     object Settings : Screen()
-
-    // Tasks & Scheduling
-    data class UserTasks(val initialTaskId: String? = null) : Screen()
-
-    object Scheduler : Screen()
-
-    object PendingTasks : Screen()
-
-    // Search & Logs
-    object RagSearch : Screen()
-
-    object ErrorLogs : Screen()
-
-    // Meetings
     object Meetings : Screen()
-
-    // Indexing queue overview
-    object IndexingQueue : Screen()
-
-    // Environment viewer (K8s resource inspection) — legacy, use EnvironmentManager
-    object EnvironmentViewer : Screen()
-
-    // Environment manager (full CRUD + K8s inspection)
-    data class EnvironmentManager(val initialEnvironmentId: String? = null) : Screen()
-
-    // Finance
-    object Finance : Screen()
-
-    // Time Tracking
-    object TimeTracking : Screen()
-
-    // Debug console (WebSocket)
-    object DebugConsole : Screen()
+    object Calendar : Screen()
 }
 
 /**

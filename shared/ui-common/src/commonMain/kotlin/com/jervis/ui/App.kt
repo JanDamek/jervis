@@ -124,13 +124,7 @@ fun App(
         PersistentTopBar(
             canGoBack = canGoBack,
             onBack = { appNavigator.goBack() },
-            onNavigate = { screen ->
-                if (screen == Screen.DebugConsole && onOpenDebugWindow != null) {
-                    onOpenDebugWindow()
-                } else {
-                    appNavigator.navigateTo(screen)
-                }
-            },
+            onNavigate = { screen -> appNavigator.navigateTo(screen) },
             clients = clients,
             projects = projects,
             projectGroups = projectGroups,
@@ -188,19 +182,15 @@ fun App(
             }
         }
 
-        when (val screen = currentScreen) {
+        when (currentScreen) {
             Screen.Main -> {
                 MainScreen(
                     viewModel = viewModel,
                     repository = repository,
                     onOpenEnvironmentManager = { envId ->
                         viewModel.environment.closePanel()
-                        appNavigator.navigateTo(
-                            Screen.EnvironmentManager(initialEnvironmentId = envId.ifEmpty { null }),
-                        )
-                    },
-                    onNavigateToTask = { taskId ->
-                        appNavigator.navigateTo(Screen.UserTasks(initialTaskId = taskId))
+                        // Environment panel stays as right sidebar, no separate screen
+                        viewModel.environment.togglePanel()
                     },
                 )
             }
@@ -209,54 +199,8 @@ fun App(
                 com.jervis.ui.screens.settings.SettingsScreen(
                     repository = repository,
                     onBack = { appNavigator.goBack() },
-                    onNavigate = { screen -> appNavigator.navigateTo(screen) },
+                    onNavigate = { appNavigator.navigateTo(it) },
                     onDataChanged = { viewModel.refreshProjects() },
-                )
-            }
-
-            is Screen.UserTasks -> {
-                UserTasksScreen(
-                    repository = repository,
-                    onBack = { appNavigator.goBack() },
-                    onNavigateToProject = { clientId, projectId ->
-                        viewModel.selectClient(clientId)
-                        if (projectId != null) {
-                            viewModel.selectProject(projectId)
-                        }
-                        appNavigator.navigateAndClearHistory(Screen.Main)
-                    },
-                    onRefreshBadge = { viewModel.notification.refreshUserTaskCount() },
-                    userTaskCancelled = viewModel.userTaskCancelled,
-                    initialTaskId = screen.initialTaskId,
-                )
-            }
-
-            Screen.PendingTasks -> {
-                PendingTasksScreen(
-                    repository = repository,
-                    clientId = viewModel.selectedClientId.value,
-                    onBack = { appNavigator.goBack() },
-                )
-            }
-
-            Screen.ErrorLogs -> {
-                ErrorLogsScreen(
-                    repository = repository,
-                    onBack = { appNavigator.goBack() },
-                )
-            }
-
-            Screen.RagSearch -> {
-                RagSearchScreen(
-                    repository = repository,
-                    onBack = { appNavigator.goBack() },
-                )
-            }
-
-            Screen.Scheduler -> {
-                SchedulerScreen(
-                    repository = repository,
-                    onBack = { appNavigator.goBack() },
                 )
             }
 
@@ -271,51 +215,12 @@ fun App(
                 )
             }
 
-            Screen.IndexingQueue -> {
-                IndexingQueueScreen(
-                    repository = repository,
-                    qualificationProgress = viewModel.queue.qualificationProgress,
-                    onBack = { appNavigator.goBack() },
-                )
-            }
-
-            Screen.EnvironmentViewer -> {
-                EnvironmentViewerScreen(
+            Screen.Calendar -> {
+                // TODO: Calendar grid view (step 4)
+                SchedulerScreen(
                     repository = repository,
                     onBack = { appNavigator.goBack() },
                 )
-            }
-
-            is Screen.EnvironmentManager -> {
-                com.jervis.ui.screens.environment.EnvironmentManagerScreen(
-                    repository = repository,
-                    onBack = { appNavigator.goBack() },
-                    initialEnvironmentId = screen.initialEnvironmentId,
-                )
-            }
-
-            Screen.Finance -> {
-                com.jervis.ui.screens.finance.FinanceScreen(
-                    repository = repository,
-                    selectedClientId = selectedClientId,
-                    onBack = { appNavigator.goBack() },
-                )
-            }
-
-            Screen.TimeTracking -> {
-                com.jervis.ui.screens.finance.TimeTrackingScreen(
-                    repository = repository,
-                    selectedClientId = selectedClientId,
-                    onBack = { appNavigator.goBack() },
-                )
-            }
-
-            // Debug console removed - server does not publish debug WebSocket
-            Screen.DebugConsole -> {
-                // No debug window - navigate back to main
-                LaunchedEffect(Unit) {
-                    appNavigator.navigateAndClearHistory(Screen.Main)
-                }
             }
         }
         } // Column

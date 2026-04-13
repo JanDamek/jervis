@@ -70,37 +70,18 @@ import com.jervis.ui.design.LocalJervisSemanticColors
 import com.jervis.ui.navigation.Screen
 
 /**
- * Main menu items — reorganized: daily first, utility second, settings last.
+ * Main menu items — minimal set as top bar icons.
+ * Meetings, Calendar, Settings only. Everything else is sidebars or inline.
  */
-private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val group: Int) {
-    // Group 0: Daily
-    USER_TASKS(Icons.AutoMirrored.Filled.List, "Uživatelské úlohy", 0),
-    MEETINGS(Icons.Default.Mic, "Meetingy", 0),
-    FINANCE(Icons.Default.AccountBalance, "Finance", 0),
-    TIME_TRACKING(Icons.Default.Schedule, "Čas a kapacita", 0),
-    // Group 1: Management
-    PENDING_TASKS(Icons.Default.MoveToInbox, "Fronta úloh", 1),
-    SCHEDULER(Icons.Default.CalendarMonth, "Kalendář", 1),
-    INDEXING_QUEUE(Icons.Filled.Schedule, "Fronta indexace", 1),
-    ENVIRONMENT_MANAGER(Icons.Default.Dns, "Správa prostředí", 1),
-    // Group 2: Debug
-    ERROR_LOGS(Icons.Default.BugReport, "Chybové logy", 2),
-    RAG_SEARCH(Icons.Default.Search, "RAG Hledání", 2),
-    // Group 3: Config
-    SETTINGS(Icons.Default.Settings, "Nastavení", 3),
+private enum class TopBarMenuItem(val icon: ImageVector, val title: String) {
+    MEETINGS(Icons.Default.Mic, "Meetingy"),
+    CALENDAR(Icons.Default.CalendarMonth, "Kalendář"),
+    SETTINGS(Icons.Default.Settings, "Nastavení"),
 }
 
 private fun TopBarMenuItem.toScreen(): Screen = when (this) {
-    TopBarMenuItem.USER_TASKS -> Screen.UserTasks()
     TopBarMenuItem.MEETINGS -> Screen.Meetings
-    TopBarMenuItem.FINANCE -> Screen.Finance
-    TopBarMenuItem.TIME_TRACKING -> Screen.TimeTracking
-    TopBarMenuItem.PENDING_TASKS -> Screen.PendingTasks
-    TopBarMenuItem.SCHEDULER -> Screen.Scheduler
-    TopBarMenuItem.INDEXING_QUEUE -> Screen.IndexingQueue
-    TopBarMenuItem.ENVIRONMENT_MANAGER -> Screen.EnvironmentManager()
-    TopBarMenuItem.ERROR_LOGS -> Screen.ErrorLogs
-    TopBarMenuItem.RAG_SEARCH -> Screen.RagSearch
+    TopBarMenuItem.CALENDAR -> Screen.Calendar
     TopBarMenuItem.SETTINGS -> Screen.Settings
 }
 
@@ -166,8 +147,14 @@ fun PersistentTopBar(
                 )
             }
 
-            // Menu
-            MenuDropdown(onNavigate = onNavigate, userTaskCount = userTaskCount)
+            // Navigation icons — Meetings, Calendar, Settings
+            TopBarMenuItem.entries.forEach { item ->
+                JIconButton(
+                    onClick = { onNavigate(item.toScreen()) },
+                    icon = item.icon,
+                    contentDescription = item.title,
+                )
+            }
 
             // Client / Project compact selector — takes remaining space
             ClientProjectCompactSelector(
@@ -231,61 +218,6 @@ fun PersistentTopBar(
     }
 }
 
-@Composable
-private fun MenuDropdown(
-    onNavigate: (Screen) -> Unit,
-    userTaskCount: Int = 0,
-) {
-    Box {
-        var menuExpanded by remember { mutableStateOf(false) }
-
-        BadgedBox(
-            badge = {
-                if (userTaskCount > 0) {
-                    Badge { Text("$userTaskCount") }
-                }
-            },
-        ) {
-            JIconButton(
-                onClick = { menuExpanded = true },
-                icon = Icons.Default.Menu,
-                contentDescription = "Menu",
-            )
-        }
-
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
-        ) {
-            var lastGroup = -1
-            TopBarMenuItem.entries.forEach { item ->
-                if (item.group != lastGroup && lastGroup >= 0) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                }
-                lastGroup = item.group
-
-                DropdownMenuItem(
-                    text = {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(item.icon, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Text(item.title)
-                            if (item == TopBarMenuItem.USER_TASKS && userTaskCount > 0) {
-                                Badge { Text("$userTaskCount") }
-                            }
-                        }
-                    },
-                    onClick = {
-                        menuExpanded = false
-                        onNavigate(item.toScreen())
-                    },
-                )
-            }
-        }
-    }
-}
 
 /**
  * Compact client/project selector — shows "ClientName / ProjectName" as clickable text

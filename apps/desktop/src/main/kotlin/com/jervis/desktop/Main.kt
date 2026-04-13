@@ -77,25 +77,14 @@ fun main() {
                     navigator.navigateTo(com.jervis.ui.navigation.Screen.Main)
                 })
                 Separator()
-                Item("User Tasks", onClick = {
+                Item("Meetings", onClick = {
                     showMainWindow = true
-                    navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks())
+                    navigator.navigateTo(com.jervis.ui.navigation.Screen.Meetings)
                 })
-                Item("Error Logs", onClick = {
+                Item("Calendar", onClick = {
                     showMainWindow = true
-                    navigator.navigateTo(com.jervis.ui.navigation.Screen.ErrorLogs)
+                    navigator.navigateTo(com.jervis.ui.navigation.Screen.Calendar)
                 })
-                Separator()
-                Item("RAG Search", onClick = {
-                    showMainWindow = true
-                    navigator.navigateTo(com.jervis.ui.navigation.Screen.RagSearch)
-                })
-                Item("Scheduler", onClick = {
-                    showMainWindow = true
-                    navigator.navigateTo(com.jervis.ui.navigation.Screen.Scheduler)
-                })
-                Separator()
-                Item("Debug Console", onClick = { showDebug = true })
                 Item("Settings", onClick = {
                     showMainWindow = true
                     navigator.navigateTo(com.jervis.ui.navigation.Screen.Settings)
@@ -151,22 +140,10 @@ fun main() {
                     Menu("View") {
                         Item("Home", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Main) })
                         Separator()
-                        Item(
-                            "User Tasks",
-                            onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks()) },
-                        )
-                        Item(
-                            "Error Logs",
-                            onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.ErrorLogs) },
-                        )
+                        Item("Meetings", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Meetings) })
+                        Item("Calendar", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Calendar) })
                         Separator()
-                        Item(
-                            "RAG Search",
-                            onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.RagSearch) },
-                        )
-                        Item("Scheduler", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Scheduler) })
-                        Separator()
-                        Item("Debug Console", onClick = { showDebug = true })
+                        Item("Settings", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Settings) })
                     }
                     Menu("Help") {
                         Item("About") {

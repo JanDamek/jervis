@@ -14,7 +14,6 @@ fun MainScreen(
     viewModel: MainViewModel,
     repository: JervisRepository? = null,
     onOpenEnvironmentManager: (String) -> Unit = {},
-    onNavigateToTask: ((taskId: String) -> Unit)? = null,
 ) {
     val isOffline by viewModel.connection.isOffline.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
@@ -184,7 +183,7 @@ fun MainScreen(
             )
         },
         jobLogsService = viewModel.chat.jobLogsService,
-        onNavigateToTask = onNavigateToTask,
+        onNavigateToTask = null,
         // Phase 5 — chat task sidebar wired to per-task conversation switching
         repository = repository,
         activeChatTaskId = viewModel.chat.activeChatTaskId.collectAsState().value,
