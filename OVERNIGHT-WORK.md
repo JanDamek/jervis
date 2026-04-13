@@ -127,12 +127,17 @@
 ---
 
 ## 6. Sidebar šířka persistence
-- [ ] `chatSidebarSplitFraction` uložit lokálně na zařízení (platform-specific storage)
-- [ ] Sync na server přes preferences API (pro reinstalaci)
-- [ ] Sidebar schovávací na ikonu — toggle tlačítko
-- [ ] Commit
+- [x] `chatSidebarSplitFraction` uložit na server přes `chatService.saveUiSetting`
+- [x] Na startu obnovit přes `chatService.loadUiSettings`
+- [x] Backend: `ChatSessionDocument.uiSettings: Map<String, String>`, `ChatService.updateUiSettings()`
+- [x] RPC: `IChatService.saveUiSetting(key, value)`, `loadUiSettings()`
+- [x] Kompilace OK
+- [x] Commit: `808f3395`
+- [ ] Sidebar toggle na ikonu — TODO (menší UX vylepšení, ne blocker)
 
 **Poznámky:**
+- Lokální storage (per-device) zatím není — vše na server. Pro reinstalaci to stačí.
+- Toggle ikona pro sidebar collapse zatím chybí — přidám v dalším kroku pokud bude čas
 
 
 ---

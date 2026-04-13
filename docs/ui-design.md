@@ -110,17 +110,27 @@ expect/actual for layout decisions** -- width-based detection works everywhere.
 
 **PersistentTopBar** (always visible above all screens):
 ```
-┌─────────────────────────────────────────────────────┐
-│ [←] [≡]  Client ▾ / Project ▾   ● REC  🤖agent K8s●│
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ [←] [🎙][📅][⚙]  Client ▾ / Project ▾   ● REC  🤖agent K8s●│
+└──────────────────────────────────────────────────────────────┘
 ```
 - **Back arrow** — shown only when `canGoBack` is true
-- **Menu dropdown** — reorganized: Daily (User Tasks, Meetings) → Management (Fronta, Plánovač, Indexace, K8s) → Debug (Logs, RAG) → Config (Settings)
+- **Navigation icons** — Meetings, Calendar, Settings (3 icons, no hamburger menu)
 - **Client/Project selector** — compact text "ClientName / ProjectName" with dropdown, `weight(1f)`, truncates on small screens
 - **Recording indicator** — red blinking dot + duration, clickable → Meetings
 - **Agent status** — spinner when running / dot when idle, clickable → AgentWorkload
-- **K8s badge** — clickable → toggle environment panel
+- **K8s badge** — clickable → toggle environment panel (right sidebar)
 - **Connection dot** — green (connected), spinner (connecting), refresh icon (disconnected)
+
+**Screens (4 total):**
+| Screen | Purpose |
+|--------|---------|
+| Main | Chat + task sidebar (left) + environment panel (right) |
+| Meetings | Meeting list, recording, transcription |
+| Calendar | Weekly grid — tasks, calendar events, deadlines |
+| Settings | Client/project/connection configuration |
+
+**Removed screens:** UserTasks (→ chat sidebar), Finance, Capacity, PendingTasks, IndexingQueue, ErrorLogs, RagSearch, EnvironmentManager/Viewer (→ right sidebar panel)
 
 **Per-screen JTopBar** shows only the **title** (no back arrow — handled by PersistentTopBar).
 Internal navigation (detail → list within a screen) still uses JTopBar's onBack.
