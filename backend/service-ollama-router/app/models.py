@@ -70,7 +70,7 @@ LOCAL_MODEL_CAPABILITIES: dict[str, list[str]] = {
     "qwen3-coder-tool:30b": ["thinking", "coding", "chat", "extraction"],
     "qwen3:14b": ["chat", "extraction", "thinking", "coding"],
     "bge-m3": ["embedding"],
-    "qwen3-vl-tool:latest": ["visual"],
+    "qwen3-vl-tool:latest": ["vision", "visual"],
 }
 
 # Local model context limits (fixed num_ctx per GPU Modelfile)

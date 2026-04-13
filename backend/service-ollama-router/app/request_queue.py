@@ -385,37 +385,84 @@ class RequestQueue:
             logger.debug("WHISPER_GPU_RELEASE: not reachable (%s) — OK if whisper not running", e)
 
     async def _run_on_backend(self, backend: str, request: TrackedRequest) -> Response:
-        """Actually proxy the request to a GPU backend."""
+        """Actually proxy the request to a GPU backend.
+
+        NEVER returns 503. On GPU errors (model load failure, connect error),
+        retries with backoff. Router is the sole gateway — requests wait until
+        GPU is available, no timeouts.
+        """
         if not backend.startswith("gpu:"):
             return JSONResponse(status_code=500, content={"error": "unknown_backend"})
 
         gpu_name = backend[4:]
-        gpu = self.gpu_pool.backends.get(gpu_name)
-        if not gpu:
-            return JSONResponse(
-                status_code=503,
-                content={"error": "gpu_unavailable", "message": f"GPU {gpu_name} not found"},
-            )
-        # Ensure model is loaded
-        if not gpu.has_model(request.model):
-            # If loading non-embedding on p40-2, coordinate with whisper first
-            if gpu.name == VLM_GPU and request.model not in EMBEDDING_MODELS:
-                # Check if whisper is actively transcribing (flag-based)
-                if self._router.check_whisper_busy():
-                    logger.info("VLM_WAIT_WHISPER: whisper active, waiting for done before loading %s", request.model)
-                    ok = await self._router.wait_for_whisper_done(timeout=settings.whisper_gpu_acquire_timeout_s)
-                    if not ok:
-                        logger.warning("VLM_WAIT_WHISPER: timeout waiting for whisper done")
-                # Ask whisper server to unload model from VRAM
-                await self._release_whisper_gpu()
-            loaded = await self.gpu_pool.load_model(
-                gpu, request.model, self._router._mgmt_client,
-            )
-            if not loaded:
-                return JSONResponse(
-                    status_code=503,
-                    content={"error": "model_load_failed", "message": f"Failed to load {request.model}"},
+        retry_delays = [5, 15, 30, 60]  # seconds between retries
+
+        for attempt in range(len(retry_delays) + 1):
+            gpu = self.gpu_pool.backends.get(gpu_name)
+            if not gpu:
+                if attempt < len(retry_delays):
+                    logger.warning(
+                        "GPU_RETRY: GPU %s not found, retry %d/%d in %ds",
+                        gpu_name, attempt + 1, len(retry_delays), retry_delays[attempt],
+                    )
+                    await asyncio.sleep(retry_delays[attempt])
+                    continue
+                # All retries exhausted — try any other healthy GPU
+                for fallback in self.gpu_pool.backends.values():
+                    if fallback.healthy:
+                        gpu = fallback
+                        logger.warning("GPU_FALLBACK: %s not found, using %s", gpu_name, gpu.name)
+                        break
+                if not gpu:
+                    logger.error("GPU_EXHAUSTED: no healthy GPU available for request %s", request.request_id)
+                    return JSONResponse(
+                        status_code=503,
+                        content={"error": "all_gpus_exhausted", "message": "No healthy GPU after retries"},
+                    )
+
+            # Ensure model is loaded
+            if not gpu.has_model(request.model):
+                # If loading non-embedding on p40-2, coordinate with whisper first
+                if gpu.name == VLM_GPU and request.model not in EMBEDDING_MODELS:
+                    if self._router.check_whisper_busy():
+                        logger.info("VLM_WAIT_WHISPER: whisper active, waiting for done before loading %s", request.model)
+                        ok = await self._router.wait_for_whisper_done(timeout=settings.whisper_gpu_acquire_timeout_s)
+                        if not ok:
+                            logger.warning("VLM_WAIT_WHISPER: timeout waiting for whisper done")
+                    await self._release_whisper_gpu()
+                loaded = await self.gpu_pool.load_model(
+                    gpu, request.model, self._router._mgmt_client,
                 )
+                if not loaded:
+                    if attempt < len(retry_delays):
+                        logger.warning(
+                            "GPU_RETRY: model load failed on %s, retry %d/%d in %ds",
+                            gpu.name, attempt + 1, len(retry_delays), retry_delays[attempt],
+                        )
+                        gpu.healthy = False
+                        self._router._start_gpu_recovery()
+                        await asyncio.sleep(retry_delays[attempt])
+                        continue
+                    logger.error("GPU_EXHAUSTED: model %s failed to load after retries", request.model)
+                    return JSONResponse(
+                        status_code=503,
+                        content={"error": "model_load_failed", "message": f"Failed to load {request.model} after retries"},
+                    )
+
+            response = await self._send_to_gpu(gpu, request)
+
+            # If GPU returned a connect error (marked unhealthy in callback), retry
+            if not gpu.healthy and attempt < len(retry_delays):
+                logger.warning(
+                    "GPU_RETRY: GPU %s unhealthy after request, retry %d/%d in %ds",
+                    gpu.name, attempt + 1, len(retry_delays), retry_delays[attempt],
+                )
+                await asyncio.sleep(retry_delays[attempt])
+                continue
+
+            return response
+
+        # Should not reach here, but safety fallback
         return await self._send_to_gpu(gpu, request)
 
     def _cleanup_backend(self, backend: str, request: TrackedRequest) -> None:
