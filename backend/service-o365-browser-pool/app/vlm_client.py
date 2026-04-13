@@ -28,26 +28,27 @@ async def analyze_screenshot(
 ) -> str:
     """Send a screenshot to VLM and return the text analysis.
 
-    Routes through ollama-router for model selection (local vs OpenRouter).
+    Routes through ollama-router — router decides local GPU vs OpenRouter
+    based on GPU availability, queue depth, and client tier.
     """
     image_b64 = base64.b64encode(image_bytes).decode()
     estimated_tokens = 1500 + len(prompt) // 4  # ~1k for image + prompt tokens
 
-    # Always use local ollama for VLM — OpenRouter has no free VLM models
-    route = {
-        "target": "local",
-        "model": "qwen3-vl-tool:latest",
-        "api_base": settings.ollama_router_url,
-    }
+    route = await _get_route_decision(
+        capability="vision",
+        estimated_tokens=estimated_tokens,
+        processing_mode=processing_mode,
+        max_tier=max_tier,
+    )
+
+    target = route.get("target", "local")
+    call_fn = _call_openrouter if target == "openrouter" else _call_ollama
 
     for attempt, delay in enumerate(_RETRY_DELAYS):
         try:
-            return await _call_ollama(route, image_b64, prompt)
+            return await call_fn(route, image_b64, prompt)
         except Exception as e:
-            logger.warning(
-                "VLM call attempt %d failed (ollama): %s",
-                attempt + 1, e,
-            )
+            logger.warning("VLM attempt %d failed (%s): %s", attempt + 1, target, e)
             if attempt < len(_RETRY_DELAYS) - 1:
                 await asyncio.sleep(delay)
 

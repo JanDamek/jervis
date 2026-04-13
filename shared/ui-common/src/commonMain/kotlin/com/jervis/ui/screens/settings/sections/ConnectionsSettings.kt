@@ -183,7 +183,11 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                         try {
                                             repository.connections.rediscoverCapabilities(connection.id)
                                             snackbarHostState.showSnackbar("Zjišťuji dostupné služby...")
+                                            // Rediscovery is async — browser pod re-checks tabs and
+                                            // pushes capabilities via callback. Wait before refresh.
+                                            kotlinx.coroutines.delay(8000)
                                             loadConnections()
+                                            snackbarHostState.showSnackbar("Služby aktualizovány")
                                         } catch (e: Exception) {
                                             snackbarHostState.showSnackbar("Chyba: ${e.message}")
                                             loadConnections()
