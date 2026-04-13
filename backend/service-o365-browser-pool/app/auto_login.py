@@ -575,6 +575,15 @@ async def _detect_stage(page: Page) -> LoginStage:
 
     # Org info page ("Access to X is monitored") — can appear on ANY domain
     # including MCAS proxy (*.mcas.ms). Must check before domain-specific logic.
+    if "mcas.ms" in url or "access" in url:
+        # MCAS proxy page — check for Continue link or monitored text
+        try:
+            body_text = await page.text_content("body", timeout=2000) or ""
+            if "Continue to Microsoft Teams" in body_text or "is monitored" in body_text:
+                logger.info("ORG_INFO detected via body text on %s", url[:60])
+                return LoginStage.ORG_INFO
+        except Exception:
+            pass
     org_info = await _find_element(page, [
         'a:has-text("Continue to Microsoft Teams")',
         'a:has-text("Pokračovat na Microsoft Teams")',
@@ -1065,10 +1074,30 @@ async def _handle_org_info(page: Page) -> None:
     ])
     if continue_btn:
         await continue_btn.click()
+        logger.info("Auto-login: clicked Continue button via selector")
         await asyncio.sleep(3)
     else:
-        # Fallback — press Enter
-        await page.keyboard.press("Enter")
+        # Fallback — try JavaScript click on any link containing "Continue"
+        logger.info("Auto-login: Continue button not found via selector, trying JS click")
+        try:
+            clicked = await page.evaluate("""() => {
+                const links = document.querySelectorAll('a');
+                for (const a of links) {
+                    if (a.textContent && a.textContent.includes('Continue')) {
+                        a.click();
+                        return true;
+                    }
+                }
+                return false;
+            }""")
+            if clicked:
+                logger.info("Auto-login: clicked Continue via JavaScript")
+            else:
+                logger.info("Auto-login: no Continue link found, pressing Enter")
+                await page.keyboard.press("Enter")
+        except Exception as e:
+            logger.warning("Auto-login: JS click failed: %s, pressing Enter", e)
+            await page.keyboard.press("Enter")
         await asyncio.sleep(3)
 
 
