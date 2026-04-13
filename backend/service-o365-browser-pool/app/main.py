@@ -74,7 +74,7 @@ async def _try_self_restore():
         for attempt in range(max_wait // 5):
             try:
                 async with httpx.AsyncClient(timeout=5) as client:
-                    resp = await client.get(f"{server_url}/health")
+                    resp = await client.get(server_url)
                     if resp.status_code == 200:
                         logger.info("Self-restore: Kotlin server reachable")
                         break
