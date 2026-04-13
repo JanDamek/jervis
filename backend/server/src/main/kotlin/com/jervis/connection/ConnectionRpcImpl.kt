@@ -53,49 +53,24 @@ class ConnectionRpcImpl(
     private val oauth2Service: OAuth2Service,
     private val httpClient: io.ktor.client.HttpClient,
     private val discoveredResourceRepository: com.jervis.teams.O365DiscoveredResourceRepository,
+    private val browserPodManager: BrowserPodManager,
     @org.springframework.beans.factory.annotation.Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
     private val o365GatewayUrl: String = "http://jervis-o365-gateway:8080",
-    @org.springframework.beans.factory.annotation.Value("\${jervis.o365-browser-pool.base-url:jervis-o365-browser-pool}")
-    private val o365BrowserPoolBaseName: String = "jervis-o365-browser-pool",
     @org.springframework.beans.factory.annotation.Value("\${jervis.whatsapp-browser.url:http://jervis-whatsapp-browser:8091}")
     private val whatsAppBrowserUrl: String = "http://jervis-whatsapp-browser:8091",
 ) : IConnectionService {
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Resolve browser pool URL for a connection. Each O365/Teams connection
-     * gets its own StatefulSet pod (ordinal 0, 1, 2). Pod is addressable via:
-     * http://jervis-o365-browser-pool-{ordinal}.jervis-o365-browser-pool.jervis.svc.cluster.local:8090
-     *
-     * If no pod index assigned yet, auto-assigns the next free ordinal.
+     * Resolve browser pod URL for a connection by o365ClientId or connectionId.
+     * Each O365/Teams connection gets its own dynamic Deployment:
+     *   http://jervis-browser-{connectionId}.jervis.svc.cluster.local:8090
      */
-    private suspend fun browserPoolUrlFor(connection: ConnectionDocument): String {
-        val podIndex = connection.browserPoolPodIndex
-            ?: assignBrowserPoolPod(connection)
-        return "http://$o365BrowserPoolBaseName-$podIndex.$o365BrowserPoolBaseName.jervis.svc.cluster.local:8090"
-    }
-
-    /** Resolve browser pool URL by o365ClientId or connectionId string. */
-    private suspend fun browserPoolUrl(clientId: String): String {
-        // Try to find connection by o365ClientId first (most common call path)
+    private suspend fun browserPodUrl(clientId: String): String {
         val conn = connectionService.findAll().toList().firstOrNull {
             it.o365ClientId == clientId || it.id.toString() == clientId
-        } ?: return "http://$o365BrowserPoolBaseName-0.$o365BrowserPoolBaseName.jervis.svc.cluster.local:8090"
-        return browserPoolUrlFor(conn)
-    }
-
-    private suspend fun assignBrowserPoolPod(connection: ConnectionDocument): Int {
-        // Find used ordinals
-        val used = connectionService.findAll()
-            .toList()
-            .filter { it.browserPoolPodIndex != null && it.id != connection.id }
-            .map { it.browserPoolPodIndex!! }
-            .toSet()
-        // Assign first free ordinal (0, 1, 2)
-        val freeIndex = (0..9).first { it !in used }
-        connectionService.save(connection.copy(browserPoolPodIndex = freeIndex))
-        logger.info { "Assigned browser pool pod $freeIndex to connection '${connection.name}' (${connection.id})" }
-        return freeIndex
+        } ?: throw IllegalArgumentException("No connection found for clientId: $clientId")
+        return BrowserPodManager.serviceUrl(conn.id)
     }
 
     private val _connectionsFlow = MutableStateFlow<List<ConnectionResponseDto>>(emptyList())
@@ -172,11 +147,12 @@ class ConnectionRpcImpl(
         val created = connectionService.save(toSave)
         logger.info { "Created connection: ${created.name} (${created.id}) - provider=$provider, protocol=$protocol, authType=$authType" }
 
-        // Auto-init browser pool session for Teams Browser Session auth
+        // Create dynamic browser pod for Teams Browser Session connections
         if (provider == ProviderEnum.MICROSOFT_TEAMS && authType == com.jervis.dto.connection.AuthTypeEnum.NONE) {
+            browserPodManager.createBrowserPod(created.id)
             initBrowserPoolSession(created)
         }
-        // Auto-init WhatsApp browser session
+        // Auto-init WhatsApp browser session (still singleton, no dynamic pod)
         if (provider == ProviderEnum.WHATSAPP && authType == com.jervis.dto.connection.AuthTypeEnum.NONE) {
             initWhatsAppBrowserSession(created)
         }
@@ -256,7 +232,19 @@ class ConnectionRpcImpl(
     }
 
     override suspend fun deleteConnection(id: String) {
-        connectionService.delete(ConnectionId.fromString(id))
+        val connectionId = ConnectionId.fromString(id)
+        // Delete dynamic browser pod if it exists
+        val connection = connectionService.findById(connectionId)
+        if (connection != null && connection.provider == ProviderEnum.MICROSOFT_TEAMS &&
+            connection.authType == com.jervis.dto.connection.AuthTypeEnum.NONE
+        ) {
+            try {
+                browserPodManager.deleteBrowserPod(connectionId)
+            } catch (e: Exception) {
+                logger.warn { "Failed to delete browser pod for connection $id: ${e.message}" }
+            }
+        }
+        connectionService.delete(connectionId)
         logger.info { "Deleted connection: $id" }
         val updatedList = connectionService.findAll().map { it.toDto() }.toList()
         _connectionsFlow.emit(updatedList)
@@ -346,7 +334,7 @@ class ConnectionRpcImpl(
             // Browser Session: check if O365 Gateway can reach the browser pool
             val clientId = connection.o365ClientId
             if (!clientId.isNullOrBlank()) {
-                val response = httpClient.get("${browserPoolUrl(clientId)}/session/$clientId")
+                val response = httpClient.get("${browserPodUrl(clientId)}/session/$clientId")
                 return if (response.status.isSuccess()) {
                     val withIdentity = detectSelfIdentity(connection.copy(state = ConnectionStateEnum.VALID))
                     connectionService.save(withIdentity)
@@ -594,7 +582,7 @@ class ConnectionRpcImpl(
 
         return try {
             // Get session status from browser pool
-            val response = httpClient.get("${browserPoolUrl(clientId)}/session/$clientId")
+            val response = httpClient.get("${browserPodUrl(clientId)}/session/$clientId")
             if (!response.status.isSuccess()) {
                 return BrowserSessionStatusDto(
                     state = "ERROR",
@@ -620,7 +608,7 @@ class ConnectionRpcImpl(
             if (state == "EXPIRED" && connection.username?.isNotBlank() == true) {
                 try {
                     val capabilities = connection.availableCapabilities.map { it.name }
-                    val initResponse = httpClient.post("${browserPoolUrl(clientId)}/session/$clientId/init") {
+                    val initResponse = httpClient.post("${browserPodUrl(clientId)}/session/$clientId/init") {
                         contentType(ContentType.Application.Json)
                         setBody(buildJsonObject {
                             put("login_url", "https://teams.microsoft.com")
@@ -651,7 +639,7 @@ class ConnectionRpcImpl(
             // Generate one-time VNC token ALWAYS — VNC accessible regardless of state
             var vncUrl: String? = null
             try {
-                val resolvedUrl = browserPoolUrl(clientId)
+                val resolvedUrl = browserPodUrl(clientId)
                 logger.info { "VNC token request: clientId=$clientId resolvedUrl=$resolvedUrl" }
                 val tokenResponse = httpClient.post("$resolvedUrl/vnc-token/$clientId")
                 if (tokenResponse.status.isSuccess()) {
@@ -710,7 +698,7 @@ class ConnectionRpcImpl(
             ?: return BrowserSessionStatusDto(state = "ERROR", message = "Připojení nemá o365ClientId")
 
         return try {
-            val response = httpClient.post("${browserPoolUrl(clientId)}/session/$clientId/mfa") {
+            val response = httpClient.post("${browserPodUrl(clientId)}/session/$clientId/mfa") {
                 contentType(ContentType.Application.Json)
                 setBody(buildJsonObject { put("code", code) }.toString())
             }
@@ -747,7 +735,7 @@ class ConnectionRpcImpl(
         connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
 
         return try {
-            val response = httpClient.post("${browserPoolUrl(clientId)}/session/$clientId/rediscover")
+            val response = httpClient.post("${browserPodUrl(clientId)}/session/$clientId/rediscover")
             val responseText = response.bodyAsText()
             logger.info { "Rediscovery triggered for $clientId: $responseText" }
 
@@ -774,7 +762,7 @@ class ConnectionRpcImpl(
 
         return try {
             val capabilities = connection.availableCapabilities.map { it.name }
-            val response = httpClient.post("${browserPoolUrl(clientId)}/session/$clientId/init") {
+            val response = httpClient.post("${browserPodUrl(clientId)}/session/$clientId/init") {
                 contentType(ContentType.Application.Json)
                 setBody(buildJsonObject {
                     put("login_url", "https://teams.microsoft.com")
@@ -1009,7 +997,7 @@ class ConnectionRpcImpl(
         capability: ConnectionCapability,
     ): List<ConnectionResourceDto> {
         return try {
-            val resp = httpClient.post("${browserPoolUrl(clientId)}/scrape/$clientId/discover")
+            val resp = httpClient.post("${browserPodUrl(clientId)}/scrape/$clientId/discover")
             if (!resp.status.isSuccess()) {
                 logger.warn { "Browser pool discovery failed for $clientId: ${resp.status}" }
                 return emptyList()

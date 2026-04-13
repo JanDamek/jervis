@@ -40,21 +40,23 @@ private val logger = KotlinLogging.logger {}
  * The browser pool executes fetch() from within the browser context,
  * so requests originate from the same IP/device as the login session.
  *
- * URL pattern: {browserPoolUrl}/graph/{clientId}/{graphPath}
+ * URL pattern: http://jervis-browser-{clientId}.jervis.svc.cluster.local:8090/graph/{clientId}/{graphPath}
+ *
+ * Each connection has its own dynamic Deployment + Service in K8s.
+ * Service name convention: jervis-browser-{connectionId}
  */
 class GraphApiService(
     private val httpClient: HttpClient,
     private val tokenService: TokenService,
     private val rateLimiter: GraphRateLimiter,
     private val graphBaseUrl: String = "https://graph.microsoft.com/v1.0",
-    private val browserPoolUrl: String = "http://jervis-o365-browser-pool:8090",
 ) {
     /**
-     * Build the URL for a Graph API call — routed through browser pool proxy.
-     * The browser pool handles auth internally (captured Bearer token + browser fetch).
+     * Build the URL for a Graph API call — routed through the connection's browser pod.
+     * Each connection has its own K8s service: jervis-browser-{clientId}
      */
     private fun proxyUrl(clientId: String, path: String): String {
-        return "$browserPoolUrl/graph/$clientId/$path"
+        return "http://jervis-browser-$clientId.jervis.svc.cluster.local:8090/graph/$clientId/$path"
     }
 
     // -- Teams Chats ----------------------------------------------------------

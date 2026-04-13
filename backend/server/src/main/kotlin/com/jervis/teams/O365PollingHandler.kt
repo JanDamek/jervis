@@ -61,8 +61,7 @@ class O365PollingHandler(
     private val o365CalendarPoller: O365CalendarPoller,
     @Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
     private val gatewayUrl: String,
-    @Value("\${jervis.o365-browser-pool.url:http://jervis-o365-browser-pool:8090}")
-    private val browserPoolUrl: String,
+    private val browserPodManager: com.jervis.connection.BrowserPodManager,
 ) : PollingHandler {
     override val provider: ProviderEnum = ProviderEnum.MICROSOFT_TEAMS
 
@@ -104,7 +103,8 @@ class O365PollingHandler(
             // If session is EXPIRED/ERROR, mark connection INVALID immediately
             if (connectionDocument.state in listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING)) {
                 try {
-                    val statusResponse = httpClient.get("$browserPoolUrl/session/$o365ClientId")
+                    val browserPodUrl = com.jervis.connection.BrowserPodManager.serviceUrl(connectionDocument.id)
+                    val statusResponse = httpClient.get("$browserPodUrl/session/$o365ClientId")
                     if (statusResponse.status.isSuccess()) {
                         val statusJson = json.parseToJsonElement(statusResponse.body<String>()).jsonObject
                         val sessionState = statusJson["state"]?.jsonPrimitive?.content

@@ -42,6 +42,9 @@ echo ""
 "${K8S_DIR}/build_o365_browser_pool.sh"
 echo ""
 
+"${K8S_DIR}/build_vnc_router.sh"
+echo ""
+
 "${K8S_DIR}/build_whatsapp_browser.sh"
 echo ""
 

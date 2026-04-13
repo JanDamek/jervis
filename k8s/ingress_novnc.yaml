@@ -1,5 +1,5 @@
-# Jervis noVNC ingress — all traffic goes through FastAPI on port 8090
-# Auth is handled by the application (cookie-based, one-time token)
+# Jervis noVNC ingress — routes to VNC router (nginx + Lua)
+# VNC router parses connectionId from token/cookie and proxies to correct browser pod
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -11,10 +11,7 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
-    nginx.ingress.kubernetes.io/websocket-services: jervis-o365-browser-pool-lb
-    nginx.ingress.kubernetes.io/affinity: "cookie"
-    nginx.ingress.kubernetes.io/session-cookie-name: "JERVIS_VNC_POD"
-    nginx.ingress.kubernetes.io/session-cookie-max-age: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: jervis-vnc-router
 spec:
   tls:
     - hosts:
@@ -28,6 +25,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: jervis-o365-browser-pool-lb
+                name: jervis-vnc-router
                 port:
-                  number: 8090
+                  number: 8080

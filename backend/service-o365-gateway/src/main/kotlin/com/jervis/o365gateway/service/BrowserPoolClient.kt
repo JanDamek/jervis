@@ -16,15 +16,19 @@ import mu.KotlinLogging
 private val logger = KotlinLogging.logger {}
 
 /**
- * Ktor HTTP client for communicating with the O365 Browser Pool service.
+ * Ktor HTTP client for communicating with browser pod services.
+ * Each connection has its own K8s service: jervis-browser-{clientId}
  */
 class BrowserPoolClient(
     private val httpClient: HttpClient,
-    private val baseUrl: String,
 ) {
+    /** Resolve browser pod base URL for a given clientId (= connectionId). */
+    private fun baseUrl(clientId: String): String =
+        "http://jervis-browser-$clientId.jervis.svc.cluster.local:8090"
+
     suspend fun getToken(clientId: String): BrowserPoolTokenResponse? {
         return try {
-            val response = httpClient.get("$baseUrl/token/$clientId")
+            val response = httpClient.get("${baseUrl(clientId)}/token/$clientId")
             if (response.status.isSuccess()) {
                 response.body<BrowserPoolTokenResponse>()
             } else {
@@ -39,7 +43,7 @@ class BrowserPoolClient(
 
     suspend fun getSessionStatus(clientId: String): BrowserPoolSessionStatus? {
         return try {
-            val response = httpClient.get("$baseUrl/session/$clientId")
+            val response = httpClient.get("${baseUrl(clientId)}/session/$clientId")
             if (response.status.isSuccess()) {
                 response.body<BrowserPoolSessionStatus>()
             } else {
@@ -53,7 +57,7 @@ class BrowserPoolClient(
 
     suspend fun initSession(clientId: String, loginUrl: String = "https://teams.microsoft.com"): Boolean {
         return try {
-            val response = httpClient.post("$baseUrl/session/$clientId/init") {
+            val response = httpClient.post("${baseUrl(clientId)}/session/$clientId/init") {
                 setBody(mapOf("login_url" to loginUrl))
                 contentType(ContentType.Application.Json)
             }
@@ -66,7 +70,7 @@ class BrowserPoolClient(
 
     suspend fun refreshSession(clientId: String): Boolean {
         return try {
-            val response = httpClient.post("$baseUrl/session/$clientId/refresh")
+            val response = httpClient.post("${baseUrl(clientId)}/session/$clientId/refresh")
             response.status.isSuccess()
         } catch (e: Exception) {
             logger.error(e) { "Failed to refresh session for $clientId" }
@@ -76,7 +80,7 @@ class BrowserPoolClient(
 
     suspend fun deleteSession(clientId: String): Boolean {
         return try {
-            val response = httpClient.delete("$baseUrl/session/$clientId")
+            val response = httpClient.delete("${baseUrl(clientId)}/session/$clientId")
             response.status.isSuccess()
         } catch (e: Exception) {
             logger.error(e) { "Failed to delete session for $clientId" }

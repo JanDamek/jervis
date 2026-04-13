@@ -55,13 +55,61 @@ meeting_recorder = MeetingRecorder(browser_manager)
 session_monitor = SessionMonitor(browser_manager, token_extractor)
 
 
+async def _try_self_restore():
+    """Check PVC for saved init config and auto-restore session after restart."""
+    import json as _json
+    from pathlib import Path
+
+    config_path = Path(settings.profiles_dir) / "init-config.json"
+    if not config_path.exists():
+        logger.info("No init-config.json found — waiting for server init call")
+        return
+
+    try:
+        config = _json.loads(config_path.read_text())
+        client_id = config.get("client_id", settings.connection_id)
+        login_url = config.get("login_url", "https://teams.microsoft.com")
+        capabilities = config.get("capabilities", [])
+        username = config.get("username")
+        password = config.get("password")
+
+        logger.info("Self-restore: found init config for client %s", client_id)
+
+        # Import session init logic
+        from app.routes.session import _do_init_session
+        await _do_init_session(
+            client_id=client_id,
+            login_url=login_url,
+            capabilities=capabilities,
+            username=username,
+            password=password,
+            browser_manager=browser_manager,
+            token_extractor=token_extractor,
+            tab_manager=tab_manager,
+            screen_scraper=screen_scraper,
+            teams_crawler=teams_crawler,
+            scrape_storage=scrape_storage,
+        )
+        logger.info("Self-restore completed for client %s", client_id)
+    except Exception as e:
+        logger.error("Self-restore failed: %s", e, exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting O365 Browser Pool on %s:%d", settings.host, settings.port)
+    logger.info(
+        "Starting O365 Browser Pool on %s:%d (connection=%s)",
+        settings.host, settings.port, settings.connection_id,
+    )
     await browser_manager.startup()
     await scrape_storage.start()
     await session_monitor.start()
     await screen_scraper.start()
+
+    # Self-restore from PVC if init config exists (cluster restart recovery)
+    if settings.connection_id:
+        await _try_self_restore()
+
     yield
     await screen_scraper.stop()
     await session_monitor.stop()

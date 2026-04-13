@@ -68,10 +68,10 @@ fun main() {
         }
     }
 
-    val browserPoolClient = BrowserPoolClient(httpClient, config.browserPoolUrl)
+    val browserPoolClient = BrowserPoolClient(httpClient)
     val tokenService = TokenService(browserPoolClient)
     val rateLimiter = GraphRateLimiter(config.rateLimitPerSecond)
-    val graphApi = GraphApiService(httpClient, tokenService, rateLimiter, config.graphApiBaseUrl, config.browserPoolUrl)
+    val graphApi = GraphApiService(httpClient, tokenService, rateLimiter, config.graphApiBaseUrl)
 
     val json = Json {
         ignoreUnknownKeys = true

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
 from app.auto_login import LoginStage, MfaType, auto_login, poll_mfa_approval, submit_mfa_code
 from app.browser_manager import BrowserManager
+from app.config import settings
 from app.kotlin_callback import notify_capabilities_discovered, notify_session_state
 from app.models import (
     SessionInitRequest,
@@ -26,6 +29,100 @@ from app.token_extractor import TokenExtractor
 logger = logging.getLogger("o365-browser-pool")
 
 router = APIRouter(tags=["session"])
+
+
+def _save_init_config(
+    client_id: str,
+    login_url: str,
+    capabilities: list[str],
+    username: str | None,
+    password: str | None,
+) -> None:
+    """Save init config to PVC for self-restore after cluster restart."""
+    config_path = Path(settings.profiles_dir) / "init-config.json"
+    config_path.write_text(_json.dumps({
+        "client_id": client_id,
+        "login_url": login_url,
+        "capabilities": capabilities,
+        "username": username,
+        "password": password,
+    }))
+    logger.info("Saved init config to %s", config_path)
+
+
+async def _do_init_session(
+    *,
+    client_id: str,
+    login_url: str,
+    capabilities: list[str],
+    username: str | None,
+    password: str | None,
+    browser_manager: BrowserManager,
+    token_extractor: TokenExtractor,
+    tab_manager: TabManager,
+    screen_scraper: ScreenScraper,
+    teams_crawler: TeamsCrawler | None = None,
+    scrape_storage: ScrapeStorage | None = None,
+) -> SessionInitResponse:
+    """Core init logic — used by both /session/{id}/init endpoint and self-restore."""
+    try:
+        context = await browser_manager.get_or_create_context(client_id)
+    except RuntimeError as exc:
+        return SessionInitResponse(
+            client_id=client_id, state=SessionState.ERROR,
+            message=str(exc),
+        )
+
+    if context.pages:
+        page = context.pages[0]
+        for extra in context.pages[1:]:
+            try:
+                await extra.close()
+            except Exception:
+                pass
+    else:
+        page = await context.new_page()
+        await token_extractor.setup_interception(client_id, page)
+
+    if username and password:
+        browser_manager.set_state(client_id, SessionState.PENDING_LOGIN)
+        logger.info("Auto-login starting for %s (user: %s)", client_id, username)
+        result = await auto_login(page, username, password, login_url)
+
+        if result.stage == LoginStage.LOGGED_IN:
+            logger.info("Auto-login successful for %s", client_id)
+            browser_manager.set_state(client_id, SessionState.ACTIVE)
+            await browser_manager.save_state(client_id)
+            await tab_manager.setup_tabs(client_id, context, capabilities)
+            available = tab_manager.get_available_capabilities(client_id)
+            await notify_capabilities_discovered(client_id, client_id, available)
+            screen_scraper.set_connection_id(client_id, client_id)
+            await screen_scraper.start_scraping(client_id)
+            return SessionInitResponse(
+                client_id=client_id, state=SessionState.ACTIVE,
+                message="Automatické přihlášení úspěšné",
+            )
+
+        if result.stage == LoginStage.ERROR:
+            browser_manager.set_state(client_id, SessionState.ERROR)
+            return SessionInitResponse(
+                client_id=client_id, state=SessionState.ERROR,
+                message=f"Přihlášení selhalo: {result.error}",
+            )
+
+    # No credentials or MFA required — navigate to login page
+    current_url = page.url or ""
+    if not any(d in current_url for d in ["teams.microsoft.com", "login.microsoftonline.com", "teams.live.com"]):
+        try:
+            await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+        except Exception:
+            logger.warning("Navigation to %s timed out for %s", login_url, client_id)
+
+    browser_manager.set_state(client_id, SessionState.PENDING_LOGIN)
+    return SessionInitResponse(
+        client_id=client_id, state=SessionState.PENDING_LOGIN,
+        message=f"Session created. Navigate to login page: {login_url}",
+    )
 
 
 def create_session_router(
@@ -203,6 +300,15 @@ def create_session_router(
         # Store capabilities for later tab setup
         if req.capabilities:
             _client_capabilities[client_id] = req.capabilities
+
+        # Save init config to PVC for self-restore after cluster restart
+        _save_init_config(
+            client_id=client_id,
+            login_url=req.login_url,
+            capabilities=req.capabilities or [],
+            username=req.username,
+            password=req.password,
+        )
 
         try:
             context = await browser_manager.get_or_create_context(

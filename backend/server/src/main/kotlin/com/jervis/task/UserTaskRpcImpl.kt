@@ -43,8 +43,7 @@ class UserTaskRpcImpl(
     private val chatService: com.jervis.chat.ChatService,
     private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
     private val httpClient: HttpClient,
-    @Value("\${jervis.o365-browser-pool.url:http://jervis-o365-browser-pool:8090}")
-    private val browserPoolUrl: String,
+    private val connectionService: com.jervis.connection.ConnectionService,
 ) : IUserTaskService {
     private val logger = KotlinLogging.logger {}
 
@@ -368,7 +367,8 @@ class UserTaskRpcImpl(
         logger.info { "O365_MFA_RESPONSE | taskId=${task.id} | browserPoolClient=$browserPoolClientId | forwarding code" }
 
         try {
-            val response = httpClient.post("$browserPoolUrl/session/$browserPoolClientId/mfa") {
+            val browserPodUrl = resolveBrowserPodUrl(browserPoolClientId)
+            val response = httpClient.post("$browserPodUrl/session/$browserPoolClientId/mfa") {
                 contentType(ContentType.Application.Json)
                 setBody("""{"code":"$mfaCode"}""")
             }
@@ -391,5 +391,13 @@ class UserTaskRpcImpl(
         }
 
         return task.toUserTaskDto()
+    }
+
+    /** Resolve browser pod URL for a given o365ClientId. */
+    private suspend fun resolveBrowserPodUrl(clientId: String): String {
+        val conn = connectionService.findAll().toList().firstOrNull {
+            it.o365ClientId == clientId || it.id.toString() == clientId
+        } ?: throw IllegalStateException("No connection found for browser client ID: $clientId")
+        return com.jervis.connection.BrowserPodManager.serviceUrl(conn.id)
     }
 }

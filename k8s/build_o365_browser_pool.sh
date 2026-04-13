@@ -9,26 +9,28 @@ REGISTRY="registry.damek-soft.eu/jandamek"
 NAMESPACE="jervis"
 IMAGE="${REGISTRY}/${SERVICE_NAME}:latest"
 
-echo "=== Building and deploying ${SERVICE_NAME} (Python) ==="
+echo "=== Building ${SERVICE_NAME} (Python) ==="
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Docker Build
-echo "Step 1/3: Building Docker image..."
+echo "Step 1/2: Building Docker image..."
 docker build --platform linux/amd64 \
   -t "${IMAGE}" \
   -f "${PROJECT_ROOT}/${DOCKERFILE}" "${PROJECT_ROOT}/backend/service-o365-browser-pool"
 echo "✓ Docker image built"
 
 # Docker Push
-echo "Step 2/3: Pushing Docker image..."
+echo "Step 2/2: Pushing Docker image..."
 docker push "${IMAGE}"
 echo "✓ Docker image pushed"
 
-# Deploy to Kubernetes
-echo "Step 3/3: Deploying to Kubernetes..."
-kubectl apply -f "$SCRIPT_DIR/app_o365_browser_pool.yaml" -n "${NAMESPACE}"
-kubectl rollout restart statefulset/jervis-o365-browser-pool -n ${NAMESPACE}
-kubectl rollout status statefulset/jervis-o365-browser-pool -n ${NAMESPACE}
+# Dynamic browser pods are managed by the server (BrowserPodManager).
+# To restart all browser pods after image update, restart the pods via:
+#   kubectl get deployments -n jervis -l managed-by=jervis-browser-pod --no-headers | awk '{print $1}' | xargs -I{} kubectl rollout restart deployment/{} -n jervis
+echo ""
+echo "Image pushed. Dynamic browser pods will use new image on next restart."
+echo "To force-restart all browser pods:"
+echo "  kubectl get deployments -n jervis -l managed-by=jervis-browser-pod --no-headers | awk '{print \$1}' | xargs -I{} kubectl rollout restart deployment/{} -n jervis"
 
-echo "=== ✓ ${SERVICE_NAME} deployed ==="
+echo "=== ✓ ${SERVICE_NAME} image built and pushed ==="

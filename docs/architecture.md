@@ -2703,28 +2703,39 @@ When the multi-agent delegation system is enabled (`use_delegation_graph=true`):
 
 ### Overview
 
-Multi-tenant Microsoft 365 integration via browser-session relay. Two services:
+Multi-tenant Microsoft 365 integration via browser-session relay. Three services:
 
-1. **`jervis-o365-gateway`** (Kotlin/Ktor) — Stateless API. Receives tool calls from MCP/orchestrator, fetches Bearer tokens from browser pool, calls Microsoft Graph API.
-2. **`jervis-o365-browser-pool`** (Python/FastAPI/Playwright) — Stateful service. Manages one Playwright Chromium context per client. Intercepts network requests to extract Bearer tokens from live O365 web sessions.
+1. **`jervis-o365-gateway`** (Kotlin/Ktor) — Stateless API. Receives tool calls from MCP/orchestrator, fetches Bearer tokens from browser pods, calls Microsoft Graph API.
+2. **`jervis-browser-{connectionId}`** (Python/FastAPI/Playwright) — Dynamic Deployment per connection. Each O365/Teams connection gets its own isolated pod with dedicated PVC for browser profiles.
+3. **`jervis-vnc-router`** (OpenResty/nginx+Lua) — Centralized VNC proxy. Parses connectionId from token/cookie, routes to correct browser pod.
 
 ### Architecture Flow
 
 ```
-MCP Tool Call → O365 Gateway → Token Service (cache → browser pool) → Graph API
-                                     ↓
-                              Browser Pool (Playwright)
-                              ├── Client A context (persistent profile)
-                              ├── Client B context
-                              └── Client C context
+MCP Tool Call → O365 Gateway → Browser Pod (per connection) → Graph API
+
+UI → Server → BrowserPodManager → K8s API
+                                    ↓
+                            Deployment: jervis-browser-{connId}
+                            Service:    jervis-browser-{connId}
+                            PVC:        jervis-browser-{connId}-data
+
+VNC Access:
+  User → jervis-vnc.damek-soft.eu → Ingress → VNC Router (nginx+Lua)
+           ↓ parses connId from token/cookie
+         http://jervis-browser-{connId}:8090 → noVNC
 ```
 
 ### Key Design Decisions
 
+- **Dynamic pod per connection**: Each connection gets isolated Deployment+Service+PVC. Crash of one connection doesn't affect others. Server creates/deletes pods via Fabric8 K8s client (`BrowserPodManager`).
+- **CONNECTION_ID via env**: Pod receives only `CONNECTION_ID` — reads credentials from MongoDB on init. Credentials never in env/ConfigMap.
+- **Self-restore from PVC**: Pod saves `init-config.json` to PVC after successful init. On cluster restart, pod self-restores without server intervention.
+- **VNC Router**: Centralized nginx+Lua proxy. Token format `{connId}_{randomHex}` — router parses connId, proxies to correct pod. Handles HTTP + WebSocket (noVNC).
 - **Raw HTTP over Graph SDK**: Uses Ktor HTTP client for Graph API calls instead of the heavy Graph SDK. Simpler, fewer dependencies.
 - **Browser-based token relay**: For tenants that don't allow OAuth app registration in Azure AD. Playwright intercepts `Authorization: Bearer` headers from `graph.microsoft.com` requests.
 - **Per-client rate limiting**: 4 req/s safety margin under Graph API's 5 req/s Teams limit.
-- **Persistent browser profiles**: Cookies and local storage persisted to PVC, surviving pod restarts.
+- **Persistent browser profiles**: Cookies and local storage persisted to per-pod PVC (5Gi), surviving pod restarts.
 
 ### VLM Screen Scraping (Conditional Access Fallback)
 
@@ -2793,7 +2804,8 @@ Browser Pool (Playwright, headed mode with Xvfb)
 ### Deployment
 
 - Gateway: `Deployment` (stateless, 256-512Mi)
-- Browser Pool: `StatefulSet` with PVC (stateful, 1-4Gi, ~500MB per browser context)
+- Browser Pods: Dynamic `Deployment` per connection + `PVC` 5Gi (managed by `BrowserPodManager`, label `managed-by=jervis-browser-pod`)
+- VNC Router: `Deployment` (stateless, 64-256Mi, OpenResty nginx+Lua)
 
 ## Chat Platform Integrations (Teams, Slack, Discord)
 
