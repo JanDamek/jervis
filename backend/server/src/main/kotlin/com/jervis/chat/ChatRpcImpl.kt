@@ -668,6 +668,18 @@ class ChatRpcImpl(
         return session.drafts ?: emptyMap()
     }
 
+    override suspend fun saveUiSetting(key: String, value: String) {
+        val session = chatService.getOrCreateActiveSession()
+        val settings = session.uiSettings?.toMutableMap() ?: mutableMapOf()
+        settings[key] = value
+        chatService.updateUiSettings(session.id, settings)
+    }
+
+    override suspend fun loadUiSettings(): Map<String, String> {
+        val session = chatService.getOrCreateActiveSession()
+        return session.uiSettings ?: emptyMap()
+    }
+
     override suspend fun updateScope(clientId: String?, projectId: String?, groupId: String?) {
         if (clientId.isNullOrBlank()) return
         // Validate ObjectId format — reject placeholder values

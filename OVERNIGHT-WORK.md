@@ -100,23 +100,28 @@
 ---
 
 ## 5. Teams scraping přes MCAS
-- [ ] Přečíst existující browser pool kód: `tab_manager.py`, `screen_scraper.py`, `routes/scrape.py`
-- [ ] Přečíst `vlm_client.py` — volá router přes `_get_route_decision(capability="vision")`
-- [ ] Zjistit DOM strukturu Teams chatů na `.mcas.ms` doméně — Playwright selectory:
-  - [ ] Navigace na Teams chat list
-  - [ ] Extrakce seznamu chatů (jméno, poslední zpráva, timestamp)
-  - [ ] Kliknutí na chat → extrakce zpráv (odesílatel, text, čas)
-  - [ ] Detekce nových zpráv od posledního scrape
-- [ ] Pokud DOM selektory fungují → implementovat DOM scraping (rychlejší, spolehlivější, bez GPU)
-- [ ] Pokud DOM nefunguje (Shadow DOM, MCAS obfuskace) → VLM screenshot přes router (bod 2 musí být hotový)
-- [ ] Napojit na Kotlin server:
-  - [ ] Vytvořit `/internal/o365-scrape` endpoint v `InternalO365SessionRouting.kt`
-  - [ ] Browser pool POST-ne scrape výsledky na server (push-based, ne polling)
-  - [ ] Server uloží jako TaskDocument se `sourceUrn=teams://{clientId}/{chatId}`
-- [ ] Kód připravit v repo, restart podů ráno
-- [ ] Commit
+- [x] Přečíst existující browser pool kód — **VŠE UŽ IMPLEMENTOVÁNO:**
+  - `teams_crawler.py` (655 řádků) — plný DOM extraction: sidebar list, messages, scrolling, dedup
+  - `screen_scraper.py` (359 řádků) — VLM fallback s adaptivními intervaly
+  - `routes/scrape.py` (589 řádků) — REST API: crawl, discover, search, backfill
+  - `scrape_storage.py` — ukládá do `o365_scrape_messages` kolekce (state=NEW)
+- [x] DOM selektory pro Teams v2 existují: `[data-tid="chat-list"]`, `[data-tid="chat-pane-message"]`, atd.
+- [x] VLM fallback existuje (pokud DOM selže)
+- [x] **Chybějící kus:** Kotlin server nečetl `o365_scrape_messages` → vytvořen `O365ScrapeMessageIndexer`:
+  - Polluje `o365_scrape_messages` (state=NEW) každých 30s
+  - Groupuje messages by chatName (topic consolidation)
+  - Appenduje k existujícímu aktivnímu tasku (ne duplicity)
+  - Vytváří TaskDocument se `sourceUrn=teams::conn:{id},scrape:{chatName}`
+  - Markuje jako PROCESSED
+- [x] Commit: `a0e54e22`
+- [ ] Server build potřeba pro nasazení indexeru (ráno)
+- [ ] Browser pool restart pro aktivaci scraperu na MMB connection (ráno)
 
 **Poznámky:**
+- DOM extraction je preferovaný (rychlejší, bez GPU), VLM je fallback
+- VLM routing nyní funguje (bod 2 — `capability=vision` → `qwen3-vl-tool:latest`)
+- MCAS org info page handling už implementován v `auto_login.py`
+- Existující `O365ScrapeMessageDocument` a `O365ScrapeMessageRepository` — vše připraveno
 
 
 ---

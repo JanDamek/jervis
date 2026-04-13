@@ -86,6 +86,12 @@ interface IChatService {
     /** Phase 5 draft persistence: load all drafts for restoration on startup. */
     suspend fun loadDrafts(): Map<String, String>
 
+    /** Save a UI setting (e.g., sidebar width) — stored per-device, synced to server. */
+    suspend fun saveUiSetting(key: String, value: String)
+
+    /** Load all UI settings for the current device. */
+    suspend fun loadUiSettings(): Map<String, String>
+
     /**
      * Update active scope (client/project/group) in the chat session.
      * Called when user manually switches client/project/group in the UI dropdown.

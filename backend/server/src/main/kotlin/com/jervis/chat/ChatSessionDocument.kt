@@ -34,4 +34,6 @@ data class ChatSessionDocument(
     var lastGroupId: String? = null,
     /** Phase 5 draft persistence: unsent text per conversation. Key "__main__" = main chat. */
     var drafts: Map<String, String>? = null,
+    /** UI settings: sidebar width, collapsed state, etc. Synced to server for cross-device restoration. */
+    var uiSettings: Map<String, String>? = null,
 )

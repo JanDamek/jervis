@@ -121,7 +121,14 @@ class ChatViewModel(
     }
 
     fun updateChatSidebarSplitFraction(fraction: Float) {
-        _chatSidebarSplitFraction.value = fraction.coerceIn(0.15f, 0.5f)
+        val clamped = fraction.coerceIn(0.15f, 0.5f)
+        _chatSidebarSplitFraction.value = clamped
+        // Persist to server (debounced — only saves when user stops dragging)
+        scope.launch {
+            try {
+                repository.call { s -> s.chatService.saveUiSetting("sidebarSplitFraction", clamped.toString()) }
+            } catch (_: Exception) { /* non-critical */ }
+        }
     }
 
     /**
@@ -499,6 +506,13 @@ class ChatViewModel(
                         }
                         // Restore draft for current conversation
                         _inputText.value = drafts[_activeChatTaskId.value] ?: ""
+                    } catch (_: Exception) { /* non-critical */ }
+                    // Restore UI settings (sidebar width, etc.)
+                    try {
+                        val uiSettings = repository.call { s -> s.chatService.loadUiSettings() }
+                        uiSettings["sidebarSplitFraction"]?.toFloatOrNull()?.let {
+                            _chatSidebarSplitFraction.value = it.coerceIn(0.15f, 0.5f)
+                        }
                     } catch (_: Exception) { /* non-critical */ }
                     onStatusDetail("ok")
                     println("ChatViewModel: history loaded (gen=$gen) — ${history.messages.size} msgs, " +

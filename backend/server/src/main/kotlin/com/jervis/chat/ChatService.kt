@@ -260,6 +260,13 @@ class ChatService(
         chatSessionRepository.save(session)
     }
 
+    /** UI settings persistence — sidebar width, collapsed state, etc. */
+    suspend fun updateUiSettings(sessionId: ObjectId, settings: Map<String, String>) {
+        val session = chatSessionRepository.findById(sessionId) ?: return
+        session.uiSettings = settings
+        chatSessionRepository.save(session)
+    }
+
     suspend fun updateSessionScope(userId: String = "jan", clientId: String, projectId: String?, groupId: String? = null) {
         val session = chatSessionRepository.findFirstByUserIdAndArchivedOrderByLastMessageAtDesc(userId, false) ?: return
         session.lastClientId = clientId
