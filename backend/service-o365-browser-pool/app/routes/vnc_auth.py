@@ -98,16 +98,43 @@ def create_vnc_auth_router(vnc_auth: VncAuthManager) -> APIRouter:
         if client_id is None:
             return Response(status_code=404)
 
-        # Token valid — create session and set cookie
+        # Token valid — create session, set cookie, serve noVNC directly.
+        # No redirect — URL stays as /vnc-login?token=... (token already consumed,
+        # session cookie is the auth mechanism from here on).
         session_id = vnc_auth.create_session()
-
-        # Redirect to noVNC with auto-connect and VNC password
         vnc_pwd = _get_vnc_password()
-        redirect_url = "/vnc.html?autoconnect=true&resize=scale"
-        if vnc_pwd:
-            redirect_url += f"&password={quote(vnc_pwd, safe='')}"
 
-        response = RedirectResponse(url=redirect_url, status_code=302)
+        import os
+        novnc_dir = os.environ.get("NOVNC_DIR", "/usr/share/novnc")
+        vnc_html_path = os.path.join(novnc_dir, "vnc.html")
+        try:
+            with open(vnc_html_path) as f:
+                html = f.read()
+        except FileNotFoundError:
+            return Response(status_code=500, content="noVNC not found")
+
+        # Inject auto-connect config into noVNC HTML
+        inject_script = f"""
+        <script>
+        window.addEventListener('load', function() {{
+            var ui = window.UI || {{}};
+            if (ui.connect) {{
+                ui.connect('{vnc_pwd}');
+            }} else {{
+                // Fallback: set URL params for noVNC to read
+                var params = new URLSearchParams(window.location.search);
+                if (!params.has('autoconnect')) {{
+                    params.set('autoconnect', 'true');
+                    params.set('resize', 'scale');
+                    params.set('password', '{vnc_pwd}');
+                }}
+            }}
+        }});
+        </script>
+        """
+        html = html.replace("</head>", inject_script + "</head>")
+
+        response = Response(content=html, media_type="text/html")
         response.set_cookie(
             key="vnc_session",
             value=session_id,
