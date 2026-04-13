@@ -205,11 +205,13 @@ private suspend fun createSessionNotification(
 
     // Send push notification if app is not actively connected
     if (!hasActiveUi) {
-        val pushData = mapOf(
-            "taskId" to task.id.toString(),
-            "type" to "user_task",
-            "interruptAction" to interruptAction,
-        )
+        val pushData = buildMap {
+            put("taskId", task.id.toString())
+            put("type", "user_task")
+            put("interruptAction", interruptAction)
+            mfaType?.let { put("mfaType", it) }
+            mfaNumber?.let { put("mfaNumber", it) }
+        }
         try {
             fcmPushService.sendPushNotification(clientId.toString(), "Microsoft 365", title, pushData)
         } catch (e: Exception) {

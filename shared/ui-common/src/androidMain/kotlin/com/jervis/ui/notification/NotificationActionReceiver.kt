@@ -50,6 +50,21 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val action = when (intent.action) {
             PlatformNotificationManager.ACTION_APPROVE -> NotificationAction.APPROVE
             PlatformNotificationManager.ACTION_DENY -> NotificationAction.DENY
+            PlatformNotificationManager.ACTION_CONFIRM -> {
+                // MFA confirmed (authenticator_number / phone_call) — send "confirmed" reply
+                CoroutineScope(Dispatchers.IO).launch {
+                    NotificationActionChannel.actions.emit(
+                        NotificationActionResult(
+                            taskId = taskId,
+                            action = NotificationAction.REPLY,
+                            replyText = "confirmed",
+                        ),
+                    )
+                }
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                manager.cancel(taskId.hashCode())
+                return
+            }
             else -> return
         }
 

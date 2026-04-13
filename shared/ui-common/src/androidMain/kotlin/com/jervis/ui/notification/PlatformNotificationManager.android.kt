@@ -26,9 +26,11 @@ actual class PlatformNotificationManager actual constructor() {
     companion object {
         const val CHANNEL_APPROVAL = "jervis_approval"
         const val CHANNEL_TASKS = "jervis_tasks"
+        const val CHANNEL_URGENT = "jervis_urgent"
         const val ACTION_APPROVE = "com.jervis.APPROVE"
         const val ACTION_DENY = "com.jervis.DENY"
         const val ACTION_REPLY = "com.jervis.REPLY"
+        const val ACTION_CONFIRM = "com.jervis.CONFIRM"
         const val KEY_MFA_CODE = "mfa_code"
     }
 
@@ -57,8 +59,20 @@ actual class PlatformNotificationManager actual constructor() {
                 description = "Oznámení o nových úlohách"
             }
 
+            // Urgent channel for MFA and session expiry — MAX importance
+            val urgentChannel = NotificationChannel(
+                CHANNEL_URGENT,
+                "MFA a přihlášení",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "Urgentní MFA ověření a re-login"
+                enableVibration(true)
+                setBypassDnd(true)
+            }
+
             manager.createNotificationChannel(approvalChannel)
             manager.createNotificationChannel(taskChannel)
+            manager.createNotificationChannel(urgentChannel)
         }
     }
 
@@ -87,11 +101,18 @@ actual class PlatformNotificationManager actual constructor() {
         isApproval: Boolean,
         interruptAction: String?,
         badgeCount: Int?,
+        mfaType: String?,
+        mfaNumber: String?,
     ) {
         val context = AndroidContextHolder.applicationContext
         if (!hasPermission) return
 
-        val channel = if (isApproval) CHANNEL_APPROVAL else CHANNEL_TASKS
+        val isUrgent = interruptAction in listOf("o365_mfa", "o365_relogin")
+        val channel = when {
+            isUrgent -> CHANNEL_URGENT
+            isApproval -> CHANNEL_APPROVAL
+            else -> CHANNEL_TASKS
+        }
         val notificationId = taskId?.hashCode() ?: System.currentTimeMillis().toInt()
 
         val builder = NotificationCompat.Builder(context, channel)
@@ -100,7 +121,7 @@ actual class PlatformNotificationManager actual constructor() {
             .setContentText(body)
             .setAutoCancel(true)
             .setPriority(
-                if (isApproval) NotificationCompat.PRIORITY_HIGH
+                if (isUrgent || isApproval) NotificationCompat.PRIORITY_HIGH
                 else NotificationCompat.PRIORITY_DEFAULT,
             )
             .apply {
@@ -135,26 +156,43 @@ actual class PlatformNotificationManager actual constructor() {
             builder.addAction(0, "Zamítnout", denyPi)
         }
 
-        // Add inline reply for MFA code input (authenticator_code, sms_code)
+        // MFA actions based on type
         if (interruptAction == "o365_mfa" && taskId != null) {
-            val replyIntent = Intent(context, NotificationActionReceiver::class.java).apply {
-                action = ACTION_REPLY
-                putExtra("taskId", taskId)
+            val needsCode = mfaType in listOf("authenticator_code", "sms_code")
+            if (needsCode) {
+                // Inline reply for code input
+                val replyIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+                    action = ACTION_REPLY
+                    putExtra("taskId", taskId)
+                }
+                val replyPi = PendingIntent.getBroadcast(
+                    context,
+                    notificationId * 2 + 2,
+                    replyIntent,
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                val remoteInput = RemoteInput.Builder(KEY_MFA_CODE)
+                    .setLabel("Kód")
+                    .build()
+                val replyAction = NotificationCompat.Action.Builder(0, "Zadat kód", replyPi)
+                    .addRemoteInput(remoteInput)
+                    .setAllowGeneratedReplies(false)
+                    .build()
+                builder.addAction(replyAction)
+            } else {
+                // authenticator_number / phone_call — just a confirm button
+                val confirmIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+                    action = ACTION_CONFIRM
+                    putExtra("taskId", taskId)
+                }
+                val confirmPi = PendingIntent.getBroadcast(
+                    context,
+                    notificationId * 2 + 2,
+                    confirmIntent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                builder.addAction(0, "Potvrzeno", confirmPi)
             }
-            val replyPi = PendingIntent.getBroadcast(
-                context,
-                notificationId * 2 + 2,
-                replyIntent,
-                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-            val remoteInput = RemoteInput.Builder(KEY_MFA_CODE)
-                .setLabel("MFA kód")
-                .build()
-            val replyAction = NotificationCompat.Action.Builder(0, "Zadat kód", replyPi)
-                .addRemoteInput(remoteInput)
-                .setAllowGeneratedReplies(false)
-                .build()
-            builder.addAction(replyAction)
         }
 
         // Tap opens the app

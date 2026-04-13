@@ -90,7 +90,7 @@ class FcmPushService(
                             .setTtl(120_000) // 2 minutes — MFA has a short window
                             .setNotification(
                                 com.google.firebase.messaging.AndroidNotification.builder()
-                                    .setChannelId("urgent")
+                                    .setChannelId("jervis_urgent")
                                     .setPriority(com.google.firebase.messaging.AndroidNotification.Priority.MAX)
                                     .build()
                             )

@@ -264,6 +264,8 @@ class NotificationViewModel(
             taskId = event.taskId,
             isApproval = event.isApproval,
             interruptAction = event.interruptAction,
+            mfaType = event.mfaType,
+            mfaNumber = event.mfaNumber,
         )
         _userTaskDialogEvent.value = event
     }

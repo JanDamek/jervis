@@ -38,6 +38,8 @@ class JervisFcmService : FirebaseMessagingService() {
         val isApproval = data["isApproval"]?.toBooleanStrictOrNull() ?: false
         val interruptAction = data["interruptAction"]
         val badgeCount = data["badgeCount"]?.toIntOrNull()
+        val mfaType = data["mfaType"]
+        val mfaNumber = data["mfaNumber"]
 
         val notificationManager = PlatformNotificationManager()
         notificationManager.initialize()
@@ -48,6 +50,8 @@ class JervisFcmService : FirebaseMessagingService() {
             isApproval = isApproval,
             interruptAction = interruptAction,
             badgeCount = badgeCount,
+            mfaType = mfaType,
+            mfaNumber = mfaNumber,
         )
     }
 }
