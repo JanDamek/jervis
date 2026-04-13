@@ -8,17 +8,9 @@ import org.springframework.stereotype.Service
 /**
  * Firebase Cloud Messaging push notification service.
  *
- * Sends FCM data messages to all registered devices for a given client.
- * Data messages (not notification messages) ensure that
- * onMessageReceived is always called, even when the app is in foreground.
- *
- * NOTE: Firebase Admin SDK dependency is required.
- * Add to gradle/libs.versions.toml and backend/server/build.gradle.kts:
- *   firebase-admin = "9.3.0"
- *   implementation("com.google.firebase:firebase-admin:${libs.versions.firebase.admin}")
- *
- * Also requires a Firebase service account JSON in the deployment environment.
- * Set GOOGLE_APPLICATION_CREDENTIALS env var or configure programmatically.
+ * Sends FCM messages with BOTH notification + data payloads to all registered devices.
+ * Notification payload ensures the system tray notification is shown even when app is backgrounded.
+ * Data payload carries structured info for in-app handling when app is in foreground.
  */
 @Service
 class FcmPushService(
@@ -42,9 +34,8 @@ class FcmPushService(
     }
 
     /**
-     * Send a push notification to all registered devices for a client.
-     *
-     * Uses FCM data messages for full control over notification display.
+     * Send a push notification to all registered FCM devices for a client.
+     * Searches for both 'android' and 'desktop' platform tokens.
      */
     suspend fun sendPushNotification(
         clientId: String,
@@ -57,13 +48,17 @@ class FcmPushService(
             return
         }
 
-        val tokens = deviceTokenRepository.findByClientIdAndPlatform(clientId, "android").toList()
+        // Find all FCM-capable devices (android + desktop use FCM)
+        val tokens = (
+            deviceTokenRepository.findByClientIdAndPlatform(clientId, "android").toList() +
+            deviceTokenRepository.findByClientIdAndPlatform(clientId, "desktop").toList()
+        )
         if (tokens.isEmpty()) {
-            logger.debug { "No registered devices for client=$clientId, skipping push" }
+            logger.info { "No FCM devices for client=$clientId, skipping push" }
             return
         }
 
-        logger.info { "Sending push notification to ${tokens.size} device(s) for client=$clientId" }
+        logger.info { "Sending FCM push to ${tokens.size} device(s) for client=$clientId: $title" }
 
         val messaging = com.google.firebase.messaging.FirebaseMessaging.getInstance()
 
@@ -73,6 +68,14 @@ class FcmPushService(
 
                 val messageBuilder = com.google.firebase.messaging.Message.builder()
                     .setToken(tokenDoc.token)
+                    // Notification payload — ensures system tray notification when app is backgrounded
+                    .setNotification(
+                        com.google.firebase.messaging.Notification.builder()
+                            .setTitle(title)
+                            .setBody(body)
+                            .build()
+                    )
+                    // Data payload — for in-app handling when foregrounded
                     .putAllData(data + mapOf(
                         "title" to title,
                         "body" to body,
@@ -85,21 +88,26 @@ class FcmPushService(
                         com.google.firebase.messaging.AndroidConfig.builder()
                             .setPriority(com.google.firebase.messaging.AndroidConfig.Priority.HIGH)
                             .setTtl(120_000) // 2 minutes — MFA has a short window
+                            .setNotification(
+                                com.google.firebase.messaging.AndroidNotification.builder()
+                                    .setChannelId("urgent")
+                                    .setPriority(com.google.firebase.messaging.AndroidNotification.Priority.MAX)
+                                    .build()
+                            )
                             .build()
                     )
                 }
 
                 val message = messageBuilder.build()
-
-                messaging.send(message)
-                logger.debug { "Push sent to device=${tokenDoc.deviceId} platform=${tokenDoc.platform}" }
+                val messageId = messaging.send(message)
+                logger.info { "FCM push sent: device=${tokenDoc.deviceId} platform=${tokenDoc.platform} messageId=$messageId" }
             } catch (e: Exception) {
-                logger.warn { "Failed to send push to device=${tokenDoc.deviceId}: ${e.message}" }
+                logger.warn { "FCM push failed: device=${tokenDoc.deviceId} error=${e.message}" }
                 // If token is invalid, clean it up
                 if (e.message?.contains("not registered", ignoreCase = true) == true ||
                     e.message?.contains("invalid registration", ignoreCase = true) == true
                 ) {
-                    logger.info { "Removing invalid token for device=${tokenDoc.deviceId}" }
+                    logger.info { "Removing invalid FCM token for device=${tokenDoc.deviceId}" }
                     deviceTokenRepository.deleteByDeviceId(tokenDoc.deviceId)
                 }
             }
