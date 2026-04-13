@@ -1077,27 +1077,53 @@ async def _handle_org_info(page: Page) -> None:
         logger.info("Auto-login: clicked Continue button via selector")
         await asyncio.sleep(3)
     else:
-        # Fallback — try JavaScript click on any link containing "Continue"
-        logger.info("Auto-login: Continue button not found via selector, trying JS click")
+        # Fallback — try JavaScript click including iframes
+        logger.info("Auto-login: Continue button not found via selector, trying JS + iframe")
+        clicked = False
         try:
+            # Try main frame first
             clicked = await page.evaluate("""() => {
-                const links = document.querySelectorAll('a');
-                for (const a of links) {
-                    if (a.textContent && a.textContent.includes('Continue')) {
-                        a.click();
+                const els = document.querySelectorAll('a, button, input[type="submit"]');
+                for (const el of els) {
+                    if (el.textContent && el.textContent.includes('Continue')) {
+                        el.click();
                         return true;
                     }
                 }
                 return false;
             }""")
-            if clicked:
-                logger.info("Auto-login: clicked Continue via JavaScript")
-            else:
-                logger.info("Auto-login: no Continue link found, pressing Enter")
-                await page.keyboard.press("Enter")
         except Exception as e:
-            logger.warning("Auto-login: JS click failed: %s, pressing Enter", e)
+            logger.warning("Auto-login: main frame JS click failed: %s", e)
+
+        if not clicked:
+            # Try all iframes
+            for frame in page.frames:
+                if frame == page.main_frame:
+                    continue
+                try:
+                    clicked = await frame.evaluate("""() => {
+                        const els = document.querySelectorAll('a, button, input[type="submit"]');
+                        for (const el of els) {
+                            if (el.textContent && el.textContent.includes('Continue')) {
+                                el.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    }""")
+                    if clicked:
+                        logger.info("Auto-login: clicked Continue in iframe %s", frame.url[:60])
+                        break
+                except Exception:
+                    pass
+
+        if not clicked:
+            # Last resort — try clicking by coordinates or Tab+Enter
+            logger.info("Auto-login: no Continue found in any frame, trying Tab+Enter")
+            await page.keyboard.press("Tab")
+            await asyncio.sleep(0.5)
             await page.keyboard.press("Enter")
+
         await asyncio.sleep(3)
 
 
