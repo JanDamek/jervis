@@ -39,6 +39,7 @@ class LoginStage(str, Enum):
     MFA_REQUIRED = "mfa_required"
     STAY_SIGNED_IN = "stay_signed_in"
     CONSENT = "consent"
+    ORG_INFO = "org_info"  # "Access to X is monitored" page
     TEAMS_LOADING = "teams_loading"
     LOGGED_IN = "logged_in"
     ERROR = "error"
@@ -203,6 +204,11 @@ async def auto_login(
             if stage == LoginStage.CONSENT:
                 await _handle_consent(page)
                 await asyncio.sleep(3)
+                continue
+
+            if stage == LoginStage.ORG_INFO:
+                await _handle_org_info(page)
+                await asyncio.sleep(5)
                 continue
 
             if stage == LoginStage.NAVIGATING:
@@ -527,6 +533,13 @@ async def poll_mfa_approval(page: Page, timeout_seconds: int = 120) -> LoginResu
                 logger.info("MFA approved — login complete")
                 return LoginResult(stage=LoginStage.LOGGED_IN)
 
+            if stage == LoginStage.ORG_INFO:
+                await _handle_org_info(page)
+                logger.info("MFA approved — org info page handled")
+                # After clicking Continue, Teams will load
+                await asyncio.sleep(5)
+                continue
+
             if stage == LoginStage.LOGGED_IN:
                 logger.info("MFA approved — login complete")
                 return LoginResult(stage=LoginStage.LOGGED_IN)
@@ -678,6 +691,16 @@ async def _detect_stage(page: Page) -> LoginStage:
         ])
         if consent:
             return LoginStage.CONSENT
+
+        # Check for organizational info page ("Access to X is monitored")
+        org_info = await _find_element(page, [
+            'a:has-text("Continue to Microsoft Teams")',
+            'a:has-text("Pokračovat na Microsoft Teams")',
+            'div:has-text("is monitored")',
+            'div:has-text("je monitorován")',
+        ])
+        if org_info:
+            return LoginStage.ORG_INFO
 
         # Check for error messages
         error_el = await _find_element(page, [
@@ -1023,6 +1046,26 @@ async def _handle_consent(page: Page) -> None:
         await accept_btn.click()
         await asyncio.sleep(3)
     else:
+        await page.keyboard.press("Enter")
+        await asyncio.sleep(3)
+
+
+async def _handle_org_info(page: Page) -> None:
+    """Handle organizational info page ('Access to X is monitored')."""
+    logger.info("Auto-login: handling org info page — clicking Continue")
+    continue_btn = await _find_element(page, [
+        'a:has-text("Continue to Microsoft Teams")',
+        'a:has-text("Pokračovat na Microsoft Teams")',
+        'a:has-text("Continue")',
+        'a:has-text("Pokračovat")',
+        'button:has-text("Continue")',
+        'button:has-text("Pokračovat")',
+    ])
+    if continue_btn:
+        await continue_btn.click()
+        await asyncio.sleep(3)
+    else:
+        # Fallback — press Enter
         await page.keyboard.press("Enter")
         await asyncio.sleep(3)
 
