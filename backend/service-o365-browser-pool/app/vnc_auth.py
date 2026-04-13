@@ -95,9 +95,18 @@ class VncAuthManager:
         return access_token.client_id
 
     def create_session(self, ttl_seconds: int = 3600) -> str:
-        """Create a VNC session (cookie-based) after token validation."""
+        """Create a VNC session (cookie-based) after token validation.
+
+        Returns session_id. Caller stores cookie as '{ordinal}_{session_id}'.
+        Session is stored under BOTH keys (plain + composite) so validation
+        works regardless of format.
+        """
         session_id = uuid.uuid4().hex
-        self._sessions[session_id] = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+        expiry = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+        self._sessions[session_id] = expiry
+        # Also store composite key (ordinal_sessionId) for direct cookie lookup
+        composite = f"{settings.pod_ordinal}_{session_id}"
+        self._sessions[composite] = expiry
         self._cleanup_expired()
         logger.info("Created VNC session (ttl=%ds, active=%d)", ttl_seconds, len(self._sessions))
         return session_id

@@ -1,10 +1,17 @@
 """VNC authentication endpoints – one-time token login with multi-pod routing.
 
 Token format: {podOrdinal}_{randomHex}
-Any pod can receive the vnc-login request. It parses the ordinal from the token:
-- If this IS the owning pod → validate, consume, set cookie, redirect to noVNC
-- If this is NOT the owning pod → proxy the request to the correct pod via
-  StatefulSet DNS (internal K8s network, not exposed externally)
+
+Flow:
+1. UI calls server → server calls /vnc-token on correct pod → gets token with ordinal
+2. UI opens https://jervis-vnc.damek-soft.eu/vnc-login?token=1_abc123
+3. Ingress routes to any pod (lb service)
+4. vnc-login parses ordinal from token:
+   - If this IS the owning pod → validate token, set session cookie with pod ordinal,
+     redirect to /vnc.html?autoconnect=true&resize=scale&password=...
+   - If NOT → proxy to owning pod, forward response (including Set-Cookie)
+5. Session cookie contains pod ordinal → VNC middleware uses it to proxy
+   all subsequent requests (static files + WebSocket) to the correct pod
 """
 
 from __future__ import annotations
@@ -45,11 +52,7 @@ def create_vnc_auth_router(vnc_auth: VncAuthManager) -> APIRouter:
 
     @router.post("/vnc-token/{client_id}")
     async def create_vnc_token(client_id: str) -> dict:
-        """Generate a one-time VNC access token for a client.
-
-        Called by Kotlin backend on the correct pod (routed via browserPoolUrl).
-        Token includes this pod's ordinal so vnc-login can route correctly.
-        """
+        """Generate a one-time VNC access token. Called by Kotlin server on the correct pod."""
         token = vnc_auth.create_token(client_id)
         return {"token": token, "client_id": client_id}
 
@@ -57,100 +60,74 @@ def create_vnc_auth_router(vnc_auth: VncAuthManager) -> APIRouter:
     async def vnc_login(token: str = "") -> Response:
         """Validate one-time token, set session cookie, redirect to noVNC.
 
-        Multi-pod routing: parses pod ordinal from token. If request landed
-        on the wrong pod (load balancer), proxies to the correct pod internally.
+        Multi-pod: parses ordinal from token. If wrong pod, proxies to correct pod
+        and forwards its response (including Set-Cookie with correct pod ordinal).
         """
         if not token:
             return Response(status_code=404)
 
-        # Parse pod ordinal from token
         target_ordinal = VncAuthManager.parse_pod_ordinal(token)
         if target_ordinal is None:
-            logger.warning("VNC token has invalid format (no ordinal): %s", token[:20])
             return Response(status_code=404)
 
         my_ordinal = settings.pod_ordinal
 
-        # If token belongs to a different pod, proxy the request there
         if target_ordinal != my_ordinal:
-            logger.info(
-                "VNC token for pod %d, I am pod %d — proxying",
-                target_ordinal, my_ordinal,
-            )
+            # Proxy to correct pod — forward entire response including cookies
+            logger.info("VNC login: token for pod %d, proxying (I am pod %d)", target_ordinal, my_ordinal)
             target_url = f"{_pod_internal_url(target_ordinal)}/vnc-login?token={quote(token, safe='')}"
             try:
-                async with httpx.AsyncClient(timeout=10) as client:
+                async with httpx.AsyncClient(timeout=15) as client:
                     resp = await client.get(target_url, follow_redirects=False)
-
-                # Forward the response (redirect + cookies) from the correct pod
                 response = Response(
                     content=resp.content,
                     status_code=resp.status_code,
-                    headers=dict(resp.headers),
+                    headers={k: v for k, v in resp.headers.items()
+                             if k.lower() in ("set-cookie", "location", "content-type")},
                 )
                 return response
             except Exception as e:
-                logger.error("Failed to proxy VNC login to pod %d: %s", target_ordinal, e)
+                logger.error("VNC proxy to pod %d failed: %s", target_ordinal, e)
                 return Response(status_code=502)
 
-        # This IS the owning pod — validate and consume token
+        # This IS the owning pod
         client_id = vnc_auth.validate_and_consume_token(token)
         if client_id is None:
             return Response(status_code=404)
 
-        # Token valid — create session, set cookie, serve noVNC directly.
-        # No redirect — URL stays as /vnc-login?token=... (token already consumed,
-        # session cookie is the auth mechanism from here on).
         session_id = vnc_auth.create_session()
         vnc_pwd = _get_vnc_password()
+        redirect_url = f"/vnc.html?autoconnect=true&resize=scale"
+        if vnc_pwd:
+            redirect_url += f"&password={quote(vnc_pwd, safe='')}"
 
-        import os
-        novnc_dir = os.environ.get("NOVNC_DIR", "/usr/share/novnc")
-        vnc_html_path = os.path.join(novnc_dir, "vnc.html")
-        try:
-            with open(vnc_html_path) as f:
-                html = f.read()
-        except FileNotFoundError:
-            return Response(status_code=500, content="noVNC not found")
-
-        # Inject auto-connect config into noVNC HTML
-        inject_script = f"""
-        <script>
-        window.addEventListener('load', function() {{
-            var ui = window.UI || {{}};
-            if (ui.connect) {{
-                ui.connect('{vnc_pwd}');
-            }} else {{
-                // Fallback: set URL params for noVNC to read
-                var params = new URLSearchParams(window.location.search);
-                if (!params.has('autoconnect')) {{
-                    params.set('autoconnect', 'true');
-                    params.set('resize', 'scale');
-                    params.set('password', '{vnc_pwd}');
-                }}
-            }}
-        }});
-        </script>
-        """
-        html = html.replace("</head>", inject_script + "</head>")
-
-        response = Response(content=html, media_type="text/html")
+        response = RedirectResponse(url=redirect_url, status_code=302)
         response.set_cookie(
             key="vnc_session",
-            value=session_id,
+            value=f"{my_ordinal}_{session_id}",
             httponly=True,
             secure=True,
             samesite="lax",
             path="/",
             max_age=3600,
         )
-        logger.info("VNC login successful for client %s on pod %d", client_id, my_ordinal)
+        logger.info("VNC login OK for client %s on pod %d", client_id, my_ordinal)
         return response
 
     @router.get("/vnc-auth")
     async def vnc_auth_check(vnc_session: str = Cookie(default="")) -> Response:
         """Validate VNC session cookie."""
-        if vnc_session and vnc_auth.is_session_valid(vnc_session):
+        if not vnc_session:
+            return Response(status_code=401)
+        # Parse pod ordinal from session cookie: "{ordinal}_{sessionId}"
+        parts = vnc_session.split("_", 1)
+        if len(parts) != 2:
+            # Legacy format without ordinal
+            if vnc_auth.is_session_valid(vnc_session):
+                return Response(status_code=200)
+            return Response(status_code=401)
+        session_id = parts[1]
+        if vnc_auth.is_session_valid(f"{parts[0]}_{session_id}"):
             return Response(status_code=200)
         return Response(status_code=401)
 
