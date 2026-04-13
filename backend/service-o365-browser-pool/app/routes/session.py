@@ -110,6 +110,49 @@ async def _do_init_session(
                 message=f"Přihlášení selhalo: {result.error}",
             )
 
+        if result.stage == LoginStage.MFA_REQUIRED:
+            # MFA detected — start background polling and notify server
+            mfa_type_val = result.mfa_type.value if result.mfa_type else "unknown"
+            browser_manager.set_state(client_id, SessionState.AWAITING_MFA)
+            await notify_session_state(
+                client_id, client_id, "AWAITING_MFA",
+                mfa_type=mfa_type_val,
+                mfa_message=result.mfa_message,
+                mfa_number=result.mfa_number,
+            )
+
+            if result.mfa_type == MfaType.AUTHENTICATOR_NUMBER:
+                # Background poll — user approves in Authenticator app
+                async def _self_restore_poll():
+                    try:
+                        poll_result = await poll_mfa_approval(page, timeout_seconds=120)
+                        if poll_result.stage == LoginStage.LOGGED_IN:
+                            logger.info("Self-restore MFA approved for %s — activating", client_id)
+                            browser_manager.set_state(client_id, SessionState.ACTIVE)
+                            await browser_manager.save_state(client_id)
+                            await tab_manager.setup_tabs(client_id, context, capabilities)
+                            available = tab_manager.get_available_capabilities(client_id)
+                            await notify_capabilities_discovered(client_id, client_id, available)
+                            screen_scraper.set_connection_id(client_id, client_id)
+                            await screen_scraper.start_scraping(client_id)
+                        else:
+                            logger.warning("Self-restore MFA polling failed for %s: %s", client_id, poll_result.error)
+                            browser_manager.set_state(client_id, SessionState.ERROR)
+                            await notify_session_state(client_id, client_id, "EXPIRED")
+                    except Exception as e:
+                        logger.error("Self-restore MFA poll failed for %s: %s", client_id, e)
+
+                asyncio.create_task(_self_restore_poll())
+                logger.info("Started self-restore MFA polling for %s", client_id)
+
+            mfa_msg = result.mfa_message or f"MFA ověření vyžadováno ({mfa_type_val})"
+            if result.mfa_number:
+                mfa_msg = f"Potvrďte přihlášení v Microsoft Authenticator. Zadejte číslo: {result.mfa_number}"
+            return SessionInitResponse(
+                client_id=client_id, state=SessionState.AWAITING_MFA,
+                message=mfa_msg,
+            )
+
     # No credentials or MFA required — navigate to login page
     current_url = page.url or ""
     if not any(d in current_url for d in ["teams.microsoft.com", "login.microsoftonline.com", "teams.live.com"]):
