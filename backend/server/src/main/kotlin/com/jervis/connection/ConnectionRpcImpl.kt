@@ -651,7 +651,9 @@ class ConnectionRpcImpl(
             // Generate one-time VNC token ALWAYS — VNC accessible regardless of state
             var vncUrl: String? = null
             try {
-                val tokenResponse = httpClient.post("${browserPoolUrl(clientId)}/vnc-token/$clientId")
+                val resolvedUrl = browserPoolUrl(clientId)
+                logger.info { "VNC token request: clientId=$clientId resolvedUrl=$resolvedUrl" }
+                val tokenResponse = httpClient.post("$resolvedUrl/vnc-token/$clientId")
                 if (tokenResponse.status.isSuccess()) {
                     val tokenJson = json.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
                     val vncToken = tokenJson["token"]?.jsonPrimitive?.content
