@@ -76,16 +76,25 @@
 ---
 
 ## 4. Kalendář
-- [ ] Přečíst existující `CalendarScreen.kt`, backend `O365CalendarPoller`, `CalendarEventIndexDocument`
-- [ ] Implementovat kalendářový grid (den/týden view)
-- [ ] Zdroje dat: O365 kalendářní eventy, tasky s termínem (`scheduledAt`), tasky bez termínu = dnes
-- [ ] Co se nestihlo → přesouvá na další den
-- [ ] Nic nezapadne — vše má místo v kalendáři
-- [ ] Kompletní implementace
+- [x] Přečíst existující SchedulerScreen, backend O365CalendarPoller, CalendarEventIndexDocument, TaskRepository
+- [x] Implementovat kalendářový grid — týdenní view (Po-Ne)
+- [x] Zdroje dat:
+  - Scheduled tasks (`type=SCHEDULED`, `scheduledAt` set)
+  - Calendar events (O365 polling, `meetingMetadata != null`)
+  - Deadline tasks (jakýkoli task se `scheduledAt`)
+- [x] Overdue → přesouvá na dnešek, `isOverdue=true` badge
+- [x] Backend: `CalendarEntryDto`, `ITaskSchedulingService.calendarEntries()`, `TaskSchedulingRpcImpl` s MongoDB range query
+- [x] UI: Navigace předchozí/další týden, "dnes" tlačítko, barevné kódování typů
+- [x] Smazán SchedulerComponents.kt (mrtvý kód)
+- [x] Kompilace OK
+- [x] Commit: `125cb91d`
 - [ ] Update `docs/ui-design.md`
-- [ ] Commit
+- [ ] Backend server build potřeba (nový RPC endpoint) — ráno
 
 **Poznámky:**
+- Backend `calendarEntries()` ještě nebyl zkompilován (server build potřeba)
+- Tasky bez termínu se zatím nezobrazují jako "dnes" — query filtruje `scheduledAt != null`
+- TODO: přidat "unscheduled active tasks = today" logiku po server buildu
 
 
 ---
