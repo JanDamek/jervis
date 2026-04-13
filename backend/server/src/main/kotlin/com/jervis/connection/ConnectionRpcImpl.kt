@@ -26,6 +26,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.client.plugins.timeout
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
@@ -831,6 +832,11 @@ class ConnectionRpcImpl(
                     connection.username?.takeIf { it.isNotBlank() }?.let { put("username", it) }
                     connection.password?.takeIf { it.isNotBlank() }?.let { put("password", it) }
                 }.toString())
+                // Auto-login takes 15-30s (navigate + fill + MFA detect), needs higher timeout
+                timeout {
+                    requestTimeoutMillis = 90_000
+                    socketTimeoutMillis = 90_000
+                }
             }
             val responseText = response.bodyAsText()
             logger.info { "Browser pool session init for $clientId: $responseText" }
