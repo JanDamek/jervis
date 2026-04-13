@@ -245,7 +245,8 @@ All services use Ollama Router (K8s service `jervis-ollama-router:11430`):
 - **Auto-reservation** - GPU reserved/released automatically based on CRITICAL activity
 - **Model management** - Auto-loads/unloads model sets per GPU_MODEL_SETS
 - **Per-type concurrency** - embedding concurrent=5 on p40-2, LLM serial=1 per GPU
-- **Capability routing** - extraction capability routes to qwen3:8b on p40-2
+- **Capability routing** - vision capability routes to qwen3-vl-tool on p40-2, extraction to qwen3:8b
+- **GPU error retry** - on model load failure or connect error, retries with backoff (5s, 15s, 30s, 60s) — NEVER returns 503 to client
 
 ### Deployment
 

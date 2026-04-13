@@ -29,16 +29,28 @@
 ---
 
 ## 2. Fix ollama-router — vision routing + 503
-- [ ] Přečíst `router_core.py` — `decide_route()` a jak mapuje `capability=vision` na model
-- [ ] Přečíst `models.py` — `LOCAL_MODEL_CAPABILITIES` mapování
-- [ ] Opravit `decide_route()` aby `capability=vision` → `qwen3-vl-tool:latest` na p40-2
-- [ ] Přečíst `proxy.py` a `request_queue.py` — zajistit, že router NIKDY nevrací 503, vždy requeue
-- [ ] Router je jediný gateway na GPU, drží frontu, ví co kde běží, žádné timeouty — vždy se čeká na odpověď
-- [ ] Otestovat přes `/route-decision` endpoint
-- [ ] Deploy: `k8s/build_ollama_router.sh`
-- [ ] Commit
+- [x] Přečíst `router_core.py` — `decide_route()` řádek 157-253, `_find_local_model_for_capability()` řádek 352-378
+- [x] Přečíst `models.py` — `LOCAL_MODEL_CAPABILITIES` řádek 69-74
+- [x] Opravit vision routing — **root cause: capability name mismatch** `"vision"` vs `"visual"`
+  - `vlm_client.py` posílá `capability="vision"`, `models.py` měl pouze `"visual"`
+  - `_find_local_model_for_capability("vision")` → None → fallback `orchestrator_model` (30b)
+  - Fix: přidáno `"vision"` do capabilities pro `qwen3-vl-tool:latest`
+- [x] Přečíst `proxy.py` a `request_queue.py` — GPU error handling
+  - `proxy.py:170-190` — vrací 503/error přímo klientovi, NO RETRY
+  - `request_queue.py:394-418` — vrací 503 pro gpu_unavailable a model_load_failed
+- [x] Opravit 503 — `_run_on_backend` nyní retryuje: 5s, 15s, 30s, 60s backoff
+  - model_load_failed → mark unhealthy, start recovery, retry
+  - gpu_unavailable → retry, pak fallback na jiný healthy GPU
+  - connect_error → GPU marked unhealthy (existing), nyní retry
+- [x] Deploy: `k8s/build_ollama_router.sh` — úspěšně
+- [x] Otestovat přes `/route-decision`:
+  - `capability="vision"` → `{"target":"local","model":"qwen3-vl-tool:latest"}` ✓
+  - `capability="visual"` → `{"target":"local","model":"qwen3-vl-tool:latest"}` ✓ (backward compat)
+- [x] Commit: `79368d71`
 
 **Poznámky:**
+- `decide_route()` řádek 192: `local_model or settings.orchestrator_model` — None fallback na 30b byl root cause
+- Router docs (`structures.md:29`): "Router ALWAYS accepts requests. Never returns 503/reject." — teď splněno s retry
 
 
 ---
