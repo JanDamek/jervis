@@ -650,6 +650,16 @@ async def _detect_stage(page: Page) -> LoginStage:
         if email_input:
             return LoginStage.EMAIL_ENTRY
 
+        # Check for organizational info page ("Access to X is monitored")
+        # MUST be before MFA check — org info page is on login.microsoftonline.com
+        # and old MFA elements may still be in DOM after approval transition
+        org_info = await _find_element(page, [
+            'a:has-text("Continue to Microsoft Teams")',
+            'a:has-text("Pokračovat na Microsoft Teams")',
+        ])
+        if org_info:
+            return LoginStage.ORG_INFO
+
         # Check for MFA
         mfa_element = await _find_element(page, [
             'input[name="otc"]',
@@ -691,16 +701,6 @@ async def _detect_stage(page: Page) -> LoginStage:
         ])
         if consent:
             return LoginStage.CONSENT
-
-        # Check for organizational info page ("Access to X is monitored")
-        org_info = await _find_element(page, [
-            'a:has-text("Continue to Microsoft Teams")',
-            'a:has-text("Pokračovat na Microsoft Teams")',
-            'div:has-text("is monitored")',
-            'div:has-text("je monitorován")',
-        ])
-        if org_info:
-            return LoginStage.ORG_INFO
 
         # Check for error messages
         error_el = await _find_element(page, [
