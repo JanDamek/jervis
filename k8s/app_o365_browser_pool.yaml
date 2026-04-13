@@ -95,7 +95,7 @@ spec:
           requests:
             storage: 5Gi
 ---
-# ===== Headless Service (required for StatefulSet DNS) =====
+# ===== Headless Service (required for StatefulSet individual pod DNS) =====
 apiVersion: v1
 kind: Service
 metadata:
@@ -103,6 +103,23 @@ metadata:
   namespace: jervis
 spec:
   clusterIP: None
+  selector:
+    app: jervis-o365-browser-pool
+  ports:
+    - name: api
+      port: 8090
+      targetPort: 8090
+    - name: novnc
+      port: 6080
+      targetPort: 6080
+---
+# ===== ClusterIP Service (for ingress VNC access — routes to pod-0 by default) =====
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-o365-browser-pool-lb
+  namespace: jervis
+spec:
   selector:
     app: jervis-o365-browser-pool
   ports:

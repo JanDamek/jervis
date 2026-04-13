@@ -50,7 +50,7 @@ def create_vnc_auth_router(vnc_auth: VncAuthManager) -> APIRouter:
         # Token valid — create session and set cookie
         session_id = vnc_auth.create_session()
 
-        # Build redirect URL to noVNC with auto-connect and VNC password
+        # Build redirect URL to noVNC with auto-connect and VNC password.
         vnc_pwd = _get_vnc_password()
         redirect_url = "/vnc.html?autoconnect=true&resize=scale"
         if vnc_pwd:

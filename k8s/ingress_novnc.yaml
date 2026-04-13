@@ -25,6 +25,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: jervis-o365-browser-pool
+                name: jervis-o365-browser-pool-lb
                 port:
                   number: 8090
