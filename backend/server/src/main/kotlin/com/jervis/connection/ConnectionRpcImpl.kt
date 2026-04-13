@@ -81,6 +81,66 @@ class ConnectionRpcImpl(
         }
     }
 
+    /**
+     * After server startup, init browser sessions for all Teams connections.
+     * Waits for pods to be ready, then calls initBrowserPoolSession (handles credentials + MFA).
+     * Runs in background thread to not block startup.
+     */
+    @jakarta.annotation.PostConstruct
+    fun initBrowserSessionsOnStartup() {
+        Thread {
+            // Wait for browser pods to become ready (BrowserPodManager.reconcileOnStartup runs first)
+            Thread.sleep(45_000)
+
+            runBlocking {
+                val connections = connectionService.findAll()
+                    .toList()
+                    .filter { it.provider == ProviderEnum.MICROSOFT_TEAMS && it.authType == com.jervis.dto.connection.AuthTypeEnum.NONE }
+
+                if (connections.isEmpty()) return@runBlocking
+
+                logger.info { "Sending init to ${connections.size} browser session connection(s)" }
+                for (conn in connections) {
+                    try {
+                        // Check if pod is ready before sending init
+                        val podUrl = BrowserPodManager.serviceUrl(conn.id)
+                        try {
+                            val healthResp = httpClient.get("$podUrl/health")
+                            if (!healthResp.status.isSuccess()) {
+                                logger.warn { "Browser pod not ready for ${conn.name} — skipping init" }
+                                continue
+                            }
+                        } catch (e: Exception) {
+                            logger.warn { "Browser pod unreachable for ${conn.name} — skipping init" }
+                            continue
+                        }
+
+                        // Check if session already active (self-restored from PVC)
+                        val clientId = conn.o365ClientId ?: conn.id.toString()
+                        try {
+                            val statusResp = httpClient.get("$podUrl/session/$clientId")
+                            if (statusResp.status.isSuccess()) {
+                                val statusJson = Json.parseToJsonElement(statusResp.bodyAsText()).jsonObject
+                                val state = statusJson["state"]?.jsonPrimitive?.content
+                                if (state == "ACTIVE") {
+                                    logger.info { "Browser session already active for ${conn.name} — skipping init" }
+                                    continue
+                                }
+                            }
+                        } catch (_: Exception) { /* proceed with init */ }
+
+                        // Full init with credentials + MFA handling
+                        val result = initBrowserPoolSession(conn)
+                        logger.info { "Browser session init for ${conn.name}: $result" }
+                    } catch (e: Exception) {
+                        logger.error(e) { "Failed to init browser session for ${conn.name}" }
+                    }
+                }
+                logger.info { "Browser session startup init complete" }
+            }
+        }.apply { isDaemon = true; name = "browser-session-init" }.start()
+    }
+
     override suspend fun getAllConnections(): List<ConnectionResponseDto> =
         connectionService.findAll().map { it.toDto() }.toList()
 
