@@ -526,7 +526,10 @@ async def poll_mfa_approval(page: Page, timeout_seconds: int = 120) -> LoginResu
 
     while time.time() - start < timeout_seconds:
         try:
+            url = page.url or ""
             stage = await _detect_stage(page)
+            elapsed = int(time.time() - start)
+            logger.info("MFA poll: stage=%s url=%s elapsed=%ds", stage.value, url[:80], elapsed)
 
             if stage == LoginStage.STAY_SIGNED_IN:
                 await _handle_stay_signed_in(page)
