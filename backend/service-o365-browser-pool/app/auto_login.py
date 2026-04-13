@@ -573,23 +573,17 @@ async def _detect_stage(page: Page) -> LoginStage:
     """Detect current login stage from page URL and DOM content."""
     url = page.url or ""
 
-    # Org info page ("Access to X is monitored") — can appear on ANY domain
-    # including MCAS proxy (*.mcas.ms). Must check before domain-specific logic.
-    if "mcas.ms" in url or "access" in url:
-        # MCAS proxy page — check for Continue link or monitored text
+    # MCAS org info page ("Access to X is monitored") — only on *.mcas.ms domain
+    # Appears after MFA approval, before Teams loads. Must check before Teams domain logic
+    # because mcas.ms URLs also contain "teams" patterns.
+    if "mcas.ms" in url and "aad_login" in url:
         try:
             body_text = await page.text_content("body", timeout=2000) or ""
             if "Continue to Microsoft Teams" in body_text or "is monitored" in body_text:
-                logger.info("ORG_INFO detected via body text on %s", url[:60])
+                logger.info("ORG_INFO detected on MCAS page %s", url[:60])
                 return LoginStage.ORG_INFO
         except Exception:
             pass
-    org_info = await _find_element(page, [
-        'a:has-text("Continue to Microsoft Teams")',
-        'a:has-text("Pokračovat na Microsoft Teams")',
-    ], timeout_ms=500)
-    if org_info:
-        return LoginStage.ORG_INFO
 
     # On Teams/Outlook domain — check if actually loaded (not just URL redirect)
     is_on_teams = any(d in url for d in _LOGGED_IN_DOMAINS)
