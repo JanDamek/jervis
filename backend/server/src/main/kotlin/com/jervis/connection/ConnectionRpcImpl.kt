@@ -645,9 +645,22 @@ class ConnectionRpcImpl(
             // Get session status from browser pool
             val response = httpClient.get("${browserPodUrl(clientId)}/session/$clientId")
             if (!response.status.isSuccess()) {
+                // Session status failed but pod may still serve VNC
+                var vncUrl: String? = null
+                try {
+                    val resolvedUrl = browserPodUrl(clientId)
+                    val tokenResponse = httpClient.post("$resolvedUrl/vnc-token/$clientId")
+                    if (tokenResponse.status.isSuccess()) {
+                        val tokenJson = Json { ignoreUnknownKeys = true }.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
+                        vncUrl = tokenJson["token"]?.jsonPrimitive?.content?.let {
+                            "https://jervis-vnc.damek-soft.eu/vnc-login?token=$it"
+                        }
+                    }
+                } catch (_: Exception) {}
                 return BrowserSessionStatusDto(
                     state = "ERROR",
                     message = "Browser pool nedostupný: ${response.status}",
+                    vncUrl = vncUrl,
                 )
             }
 
@@ -744,9 +757,23 @@ class ConnectionRpcImpl(
                 connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
                 logger.info { "Connection ${connection.id} marked INVALID — browser pool unreachable" }
             }
+            // Still try to generate VNC URL — pod may be reachable even if session status failed
+            var vncUrl: String? = null
+            try {
+                val resolvedUrl = BrowserPodManager.serviceUrl(connection.id)
+                val tokenResponse = httpClient.post("$resolvedUrl/vnc-token/$clientId")
+                if (tokenResponse.status.isSuccess()) {
+                    val tokenJson = Json { ignoreUnknownKeys = true }.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
+                    val vncToken = tokenJson["token"]?.jsonPrimitive?.content
+                    if (vncToken != null) {
+                        vncUrl = "https://jervis-vnc.damek-soft.eu/vnc-login?token=$vncToken"
+                    }
+                }
+            } catch (_: Exception) { /* pod truly unreachable */ }
             BrowserSessionStatusDto(
                 state = "ERROR",
                 message = "Chyba komunikace s browser pool: ${e.message}",
+                vncUrl = vncUrl,
             )
         }
     }
