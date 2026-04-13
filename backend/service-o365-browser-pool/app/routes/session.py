@@ -230,8 +230,18 @@ def create_session_router(
             context = browser_manager.get_context(client_id)
             if context and context.pages:
                 page_url = context.pages[0].url or ""
+                # Exclude login/auth pages — these are NOT logged in
+                is_login_page = any(
+                    auth_domain in page_url
+                    for auth_domain in [
+                        "login.microsoftonline.com",
+                        "login.live.com",
+                        "login.microsoft.com",
+                        "account.live.com",
+                    ]
+                )
                 # If we're past the login page and on Teams/Outlook, consider it active
-                if any(
+                if not is_login_page and any(
                     domain in page_url
                     for domain in [
                         "teams.microsoft.com/v2",

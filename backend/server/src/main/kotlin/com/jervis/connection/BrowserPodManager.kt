@@ -318,6 +318,7 @@ class BrowserPodManager(
     /**
      * Reconcile browser pods on server startup.
      * Ensures every Teams browser-session connection has a running pod.
+     * After pod creation, waits for readiness and sends init with credentials.
      */
     @jakarta.annotation.PostConstruct
     fun reconcileOnStartup() {
@@ -339,7 +340,58 @@ class BrowserPodManager(
                     logger.error(e) { "Failed to reconcile browser pod for connection ${conn.id}" }
                 }
             }
-            logger.info { "Browser pod reconciliation complete" }
+            logger.info { "Browser pod reconciliation complete — init calls will be sent after pods are ready" }
+
+            // Background: wait for pods and send init with credentials
+            kotlinx.coroutines.launch(kotlinx.coroutines.Dispatchers.IO) {
+                kotlinx.coroutines.delay(30_000) // Wait 30s for pods to become ready
+                for (conn in connections) {
+                    try {
+                        initBrowserSession(conn)
+                    } catch (e: Exception) {
+                        logger.error(e) { "Failed to init browser session for connection ${conn.id}" }
+                    }
+                }
+                logger.info { "Browser session init complete for ${connections.size} connection(s)" }
+            }
+        }
+    }
+
+    /**
+     * Send init request with credentials to a browser pod.
+     * Pod will auto-login if credentials are available, or wait for manual VNC login.
+     */
+    private suspend fun initBrowserSession(connection: ConnectionDocument) {
+        val clientId = connection.o365ClientId ?: connection.id.toString()
+        val url = "${serviceUrl(connection.id)}/session/$clientId/init"
+
+        val body = buildString {
+            append("{\"login_url\":\"https://teams.microsoft.com\"")
+            append(",\"capabilities\":[")
+            append(connection.availableCapabilities.joinToString(",") { "\"${it.name}\"" })
+            append("]")
+            connection.username?.takeIf { it.isNotBlank() }?.let {
+                append(",\"username\":\"${it.replace("\"", "\\\"")}\"")
+            }
+            connection.password?.takeIf { it.isNotBlank() }?.let {
+                append(",\"password\":\"${it.replace("\"", "\\\"")}\"")
+            }
+            append("}")
+        }
+
+        val client = java.net.http.HttpClient.newHttpClient()
+        val request = java.net.http.HttpRequest.newBuilder()
+            .uri(java.net.URI.create(url))
+            .header("Content-Type", "application/json")
+            .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body))
+            .timeout(java.time.Duration.ofSeconds(30))
+            .build()
+
+        try {
+            val response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString())
+            logger.info { "Init browser session for ${connection.name} (${connection.id}): ${response.statusCode()} ${response.body()}" }
+        } catch (e: Exception) {
+            logger.warn { "Init browser session failed for ${connection.name}: ${e.message}" }
         }
     }
 }
