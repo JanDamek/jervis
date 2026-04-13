@@ -112,6 +112,8 @@ fun Routing.installInternalO365SessionApi(
                             interruptAction = "o365_mfa",
                             browserPoolClientId = body.connectionId,
                             alwaysPush = true,
+                            mfaType = body.mfaType,
+                            mfaNumber = body.mfaNumber,
                         )
                     }
                 }
@@ -167,6 +169,8 @@ private suspend fun createSessionNotification(
     interruptAction: String,
     browserPoolClientId: String? = null,
     alwaysPush: Boolean = false,
+    mfaType: String? = null,
+    mfaNumber: String? = null,
 ) {
     // Check if UI has active subscribers — skip push if app is open (unless alwaysPush)
     val hasActiveUi = if (alwaysPush) false else notificationRpc.hasActiveSubscribers(clientId.toString())
@@ -194,6 +198,9 @@ private suspend fun createSessionNotification(
         title = title,
         interruptAction = interruptAction,
         interruptDescription = description,
+        connectionName = connectionName,
+        mfaType = mfaType,
+        mfaNumber = mfaNumber,
     )
 
     // Send push notification if app is not actively connected

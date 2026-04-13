@@ -20,6 +20,10 @@ sealed class JervisEvent {
         // Error mode — task failed, show error detail + retry/discard
         val isError: Boolean = false,
         val errorDetail: String? = null,
+        // O365 MFA structured fields — clean UI rendering without markdown
+        val connectionName: String? = null,
+        val mfaType: String? = null,
+        val mfaNumber: String? = null,
         /**
          * When set, this event represents a CHAT approval (ephemeral, in-flight
          * tool call waiting for user consent in the agentic chat loop). The UI

@@ -52,6 +52,16 @@ fun UserTaskNotificationDialog(
     onDiscard: (taskId: String) -> Unit = {},
 ) {
     when {
+        event.interruptAction == "o365_mfa" -> MfaContent(
+            event = event,
+            onReply = onReply,
+            onDismiss = onDismiss,
+        )
+        event.interruptAction == "o365_relogin" -> ReloginContent(
+            event = event,
+            onApprove = onApprove,
+            onDismiss = onDismiss,
+        )
         event.isError -> ErrorContent(
             event = event,
             onRetry = onRetry,
@@ -309,6 +319,138 @@ private fun ClarificationContent(
                     enabled = replyText.isNotBlank(),
                 ) {
                     Text("Odeslat")
+                }
+            }
+        },
+        dismissButton = null,
+    )
+}
+
+/**
+ * Clean MFA dialog — shows only connection name, MFA type, and number to confirm.
+ * For authenticator_number: just confirm button (no code input needed).
+ * For authenticator_code/sms_code: text input for the code.
+ */
+@Composable
+private fun MfaContent(
+    event: JervisEvent.UserTaskCreated,
+    onReply: (taskId: String, reply: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val connectionName = event.connectionName ?: "Microsoft 365"
+    val needsCodeInput = event.mfaType in listOf("authenticator_code", "sms_code")
+    var mfaCode by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = connectionName,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        },
+        text = {
+            Column {
+                val prompt = when (event.mfaType) {
+                    "authenticator_number" -> "Potvrďte číslo ${event.mfaNumber ?: ""} v Authenticator"
+                    "authenticator_code" -> "Zadejte kód z Authenticator"
+                    "sms_code" -> "Zadejte SMS kód"
+                    "phone_call" -> "Potvrďte telefonní hovor"
+                    else -> "Vyžadováno dvoufaktorové ověření"
+                }
+                Text(
+                    text = prompt,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                val number = event.mfaNumber
+                if (number != null && event.mfaType == "authenticator_number") {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = number,
+                        style = MaterialTheme.typography.displaySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (needsCodeInput) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    JTextField(
+                        value = mfaCode,
+                        onValueChange = { mfaCode = it },
+                        label = "Kód",
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = "Zadejte kód...",
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                JSecondaryButton(onClick = onDismiss) {
+                    Text("Zavřít")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                if (needsCodeInput) {
+                    JPrimaryButton(
+                        onClick = { onReply(event.taskId, mfaCode) },
+                        enabled = mfaCode.isNotBlank(),
+                    ) {
+                        Text("Odeslat")
+                    }
+                } else {
+                    JPrimaryButton(
+                        onClick = { onReply(event.taskId, "confirmed") },
+                    ) {
+                        Text("Potvrzeno")
+                    }
+                }
+            }
+        },
+        dismissButton = null,
+    )
+}
+
+/**
+ * Clean relogin dialog — shows connection name and single action button.
+ */
+@Composable
+private fun ReloginContent(
+    event: JervisEvent.UserTaskCreated,
+    onApprove: (taskId: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val connectionName = event.connectionName ?: "Microsoft 365"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = connectionName,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        },
+        text = {
+            Text(
+                text = "Session vypršela, je potřeba se znovu přihlásit.",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        },
+        confirmButton = {
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                JSecondaryButton(onClick = onDismiss) {
+                    Text("Zavřít")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                JPrimaryButton(
+                    onClick = { onApprove(event.taskId) },
+                ) {
+                    Text("Přihlásit znovu")
                 }
             }
         },

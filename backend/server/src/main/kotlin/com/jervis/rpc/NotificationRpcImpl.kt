@@ -63,6 +63,9 @@ class NotificationRpcImpl : INotificationService {
         isError: Boolean = false,
         errorDetail: String? = null,
         chatApprovalAction: String? = null,
+        connectionName: String? = null,
+        mfaType: String? = null,
+        mfaNumber: String? = null,
     ) {
         emitEvent(clientId, JervisEvent.UserTaskCreated(
             clientId = clientId,
@@ -76,6 +79,9 @@ class NotificationRpcImpl : INotificationService {
             isError = isError,
             errorDetail = errorDetail,
             chatApprovalAction = chatApprovalAction,
+            connectionName = connectionName,
+            mfaType = mfaType,
+            mfaNumber = mfaNumber,
         ))
     }
 
