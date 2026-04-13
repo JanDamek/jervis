@@ -11,14 +11,17 @@ import platform.UserNotifications.UNNotificationCategory
 import platform.UserNotifications.UNNotificationCategoryOptionNone
 import platform.UserNotifications.UNNotificationRequest
 import platform.UserNotifications.UNNotificationSound
+import platform.UserNotifications.UNTextInputNotificationAction
 import platform.UserNotifications.UNTimeIntervalNotificationTrigger
 import platform.UserNotifications.UNUserNotificationCenter
 
 /**
  * iOS notification manager using UNUserNotificationCenter.
  *
- * Registers a notification category "TASK_APPROVAL" with
- * Approve and Deny action buttons for orchestrator interrupts.
+ * Registers notification categories:
+ * - TASK_APPROVAL: Approve/Deny buttons for orchestrator interrupts
+ * - MFA_CODE: Text input action for MFA code entry (authenticator_code, sms_code)
+ * - MFA_CONFIRM: Simple confirm button for authenticator_number/phone_call
  *
  * The Swift NotificationDelegate handles action callbacks
  * and forwards them via NotificationBridge → NotificationActionChannel.
@@ -26,8 +29,12 @@ import platform.UserNotifications.UNUserNotificationCenter
 actual class PlatformNotificationManager actual constructor() {
     companion object {
         const val CATEGORY_APPROVAL = "TASK_APPROVAL"
+        const val CATEGORY_MFA_CODE = "MFA_CODE"
+        const val CATEGORY_MFA_CONFIRM = "MFA_CONFIRM"
         const val ACTION_APPROVE = "APPROVE"
         const val ACTION_DENY = "DENY"
+        const val ACTION_MFA_REPLY = "MFA_REPLY"
+        const val ACTION_MFA_CONFIRM = "MFA_CONFIRM"
     }
 
     private var _hasPermission = false
@@ -35,7 +42,7 @@ actual class PlatformNotificationManager actual constructor() {
     actual fun initialize() {
         val center = UNUserNotificationCenter.currentNotificationCenter()
 
-        // Register approval category with action buttons
+        // Approval category with Approve/Deny buttons
         val approveAction = UNNotificationAction.actionWithIdentifier(
             identifier = ACTION_APPROVE,
             title = "Povolit",
@@ -46,7 +53,6 @@ actual class PlatformNotificationManager actual constructor() {
             title = "Zamítnout",
             options = UNNotificationActionOptionForeground,
         )
-
         val approvalCategory = UNNotificationCategory.categoryWithIdentifier(
             identifier = CATEGORY_APPROVAL,
             actions = listOf(approveAction, denyAction),
@@ -54,7 +60,35 @@ actual class PlatformNotificationManager actual constructor() {
             options = UNNotificationCategoryOptionNone,
         )
 
-        center.setNotificationCategories(setOf(approvalCategory))
+        // MFA code input category — text input for authenticator_code / sms_code
+        val mfaReplyAction = UNTextInputNotificationAction.actionWithIdentifier(
+            identifier = ACTION_MFA_REPLY,
+            title = "Zadat kód",
+            options = UNNotificationActionOptionForeground,
+            textInputButtonTitle = "Odeslat",
+            textInputPlaceholder = "Kód",
+        )
+        val mfaCodeCategory = UNNotificationCategory.categoryWithIdentifier(
+            identifier = CATEGORY_MFA_CODE,
+            actions = listOf(mfaReplyAction),
+            intentIdentifiers = emptyList<String>(),
+            options = UNNotificationCategoryOptionNone,
+        )
+
+        // MFA confirm category — simple button for authenticator_number / phone_call
+        val mfaConfirmAction = UNNotificationAction.actionWithIdentifier(
+            identifier = ACTION_MFA_CONFIRM,
+            title = "Potvrzeno",
+            options = UNNotificationActionOptionForeground,
+        )
+        val mfaConfirmCategory = UNNotificationCategory.categoryWithIdentifier(
+            identifier = CATEGORY_MFA_CONFIRM,
+            actions = listOf(mfaConfirmAction),
+            intentIdentifiers = emptyList<String>(),
+            options = UNNotificationCategoryOptionNone,
+        )
+
+        center.setNotificationCategories(setOf(approvalCategory, mfaCodeCategory, mfaConfirmCategory))
     }
 
     actual fun requestPermission() {
@@ -87,13 +121,27 @@ actual class PlatformNotificationManager actual constructor() {
             setBody(body)
             setSound(UNNotificationSound.defaultSound())
 
-            if (isApproval) {
-                setCategoryIdentifier(CATEGORY_APPROVAL)
+            // Set category for actionable notifications
+            val category = when {
+                interruptAction == "o365_mfa" && mfaType in listOf("authenticator_code", "sms_code") ->
+                    CATEGORY_MFA_CODE
+                interruptAction == "o365_mfa" ->
+                    CATEGORY_MFA_CONFIRM
+                isApproval ->
+                    CATEGORY_APPROVAL
+                else -> null
+            }
+            category?.let { setCategoryIdentifier(it) }
+
+            // Set interruption level for urgent MFA notifications
+            if (interruptAction in listOf("o365_mfa", "o365_relogin")) {
+                setInterruptionLevel(platform.UserNotifications.UNNotificationInterruptionLevel.UNNotificationInterruptionLevelTimeSensitive)
             }
 
-            if (taskId != null) {
-                setUserInfo(mapOf("taskId" to taskId))
-            }
+            val info = mutableMapOf<Any?, Any?>("taskId" to (taskId ?: ""))
+            mfaType?.let { info["mfaType"] = it }
+            mfaNumber?.let { info["mfaNumber"] = it }
+            setUserInfo(info)
         }
 
         // Trigger immediately (1 second delay is minimum for time interval)

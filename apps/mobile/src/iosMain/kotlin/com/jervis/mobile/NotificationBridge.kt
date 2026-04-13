@@ -17,10 +17,11 @@ import kotlinx.coroutines.launch
  * collected by MainViewModel.
  */
 object NotificationBridge {
-    fun handleAction(taskId: String?, action: String) {
+    fun handleAction(taskId: String?, action: String, replyText: String?) {
         val notifAction = when (action) {
             "APPROVE" -> NotificationAction.APPROVE
             "DENY" -> NotificationAction.DENY
+            "REPLY" -> NotificationAction.REPLY
             "OPEN" -> NotificationAction.OPEN
             else -> return
         }
@@ -30,6 +31,7 @@ object NotificationBridge {
                 NotificationActionResult(
                     taskId = taskId ?: "",
                     action = notifAction,
+                    replyText = replyText,
                 ),
             )
         }

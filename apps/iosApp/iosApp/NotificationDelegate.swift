@@ -22,12 +22,23 @@ class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
 
         switch response.actionIdentifier {
         case "APPROVE":
-            NotificationBridge.shared.handleAction(taskId: taskId, action: "APPROVE")
+            NotificationBridge.shared.handleAction(taskId: taskId, action: "APPROVE", replyText: nil)
         case "DENY":
-            NotificationBridge.shared.handleAction(taskId: taskId, action: "DENY")
+            NotificationBridge.shared.handleAction(taskId: taskId, action: "DENY", replyText: nil)
+        case "MFA_REPLY":
+            // Text input MFA code reply
+            if let textResponse = response as? UNTextInputNotificationResponse {
+                let code = textResponse.userText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !code.isEmpty {
+                    NotificationBridge.shared.handleAction(taskId: taskId, action: "REPLY", replyText: code)
+                }
+            }
+        case "MFA_CONFIRM":
+            // Authenticator number / phone call confirmed
+            NotificationBridge.shared.handleAction(taskId: taskId, action: "REPLY", replyText: "confirmed")
         case UNNotificationDefaultActionIdentifier:
             // User tapped the notification itself → open app
-            NotificationBridge.shared.handleAction(taskId: taskId, action: "OPEN")
+            NotificationBridge.shared.handleAction(taskId: taskId, action: "OPEN", replyText: nil)
         default:
             break
         }
