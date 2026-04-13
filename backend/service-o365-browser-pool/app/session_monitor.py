@@ -99,14 +99,35 @@ class SessionMonitor:
                         self._last_check[client_id] = now
                         continue
 
-                logger.warning(
-                    "Token expired for client %s, marking session EXPIRED",
-                    client_id,
-                )
-                self._bm.set_state(client_id, SessionState.EXPIRED)
-                await notify_session_state(
-                    client_id, client_id, "EXPIRED",
-                )
+                # Token refresh failed — but browser session may still be valid
+                # (e.g. MCAS proxy captures tokens that can't be refreshed via MSAL)
+                # Only mark EXPIRED if browser is actually on a login page
+                context2 = self._bm.get_context(client_id)
+                if context2 and context2.pages:
+                    url = context2.pages[0].url or ""
+                    if "login.microsoftonline.com" in url or "login.live.com" in url:
+                        logger.warning(
+                            "Token expired AND browser on login page for %s — marking EXPIRED",
+                            client_id,
+                        )
+                        self._bm.set_state(client_id, SessionState.EXPIRED)
+                        await notify_session_state(
+                            client_id, client_id, "EXPIRED",
+                        )
+                    else:
+                        logger.info(
+                            "Token expired for %s but browser still on %s — session OK",
+                            client_id, url[:60],
+                        )
+                else:
+                    logger.warning(
+                        "Token expired for %s and no browser context — marking EXPIRED",
+                        client_id,
+                    )
+                    self._bm.set_state(client_id, SessionState.EXPIRED)
+                    await notify_session_state(
+                        client_id, client_id, "EXPIRED",
+                    )
 
             self._last_check[client_id] = now
 
