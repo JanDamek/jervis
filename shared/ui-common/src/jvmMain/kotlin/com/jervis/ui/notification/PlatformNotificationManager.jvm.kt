@@ -60,12 +60,9 @@ actual class PlatformNotificationManager actual constructor() {
     }
 
     private fun showMacOSNotification(title: String, body: String) {
-        // osascript notification — clicks open Script Editor (no bundle ID fix from JVM),
-        // but the visual alert is useful as a heads-up. Interaction goes through in-app dialog.
-        val escapedTitle = title.replace("\"", "\\\"")
-        val escapedBody = body.replace("\"", "\\\"")
-        val script = """display notification "$escapedBody" with title "$escapedTitle" sound name "default""""
-        ProcessBuilder("osascript", "-e", script).start()
+        // DISABLED: osascript notifications open Script Editor on click, not Jervis.
+        // Compose Desktop has no native macOS notification API.
+        // In-app dialog + window bring-to-front handles urgent notifications.
     }
 
     private fun showWindowsNotification(title: String, body: String) {
