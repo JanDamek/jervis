@@ -45,8 +45,16 @@ import com.jervis.ui.util.RefreshIconButton
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.datetime.toLocalDateTime
 
 private const val PAGE_SIZE = 20
+
+private fun formatInstant(epochMs: Long): String {
+    val tz = kotlinx.datetime.TimeZone.currentSystemDefault()
+    val instant = kotlinx.datetime.Instant.fromEpochMilliseconds(epochMs)
+    val dt = instant.toLocalDateTime(tz)
+    return "%02d.%02d.%d %02d:%02d".format(dt.dayOfMonth, dt.monthNumber, dt.year, dt.hour, dt.minute)
+}
 
 private fun userTaskStateBadge(state: String): Pair<String, Color> = when (state) {
     "USER_TASK" -> "K vyřízení" to Color(0xFF1976D2)

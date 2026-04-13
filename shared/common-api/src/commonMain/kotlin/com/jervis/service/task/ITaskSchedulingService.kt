@@ -1,5 +1,6 @@
 package com.jervis.service.task
 
+import com.jervis.dto.task.CalendarEntryDto
 import com.jervis.dto.task.ScheduledTaskDto
 import kotlinx.rpc.annotations.Rpc
 
@@ -24,4 +25,15 @@ interface ITaskSchedulingService {
     suspend fun listTasksForClient(clientId: String): List<ScheduledTaskDto>
 
     suspend fun cancelTask(taskId: String)
+
+    /**
+     * Calendar view: all entries (scheduled tasks, calendar events, deadline tasks)
+     * within the given date range. Tasks without a deadline are treated as "today".
+     * Overdue tasks (scheduledAt < now, state != DONE) are included with isOverdue=true.
+     */
+    suspend fun calendarEntries(
+        fromEpochMs: Long,
+        toEpochMs: Long,
+        clientId: String? = null,
+    ): List<CalendarEntryDto>
 }

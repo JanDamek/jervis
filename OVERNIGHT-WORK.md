@@ -56,17 +56,21 @@
 ---
 
 ## 3. Zjednodušení menu
-- [ ] Smazat Screen enum hodnoty: UserTasks, Finance, Capacity, PendingTasks, IndexingQueue, ErrorLogs, RagSearch, EnvironmentManager, EnvironmentViewer
-- [ ] Smazat odpovídající composables a soubory
-- [ ] Ponechat: Meetings, Kalendář, Nastavení — ikony v top baru
-- [ ] Ponechat environment pravý sidebar = live náhled do K8s namespace (pody, ingressy, configmapy)
-- [ ] Settings: environment = přiřazení namespace → projekt
-- [ ] Smazat drawer menu
-- [ ] Smazat mrtvé soubory — žádný mrtvý kód nikde
-- [ ] Update `docs/ui-design.md`
-- [ ] Commit
+- [x] Smazat Screen enum: UserTasks, Finance, TimeTracking, PendingTasks, IndexingQueue, ErrorLogs, RagSearch, EnvironmentManager, EnvironmentViewer, Scheduler (renamed→Calendar), DebugConsole
+- [x] Smazat composable soubory: PendingTasksScreen, ErrorLogsScreen, RagSearchScreen, IndexingQueueScreen, EnvironmentViewerScreen, FinanceScreen, TimeTrackingScreen
+- [x] Ponechat: Main, Meetings, Calendar, Settings — Screen enum, ikony v top baru
+- [x] Environment pravý sidebar ponechán (EnvironmentPanel v MainScreenView)
+- [x] Smazat MenuDropdown (hamburger) — nahrazeno ikonami TopBarMenuItem v top baru
+- [x] Desktop Main.kt — system tray + menu bar aktualizovány
+- [x] -4394 řádků mrtvého kódu
+- [x] Kompilace OK
+- [x] Commit: `55762378`
+- [ ] Update `docs/ui-design.md` (TODO)
 
 **Poznámky:**
+- SchedulerScreen ponechán jako placeholder pro Calendar screen (redesign v kroku 4)
+- EnvironmentManagerScreen ponechán (používán z K8sResourcesTab) — ale nemá Screen enum, přístupný jen přes environment panel
+- UserTasksScreen.kt ponechán v repo (má "Hotovo" tlačítko) ale nemá Screen — přístupný jen přes chat sidebar
 
 
 ---
