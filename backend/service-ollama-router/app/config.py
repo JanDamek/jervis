@@ -47,9 +47,9 @@ class Settings(BaseSettings):
     default_keep_alive: str = "-1"
 
     # ── Request limits ──────────────────────────────────────────────────
-    max_request_timeout_s: int = 300     # 5 min per request (cancel + REQUEST_OUT if exceeded)
-    max_concurrent_llm: int = 1           # LLM/VLM: serial is faster (VRAM spill)
-    max_concurrent_embeddings: int = 5     # Embedding: GPU-2 benchmark sweet spot = 4-5 concurrent
+    max_request_timeout_s: int = 0        # No timeout — request waits until done
+    max_concurrent_llm: int = 1           # LLM/VLM: serial (1 per GPU)
+    max_concurrent_embeddings: int = 4     # Embedding: 4 parallel per GPU (ollama NUM_PARALLEL=10)
 
     # ── Preemption ──────────────────────────────────────────────────────
     preempt_embeddings: bool = False     # let short embedding requests finish
