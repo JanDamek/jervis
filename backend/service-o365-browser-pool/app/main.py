@@ -14,6 +14,7 @@ Port 8090 serves ALL traffic:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -59,11 +60,31 @@ async def _try_self_restore():
     """Check PVC for saved init config and auto-restore session after restart."""
     import json as _json
     from pathlib import Path
+    import httpx
 
     config_path = Path(settings.profiles_dir) / "init-config.json"
     if not config_path.exists():
         logger.info("No init-config.json found — waiting for server init call")
         return
+
+    # Wait for Kotlin server to be reachable — MFA needs push notification delivery
+    server_url = settings.kotlin_server_url
+    if server_url:
+        max_wait = 60
+        for attempt in range(max_wait // 5):
+            try:
+                async with httpx.AsyncClient(timeout=5) as client:
+                    resp = await client.get(f"{server_url}/health")
+                    if resp.status_code == 200:
+                        logger.info("Self-restore: Kotlin server reachable")
+                        break
+            except Exception:
+                pass
+            logger.info("Self-restore: waiting for Kotlin server (%d/%ds)...", (attempt + 1) * 5, max_wait)
+            await asyncio.sleep(5)
+        else:
+            logger.warning("Self-restore: Kotlin server not reachable after %ds — skipping auto-login", max_wait)
+            return
 
     try:
         config = _json.loads(config_path.read_text())
