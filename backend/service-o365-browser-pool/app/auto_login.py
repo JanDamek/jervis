@@ -673,13 +673,25 @@ async def _detect_stage(page: Page) -> LoginStage:
 
         # Check for MFA method picker ("Verify your identity" / "Choose a verification method")
         # Microsoft Entra shows this BEFORE the actual MFA challenge when multiple methods are configured.
-        # Selectors: the page has a list of div buttons with method names and icons.
+        # The page has clickable divs for each method (certificate, authenticator, verification code).
+        # Use body text check first (fast), then DOM selectors.
+        try:
+            body_text = await page.text_content("body", timeout=2000) or ""
+            is_method_picker = (
+                "Verify your identity" in body_text
+                or "Ověřte svou identitu" in body_text
+                or "Choose a verification method" in body_text
+                or ("certificate" in body_text.lower() and "authenticator" in body_text.lower())
+            )
+            if is_method_picker:
+                logger.info("MFA_METHOD_PICKER detected via body text on %s", url[:60])
+                return LoginStage.MFA_METHOD_PICKER
+        except Exception:
+            pass
+        # Fallback: DOM selectors for method picker container
         method_picker = await _find_element(page, [
-            '#idDiv_SAOTCAS_Proofs',                      # Container for method list
-            'div[data-bind*="proofConfirmation"]',         # Entra method picker binding
-            'div:has-text("Verify your identity")',
-            'div:has-text("Ověřte svou identitu")',
-            'div:has-text("Choose a verification method")',
+            '#idDiv_SAOTCAS_Proofs',
+            'div[data-bind*="proofConfirmation"]',
         ], timeout_ms=1500)
         if method_picker:
             return LoginStage.MFA_METHOD_PICKER
@@ -1049,39 +1061,33 @@ async def _select_mfa_method(page: Page) -> None:
     """
     logger.info("Auto-login: MFA method picker detected — selecting Authenticator")
 
-    # Try to click Microsoft Authenticator option — various selector patterns
+    # Try Playwright's get_by_text first — most reliable for matching visible text
+    for text_query in [
+        "Approve a request on my Microsoft Authenticator",
+        "Microsoft Authenticator",
+        "Authenticator app",
+        "Aplikace Authenticator",
+        "Authenticator",
+    ]:
+        try:
+            locator = page.get_by_text(text_query, exact=False)
+            if await locator.count() > 0:
+                await locator.first.click()
+                logger.info("Auto-login: selected Authenticator via text '%s'", text_query)
+                return
+        except Exception:
+            continue
+
+    # Fallback: DOM selectors
     authenticator = await _find_element(page, [
-        # Entra ID data-value selectors
         'div[data-value="PhoneAppNotification"]',
         'div[data-value="PhoneAppOTP"]',
-        'div[data-value="OneWaySMS"]',  # Fallback: SMS (less preferred but works)
-        # Text-based selectors (English + Czech)
-        'div:has-text("Microsoft Authenticator")',
-        'div:has-text("Authenticator app")',
-        'div:has-text("Aplikace Authenticator")',
-        # Playwright get_by_text (pierces Shadow DOM)
+        'div[data-value="OneWaySMS"]',
     ])
     if authenticator:
         await authenticator.click()
-        logger.info("Auto-login: selected Authenticator method via selector")
+        logger.info("Auto-login: selected Authenticator method via data-value selector")
         return
-
-    # Fallback: try Playwright's get_by_text for better text matching
-    try:
-        locator = page.get_by_text("Microsoft Authenticator", exact=False)
-        if await locator.count() > 0:
-            await locator.first.click()
-            logger.info("Auto-login: selected Authenticator via get_by_text")
-            return
-
-        # Try "Authenticator" alone
-        locator = page.get_by_text("Authenticator", exact=False)
-        if await locator.count() > 0:
-            await locator.first.click()
-            logger.info("Auto-login: selected Authenticator via partial text")
-            return
-    except Exception as e:
-        logger.debug("Auto-login: get_by_text failed: %s", e)
 
     # Debug: log what methods are available
     try:

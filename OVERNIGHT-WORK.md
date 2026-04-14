@@ -137,6 +137,30 @@
 - [ ] Sidebar toggle na ikonu — TODO (menší UX vylepšení, ne blocker)
 - [ ] UX: mikrofon ikona v top baru je zavádějící (meeting vs ad-hoc recording) — redesign do budoucna
 
+## NÁVRH K DISKUSI: Browser pod — autonomní session health monitoring
+
+**Problém:** Pod naběhne, auto_login proběhne (LOGGED_IN), ale session může kdykoliv vypršet
+a browser se redirectne na login stránku. Pod to nedetekuje → zůstane zaseklý.
+
+**Návrh (uživatel):** Periodický check ~1x/min:
+1. Zkontrolovat DOM — jsou vidět Teams zprávy? (selektory `[data-tid="chat-list"]` atd.)
+2. Pokud DOM neobsahuje zprávy → VLM screenshot → zjistit co je na obrazovce
+3. Podle výsledku VLM → rozhodnout kde ve flow jsme (login stránka? MFA picker? Teams loading?)
+4. Automaticky pokračovat ve flow (kliknout na Authenticator, zadat email, atd.)
+
+**Princip:** Pod si žije vlastním životem. Server jen polluje data ze scrapingu.
+Pod sám detekuje problémy a sám se z nich zotaví.
+
+**Implementace:**
+- Nový `session_health_loop` v browseru (coroutine, každých 60s)
+- DOM check: `page.query_selector('[data-tid="chat-list"]')` — pokud existuje, session OK
+- Pokud DOM check selže → `_detect_stage(page)` → podle výsledku spustit příslušný handler
+- Pokud na login stránce → auto_login znovu (credentials z init-config.json na PVC)
+- Pokud na MFA method picker → `_select_mfa_method(page)`
+- Notifikovat server jen pokud je potřeba MFA schválení od uživatele
+
+**K diskusi:** Schválit přístup, pak implementovat.
+
 **Poznámky:**
 - Lokální storage (per-device) zatím není — vše na server. Pro reinstalaci to stačí.
 - Toggle ikona pro sidebar collapse zatím chybí — přidám v dalším kroku pokud bude čas
