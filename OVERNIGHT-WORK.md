@@ -135,6 +135,7 @@
 - [x] Kompilace OK
 - [x] Commit: `808f3395`
 - [ ] Sidebar toggle na ikonu — TODO (menší UX vylepšení, ne blocker)
+- [ ] UX: mikrofon ikona v top baru je zavádějící (meeting vs ad-hoc recording) — redesign do budoucna
 
 **Poznámky:**
 - Lokální storage (per-device) zatím není — vše na server. Pro reinstalaci to stačí.

@@ -37,6 +37,7 @@ class LoginStage(str, Enum):
     PICK_ACCOUNT = "pick_account"
     PASSWORD_ENTRY = "password_entry"
     MFA_REQUIRED = "mfa_required"
+    MFA_METHOD_PICKER = "mfa_method_picker"  # "Choose verification method" page
     STAY_SIGNED_IN = "stay_signed_in"
     CONSENT = "consent"
     ORG_INFO = "org_info"  # "Access to X is monitored" page
@@ -191,6 +192,11 @@ async def auto_login(
                 if result.stage == LoginStage.ERROR:
                     return result
                 await asyncio.sleep(5)
+                continue
+
+            if stage == LoginStage.MFA_METHOD_PICKER:
+                await _select_mfa_method(page)
+                await asyncio.sleep(3)
                 continue
 
             if stage == LoginStage.MFA_REQUIRED:
@@ -665,7 +671,20 @@ async def _detect_stage(page: Page) -> LoginStage:
         if email_input:
             return LoginStage.EMAIL_ENTRY
 
-        # Check for MFA
+        # Check for MFA method picker ("Verify your identity" / "Choose a verification method")
+        # Microsoft Entra shows this BEFORE the actual MFA challenge when multiple methods are configured.
+        # Selectors: the page has a list of div buttons with method names and icons.
+        method_picker = await _find_element(page, [
+            '#idDiv_SAOTCAS_Proofs',                      # Container for method list
+            'div[data-bind*="proofConfirmation"]',         # Entra method picker binding
+            'div:has-text("Verify your identity")',
+            'div:has-text("Ověřte svou identitu")',
+            'div:has-text("Choose a verification method")',
+        ], timeout_ms=1500)
+        if method_picker:
+            return LoginStage.MFA_METHOD_PICKER
+
+        # Check for MFA challenge (already on specific method page)
         mfa_element = await _find_element(page, [
             'input[name="otc"]',
             'input[id="idTxtBx_SAOTCC_OTC"]',
@@ -1016,6 +1035,77 @@ async def _detect_mfa_type(page: Page) -> LoginResult:
         mfa_type=MfaType.UNKNOWN,
         mfa_message="Neznámý typ MFA — zkontrolujte přihlášení přes noVNC",
     )
+
+
+async def _select_mfa_method(page: Page) -> None:
+    """Select Microsoft Authenticator from MFA method picker.
+
+    Microsoft Entra "Verify your identity" page shows a list of available
+    verification methods (certificate, authenticator, SMS, phone call).
+    We prefer Microsoft Authenticator (number matching or push notification).
+
+    Selectors target the Entra proof list buttons. Each method is a div with
+    data-value attribute or a clickable element with method name text.
+    """
+    logger.info("Auto-login: MFA method picker detected — selecting Authenticator")
+
+    # Try to click Microsoft Authenticator option — various selector patterns
+    authenticator = await _find_element(page, [
+        # Entra ID data-value selectors
+        'div[data-value="PhoneAppNotification"]',
+        'div[data-value="PhoneAppOTP"]',
+        'div[data-value="OneWaySMS"]',  # Fallback: SMS (less preferred but works)
+        # Text-based selectors (English + Czech)
+        'div:has-text("Microsoft Authenticator")',
+        'div:has-text("Authenticator app")',
+        'div:has-text("Aplikace Authenticator")',
+        # Playwright get_by_text (pierces Shadow DOM)
+    ])
+    if authenticator:
+        await authenticator.click()
+        logger.info("Auto-login: selected Authenticator method via selector")
+        return
+
+    # Fallback: try Playwright's get_by_text for better text matching
+    try:
+        locator = page.get_by_text("Microsoft Authenticator", exact=False)
+        if await locator.count() > 0:
+            await locator.first.click()
+            logger.info("Auto-login: selected Authenticator via get_by_text")
+            return
+
+        # Try "Authenticator" alone
+        locator = page.get_by_text("Authenticator", exact=False)
+        if await locator.count() > 0:
+            await locator.first.click()
+            logger.info("Auto-login: selected Authenticator via partial text")
+            return
+    except Exception as e:
+        logger.debug("Auto-login: get_by_text failed: %s", e)
+
+    # Debug: log what methods are available
+    try:
+        page_info = await page.evaluate("""
+            (() => ({
+                text: document.body?.innerText?.substring(0, 800),
+                buttons: Array.from(document.querySelectorAll('div[data-value], [role="button"], button'))
+                    .map(el => ({
+                        text: el.textContent?.trim()?.substring(0, 80),
+                        value: el.getAttribute('data-value'),
+                        visible: el.offsetWidth > 0 && el.offsetHeight > 0,
+                    })),
+            }))()
+        """)
+        logger.warning(
+            "Auto-login: MFA method picker — no Authenticator found. Page text: %s",
+            (page_info.get("text") or "")[:500].replace("\n", " "),
+        )
+        logger.warning(
+            "Auto-login: available buttons: %s",
+            page_info.get("buttons", []),
+        )
+    except Exception:
+        pass
 
 
 async def _handle_stay_signed_in(page: Page) -> None:
