@@ -44,7 +44,7 @@ class GraphService:
             self.db.create_collection("KnowledgeEdges", edge=True)
 
     async def _llm_call(self, prompt: str, priority: int | None = None, max_retries: int = 2,
-                        max_tier: str = "NONE") -> str:
+                        max_tier: str = "NONE", client_id: str | None = None) -> str:
         """Route-aware LLM call: local GPU or OpenRouter based on client tier.
 
         Dynamic num_ctx: sized to actual prompt + response reserve, rounded to 4k,
@@ -67,6 +67,7 @@ class GraphService:
                     model=settings.LLM_MODEL,
                     num_ctx=num_ctx,
                     priority=priority,
+                    client_id=client_id,
                     temperature=0,
                     format_json=False,
                 )
@@ -190,7 +191,7 @@ class GraphService:
             nonlocal _completed
             async with _extract_sem:
                 logger.info("GRAPH_WRITE: LLM_EXTRACT chunk %d/%d sourceUrn=%s", idx, len(chunks), request.sourceUrn)
-                n, e, keys = await self._process_chunk(chunk_text, request, chunk_ids, embedding_priority=embedding_priority, max_tier=max_tier)
+                n, e, keys = await self._process_chunk(chunk_text, request, chunk_ids, embedding_priority=embedding_priority, max_tier=max_tier, client_id=request.clientId)
                 _completed += 1
                 logger.info(
                     "GRAPH_WRITE: CHUNK_DONE %d/%d nodes=%d edges=%d entities=%d",
@@ -265,6 +266,7 @@ class GraphService:
         chunk_ids: list[str] = None,
         embedding_priority: int | None = None,
         max_tier: str = "NONE",
+        client_id: str | None = None,
     ) -> tuple[int, int, list[str]]:
         """
         Process a single chunk: extract entities and relationships.
@@ -295,7 +297,7 @@ Text: {text}
         )
 
         try:
-            content = await self._llm_call(prompt, priority=embedding_priority, max_tier=max_tier)
+            content = await self._llm_call(prompt, priority=embedding_priority, max_tier=max_tier, client_id=client_id)
             logger.info(
                 "GRAPH_WRITE: LLM_RESPONSE sourceUrn=%s response_len=%d response_preview=%.200s",
                 request.sourceUrn, len(content), content.replace("\n", " ")[:200]

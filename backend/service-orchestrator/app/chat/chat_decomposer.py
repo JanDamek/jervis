@@ -77,7 +77,8 @@ async def detect_and_decompose(
             route = await route_request(
                 capability="chat",
                 max_tier=max_openrouter_tier,
-                estimated_tokens=2000,  # Small classification prompt
+                estimated_tokens=2000,
+                client_id=client_id,
             )
 
         # Build messages with optional conversation context

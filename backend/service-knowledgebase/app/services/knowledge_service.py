@@ -564,6 +564,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
                 max_tier=max_tier,
                 model=settings.INGEST_MODEL_SIMPLE,
                 num_ctx=8192,
+                client_id=getattr(self, "_current_client_id", None),
             )
             import json
             result = json.loads(response_text)
@@ -1036,6 +1037,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         subject: str = None,
         embedding_priority: int | None = None,
         max_tier: str = "NONE",
+        client_id: str | None = None,
     ) -> dict:
         """
         Generate summary, detect actionable content, deadlines,
@@ -1099,6 +1101,7 @@ Rules:
                 num_ctx=8192,
                 priority=embedding_priority,
                 temperature=0,
+                client_id=client_id,
                 format_json=False,
             )
             # Parse JSON from free text (model may prefix with explanation)

@@ -36,6 +36,7 @@ async def call_llm(
     route: RouteDecision | None = None,
     max_tier: str = "NONE",
     estimated_tokens: int = 0,
+    client_id: str | None = None,
 ):
     """Unified LLM completion call with optional timeout and route override.
 
@@ -83,7 +84,7 @@ async def call_llm(
         # Timeout fallback: if local GPU timed out, try cloud via router
         if route and route.target == "local":
             from app.llm.router_client import route_request
-            fallback = await route_request(capability="chat", max_tier="FREE", estimated_tokens=48_000)
+            fallback = await route_request(capability="chat", estimated_tokens=48_000, client_id=client_id)
             if fallback.target == "openrouter" and fallback.model:
                 logger.info("Local GPU timeout, falling back to OpenRouter %s", fallback.model)
                 return await llm_provider.completion(
@@ -143,14 +144,9 @@ async def _retry_with_next_model(
     max_tier: str = "NONE",
     estimated_tokens: int = 0,
     processing_mode: str = "FOREGROUND",
+    client_id: str | None = None,
 ):
-    """Try next models in queue after a cloud model failure.
-
-    Asks router for route decision with skip_models to get next available model.
-    Iterates all queue models (router returns no-match when exhausted), then
-    falls back to local GPU as last resort.
-    Reports errors to router so error counters increment and models get disabled.
-    """
+    """Try next models in queue after a cloud model failure."""
     from app.llm.router_client import route_request, report_model_error
 
     skip_models = [failed_model]
@@ -164,6 +160,7 @@ async def _retry_with_next_model(
             processing_mode=processing_mode,
             skip_models=skip_models,
             require_tools=bool(tools),
+            client_id=client_id,
         )
         if fallback.target != "openrouter" or not fallback.model or fallback.model in skip_models:
             logger.warning("No more cloud models available after %s failed (skip=%s)",
@@ -229,6 +226,7 @@ async def _retry_with_next_model(
                 estimated_tokens=estimated_tokens,
                 processing_mode=processing_mode,
                 require_tools=bool(tools),
+                client_id=client_id,
             )
             if fallback.target == "openrouter" and fallback.model:
                 try:

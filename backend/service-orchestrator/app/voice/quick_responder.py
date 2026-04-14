@@ -94,9 +94,9 @@ async def quick_respond(
     # Step 2: Route to FREE model
     route = await route_request(
         capability="chat",
-        max_tier="FREE",
         estimated_tokens=500,
         processing_mode="FOREGROUND",
+        client_id=client_id,
     )
 
     model = route.model or "openrouter/auto"

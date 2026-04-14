@@ -34,7 +34,7 @@ Respond with JSON only:
 User said: {text}"""
 
 
-async def classify_intent(text: str) -> IntentResult:
+async def classify_intent(text: str, client_id: str | None = None) -> IntentResult:
     """Classify voice input intent using FREE OpenRouter model.
 
     Target: <500ms response time.
@@ -50,9 +50,9 @@ async def classify_intent(text: str) -> IntentResult:
     try:
         route = await route_request(
             capability="chat",
-            max_tier="FREE",
             estimated_tokens=200,
             processing_mode="FOREGROUND",
+            client_id=client_id,
         )
 
         model = route.model or "openrouter/auto"

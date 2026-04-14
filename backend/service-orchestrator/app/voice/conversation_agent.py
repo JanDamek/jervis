@@ -116,9 +116,9 @@ class ConversationContextAgent:
         # 4. Route to LLM — use PAID for quality Czech responses
         route = await route_request(
             capability="chat",
-            max_tier="PAID",
             estimated_tokens=800,
             processing_mode="FOREGROUND",
+            client_id=self.client_id,
         )
         model = route.model or "openrouter/auto"
         logger.info("CONV_AGENT: using model=%s, kb_context=%d chars", model, len(self.kb_context))

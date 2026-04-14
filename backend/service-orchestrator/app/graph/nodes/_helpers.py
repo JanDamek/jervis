@@ -173,6 +173,7 @@ async def llm_with_cloud_fallback(
     task = CodingTask(**state["task"])
     allow_cloud_prompt = state.get("allow_cloud_prompt", False)
     processing_mode = state.get("processing_mode", "BACKGROUND")
+    client_id = task.client_id
 
     auto = auto_providers(rules)
     if allow_cloud_prompt:
@@ -180,12 +181,13 @@ async def llm_with_cloud_fallback(
 
     max_tier = rules.max_openrouter_tier if rules.max_openrouter_tier else "NONE"
 
-    # Ask router for routing decision (GPU vs OpenRouter)
+    # Router resolves tier from client_id; max_tier as explicit override
     route = await route_request(
         capability="chat",
         max_tier=max_tier,
         estimated_tokens=context_tokens,
         processing_mode=processing_mode,
+        client_id=client_id,
     )
     logger.info(
         "llm_with_cloud_fallback: route=%s/%s (tokens=%d, mode=%s, max_tier=%s)",
@@ -222,6 +224,7 @@ async def llm_with_cloud_fallback(
                 estimated_tokens=context_tokens,
                 processing_mode=processing_mode,
                 skip_models=[route.model],
+                client_id=client_id,
             )
             if fallback.target == "openrouter" and fallback.model:
                 try:
@@ -301,9 +304,10 @@ async def _escalate_to_cloud(
         # For OpenRouter, get a specific model via route_request (not "openrouter/auto")
         if auto_tier == ModelTier.CLOUD_OPENROUTER:
             route = await route_request(
-                capability="chat", max_tier="FREE",
+                capability="chat",
                 estimated_tokens=context_tokens, processing_mode="BACKGROUND",
                 require_tools=bool(tools),
+                client_id=client_id,
             )
             if route.target == "openrouter" and route.model:
                 return await llm_provider.completion(

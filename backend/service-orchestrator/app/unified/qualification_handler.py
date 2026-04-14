@@ -506,7 +506,7 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
     route = await route_request(
         capability="extraction",
         estimated_tokens=estimated_tokens_count,
-        max_tier="NONE",
+        client_id=request.client_id,
     )
 
     model_override = route.model
@@ -661,7 +661,7 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
                 route = await route_request(
                     capability="extraction",
                     estimated_tokens=estimate_tokens(prompt) + 200,
-                    max_tier="NONE",
+                    client_id=request.client_id,
                 )
 
                 response = await llm_provider.completion(

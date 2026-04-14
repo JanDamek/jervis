@@ -38,16 +38,18 @@ async def route_request(
     processing_mode: str = "FOREGROUND",
     skip_models: list[str] | None = None,
     require_tools: bool = False,
+    client_id: str | None = None,
 ) -> RouteDecision:
     """Ask router for routing decision based on capability.
 
     Args:
         capability: "thinking", "coding", "chat", "embedding", "visual"
-        max_tier: "NONE", "FREE", "PAID", "PREMIUM"
+        max_tier: explicit tier override (backward compat). Prefer client_id.
         estimated_tokens: estimated context size in tokens
         processing_mode: "FOREGROUND" (chat → always cloud) or "BACKGROUND" (local, cloud >48k)
         skip_models: model IDs to skip (already tried and failed in this request)
         require_tools: if True, only models with supportsTools=True are eligible
+        client_id: router resolves tier from client's CloudModelPolicy in DB
 
     Returns:
         RouteDecision with target, model, and optional api_base.
@@ -56,10 +58,13 @@ async def route_request(
     try:
         payload = {
             "capability": capability,
-            "max_tier": max_tier,
             "estimated_tokens": estimated_tokens,
             "processing_mode": processing_mode,
         }
+        if client_id:
+            payload["client_id"] = client_id
+        if max_tier and max_tier != "NONE":
+            payload["max_tier"] = max_tier
         if skip_models:
             payload["skip_models"] = skip_models
         if require_tools:

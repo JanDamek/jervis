@@ -42,10 +42,11 @@ async def get_route(
     max_tier: str = "NONE",
     estimated_tokens: int = 8000,
     capability: str = "extraction",
+    client_id: str | None = None,
 ) -> RouteDecision:
-    """Ask router for routing decision."""
-    if max_tier == "NONE":
-        # Skip network call — always local for NONE
+    """Ask router for routing decision. Router resolves tier from client_id."""
+    # If no client_id and tier is NONE → always local, skip network call
+    if not client_id and max_tier == "NONE":
         return RouteDecision(
             target="local",
             model=settings.INGEST_MODEL_COMPLEX,
@@ -54,12 +55,16 @@ async def get_route(
 
     url = f"{_router_base_url()}/route-decision"
     try:
-        resp = await _route_http.post(url, json={
+        payload = {
             "capability": capability,
-            "max_tier": max_tier,
             "estimated_tokens": estimated_tokens,
             "processing_mode": "BACKGROUND",
-        })
+        }
+        if client_id:
+            payload["client_id"] = client_id
+        if max_tier and max_tier != "NONE":
+            payload["max_tier"] = max_tier
+        resp = await _route_http.post(url, json=payload)
         resp.raise_for_status()
         data = resp.json()
         return RouteDecision(
@@ -85,6 +90,7 @@ async def llm_generate(
     priority: int | None = None,
     temperature: float = 0,
     format_json: bool = True,
+    client_id: str | None = None,
 ) -> str:
     """Route-aware LLM generate call.
 
@@ -109,6 +115,7 @@ async def llm_generate(
     route = await get_route(
         max_tier=max_tier,
         estimated_tokens=estimated_tokens,
+        client_id=client_id,
     )
 
     if route.target == "openrouter" and route.api_key:
@@ -206,6 +213,7 @@ async def llm_generate_vision(
     prompt: str,
     max_tier: str = "NONE",
     priority: int | None = None,
+    client_id: str | None = None,
 ) -> str:
     """Route-aware VLM call for image understanding.
 
@@ -225,6 +233,7 @@ async def llm_generate_vision(
         max_tier=max_tier,
         estimated_tokens=estimated_tokens,
         capability="visual",
+        client_id=client_id,
     )
 
     last_error = None

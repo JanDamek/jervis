@@ -351,6 +351,7 @@ async def run_agentic_loop(
             estimated_tokens=estimated,
             skip_models=_skip_models or None,
             require_tools=bool(selected_tools),
+            client_id=effective_client_id,
         )
         logger.info("Chat: estimated_tokens=%d → tier=%s, route=%s/%s (max_tier=%s)",
                      estimated, tier.value, route.target, route.model or tier.value, max_tier)

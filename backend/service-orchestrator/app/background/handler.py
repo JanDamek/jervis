@@ -27,11 +27,9 @@ async def _bg_retry_with_next_model(
     messages: list[dict],
     max_tier: str,
     estimated_tokens: int,
+    client_id: str | None = None,
 ) -> object | None:
-    """Try next cloud models after a background OpenRouter failure.
-
-    Returns LLM response on success, None if all fallbacks exhausted.
-    """
+    """Try next cloud models after a background OpenRouter failure."""
     from app.llm.router_client import route_request
 
     skip_models = [failed_model]
@@ -42,6 +40,7 @@ async def _bg_retry_with_next_model(
             estimated_tokens=estimated_tokens,
             processing_mode="BACKGROUND",
             skip_models=skip_models,
+            client_id=client_id,
         )
         if fallback.target != "openrouter" or not fallback.model or fallback.model in skip_models:
             logger.warning("No more cloud models available after %s failed (skip=%s)",
