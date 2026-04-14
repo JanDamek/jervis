@@ -62,8 +62,8 @@ Key identifiers:
     try:
         result_text = await analyze_screenshot(
             screenshot, prompt,
-            processing_mode="FOREGROUND",
-            max_tier="NONE",
+            processing_mode="BACKGROUND",
+            max_tier="FREE",
         )
         # Parse JSON from VLM response (may have markdown wrapping)
         json_str = result_text.strip()
