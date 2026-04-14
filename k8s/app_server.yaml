@@ -236,6 +236,8 @@ spec:
                   key: APNS_TEAM_ID
             - name: APNS_BUNDLE_ID
               value: com.jervis.mobile
+            - name: APNS_PRODUCTION
+              value: "false"
           volumeMounts:
             - name: jervis-data
               mountPath: /opt/jervis/data

@@ -28,7 +28,7 @@ import platform.UserNotifications.UNUserNotificationCenter
  */
 actual class PlatformNotificationManager actual constructor() {
     companion object {
-        const val CATEGORY_APPROVAL = "TASK_APPROVAL"
+        const val CATEGORY_APPROVAL = "APPROVAL"
         const val CATEGORY_MFA_CODE = "MFA_CODE"
         const val CATEGORY_MFA_CONFIRM = "MFA_CONFIRM"
         const val ACTION_APPROVE = "APPROVE"

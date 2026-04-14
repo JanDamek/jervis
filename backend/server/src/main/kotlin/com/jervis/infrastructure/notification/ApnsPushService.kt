@@ -101,10 +101,15 @@ class ApnsPushService(
             payloadBuilder.addCustomProperty("interruption-level", "time-sensitive")
         }
 
-        // Set category for actionable notifications (Approve/Deny buttons)
-        if (isApproval) {
-            payloadBuilder.setCategoryName("APPROVAL")
+        // Set category for actionable notifications
+        val mfaType = data["mfaType"]
+        val category = when {
+            isUrgent && mfaType in listOf("authenticator_code", "sms_code") -> "MFA_CODE"
+            isUrgent && mfaType != null -> "MFA_CONFIRM"
+            isApproval -> "APPROVAL"
+            else -> null
         }
+        category?.let { payloadBuilder.setCategoryName(it) }
 
         // Add custom data fields
         for ((key, value) in data) {

@@ -51,16 +51,8 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             }
         }
 
-        // Register notification action categories (Approve/Deny for approval notifications)
-        let approveAction = UNNotificationAction(identifier: "APPROVE", title: "Schválit", options: [.authenticationRequired])
-        let denyAction = UNNotificationAction(identifier: "DENY", title: "Zamítnout", options: [.authenticationRequired, .destructive])
-        let approvalCategory = UNNotificationCategory(
-            identifier: "APPROVAL",
-            actions: [approveAction, denyAction],
-            intentIdentifiers: [],
-            options: []
-        )
-        UNUserNotificationCenter.current().setNotificationCategories([approvalCategory])
+        // Notification action categories are registered by KMP PlatformNotificationManager.initialize()
+        // (APPROVAL, MFA_CODE, MFA_CONFIRM) — do NOT duplicate here, setNotificationCategories replaces all.
 
         // Activate WatchConnectivity for watch app communication
         WatchSessionManager.shared.activate()
