@@ -676,12 +676,17 @@ async def _detect_stage(page: Page) -> LoginStage:
         # The page has clickable divs for each method (certificate, authenticator, verification code).
         # Use body text check first (fast), then DOM selectors.
         try:
-            body_text = await page.text_content("body", timeout=2000) or ""
-            # Debug: log body text on login pages to diagnose method picker detection
-            if "login" in url and body_text.strip():
+            # Wait for DOM to be ready (JS SPA pages like /common/resume load async)
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=3000)
+            except Exception:
+                pass
+            body_text = await page.text_content("body", timeout=3000) or ""
+            # Debug: always log body text on login pages
+            if "login" in url:
                 logger.info(
-                    "DETECT_STAGE_BODY: url=%s body_preview=%s",
-                    url[:80], body_text[:300].replace("\n", " "),
+                    "DETECT_STAGE_BODY: url=%s len=%d body_preview=%s",
+                    url[:80], len(body_text), body_text[:400].replace("\n", " "),
                 )
             is_method_picker = (
                 "Verify your identity" in body_text
@@ -693,7 +698,7 @@ async def _detect_stage(page: Page) -> LoginStage:
                 logger.info("MFA_METHOD_PICKER detected via body text on %s", url[:60])
                 return LoginStage.MFA_METHOD_PICKER
         except Exception as e:
-            logger.debug("DETECT_STAGE_BODY: text_content failed: %s", e)
+            logger.info("DETECT_STAGE_BODY: failed on %s: %s", url[:60], e)
         # Fallback: DOM selectors for method picker container
         method_picker = await _find_element(page, [
             '#idDiv_SAOTCAS_Proofs',
