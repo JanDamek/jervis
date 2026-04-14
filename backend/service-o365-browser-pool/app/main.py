@@ -128,8 +128,10 @@ async def lifespan(app: FastAPI):
     await screen_scraper.start()
 
     # Self-restore from PVC if init config exists (cluster restart recovery)
+    # Runs as background task — HTTP server must be available immediately
+    # for VNC access and health checks during auto-login/MFA wait.
     if settings.connection_id:
-        await _try_self_restore()
+        asyncio.create_task(_try_self_restore())
 
     yield
     await screen_scraper.stop()
