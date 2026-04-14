@@ -160,6 +160,7 @@ class OllamaRouter:
         processing_mode: str = "FOREGROUND",
         skip_models: list[str] | None = None,
         require_tools: bool = False,
+        client_id: str | None = None,
     ) -> dict:
         """Capability-based routing decision.
 
@@ -176,6 +177,11 @@ class OllamaRouter:
         require_tools: if True, only cloud models with supportsTools=True are eligible.
         Returns: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
         """
+        # Resolve tier: client_id takes precedence over explicit max_tier
+        if client_id and (not max_tier or max_tier == "NONE"):
+            from app.client_tier_cache import resolve_client_tier
+            max_tier = await resolve_client_tier(client_id)
+
         max_tier = normalize_tier(max_tier)  # backward compat: PAID_LOW→PAID, PAID_HIGH→PREMIUM
         tier_level = TIER_LEVELS.get(max_tier, 0)
         is_background = processing_mode == "BACKGROUND"

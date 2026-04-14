@@ -464,6 +464,7 @@ async def route_decision(request: Request):
         processing_mode=body.get("processing_mode", "FOREGROUND"),
         skip_models=body.get("skip_models"),
         require_tools=body.get("require_tools", False),
+        client_id=body.get("client_id"),
     )
     return JSONResponse(content=decision)
 

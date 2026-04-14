@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     gpu_idle_notify_after_s: int = 120   # 2 minutes (faster proactive task triggering)
     kotlin_server_url: str = "http://jervis-server:5500"
 
+    # ── MongoDB (client tier resolution) ─────────────────────────────────
+    mongodb_uri: str = "mongodb://root:qusre5-mYfpox-dikpef@nas.lan.mazlusek.com:27017/jervis?authSource=admin"
+    client_tier_cache_ttl_s: int = 300  # 5 min cache for client tier
+
     # ── Whisper GPU coordination (p40-2) ──────────────────────────────────
     # Whisper REST service runs on same GPU (p40-2). Before loading VLM,
     # router asks whisper to release GPU VRAM.
