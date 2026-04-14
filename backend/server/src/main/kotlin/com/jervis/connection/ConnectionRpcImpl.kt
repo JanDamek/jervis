@@ -852,18 +852,11 @@ class ConnectionRpcImpl(
             val capabilities = connection.availableCapabilities.map { it.name }
             val response = httpClient.post("${browserPodUrl(clientId)}/session/$clientId/init") {
                 contentType(ContentType.Application.Json)
-                // Resolve client's cloud model tier for VLM routing
-                val clientTier = try {
-                    val client = clientRepository.findById(connection.clientId)
-                    client?.cloudModelPolicy?.maxOpenRouterTier?.name ?: "FREE"
-                } catch (_: Exception) { "FREE" }
-
                 setBody(buildJsonObject {
                     put("login_url", "https://teams.microsoft.com")
                     putJsonArray("capabilities") { capabilities.forEach { add(it) } }
                     connection.username?.takeIf { it.isNotBlank() }?.let { put("username", it) }
                     connection.password?.takeIf { it.isNotBlank() }?.let { put("password", it) }
-                    put("max_tier", clientTier)
                 }.toString())
                 // Auto-login takes 15-30s (navigate + fill + MFA detect), needs higher timeout
                 timeout {

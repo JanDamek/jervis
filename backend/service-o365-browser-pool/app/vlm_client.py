@@ -62,16 +62,23 @@ async def _get_route_decision(
     max_tier: str,
 ) -> dict:
     """Ask ollama-router for routing decision."""
+    # Send client_id — router resolves tier from DB. No hardcoded tier.
+    client_id = getattr(settings, "connection_id", None)
+
     async with httpx.AsyncClient(timeout=10) as client:
         try:
+            body = {
+                "capability": capability,
+                "estimated_tokens": estimated_tokens,
+                "processing_mode": processing_mode,
+            }
+            if client_id:
+                body["client_id"] = client_id
+            else:
+                body["max_tier"] = max_tier
             resp = await client.post(
                 f"{settings.ollama_router_url}/route-decision",
-                json={
-                    "capability": capability,
-                    "estimated_tokens": estimated_tokens,
-                    "processing_mode": processing_mode,
-                    "max_tier": max_tier,
-                },
+                json=body,
             )
             if resp.status_code == 200:
                 return resp.json()
