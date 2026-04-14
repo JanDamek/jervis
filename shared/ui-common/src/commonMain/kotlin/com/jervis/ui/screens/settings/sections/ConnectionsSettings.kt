@@ -195,19 +195,18 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                     }
                                 },
                                 onVnc = {
-                                    // Both O365 and WhatsApp: get VNC URL with one-time auth token
+                                    // VNC is always available — independent of session state
                                     scope.launch {
                                         try {
-                                            snackbarHostState.showSnackbar("Připojuji k VNC...")
                                             val status = repository.connections.getBrowserSessionStatus(connection.id)
                                             val url = status.vncUrl
                                             if (!url.isNullOrBlank()) {
                                                 openUrlInBrowser(url)
                                             } else {
-                                                snackbarHostState.showSnackbar("VNC: session není aktivní (${status.state})")
+                                                snackbarHostState.showSnackbar("VNC nedostupné — pod se pravděpodobně restartuje")
                                             }
                                         } catch (e: Exception) {
-                                            snackbarHostState.showSnackbar("VNC: ${e.message}")
+                                            snackbarHostState.showSnackbar("VNC nedostupné — pod se pravděpodobně restartuje")
                                         }
                                     }
                                 },
