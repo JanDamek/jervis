@@ -136,6 +136,7 @@
 - [x] Commit: `808f3395`
 - [ ] Sidebar toggle na ikonu — TODO (menší UX vylepšení, ne blocker)
 - [ ] UX: mikrofon ikona v top baru je zavádějící (meeting vs ad-hoc recording) — redesign do budoucna
+- [ ] **FALLBACK v rozporu s guidelines**: orchestrátor má fallback logiku v `_helpers.py` a `handler_streaming.py` — pokud router vrátí local a ten selže, orchestrátor sám zkouší cloud. Porušuje princip "router je jediný gateway". Router by měl sám retry/requeue, klient nemá řešit fallback. Projít a odstranit.
 
 ## NÁVRH K DISKUSI: Browser pod — autonomní session health monitoring
 
