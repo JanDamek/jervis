@@ -85,9 +85,13 @@ async def _try_self_restore():
     capabilities = config.get("capabilities", [])
     username = config.get("username")
     password = config.get("password")
+    max_tier = config.get("max_tier", "FREE")
     credentials = None
     if username:
         credentials = {"email": username, "password": password or ""}
+
+    # Store tier globally for VLM routing
+    settings.client_max_tier = max_tier
 
     logger.info("Self-restore: client=%s, user=%s", client_id, username)
 

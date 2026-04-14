@@ -60,10 +60,12 @@ Key identifiers:
 """
 
     try:
+        # Tier from client's CloudModelPolicy — resolved at init, stored in settings
+        tier = getattr(settings, "client_max_tier", "FREE")
         result_text = await analyze_screenshot(
             screenshot, prompt,
             processing_mode="BACKGROUND",
-            max_tier="FREE",
+            max_tier=tier,
         )
         # Parse JSON from VLM response (may have markdown wrapping)
         json_str = result_text.strip()
