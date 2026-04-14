@@ -13,6 +13,7 @@ import com.jervis.project.ProjectRepository
 import com.jervis.service.task.ITaskSchedulingService
 import com.jervis.task.scheduling.TaskSchedulingService
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.reactor.awaitSingle
 import org.bson.types.ObjectId
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate
 import org.springframework.data.mongodb.core.query.Criteria
@@ -91,9 +92,9 @@ class TaskSchedulingRpcImpl(
         }
 
         val query = Query(criteria).limit(200)
-        val tasks = kotlinx.coroutines.reactive.awaitSingle(
-            mongoTemplate.find(query, TaskDocument::class.java).collectList(),
-        )
+        val tasks = mongoTemplate.find(query, TaskDocument::class.java)
+            .collectList()
+            .awaitSingle()
 
         // Build client/project name caches
         val clientIds = tasks.mapNotNull { it.clientId }.distinct()

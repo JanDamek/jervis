@@ -13,6 +13,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.reactor.awaitSingle
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.core.annotation.Order
@@ -78,22 +79,20 @@ class O365ScrapeMessageIndexer(
     private suspend fun processBatch(): Int {
         // Query NEW messages directly from MongoDB (repository doesn't have a general findByState)
         val query = Query(Criteria.where("state").`is`("NEW")).limit(BATCH_SIZE)
-        val messages = kotlinx.coroutines.reactive.awaitSingle(
-            mongoTemplate.find(query, O365ScrapeMessageDocument::class.java).collectList(),
-        )
+        val messages = mongoTemplate.find(query, O365ScrapeMessageDocument::class.java)
+            .collectList()
+            .awaitSingle()
         if (messages.isEmpty()) return 0
 
         // Group by connectionId + chatName for topic consolidation
         val groups = messages.groupBy { "${it.connectionId}::${it.chatName ?: "unknown"}" }
 
-        for ((key, groupMessages) in groups) {
+        groups.forEach { (key, groupMessages) ->
             try {
                 indexMessageGroup(groupMessages)
             } catch (e: Exception) {
                 logger.error(e) { "Failed to index scrape message group: $key" }
-                for (msg in groupMessages) {
-                    markAsState(msg, "FAILED")
-                }
+                groupMessages.forEach { msg -> markAsState(msg, "FAILED") }
             }
         }
 
@@ -152,7 +151,7 @@ class O365ScrapeMessageIndexer(
 
         // Create new task
         val sourceUrn = SourceUrn("teams::conn:$connectionId,scrape:$chatName")
-        taskService.createTask(
+        val newTask = taskService.createTask(
             taskType = TaskTypeEnum.SYSTEM,
             content = content,
             clientId = ClientId(ObjectId(clientId)),
@@ -162,8 +161,7 @@ class O365ScrapeMessageIndexer(
         )
 
         // Set topic ID for future message consolidation
-        val task = taskRepository.findFirstByTopicIdAndStateIn(topicId, activeStates)
-            ?: taskRepository.findAll().toList().lastOrNull() // fallback
+        taskService.setTopicId(newTask.id, topicId)
 
         messages.forEach { markAsState(it, "PROCESSED") }
         logger.info { "Created task from ${messages.size} scrape messages: $taskName (topic=$topicId)" }
@@ -171,12 +169,10 @@ class O365ScrapeMessageIndexer(
 
     private suspend fun markAsState(doc: O365ScrapeMessageDocument, newState: String) {
         val update = Update().set("state", newState)
-        kotlinx.coroutines.reactive.awaitSingle(
-            mongoTemplate.updateFirst(
-                Query(Criteria.where("_id").`is`(doc.id)),
-                update,
-                O365ScrapeMessageDocument::class.java,
-            ),
-        )
+        mongoTemplate.updateFirst(
+            Query(Criteria.where("_id").`is`(doc.id)),
+            update,
+            O365ScrapeMessageDocument::class.java,
+        ).awaitSingle()
     }
 }
