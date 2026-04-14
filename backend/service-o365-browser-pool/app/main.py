@@ -132,16 +132,43 @@ async def _try_self_restore():
                 await token_extractor.setup_interception(client_id, p)
 
         # Check if already logged in (persistent session from PVC cookies)
+        # Wait briefly for page to settle (redirect from about:blank)
+        await asyncio.sleep(3)
         url = page.url or ""
-        if any(d in url for d in ["teams.cloud.microsoft", "teams.microsoft.com",
-                                   "outlook.office.com", "outlook.live.com"]):
-            # Might be logged in — health loop will verify
-            logger.info("Self-restore: existing session detected at %s", url[:80])
+        logger.info("Self-restore: page URL = %s", url[:100])
+
+        # Check URL — if on Teams/Outlook domain, session is likely valid
+        is_on_app = any(d in url for d in [
+            "teams.cloud.microsoft", "teams.microsoft.com",
+            "outlook.office.com", "outlook.live.com",
+            "teams.live.com",
+        ])
+        # Also check if on MCAS-wrapped Teams
+        if "mcas.ms" in url and "login" not in url:
+            is_on_app = True
+
+        if is_on_app:
+            logger.info("Self-restore: session active at %s", url[:80])
             await _state_manager.transition(PodState.ACTIVE, reason="Restored from PVC cookies")
-        else:
-            # Need to login
+        elif "login" in url:
+            # On login page — need to authenticate
             from app.ai_login import ai_login
             await ai_login(page, _state_manager, credentials=credentials, login_url=login_url)
+        else:
+            # Unknown page (about:blank, etc.) — navigate to Teams and check
+            logger.info("Self-restore: unknown page %s — navigating to Teams", url[:60])
+            try:
+                await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(5)
+            except Exception:
+                pass
+            url = page.url or ""
+            is_on_app = any(d in url for d in ["teams.cloud.microsoft", "teams.microsoft.com"])
+            if is_on_app or ("mcas.ms" in url and "login" not in url):
+                await _state_manager.transition(PodState.ACTIVE, reason="Navigated to Teams, session valid")
+            else:
+                from app.ai_login import ai_login
+                await ai_login(page, _state_manager, credentials=credentials, login_url=login_url)
 
         # Start health loop and chat monitor (regardless of login result)
         _health_loop = HealthLoop(browser_manager, _state_manager, credentials=credentials)
