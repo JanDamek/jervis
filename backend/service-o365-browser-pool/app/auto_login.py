@@ -677,6 +677,12 @@ async def _detect_stage(page: Page) -> LoginStage:
         # Use body text check first (fast), then DOM selectors.
         try:
             body_text = await page.text_content("body", timeout=2000) or ""
+            # Debug: log body text on login pages to diagnose method picker detection
+            if "login" in url and body_text.strip():
+                logger.info(
+                    "DETECT_STAGE_BODY: url=%s body_preview=%s",
+                    url[:80], body_text[:300].replace("\n", " "),
+                )
             is_method_picker = (
                 "Verify your identity" in body_text
                 or "Ověřte svou identitu" in body_text
@@ -686,8 +692,8 @@ async def _detect_stage(page: Page) -> LoginStage:
             if is_method_picker:
                 logger.info("MFA_METHOD_PICKER detected via body text on %s", url[:60])
                 return LoginStage.MFA_METHOD_PICKER
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("DETECT_STAGE_BODY: text_content failed: %s", e)
         # Fallback: DOM selectors for method picker container
         method_picker = await _find_element(page, [
             '#idDiv_SAOTCAS_Proofs',
