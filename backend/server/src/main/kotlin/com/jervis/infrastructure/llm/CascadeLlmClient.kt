@@ -53,8 +53,12 @@ class CascadeLlmClient(
         }
 
         return try {
-            val response = client.post("$routerUrl/api/cascade") {
+            // Unified entrypoint: /api/generate with X-Priority: CASCADE selects the
+            // latency-optimized cascade path (try GPU-1 → GPU-2 → OpenRouter FREE →
+            // PAID → PREMIUM → queue). Replaces the dedicated /api/cascade endpoint.
+            val response = client.post("$routerUrl/api/generate") {
                 contentType(ContentType.Application.Json)
+                header("X-Priority", "CASCADE")
                 setBody(Json.encodeToString(kotlinx.serialization.serializer<Map<String, Any?>>(), body))
             }
             val text = response.bodyAsText()

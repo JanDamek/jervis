@@ -186,6 +186,11 @@ def _unified_routing_headers_present(request: Request) -> bool:
 @app.post("/api/generate")
 async def api_generate(request: Request):
     body = await request.json()
+    # X-Priority: CASCADE activates the latency-optimized cascade path
+    # (GPU-1 → GPU-2 → OpenRouter FREE → PAID → PREMIUM → queue, no preempt).
+    # Replaces the deprecated /api/cascade endpoint.
+    if (request.headers.get("X-Priority") or "").upper() == "CASCADE":
+        return await router.cascade_route("/api/generate", body, http_request=request)
     if _unified_routing_headers_present(request):
         return await router.decide_and_dispatch("/api/generate", body, http_request=request)
     priority = _get_priority_header(request)
@@ -216,14 +221,14 @@ async def api_chat(request: Request):
 
 @app.post("/api/cascade")
 async def api_cascade(request: Request):
-    """Instant cascade: GPU-1 → GPU-2 → OpenRouter FREE → PAID → PREMIUM → queue.
+    """DEPRECATED — use /api/generate with header `X-Priority: CASCADE` instead.
 
-    SERVER-ONLY. Not for orchestrator or external callers.
-    Used for: merge AI text resolution, voice quick KB lookup.
-    Prompt format only (not chat). Highest priority (CASCADE=-1).
-    Does NOT kill running GPU work — jumps to front of queue.
+    Retained for backward compatibility with any unmigrated caller. Will be
+    removed once all callers (server-side CascadeLlmClient already migrated)
+    stop hitting this path. Behavior is identical to the header-driven route.
     """
     body = await request.json()
+    logger.warning("DEPRECATED /api/cascade called — migrate to /api/generate with X-Priority: CASCADE")
     return await router.cascade_route("/api/generate", body, http_request=request)
 
 
