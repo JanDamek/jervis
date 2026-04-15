@@ -144,6 +144,7 @@ class MeetingLiveUrgencyProbe(
                     meetingId = null, // no state mutation
                     clientId = meeting.clientId?.toString(),
                     projectId = meeting.projectId?.toString(),
+                    diarize = false, // live tail probe — speakers irrelevant, avoid pyannote latency
                 )
                 if (result.error != null) {
                     logger.warn { "MeetingLiveUrgencyProbe: whisper error for $meetingIdStr: ${result.error}" }

@@ -56,6 +56,7 @@ class WhisperTranscriptionClient(
         meetingId: String?,
         clientId: String?,
         projectId: String?,
+        diarize: Boolean = whisperProperties.diarize,
     ): WhisperResult {
         val settings = whisperProperties
 
@@ -65,10 +66,10 @@ class WhisperTranscriptionClient(
         val audioDurationSeconds = (audioFileSize - WAV_HEADER_SIZE).coerceAtLeast(0) / BYTES_PER_SECOND
         logger.info {
             "Whisper transcription: audio=${audioDurationSeconds}s, file=${audioFileSize} bytes, " +
-                "model=${settings.model}, beam=${settings.beamSize}, diarize=${settings.diarize}"
+                "model=${settings.model}, beam=${settings.beamSize}, diarize=$diarize"
         }
 
-        val optionsJson = buildOptionsJson(settings, autoPrompt)
+        val optionsJson = buildOptionsJson(settings, autoPrompt, diarize)
 
         return whisperRestClient.transcribe(
             baseUrl = settings.restRemoteUrl,
@@ -161,7 +162,11 @@ class WhisperTranscriptionClient(
         }
     }
 
-    private fun buildOptionsJson(settings: WhisperProperties, initialPrompt: String? = null): String {
+    private fun buildOptionsJson(
+        settings: WhisperProperties,
+        initialPrompt: String? = null,
+        diarize: Boolean = settings.diarize,
+    ): String {
         val opts = mutableMapOf<String, Any?>(
             "task" to "transcribe",
             "model" to settings.model,
@@ -170,7 +175,7 @@ class WhisperTranscriptionClient(
             "word_timestamps" to false,
             "condition_on_previous_text" to settings.conditionOnPreviousText,
             "no_speech_threshold" to settings.noSpeechThreshold,
-            "diarize" to settings.diarize,
+            "diarize" to diarize,
         )
         initialPrompt?.let { opts["initial_prompt"] = it }
 
@@ -207,7 +212,7 @@ class WhisperTranscriptionClient(
         parts.add(""""word_timestamps":false""")
         parts.add(""""condition_on_previous_text":true""")
         parts.add(""""no_speech_threshold":0.3""")
-        parts.add(""""diarize":true""")
+        parts.add(""""diarize":false""")
         parts.add(""""extraction_ranges":$extractionRangesJson""")
         initialPrompt?.let {
             parts.add(""""initial_prompt":"${it.replace("\"", "\\\"")}"""")
