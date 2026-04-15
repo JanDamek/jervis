@@ -18,6 +18,9 @@ from starlette.responses import Response, JSONResponse, StreamingResponse
 
 from .config import settings
 from .gpu_state import GpuBackend, GpuPool
+from datetime import datetime, timezone
+from enum import Enum as _StdEnum
+
 from .models import (
     EMBEDDING_MODELS,
     GPU_MODEL_SETS,
@@ -28,10 +31,49 @@ from .models import (
     MODEL_TO_PRIORITY,
     Capability,
     Priority,
-    Speed,
     TrackedRequest,
     VLM_GPU,
 )
+
+
+class _Bucket(str, _StdEnum):
+    """Private router bucket derived from (deadline - now, priority).
+
+    Never leaves router_core.py. Callers pass `deadline_iso` (Instant) and
+    `priority`; the bucket is recomputed at every call so changes to the
+    deadline take effect without cache invalidation.
+    """
+    REALTIME = "REALTIME"   # < 10s OR priority=CASCADE (voice, preempts)
+    URGENT = "URGENT"       # < 5 min   — user actively waiting
+    NORMAL = "NORMAL"       # < 1 h     — standard work
+    BATCH = "BATCH"         # no deadline / > 1 h (background, local-preferred)
+
+
+def _bucket_from_deadline(
+    deadline_iso: str | None,
+    priority: Priority,
+    now: datetime | None = None,
+) -> _Bucket:
+    """Compute the private urgency bucket. See `_Bucket` docstring for rules."""
+    if priority == Priority.CASCADE:
+        return _Bucket.REALTIME
+    if not deadline_iso:
+        return _Bucket.BATCH
+    try:
+        dt = datetime.fromisoformat(deadline_iso.replace("Z", "+00:00"))
+    except ValueError:
+        return _Bucket.BATCH
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    remaining_s = (dt - now).total_seconds()
+    if remaining_s < 10:
+        return _Bucket.REALTIME
+    if remaining_s < 300:
+        return _Bucket.URGENT
+    if remaining_s < 3600:
+        return _Bucket.NORMAL
+    return _Bucket.BATCH
 from .openrouter_catalog import (
     TIER_LEVELS,
     find_cloud_model_for_context,
@@ -190,36 +232,36 @@ class OllamaRouter:
 
     async def decide_route(
         self, capability: str, max_tier: str, estimated_tokens: int,
-        processing_mode: str | None = None,
-        speed: str | None = None,
+        deadline_iso: str | None = None,
+        priority: Priority = Priority.NORMAL,
         min_model_size: int = 0,
         skip_models: list[str] | None = None,
         require_tools: bool = False,
         client_id: str | None = None,
     ) -> dict:
-        """3D routing decision: capability × tier × speed × min_model_size.
+        """Unified routing decision. See KB agent://claude-code/task-routing-unified-design.
 
-        speed=FAST (assistant/interactive): prefer cloud whenever tier>=FREE AND a cloud
-            model fits. Fall back to local only if no cloud model is available / rate-limited.
-        speed=STANDARD (background, batch): prefer local; escalate to cloud only if local
-            GPU is busy or context exceeds local limits.
-        tier=NONE: local only — no cloud escalation regardless of speed.
+        Inputs:
+          capability       — chat | thinking | coding | extraction | embedding | visual
+          max_tier         — NONE | FREE | PAID | PREMIUM (or resolved from client_id)
+          estimated_tokens — body token estimate
+          deadline_iso     — absolute response deadline (ISO-8601). None = no pressure (BATCH).
+          priority         — CASCADE | CRITICAL | NORMAL (queue priority + REALTIME override).
+          min_model_size   — minimum local model size in billions (0 = any, 14, 30, 120)
 
-        min_model_size: minimum local model parameter count (billions). A request with
-            min_model_size=30 only runs on models whose size is >= 30. min_model_size=0
-            means any model is acceptable.
+        Urgency is derived internally via `_bucket_from_deadline`. There is NO
+        `speed` parameter — speed is a private router concept only.
 
-        Legacy: if `speed` is None and `processing_mode` is provided, FOREGROUND maps to
-            FAST and BACKGROUND to STANDARD.
-
-        skip_models may contain litellm provider prefixes (openrouter/, ollama/) — stripped.
-        require_tools: if True, only cloud models with supportsTools=True are eligible.
-        Returns: {"target": "local"|"openrouter", "model": "...", "api_base"|"api_key"}
+        Rules (applied in order):
+          tier == NONE                 → local only (queue if busy)
+          capability == embedding      → local only (data locality)
+          capability == vlm + GPU blocked → cloud preferred
+          bucket == REALTIME           → cloud PREMIUM/PAID, else local with preempt
+          bucket == URGENT             → cloud preferred, local fallback
+          bucket == NORMAL             → local if GPU free + ≤48k ctx, cloud on busy
+          bucket == BATCH              → local only, cloud only if no local model fits
         """
-        # Resolve speed — explicit `speed` wins, else derive from legacy processing_mode
-        if speed is None:
-            speed = Speed.FAST.value if (processing_mode or "FOREGROUND") == "FOREGROUND" else Speed.STANDARD.value
-        prefer_cloud = speed == Speed.FAST.value
+        bucket = _bucket_from_deadline(deadline_iso, priority)
 
         # Resolve tier: client_id takes precedence over explicit max_tier
         if client_id and (not max_tier or max_tier == "NONE"):
@@ -273,15 +315,15 @@ class OllamaRouter:
             if not slot_ok:
                 logger.warning("Route decision: %s → rate limit on %s queue, falling back to local", reason, queue)
                 return None
-            logger.info("Route decision: %s → cloud %s (speed=%s, tier=%s, tokens=%d, skip=%s)",
-                        reason, cloud_model, speed, max_tier, estimated_tokens, skip_models or [])
+            logger.info("Route decision: %s → cloud %s (bucket=%s, tier=%s, tokens=%d, skip=%s)",
+                        reason, cloud_model, bucket.value, max_tier, estimated_tokens, skip_models or [])
             api_key = await get_api_key()
             return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
 
         # VLM-specific escalation — when the only VLM GPU (p40-2) cannot serve
         # (whisper holding it, or VLM already in flight, or model still loading),
-        # try cloud immediately regardless of speed. Without this the request
-        # would queue behind whisper / VLM and block real-time paths.
+        # try cloud immediately regardless of bucket. Without this the request
+        # would queue behind whisper / VLM and block deadline-driven paths.
         _VLM_CAPS = ("visual", "vision", "vlm")
         if cap_lower in _VLM_CAPS:
             whisper_busy = self.check_whisper_busy()
@@ -305,15 +347,16 @@ class OllamaRouter:
                 )
                 # Fall through to normal logic → will queue locally
 
-        # speed=FAST → always try cloud first
-        if prefer_cloud:
-            cloud = await _try_cloud(f"FAST speed tier={max_tier}")
+        # bucket=REALTIME or URGENT → cloud preferred first
+        if bucket in (_Bucket.REALTIME, _Bucket.URGENT):
+            cloud = await _try_cloud(f"bucket={bucket.value} tier={max_tier}")
             if cloud:
                 return cloud
-            logger.info("Route decision: FAST but no cloud model → local fallback (model=%s)", local_fallback["model"])
+            logger.info("Route decision: bucket=%s no cloud fits → local fallback (model=%s)",
+                        bucket.value, local_fallback["model"])
             return local_fallback
 
-        # speed=STANDARD — local if GPU idle AND context fits local limit
+        # bucket=NORMAL — local if GPU idle AND context fits, cloud on busy/oversize
         target_model = local_fallback["model"]
         whisper_busy = self.check_whisper_busy()
         qdepth = self._queue.queue_depth if self._queue else {}
@@ -324,19 +367,33 @@ class OllamaRouter:
             for b in self.gpu_pool.all_backends
             if target_model in GPU_MODEL_SETS.get(b.name, [])
         )
-        if estimated_tokens <= 48_000 and gpu_free:
-            logger.info("Route decision: STANDARD tier=%s ≤48k + GPU idle → local model=%s",
+        if bucket == _Bucket.NORMAL and estimated_tokens <= 48_000 and gpu_free:
+            logger.info("Route decision: bucket=NORMAL tier=%s ≤48k + GPU idle → local model=%s",
                         max_tier, target_model)
             return local_fallback
 
-        # Escalate: GPU busy or context too large → cloud
-        reason = f"STANDARD escalation ({'>48k' if estimated_tokens > 48_000 else 'GPU busy'})"
-        cloud = await _try_cloud(reason)
+        # bucket=NORMAL escalation (busy/oversize)
+        if bucket == _Bucket.NORMAL:
+            reason = f"bucket=NORMAL escalation ({'>48k' if estimated_tokens > 48_000 else 'GPU busy'})"
+            cloud = await _try_cloud(reason)
+            if cloud:
+                return cloud
+            logger.info(
+                "Route decision: NORMAL tier=%s no cloud fits → local fallback (model=%s, tokens=%d)",
+                max_tier, target_model, estimated_tokens,
+            )
+            return local_fallback
+
+        # bucket=BATCH — local only; cloud only when no local model matches the
+        # requested capability/size at all (genuine gap in coverage matrix).
+        if local_model is not None:
+            logger.info("Route decision: bucket=BATCH → local model=%s (tier=%s, tokens=%d)",
+                        target_model, max_tier, estimated_tokens)
+            return local_fallback
+        cloud = await _try_cloud("bucket=BATCH no local model available for capability")
         if cloud:
             return cloud
-
-        logger.info("Route decision: %s tier=%s no cloud fits → local fallback (model=%s, tokens=%d)",
-                    speed, max_tier, target_model, estimated_tokens)
+        logger.info("Route decision: bucket=BATCH no local nor cloud → fallback to orchestrator_model")
         return local_fallback
 
     # ── Instant cascade routing ────────────────────────────────────────

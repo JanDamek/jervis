@@ -447,29 +447,53 @@ async def router_status():
 
 @app.post("/route-decision")
 async def route_decision(request: Request):
-    """3D routing decision endpoint: capability × tier × speed × min_model_size.
+    """Unified routing decision endpoint.
 
-    Input: {
-        "capability": "chat",           # fine-grained: chat|thinking|coding|extraction|embedding|visual
-        "max_tier": "FREE",             # NONE|FREE|PAID|PREMIUM (resolved from client_id if omitted)
+    Preferred input (see KB agent://claude-code/task-routing-unified-design):
+      {
+        "capability": "chat",              # chat|thinking|coding|extraction|embedding|visual
+        "max_tier": "FREE",                # NONE|FREE|PAID|PREMIUM (or resolved from client_id)
         "estimated_tokens": 5000,
-        "speed": "STANDARD",            # STANDARD|FAST (FAST prefers cloud whenever tier allows)
-        "min_model_size": 0,            # local size floor in billions (0=any, 14, 30, ...)
-        "processing_mode": "FOREGROUND",# legacy: FOREGROUND→FAST, BACKGROUND→STANDARD (if `speed` omitted)
+        "deadline_iso": "2026-04-15T12:34:56Z",  # absolute deadline; null = no pressure
+        "priority": "NORMAL",              # CASCADE|CRITICAL|NORMAL
+        "min_model_size": 0,               # 0=any, 14, 30, 120
         "require_tools": false,
         "skip_models": [...],
         "client_id": "..."
-    }
+      }
+
+    Legacy (accepted for migration until callers are updated):
+      - `processing_mode`: FOREGROUND → `deadline_iso = now+300s`, BACKGROUND → null
+      - `speed`: FAST → `deadline_iso = now+60s`, STANDARD → null, SLOW → null
+
     Output: {"target": "local"|"openrouter", "model": "...", "api_base"|"api_key": "..."}
     """
     body = await request.json()
+
+    # Legacy speed / processing_mode → deadline translation (removed once commit 6 lands)
+    deadline_iso = body.get("deadline_iso")
+    if deadline_iso is None:
+        legacy_speed = (body.get("speed") or "").upper()
+        legacy_mode = (body.get("processing_mode") or "").upper()
+        from datetime import datetime, timezone, timedelta
+        if legacy_speed == "FAST" or legacy_mode == "FOREGROUND":
+            deadline_iso = (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()
+        # STANDARD / BACKGROUND / SLOW / missing → None (BATCH bucket)
+
+    priority_str = (body.get("priority") or "NORMAL").upper()
+    priority_val = {
+        "CASCADE": Priority.CASCADE,
+        "CRITICAL": Priority.CRITICAL,
+        "NORMAL": Priority.NORMAL,
+    }.get(priority_str, Priority.NORMAL)
+
     decision = await router.decide_route(
         capability=body.get("capability", "chat"),
         max_tier=body.get("max_tier", "NONE"),
         estimated_tokens=body.get("estimated_tokens", 0),
-        speed=body.get("speed"),
+        deadline_iso=deadline_iso,
+        priority=priority_val,
         min_model_size=body.get("min_model_size", 0),
-        processing_mode=body.get("processing_mode"),
         skip_models=body.get("skip_models"),
         require_tools=body.get("require_tools", False),
         client_id=body.get("client_id"),

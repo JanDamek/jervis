@@ -57,10 +57,10 @@ def capability_to_queue_group(cap: str | Capability) -> QueueGroup:
     return QueueGroup.LLM
 
 
-class Speed(str, Enum):
-    """Latency preference — routes FAST calls to cloud whenever possible."""
-    STANDARD = "STANDARD"  # Default: prefer local if free, escalate when busy/oversize.
-    FAST = "FAST"          # Assistant/user-facing: prefer cloud whenever tier allows.
+# Speed/urgency is NOT a shared concept — see KB agent://claude-code/task-routing-unified-design.
+# Only `deadline: Instant` crosses service boundaries. The router computes a
+# private bucket (REALTIME/URGENT/NORMAL/BATCH) from (deadline - now, priority)
+# at decision time. Do NOT reintroduce a Speed enum here.
 
 
 # ── Per-GPU model sets ──────────────────────────────────────────────────
@@ -202,7 +202,7 @@ class TrackedRequest:
     # Defaults keep legacy callers working without changes.
     capability: str = Capability.CHAT.value
     min_model_size: int = 0    # 0 = no size floor (accept any)
-    speed: Speed = Speed.STANDARD
+    deadline_iso: str | None = None   # absolute deadline (ISO-8601); router derives urgency
 
     @property
     def queue_group(self) -> QueueGroup:
