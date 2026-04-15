@@ -1208,9 +1208,12 @@ async def schedule_task(
     """
     import uuid
     from datetime import timezone
+    from bson import ObjectId
 
     db = await get_db()
-    task_id = str(uuid.uuid4())[:24]
+    # Use MongoDB ObjectId (24-char hex) — matches Kotlin server expectations.
+    # UUID truncated to 24 chars would contain dashes → invalid ObjectId → Spring Data crashes.
+    task_id = ObjectId()
     now = datetime.now(tz=timezone.utc)
 
     if scheduled_at_iso:
