@@ -1081,9 +1081,12 @@ class KtorRpcServer(
                                                 qualifierContext = body.contextSummary + "\n\n" + body.suggestedApproach,
                                             )
 
-                                            // Save qualifier-generated summary to task
+                                            // Save qualifier-generated summary to task.
+                                            // Only use contextSummary (actual task summary) — NEVER use reason
+                                            // as summary. Reason is for errors/decisions ("Qualification error: ...")
+                                            // and should stay in errorMessage/priorityReason, not hijack the summary
+                                            // field which sidebar uses as task display name.
                                             val qualSummary = body.contextSummary.takeIf { it.isNotBlank() }
-                                                ?: body.reason.takeIf { it.isNotBlank() }
                                             if (qualSummary != null) {
                                                 taskService.saveSummary(taskId, qualSummary)
                                             }
