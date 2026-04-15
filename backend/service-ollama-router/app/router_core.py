@@ -253,6 +253,14 @@ class OllamaRouter:
                         capability, local_fallback["model"], min_model_size)
             return local_fallback
 
+        # Embeddings NEVER escalate to cloud (data-locality + cost). Always local, queue if busy.
+        # Applies to both legacy "embedding" and short alias "embed".
+        cap_lower = (capability or "").strip().lower()
+        if cap_lower in ("embedding", "embed"):
+            logger.info("Route decision: embedding capability → local only (never cloud), model=%s",
+                        local_fallback["model"])
+            return local_fallback
+
         async def _try_cloud(reason: str) -> dict | None:
             cloud_model = await find_cloud_model_for_context(
                 estimated_tokens, tier_level, skip_models,
@@ -269,6 +277,33 @@ class OllamaRouter:
                         reason, cloud_model, speed, max_tier, estimated_tokens, skip_models or [])
             api_key = await get_api_key()
             return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
+
+        # VLM-specific escalation — when the only VLM GPU (p40-2) cannot serve
+        # (whisper holding it, or VLM already in flight, or model still loading),
+        # try cloud immediately regardless of speed. Without this the request
+        # would queue behind whisper / VLM and block real-time paths.
+        _VLM_CAPS = ("visual", "vision", "vlm")
+        if cap_lower in _VLM_CAPS:
+            whisper_busy = self.check_whisper_busy()
+            vlm_gpu_blocked = whisper_busy or any(
+                b.name == VLM_GPU and (
+                    not b.healthy
+                    or b.active_request_count() > 0
+                    or b.loading_in_progress
+                )
+                for b in self.gpu_pool.all_backends
+            )
+            if vlm_gpu_blocked:
+                reason = (
+                    "VLM GPU busy (whisper)" if whisper_busy else "VLM GPU busy / loading"
+                )
+                cloud = await _try_cloud(f"VLM forced escalation — {reason}")
+                if cloud:
+                    return cloud
+                logger.warning(
+                    "VLM requested but local GPU blocked AND no cloud VLM fits — queuing on local (expect delay)"
+                )
+                # Fall through to normal logic → will queue locally
 
         # speed=FAST → always try cloud first
         if prefer_cloud:
