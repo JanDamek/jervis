@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -286,6 +287,10 @@ private fun ClientProjectCompactSelector(
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            // Anchor ("Mazluš...") is narrow; without explicit width the popup
+            // inherits ~60 dp and renders Hledat/client names character-per-line.
+            // Force a usable minimum so the dropdown is readable on mobile.
+            modifier = Modifier.widthIn(min = 280.dp),
         ) {
             // Search field
             androidx.compose.material3.OutlinedTextField(
@@ -295,6 +300,7 @@ private fun ClientProjectCompactSelector(
                 singleLine = true,
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
                 modifier = Modifier
+                    .widthIn(min = 256.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 textStyle = MaterialTheme.typography.bodySmall,

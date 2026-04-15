@@ -1113,6 +1113,7 @@ class ChatViewModel(
                 // already supports contextTaskId — this just plumbs the active
                 // task id through.
                 val taskContext = _contextTaskId ?: _activeChatTaskId.value
+                val wasInActiveTaskScope = _activeChatTaskId.value != null
                 _contextTaskId = null  // Clear after use
                 // Resilient call: waits up to 10s for Connected state, wraps send in
                 // withTimeout, automatically triggers reconnect on connection-lost errors
@@ -1131,6 +1132,15 @@ class ChatViewModel(
                     )
                 }
                 println("=== Message sent successfully (RPC) ===")
+
+                // UX: sending a message inside a task detail view forwards the task
+                // to the qualifier (server-side re-qualification), which moves it
+                // out of the user's immediate scope. Return to the task-list view
+                // (sidebar) so the next actionable item is visible on both mobile
+                // and desktop — consistent with "Hotovo" behavior.
+                if (wasInActiveTaskScope) {
+                    switchToMainChat()
+                }
 
                 val progressMsg = ChatMessage(
                     from = ChatMessage.Sender.Assistant,
@@ -1705,9 +1715,12 @@ class ChatViewModel(
             )
         }
         // Merge: preserve in-flight messages (not yet in DB) so they don't vanish on reconnect.
+        // Exclude synthetic task-brief messages — they are local-only, rendered for a task
+        // detail view, and must NOT leak into main chat history when switching back.
         val inFlight = _chatMessages.value.filter { msg ->
             msg.sequence == null &&
                 msg.metadata["streaming"] != "true" &&
+                msg.id?.startsWith("task-brief-") != true &&
                 (msg.messageType == ChatMessage.MessageType.USER_MESSAGE ||
                     msg.messageType == ChatMessage.MessageType.PROGRESS ||
                     msg.messageType == ChatMessage.MessageType.FINAL)

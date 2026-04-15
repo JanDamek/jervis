@@ -6,6 +6,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -562,18 +563,24 @@ private fun ChatContent(
                         modifier = Modifier
                             .weight(1f)
                             .clickable { onReturnToMainChat() }
+                            // Touch target ≥ 44dp per docs/guidelines.md — the whole
+                            // breadcrumb row is the back affordance, not just the icon.
+                            .heightIn(min = 44.dp)
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Zpět na hlavní chat",
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(22.dp),
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(10.dp))
                         Text(
-                            text = "↳ $activeChatTaskName",
+                            // No leading ↳ glyph — it renders as three stacked strokes
+                            // on Android icon fonts and visually collides with the back
+                            // arrow, making the tap target ambiguous.
+                            text = activeChatTaskName,
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             maxLines = 1,
