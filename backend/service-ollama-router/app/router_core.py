@@ -430,6 +430,71 @@ class OllamaRouter:
         logger.info("Route decision: bucket=BATCH no local nor cloud → fallback to orchestrator_model")
         return local_fallback
 
+    # ── Unified single-entry dispatch ──────────────────────────────────
+
+    async def decide_and_dispatch(
+        self,
+        api_path: str,
+        body: dict,
+        http_request,
+    ) -> Response:
+        """Single-pass route + dispatch driven by request headers.
+
+        Reads routing metadata from headers:
+          X-Capability       chat | thinking | coding | extraction | embedding | visual
+                             (falls back to detect_capability_from_body when missing)
+          X-Deadline-Iso     absolute ISO-8601 deadline (null = BATCH)
+          X-Priority         CASCADE | CRITICAL | NORMAL (default NORMAL)
+          X-Client-Id        resolves tier via CloudModelPolicy
+          X-Min-Model-Size   minimum local model size in billions (default 0)
+
+        Decides local vs cloud in one function (no /route-decision + /api/*
+        round-trip) and dispatches: cloud → proxy_to_openrouter streamed;
+        local → existing queue.submit which streams from the GPU.
+        """
+        headers = http_request.headers
+        capability = (headers.get("X-Capability") or "").strip().lower()
+        if not capability:
+            capability = detect_capability_from_body(api_path, body)
+        deadline_iso = headers.get("X-Deadline-Iso") or None
+        priority_str = (headers.get("X-Priority") or "NORMAL").upper()
+        priority = {
+            "CASCADE": Priority.CASCADE,
+            "CRITICAL": Priority.CRITICAL,
+            "NORMAL": Priority.NORMAL,
+        }.get(priority_str, Priority.NORMAL)
+        client_id = headers.get("X-Client-Id") or None
+        try:
+            min_size = int(headers.get("X-Min-Model-Size") or 0)
+        except ValueError:
+            min_size = 0
+
+        estimated_tokens = self._estimate_tokens(body)
+
+        decision = await self.decide_route(
+            capability=capability,
+            max_tier="NONE",  # resolved from client_id inside decide_route
+            estimated_tokens=estimated_tokens,
+            deadline_iso=deadline_iso,
+            priority=priority,
+            min_model_size=min_size,
+            client_id=client_id,
+        )
+
+        if decision.get("target") == "openrouter":
+            from app.openrouter_proxy import proxy_to_openrouter
+            request_id = f"unified-{str(uuid.uuid4())[:6]}"
+            return await proxy_to_openrouter(
+                api_path, body,
+                decision["model"], decision["api_key"], request_id,
+            )
+
+        # Local path — substitute model from decision and queue-dispatch.
+        local_model = decision.get("model")
+        if local_model:
+            body["model"] = local_model
+        return await self.route_request(api_path, body, int(priority), http_request=http_request)
+
     # ── Instant cascade routing ────────────────────────────────────────
 
     async def cascade_route(
