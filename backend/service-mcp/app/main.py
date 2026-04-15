@@ -1195,7 +1195,7 @@ async def schedule_task(
 ) -> str:
     """Schedule a task for future or recurring execution.
 
-    Creates a SCHEDULED_TASK that BackgroundEngine will pick up at the scheduled time.
+    Creates a SCHEDULED task that BackgroundEngine will pick up at the scheduled time.
     For one-time tasks, provide scheduled_at_iso. For recurring, provide cron_expression.
 
     Args:
@@ -1231,7 +1231,7 @@ async def schedule_task(
 
     task_doc = {
         "_id": task_id,
-        "type": "SCHEDULED_TASK",
+        "type": "SCHEDULED",
         "taskName": task_name or query[:60],
         "content": query,
         "projectId": project_id or None,
@@ -1263,7 +1263,7 @@ async def list_scheduled_tasks(
     include_done: bool = False,
     limit: int = 20,
 ) -> str:
-    """List scheduled tasks (type=SCHEDULED_TASK) with optional filters.
+    """List scheduled tasks (type=SCHEDULED) with optional filters.
 
     Args:
         client_id: Filter by client ID
@@ -1272,7 +1272,7 @@ async def list_scheduled_tasks(
         limit: Maximum results (default 20)
     """
     db = await get_db()
-    query: dict = {"type": "SCHEDULED_TASK"}
+    query: dict = {"type": "SCHEDULED"}
     if client_id:
         query["clientId"] = client_id
     if project_id:
@@ -1313,7 +1313,7 @@ async def cancel_scheduled_task(task_id: str) -> str:
     result = await db["tasks"].update_one(
         {
             "_id": task_id,
-            "type": "SCHEDULED_TASK",
+            "type": "SCHEDULED",
             "state": {"$in": ["NEW", "INDEXING", "QUEUED"]},
         },
         {
@@ -1329,7 +1329,7 @@ async def cancel_scheduled_task(task_id: str) -> str:
     doc = await db["tasks"].find_one({"_id": task_id})
     if not doc:
         return f"Error: Task {task_id} not found."
-    if doc.get("type") != "SCHEDULED_TASK":
+    if doc.get("type") != "SCHEDULED":
         return f"Error: Task {task_id} is not a scheduled task (type={doc.get('type')})."
     return f"Error: Cannot cancel task in state={doc.get('state')} (already processing or finished)."
 
