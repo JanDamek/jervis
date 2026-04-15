@@ -728,6 +728,25 @@ async def execute_tool(
                 query=arguments.get("query", ""),
                 top=arguments.get("top", 25),
             )
+        elif tool_name == "get_urgency_config":
+            result = await _execute_get_urgency_config(
+                client_id=arguments.get("client_id") or client_id,
+            )
+        elif tool_name == "update_urgency_config":
+            result = await _execute_update_urgency_config(
+                config=arguments.get("config", {}),
+            )
+        elif tool_name == "bump_task_deadline":
+            result = await _execute_bump_task_deadline(
+                task_id=arguments.get("task_id", ""),
+                deadline_iso=arguments.get("deadline_iso", ""),
+                reason=arguments.get("reason"),
+            )
+        elif tool_name == "get_user_presence":
+            result = await _execute_get_user_presence(
+                user_id=arguments.get("user_id", ""),
+                platform=arguments.get("platform", ""),
+            )
         else:
             result = f"Error: Unknown tool '{tool_name}'."
 
@@ -4349,3 +4368,80 @@ async def _execute_issue_list(client_id: str, project_id: str) -> str:
             return "\n".join(lines)
     except Exception as e:
         return f"Error listing issues: {e}"
+
+
+# ── Urgency & Deadline tools ─────────────────────────────────────────────
+
+
+async def _execute_get_urgency_config(client_id: str) -> str:
+    """Read the urgency / deadline config for a client."""
+    if not client_id:
+        return "Error: client_id is required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_KOTLIN_INTERNAL_URL}/internal/urgency-config",
+                params={"clientId": client_id},
+            )
+            if resp.status_code != 200:
+                return f"Error: HTTP {resp.status_code} — {resp.text[:300]}"
+            return resp.text
+    except Exception as e:
+        return f"Error reading urgency config: {e}"
+
+
+async def _execute_update_urgency_config(config: dict) -> str:
+    """Full replace of a client's urgency / deadline config."""
+    if not isinstance(config, dict) or "clientId" not in config:
+        return "Error: config must be an object with at least clientId."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.put(
+                f"{_KOTLIN_INTERNAL_URL}/internal/urgency-config",
+                json=config,
+            )
+            if resp.status_code != 200:
+                return f"Error: HTTP {resp.status_code} — {resp.text[:300]}"
+            return f"Urgency config updated for client {config.get('clientId')}."
+    except Exception as e:
+        return f"Error updating urgency config: {e}"
+
+
+async def _execute_bump_task_deadline(
+    task_id: str, deadline_iso: str, reason: str | None = None
+) -> str:
+    """Move a task's deadline earlier or later."""
+    if not task_id or not deadline_iso:
+        return "Error: task_id and deadline_iso are required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{_KOTLIN_INTERNAL_URL}/internal/urgency-bump-deadline",
+                json={
+                    "taskId": task_id,
+                    "deadlineIso": deadline_iso,
+                    "reason": reason,
+                },
+            )
+            if resp.status_code != 200:
+                return f"Error: HTTP {resp.status_code} — {resp.text[:300]}"
+            return f"Deadline updated for task {task_id} to {deadline_iso}."
+    except Exception as e:
+        return f"Error bumping deadline: {e}"
+
+
+async def _execute_get_user_presence(user_id: str, platform: str) -> str:
+    """Look up cached presence for a user on a given platform."""
+    if not user_id or not platform:
+        return "Error: user_id and platform are required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{_KOTLIN_INTERNAL_URL}/internal/urgency-presence",
+                params={"userId": user_id, "platform": platform},
+            )
+            if resp.status_code != 200:
+                return f"Error: HTTP {resp.status_code} — {resp.text[:300]}"
+            return resp.text
+    except Exception as e:
+        return f"Error reading presence: {e}"

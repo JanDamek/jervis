@@ -171,6 +171,7 @@ object NetworkModule {
             agentQuestionService = rpcClient.withService<IAgentQuestionService>(),
             autoResponseSettingsService = rpcClient.withService<IAutoResponseSettingsService>(),
             timeTrackingService = rpcClient.withService<ITimeTrackingService>(),
+            urgencyConfigService = rpcClient.withService<com.jervis.service.urgency.IUrgencyConfigRpc>(),
         )
 
     /**
@@ -212,9 +213,10 @@ object NetworkModule {
         val agentQuestionService: IAgentQuestionService,
         val autoResponseSettingsService: IAutoResponseSettingsService,
         val timeTrackingService: ITimeTrackingService,
+        val urgencyConfigService: com.jervis.service.urgency.IUrgencyConfigRpc,
     ) {
         /** Number of service stubs in this container. */
-        fun countServices(): Int = 34
+        fun countServices(): Int = 35
 
         override fun toString() = "Services(${countServices()} stubs)"
     }

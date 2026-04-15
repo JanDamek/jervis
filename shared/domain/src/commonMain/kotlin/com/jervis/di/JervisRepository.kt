@@ -107,6 +107,7 @@ class JervisRepository private constructor(
     val agentQuestions: IAgentQuestionService get() = servicesProvider().agentQuestionService
     val autoResponseSettings: IAutoResponseSettingsService get() = servicesProvider().autoResponseSettingsService
     val timeTracking: ITimeTrackingService get() = servicesProvider().timeTrackingService
+    val urgencyConfig: com.jervis.service.urgency.IUrgencyConfigRpc get() = servicesProvider().urgencyConfigService
 
     // ─── Resilient call wrapper ─────────────────────────────────────
 

@@ -2481,5 +2481,119 @@ MONGO_TOOLS: list[dict] = [
     TOOL_MONGO_UPDATE_DOCUMENT,
 ]
 
+
+# ── Urgency & Deadline tools ─────────────────────────────────────────────
+
+TOOL_GET_URGENCY_CONFIG: dict = {
+    "type": "function",
+    "function": {
+        "name": "get_urgency_config",
+        "description": (
+            "Read the current urgency / deadline configuration for a client. "
+            "Returns default deadline, fast-path deadlines (direct message, channel "
+            "mention, reply-to-my-thread), presence factors, and the classifier budget."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client id whose config to read.",
+                },
+            },
+            "required": ["client_id"],
+        },
+    },
+}
+
+TOOL_UPDATE_URGENCY_CONFIG: dict = {
+    "type": "function",
+    "function": {
+        "name": "update_urgency_config",
+        "description": (
+            "Persist a new urgency / deadline configuration for a client (full replace). "
+            "Use after the user asks to adjust how fast Jervis should react — e.g. "
+            "'make DM deadline 1 minute', 'channel mentions can wait 10 min'. Always "
+            "read the current config first via get_urgency_config, modify only the "
+            "fields the user intends to change, and send the complete object back."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "description": (
+                        "Full UrgencyConfigDto. Required keys: clientId, "
+                        "defaultDeadlineMinutes, fastPathDeadlineMinutes "
+                        "{directMessage, channelMention, replyMyThreadActive, replyMyThreadStale}, "
+                        "presenceFactor {active, awayRecent, awayOld, offline, unknown}, "
+                        "presenceTtlSeconds, classifierBudgetPerHourPerSender, "
+                        "approachingDeadlineThresholdPct."
+                    ),
+                },
+            },
+            "required": ["config"],
+        },
+    },
+}
+
+TOOL_BUMP_TASK_DEADLINE: dict = {
+    "type": "function",
+    "function": {
+        "name": "bump_task_deadline",
+        "description": (
+            "Move a task's deadline earlier or later. Use when a user says 'this is "
+            "urgent now' (shorten) or 'this can wait' (extend) about a specific task."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "Task id.",
+                },
+                "deadline_iso": {
+                    "type": "string",
+                    "description": "New deadline as an ISO-8601 instant (e.g. 2026-04-15T14:30:00Z).",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Human-readable reason (audit log).",
+                },
+            },
+            "required": ["task_id", "deadline_iso"],
+        },
+    },
+}
+
+TOOL_GET_USER_PRESENCE: dict = {
+    "type": "function",
+    "function": {
+        "name": "get_user_presence",
+        "description": (
+            "Look up a user's presence on Slack / Teams / Discord from the in-memory "
+            "cache. Returns UNKNOWN when no subscription is active yet."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "user_id": {"type": "string"},
+                "platform": {
+                    "type": "string",
+                    "enum": ["slack", "teams", "discord"],
+                },
+            },
+            "required": ["user_id", "platform"],
+        },
+    },
+}
+
+URGENCY_TOOLS: list[dict] = [
+    TOOL_GET_URGENCY_CONFIG,
+    TOOL_UPDATE_URGENCY_CONFIG,
+    TOOL_BUMP_TASK_DEADLINE,
+    TOOL_GET_USER_PRESENCE,
+]
+
 # Backward compatibility alias
 LEGACY_AGENT_TOOLS: list[dict] = ALL_AGENT_TOOLS

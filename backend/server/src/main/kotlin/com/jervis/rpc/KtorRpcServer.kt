@@ -22,6 +22,7 @@ import com.jervis.rpc.internal.installInternalCacheApi
 import com.jervis.rpc.internal.installInternalChatContextApi
 import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalFilterRulesApi
+import com.jervis.rpc.internal.installInternalUrgencyApi
 import com.jervis.rpc.internal.installInternalGitApi
 import com.jervis.rpc.internal.installInternalGuidelinesApi
 import com.jervis.rpc.internal.installInternalOpenRouterApi
@@ -196,6 +197,7 @@ class KtorRpcServer(
                             installInternalTaskApi(taskRepository, taskService, userTaskService, preferenceService, pendingTaskService, fcmPushService, apnsPushService, chatRpcImpl)
                             installInternalGuidelinesApi(guidelinesService)
                             installInternalFilterRulesApi(filteringRulesService)
+                            installInternalUrgencyApi(urgencyConfigRpcImpl, taskRepository)
                             installInternalEnvironmentApi(environmentService, environmentK8sService)
                             installInternalOpenRouterApi(openRouterSettingsRpcImpl)
                             installInternalProjectManagementApi(clientService, projectService, connectionService, projectTemplateService)
