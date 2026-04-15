@@ -49,6 +49,40 @@ class _Bucket(str, _StdEnum):
     BATCH = "BATCH"         # no deadline / > 1 h (background, local-preferred)
 
 
+def detect_capability_from_body(api_path: str, body: dict) -> str:
+    """Infer the request capability from the HTTP path + body.
+
+    Rules (first match wins):
+      - path contains `/embed` (Ollama embedding endpoints)  → "embedding"
+      - body has `images` OR any message content has image parts → "visual"
+      - everything else → "chat"
+
+    Normalized to a Capability enum value (lowercase). Callers may still pass
+    an explicit X-Capability header, which takes precedence over this helper.
+    """
+    if "/embed" in (api_path or ""):
+        return "embedding"
+
+    if isinstance(body, dict):
+        # Ollama /api/generate with images[]
+        if body.get("images"):
+            return "visual"
+        # Ollama /api/chat — messages[].images or multimodal content parts
+        messages = body.get("messages")
+        if isinstance(messages, list):
+            for m in messages:
+                if not isinstance(m, dict):
+                    continue
+                if m.get("images"):
+                    return "visual"
+                content = m.get("content")
+                if isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict) and part.get("type") in ("image", "image_url"):
+                            return "visual"
+    return "chat"
+
+
 def _bucket_from_deadline(
     deadline_iso: str | None,
     priority: Priority,
