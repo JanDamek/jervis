@@ -36,4 +36,8 @@ data class PendingTaskItemDto(
     val taskType: String,
     val processingMode: String, // "FOREGROUND", "BACKGROUND", or "IDLE"
     val queuePosition: Int? = null,
+    /** ISO-8601 absolute deadline; null = no deadline pressure (BATCH). */
+    val deadlineIso: String? = null,
+    /** Observed user presence snapshot name; null when not recorded. */
+    val userPresence: String? = null,
 )

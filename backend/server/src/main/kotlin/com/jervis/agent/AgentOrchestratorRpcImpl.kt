@@ -258,6 +258,8 @@ class AgentOrchestratorRpcImpl(
             taskType = taskTypeLabel,
             processingMode = this.processingMode.name,
             queuePosition = this.queuePosition,
+            deadlineIso = this.deadline?.toString(),
+            userPresence = this.userPresence,
         )
     }
 

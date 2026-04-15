@@ -56,6 +56,10 @@ data class PendingTaskDto(
     val lastQualificationStep: String? = null,
     /** 2-3 sentence overview set by the qualifier agent — shown in brief and related-tasks list. */
     val summary: String? = null,
+    /** Absolute deadline ISO-8601; null = no urgency pressure. Drives sidebar ordering. */
+    val deadlineIso: String? = null,
+    /** Observed user presence snapshot at task creation; null when not recorded. */
+    val userPresence: String? = null,
 )
 
 /** Paginated result for PendingTasksScreen — merges listTasks + countTasks into a single RPC call. */

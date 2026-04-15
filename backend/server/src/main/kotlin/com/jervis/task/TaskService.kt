@@ -278,22 +278,27 @@ class TaskService(
     }
 
     /**
-     * Get ALL pending BACKGROUND tasks for queue display (global, not per-client).
-     * Returns tasks waiting to be processed, excluding the currently running task.
+     * Get ALL pending BACKGROUND tasks for queue display (sidebar ordering).
+     *
+     * Ordering (all in DB):
+     *   1. deadline ASC, nulls LAST — nearest deadline wins, tasks without deadline
+     *      (e.g. legacy / BATCH work) sink to the bottom.
+     *   2. priorityScore DESC — tie-break.
+     *   3. queuePosition ASC — user-reorderable manual ordering.
+     *   4. createdAt ASC — FIFO fallback.
      */
     suspend fun getPendingBackgroundTasks(): List<TaskDocument> {
-        val running = currentRunningTask
-        return taskRepository
-            .findByProcessingModeAndStateOrderByQueuePositionAscCreatedAtAsc(
-                ProcessingMode.BACKGROUND,
-                TaskStateEnum.QUEUED,
-            ).toList()
-            .filter { it.id != running?.id }
+        val (tasks, _) = getPendingBackgroundTasksPaginated(limit = Int.MAX_VALUE, offset = 0)
+        return tasks
     }
 
     /**
      * Get paginated BACKGROUND tasks for infinite scroll (DB skip/limit).
-     * Returns (tasks, totalCount) where totalCount is the total number of background tasks.
+     * Returns (tasks, totalCount). Order matches getPendingBackgroundTasks() above.
+     *
+     * Uses aggregation with $addFields to coerce null deadlines to a far-future
+     * sentinel so sort ASC places tasks WITH deadline first and nulls at the end
+     * (MongoDB's native sort puts nulls first in ASC, which we don't want).
      */
     suspend fun getPendingBackgroundTasksPaginated(limit: Int, offset: Int): Pair<List<TaskDocument>, Long> {
         val running = currentRunningTask
@@ -302,15 +307,32 @@ class TaskService(
 
         val totalCount = mongoTemplate.count(Query(criteria), TaskDocument::class.java).awaitSingle()
 
-        val query = Query(criteria)
-            .with(org.springframework.data.domain.Sort.by(
-                org.springframework.data.domain.Sort.Order.asc("queuePosition"),
-                org.springframework.data.domain.Sort.Order.asc("createdAt"),
-            ))
-            .skip(offset.toLong())
-            .limit(limit)
+        val farFuture = java.util.Date.from(java.time.Instant.parse("9999-12-31T23:59:59Z"))
+        val aggregation = org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(
+            org.springframework.data.mongodb.core.aggregation.Aggregation.match(criteria),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.addFields()
+                .addField("_deadlineSort")
+                .withValue(
+                    org.bson.Document(
+                        "\$ifNull",
+                        listOf("\$deadline", farFuture),
+                    ),
+                )
+                .build(),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.sort(
+                org.springframework.data.domain.Sort.by(
+                    org.springframework.data.domain.Sort.Order.asc("_deadlineSort"),
+                    org.springframework.data.domain.Sort.Order.desc("priorityScore"),
+                    org.springframework.data.domain.Sort.Order.asc("queuePosition"),
+                    org.springframework.data.domain.Sort.Order.asc("createdAt"),
+                ),
+            ),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.skip(offset.toLong()),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.limit(limit.toLong()),
+        )
 
-        val tasks = mongoTemplate.find(query, TaskDocument::class.java)
+        val tasks = mongoTemplate
+            .aggregate(aggregation, "tasks", TaskDocument::class.java)
             .collectList()
             .awaitSingle()
             .filter { it.id != running?.id }

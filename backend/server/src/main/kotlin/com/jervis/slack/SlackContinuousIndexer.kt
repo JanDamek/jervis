@@ -1,11 +1,18 @@
 package com.jervis.slack
 
 import com.jervis.common.types.SourceUrn
+import com.jervis.dto.urgency.Presence
 import com.jervis.infrastructure.polling.PollingStatusEnum
 import com.jervis.dto.task.TaskStateEnum
 import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.task.TaskRepository
 import com.jervis.task.TaskService
+import com.jervis.urgency.InboundMessageType
+import com.jervis.urgency.InboundSignal
+import com.jervis.urgency.PresenceCache
+import com.jervis.urgency.StructuralUrgencyDetector
+import com.jervis.urgency.UrgencyConfigDocument
+import com.jervis.urgency.UrgencyConfigRepository
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +41,9 @@ class SlackContinuousIndexer(
     private val repository: SlackMessageIndexRepository,
     private val taskService: TaskService,
     private val taskRepository: TaskRepository,
+    private val urgencyDetector: StructuralUrgencyDetector,
+    private val urgencyConfigRepository: UrgencyConfigRepository,
+    private val presenceCache: PresenceCache,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -107,6 +117,23 @@ class SlackContinuousIndexer(
             taskRepository.save(updated)
             logger.debug { "Slack message appended to existing task ${existing.id} (topic=$topicId)" }
         } else {
+            // Derive deadline + presence from structural urgency signal (DM detection etc.).
+            // Slack DM channel IDs start with 'D'; public/private channels start with 'C'/'G'.
+            val isDm = doc.channelId.startsWith("D")
+            val signal = InboundSignal(
+                platform = "slack",
+                senderId = doc.from ?: "unknown",
+                messageType = if (isDm) InboundMessageType.DIRECT else InboundMessageType.CHANNEL_MESSAGE,
+                isDirectMessage = isDm,
+                mentionsMe = false,        // TODO: parse body for bot user mention (next iter)
+                replyToMyThread = false,   // TODO: thread root lookup (next iter)
+                threadActive = false,
+            )
+            val cfg = urgencyConfigRepository.findByClientId(doc.clientId)
+                ?: UrgencyConfigDocument.default(doc.clientId)
+            val presence = doc.from?.let { presenceCache.get(it, "slack")?.presence } ?: Presence.UNKNOWN
+            val decision = urgencyDetector.decide(signal, cfg, presence = presence)
+
             val task = taskService.createTask(
                 taskType = TaskTypeEnum.SYSTEM,
                 content = content,
@@ -119,9 +146,13 @@ class SlackContinuousIndexer(
                 ),
                 projectId = doc.projectId,
                 taskName = taskName,
+                deadline = decision.deadline,
+                userPresence = decision.presence.name,
             )
             taskService.setTopicId(task.id, topicId)
-            logger.debug { "Indexed new Slack message: $taskName (topic=$topicId)" }
+            logger.debug {
+                "Indexed new Slack message: $taskName (topic=$topicId, deadline=${decision.deadline}, presence=${decision.presence})"
+            }
         }
 
         markAsIndexed(doc)

@@ -1,9 +1,16 @@
 package com.jervis.discord
 
 import com.jervis.common.types.SourceUrn
+import com.jervis.dto.urgency.Presence
 import com.jervis.infrastructure.polling.PollingStatusEnum
 import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.task.TaskService
+import com.jervis.urgency.InboundMessageType
+import com.jervis.urgency.InboundSignal
+import com.jervis.urgency.PresenceCache
+import com.jervis.urgency.StructuralUrgencyDetector
+import com.jervis.urgency.UrgencyConfigDocument
+import com.jervis.urgency.UrgencyConfigRepository
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +38,9 @@ private val logger = KotlinLogging.logger {}
 class DiscordContinuousIndexer(
     private val repository: DiscordMessageIndexRepository,
     private val taskService: TaskService,
+    private val urgencyDetector: StructuralUrgencyDetector,
+    private val urgencyConfigRepository: UrgencyConfigRepository,
+    private val presenceCache: PresenceCache,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -81,6 +91,22 @@ class DiscordContinuousIndexer(
 
         val topicId = "discord-channel:${doc.guildId}/${doc.channelId}"
 
+        // Discord messages in this pipeline are guild channel messages (DMs are separate).
+        // No fast-path structural signal; decision will be AMBIGUOUS → deadline=null (BATCH).
+        val signal = InboundSignal(
+            platform = "discord",
+            senderId = doc.from ?: "unknown",
+            messageType = InboundMessageType.CHANNEL_MESSAGE,
+            isDirectMessage = false,
+            mentionsMe = false,
+            replyToMyThread = false,
+            threadActive = false,
+        )
+        val cfg = urgencyConfigRepository.findByClientId(doc.clientId)
+            ?: UrgencyConfigDocument.default(doc.clientId)
+        val presence = doc.from?.let { presenceCache.get(it, "discord")?.presence } ?: Presence.UNKNOWN
+        val decision = urgencyDetector.decide(signal, cfg, presence = presence)
+
         val task = taskService.createTask(
             taskType = TaskTypeEnum.SYSTEM,
             content = content,
@@ -94,6 +120,8 @@ class DiscordContinuousIndexer(
             ),
             projectId = doc.projectId,
             taskName = taskName,
+            deadline = decision.deadline,
+            userPresence = decision.presence.name,
         )
 
         taskService.setTopicId(task.id, topicId)

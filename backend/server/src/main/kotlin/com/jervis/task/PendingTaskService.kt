@@ -104,13 +104,31 @@ class PendingTaskService(
         // Count total (lightweight)
         val totalCount = mongoTemplate.count(baseQuery, "tasks").awaitSingle()
 
-        // Paginated fetch — newest first so the user sees fresh tasks at the top.
-        val pagedQuery = Query(criteria)
-            .with(Sort.by(Sort.Direction.DESC, "createdAt"))
-            .skip((safePage * safePageSize).toLong())
-            .limit(safePageSize)
+        // Paginated fetch via aggregation — $ifNull coerces missing deadline to a
+        // far-future sentinel so ASC sort places tasks WITH deadline first and null
+        // deadlines at the bottom (MongoDB ASC sort would otherwise put nulls first).
+        // Secondary sort: priorityScore DESC, createdAt DESC — legacy/batch tasks
+        // keep familiar "newest first" ordering within the null bucket.
+        val farFuture = java.util.Date.from(java.time.Instant.parse("9999-12-31T23:59:59Z"))
+        val aggregation = org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(
+            org.springframework.data.mongodb.core.aggregation.Aggregation.match(criteria),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.addFields()
+                .addField("_deadlineSort")
+                .withValue(org.bson.Document("\$ifNull", listOf("\$deadline", farFuture)))
+                .build(),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.sort(
+                Sort.by(
+                    Sort.Order.asc("_deadlineSort"),
+                    Sort.Order.desc("priorityScore"),
+                    Sort.Order.desc("createdAt"),
+                ),
+            ),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.skip((safePage * safePageSize).toLong()),
+            org.springframework.data.mongodb.core.aggregation.Aggregation.limit(safePageSize.toLong()),
+        )
 
-        val tasks = mongoTemplate.find(pagedQuery, TaskDocument::class.java, "tasks")
+        val tasks = mongoTemplate
+            .aggregate(aggregation, "tasks", TaskDocument::class.java)
             .collectList().awaitSingle()
 
         return PagedPendingTasksResult(

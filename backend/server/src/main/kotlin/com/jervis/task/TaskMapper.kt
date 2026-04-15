@@ -91,5 +91,7 @@ fun TaskDocument.toPendingTaskDto(
         qualifierSuggestedApproach = ctxApproach,
         lastQualificationStep = lastStep,
         summary = this.summary,
+        deadlineIso = this.deadline?.toString(),
+        userPresence = this.userPresence,
     )
 }

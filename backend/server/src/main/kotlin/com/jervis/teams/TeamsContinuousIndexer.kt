@@ -1,12 +1,19 @@
 package com.jervis.teams
 
 import com.jervis.common.types.SourceUrn
+import com.jervis.dto.urgency.Presence
 import com.jervis.infrastructure.polling.PollingStatusEnum
 import com.jervis.dto.task.TaskStateEnum
 import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.task.TaskRepository
 import com.jervis.task.TaskService
 import com.jervis.infrastructure.llm.DocumentExtractionClient
+import com.jervis.urgency.InboundMessageType
+import com.jervis.urgency.InboundSignal
+import com.jervis.urgency.PresenceCache
+import com.jervis.urgency.StructuralUrgencyDetector
+import com.jervis.urgency.UrgencyConfigDocument
+import com.jervis.urgency.UrgencyConfigRepository
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +43,9 @@ class TeamsContinuousIndexer(
     private val taskService: TaskService,
     private val taskRepository: TaskRepository,
     private val documentExtractionClient: DocumentExtractionClient,
+    private val urgencyDetector: StructuralUrgencyDetector,
+    private val urgencyConfigRepository: UrgencyConfigRepository,
+    private val presenceCache: PresenceCache,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -117,6 +127,23 @@ class TeamsContinuousIndexer(
             }
         }
 
+        // Derive deadline + presence structurally. Teams 1:1/group chat → chatId set & teamId null;
+        // channel message → teamId & channelId set.
+        val isChat = doc.chatId != null && doc.teamId == null
+        val signal = InboundSignal(
+            platform = "teams",
+            senderId = doc.from ?: "unknown",
+            messageType = if (isChat) InboundMessageType.DIRECT else InboundMessageType.CHANNEL_MESSAGE,
+            isDirectMessage = isChat,
+            mentionsMe = false,        // TODO: parse Graph mentions[] (next iter)
+            replyToMyThread = false,   // TODO: thread reply detection
+            threadActive = false,
+        )
+        val cfg = urgencyConfigRepository.findByClientId(doc.clientId)
+            ?: UrgencyConfigDocument.default(doc.clientId)
+        val presence = doc.from?.let { presenceCache.get(it, "teams")?.presence } ?: Presence.UNKNOWN
+        val decision = urgencyDetector.decide(signal, cfg, presence = presence)
+
         val task = taskService.createTask(
             taskType = TaskTypeEnum.SYSTEM,
             content = content,
@@ -130,6 +157,8 @@ class TeamsContinuousIndexer(
             ),
             projectId = doc.projectId,
             taskName = taskName,
+            deadline = decision.deadline,
+            userPresence = decision.presence.name,
         )
 
         if (topicId != null) {
@@ -137,7 +166,9 @@ class TeamsContinuousIndexer(
         }
 
         markAsIndexed(doc)
-        logger.debug { "Indexed new Teams message: $taskName (topic=$topicId)" }
+        logger.debug {
+            "Indexed new Teams message: $taskName (topic=$topicId, deadline=${decision.deadline}, presence=${decision.presence})"
+        }
     }
 
     private suspend fun buildMessageContent(doc: TeamsMessageIndexDocument): String = buildString {
