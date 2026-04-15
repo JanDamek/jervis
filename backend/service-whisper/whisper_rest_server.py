@@ -219,7 +219,12 @@ def get_model(model_name: str):
         return _model_cache[model_name]
 
 
-def run_diarization(audio_path: str, request_id: str = "") -> dict | None:
+def run_diarization(
+    audio_path: str,
+    request_id: str = "",
+    progress_queue: queue.Queue | None = None,
+    segments_done: int = 0,
+) -> dict | None:
     """Run speaker diarization on audio file.
 
     Returns dict with 'turns' (list of speaker turns) and 'embeddings'
@@ -227,10 +232,31 @@ def run_diarization(audio_path: str, request_id: str = "") -> dict | None:
     """
     if not _diarization_available or _diarization_pipeline is None:
         return None
+    if not os.path.exists(audio_path):
+        print(f"[{request_id}] Diarization aborted: audio file missing at {audio_path}", flush=True)
+        return None
     try:
         print(f"[{request_id}] Running speaker diarization...", flush=True)
         start = time.time()
-        result = _diarization_pipeline(audio_path)
+        # Heartbeat thread: pyannote runs synchronously and emits no progress;
+        # without periodic SSE events, NAT/ingress can drop the connection
+        # during long diarization (5–10 min on 20-min audio).
+        stop_heartbeat = threading.Event()
+        if progress_queue is not None:
+            def _heartbeat():
+                while not stop_heartbeat.wait(5.0):
+                    elapsed = time.time() - start
+                    progress_queue.put({
+                        "percent": 99.9,
+                        "segments_done": segments_done,
+                        "elapsed_seconds": round(elapsed, 1),
+                        "last_segment_text": f"diarizing... {elapsed:.0f}s",
+                    })
+            threading.Thread(target=_heartbeat, daemon=True).start()
+        try:
+            result = _diarization_pipeline(audio_path)
+        finally:
+            stop_heartbeat.set()
         # pyannote 4.x returns DiarizeOutput dataclass; 3.x returns Annotation directly
         annotation = getattr(result, "speaker_diarization", result)
         turns = []
@@ -334,6 +360,12 @@ async def lifespan(app: FastAPI):
         print(f"Model {DEFAULT_MODEL} preloaded and ready", flush=True)
     else:
         print("Server ready, accepting requests (GPU model loaded on-demand)", flush=True)
+
+    # Preload diarization pipeline (CPU) so the first diarize=true request
+    # doesn't pay the 9s lazy-load cost and so _diarization_available is
+    # deterministically True from start (no silent fallback to no-speakers).
+    if HF_TOKEN:
+        await asyncio.get_event_loop().run_in_executor(None, _load_diarization_pipeline)
     yield
     idle_task.cancel()
     if _gpu_loaded:
@@ -446,6 +478,11 @@ async def transcribe(
     with open(audio_path, "wb") as f:
         shutil.copyfileobj(audio.file, f)
 
+    # work_dir is freed by the worker thread after run_whisper finishes,
+    # NOT by the generator's finally — otherwise a dropped SSE connection
+    # would delete the audio while diarization is still using it.
+    cleanup_done = threading.Event()
+
     file_size = os.path.getsize(audio_path)
     request_id = uuid.uuid4().hex[:8]
     model_name = opts.get("model", DEFAULT_MODEL)
@@ -488,6 +525,11 @@ async def transcribe(
                 finally:
                     _last_transcription_end = time.monotonic()
                     _router_notify_done()  # Always tell router we're done
+                    # Free temp audio AFTER whisper+diarize finished — never
+                    # earlier (a closed SSE generator would otherwise rmtree
+                    # the file mid-diarization).
+                    shutil.rmtree(work_dir, ignore_errors=True)
+                    cleanup_done.set()
                     loop.call_soon_threadsafe(done_event.set)
 
             loop.run_in_executor(None, run_in_thread)
@@ -574,9 +616,12 @@ async def transcribe(
         finally:
             with _active_lock:
                 _active_transcriptions -= 1
-            shutil.rmtree(work_dir, ignore_errors=True)
+            # Defensive: if the worker hasn't cleaned up yet (e.g. early error
+            # before run_in_thread was scheduled), do it here.
+            if not cleanup_done.is_set():
+                shutil.rmtree(work_dir, ignore_errors=True)
 
-    return EventSourceResponse(event_generator(), ping=15)
+    return EventSourceResponse(event_generator(), ping=5)
 
 
 def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue, request_id: str = "") -> dict:
@@ -655,7 +700,9 @@ def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue, reques
     speaker_turns = None
     speaker_embeddings = None
     if do_diarize and _diarization_available:
-        diarize_result = run_diarization(audio_path, request_id)
+        diarize_result = run_diarization(
+            audio_path, request_id, progress_queue, len(out_segments),
+        )
         if diarize_result:
             speaker_turns = diarize_result["turns"]
             speaker_embeddings = diarize_result.get("embeddings")
