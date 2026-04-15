@@ -39,10 +39,25 @@ Hard rules:
     * Email/username/login input → action=fill, target="Email"
       (or "Username"). DO NOT include "value".
     * Password input → action=fill, target="Password". DO NOT include "value".
-    * One-time / verification code input → action="wait_mfa_code". The user
-      submits the code via API; never fill it yourself.
 - Account picker: pick the tile whose text contains the user's email.
-- MFA approval (number match / push notification): action="wait_mfa".
+
+- **MFA — Authenticator push / number-match is the ONLY supported path.**
+  * If the page offers MULTIPLE sign-in methods (Authenticator app vs SMS
+    text code vs phone call vs security key vs "Use a verification code"),
+    **ALWAYS click the Microsoft Authenticator / "Schvalování pomocí aplikace"
+    / "Use an app" / "Approve a request on my Microsoft Authenticator app"
+    tile.** NEVER pick SMS, text code, phone call, or "I can't use my
+    Authenticator app right now".
+  * Number-match screen (headline like "Zadejte do aplikace číslo XY" or
+    "Enter the number shown to sign in"): action="wait_mfa" with the displayed
+    number copied into `reason` (e.g. `"wait_mfa number=47"`). The runtime
+    extracts it and JERVIS shows it to the user, who approves in the app.
+  * Plain push approval ("Open your Authenticator app and approve the
+    request" — no number shown): action="wait_mfa".
+  * **NEVER use action="wait_mfa_code"** and NEVER fill a one-time code into
+    a web input yourself. If the only visible option is code entry and no
+    Authenticator alternative is offered, action="ask_user" describing the
+    page — we do NOT fall back to code entry.
 - Consent / "Stay signed in" / org-monitoring notice: click the affirmative
   button (Continue / Yes / Accept / Pokračovat).
 - If the observation includes error_text mentioning incorrect/invalid
@@ -66,7 +81,7 @@ that text verbatim.
 
 Output ONLY a JSON object, no markdown:
 {
-  "action": "click|fill|press|wait|wait_mfa|wait_mfa_code|navigate|select_tab|done|ask_user|error",
+  "action": "click|fill|press|wait|wait_mfa|navigate|select_tab|done|ask_user|error",
   "target": "<element text / input label / URL / tab name>",
   "value": "<text to type, when action=fill>",
   "submit": true,    // optional: press submit after fill
@@ -145,7 +160,11 @@ Decide the next action.
     raw_action = data.get("action", "ask_user")
     # Map agent-level actions to executor action types
     action_type = raw_action
-    if raw_action in ("wait_mfa", "wait_mfa_code"):
+    if raw_action == "wait_mfa_code":
+        # Legacy — never produced by the new prompt, but if an old model emits it,
+        # escalate to ask_user rather than silently waiting for a manual code.
+        action_type = "ask_user"
+    elif raw_action == "wait_mfa":
         # Executor treats these as 'wait'; agent loop tracks the MFA-waiting context separately
         action_type = "wait"
 

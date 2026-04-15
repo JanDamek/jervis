@@ -81,10 +81,13 @@ class AuthGoal(Goal):
             description=(
                 "Sign into Microsoft 365 (target app: Teams). "
                 "Walk through whatever screens appear: account picker, "
-                "email entry, password, MFA approval (number-match in "
-                "Authenticator), MFA code, consent, 'Stay signed in', "
-                "monitoring notice. The goal is reached when an app shell "
-                "(Teams/Outlook/Calendar) becomes visible."
+                "email entry, password, Authenticator push / number-match, "
+                "consent, 'Stay signed in', monitoring notice. The goal is "
+                "reached when an app shell (Teams/Outlook/Calendar) becomes "
+                "visible. When the sign-in page offers multiple MFA methods, "
+                "ALWAYS choose Microsoft Authenticator (push / number-match). "
+                "NEVER pick SMS, phone call, or manual code entry — ask_user "
+                "if Authenticator is unavailable."
             ),
             extra_context=(
                 "If the page is empty/about:blank, navigate to "
