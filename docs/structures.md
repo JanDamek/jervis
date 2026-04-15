@@ -251,17 +251,38 @@ Persistent FastAPI service on `ollama.damek.local:8786`, sharing P40 GPU with Ol
 | **Deploy** | `k8s/deploy_whisper_gpu.sh` (systemd on GPU VM, not K8s) |
 | **Device** | CUDA (int8_float32 — P40 lacks efficient float16) |
 | **Models** | medium (default), large-v3 (on request) |
-| **Diarization** | pyannote-audio 4.x (requires HF_TOKEN), returns 256-dim speaker embeddings |
-| **Idle timeout** | 60s → auto-unloads GPU |
-| **Startup** | Lazy — no model pre-loaded |
+| **Diarization** | pyannote-audio 4.x (requires HF_TOKEN), CPU only, returns 256-dim speaker embeddings. **Pipeline preloaded at startup** when HF_TOKEN is set. |
+| **Idle timeout** | 60s → auto-unloads whisper GPU model (diarization pipeline stays on CPU) |
+| **Startup** | Whisper model lazy-loaded on first request; pyannote pipeline preloaded |
+
+#### When diarization runs
+
+Diarization is **only** requested by `MeetingTranscriptionService.transcribe()` (full meeting, finished recording). All other Whisper callers pass `diarize=false`:
+
+| Caller | `diarize` | Why |
+|--------|-----------|-----|
+| `MeetingTranscriptionService.transcribe` | **true** (default) | Full meeting needs speaker labels |
+| `MeetingLiveUrgencyProbe` (tail probes) | false | Only needs text for keyword detection |
+| `WhisperTranscriptionClient.retranscribe` | false | Short slice ("Nevím" fix), speakers irrelevant |
+| `VoiceWebSocketHandler` (watch voice chat) | false (omitted) | Single-speaker, speakers irrelevant |
+| `VoiceChatRouting` (chat voice) | false (omitted) | Single-speaker |
+
+#### SSE robustness (critical)
+
+Long pyannote runs (5–10 min on 20-min audio) produce no native progress events, which previously caused NAT/ingress to drop the SSE connection. Server now:
+- Cleans up `work_dir` from the **worker thread**, not the SSE generator's `finally` — a dropped connection no longer deletes the audio while diarization is still using it.
+- Emits a 5s heartbeat into `progress_queue` from inside `run_diarization` so the SSE keeps flowing during the silent pyannote phase.
+- `EventSourceResponse(ping=5)`.
+- Defensive `os.path.exists(audio_path)` early-abort with a clear log line.
 
 Key files:
 
 | File | Purpose |
 |------|---------|
-| `backend/service-whisper/whisper_rest_server.py` | REST server — GPU coordination, lazy-load, auto-unload |
+| `backend/service-whisper/whisper_rest_server.py` | REST server — GPU coordination, lazy-load, auto-unload, diarization heartbeat |
 | `backend/service-whisper/whisper_runner.py` | Whisper transcription engine (range extraction, segment mapping) |
 | `k8s/deploy_whisper_gpu.sh` | SSH deployment to GPU VM (systemd service) |
+| `backend/server/.../meeting/WhisperTranscriptionClient.kt` | Kotlin client — `transcribe(..., diarize)` parameter, default from `whisperProperties.diarize` |
 
 ---
 
