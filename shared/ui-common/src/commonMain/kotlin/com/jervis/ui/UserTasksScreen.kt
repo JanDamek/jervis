@@ -53,7 +53,11 @@ private fun formatInstant(epochMs: Long): String {
     val tz = kotlinx.datetime.TimeZone.currentSystemDefault()
     val instant = kotlinx.datetime.Instant.fromEpochMilliseconds(epochMs)
     val dt = instant.toLocalDateTime(tz)
-    return "%02d.%02d.%d %02d:%02d".format(dt.dayOfMonth, dt.monthNumber, dt.year, dt.hour, dt.minute)
+    val dd = dt.dayOfMonth.toString().padStart(2, '0')
+    val mm = dt.monthNumber.toString().padStart(2, '0')
+    val hh = dt.hour.toString().padStart(2, '0')
+    val mi = dt.minute.toString().padStart(2, '0')
+    return "$dd.$mm.${dt.year} $hh:$mi"
 }
 
 private fun userTaskStateBadge(state: String): Pair<String, Color> = when (state) {

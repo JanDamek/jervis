@@ -245,7 +245,7 @@ private fun CalendarEntryCard(entry: CalendarEntryDto) {
     val timeStr = remember(entry.startEpochMs) {
         val dt = kotlinx.datetime.Instant.fromEpochMilliseconds(entry.startEpochMs)
             .toLocalDateTime(tz)
-        "%02d:%02d".format(dt.hour, dt.minute)
+        "${dt.hour.toString().padStart(2, '0')}:${dt.minute.toString().padStart(2, '0')}"
     }
 
     val (typeLabel, typeColor) = when (entry.entryType) {
