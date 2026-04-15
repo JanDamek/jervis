@@ -111,6 +111,15 @@ class CodingTask(BaseModel):
     workspace_path: str
     query: str
     agent_preference: str = "auto"
+    # Urgency metadata propagated from the Kotlin TaskDocument. Used by graph
+    # nodes to forward `deadline_iso` + `priority` to route_request() so the
+    # router can derive the correct bucket (REALTIME/URGENT/NORMAL/BATCH) per
+    # KB `agent://claude-code/task-routing-unified-design`.
+    deadline_iso: str | None = None
+    priority: str = "NORMAL"           # CASCADE | CRITICAL | NORMAL
+    capability: str | None = None
+    tier: str | None = None
+    min_model_size: int = 0
 
 
 class Goal(BaseModel):

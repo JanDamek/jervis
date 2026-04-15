@@ -375,6 +375,11 @@ class AgentOrchestratorService(
             qualifierContext = task.qualifierPreparedContext,
             sourceUrn = task.sourceUrn.value,
             taskName = task.taskName,
+            // Urgency propagation — orchestrator forwards deadline to router.
+            deadlineIso = task.deadline?.toString(),
+            capability = task.capability,
+            tier = task.tier,
+            minModelSize = task.minModelSize,
         )
 
         try {

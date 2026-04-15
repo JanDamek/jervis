@@ -181,11 +181,18 @@ async def llm_with_cloud_fallback(
 
     max_tier = rules.max_openrouter_tier if rules.max_openrouter_tier else "NONE"
 
-    # Router resolves tier from client_id; max_tier as explicit override
+    # Router resolves tier from client_id; max_tier as explicit override.
+    # Forward task urgency metadata so the router derives the correct bucket
+    # (REALTIME/URGENT/NORMAL/BATCH) from the absolute deadline rather than
+    # from the legacy processing_mode. processing_mode kept as legacy fallback
+    # when deadline is absent (older task flows that haven't been migrated).
     route = await route_request(
-        capability="chat",
+        capability=task.capability or "chat",
         max_tier=max_tier,
         estimated_tokens=context_tokens,
+        deadline_iso=task.deadline_iso,
+        priority=task.priority,
+        min_model_size=task.min_model_size,
         processing_mode=processing_mode,
         client_id=client_id,
     )
@@ -217,11 +224,14 @@ async def llm_with_cloud_fallback(
         except Exception as e:
             await report_model_error(route.model, str(e)[:500])
             logger.warning("Cloud model %s failed: %s — trying next model", route.model, e)
-            # Try next cloud model (skip the failed one)
+            # Try next cloud model (skip the failed one) — same urgency metadata.
             fallback = await route_request(
-                capability="chat",
+                capability=task.capability or "chat",
                 max_tier=max_tier,
                 estimated_tokens=context_tokens,
+                deadline_iso=task.deadline_iso,
+                priority=task.priority,
+                min_model_size=task.min_model_size,
                 processing_mode=processing_mode,
                 skip_models=[route.model],
                 client_id=client_id,

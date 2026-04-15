@@ -317,18 +317,57 @@ Connection edit dialog shows sender/domain → client ID mapping editor for emai
 
 ## Urgency / Deadline Scheduling
 
-**Module:** `com.jervis.urgency` (backend/server)
+**Module:** `com.jervis.urgency` (backend/server) + `backend/service-ollama-router` + orchestrator `graph/nodes`.
+**Canonical SSOT:** KB `agent://claude-code/task-routing-unified-design`.
 
-Per-client urgency config (Mongo `urgency_configs`) drives deadline-first task scheduling:
+### Prime directive — deadline is the ONLY urgency signal crossing service boundaries
 
-- **TaskDocument fields:** `deadline: Instant?` (absolute response-by time) + `userPresence: String?`
-- **StructuralUrgencyDetector:** pure function mapping inbound signal (DM / @mention / reply-to-my-thread) → deadline derived from `UrgencyConfigDocument.fastPath*` + presence multiplier
-- **PresenceCache:** in-memory per-platform store; TTL from `presenceTtlSeconds`. Real platform subscriptions (Slack Events, Graph `/me/presence`, Discord gateway) are a separate workstream — current impl returns `UNKNOWN` on miss
-- **Scheduler:** `TaskRepository.findByProcessingModeAndStateOrderByDeadlineAscPriorityScoreDescCreatedAtAsc` — BACKGROUND tasks served nearest-deadline first, null deadlines sort last, `priorityScore DESC` breaks ties. **No watchdog / priority-bump background loop — sort key does the work.**
-- **Expired deadlines:** the task still wins scheduling race (earliest deadline) and runs; orchestrator logs a warning and may note the delay in its response. No separate cleanup job
-- **Config RPC:** `IUrgencyConfigRpc` (get / update / getUserPresence) — consumed by UI settings tab and future orchestrator tools
+A single `deadline: Instant?` field on `TaskDocument` drives urgency end-to-end.
+There is **no** `Speed`/`Priority`/`Bucket` enum travelling through DTOs, RPC,
+or HTTP. The router derives a private `_Bucket` (REALTIME / URGENT / NORMAL /
+BATCH) from `(deadline - now, priority)` at decision time — that enum never
+leaves `router_core.py`.
 
-Design history + decisions: KB `agent://claude-code/urgency-deadline-presence-design`.
+Changing `task.deadline` (e.g. via `bump_task_deadline` tool) takes effect on
+the next router call with zero cache invalidation — the bucket is recomputed.
+
+### TaskDocument urgency fields
+
+- `deadline: Instant?` — absolute response-by time. Null = no urgency pressure (BATCH).
+- `userPresence: String?` — observed presence at creation (ACTIVE_CONVERSATION / LIKELY_WAITING / RECENTLY_ACTIVE / AWAY / OFFLINE / UNKNOWN).
+- `capability: String` — router queue + model selection (chat | thinking | coding | extraction | embedding | visual). Default "chat".
+- `tier: String?` — snapshot of max cloud tier at creation (NONE | FREE | PAID | PREMIUM). Null = resolve from clientId.
+- `minModelSize: Int` — minimum local model size in billions (0 | 14 | 30 | 120). 0 = any.
+
+### Layers
+
+1. **Inbound handlers** (`SlackContinuousIndexer`, `TeamsContinuousIndexer`, `DiscordContinuousIndexer`) — call `StructuralUrgencyDetector.decide(signal, config, presence)` and write `deadline + userPresence` onto the new TaskDocument. No cloud/local decision here.
+2. **StructuralUrgencyDetector** — pure function mapping inbound structural signal (DM / @mention / reply-to-my-thread) → deadline derived from `UrgencyConfigDocument.fastPath*` fields, multiplied by the `presenceFactor` for the observed presence. Ambiguous messages return `deadline = null`.
+3. **PresenceCache** — in-memory per-platform store; TTL from `presenceTtlSeconds`. Real platform subscriptions (Slack Events, Graph `/me/presence`, Discord gateway) are a separate workstream — current impl returns `UNKNOWN` on miss.
+4. **Scheduler** — `TaskService.getNextBackgroundTask()` → `TaskRepository.findByProcessingModeAndStateOrderByDeadlineAscPriorityScoreDescCreatedAtAsc`. BACKGROUND tasks served nearest-deadline first, null deadlines sort last, `priorityScore DESC` breaks ties. **No watchdog / priority-bump background loop — sort key does the work.**
+5. **Sidebar / pending-tasks list** — `TaskService.getPendingBackgroundTasksPaginated` + `PendingTaskService.listPagedPendingTasks` both use `$ifNull`-coerced aggregation (missing deadline → far-future) so ASC sort puts due tasks first and tasks without deadline at the bottom.
+6. **Orchestrator dispatch** (Kotlin → Python) — `OrchestrateRequestDto` carries `deadline_iso`, `priority`, `capability`, `tier`, `min_model_size` onto `CodingTask`.
+7. **Graph nodes** (`_helpers.py::llm_with_cloud_fallback`) — forward `deadline_iso` + `priority` + `min_model_size` to `route_request()`.
+8. **Router unified entrypoint** — `/api/chat`, `/api/generate`, `/api/embed` + headers `X-Deadline-Iso`, `X-Capability`, `X-Client-Id`, `X-Min-Model-Size`, `X-Priority`. The router runs `decide_and_dispatch` in one pass (no `/route-decision` → `/api/*` round-trip). `X-Priority: CASCADE` on `/api/generate` selects the latency-optimized cascade path; `/api/cascade` is deprecated.
+
+### Router decision rules (applied in order)
+
+```
+tier == NONE                 → local only
+capability == embedding      → local only (data locality)
+capability == vlm + GPU blocked (whisper / loading / in-flight) → cloud preferred
+bucket == REALTIME           → cloud PREMIUM/PAID, else local with CASCADE preempt
+bucket == URGENT             → cloud preferred, local fallback
+bucket == NORMAL             → local if GPU free + ctx ≤ 48k, cloud on busy/oversize
+bucket == BATCH              → local only; cloud only when no local model fits the capability
+```
+
+### Expired deadlines, config RPC
+
+- **Expired deadlines** — the task still wins scheduling race (earliest deadline) and runs; orchestrator logs a warning. No separate cleanup job.
+- **Config RPC** — `IUrgencyConfigRpc` (`getUrgencyConfig` / `updateUrgencyConfig` / `getUserPresence`) — consumed by UI Settings tab "Urgency & Deadliny" and by orchestrator tools `get_urgency_config` / `update_urgency_config` / `bump_task_deadline` / `get_user_presence`.
+
+Superseded briefs (kept for history): `agent://claude-code/urgency-deadline-presence-design`, `agent://claude-code/router-escalation-unification-brief`.
 
 ## Polling & Indexing Pipeline
 

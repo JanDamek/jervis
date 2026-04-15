@@ -363,6 +363,13 @@ data class OrchestrateRequestDto(
     @SerialName("qualifier_context") val qualifierContext: String? = null,
     @SerialName("source_urn") val sourceUrn: String? = null,
     @SerialName("task_name") val taskName: String? = null,
+    // Urgency metadata forwarded to orchestrator for deadline-aware routing.
+    // See KB agent://claude-code/task-routing-unified-design.
+    @SerialName("deadline_iso") val deadlineIso: String? = null,
+    val priority: String = "NORMAL",
+    val capability: String? = null,
+    val tier: String? = null,
+    @SerialName("min_model_size") val minModelSize: Int = 0,
 )
 
 @Serializable

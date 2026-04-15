@@ -116,6 +116,18 @@ Replace `if/when` with polymorphism/sealed classes/routing tables where code mig
 - **UI text**: Czech
 - **Documentation**: English
 
+### 8. Urgency signal = deadline only
+
+**Only `deadline: Instant?` crosses service boundaries as an urgency signal.**
+No `Speed` / `Bucket` / `Urgency` enum in shared DTOs, RPC, HTTP headers, or
+Mongo. If urgency matters at some layer, derive it there from `(deadline, priority, now)`.
+The router has a private `_Bucket` (REALTIME / URGENT / NORMAL / BATCH) inside
+`router_core.py` — it must not leak out.
+
+Reason: two representations of the same thing (deadline + speed) drift out of
+sync. Canonical SSOT: `docs/architecture.md#urgency--deadline-scheduling`
+and KB `agent://claude-code/task-routing-unified-design`.
+
 ---
 
 ## Architecture Quick Reference
