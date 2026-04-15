@@ -41,9 +41,9 @@ class DocumentExtractionClient(baseUrl: String) {
             )
         }
         install(HttpTimeout) {
-            requestTimeoutMillis = 120_000   // 2 min — VLM calls can be slow
+            requestTimeoutMillis = Long.MAX_VALUE   // VLM trvá jak trvá, žádný read timeout
             connectTimeoutMillis = 10_000
-            socketTimeoutMillis = 120_000
+            socketTimeoutMillis = Long.MAX_VALUE
         }
     }
 

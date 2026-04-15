@@ -34,18 +34,17 @@ data class DomainRateLimitProperties(
      */
     var rateLimitTtlSeconds: Long = 300,
     /**
-     * Request timeout in milliseconds.
-     * Default: 30000ms (30 seconds)
+     * Request timeout — žádný (pokud LLM/služba odpovídá pomalu, čekáme).
+     * Connect timeout zachován pro detekci nedostupné služby.
      */
-    var requestTimeoutMs: Long = 30000,
+    var requestTimeoutMs: Long = Long.MAX_VALUE,
     /**
-     * ConnectionDocument timeout in milliseconds.
+     * Connect timeout — rychlá detekce nedostupné služby.
      * Default: 10000ms (10 seconds)
      */
     var connectTimeoutMs: Long = 10000,
     /**
-     * Socket timeout in milliseconds.
-     * Default: 30000ms (30 seconds)
+     * Socket (read) timeout — žádný. Pomalé GPU/LLM operace musí dojet.
      */
-    var socketTimeoutMs: Long = 30000,
+    var socketTimeoutMs: Long = Long.MAX_VALUE,
 )

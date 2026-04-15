@@ -34,7 +34,8 @@ class CascadeLlmClient(
     private val client = HttpClient(CIO) {
         install(HttpTimeout) {
             connectTimeoutMillis = 5_000
-            requestTimeoutMillis = 120_000
+            requestTimeoutMillis = Long.MAX_VALUE   // LLM trvá jak trvá, žádný read timeout
+            socketTimeoutMillis = Long.MAX_VALUE
         }
     }
 

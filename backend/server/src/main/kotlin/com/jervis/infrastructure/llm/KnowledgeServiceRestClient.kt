@@ -71,7 +71,7 @@ class KnowledgeServiceRestClient(
         install(HttpTimeout) {
             requestTimeoutMillis = Long.MAX_VALUE
             connectTimeoutMillis = 30_000   // 30s connect timeout only
-            socketTimeoutMillis = 10 * 60 * 1000L // 10 min — KB embedding can take long when GPU is busy with chat
+            socketTimeoutMillis = Long.MAX_VALUE // KB embedding trvá jak trvá, čekáme na GPU
         }
     }
 
