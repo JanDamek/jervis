@@ -277,6 +277,25 @@ data class TaskDocument(
      * API is unavailable. See Presence enum.
      */
     val userPresence: String? = null,
+    /**
+     * What kind of processing this task needs — drives router queue selection and
+     * per-call model picking. Values mirror router Capability enum: "chat", "thinking",
+     * "coding", "extraction", "embedding", "visual". Default "chat" for backward compat.
+     */
+    val capability: String = "chat",
+    /**
+     * Maximum cloud tier this task may escalate to: NONE | FREE | PAID | PREMIUM.
+     * Snapshotted from ClientDocument.cloudModelPolicy at task creation time, so a
+     * later tier change does not retroactively affect in-flight tasks. Null = let
+     * the router resolve from clientId (legacy callers that don't set it).
+     */
+    val tier: String? = null,
+    /**
+     * Minimum local model size in billions required for this task. 0 = any (default).
+     * 14 accepts 14b or 30b; 30 requires >= 30b. Used by orchestrator nodes that need
+     * stronger reasoning to avoid being routed to a weaker model.
+     */
+    val minModelSize: Int = 0,
 ) {
     companion object {
         /**
@@ -345,6 +364,9 @@ data class TaskDocument(
             needsQualification: Boolean?,
             deadline: Instant?,
             userPresence: String?,
+            capability: String?,
+            tier: String?,
+            minModelSize: Int?,
         ): TaskDocument = TaskDocument(
             id = TaskId(id),
             type = type,
@@ -403,6 +425,9 @@ data class TaskDocument(
             needsQualification = needsQualification ?: false,
             deadline = deadline,
             userPresence = userPresence,
+            capability = capability ?: "chat",
+            tier = tier,
+            minModelSize = minModelSize ?: 0,
         )
     }
 }

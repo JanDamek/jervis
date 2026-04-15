@@ -35,6 +35,8 @@ async def route_request(
     capability: str = "chat",
     max_tier: str = "NONE",
     estimated_tokens: int = 0,
+    deadline_iso: str | None = None,
+    priority: str = "NORMAL",
     processing_mode: str | None = None,
     speed: str | None = None,
     min_model_size: int = 0,
@@ -42,18 +44,20 @@ async def route_request(
     require_tools: bool = False,
     client_id: str | None = None,
 ) -> RouteDecision:
-    """Ask router for routing decision (3D: capability × tier × speed × min_model_size).
-
-    This client is a thin passthrough — the router decides local vs cloud.
-    Callers supply what they need; no routing heuristics live here.
+    """Ask router for routing decision. Urgency is carried by `deadline_iso` + `priority`;
+    the router derives its internal bucket from them. See KB
+    `agent://claude-code/task-routing-unified-design`.
 
     Args:
         capability: "thinking", "coding", "chat", "extraction", "embedding", "visual"
         max_tier: explicit tier override. Prefer client_id.
         estimated_tokens: estimated context size in tokens
-        speed: "STANDARD" (default, prefer local) | "FAST" (assistant, prefer cloud)
+        deadline_iso: absolute ISO-8601 deadline (e.g. from TaskDocument.deadline).
+            None = no urgency pressure (router treats as BATCH).
+        priority: "CASCADE" | "CRITICAL" | "NORMAL" — queue priority + REALTIME override.
         min_model_size: minimum local model size in billions (0 = any, 14, 30)
-        processing_mode: legacy FOREGROUND→FAST / BACKGROUND→STANDARD (used only if `speed` omitted)
+        processing_mode / speed: DEPRECATED legacy — router's legacy shim translates them
+            to a synthetic deadline when `deadline_iso` is absent. Prefer deadline_iso.
         skip_models: model IDs to skip (already tried and failed in this request)
         require_tools: if True, only models with supportsTools=True are eligible
         client_id: router resolves tier from client's CloudModelPolicy in DB
@@ -66,10 +70,13 @@ async def route_request(
         payload: dict = {
             "capability": capability,
             "estimated_tokens": estimated_tokens,
+            "priority": priority,
         }
-        if speed:
+        if deadline_iso:
+            payload["deadline_iso"] = deadline_iso
+        elif speed:
             payload["speed"] = speed
-        if processing_mode:
+        elif processing_mode:
             payload["processing_mode"] = processing_mode
         if min_model_size:
             payload["min_model_size"] = min_model_size

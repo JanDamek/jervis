@@ -99,6 +99,9 @@ class TaskService(
         meetingMetadata: MeetingMetadata? = null,
         deadline: java.time.Instant? = null,
         userPresence: String? = null,
+        capability: String = "chat",
+        tier: String? = null,
+        minModelSize: Int = 0,
     ): TaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
@@ -126,6 +129,9 @@ class TaskService(
                 meetingMetadata = meetingMetadata,
                 deadline = deadline,
                 userPresence = userPresence,
+                capability = capability,
+                tier = tier,
+                minModelSize = minModelSize,
             )
 
         val saved = taskRepository.save(task)
