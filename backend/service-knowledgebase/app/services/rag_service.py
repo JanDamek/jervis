@@ -18,7 +18,7 @@ class RagService:
     def __init__(self):
         # Default: no priority header (NORMAL). Callers pass explicit priority via header.
         self.embedding_priority = None
-        self.http_client = httpx.AsyncClient(timeout=300.0)  # 5 min — embedding + router queue
+        self.http_client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0))
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=2000,
             chunk_overlap=400

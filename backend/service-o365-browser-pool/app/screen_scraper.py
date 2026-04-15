@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from app.browser_manager import BrowserManager
 from app.config import settings
 from app.kotlin_callback import notify_session_state
-from app.models import SessionState
+from app.pod_state import PodState, get_state_manager
 from app.scrape_storage import ScrapeStorage
 from app.tab_manager import TabManager, TabType
 from app.vlm_client import analyze_screenshot
@@ -161,8 +161,8 @@ class ScreenScraper:
 
         while self._running:
             try:
-                state = self._bm.get_state(client_id)
-                if state != SessionState.ACTIVE:
+                sm = get_state_manager(client_id)
+                if sm is None or sm.state != PodState.ACTIVE:
                     await asyncio.sleep(30)
                     continue
 

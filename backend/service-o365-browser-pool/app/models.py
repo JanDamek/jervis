@@ -1,19 +1,14 @@
-"""Pydantic models for O365 Browser Pool."""
+"""Pydantic models for O365 Browser Pool API.
+
+Pod state lives in PodStateManager (pod_state.py) — these models just
+serialize the state value as string for HTTP responses.
+"""
 
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
 
 from pydantic import BaseModel
-
-
-class SessionState(str, Enum):
-    ACTIVE = "ACTIVE"
-    EXPIRED = "EXPIRED"
-    PENDING_LOGIN = "PENDING_LOGIN"
-    AWAITING_MFA = "AWAITING_MFA"
-    ERROR = "ERROR"
 
 
 class TokenInfo(BaseModel):
@@ -31,15 +26,14 @@ class TokenResponse(BaseModel):
 
 class SessionStatus(BaseModel):
     client_id: str
-    state: SessionState
+    state: str  # PodState value (STARTING, AUTHENTICATING, ACTIVE, AWAITING_MFA, ERROR, ...)
     has_token: bool = False
     last_activity: str | None = None
     last_token_extract: str | None = None
     novnc_url: str | None = None
-    # MFA info (when state == AWAITING_MFA)
     mfa_type: str | None = None
     mfa_message: str | None = None
-    mfa_number: str | None = None  # Number to approve in authenticator
+    mfa_number: str | None = None
 
 
 class SessionInitRequest(BaseModel):
@@ -49,15 +43,13 @@ class SessionInitRequest(BaseModel):
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/131.0.0.0 Safari/537.36"
     )
-    # Capabilities from connection — determines which tabs to open
-    capabilities: list[str] = []  # e.g. ["CHAT_READ", "EMAIL_READ", "CALENDAR_READ"]
-    # Auto-login credentials (optional — if provided, Playwright fills the login form)
+    capabilities: list[str] = []
     username: str | None = None
     password: str | None = None
 
 
 class SessionInitResponse(BaseModel):
     client_id: str
-    state: SessionState
+    state: str  # PodState value
     novnc_url: str | None = None
     message: str

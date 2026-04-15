@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 # Reuse a single httpx client for route decisions (short timeout)
 _route_http = httpx.AsyncClient(timeout=3.0)
-# Reuse a single httpx client for LLM calls (long timeout)
-_llm_http = httpx.AsyncClient(timeout=settings.LLM_CALL_TIMEOUT)
+# Reuse a single httpx client for LLM calls — žádný read timeout (LLM trvá jak trvá)
+_llm_http = httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0))
 
 
 @dataclass

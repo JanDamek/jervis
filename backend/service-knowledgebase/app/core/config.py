@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     INGEST_PROMPT_RESERVE: int = 1_500      # Reserve tokens for instruction/system part of prompt
     TOKEN_ESTIMATE_RATIO: float = 2.5       # chars / 2.5 ≈ tokens (Czech text heuristic)
     MAX_EXTRACTION_CHUNKS: int = 30         # Max chunks for LLM graph extraction per document
-    LLM_CALL_TIMEOUT: float = 900.0         # Max seconds for a single LLM call (router queue may hold request)
+    LLM_CALL_TIMEOUT: float = 86400.0       # ChatOllama wrapper potřebuje float, prakticky neomezeno (24h)
 
     # -- Image processing -------------------------------------------------------
     # VLM-first strategy: DocumentExtractor uses VLM for images and scanned PDFs.

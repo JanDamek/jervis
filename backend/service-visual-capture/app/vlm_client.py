@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 AnalysisMode = Literal["scene", "whiteboard", "screen"]
 
 _RETRY_DELAYS = [5, 10, 20]  # seconds — same as whatsapp-browser vlm_client
-_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+_TIMEOUT = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0)  # VLM trvá jak trvá
 
 _PROMPTS: dict[AnalysisMode, str] = {
     "scene": settings.visual_capture_vlm_prompt_scene,

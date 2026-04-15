@@ -48,8 +48,8 @@ class KnowledgeService:
         # Persistent HTTP client for progress callbacks to Kotlin server
         import httpx
         self._callback_http = httpx.AsyncClient(timeout=5.0) if settings.KOTLIN_SERVER_URL else None
-        # Direct httpx for LLM calls with priority headers (ChatOllama can't set per-request headers)
-        self._llm_http = httpx.AsyncClient(timeout=settings.LLM_CALL_TIMEOUT)
+        # Direct httpx for LLM calls with priority headers — žádný read timeout (LLM trvá jak trvá)
+        self._llm_http = httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0))
         # LLM for ingest tasks — explicit num_ctx prevents Ollama using small
         # default (often 2048), and timeout prevents indefinite hangs that block
         # the async callback to Kotlin (causing infinite INDEXING→retry loop).

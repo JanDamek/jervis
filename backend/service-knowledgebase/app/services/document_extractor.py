@@ -73,7 +73,7 @@ class DocumentExtractor:
             self._base_url, filename, mime_type, len(file_bytes),
         )
 
-        async with httpx.AsyncClient(timeout=180.0) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0)) as client:
             resp = await client.post(
                 f"{self._base_url}/extract",
                 files={"file": (filename, file_bytes, mime_type)},

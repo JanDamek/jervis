@@ -98,7 +98,7 @@ async def _call_ollama(route: dict, image_b64: str, prompt: str) -> str:
     api_base = route.get("api_base", settings.ollama_router_url)
     model = route.get("model", "qwen3-vl-tool:latest")
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0)) as client:
         resp = await client.post(
             f"{api_base}/api/generate",
             json={
@@ -126,7 +126,7 @@ async def _call_openrouter(route: dict, image_b64: str, prompt: str) -> str:
     if not api_key:
         raise RuntimeError("No OpenRouter API key available")
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0)) as client:
         resp = await client.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={

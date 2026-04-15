@@ -138,3 +138,21 @@ class PodStateManager:
             "mfa_message": self._mfa_message,
             "mfa_number": self._mfa_number,
         }
+
+
+# Shared registry — 1 pod typically has 1 client, but the registry lets
+# main.py self-restore and routes/session.py share the same PodStateManager
+# instance per client_id.
+_managers: dict[str, PodStateManager] = {}
+
+
+def get_or_create_state_manager(client_id: str, connection_id: str) -> PodStateManager:
+    sm = _managers.get(client_id)
+    if sm is None:
+        sm = PodStateManager(client_id, connection_id)
+        _managers[client_id] = sm
+    return sm
+
+
+def get_state_manager(client_id: str) -> PodStateManager | None:
+    return _managers.get(client_id)

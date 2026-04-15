@@ -9,7 +9,6 @@ from pathlib import Path
 from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright
 
 from app.config import settings
-from app.models import SessionState
 
 logger = logging.getLogger("o365-browser-pool")
 
@@ -20,11 +19,12 @@ class BrowserManager:
     Each client gets a persistent Chromium profile stored under
     ``{profiles_dir}/{client_id}/``.  Cookies and local-storage are
     persisted so that O365 sessions survive pod restarts.
+
+    Session state lives in PodStateManager (pod_state.py), not here.
     """
 
     def __init__(self) -> None:
         self._contexts: dict[str, BrowserContext] = {}
-        self._states: dict[str, SessionState] = {}
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
 
@@ -81,7 +81,6 @@ class BrowserManager:
         )
 
         self._contexts[client_id] = context
-        self._states[client_id] = SessionState.PENDING_LOGIN
         logger.info("Created browser context for client %s", client_id)
         return context
 
@@ -102,12 +101,6 @@ class BrowserManager:
     def get_context(self, client_id: str) -> BrowserContext | None:
         return self._contexts.get(client_id)
 
-    def get_state(self, client_id: str) -> SessionState:
-        return self._states.get(client_id, SessionState.EXPIRED)
-
-    def set_state(self, client_id: str, state: SessionState) -> None:
-        self._states[client_id] = state
-
     @property
     def active_count(self) -> int:
         return len(self._contexts)
@@ -123,7 +116,6 @@ class BrowserManager:
 
     async def _close_context(self, client_id: str) -> None:
         ctx = self._contexts.pop(client_id, None)
-        self._states.pop(client_id, None)
         if ctx:
             try:
                 await self.save_state(client_id)

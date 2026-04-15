@@ -24,7 +24,7 @@ class GraphService:
     def __init__(self):
         self.db = get_arango_db()
         self.alias_registry = AliasRegistry(self.db)
-        self.http_client = httpx.AsyncClient(timeout=600.0)
+        self.http_client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0))
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=2000,
             chunk_overlap=200
