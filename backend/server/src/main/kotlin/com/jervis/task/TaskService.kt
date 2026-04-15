@@ -97,6 +97,8 @@ class TaskService(
         mentionsJervis: Boolean = false,
         topicId: String? = null,
         meetingMetadata: MeetingMetadata? = null,
+        deadline: java.time.Instant? = null,
+        userPresence: String? = null,
     ): TaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
@@ -122,6 +124,8 @@ class TaskService(
                 mentionsJervis = mentionsJervis,
                 topicId = topicId,
                 meetingMetadata = meetingMetadata,
+                deadline = deadline,
+                userPresence = userPresence,
             )
 
         val saved = taskRepository.save(task)
@@ -175,18 +179,20 @@ class TaskService(
     }
 
     /**
-     * Get next BACKGROUND task ordered by priority score DESC, then createdAt ASC.
+     * Get next BACKGROUND task — deadline-first, then priority, then FIFO.
      *
-     * EPIC 2 change: Background tasks now use priority-based scheduling instead of FIFO.
-     * Tasks with higher priorityScore are processed first. Tasks without a score
-     * (null priorityScore) are treated as priority 50 (default) and fall back to FIFO.
+     * Ordering (all in DB, no application-level filter):
+     *   1. deadline ASC — nearest deadline wins (expired deadlines sort first among non-null,
+     *      null deadlines sort last so non-urgent work flows behind urgent tasks).
+     *   2. priorityScore DESC — tie-break for equal deadlines (or all-null bucket).
+     *   3. createdAt ASC — FIFO within everything else.
      *
-     * @return Next BACKGROUND task to process, or null if no tasks
+     * No watchdog / priority-bump loop — the sort key does the work.
      */
     suspend fun getNextBackgroundTask(): TaskDocument? {
         val now = java.time.Instant.now()
         return taskRepository
-            .findByProcessingModeAndStateOrderByPriorityScoreDescCreatedAtAsc(
+            .findByProcessingModeAndStateOrderByDeadlineAscPriorityScoreDescCreatedAtAsc(
                 ProcessingMode.BACKGROUND,
                 TaskStateEnum.QUEUED,
             ).firstOrNull { it.nextDispatchRetryAt == null || it.nextDispatchRetryAt <= now }

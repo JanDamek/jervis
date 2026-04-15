@@ -315,6 +315,21 @@ Connection edit dialog shows sender/domain → client ID mapping editor for emai
 
 ---
 
+## Urgency / Deadline Scheduling
+
+**Module:** `com.jervis.urgency` (backend/server)
+
+Per-client urgency config (Mongo `urgency_configs`) drives deadline-first task scheduling:
+
+- **TaskDocument fields:** `deadline: Instant?` (absolute response-by time) + `userPresence: String?`
+- **StructuralUrgencyDetector:** pure function mapping inbound signal (DM / @mention / reply-to-my-thread) → deadline derived from `UrgencyConfigDocument.fastPath*` + presence multiplier
+- **PresenceCache:** in-memory per-platform store; TTL from `presenceTtlSeconds`. Real platform subscriptions (Slack Events, Graph `/me/presence`, Discord gateway) are a separate workstream — current impl returns `UNKNOWN` on miss
+- **Scheduler:** `TaskRepository.findByProcessingModeAndStateOrderByDeadlineAscPriorityScoreDescCreatedAtAsc` — BACKGROUND tasks served nearest-deadline first, null deadlines sort last, `priorityScore DESC` breaks ties. **No watchdog / priority-bump background loop — sort key does the work.**
+- **Expired deadlines:** the task still wins scheduling race (earliest deadline) and runs; orchestrator logs a warning and may note the delay in its response. No separate cleanup job
+- **Config RPC:** `IUrgencyConfigRpc` (get / update / getUserPresence) — consumed by UI settings tab and future orchestrator tools
+
+Design history + decisions: KB `agent://claude-code/urgency-deadline-presence-design`.
+
 ## Polling & Indexing Pipeline
 
 ### 3-Stage Pipeline

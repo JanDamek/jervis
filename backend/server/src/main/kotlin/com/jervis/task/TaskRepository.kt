@@ -275,6 +275,17 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     ): Flow<TaskDocument>
 
     /**
+     * Deadline-first ordering. `deadline ASC` means tasks with an earlier deadline (or
+     * already past due) are served first; `null` deadlines sort LAST in MongoDB ascending
+     * sort so non-urgent work still flows behind urgent tasks. `priorityScore DESC` and
+     * `createdAt ASC` are secondary tie-breakers. Used by deadline-aware schedulers.
+     */
+    suspend fun findByProcessingModeAndStateOrderByDeadlineAscPriorityScoreDescCreatedAtAsc(
+        processingMode: ProcessingMode,
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    /**
      * Find task by correlationId for deduplication.
      * Used by AutoTaskCreationService to avoid creating duplicate tasks.
      */
