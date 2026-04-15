@@ -1,6 +1,7 @@
 package com.jervis.ui.screens.settings.sections
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,11 +10,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -47,7 +50,6 @@ import kotlinx.coroutines.launch
  * approaching-deadline threshold. Client is picked via a dropdown; "Uložit" persists
  * the full UrgencyConfigDto (update_urgency_config semantics).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun UrgencySettings(repository: JervisRepository) {
     val scope = rememberCoroutineScope()
@@ -124,32 +126,38 @@ internal fun UrgencySettings(repository: JervisRepository) {
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Client picker
+        // Client picker — plain TextField (read-only) + DropdownMenu anchored to a
+        // trailing icon. Keeps cross-platform compatibility (ExposedDropdownMenu has
+        // differing signatures across material3 revisions).
         JSection(title = "Klient") {
-            ExposedDropdownMenuBox(
-                expanded = clientDropdownOpen,
-                onExpandedChange = { clientDropdownOpen = !clientDropdownOpen },
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 TextField(
                     value = selectedClient?.name ?: "—",
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Vybraný klient") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(clientDropdownOpen) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    modifier = Modifier.weight(1f),
                 )
-                androidx.compose.material3.ExposedDropdownMenu(
-                    expanded = clientDropdownOpen,
-                    onDismissRequest = { clientDropdownOpen = false },
-                ) {
-                    clients.forEach { c ->
-                        DropdownMenuItem(
-                            text = { Text(c.name) },
-                            onClick = {
-                                selectedClient = c
-                                clientDropdownOpen = false
-                            },
-                        )
+                Box {
+                    IconButton(onClick = { clientDropdownOpen = true }) {
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Vybrat klienta")
+                    }
+                    DropdownMenu(
+                        expanded = clientDropdownOpen,
+                        onDismissRequest = { clientDropdownOpen = false },
+                    ) {
+                        clients.forEach { c ->
+                            DropdownMenuItem(
+                                text = { Text(c.name) },
+                                onClick = {
+                                    selectedClient = c
+                                    clientDropdownOpen = false
+                                },
+                            )
+                        }
                     }
                 }
             }
