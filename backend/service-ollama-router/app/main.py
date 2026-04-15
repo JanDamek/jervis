@@ -532,6 +532,23 @@ async def get_model_stats_endpoint():
     return JSONResponse(content=get_model_stats())
 
 
+@app.post("/route-decision/invalidate-client-tier")
+async def invalidate_client_tier_endpoint(request: Request):
+    """Invalidate cached client tier after client update on server.
+
+    Called by Kotlin server after client's cloudModelPolicy changes.
+    Input: {"client_id": "..."} or empty body to invalidate all.
+    """
+    from app.client_tier_cache import invalidate_cache
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    client_id = body.get("client_id")
+    invalidate_cache(client_id)
+    return JSONResponse(content={"invalidated": client_id or "all"})
+
+
 @app.post("/route-decision/model-reset")
 async def reset_model_error_endpoint(request: Request):
     """Re-enable a disabled model (called from UI after manual testing).

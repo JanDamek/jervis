@@ -62,7 +62,7 @@ class OllamaRouter:
 
         # Watchdog tasks
         self._watchdog_task: asyncio.Task | None = None
-        self._request_timeout_task: asyncio.Task | None = None
+        self._active_requests_task: asyncio.Task | None = None
         self._gpu_recovery_task: asyncio.Task | None = None
         self._idle_notify_task: asyncio.Task | None = None
         self._warmup_task: asyncio.Task | None = None
@@ -92,7 +92,7 @@ class OllamaRouter:
         await self._queue.start()
         # Start background tasks
         self._watchdog_task = asyncio.create_task(self._reservation_watchdog())
-        self._request_timeout_task = asyncio.create_task(self._request_timeout_watchdog())
+        self._active_requests_task = asyncio.create_task(self._active_requests_logger())
         self._idle_notify_task = asyncio.create_task(self._idle_notify_watchdog())
         # Start warmup loop (keeps models in VRAM)
         if settings.warmup_enabled:
@@ -109,8 +109,8 @@ class OllamaRouter:
             await self._queue.stop()
         if self._watchdog_task:
             self._watchdog_task.cancel()
-        if self._request_timeout_task:
-            self._request_timeout_task.cancel()
+        if self._active_requests_task:
+            self._active_requests_task.cancel()
         if self._gpu_recovery_task:
             self._gpu_recovery_task.cancel()
         if self._idle_notify_task:
@@ -618,41 +618,29 @@ class OllamaRouter:
             except Exception as e:
                 logger.error("Watchdog error: %s", e)
 
-    async def _request_timeout_watchdog(self) -> None:
-        """Cancel requests exceeding max_request_timeout_s.
+    async def _active_requests_logger(self) -> None:
+        """Periodically log active request counts for observability.
 
-        Runs every 15s. Detects zombie requests (client disconnected but
-        proxy still running) and cancels them to free GPU resources.
-        Also logs periodic active request counts for observability.
+        Runs every 30s. Only logs when requests are active. Replaces the
+        old timeout watchdog — router does NOT force-cancel long requests.
+        Requests complete when backend returns, or are cancelled via
+        cancel_event when the client disconnects (handled in proxy layer).
+        Rationale: guidelines say "NEVER hard timeouts — stream + heartbeat".
         """
-        logger.info("Request timeout watchdog started (check every 15s, limit=%ds)", settings.max_request_timeout_s)
+        logger.info("Active requests logger started (interval 30s, NO timeouts)")
         while True:
             try:
-                await asyncio.sleep(15)
-                now = time.monotonic()
+                await asyncio.sleep(30)
                 total_active = 0
                 for backend in self.gpu_pool.all_backends:
                     total_active += backend.active_request_count()
-                    for req_id, req in list(backend.active_requests.items()):
-                        age_s = now - req.created_at
-                        if age_s > settings.max_request_timeout_s and not req.cancel_event.is_set():
-                            logger.warning(
-                                "REQUEST_TIMEOUT: id=%s model=%s age=%.0fs (limit=%ds) — cancelling",
-                                req_id, req.model, age_s, settings.max_request_timeout_s,
-                            )
-                            req.cancel_event.set()
-
                 if total_active > 0:
                     qdepth = self._queue.queue_depth if self._queue else {}
-                    logger.info(
-                        "ACTIVE_REQUESTS: gpu=%d queue=%s",
-                        total_active, qdepth,
-                    )
-
+                    logger.info("ACTIVE_REQUESTS: gpu=%d queue=%s", total_active, qdepth)
             except asyncio.CancelledError:
                 return
             except Exception as e:
-                logger.error("Request timeout watchdog error: %s", e)
+                logger.error("Active requests logger error: %s", e)
 
     async def _idle_notify_watchdog(self) -> None:
         """Notify Kotlin server when GPU has been idle for gpu_idle_notify_after_s.
