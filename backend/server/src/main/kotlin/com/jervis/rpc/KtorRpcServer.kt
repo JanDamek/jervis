@@ -142,6 +142,7 @@ class KtorRpcServer(
     private val meetingHelperService: com.jervis.meeting.MeetingHelperService,
     private val financialRpcImpl: com.jervis.finance.FinancialRpcImpl,
     private val financialService: com.jervis.finance.FinancialService,
+    private val urgencyConfigRpcImpl: com.jervis.urgency.UrgencyConfigRpcImpl,
     private val timeTrackingRpcImpl: com.jervis.timetracking.TimeTrackingRpcImpl,
     private val timeTrackingService: com.jervis.timetracking.TimeTrackingService,
     private val proactiveScheduler: com.jervis.proactive.ProactiveScheduler,
@@ -1522,6 +1523,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.environment.IEnvironmentService> { environmentRpcImpl }
                                 registerService<com.jervis.service.environment.IEnvironmentResourceService> { environmentResourceRpcImpl }
                                 registerService<com.jervis.service.preferences.ISystemConfigService> { systemConfigRpcImpl }
+                                registerService<com.jervis.service.urgency.IUrgencyConfigRpc> { urgencyConfigRpcImpl }
                                 registerService<com.jervis.service.chat.IChatService> { chatRpcImpl }
                                 registerService<com.jervis.service.guidelines.IGuidelinesService> { guidelinesRpcImpl }
                                 registerService<com.jervis.service.kb.IKbDocumentService> { kbDocumentRpcImpl }

@@ -110,6 +110,7 @@ import java.time.Instant
     CompoundIndex(name = "queue_priority_idx", def = "{'processingMode': 1, 'state': 1, 'priorityScore': -1, 'createdAt': 1}"),
     CompoundIndex(name = "user_task_priority_idx", def = "{'type': 1, 'state': 1, 'priorityScore': -1, 'lastActivityAt': -1}"),
     CompoundIndex(name = "topic_idx", def = "{'topicId': 1, 'state': 1}"),
+    CompoundIndex(name = "deadline_idx", def = "{'state': 1, 'deadline': 1}"),
 )
 data class TaskDocument(
     @Id
@@ -263,6 +264,19 @@ data class TaskDocument(
      */
     @Indexed
     val needsQualification: Boolean = false,
+    /**
+     * Absolute instant by which a response MUST be out. Drives deadline-first scheduling
+     * (nearest deadline wins over priority in same priority tier). Null = no deadline pressure
+     * (legacy tasks, batch jobs). Populated by inbound handlers via StructuralUrgencyDetector.
+     */
+    @Indexed
+    val deadline: Instant? = null,
+    /**
+     * Observed user presence at the moment this task was created. Used to scale the deadline
+     * (active user → tight, offline → relaxed). Stored as enum name; UNKNOWN when presence
+     * API is unavailable. See Presence enum.
+     */
+    val userPresence: String? = null,
 ) {
     companion object {
         /**
@@ -329,6 +343,8 @@ data class TaskDocument(
             meetingMetadata: MeetingMetadata?,
             summary: String?,
             needsQualification: Boolean?,
+            deadline: Instant?,
+            userPresence: String?,
         ): TaskDocument = TaskDocument(
             id = TaskId(id),
             type = type,
@@ -385,6 +401,8 @@ data class TaskDocument(
             meetingMetadata = meetingMetadata,
             summary = summary,
             needsQualification = needsQualification ?: false,
+            deadline = deadline,
+            userPresence = userPresence,
         )
     }
 }
