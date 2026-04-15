@@ -35,32 +35,44 @@ async def route_request(
     capability: str = "chat",
     max_tier: str = "NONE",
     estimated_tokens: int = 0,
-    processing_mode: str = "FOREGROUND",
+    processing_mode: str | None = None,
+    speed: str | None = None,
+    min_model_size: int = 0,
     skip_models: list[str] | None = None,
     require_tools: bool = False,
     client_id: str | None = None,
 ) -> RouteDecision:
-    """Ask router for routing decision based on capability.
+    """Ask router for routing decision (3D: capability × tier × speed × min_model_size).
+
+    This client is a thin passthrough — the router decides local vs cloud.
+    Callers supply what they need; no routing heuristics live here.
 
     Args:
-        capability: "thinking", "coding", "chat", "embedding", "visual"
-        max_tier: explicit tier override (backward compat). Prefer client_id.
+        capability: "thinking", "coding", "chat", "extraction", "embedding", "visual"
+        max_tier: explicit tier override. Prefer client_id.
         estimated_tokens: estimated context size in tokens
-        processing_mode: "FOREGROUND" (chat → always cloud) or "BACKGROUND" (local, cloud >48k)
+        speed: "STANDARD" (default, prefer local) | "FAST" (assistant, prefer cloud)
+        min_model_size: minimum local model size in billions (0 = any, 14, 30)
+        processing_mode: legacy FOREGROUND→FAST / BACKGROUND→STANDARD (used only if `speed` omitted)
         skip_models: model IDs to skip (already tried and failed in this request)
         require_tools: if True, only models with supportsTools=True are eligible
         client_id: router resolves tier from client's CloudModelPolicy in DB
 
     Returns:
-        RouteDecision with target, model, and optional api_base.
+        RouteDecision with target, model, and optional api_base/api_key.
     """
     url = f"{_router_base_url()}/route-decision"
     try:
-        payload = {
+        payload: dict = {
             "capability": capability,
             "estimated_tokens": estimated_tokens,
-            "processing_mode": processing_mode,
         }
+        if speed:
+            payload["speed"] = speed
+        if processing_mode:
+            payload["processing_mode"] = processing_mode
+        if min_model_size:
+            payload["min_model_size"] = min_model_size
         if client_id:
             payload["client_id"] = client_id
         if max_tier and max_tier != "NONE":

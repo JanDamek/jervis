@@ -23,9 +23,12 @@ from .models import (
     GPU_MODEL_SETS,
     LOCAL_MODEL_CAPABILITIES,
     LOCAL_MODEL_CONTEXT,
+    LOCAL_MODEL_SIZE,
     MODEL_SETS,
     MODEL_TO_PRIORITY,
+    Capability,
     Priority,
+    Speed,
     TrackedRequest,
     VLM_GPU,
 )
@@ -83,6 +86,8 @@ class OllamaRouter:
     async def startup(self) -> None:
         """Initialize router state on startup."""
         self._mgmt_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+        # Validate coverage matrix (capability × tier) — fail fast on gaps.
+        await self._validate_coverage_matrix()
         # Sync GPU state from all backends (initial check only, fail fast after)
         await self.gpu_pool.sync_state(self._mgmt_client)
         # Preload per-GPU model sets (each GPU gets its own models)
@@ -123,6 +128,34 @@ class OllamaRouter:
         if self._mgmt_client:
             await self._mgmt_client.aclose()
 
+    async def _validate_coverage_matrix(self) -> None:
+        """Ensure every (capability, tier) combination has at least one model available.
+
+        Local covers tier=NONE (no cloud allowed). Cloud covers FREE/PAID/PREMIUM when
+        the queue has any enabled model; local is the guaranteed fallback. We require
+        a local fallback for every core capability so the router never returns a
+        'no model available' runtime error.
+        """
+        core_caps = [
+            Capability.CHAT.value,
+            Capability.THINKING.value,
+            Capability.CODING.value,
+            Capability.EXTRACTION.value,
+            Capability.EMBEDDING.value,
+            Capability.VISUAL.value,
+        ]
+        missing: list[str] = []
+        for cap in core_caps:
+            has_local = any(cap in caps for caps in LOCAL_MODEL_CAPABILITIES.values())
+            if not has_local:
+                missing.append(f"capability={cap} has no local model")
+        if missing:
+            raise RuntimeError(
+                "Router coverage matrix incomplete — every core capability needs a local fallback. "
+                "Missing: " + "; ".join(missing)
+            )
+        logger.info("Coverage matrix OK: all %d core capabilities have local fallback", len(core_caps))
+
     async def _preload_per_gpu_models(self) -> None:
         """Preload per-GPU model sets according to GPU_MODEL_SETS config.
 
@@ -157,106 +190,119 @@ class OllamaRouter:
 
     async def decide_route(
         self, capability: str, max_tier: str, estimated_tokens: int,
-        processing_mode: str = "FOREGROUND",
+        processing_mode: str | None = None,
+        speed: str | None = None,
+        min_model_size: int = 0,
         skip_models: list[str] | None = None,
         require_tools: bool = False,
         client_id: str | None = None,
     ) -> dict:
-        """Capability-based routing decision.
+        """3D routing decision: capability × tier × speed × min_model_size.
 
-        Note: skip_models may contain litellm provider prefixes (openrouter/, ollama/).
-        We strip them to match against raw model IDs in queues.
+        speed=FAST (assistant/interactive): prefer cloud whenever tier>=FREE AND a cloud
+            model fits. Fall back to local only if no cloud model is available / rate-limited.
+        speed=STANDARD (background, batch): prefer local; escalate to cloud only if local
+            GPU is busy or context exceeds local limits.
+        tier=NONE: local only — no cloud escalation regardless of speed.
 
-        1. NONE → always local GPU (FG NONE preempts BG via CRITICAL priority)
-        2. FG + FREE+ → always OpenRouter
-        3. BG + FREE+ ≤48k + GPU free → local GPU
-        4. BG + FREE+ >48k OR GPU busy → OpenRouter (yield GPU for FG)
-        5. No cloud model fits → local fallback
+        min_model_size: minimum local model parameter count (billions). A request with
+            min_model_size=30 only runs on models whose size is >= 30. min_model_size=0
+            means any model is acceptable.
 
-        skip_models: model IDs to skip (already tried and failed in this request).
+        Legacy: if `speed` is None and `processing_mode` is provided, FOREGROUND maps to
+            FAST and BACKGROUND to STANDARD.
+
+        skip_models may contain litellm provider prefixes (openrouter/, ollama/) — stripped.
         require_tools: if True, only cloud models with supportsTools=True are eligible.
-        Returns: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
+        Returns: {"target": "local"|"openrouter", "model": "...", "api_base"|"api_key"}
         """
+        # Resolve speed — explicit `speed` wins, else derive from legacy processing_mode
+        if speed is None:
+            speed = Speed.FAST.value if (processing_mode or "FOREGROUND") == "FOREGROUND" else Speed.STANDARD.value
+        prefer_cloud = speed == Speed.FAST.value
+
         # Resolve tier: client_id takes precedence over explicit max_tier
         if client_id and (not max_tier or max_tier == "NONE"):
             from app.client_tier_cache import resolve_client_tier
             max_tier = await resolve_client_tier(client_id)
 
-        max_tier = normalize_tier(max_tier)  # backward compat: PAID_LOW→PAID, PAID_HIGH→PREMIUM
+        max_tier = normalize_tier(max_tier)
         tier_level = TIER_LEVELS.get(max_tier, 0)
-        is_background = processing_mode == "BACKGROUND"
 
-        # Strip litellm provider prefixes from skip_models (openrouter/, ollama/)
+        # Strip litellm provider prefixes from skip_models
         if skip_models:
             skip_models = [m.removeprefix("openrouter/").removeprefix("ollama/") for m in skip_models]
 
-        # Find local model for requested capability
-        local_model = self._find_local_model_for_capability(capability)
+        # Find local model honoring min_model_size
+        local_model = self._find_local_model_for_capability(capability, min_model_size=min_model_size)
         api_base = f"http://jervis-ollama-router:{settings.router_port}"
-        local_result = {
+        local_fallback = {
             "target": "local",
             "model": local_model or settings.orchestrator_model,
             "api_base": api_base,
         }
 
-        # Rule 1: NONE → always local GPU (FG NONE preempts BG via CRITICAL priority)
+        # tier=NONE → cloud is forbidden, always local (queue if needed).
         if tier_level == 0:
-            logger.info("Route decision: max_tier=NONE → local (tokens=%d)", estimated_tokens)
-            return local_result
+            if local_model is None:
+                logger.warning(
+                    "Route decision: tier=NONE but no local model for capability=%s min_size=%d — fallback to %s",
+                    capability, min_model_size, settings.orchestrator_model,
+                )
+            logger.info("Route decision: tier=NONE → local model=%s (cap=%s, min_size=%d)",
+                        capability, local_fallback["model"], min_model_size)
+            return local_fallback
 
-        # Rule 2: FOREGROUND + FREE+ → OpenRouter (if queue has models), local GPU fallback
-        # GPU is reserved for BACKGROUND. FREE/PAID/PREMIUM queues must contain
-        # models BETTER than local 30b — weaker models don't belong there.
-        if not is_background:
-            cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level, skip_models, capability=capability, require_tools=require_tools)
-            if cloud_model:
-                queue = "FREE" if cloud_model.endswith(":free") else "PAID"
-                slot_ok = await acquire_openrouter_slot(queue, timeout=65.0)
-                if not slot_ok:
-                    logger.warning("Route decision: FG rate limit timeout for %s queue → local fallback", queue)
-                    return local_result
-                logger.info("Route decision: FG tier=%s → cloud %s (tokens=%d, skip=%s)",
-                            max_tier, cloud_model, estimated_tokens, skip_models or [])
-                api_key = await get_api_key()
-                return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
-            # No cloud model in queue → local GPU fallback
-            logger.info("Route decision: FG tier=%s, no cloud model → local fallback (tokens=%d)",
-                        max_tier, estimated_tokens)
-            return local_result
+        async def _try_cloud(reason: str) -> dict | None:
+            cloud_model = await find_cloud_model_for_context(
+                estimated_tokens, tier_level, skip_models,
+                capability=capability, require_tools=require_tools,
+            )
+            if not cloud_model:
+                return None
+            queue = "FREE" if cloud_model.endswith(":free") else "PAID"
+            slot_ok = await acquire_openrouter_slot(queue, timeout=65.0)
+            if not slot_ok:
+                logger.warning("Route decision: %s → rate limit on %s queue, falling back to local", reason, queue)
+                return None
+            logger.info("Route decision: %s → cloud %s (speed=%s, tier=%s, tokens=%d, skip=%s)",
+                        reason, cloud_model, speed, max_tier, estimated_tokens, skip_models or [])
+            api_key = await get_api_key()
+            return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
 
-        # Rule 3: BACKGROUND + FREE+ — local only if ≤48k AND GPU free
-        # If GPU busy (e.g. FG NONE running) → BG yields GPU, goes to cloud
-        target_model = local_result["model"]
+        # speed=FAST → always try cloud first
+        if prefer_cloud:
+            cloud = await _try_cloud(f"FAST speed tier={max_tier}")
+            if cloud:
+                return cloud
+            logger.info("Route decision: FAST but no cloud model → local fallback (model=%s)", local_fallback["model"])
+            return local_fallback
+
+        # speed=STANDARD — local if GPU idle AND context fits local limit
+        target_model = local_fallback["model"]
         whisper_busy = self.check_whisper_busy()
-        gpu_free = any(
+        qdepth = self._queue.queue_depth if self._queue else {}
+        total_queued = sum(v for v in qdepth.values() if isinstance(v, int))
+        gpu_free = (total_queued == 0) and any(
             b.healthy and b.active_request_count() == 0
             and not (b.name == VLM_GPU and whisper_busy)
             for b in self.gpu_pool.all_backends
             if target_model in GPU_MODEL_SETS.get(b.name, [])
         )
         if estimated_tokens <= 48_000 and gpu_free:
-            logger.info("Route decision: BG tier=%s ≤48k + GPU free → local (tokens=%d)",
-                        max_tier, estimated_tokens)
-            return local_result
+            logger.info("Route decision: STANDARD tier=%s ≤48k + GPU idle → local model=%s",
+                        max_tier, target_model)
+            return local_fallback
 
-        # Rule 4: BG >48k OR GPU busy → OpenRouter (with rate limiting)
-        cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level, skip_models, capability=capability, require_tools=require_tools)
-        if cloud_model:
-            queue = "FREE" if cloud_model.endswith(":free") else "PAID"
-            slot_ok = await acquire_openrouter_slot(queue, timeout=65.0)
-            if not slot_ok:
-                logger.warning("Route decision: BG rate limit timeout for %s queue → local fallback", queue)
-                return local_result
-            reason = ">48k" if estimated_tokens > 48_000 else "GPU busy"
-            logger.info("Route decision: BG %s tier=%s → cloud %s (tokens=%d, skip=%s)",
-                        reason, max_tier, cloud_model, estimated_tokens, skip_models or [])
-            api_key = await get_api_key()
-            return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
+        # Escalate: GPU busy or context too large → cloud
+        reason = f"STANDARD escalation ({'>48k' if estimated_tokens > 48_000 else 'GPU busy'})"
+        cloud = await _try_cloud(reason)
+        if cloud:
+            return cloud
 
-        # Rule 4: No cloud model fits → local fallback
-        logger.info("Route decision: tier=%s, no cloud model fits → local fallback (tokens=%d)",
-                    max_tier, estimated_tokens)
-        return local_result
+        logger.info("Route decision: %s tier=%s no cloud fits → local fallback (model=%s, tokens=%d)",
+                    speed, max_tier, target_model, estimated_tokens)
+        return local_fallback
 
     # ── Instant cascade routing ────────────────────────────────────────
 
@@ -356,29 +402,32 @@ class OllamaRouter:
         prompt = body.get("prompt", "")
         return max(len(prompt) // 4, 100)
 
-    def _find_local_model_for_capability(self, capability: str) -> str | None:
-        """Find a local model that has the requested capability.
+    def _find_local_model_for_capability(
+        self, capability: str, min_model_size: int = 0,
+    ) -> str | None:
+        """Find a local model that has the requested capability and meets the size floor.
 
-        When multiple models support the capability, prefer the one on a free GPU.
-        This enables load balancing: 30b on p40-1 + 14b on p40-2 both handle 'chat'.
+        A request with min_model_size=30 excludes 14b models. min_model_size=0
+        accepts any model. When multiple candidates pass the filter, prefer the
+        one on a free GPU (load balancing).
         """
         candidates = [
             model for model, caps in LOCAL_MODEL_CAPABILITIES.items()
-            if capability in caps
+            if capability in caps and LOCAL_MODEL_SIZE.get(model, 0) >= min_model_size
         ]
         if not candidates:
             return None
         if len(candidates) == 1:
             return candidates[0]
 
-        # Multiple candidates — prefer the one on a free GPU
         whisper_busy = self.check_whisper_busy()
         for model in candidates:
             for backend in self.gpu_pool.all_backends:
                 if model in GPU_MODEL_SETS.get(backend.name, []):
                     if backend.healthy and backend.active_request_count() == 0:
                         if not (backend.name == VLM_GPU and whisper_busy):
-                            logger.debug("Model %s selected (GPU %s is free)", model, backend.name)
+                            logger.debug("Model %s selected (GPU %s free, cap=%s, min_size=%d)",
+                                         model, backend.name, capability, min_model_size)
                             return model
 
         # All busy — return first candidate (will queue)

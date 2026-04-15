@@ -35,6 +35,34 @@ class Capability(str, Enum):
     EXTRACTION = "extraction"  # Lightweight LLM for KB extraction, qualification (GPU-2)
 
 
+class QueueGroup(str, Enum):
+    """Capability queue groups — one dispatcher per group.
+
+    All LLM-like capabilities (thinking, coding, chat, extraction) share the `llm` queue
+    since they compete for the same GPU slot. Embeddings and VLM are isolated because
+    they target different models/GPUs and run in parallel.
+    """
+    EMBED = "embed"
+    LLM = "llm"
+    VLM = "vlm"
+
+
+def capability_to_queue_group(cap: str | Capability) -> QueueGroup:
+    """Map a fine-grained capability to its queue group."""
+    value = cap.value if isinstance(cap, Capability) else str(cap).strip().lower()
+    if value == Capability.EMBEDDING.value:
+        return QueueGroup.EMBED
+    if value in (Capability.VISUAL.value, "vision", "vlm"):
+        return QueueGroup.VLM
+    return QueueGroup.LLM
+
+
+class Speed(str, Enum):
+    """Latency preference — routes FAST calls to cloud whenever possible."""
+    STANDARD = "STANDARD"  # Default: prefer local if free, escalate when busy/oversize.
+    FAST = "FAST"          # Assistant/user-facing: prefer cloud whenever tier allows.
+
+
 # ── Per-GPU model sets ──────────────────────────────────────────────────
 # Which models to keep loaded on each GPU. Loaded from env var GPU_MODEL_SETS
 # with fallback to defaults. p40-1 stays stable (never swaps models).
@@ -77,6 +105,17 @@ LOCAL_MODEL_CAPABILITIES: dict[str, list[str]] = {
 LOCAL_MODEL_CONTEXT: dict[str, int] = {
     "p40-1": 48_000,  # 30b model, full VRAM
     "p40-2": 32_000,  # 14b + embedding + VL on-demand
+}
+
+# Local model size tier in billions of parameters — used as `min_model_size` filter.
+# A request with min_model_size=30 runs only on models with size >= 30.
+# A request with min_model_size=14 runs on any model >= 14 (30b is always acceptable).
+# Embedding models carry size=0 (size is irrelevant — they live in their own queue group).
+LOCAL_MODEL_SIZE: dict[str, int] = {
+    "qwen3-coder-tool:30b": 30,
+    "qwen3:14b": 14,
+    "qwen3-vl-tool:latest": 8,
+    "bge-m3": 0,
 }
 
 # Model equivalence — when a requested model is busy, the router can redirect
@@ -159,6 +198,15 @@ class TrackedRequest:
     target_gpu: str | None = None      # gpu backend name
     original_model: str | None = None  # original model before redirect
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    # Routing metadata (set by caller via /route-decision or explicit header).
+    # Defaults keep legacy callers working without changes.
+    capability: str = Capability.CHAT.value
+    min_model_size: int = 0    # 0 = no size floor (accept any)
+    speed: Speed = Speed.STANDARD
+
+    @property
+    def queue_group(self) -> QueueGroup:
+        return capability_to_queue_group(self.capability)
 
     def __lt__(self, other: TrackedRequest) -> bool:
         """Priority queue ordering: lower priority number first, then FIFO."""

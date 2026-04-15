@@ -129,6 +129,25 @@ def normalize_tier(tier: str) -> str:
     return _TIER_COMPAT.get(tier, tier)
 
 
+# Capability aliases — different parts of the codebase use different names.
+# DB / UI uses 'visual', vlm_client uses 'vision'. Normalize so router matches.
+_CAPABILITY_ALIASES = {
+    "vision": "visual",
+    "vlm": "visual",
+    "text": "chat",
+    "llm": "chat",
+    "code": "coding",
+    "embed": "embedding",
+}
+
+
+def _normalize_capability(cap: str) -> str:
+    if not cap:
+        return cap
+    c = cap.strip().lower()
+    return _CAPABILITY_ALIASES.get(c, c)
+
+
 async def get_queue(queue_name: str) -> list[dict]:
     """Get model queue by name from settings. Returns empty list if unavailable (= local only)."""
     queue_name = normalize_tier(queue_name)  # backward compat: PAID_LOW→PAID, PAID_HIGH→PREMIUM
@@ -206,9 +225,10 @@ async def _first_cloud_model(
             logger.debug("Skipping model %s (require_tools=True but supportsTools=False)", model_id)
             continue
         if capability:
-            model_caps = entry.get("capabilities", [])
-            if model_caps and capability not in model_caps:
-                logger.debug("Skipping model %s (no capability '%s', has %s)", model_id, capability, model_caps)
+            cap_norm = _normalize_capability(capability)
+            model_caps_norm = {_normalize_capability(c) for c in entry.get("capabilities", [])}
+            if model_caps_norm and cap_norm not in model_caps_norm:
+                logger.debug("Skipping model %s (no capability '%s', has %s)", model_id, capability, model_caps_norm)
                 continue
         # Skip models with too many consecutive errors or temporarily paused
         error_info = _model_errors.get(model_id)

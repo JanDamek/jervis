@@ -378,12 +378,12 @@ async def router_health():
     any_gpu_healthy = any(b.healthy for b in router.gpu_pool.all_backends)
     status = "healthy" if any_gpu_healthy else "unhealthy"
 
-    qdepth = router._queue.queue_depth if router._queue else {"critical": 0, "normal": 0}
+    qdepth = router._queue.queue_depth if router._queue else {}
     return {
         "status": status,
         "gpu_backends": gpu_backends,
         "orchestrator_reserved": router.is_reserved,
-        "queue_depth": qdepth["critical"] + qdepth["normal"],
+        "queue_depth": sum(qdepth.values()),
     }
 
 
@@ -447,21 +447,29 @@ async def router_status():
 
 @app.post("/route-decision")
 async def route_decision(request: Request):
-    """Capability-based routing decision endpoint.
+    """3D routing decision endpoint: capability × tier × speed × min_model_size.
 
-    Input: {"capability": "chat", "max_tier": "FREE", "estimated_tokens": 5000,
-            "processing_mode": "FOREGROUND", "require_tools": false}
-    Output: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
-
-    processing_mode: "FOREGROUND" (chat, always cloud) or "BACKGROUND" (local GPU, cloud >48k)
-    require_tools: if true, only models with supportsTools=true are eligible
+    Input: {
+        "capability": "chat",           # fine-grained: chat|thinking|coding|extraction|embedding|visual
+        "max_tier": "FREE",             # NONE|FREE|PAID|PREMIUM (resolved from client_id if omitted)
+        "estimated_tokens": 5000,
+        "speed": "STANDARD",            # STANDARD|FAST (FAST prefers cloud whenever tier allows)
+        "min_model_size": 0,            # local size floor in billions (0=any, 14, 30, ...)
+        "processing_mode": "FOREGROUND",# legacy: FOREGROUND→FAST, BACKGROUND→STANDARD (if `speed` omitted)
+        "require_tools": false,
+        "skip_models": [...],
+        "client_id": "..."
+    }
+    Output: {"target": "local"|"openrouter", "model": "...", "api_base"|"api_key": "..."}
     """
     body = await request.json()
     decision = await router.decide_route(
         capability=body.get("capability", "chat"),
         max_tier=body.get("max_tier", "NONE"),
         estimated_tokens=body.get("estimated_tokens", 0),
-        processing_mode=body.get("processing_mode", "FOREGROUND"),
+        speed=body.get("speed"),
+        min_model_size=body.get("min_model_size", 0),
+        processing_mode=body.get("processing_mode"),
         skip_models=body.get("skip_models"),
         require_tools=body.get("require_tools", False),
         client_id=body.get("client_id"),
@@ -676,12 +684,12 @@ async def whisper_done():
 @app.get("/queue-status")
 async def queue_status():
     """Minimal queue status for orchestrator routing decisions."""
-    qdepth = router._queue.queue_depth if router._queue else {"critical": 0, "normal": 0}
+    qdepth = router._queue.queue_depth if router._queue else {}
     gpu_free = [b.name for b in router.gpu_pool.all_backends if b.healthy and b.active_request_count() == 0]
     gpu_busy = [b.name for b in router.gpu_pool.all_backends if b.healthy and b.active_request_count() > 0]
     return {
-        "critical_queue": qdepth.get("critical", 0),
-        "normal_queue": qdepth.get("normal", 0),
+        "queue_depth_by_group": qdepth,
+        "queue_depth_total": sum(qdepth.values()),
         "gpu_free": gpu_free,
         "gpu_busy": gpu_busy,
     }

@@ -24,8 +24,10 @@ from .models import (
     EMBEDDING_MODELS,
     EMBEDDING_PATHS,
     GPU_MODEL_SETS,
+    LOCAL_MODEL_SIZE,
     MODEL_EQUIVALENTS,
     Priority,
+    QueueGroup,
     RequestState,
     TrackedRequest,
     VLM_GPU,
@@ -54,17 +56,20 @@ class QueueEntry:
 
 
 class RequestQueue:
-    """Two-tier request queue with GPU-only dispatch.
+    """Capability-based request queue with GPU-only dispatch.
 
-    CRITICAL queue: unlimited — chat, foreground, interactive.
-    NORMAL queue: unlimited — background, embedding, indexing (waits as long as needed).
+    Three independent queues run in parallel — one per capability group
+    (embed, llm, vlm). VLM on p40-2 does not wait behind LLM on p40-1.
 
-    Dispatch rules:
-    - CRITICAL preempts NORMAL if needed.
-    - Max 1 concurrent request per GPU (serial is faster than parallel when VRAM spills).
-    - GPU only — no CPU backend.
-    - Never returns 429 — all requests are queued and wait for a slot.
+    Each queue is priority-ordered: CASCADE (-1) > CRITICAL (0) > NORMAL (1).
+    Inside the same priority level, FIFO by submission time.
+    CRITICAL preempts NORMAL only within the same queue group.
+    Max 1 concurrent LLM/VLM request per GPU (VRAM spills make parallel slower);
+    embeddings allow max_concurrent_embeddings parallel on the embed GPU.
+    Never returns 429 — all requests are queued and wait for a slot.
     """
+
+    _GROUPS: tuple[QueueGroup, ...] = (QueueGroup.EMBED, QueueGroup.LLM, QueueGroup.VLM)
 
     def __init__(
         self,
@@ -74,10 +79,16 @@ class RequestQueue:
         self.gpu_pool = gpu_pool
         self._router = router
 
-        self._critical: asyncio.Queue[QueueEntry] = asyncio.Queue()
-        self._normal: asyncio.Queue[QueueEntry] = asyncio.Queue()  # unlimited — never reject
-        self._dispatch_event = asyncio.Event()
-        self._dispatcher_task: asyncio.Task | None = None
+        # One priority queue + event + dispatcher per capability group.
+        # Items: (priority_value, seq, QueueEntry). Lower priority_value = earlier.
+        self._queues: dict[QueueGroup, asyncio.PriorityQueue] = {
+            g: asyncio.PriorityQueue() for g in self._GROUPS
+        }
+        self._dispatch_events: dict[QueueGroup, asyncio.Event] = {
+            g: asyncio.Event() for g in self._GROUPS
+        }
+        self._dispatcher_tasks: dict[QueueGroup, asyncio.Task] = {}
+        self._seq_counter: int = 0   # monotonic sequence for FIFO tiebreak
 
         self._max_concurrent_llm = settings.max_concurrent_llm
         self._max_concurrent_embeddings = settings.max_concurrent_embeddings
@@ -86,19 +97,24 @@ class RequestQueue:
         self._rr_counter: int = 0
 
     async def start(self) -> None:
-        self._dispatcher_task = asyncio.create_task(self._dispatch_loop())
+        for group in self._GROUPS:
+            self._dispatcher_tasks[group] = asyncio.create_task(
+                self._group_dispatch_loop(group)
+            )
         logger.info(
-            "RequestQueue started (unlimited queues, llm_concurrent=%d, embedding_concurrent=%d)",
+            "RequestQueue started (groups=%s, llm_concurrent=%d, embedding_concurrent=%d)",
+            [g.value for g in self._GROUPS],
             self._max_concurrent_llm, self._max_concurrent_embeddings,
         )
 
     async def stop(self) -> None:
-        if self._dispatcher_task:
-            self._dispatcher_task.cancel()
+        for task in self._dispatcher_tasks.values():
+            task.cancel()
             try:
-                await self._dispatcher_task
+                await task
             except (asyncio.CancelledError, Exception):
                 pass
+        self._dispatcher_tasks.clear()
 
     # ── Public API ───────────────────────────────────────────────────────
 
@@ -110,26 +126,25 @@ class RequestQueue:
         if backend:
             return await self._execute(backend, request)
 
-        # Queue the request
+        # Queue the request into its capability group
+        group = request.queue_group
         future: asyncio.Future[Response] = asyncio.get_event_loop().create_future()
         entry = QueueEntry(request=request, future=future)
 
-        if request.priority <= Priority.CRITICAL:
-            self._critical.put_nowait(entry)  # unlimited — never fails
-            logger.info(
-                "QUEUE_IN: id=%s priority=%s model=%s (queue_depth=%d)",
-                request.request_id, request.priority.name, request.model, self._critical.qsize(),
-            )
-            # CRITICAL/CASCADE waiting behind NORMAL → preempt NORMAL queue entries
-            self._preempt_normal_for_critical()
-        else:
-            self._normal.put_nowait(entry)  # unlimited queue — never fails
-            logger.info(
-                "QUEUE_IN: id=%s priority=NORMAL model=%s (queue_depth=%d)",
-                request.request_id, request.model, self._normal.qsize(),
-            )
+        self._seq_counter += 1
+        priority_value = int(request.priority)
+        self._queues[group].put_nowait((priority_value, self._seq_counter, entry))
+        logger.info(
+            "QUEUE_IN: id=%s group=%s priority=%s model=%s min_size=%d (depth=%d)",
+            request.request_id, group.value, request.priority.name, request.model,
+            request.min_model_size, self._queues[group].qsize(),
+        )
 
-        self._dispatch_event.set()
+        # CRITICAL/CASCADE may preempt NORMAL within the same group
+        if request.priority <= Priority.CRITICAL:
+            self._preempt_normal_for_critical(group)
+
+        self._dispatch_events[group].set()
 
         # Wait for dispatch + execution to complete
         # If client disconnects, cancel_event is set by disconnect monitor
@@ -172,83 +187,65 @@ class RequestQueue:
 
         return future.result()
 
-    def notify_slot_freed(self) -> None:
-        """Called when a backend finishes a request — wake dispatcher."""
-        self._dispatch_event.set()
+    def notify_slot_freed(self, group: QueueGroup | None = None) -> None:
+        """Called when a backend finishes a request — wake dispatcher(s).
+
+        If `group` is provided, only that dispatcher is woken. Otherwise all
+        groups are woken — the freed GPU may service any of them.
+        """
+        if group is not None:
+            self._dispatch_events[group].set()
+            return
+        for event in self._dispatch_events.values():
+            event.set()
 
     @property
     def queue_depth(self) -> dict[str, int]:
-        return {
-            "critical": self._critical.qsize(),
-            "normal": self._normal.qsize(),
-        }
+        """Queue depth per capability group (keys: 'embed', 'llm', 'vlm')."""
+        return {g.value: self._queues[g].qsize() for g in self._GROUPS}
 
     # ── Dispatcher loop ──────────────────────────────────────────────────
 
-    async def _dispatch_loop(self) -> None:
-        """Background task: assign queued requests to available backend slots."""
-        logger.info("Dispatcher loop started")
+    async def _group_dispatch_loop(self, group: QueueGroup) -> None:
+        """Per-group dispatcher: pulls from one capability queue and assigns to GPU slots.
+
+        Each group runs independently — VLM dispatch is not blocked by LLM backlog.
+        Priority ordering inside the queue is handled by PriorityQueue (CASCADE<CRITICAL<NORMAL).
+        """
+        event = self._dispatch_events[group]
+        pq = self._queues[group]
+        logger.info("Dispatcher loop started for group=%s", group.value)
         while True:
             try:
-                await self._dispatch_event.wait()
-                self._dispatch_event.clear()
+                await event.wait()
+                event.clear()
 
-                # Process queued requests until no more slots or no more requests
-                dispatched_any = True
-                while dispatched_any:
-                    dispatched_any = False
+                while not pq.empty():
+                    priority_value, seq, entry = pq.get_nowait()
+                    if entry.request.cancel_event.is_set():
+                        if not entry.future.done():
+                            entry.future.set_result(JSONResponse(
+                                status_code=499,
+                                content={"error": "cancelled"},
+                            ))
+                        continue
 
-                    # Always CRITICAL first
-                    while not self._critical.empty():
-                        entry = self._critical.get_nowait()
-                        if entry.request.cancel_event.is_set():
-                            # Skip cancelled requests
-                            if not entry.future.done():
-                                entry.future.set_result(JSONResponse(
-                                    status_code=499,
-                                    content={"error": "cancelled"},
-                                ))
-                            continue
+                    backend = self._find_slot(entry.request)
+                    if backend:
+                        asyncio.create_task(self._execute_and_resolve(backend, entry))
+                        continue
 
-                        backend = self._find_slot(entry.request)
-                        if backend:
-                            asyncio.create_task(
-                                self._execute_and_resolve(backend, entry)
-                            )
-                            dispatched_any = True
-                        else:
-                            # No slot — preempt NORMAL and re-check
-                            self._preempt_normal_for_critical()
-                            # Put back and wait for preemption to free a slot
-                            self._critical.put_nowait(entry)
-                            break
-
-                    # Then NORMAL on remaining capacity
-                    while not self._normal.empty():
-                        entry = self._normal.get_nowait()
-                        if entry.request.cancel_event.is_set():
-                            if not entry.future.done():
-                                entry.future.set_result(JSONResponse(
-                                    status_code=499,
-                                    content={"error": "cancelled"},
-                                ))
-                            continue
-
-                        backend = self._find_slot(entry.request)
-                        if backend:
-                            asyncio.create_task(
-                                self._execute_and_resolve(backend, entry)
-                            )
-                            dispatched_any = True
-                        else:
-                            # No slot — put back and wait
-                            self._normal.put_nowait(entry)
-                            break
+                    # No slot available — re-enqueue and exit loop.
+                    # For CRITICAL, try to preempt NORMAL within this group first.
+                    pq.put_nowait((priority_value, seq, entry))
+                    if entry.request.priority <= Priority.CRITICAL:
+                        self._preempt_normal_for_critical(group)
+                    break
 
             except asyncio.CancelledError:
                 return
             except Exception as e:
-                logger.error("Dispatcher error: %s", e)
+                logger.error("Dispatcher group=%s error: %s", group.value, e)
                 await asyncio.sleep(1)
 
     # ── Slot finding ─────────────────────────────────────────────────────
@@ -267,6 +264,8 @@ class RequestQueue:
         is_embedding = request.model in EMBEDDING_MODELS
 
         max_concurrent = self._max_concurrent_embeddings if is_embedding else self._max_concurrent_llm
+
+        min_size = request.min_model_size
 
         # Try GPU backends (prefer one with model already loaded, least busy)
         gpu_candidates = []
@@ -290,8 +289,13 @@ class RequestQueue:
                 equiv_model = _find_equivalent_in_set(request.model, gpu_set)
                 if equiv_model is None:
                     continue
-                # Tag the backend with the equivalent model for proxy to use
+                # Size floor: the equivalent must meet the requested min_model_size
+                if LOCAL_MODEL_SIZE.get(equiv_model, 0) < min_size:
+                    continue
                 gpu_candidates.append((b, equiv_model))
+                continue
+            # Size floor on direct match
+            if LOCAL_MODEL_SIZE.get(request.model, 0) < min_size:
                 continue
             gpu_candidates.append((b, None))
 
@@ -506,30 +510,31 @@ class RequestQueue:
 
     # ── CRITICAL preemption ──────────────────────────────────────────────
 
-    def _preempt_normal_for_critical(self) -> bool:
-        """If CRITICAL is queued and all GPU slots occupied by NORMAL, preempt one.
+    def _preempt_normal_for_critical(self, group: QueueGroup | None = None) -> bool:
+        """Preempt a NORMAL active request so a queued CRITICAL in `group` can run.
 
-        Returns True if a preemption was initiated, False if nothing to preempt.
-        Skips already-preempted requests to avoid duplicate preemption attempts.
+        Scoped by group: LLM CRITICAL does not preempt an active VLM call (different GPU).
+        If `group` is None, any group is eligible (used when caller is uncertain).
+        Returns True if a preemption was signalled.
         """
-        if self._critical.empty():
+        if group is not None and self._queues[group].empty():
             return False
 
-        # Find a GPU running NORMAL that we can preempt (skip already preempted)
         for gpu in self.gpu_pool.healthy_backends:
             for req_id, req in list(gpu.active_requests.items()):
                 if req.state == RequestState.PREEMPTED:
-                    continue  # Already preempted — don't re-signal
-                if req.priority >= Priority.NORMAL:
-                    if req.model in EMBEDDING_MODELS and not settings.preempt_embeddings:
-                        continue
-                    logger.warning(
-                        "PREEMPT_FOR_QUEUE: id=%s model=%s on GPU %s — preempted for queued CRITICAL",
-                        req_id, req.model, gpu.name,
-                    )
-                    req.cancel_event.set()
-                    req.state = RequestState.PREEMPTED
-                    # After preemption completes (grace period handled by proxy),
-                    # cleanup will call notify_slot_freed() which wakes dispatcher
-                    return True  # One preemption at a time
+                    continue
+                if req.priority < Priority.NORMAL:
+                    continue
+                if group is not None and req.queue_group != group:
+                    continue
+                if req.model in EMBEDDING_MODELS and not settings.preempt_embeddings:
+                    continue
+                logger.warning(
+                    "PREEMPT_FOR_QUEUE: id=%s group=%s model=%s on GPU %s — preempted for queued CRITICAL",
+                    req_id, req.queue_group.value, req.model, gpu.name,
+                )
+                req.cancel_event.set()
+                req.state = RequestState.PREEMPTED
+                return True
         return False
