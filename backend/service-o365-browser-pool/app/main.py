@@ -187,8 +187,10 @@ async def _try_self_restore():
                 cap_names = [t.value.upper() + "_READ" for t in available]
                 await notify_capabilities_discovered(client_id, connection_id, cap_names)
 
-        # Start legacy session monitor (token-based check)
-        await session_monitor.start()
+        # NOTE: legacy session_monitor NOT started — HealthLoop handles session health
+        # via DOM check + VLM fallback, and ai_login handles auto-recovery.
+        # Old session_monitor would send EXPIRED → server creates "log in again" USER_TASK,
+        # which violates autonomy (pod has credentials, should self-heal).
 
         logger.info("Self-restore completed for client %s (state=%s)", client_id, _state_manager.state)
 

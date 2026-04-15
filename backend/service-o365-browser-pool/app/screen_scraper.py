@@ -214,16 +214,14 @@ class ScreenScraper:
             )
             return
 
-        # Detect if VLM sees a login page instead of expected content
+        # Detect if VLM sees a login page — just log, don't send EXPIRED.
+        # HealthLoop handles session health check + ai_login auto-recovery.
+        # Sending EXPIRED here caused server to create "log in again" USER_TASK,
+        # violating pod autonomy (pod has credentials, should self-heal).
         if parsed.get("login_page") or parsed.get("sign_in"):
             logger.warning(
-                "VLM detected login page for %s/%s — session may need re-login",
+                "VLM detected login page for %s/%s — HealthLoop will handle recovery",
                 client_id, tab_type.value,
-            )
-            self._bm.set_state(client_id, SessionState.EXPIRED)
-            connection_id = self._connection_ids.get(client_id, client_id)
-            await notify_session_state(
-                client_id, connection_id, "EXPIRED",
             )
             return
 

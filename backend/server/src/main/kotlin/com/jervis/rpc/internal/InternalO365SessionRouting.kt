@@ -119,20 +119,13 @@ fun Routing.installInternalO365SessionApi(
                 }
 
                 "EXPIRED" -> {
-                    val title = "Microsoft 365: Session vypršela — je potřeba se znovu přihlásit"
-                    val description = buildString {
-                        appendLine("Připojení **${connection.name}** ztratilo přihlášení.")
-                        appendLine("Otevřete nastavení připojení a přihlaste se znovu.")
-                        body.vncUrl?.let { appendLine("\n[Otevřít vzdálený přístup k prohlížeči]($it)") }
-                    }
-
-                    for (cid in clientIds) {
-                        createSessionNotification(
-                            taskRepository, notificationRpc, fcmPushService, apnsPushService,
-                            cid, connection.name, title, description,
-                            interruptAction = "o365_relogin",
-                            browserPoolClientId = body.connectionId,
-                        )
+                    // Pod is autonomous — it has credentials and must self-heal.
+                    // EXPIRED here is just a state update, NOT a user task.
+                    // Pod's HealthLoop + ai_login will trigger re-login automatically.
+                    // Only AWAITING_MFA warrants a user notification (user interaction needed).
+                    logger.info {
+                        "Session EXPIRED for ${connection.name} (${body.connectionId}) — " +
+                        "pod will self-recover via ai_login, no user notification"
                     }
                 }
 

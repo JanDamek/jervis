@@ -136,6 +136,102 @@
 - [x] Commit: `808f3395`
 - [ ] Sidebar toggle na ikonu — TODO (menší UX vylepšení, ne blocker)
 - [ ] UX: mikrofon ikona v top baru je zavádějící (meeting vs ad-hoc recording) — redesign do budoucna
+
+## TODO: MFA notifikace — auto-zrušení po schválení
+
+**Problém:** MFA dialog s číslem (např. "Potvrďte číslo 91 v Authenticator") zůstává na Desktopu i po schválení. Uživatel musí ručně kliknout Zavřít/Potvrzeno. Zbytečné — pod ví že MFA prošla.
+
+**Požadavek:**
+- Jakmile pod identifikuje že session přešla dál (MFA schváleno), dialog musí **okamžitě zmizet** na všech klientech:
+  - Desktop (in-app dialog)
+  - Android (remote push notification)
+  - iOS (remote push notification)
+- Tlačítko "Zavřít" → pro uživatele když to chce ručně zrušit (ale obvykle nebude potřeba)
+- Tlačítko "Potvrzeno" je redundantní — schválení se provádí v Authenticator apce, ne v JERVISu
+
+**Flow:**
+1. Pod detekuje AWAITING_MFA → pošle push všem klientům
+2. Uživatel schválí v Authenticator
+3. Pod detekuje že se page posunula (ACTIVE stav)
+4. Pod POST na server: MFA_COMPLETED
+5. Server pushne všem klientům: task dismiss + cancel notification
+6. Desktop zavře dialog, Android/iOS zruší push notification
+
+## TODO: Token expired v Teams — odložit re-login na uživatelskou aktivitu
+
+**Problém:** V Teams se objeví hláška "token expired, přihlašte se znovu". Pod by to detekoval a spustil re-login automaticky — ale pokud je to ve 2 v noci a uživatel nemůže schválit MFA, login skončí v AWAITING_MFA a timeoutne.
+
+**Požadavek:**
+- Pod detekuje expired token → označí session jako `EXPIRED` (ale nic nedělá, čeká)
+- Ihned se přihlásí jakmile detekuje **aktivitu uživatele v JERVISu** (chat message, UI interakce, push ack)
+- Ve 2 v noci nespouštět MFA flow — uživatel spí, MFA by propadlo
+
+**Detekce expired tokenu:**
+- **Primárně DOM check** — hláška "token expired" / "sign in again" / element s ID Microsoft login prompt je v DOM
+- **VLM jako fallback** — screenshot → VLM identifikuje login page pokud DOM selektory selžou
+- DOM je rychlejší a stabilnější, VLM jen když DOM check nic nenajde
+
+**Detekce aktivity uživatele:**
+- WebSocket connected z UI (Desktop/Mobile) = uživatel je online
+- Nová chat message odeslaná
+- Uživatel otevřel app (foreground event)
+- Server vysílá heartbeat do podu: "user active" / "user idle"
+
+**Flow:**
+1. Pod DOM check → "token expired"
+2. Pod → server: `state=EXPIRED`, `reason="token expired, waiting for user activity"`
+3. Pod se nepouští do re-login, čeká
+4. Server sleduje user activity (UI connected, chat sent)
+5. Server → pod: "user is active, start re-login"
+6. Pod spustí AI login flow → pošle MFA push → uživatel schválí okamžitě (je u toho)
+
+**Why:** MFA pushka ve 2 v noci = uživatel nespí/propadne a ráno je pod v ERROR. Raději session EXPIRED přes noc a re-login ráno když je uživatel u toho.
+
+## TODO: iOS push notifikace MFA nedorazila
+
+**Problém:** MFA push "Potvrďte číslo 91 v Authenticator" přišla jen na Android, na iOS ne.
+
+**Ověřit:**
+- iOS push tokeny — jsou registrované? APNs konfigurace?
+- `ApnsPushService.kt` — v logu, proč push neodešel nebo nedošel
+- `UserTaskCreated` event — pošle se push na všechna zařízení?
+- Priorita notifikace — iOS vyžaduje `apns-priority: 10` pro okamžité doručení při urgent alert
+- Silent push vs alert push — MFA musí být alert (zvuk, vibrace)
+- Device token validity — iOS tokeny mohou expirovat, invalidace při `BadDeviceToken`
+
+## TODO: Python → Kotlin rewrite (pro služby nezávislé na Python-only knihovnách)
+
+Každý Python service, který NENÍ závislý na knihovnách které nejsou v Kotlinu dostupné, přepsat do Kotlinu:
+
+**Pro přepis (nezávislé na Python-only lib):**
+- `service-mcp` — MCP SDK existuje i pro Kotlin (https://github.com/modelcontextprotocol/kotlin-sdk). **Priorita** — zdroj dnešních bugů (SCHEDULED_TASK, UUID trim)
+
+**Závislé na Python knihovnách — zůstávají v Pythonu:**
+- `service-orchestrator` — LangGraph (Python-only)
+- `service-knowledgebase` — langchain, některé LLM integrations
+- `service-tts` — Coqui TTS, XTTS v2 (PyTorch Python API)
+- `service-correction` — pravděpodobně LLM-specific
+- `service-ollama-router` — čistý Python HTTP proxy (LZE přepsat, ale asi OK zůstat)
+- `service-o365-browser-pool` — Playwright (Python/JS only, žádná Kotlin alternativa)
+
+**Postup:**
+1. MCP rewrite (Ktor, rychlejší startup než Spring Boot ~1-2s vs 10-15s)
+2. U dalších služeb zvážit nutnost — většina závisí na LLM/ML lib
+
+**Why:** Dnešní dva bugy (UUID trim → invalid ObjectId, SCHEDULED_TASK → neexistující enum) byly způsobené tím, že MCP Python obchází Kotlin type safety. Kotlin přístup přes `TaskId`, `TaskTypeEnum` by tyto chyby vůbec nedovolil.
+
+## TODO: Kalendář — živý, interaktivní
+
+Kalendář musí být živý view, ne statický seznam:
+- **Drag & drop** — přesunout task na jiný den/čas
+- **Right-click menu** — vepsat odpověď/reakci → task se přesune na kvalifikaci (nečeká na uživatele)
+- **Tasky čekající na kvalifikaci** — zobrazeny v aktuálním dni na konci, zabalené (tree/collapsible)
+  - Rozbalitelné jako v sidebaru
+- **Celý kalendář = sidebar + chat v pohledu kalendáře** — ne samostatný screen
+- **Živé aktualizace** — server push, ne polling
+- **Backend:** endpoint pro přesun tasku (change scheduledAt), endpoint pro inline odpověď
+- [ ] **Meeting UI push:** změny v meetingu (nový segment, stav) se musí okamžitě zobrazit v UI přes PUSH — žádné reloady, vše real-time přes kRPC/SSE
+- [ ] **Ověřit:** BMS CommerzBank — JERVIS extrahoval úkoly z dnešního standup meetingu a provedl je (uzavření starých tasků, založení nových)
 - [ ] **FALLBACK v rozporu s guidelines**: orchestrátor má fallback logiku v `_helpers.py` a `handler_streaming.py` — pokud router vrátí local a ten selže, orchestrátor sám zkouší cloud. Porušuje princip "router je jediný gateway". Router by měl sám retry/requeue, klient nemá řešit fallback. Projít a odstranit.
 
 ## NÁVRH K DISKUSI: Browser pod — autonomní session health monitoring
