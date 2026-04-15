@@ -226,6 +226,14 @@ data:
   BACKGROUND_LOAD_DELAY_S: "5"
   DEFAULT_KEEP_ALIVE: "-1"
   GPU_IDLE_NOTIFY_AFTER_S: "120"
+  # Modely uvnitř jedné skupiny se na dané GPU NESMÍ vyskytnout načtené současně
+  # (router je swappuje on-demand). Pro p40-2: qwen3:14b XOR qwen3-vl-tool.
+  EXCLUSIVE_MODEL_GROUPS: '{"p40-2":[["qwen3:14b","qwen3-vl-tool:latest"]]}'
+  # Audio služby (Whisper/XTTS) běží přímo na GPU VD (mimo ollama).
+  # XTTS = stálá rezervace VRAM; Whisper = on-demand reservation přes /audio-reserve API.
+  AUDIO_PRIORITY_GPU: "p40-2"
+  AUDIO_PINNED_RESERVATIONS: '[{"service":"xtts","gpu":"p40-2","vram_gb":4,"url":"http://ollama.lan.mazlusek.com:8787"}]'
+  AUDIO_ONDEMAND_SERVICES: '[{"service":"whisper","gpu":"p40-2","vram_gb":4,"url":"http://ollama.lan.mazlusek.com:8786","preempts":["qwen3:14b","qwen3-vl-tool:latest"]}]'
 
   # ── MCP: MCP Server ──────────────────────────────────────────────────
   MCP_HOST: "0.0.0.0"
