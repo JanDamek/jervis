@@ -20,6 +20,7 @@ from jervis.server import (
     filter_rules_pb2_grpc,
     guidelines_pb2_grpc,
     proactive_pb2_grpc,
+    time_tracking_pb2_grpc,
     urgency_pb2_grpc,
 )
 
@@ -31,6 +32,7 @@ _chat_context_stub: Optional[chat_context_pb2_grpc.ServerChatContextServiceStub]
 _filter_rules_stub: Optional[filter_rules_pb2_grpc.ServerFilterRulesServiceStub] = None
 _guidelines_stub: Optional[guidelines_pb2_grpc.ServerGuidelinesServiceStub] = None
 _proactive_stub: Optional[proactive_pb2_grpc.ServerProactiveServiceStub] = None
+_time_tracking_stub: Optional[time_tracking_pb2_grpc.ServerTimeTrackingServiceStub] = None
 _urgency_stub: Optional[urgency_pb2_grpc.ServerUrgencyServiceStub] = None
 
 
@@ -93,3 +95,10 @@ def server_proactive_stub() -> proactive_pb2_grpc.ServerProactiveServiceStub:
     if _proactive_stub is None:
         _proactive_stub = proactive_pb2_grpc.ServerProactiveServiceStub(_get_channel())
     return _proactive_stub
+
+
+def server_time_tracking_stub() -> time_tracking_pb2_grpc.ServerTimeTrackingServiceStub:
+    global _time_tracking_stub
+    if _time_tracking_stub is None:
+        _time_tracking_stub = time_tracking_pb2_grpc.ServerTimeTrackingServiceStub(_get_channel())
+    return _time_tracking_stub

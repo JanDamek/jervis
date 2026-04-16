@@ -647,7 +647,7 @@ async def _handle_list_contracts(args, client_id, _project_id, kotlin_client):
     return await kotlin_client.get("/internal/finance/contracts", params=params)
 
 
-async def _handle_log_time(args, client_id, _project_id, kotlin_client):
+async def _handle_log_time(args, client_id, _project_id, _kotlin_client):
     """Log time entry."""
     cid = args.get("client_id") or client_id
     if not cid:
@@ -655,44 +655,92 @@ async def _handle_log_time(args, client_id, _project_id, kotlin_client):
     hours = args.get("hours")
     if not hours:
         return "Error: hours is required."
-    payload = {
-        "clientId": cid,
-        "hours": float(hours),
-        "description": args.get("description", ""),
-        "date": args.get("date"),
-        "source": "MANUAL",
-    }
-    return await kotlin_client.post("/internal/time/log", json=payload)
+    from app.grpc_server_client import server_time_tracking_stub
+    from jervis.server import time_tracking_pb2
+    from jervis.common import types_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    resp = await server_time_tracking_stub().LogTime(
+        time_tracking_pb2.LogTimeRequest(
+            ctx=ctx,
+            client_id=cid,
+            hours=float(hours),
+            description=args.get("description", "") or "",
+            date_iso=args.get("date") or "",
+            source="MANUAL",
+        ),
+        timeout=10.0,
+    )
+    return f'{{"status":"ok","id":"{resp.id}","hours":{resp.hours},"date":"{resp.date_iso}"}}'
 
 
-async def _handle_check_capacity(args, _client_id, _project_id, kotlin_client):
+async def _handle_check_capacity(args, _client_id, _project_id, _kotlin_client):
     """Check capacity snapshot."""
-    resp = await kotlin_client.get("/internal/time/capacity")
+    from app.grpc_server_client import server_time_tracking_stub
+    from jervis.server import time_tracking_pb2
+    from jervis.common import types_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    resp = await server_time_tracking_stub().GetCapacity(
+        time_tracking_pb2.GetCapacityRequest(ctx=ctx),
+        timeout=10.0,
+    )
+    committed = [
+        {"clientId": c.client_id, "counterparty": c.counterparty, "hoursPerWeek": c.hours_per_week}
+        for c in resp.committed
+    ]
+    import json as _json
+    data = {
+        "totalHoursPerWeek": resp.total_hours_per_week,
+        "committed": committed,
+        "actualThisWeek": dict(resp.actual_this_week),
+        "availableHours": resp.available_hours,
+    }
+    body = _json.dumps(data)
     hours_needed = args.get("hours_needed")
-    if hours_needed and resp:
+    if hours_needed:
         try:
-            import json as _json
-            data = _json.loads(resp) if isinstance(resp, str) else resp
-            available = data.get("availableHours", 0)
             needed = float(hours_needed)
-            if needed > available:
-                return f"{resp}\n\nCapacity insufficient: need {needed}h/week, available {available}h/week."
+            if needed > resp.available_hours:
+                return (
+                    f"{body}\n\nCapacity insufficient: need {needed}h/week, "
+                    f"available {resp.available_hours}h/week."
+                )
         except Exception:
             pass
-    return resp
+    return body
 
 
-async def _handle_time_summary(args, client_id, _project_id, kotlin_client):
+async def _handle_time_summary(args, client_id, _project_id, _kotlin_client):
     """Time summary for period."""
-    params = {}
-    cid = args.get("client_id") or client_id
-    if cid:
-        params["client_id"] = cid
-    if args.get("from_date"):
-        params["from"] = args["from_date"]
-    if args.get("to_date"):
-        params["to"] = args["to_date"]
-    return await kotlin_client.get("/internal/time/summary", params=params)
+    from app.grpc_server_client import server_time_tracking_stub
+    from jervis.server import time_tracking_pb2
+    from jervis.common import types_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    resp = await server_time_tracking_stub().GetSummary(
+        time_tracking_pb2.GetSummaryRequest(
+            ctx=ctx,
+            client_id=(args.get("client_id") or client_id or ""),
+            from_iso=args.get("from_date") or "",
+            to_iso=args.get("to_date") or "",
+        ),
+        timeout=10.0,
+    )
+    import json as _json
+    data = {
+        "totalHours": resp.total_hours,
+        "billableHours": resp.billable_hours,
+        "byClient": dict(resp.by_client),
+        "entryCount": resp.entry_count,
+    }
+    return _json.dumps(data)
 
 
 _TOOL_HANDLER_MAP = {

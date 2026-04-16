@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerTimeTrackingProto";
+
+// ServerTimeTrackingService — time log entry + rollup summary + weekly
+// capacity snapshot. Consumed by the orchestrator's chat tools (log_time,
+// time_summary, check_capacity).
+service ServerTimeTrackingService {
+  rpc LogTime(LogTimeRequest) returns (LogTimeResponse);
+  rpc GetSummary(GetSummaryRequest) returns (GetSummaryResponse);
+  rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse);
+}
+
+message LogTimeRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;      // empty = no project
+  string date_iso = 4;        // YYYY-MM-DD; empty = today
+  double hours = 5;
+  string description = 6;
+  string source = 7;          // TimeSource enum name; empty = MANUAL
+  bool billable = 8;
+  bool billable_set = 9;      // false = use service default (true)
+}
+
+message LogTimeResponse {
+  string id = 1;
+  double hours = 2;
+  string date_iso = 3;
+}
+
+message GetSummaryRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;       // empty = all clients
+  string from_iso = 3;        // YYYY-MM-DD; empty = first day of this month
+  string to_iso = 4;          // YYYY-MM-DD; empty = today
+}
+
+message GetSummaryResponse {
+  double total_hours = 1;
+  double billable_hours = 2;
+  map<string, double> by_client = 3;
+  int32 entry_count = 4;
+}
+
+message GetCapacityRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message GetCapacityResponse {
+  double total_hours_per_week = 1;
+  repeated CommittedCapacity committed = 2;
+  map<string, double> actual_this_week = 3;
+  double available_hours = 4;
+}
+
+message CommittedCapacity {
+  string client_id = 1;
+  string counterparty = 2;
+  double hours_per_week = 3;
+}
