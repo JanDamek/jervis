@@ -13,14 +13,14 @@ IMAGE="$REGISTRY/$SERVICE_NAME:latest"
 
 echo "=== Building and deploying $SERVICE_NAME (Python) ==="
 
-# Step 1: Build Docker image
+# Step 1: Build Docker image. Build context = PROJECT_ROOT so the
+# Dockerfile can COPY libs/jervis_contracts/ (pod-to-pod contracts).
 echo "Step 1/3: Building Docker image..."
-cd "$PROJECT_ROOT/backend/service-ollama-router"
 docker buildx build \
   --platform linux/amd64 \
   -t "$IMAGE" \
-  -f Dockerfile \
-  "$PROJECT_ROOT/backend/service-ollama-router" || { echo "✗ Docker build failed"; exit 1; }
+  -f "$PROJECT_ROOT/backend/service-ollama-router/Dockerfile" \
+  "$PROJECT_ROOT" || { echo "✗ Docker build failed"; exit 1; }
 echo "✓ Docker image built"
 
 # Step 2: Push Docker image

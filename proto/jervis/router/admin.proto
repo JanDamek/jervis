@@ -1,0 +1,187 @@
+syntax = "proto3";
+
+package jervis.router;
+
+import "jervis/common/types.proto";
+import "jervis/common/enums.proto";
+
+option java_package = "com.jervis.contracts.router";
+option java_multiple_files = true;
+option java_outer_classname = "RouterAdminProto";
+
+// RouterAdminService exposes the `/router/admin/*` and
+// `/router/internal/*` surface of `service-ollama-router`. The transparent
+// Ollama-compatible endpoints (`/api/generate`, `/api/chat`, `/api/embeddings`)
+// stay REST because they are a vendor contract (Ollama API) — consumers
+// call them directly, no gRPC wrapper.
+service RouterAdminService {
+  // Max available context tokens for a given TierCap (used by the
+  // orchestrator's context budgeter).
+  rpc GetMaxContext(MaxContextRequest) returns (MaxContextResponse);
+
+  // Report a provider error (400/500) so the router can disable the model
+  // after N consecutive failures.
+  rpc ReportModelError(ReportModelErrorRequest) returns (ReportModelErrorResponse);
+
+  // Report a successful call — resets error counter and records stats.
+  rpc ReportModelSuccess(ReportModelSuccessRequest) returns (ReportModelSuccessResponse);
+
+  // Snapshot of model error state — keyed by model_id.
+  rpc ListModelErrors(ListModelErrorsRequest) returns (ListModelErrorsResponse);
+
+  // Snapshot of usage statistics for every tracked model.
+  rpc ListModelStats(ListModelStatsRequest) returns (ListModelStatsResponse);
+
+  // Re-enable a previously-disabled model (UI action after manual testing).
+  rpc ResetModelError(ResetModelErrorRequest) returns (ResetModelErrorResponse);
+
+  // Send a tiny completion to an OpenRouter model to verify it responds.
+  rpc TestModel(TestModelRequest) returns (TestModelResponse);
+
+  // OpenRouter rate-limit status per queue (FREE / PAID / PREMIUM).
+  rpc GetRateLimits(RateLimitsRequest) returns (RateLimitsResponse);
+
+  // Invalidate the router's cached client tier after cloudModelPolicy
+  // changes on the Kotlin server. Empty client_id = invalidate all.
+  rpc InvalidateClientTier(InvalidateClientTierRequest) returns (InvalidateClientTierResponse);
+}
+
+// ── MaxContext ───────────────────────────────────────────────────────────
+
+message MaxContextRequest {
+  jervis.common.RequestContext ctx = 1;
+  // Max tier to consider. Uses ctx.max_tier if TIER_CAP_UNSPECIFIED here.
+  jervis.common.TierCap max_tier = 2;
+}
+
+message MaxContextResponse {
+  int64 max_context_tokens = 1;
+}
+
+// ── ReportModelError ─────────────────────────────────────────────────────
+
+message ReportModelErrorRequest {
+  jervis.common.RequestContext ctx = 1;
+  string model_id = 2;
+  string error_message = 3;
+}
+
+message ReportModelErrorResponse {
+  string model_id = 1;
+  bool disabled = 2;        // disabled right now
+  int32 error_count = 3;
+  bool just_disabled = 4;   // flipped from enabled → disabled on this call
+}
+
+// ── ReportModelSuccess ───────────────────────────────────────────────────
+
+message ReportModelSuccessRequest {
+  jervis.common.RequestContext ctx = 1;
+  string model_id = 2;
+  double duration_s = 3;
+  int64 input_tokens = 4;
+  int64 output_tokens = 5;
+}
+
+message ReportModelSuccessResponse {
+  string model_id = 1;
+  bool reset = 2;   // error counter was reset
+}
+
+// ── ListModelErrors ──────────────────────────────────────────────────────
+
+message ListModelErrorsRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message ListModelErrorsResponse {
+  repeated ModelErrorInfo errors = 1;
+}
+
+message ModelErrorInfo {
+  string model_id = 1;
+  int32 count = 2;
+  bool disabled = 3;
+  repeated ModelErrorEntry entries = 4;
+}
+
+message ModelErrorEntry {
+  string message = 1;
+  double timestamp = 2;   // unix epoch seconds; matches router's native format
+}
+
+// ── ListModelStats ───────────────────────────────────────────────────────
+
+message ListModelStatsRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message ListModelStatsResponse {
+  repeated ModelStatInfo stats = 1;
+}
+
+message ModelStatInfo {
+  string model_id = 1;
+  int32 call_count = 2;
+  double avg_response_s = 3;
+  double total_time_s = 4;
+  int64 total_input_tokens = 5;
+  int64 total_output_tokens = 6;
+  double tokens_per_s = 7;
+  double last_call = 8;   // unix epoch seconds
+}
+
+// ── ResetModelError ──────────────────────────────────────────────────────
+
+message ResetModelErrorRequest {
+  jervis.common.RequestContext ctx = 1;
+  string model_id = 2;
+}
+
+message ResetModelErrorResponse {
+  string model_id = 1;
+  bool re_enabled = 2;    // was previously disabled, now re-enabled
+}
+
+// ── TestModel ────────────────────────────────────────────────────────────
+
+message TestModelRequest {
+  jervis.common.RequestContext ctx = 1;
+  string model_id = 2;
+}
+
+message TestModelResponse {
+  bool ok = 1;
+  string model_id = 2;
+  int32 response_ms = 3;
+  string response_preview = 4;
+  string error = 5;
+}
+
+// ── GetRateLimits ────────────────────────────────────────────────────────
+
+message RateLimitsRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message RateLimitsResponse {
+  repeated QueueRateLimit queues = 1;
+}
+
+message QueueRateLimit {
+  string queue_name = 1;
+  int32 limit = 2;
+  int32 remaining = 3;
+  double reset_time = 4;   // unix epoch seconds; 0 = unknown
+}
+
+// ── InvalidateClientTier ─────────────────────────────────────────────────
+
+message InvalidateClientTierRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;   // empty = invalidate all
+}
+
+message InvalidateClientTierResponse {
+  string invalidated = 1;  // client_id or "all"
+}

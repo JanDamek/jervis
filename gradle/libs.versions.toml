@@ -30,8 +30,8 @@ firebase-admin = "9.4.2"
 google-services = "4.4.2"
 firebase-bom = "33.7.0"
 pushy = "0.15.4"
-grpc = "1.66.0"
-grpc-kotlin = "1.4.1"
+grpc = "1.80.0"
+grpc-kotlin = "1.4.3"
 protobuf-kotlin = "4.34.1"
 
 [libraries]

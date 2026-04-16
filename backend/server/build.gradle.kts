@@ -38,6 +38,7 @@ dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
 
     implementation(project(":shared:common-api"))
+    implementation(project(":shared:service-contracts"))
     implementation(project(":backend:common-services"))
     // Spring Boot (bez webflux - používáme Ktor)
     implementation(libs.spring.boot.starter)

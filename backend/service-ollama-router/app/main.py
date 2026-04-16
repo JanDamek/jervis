@@ -71,11 +71,18 @@ async def lifespan(app: FastAPI):
     await load_persisted_stats()
     probe_task = asyncio.create_task(_model_probe_loop())
     persist_task = asyncio.create_task(_stats_persist_loop())
+
+    # gRPC admin surface — every /router/admin/* endpoint listens on :5501.
+    # FastAPI :11430 only keeps the Ollama-compatible passthrough.
+    from .grpc_server import start_grpc_server
+    grpc_server = await start_grpc_server(port=5501)
+
     yield
     # Persist stats before shutdown
     await persist_stats()
     probe_task.cancel()
     persist_task.cancel()
+    await grpc_server.stop(grace=5)
     await router.shutdown()
 
 
@@ -409,172 +416,8 @@ async def router_status():
     }
 
 
-@app.get("/router/admin/max-context")
-async def route_max_context(request: Request):
-    """Get max available context tokens for a given tier."""
-    max_tier = request.query_params.get("max_tier", "NONE")
-    from .openrouter_catalog import get_max_context_tokens
-    max_ctx = await get_max_context_tokens(max_tier)
-    return JSONResponse(content={"max_context_tokens": max_ctx})
-
-
-@app.post("/router/admin/model-error")
-async def report_model_error_endpoint(request: Request):
-    """Report a model error (called by orchestrator after provider 400/500).
-
-    Input: {"model_id": "stepfun/step-3.5-flash:free"}
-    Output: {"disabled": true/false, "error_count": N}
-    """
-    body = await request.json()
-    model_id = body.get("model_id", "")
-    error_message = body.get("error_message", "")
-    from .openrouter_catalog import report_model_error, get_model_errors
-    just_disabled = report_model_error(model_id, error_message)
-    errors = get_model_errors()
-    info = errors.get(model_id, {})
-    return JSONResponse(content={
-        "model_id": model_id,
-        "disabled": info.get("disabled", False),
-        "error_count": info.get("count", 0),
-        "just_disabled": just_disabled,
-    })
-
-
-@app.post("/router/admin/model-success")
-async def report_model_success_endpoint(request: Request):
-    """Report a successful model call (resets error counter + records stats).
-
-    Input: {"model_id": "...", "duration_s": 2.5, "input_tokens": 500, "output_tokens": 200}
-    """
-    body = await request.json()
-    model_id = body.get("model_id", "")
-    duration_s = body.get("duration_s", 0.0)
-    input_tokens = body.get("input_tokens", 0)
-    output_tokens = body.get("output_tokens", 0)
-    from .openrouter_catalog import report_model_success, record_model_call
-    report_model_success(model_id)
-    if duration_s > 0:
-        record_model_call(model_id, duration_s, input_tokens, output_tokens)
-    return JSONResponse(content={"model_id": model_id, "reset": True})
-
-
-@app.get("/router/admin/model-errors")
-async def get_model_errors_endpoint():
-    """Get current model error state (for UI monitoring)."""
-    from .openrouter_catalog import get_model_errors
-    return JSONResponse(content=get_model_errors())
-
-
-@app.get("/router/admin/model-stats")
-async def get_model_stats_endpoint():
-    """Get usage statistics for all models (call count, avg response time)."""
-    from .openrouter_catalog import get_model_stats
-    return JSONResponse(content=get_model_stats())
-
-
-@app.post("/router/internal/invalidate-client-tier")
-async def invalidate_client_tier_endpoint(request: Request):
-    """Invalidate cached client tier after client update on server.
-
-    Called by Kotlin server after client's cloudModelPolicy changes.
-    Input: {"client_id": "..."} or empty body to invalidate all.
-    """
-    from app.client_tier_cache import invalidate_cache
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    client_id = body.get("client_id")
-    invalidate_cache(client_id)
-    return JSONResponse(content={"invalidated": client_id or "all"})
-
-
-@app.post("/router/admin/model-reset")
-async def reset_model_error_endpoint(request: Request):
-    """Re-enable a disabled model (called from UI after manual testing).
-
-    Input: {"model_id": "stepfun/step-3.5-flash:free"}
-    """
-    body = await request.json()
-    model_id = body.get("model_id", "")
-    from .openrouter_catalog import reset_model_error
-    was_disabled = reset_model_error(model_id)
-    return JSONResponse(content={"model_id": model_id, "re_enabled": was_disabled})
-
-
-@app.get("/router/admin/rate-limits")
-async def get_rate_limits_endpoint():
-    """Get current rate limit status for OpenRouter queues."""
-    from .rate_limiter import get_rate_limit_status
-    return JSONResponse(content=get_rate_limit_status())
-
-
-@app.post("/router/admin/test-model")
-async def test_model_endpoint(request: Request):
-    """Send a tiny completion to an OpenRouter model to verify it responds.
-
-    Input: {"model_id": "qwen/qwen3-next-80b-a3b-instruct:free"}
-    Output: {"ok": true/false, "model_id": "...", "response_ms": N, "response_preview": "...", "error": "..."}
-    """
-    body = await request.json()
-    model_id = body.get("model_id", "")
-    if not model_id:
-        return JSONResponse(status_code=400, content={"ok": False, "error": "model_id required"})
-
-    from .openrouter_catalog import get_api_key
-
-    api_key = await get_api_key()
-    if not api_key:
-        return JSONResponse(content={"ok": False, "model_id": model_id, "error": "No OpenRouter API key configured"})
-
-    openai_body = {
-        "model": model_id,
-        "messages": [{"role": "user", "content": "Reply with exactly: OK"}],
-        "stream": False,
-        "max_tokens": 10,
-        "temperature": 0.0,
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://jervis.damek-soft.eu",
-        "X-Title": "Jervis AI Assistant",
-    }
-
-    start = time.monotonic()
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)) as client:
-            resp = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                json=openai_body, headers=headers,
-            )
-            elapsed_ms = int((time.monotonic() - start) * 1000)
-
-            if resp.status_code != 200:
-                error_text = resp.text[:300]
-                logger.warning("TEST_MODEL: %s returned %d: %s", model_id, resp.status_code, error_text)
-                return JSONResponse(content={
-                    "ok": False, "model_id": model_id, "response_ms": elapsed_ms,
-                    "error": f"HTTP {resp.status_code}: {error_text}",
-                })
-
-            data = resp.json()
-            choices = data.get("choices") or []
-            first_choice = choices[0] if choices else {}
-            message = first_choice.get("message") or {}
-            content = message.get("content") or ""
-            logger.info("TEST_MODEL: %s OK in %dms — response: %s", model_id, elapsed_ms, content[:50])
-            return JSONResponse(content={
-                "ok": True, "model_id": model_id, "response_ms": elapsed_ms,
-                "response_preview": content[:100],
-            })
-    except Exception as e:
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        logger.warning("TEST_MODEL: %s error: %s", model_id, e)
-        return JSONResponse(content={
-            "ok": False, "model_id": model_id, "response_ms": elapsed_ms,
-            "error": str(e)[:300],
-        })
+# ── /router/admin/* + /router/internal/* migrated to gRPC (jervis.router.RouterAdminService)
+#    on port 5501. See app/grpc_server.py. No REST fallback — hard cut.
 
 
 # ── Whisper GPU coordination (p40-2) ──────────────────────────────────

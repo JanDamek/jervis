@@ -7,15 +7,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Python dependencies
-COPY requirements.txt .
+# Pod-to-pod Protobuf contracts package. Copied first so it layer-caches
+# independently of the service's own requirements.
+COPY libs/jervis_contracts /libs/jervis_contracts
+RUN pip install --no-cache-dir -e /libs/jervis_contracts
+
+COPY backend/service-orchestrator/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Pre-download tiktoken BPE data (avoids runtime download behind SSL proxy)
 RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 
-# Application code
-COPY app/ app/
+COPY backend/service-orchestrator/app/ app/
 
 RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /app
 USER 1000

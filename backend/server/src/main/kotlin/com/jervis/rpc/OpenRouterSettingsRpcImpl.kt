@@ -14,6 +14,7 @@ import com.jervis.dto.openrouter.OpenRouterSettingsDto
 import com.jervis.dto.openrouter.OpenRouterSettingsUpdateDto
 import com.jervis.dto.openrouter.ModelQueueDto
 import com.jervis.dto.openrouter.QueueModelEntryDto
+import com.jervis.infrastructure.grpc.RouterAdminGrpcClient
 import com.jervis.infrastructure.llm.ModelQueue
 import com.jervis.infrastructure.llm.OpenRouterFilters
 import com.jervis.infrastructure.llm.OpenRouterModelEntry
@@ -29,33 +30,27 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 
 @Component
 class OpenRouterSettingsRpcImpl(
     private val repository: OpenRouterSettingsRepository,
-    @Value("\${endpoints.ollama-router.url:http://jervis-ollama-router:11430}")
-    private val routerUrl: String = "http://jervis-ollama-router:11430",
+    private val routerAdmin: RouterAdminGrpcClient,
 ) : IOpenRouterSettingsService {
     private val logger = KotlinLogging.logger {}
 
+    // Kept only for the external OpenRouter catalog API (/models on
+    // openrouter.ai) which is a vendor REST contract.
     private val httpClient = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true; isLenient = true })
@@ -170,95 +165,50 @@ class OpenRouterSettingsRpcImpl(
             ?: OpenRouterSettingsDocument()
     }
 
-    override suspend fun getModelErrors(): List<ModelErrorDto> {
-        return try {
-            val baseUrl = routerUrl.trimEnd('/')
-            val response: JsonObject = httpClient.get("$baseUrl/router/admin/model-errors").body()
-            response.entries.map { (modelId, value) ->
-                val obj = value.jsonObject
-                ModelErrorDto(
-                    modelId = modelId,
-                    errorCount = obj["count"]?.jsonPrimitive?.int ?: 0,
-                    disabled = obj["disabled"]?.jsonPrimitive?.boolean ?: false,
-                    errors = (obj["errors"]?.jsonArray ?: emptyList()).map { entry ->
-                        val e = entry.jsonObject
-                        ModelErrorEntryDto(
-                            message = e["message"]?.jsonPrimitive?.content ?: "",
-                            timestamp = e["timestamp"]?.jsonPrimitive?.double ?: 0.0,
-                        )
-                    },
-                )
-            }
-        } catch (e: Exception) {
-            logger.warn { "Failed to fetch model errors from router: ${e.message}" }
-            emptyList()
+    override suspend fun getModelErrors(): List<ModelErrorDto> =
+        routerAdmin.listModelErrors().map { info ->
+            ModelErrorDto(
+                modelId = info.modelId,
+                errorCount = info.count,
+                disabled = info.disabled,
+                errors = info.entriesList.map { entry ->
+                    ModelErrorEntryDto(message = entry.message, timestamp = entry.timestamp)
+                },
+            )
         }
-    }
 
     override suspend fun resetModelError(modelId: String): Boolean {
-        return try {
-            val baseUrl = routerUrl.trimEnd('/')
-            val response: JsonObject = httpClient.post("$baseUrl/router/admin/model-reset") {
-                contentType(ContentType.Application.Json)
-                setBody(mapOf("model_id" to modelId))
-            }.body()
-            val reEnabled = response["re_enabled"]?.jsonPrimitive?.boolean ?: false
-            if (reEnabled) {
-                logger.info { "Model $modelId re-enabled via router" }
-            }
-            reEnabled
-        } catch (e: Exception) {
-            logger.warn { "Failed to reset model error via router: ${e.message}" }
-            false
-        }
+        val reEnabled = routerAdmin.resetModelError(modelId)
+        if (reEnabled) logger.info { "Model $modelId re-enabled via router" }
+        return reEnabled
     }
 
     override suspend fun testModel(modelId: String): ModelTestResultDto {
-        return try {
-            val baseUrl = routerUrl.trimEnd('/')
-            val response: JsonObject = httpClient.post("$baseUrl/router/admin/test-model") {
-                contentType(ContentType.Application.Json)
-                setBody(mapOf("model_id" to modelId))
-            }.body()
-            ModelTestResultDto(
-                ok = response["ok"]?.jsonPrimitive?.boolean ?: false,
-                modelId = response["model_id"]?.jsonPrimitive?.content ?: modelId,
-                responseMs = response["response_ms"]?.jsonPrimitive?.int ?: 0,
-                responsePreview = response["response_preview"]?.jsonPrimitive?.content ?: "",
-                error = response["error"]?.jsonPrimitive?.content ?: "",
-            )
-        } catch (e: Exception) {
-            logger.warn { "Failed to test model $modelId via router: ${e.message}" }
-            ModelTestResultDto(
-                ok = false,
-                modelId = modelId,
-                error = e.message ?: "Connection to router failed",
-            )
-        }
+        val resp = routerAdmin.testModel(modelId)
+        return ModelTestResultDto(
+            ok = resp.ok,
+            modelId = resp.modelId.ifEmpty { modelId },
+            responseMs = resp.responseMs,
+            responsePreview = resp.responsePreview,
+            error = resp.error,
+        )
     }
 
-    override suspend fun getModelStats(): List<ModelStatsDto> {
-        return try {
-            val baseUrl = routerUrl.trimEnd('/')
-            val response: JsonObject = httpClient.get("$baseUrl/router/admin/model-stats").body()
-            response.entries.map { (modelId, value) ->
-                val obj = value.jsonObject
+    override suspend fun getModelStats(): List<ModelStatsDto> =
+        routerAdmin.listModelStats()
+            .map { s ->
                 ModelStatsDto(
-                    modelId = modelId,
-                    callCount = obj["call_count"]?.jsonPrimitive?.int ?: 0,
-                    avgResponseS = obj["avg_response_s"]?.jsonPrimitive?.double ?: 0.0,
-                    totalTimeS = obj["total_time_s"]?.jsonPrimitive?.double ?: 0.0,
-                    totalInputTokens = obj["total_input_tokens"]?.jsonPrimitive?.int ?: 0,
-                    totalOutputTokens = obj["total_output_tokens"]?.jsonPrimitive?.int ?: 0,
-                    tokensPerS = obj["tokens_per_s"]?.jsonPrimitive?.double ?: 0.0,
-                    lastCall = obj["last_call"]?.jsonPrimitive?.double ?: 0.0,
+                    modelId = s.modelId,
+                    callCount = s.callCount,
+                    avgResponseS = s.avgResponseS,
+                    totalTimeS = s.totalTimeS,
+                    totalInputTokens = s.totalInputTokens.toInt(),
+                    totalOutputTokens = s.totalOutputTokens.toInt(),
+                    tokensPerS = s.tokensPerS,
+                    lastCall = s.lastCall,
                 )
-            }.sortedByDescending { it.callCount }
-        } catch (e: Exception) {
-            logger.warn { "Failed to fetch model stats from router: ${e.message}" }
-            emptyList()
-        }
-    }
+            }
+            .sortedByDescending { it.callCount }
 
     /**
      * Persist model stats from router into MongoDB queue entries.
