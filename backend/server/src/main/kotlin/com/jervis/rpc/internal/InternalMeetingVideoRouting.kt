@@ -25,21 +25,14 @@ import org.bson.types.ObjectId
 private val logger = KotlinLogging.logger {}
 
 /**
- * Pod-recorded meeting WebM pipeline (product §10a).
+ * Pod-recorded meeting WebM pipeline (product §10a). **Blob side-channel**
+ * per `docs/inter-service-contracts.md` §2.3 — WebM chunks are multi-MiB
+ * so chunk uploads stay raw HTTP. The finalize "commit" call stays here
+ * too because it closes the upload session of the preceding blob stream
+ * (same protocol pair as S3 multipart: UploadPart + CompleteMultipartUpload).
  *
- * - POST /internal/meeting/{id}/video-chunk?chunkIndex=N
- *     body: raw video/webm bytes
- *     Saves the chunk to the per-meeting chunk dir. Idempotent: duplicate
- *     chunkIndex returns 200 with `deduped=true` and does not re-append.
- *     Updates MeetingDocument.chunksReceived + lastChunkAt + state
- *     transitions from RECORDING → UPLOADED behavior stays on the other
- *     bridge endpoints.
- *
- * - POST /internal/meeting/{id}/finalize
- *     body: { chunksUploaded, joinedBy }
- *     Marks the recording complete (transition to UPLOADED so the
- *     continuous indexer picks it up; the meeting video indexer will
- *     concat chunks + run VLM frame descriptions separately).
+ * - POST /internal/meeting/{id}/video-chunk?chunkIndex=N  — raw video/webm bytes
+ * - POST /internal/meeting/{id}/finalize                  — commit marker
  */
 fun Routing.installInternalMeetingVideoApi(
     meetingRepository: MeetingRepository,
