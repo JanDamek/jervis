@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerUrgencyProto";
+
+// ServerUrgencyService exposes urgency config, user presence lookup, and
+// task deadline bumping — feeds the orchestrator's urgency-aware
+// scheduling tools. Config bodies are kotlinx-serialized
+// `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
+// schema, see ServerGuidelinesService for rationale).
+service ServerUrgencyService {
+  rpc GetConfig(GetUrgencyConfigRequest) returns (UrgencyPayload);
+  rpc UpdateConfig(UpdateUrgencyConfigRequest) returns (UrgencyPayload);
+  rpc GetPresence(GetUserPresenceRequest) returns (UrgencyPayload);
+  rpc BumpDeadline(BumpDeadlineRequest) returns (BumpDeadlineResponse);
+}
+
+message GetUrgencyConfigRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+}
+
+message UpdateUrgencyConfigRequest {
+  jervis.common.RequestContext ctx = 1;
+  string config_json = 2;      // kotlinx-serialized UrgencyConfigDto
+}
+
+message GetUserPresenceRequest {
+  jervis.common.RequestContext ctx = 1;
+  string user_id = 2;
+  string platform = 3;
+}
+
+message BumpDeadlineRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string deadline_iso = 3;
+  string reason = 4;
+}
+
+message UrgencyPayload {
+  string body_json = 1;
+}
+
+message BumpDeadlineResponse {
+  bool ok = 1;
+  string error = 2;
+}
