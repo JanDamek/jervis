@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.filled.Refresh
@@ -121,6 +122,7 @@ fun PersistentTopBar(
     onStopRecording: () -> Unit,
     // Assistant (companion live hints during meeting)
     assistantActive: Boolean = false,
+    isOnAssistant: Boolean = false,
     onOpenAssistant: () -> Unit = {},
     // Paměťový graf panel toggle
     hasMemoryGraph: Boolean = false,
@@ -175,12 +177,15 @@ fun PersistentTopBar(
                 modifier = Modifier.weight(1f),
             )
 
-            // Assistant toggle — visible whenever a companion/helper session is streaming hints
+            // Assistant ↔ Chat toggle — Assistant is the home page during an
+            // active meeting; click switches back to chat and vice versa.
             if (assistantActive) {
+                val icon = if (isOnAssistant) Icons.AutoMirrored.Filled.Chat else Icons.Default.Headphones
+                val desc = if (isOnAssistant) "Přepnout na chat" else "Přepnout na asistenta (běží)"
                 JIconButton(
                     onClick = onOpenAssistant,
-                    icon = Icons.Default.Headphones,
-                    contentDescription = "Asistent běží — otevřít panel",
+                    icon = icon,
+                    contentDescription = desc,
                     tint = Color(0xFF2E7D32),
                 )
             }

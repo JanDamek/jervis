@@ -29,8 +29,11 @@ actual suspend fun postSseStream(
     val delegate = SseDataDelegate(eventChannel)
 
     val config = NSURLSessionConfiguration.defaultSessionConfiguration.apply {
+        // Live assist / meeting companion streams must persist for the full
+        // meeting duration. Cap only per-chunk inactivity via Request timeout
+        // (resets on each received chunk); never cap the whole resource.
         timeoutIntervalForRequest = 120.0
-        timeoutIntervalForResource = 180.0
+        timeoutIntervalForResource = Double.MAX_VALUE
         waitsForConnectivity = false
     }
     val session = NSURLSession.sessionWithConfiguration(config, delegate, NSOperationQueue.mainQueue)

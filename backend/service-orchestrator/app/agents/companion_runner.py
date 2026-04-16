@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kubernetes import client, watch as k8s_watch
+from kubernetes.client.rest import ApiException
 
 from app.agents.companion_budget import companion_budget
 from app.agents.job_runner import job_runner
@@ -161,8 +162,15 @@ class CompanionRunner:
         )
 
         logger.info("Starting companion session: %s (id=%s)", job_name, sid)
-        job_runner.batch_v1.create_namespaced_job(namespace=settings.k8s_namespace, body=manifest)
-        companion_budget.record_session_start(sid)
+        try:
+            job_runner.batch_v1.create_namespaced_job(namespace=settings.k8s_namespace, body=manifest)
+            companion_budget.record_session_start(sid)
+        except ApiException as e:
+            if e.status == 409:
+                # Session already running — restart recovery path, re-attach only
+                logger.info("Companion Job %s already exists — re-attaching to existing session", job_name)
+            else:
+                raise
 
         return CompanionDispatch(
             job_name=job_name,

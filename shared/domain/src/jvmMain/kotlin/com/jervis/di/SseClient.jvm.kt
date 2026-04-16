@@ -18,7 +18,10 @@ actual suspend fun postSseStream(
 ) {
     val client = createPlatformHttpClient {
         install(HttpTimeout) {
-            requestTimeoutMillis = 300_000   // 5 min total for long TTS
+            // Live assist / meeting companion streams run for the full meeting
+            // duration. Only per-chunk inactivity (socketTimeout) caps the stream;
+            // requestTimeout must not cap the whole resource.
+            requestTimeoutMillis = Long.MAX_VALUE
             connectTimeoutMillis = 10_000
             socketTimeoutMillis = 120_000    // 2 min between chunks
         }

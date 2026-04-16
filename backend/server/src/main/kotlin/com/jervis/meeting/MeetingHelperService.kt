@@ -12,10 +12,17 @@ import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.meeting.IMeetingHelperService
 import io.ktor.websocket.DefaultWebSocketSession
 import io.ktor.websocket.Frame
+import jakarta.annotation.PostConstruct
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import com.jervis.dto.meeting.MeetingStateEnum
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
+import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
 import java.util.concurrent.ConcurrentHashMap
 
@@ -35,8 +42,55 @@ class MeetingHelperService(
     private val deviceTokenRepository: DeviceTokenRepository,
     private val notificationRpc: NotificationRpcImpl,
     private val meetingRepository: MeetingRepository,
+    private val sessionRepository: MeetingHelperSessionRepository,
+    private val messageRepository: MeetingHelperMessageRepository,
     private val companionAssistant: org.springframework.beans.factory.ObjectProvider<MeetingCompanionAssistant>,
 ) : IMeetingHelperService {
+
+    private val recoveryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    @PostConstruct
+    fun recoverSessionsOnStartup() {
+        recoveryScope.launch {
+            runCatching {
+                val persisted = sessionRepository.findAllSessions().toList()
+                if (persisted.isEmpty()) return@runCatching
+                logger.info { "MeetingHelperService: recovering ${persisted.size} persisted helper sessions" }
+                for (doc in persisted) {
+                    val meeting = meetingRepository.findById(ObjectId(doc.meetingId))
+                    val live = meeting != null && meeting.state in listOf(
+                        MeetingStateEnum.RECORDING,
+                        MeetingStateEnum.UPLOADING,
+                    )
+                    if (!live) {
+                        // Meeting already ended — drop stale session record.
+                        sessionRepository.deleteByMeetingId(doc.meetingId)
+                        continue
+                    }
+                    sessions[doc.meetingId] = HelperSessionInfo(
+                        meetingId = doc.meetingId,
+                        deviceId = doc.deviceId,
+                        sourceLang = doc.sourceLang,
+                        targetLang = doc.targetLang,
+                    )
+                    runCatching {
+                        companionAssistant.ifAvailable?.start(
+                            meetingId = doc.meetingId,
+                            clientId = meeting?.clientId?.value?.toHexString().orEmpty(),
+                            projectId = meeting?.projectId?.value?.toHexString(),
+                            meetingTitle = meeting?.title,
+                            userName = null,
+                        )
+                    }.onFailure { e ->
+                        logger.warn(e) { "Companion recovery failed for meeting=${doc.meetingId}" }
+                    }
+                    logger.info { "MeetingHelperService: recovered session for meeting=${doc.meetingId}" }
+                }
+            }.onFailure { e ->
+                logger.error(e) { "MeetingHelperService: session recovery failed" }
+            }
+        }
+    }
 
     /** Active helper sessions: meetingId → session info */
     private val sessions = ConcurrentHashMap<String, HelperSessionInfo>()
@@ -60,6 +114,21 @@ class MeetingHelperService(
             targetLang = request.targetLang,
         )
         sessions[request.meetingId] = info
+        // Persist so the session survives a server restart — recovery on startup
+        // rewires in-memory state + re-attaches to the running K8s companion Job.
+        runCatching {
+            val existing = sessionRepository.findByMeetingId(request.meetingId)
+            val doc = MeetingHelperSessionDocument(
+                id = existing?.id ?: ObjectId(),
+                meetingId = request.meetingId,
+                deviceId = request.deviceId,
+                sourceLang = request.sourceLang,
+                targetLang = request.targetLang,
+                createdAt = existing?.createdAt ?: java.time.Instant.now(),
+                updatedAt = java.time.Instant.now(),
+            )
+            sessionRepository.save(doc)
+        }.onFailure { e -> logger.warn(e) { "Failed to persist helper session for ${request.meetingId}" } }
         logger.info { "Meeting helper started: meeting=${request.meetingId}, device=${request.deviceId}, ${request.sourceLang}→${request.targetLang}" }
 
         // Spin up the Claude companion session for this meeting (live assistant).
@@ -89,6 +158,8 @@ class MeetingHelperService(
 
     override suspend fun stopHelper(meetingId: String): Boolean {
         val session = sessions.remove(meetingId)
+        runCatching { sessionRepository.deleteByMeetingId(meetingId) }
+            .onFailure { e -> logger.warn(e) { "Failed to delete persisted helper session for $meetingId" } }
         if (session != null) {
             session.active = false
             // Notify connected devices
@@ -148,6 +219,23 @@ class MeetingHelperService(
     suspend fun pushMessage(meetingId: String, message: HelperMessageDto) {
         // Skip empty suggestion/prediction messages (non-actionable)
         if (message.text.isBlank() && message.type != HelperMessageType.STATUS) return
+
+        // Persist to history (Mongo only — not KB). Fire-and-forget so slow
+        // storage can't stall the push path.
+        recoveryScope.launch {
+            runCatching {
+                messageRepository.save(
+                    MeetingHelperMessageDocument(
+                        meetingId = meetingId,
+                        type = message.type,
+                        text = message.text,
+                        context = message.context,
+                        fromLang = message.fromLang,
+                        toLang = message.toLang,
+                    ),
+                )
+            }.onFailure { e -> logger.debug { "Helper message history save failed: ${e.message}" } }
+        }
 
         // Emit via RPC event stream — works for all platforms (desktop, mobile) identically
         notificationRpc.emitMeetingHelperMessage(

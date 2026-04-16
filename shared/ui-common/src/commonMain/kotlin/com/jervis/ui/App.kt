@@ -119,6 +119,15 @@ fun App(
         // User task count for badge
         val userTaskCount by viewModel.notification.userTaskCount.collectAsState()
 
+        // Auto-navigate to Assistant screen when the live helper session
+        // activates. Assistant is effectively the home page while a meeting
+        // is running; user can toggle back to chat via the top-bar icon.
+        LaunchedEffect(helperConnected) {
+            if (helperConnected && currentScreen == Screen.Main) {
+                appNavigator.navigateTo(Screen.Assistant)
+            }
+        }
+
         Column(modifier = Modifier.fillMaxSize()) {
         // Persistent top bar — always visible
         PersistentTopBar(
@@ -147,8 +156,15 @@ fun App(
             hasEnvironment = environments.isNotEmpty(),
             onToggleEnvironmentPanel = viewModel.environment::togglePanel,
             userTaskCount = userTaskCount,
-            assistantActive = helperConnected || helperMessages.isNotEmpty(),
-            onOpenAssistant = { appNavigator.navigateTo(Screen.Assistant) },
+            assistantActive = helperConnected || helperMessages.isNotEmpty() || isRecordingGlobal,
+            isOnAssistant = currentScreen == Screen.Assistant,
+            onOpenAssistant = {
+                if (currentScreen == Screen.Assistant) {
+                    appNavigator.navigateTo(Screen.Main)
+                } else {
+                    appNavigator.navigateTo(Screen.Assistant)
+                }
+            },
         )
 
         // Global recording bar — full controls when recording
@@ -164,8 +180,9 @@ fun App(
                 onToggleLiveAssist = { meetingViewModel.toggleLiveAssist() },
             )
 
-            // Meeting helper panel — shown below recording bar when helper messages arrive
-            if (helperMessages.isNotEmpty() || helperConnected) {
+            // Meeting helper panel — shown below recording bar when helper messages arrive.
+            // Suppressed on Assistant screen to avoid duplicate rendering of the same content.
+            if ((helperMessages.isNotEmpty() || helperConnected) && currentScreen != Screen.Assistant) {
                 com.jervis.ui.meeting.MeetingHelperView(
                     messages = helperMessages,
                     meetingTitle = null,
@@ -175,8 +192,9 @@ fun App(
                 )
             }
 
-            // Live assist hints — single bubble with accumulated KB hints
-            if (liveAssistActive && liveHints.isNotEmpty()) {
+            // Live assist hints — single bubble with accumulated KB hints.
+            // Suppressed on Assistant screen (same content rendered full-screen there).
+            if (liveAssistActive && liveHints.isNotEmpty() && currentScreen != Screen.Assistant) {
                 com.jervis.ui.meeting.LiveHintsBubble(
                     hints = liveHints,
                     modifier = androidx.compose.ui.Modifier.heightIn(max = 200.dp),
@@ -236,8 +254,12 @@ fun App(
 
         SnackbarHost(hostState = snackbarHostState)
 
-        // User task notification dialog — shown for all user tasks (approval + clarification)
+        // User task notification dialog — shown for all user tasks (approval + clarification).
+        // Suppressed while the Assistant screen is active so it doesn't overlay the live
+        // hints during a meeting. The event stays in the queue (userTaskDialogEvent) and
+        // the top-bar badge shows the count — user sees it after leaving Assistant.
         val userTaskEvent by viewModel.notification.userTaskDialogEvent.collectAsState()
+        if (currentScreen != Screen.Assistant) {
         userTaskEvent?.let { event ->
             UserTaskNotificationDialog(
                 event = event,
@@ -256,6 +278,7 @@ fun App(
                 onRetry = { taskId -> viewModel.notification.retryTask(taskId, viewModel::reportError) },
                 onDiscard = { taskId -> viewModel.notification.discardTask(taskId, viewModel::reportError) },
             )
+        }
         }
 
       }

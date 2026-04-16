@@ -55,7 +55,10 @@ class MeetingCompanionAssistant(
      *  Used to switch whisper into live-probe priority mode. */
     fun hasAnyActiveSession(): Boolean = active.isNotEmpty()
 
-    /** Start a companion session for this meeting. Idempotent — returns existing session if already active. */
+    /** Start a companion session for this meeting. Idempotent — returns existing
+     *  session if active in-memory; after a server restart it re-attaches to an
+     *  already-running K8s Job via the same session_id (orchestrator returns the
+     *  existing workspace instead of creating a new one). */
     suspend fun start(
         meetingId: String,
         clientId: String,
@@ -67,20 +70,32 @@ class MeetingCompanionAssistant(
 
         val brief = buildBrief(meetingId, meetingTitle, userName)
         val sessionId = "mtg-${meetingId.take(12)}"
-        val resp = companionClient.startSession(
-            OrchestratorCompanionClient.SessionStartRequest(
+        // startSession is idempotent on the orchestrator side: if a Job with the
+        // same session_id already exists the call returns the existing workspace.
+        // We swallow conflict errors and just reattach the outbox consumer.
+        val resp = runCatching {
+            companionClient.startSession(
+                OrchestratorCompanionClient.SessionStartRequest(
+                    session_id = sessionId,
+                    brief = brief,
+                    client_id = clientId,
+                    project_id = projectId,
+                    language = "cs",
+                    context = buildMap {
+                        put("meetingId", meetingId)
+                        meetingTitle?.let { put("meetingTitle", it) }
+                        userName?.let { put("userName", it) }
+                    },
+                ),
+            )
+        }.getOrElse { e ->
+            logger.warn(e) { "startSession failed, attempting to re-attach existing Job for meeting=$meetingId" }
+            OrchestratorCompanionClient.SessionStartResponse(
+                job_name = "jervis-companion-s-${sessionId.take(12)}",
+                workspace_path = "/opt/jervis/data/companion/$sessionId",
                 session_id = sessionId,
-                brief = brief,
-                client_id = clientId,
-                project_id = projectId,
-                language = "cs",
-                context = buildMap {
-                    put("meetingId", meetingId)
-                    meetingTitle?.let { put("meetingTitle", it) }
-                    userName?.let { put("userName", it) }
-                },
-            ),
-        )
+            )
+        }
 
         val streamJob = scope.launch {
             runCatching {
