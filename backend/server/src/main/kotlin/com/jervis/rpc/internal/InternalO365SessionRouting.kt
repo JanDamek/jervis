@@ -27,6 +27,7 @@ import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 
 private val logger = KotlinLogging.logger {}
 private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
@@ -283,7 +284,7 @@ fun Routing.installInternalO365CapabilitiesApi(
             }
 
             // Notify UI that discovery is complete
-            val clientId = com.jervis.common.types.ClientId(org.bson.types.ObjectId("68a332361b04695a243e5ae8"))
+            val clientId = ClientId(ObjectId("68a332361b04695a243e5ae8"))
             val capLabels = capabilities.joinToString(", ") { it.name }
             val message = if (capabilities.isEmpty()) {
                 "Připojení ${connection.name}: žádné služby nenalezeny"
@@ -347,3 +348,191 @@ private data class O365SessionEventRequest(
     val mfaNumber: String? = null,
     val vncUrl: String? = null,
 )
+
+@Serializable
+private data class O365NotifyRequest(
+    val connectionId: String,
+    val kind: String,
+    val message: String,
+    val chatId: String? = null,
+    val chatName: String? = null,
+    val sender: String? = null,
+    val preview: String? = null,
+    val screenshot: String? = null,
+)
+
+private const val URGENT_DEDUP_WINDOW_MS = 60_000L
+private val urgentDedupCache: MutableMap<String, Long> = ConcurrentHashMap()
+
+private fun priorityFor(kind: String): Int = when (kind) {
+    "urgent_message" -> 95
+    "meeting_invite" -> 80
+    "auth_request" -> 75
+    "mfa" -> 70
+    "error" -> 60
+    else -> 40
+}
+
+private fun alwaysPushFor(kind: String): Boolean = kind in setOf(
+    "urgent_message", "mfa", "auth_request", "meeting_invite",
+)
+
+private fun titleFor(kind: String, req: O365NotifyRequest, connectionName: String): String = when (kind) {
+    "urgent_message" -> "[$connectionName] Direct od ${req.sender ?: req.chatName ?: "?"}"
+    "meeting_invite" -> "[$connectionName] Schůzka: ${req.chatName ?: "příchozí hovor"}"
+    "auth_request" -> "[$connectionName] Povolit přihlášení?"
+    "mfa" -> "[$connectionName] Dvoufaktorové ověření"
+    "error" -> "[$connectionName] Agent uvízl — potřebuje pomoc"
+    else -> "[$connectionName] ${req.message.take(60)}"
+}
+
+private fun czechDescription(kind: String, req: O365NotifyRequest, connectionName: String): String {
+    val head = when (kind) {
+        "urgent_message" -> "Nová přímá zpráva v připojení **$connectionName** od **${req.sender ?: req.chatName ?: "?"}**."
+        "meeting_invite" -> "V připojení **$connectionName** zvoní hovor${req.chatName?.let { " v chatu **$it**" } ?: ""}. Mám se připojit a nahrát meeting?"
+        "auth_request" -> "Připojení **$connectionName** potřebuje mimo pracovní dobu schválit přihlášení."
+        "mfa" -> "Připojení **$connectionName** vyžaduje dvoufaktorové ověření."
+        "error" -> "Agent připojení **$connectionName** se zasekl a potřebuje zásah. Originální popis (LLM):"
+        else -> "Připojení **$connectionName**:"
+    }
+    return buildString {
+        appendLine(head)
+        if (req.message.isNotBlank()) {
+            appendLine()
+            appendLine(req.message)
+        }
+        req.preview?.takeIf { it.isNotBlank() }?.let {
+            appendLine()
+            appendLine("> $it")
+        }
+        req.screenshot?.takeIf { it.isNotBlank() }?.let {
+            appendLine()
+            appendLine("[screenshot]($it)")
+        }
+    }.trim()
+}
+
+/**
+ * Internal REST endpoint for kind-aware notifications from the browser pool.
+ *
+ * Direct messages and meeting invites, MFA, auth requests, and hard errors all
+ * flow through here. urgent_message is deduplicated per (connectionId, chatId)
+ * in a 60s window so a persistently unread chat does not spam push.
+ */
+fun Routing.installInternalO365NotifyApi(
+    connectionRepository: ConnectionRepository,
+    taskRepository: TaskRepository,
+    notificationRpc: NotificationRpcImpl,
+    fcmPushService: FcmPushService,
+    apnsPushService: ApnsPushService,
+    deviceTokenRepository: DeviceTokenRepository? = null,
+) {
+    post("/internal/o365/notify") {
+        try {
+            val body = call.receive<O365NotifyRequest>()
+            val connectionId = try {
+                ConnectionId(ObjectId(body.connectionId))
+            } catch (_: Exception) {
+                call.respondText(
+                    """{"error":"invalid connectionId"}""",
+                    ContentType.Application.Json, HttpStatusCode.BadRequest,
+                )
+                return@post
+            }
+            val connection = connectionRepository.getById(connectionId) ?: run {
+                call.respondText(
+                    """{"error":"connection not found"}""",
+                    ContentType.Application.Json, HttpStatusCode.NotFound,
+                )
+                return@post
+            }
+
+            if (body.kind == "urgent_message" && body.chatId != null) {
+                val key = "${body.connectionId}|${body.chatId}"
+                val now = System.currentTimeMillis()
+                val last = urgentDedupCache[key]
+                if (last != null && now - last < URGENT_DEDUP_WINDOW_MS) {
+                    logger.debug { "Deduped urgent_message for $key" }
+                    call.respondText(
+                        """{"status":"deduped"}""",
+                        ContentType.Application.Json, HttpStatusCode.OK,
+                    )
+                    return@post
+                }
+                urgentDedupCache[key] = now
+            }
+
+            val clientIds = try {
+                deviceTokenRepository?.findAll()?.toList()
+                    ?.map { it.clientId }?.distinct()
+                    ?.map { ClientId(ObjectId(it)) }
+                    ?: listOf(ClientId(ObjectId("68a332361b04695a243e5ae8")))
+            } catch (_: Exception) {
+                listOf(ClientId(ObjectId("68a332361b04695a243e5ae8")))
+            }
+
+            val title = titleFor(body.kind, body, connection.name)
+            val description = czechDescription(body.kind, body, connection.name)
+            val priority = priorityFor(body.kind)
+            val alwaysPush = alwaysPushFor(body.kind)
+
+            for (cid in clientIds) {
+                val hasActiveUi = if (alwaysPush) false else notificationRpc.hasActiveSubscribers(cid.toString())
+                val task = TaskDocument(
+                    clientId = cid,
+                    taskName = title,
+                    content = description,
+                    state = TaskStateEnum.USER_TASK,
+                    type = TaskTypeEnum.SYSTEM,
+                    sourceUrn = SourceUrn("o365-browser-pool::event:${body.kind}"),
+                    pendingUserQuestion = title,
+                    userQuestionContext = description,
+                    priorityScore = priority,
+                    lastActivityAt = Instant.now(),
+                    actionType = body.connectionId,
+                )
+                taskRepository.save(task)
+
+                notificationRpc.emitUserTaskCreated(
+                    clientId = cid.toString(),
+                    taskId = task.id.toString(),
+                    title = title,
+                    interruptAction = body.kind,
+                    interruptDescription = description,
+                    connectionName = connection.name,
+                )
+
+                if (!hasActiveUi) {
+                    val pushData = buildMap {
+                        put("taskId", task.id.toString())
+                        put("type", "user_task")
+                        put("interruptAction", body.kind)
+                        body.chatId?.let { put("chatId", it) }
+                        body.chatName?.let { put("chatName", it) }
+                    }
+                    try {
+                        fcmPushService.sendPushNotification(cid.toString(), "Microsoft 365", title, pushData)
+                    } catch (e: Exception) {
+                        logger.warn { "FCM push failed for $cid: ${e.message}" }
+                    }
+                    try {
+                        apnsPushService.sendPushNotification(cid.toString(), "Microsoft 365", title, pushData)
+                    } catch (e: Exception) {
+                        logger.warn { "APNs push failed for $cid: ${e.message}" }
+                    }
+                }
+            }
+
+            call.respondText(
+                """{"status":"ok","kind":"${body.kind}","priority":$priority}""",
+                ContentType.Application.Json, HttpStatusCode.OK,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Error handling O365 notify" }
+            call.respondText(
+                json.encodeToString(mapOf("error" to (e.message ?: "internal error"))),
+                ContentType.Application.Json, HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+}

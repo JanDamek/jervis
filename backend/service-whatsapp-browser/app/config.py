@@ -31,7 +31,7 @@ class Settings(BaseSettings):
         validation_alias="WHATSAPP_NOVNC_EXTERNAL_URL",
     )
 
-    # VLM screen scraping (model selection via ollama-router /route-decision)
+    # VLM screen scraping (model selection via ollama-router /router/admin/decide)
     ollama_router_url: str = "http://jervis-ollama-router:11430"
 
     # QR login monitoring interval (seconds) — only used during login flow

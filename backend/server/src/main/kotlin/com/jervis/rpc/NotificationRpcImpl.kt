@@ -20,8 +20,19 @@ class NotificationRpcImpl : INotificationService {
     // Store notification streams per client
     private val eventStreams = ConcurrentHashMap<String, MutableSharedFlow<JervisEvent>>()
 
+    // Last-active timestamp per client — updated on every kRPC event subscription
+    // and used by pods to check whether the user is still around off-hours.
+    private val lastActiveAt = ConcurrentHashMap<String, Instant>()
+
+    fun markActive(clientId: String) {
+        lastActiveAt[clientId] = Instant.now()
+    }
+
+    fun lastActiveAt(clientId: String): Instant? = lastActiveAt[clientId]
+
     override fun subscribeToEvents(clientId: String): Flow<JervisEvent> {
         logger.info { "Client subscribing to event stream: $clientId" }
+        markActive(clientId)
 
         val sharedFlow = eventStreams.getOrPut(clientId) {
             MutableSharedFlow(

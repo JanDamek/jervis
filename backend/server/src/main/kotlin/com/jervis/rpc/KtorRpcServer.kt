@@ -29,13 +29,17 @@ import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalProjectManagementApi
 import com.jervis.rpc.internal.installInternalMeetingApi
 import com.jervis.rpc.internal.installInternalMeetingAttendApi
+import com.jervis.rpc.internal.installInternalMeetingPresenceApi
 import com.jervis.rpc.internal.installInternalMeetingRecordingBridgeApi
 import com.jervis.rpc.internal.installInternalChatApprovalApi
 import com.jervis.rpc.internal.installInternalVisualCaptureApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalBugTrackerApi
 import com.jervis.rpc.internal.installInternalO365CapabilitiesApi
+import com.jervis.rpc.internal.installInternalO365DiscoveredResourcesApi
+import com.jervis.rpc.internal.installInternalO365NotifyApi
 import com.jervis.rpc.internal.installInternalO365SessionApi
+import com.jervis.rpc.internal.installInternalUserActivityApi
 import com.jervis.rpc.internal.installInternalWhatsAppSessionApi
 import com.jervis.rpc.internal.installInternalWhatsAppCapabilitiesApi
 import com.jervis.rpc.internal.installInternalTaskApi
@@ -150,6 +154,7 @@ class KtorRpcServer(
     private val emailMessageIndexRepository: com.jervis.email.EmailMessageIndexRepository,
     private val directoryStructureService: com.jervis.infrastructure.storage.DirectoryStructureService,
     private val connectionRepository: com.jervis.connection.ConnectionRepository,
+    private val o365DiscoveredResourceRepository: com.jervis.teams.O365DiscoveredResourceRepository,
     private val fcmPushService: com.jervis.infrastructure.notification.FcmPushService,
     private val apnsPushService: com.jervis.infrastructure.notification.ApnsPushService,
     private val preferenceService: com.jervis.preferences.PreferenceService,
@@ -206,12 +211,16 @@ class KtorRpcServer(
                             installInternalCacheApi(guidelinesService)
                             installInternalMeetingApi(meetingRpcImpl)
                             installInternalMeetingAttendApi(taskRepository, meetingAttendApprovalService)
+                            installInternalMeetingPresenceApi(meetingAttendApprovalService)
                             installInternalMeetingRecordingBridgeApi(meetingRpcImpl)
                             installInternalChatApprovalApi(notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalVisualCaptureApi(meetingHelperService)
                             installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
                             installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService, deviceTokenRepository)
                             installInternalO365CapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)
+                            installInternalO365NotifyApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService, deviceTokenRepository)
+                            installInternalO365DiscoveredResourcesApi(o365DiscoveredResourceRepository)
+                            installInternalUserActivityApi(notificationRpcImpl)
                             installInternalWhatsAppSessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalWhatsAppCapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)
 

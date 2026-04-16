@@ -163,3 +163,43 @@ private data class MeetingAttendDecisionRequest(
     val taskId: String,
     val reason: String? = null,
 )
+
+@Serializable
+private data class MeetingPresenceRequest(
+    val connectionId: String,
+    val clientId: String? = null,
+    val present: Boolean,
+)
+
+/**
+ * POST /internal/meetings/attend/presence
+ *
+ * The browser pod reports whether the user is currently present in a Teams
+ * meeting (DOM `meeting-stage` visible). The server stores the last-seen
+ * presence so MeetingAttendApprovalService can skip at-start fallback pushes
+ * when the user joined the meeting manually.
+ */
+fun Routing.installInternalMeetingPresenceApi(
+    meetingAttendApprovalService: MeetingAttendApprovalService,
+) {
+    post("/internal/meetings/attend/presence") {
+        try {
+            val body = call.receive<MeetingPresenceRequest>()
+            meetingAttendApprovalService.recordUserPresence(
+                connectionId = body.connectionId,
+                clientId = body.clientId,
+                present = body.present,
+            )
+            call.respondText(
+                """{"status":"ok","present":${body.present}}""",
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=meetings/attend/presence" }
+            call.respondText(
+                """{"error":"${e.message}"}""",
+                ContentType.Application.Json, HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+}

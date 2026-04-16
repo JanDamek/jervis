@@ -30,6 +30,9 @@ import io.ktor.client.plugins.timeout
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
@@ -1049,37 +1052,49 @@ class ConnectionRpcImpl(
             return emptyList()
         }
 
-        // Try cached resources first (available even if browser pool is down)
+        // Try cached resources first — the pod owns o365_discovered_resources
+        // and upserts on every scrape_chat cycle, so returning cached rows is
+        // always safe. We still trigger a refresh when the cache is stale, but
+        // in the background so the UI never waits.
         val cached = discoveredResourceRepository
             .findByConnectionIdAndActive(connection.id, true)
             .toList()
 
-        if (cached.isNotEmpty()) {
-            val freshEnough = cached.any {
-                it.lastSeenAt.isAfter(java.time.Instant.now().minusSeconds(3600))
+        val mapped = cached.mapNotNull { res ->
+            val matches = when (capability) {
+                ConnectionCapability.CHAT_READ, ConnectionCapability.CHAT_SEND ->
+                    res.resourceType == "chat" || res.resourceType == "channel"
+                ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND ->
+                    res.resourceType == "email" || res.resourceType == "folder"
+                ConnectionCapability.CALENDAR_READ, ConnectionCapability.CALENDAR_WRITE ->
+                    res.resourceType == "calendar"
+                else -> false
             }
-            if (freshEnough) {
-                return cached.mapNotNull { res ->
-                    val matches = when (capability) {
-                        ConnectionCapability.CHAT_READ, ConnectionCapability.CHAT_SEND ->
-                            res.resourceType == "chat" || res.resourceType == "channel"
-                        ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND ->
-                            res.resourceType == "email" || res.resourceType == "folder"
-                        ConnectionCapability.CALENDAR_READ, ConnectionCapability.CALENDAR_WRITE ->
-                            res.resourceType == "calendar"
-                        else -> false
-                    }
-                    if (matches) ConnectionResourceDto(
-                        id = res.externalId,
-                        name = res.displayName,
-                        description = res.description,
-                        capability = capability,
-                    ) else null
+            if (matches) ConnectionResourceDto(
+                id = res.externalId,
+                name = res.displayName,
+                description = res.description,
+                capability = capability,
+            ) else null
+        }
+
+        val stale = cached.isEmpty() || cached.all {
+            it.lastSeenAt.isBefore(java.time.Instant.now().minusSeconds(3600))
+        }
+        if (stale) {
+            @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+            GlobalScope.launch(Dispatchers.IO) {
+                try {
+                    listO365ResourcesViaScraper(connection, clientId, capability)
+                } catch (e: Exception) {
+                    logger.debug { "Background discover failed for $clientId: ${e.message}" }
                 }
             }
         }
 
-        // Cache miss or stale — call browser pool discovery
+        if (mapped.isNotEmpty()) return mapped
+
+        // No cache at all — synchronously trigger scraper so the UI is never empty on first open.
         return listO365ResourcesViaScraper(connection, clientId, capability)
     }
 
@@ -1089,9 +1104,12 @@ class ConnectionRpcImpl(
         capability: ConnectionCapability,
     ): List<ConnectionResourceDto> {
         return try {
-            val resp = httpClient.post("${browserPodUrl(clientId)}/scrape/$clientId/discover")
+            val resp = httpClient.post("${browserPodUrl(clientId)}/scrape/$clientId/discover") {
+                contentType(io.ktor.http.ContentType.Application.Json)
+                setBody(mapOf("capability" to capability.name))
+            }
             if (!resp.status.isSuccess()) {
-                logger.warn { "Browser pool discovery failed for $clientId: ${resp.status}" }
+                logger.warn { "Browser pool discovery failed for $clientId (capability=${capability.name}): ${resp.status}" }
                 return emptyList()
             }
             val jsonParser = Json { ignoreUnknownKeys = true }

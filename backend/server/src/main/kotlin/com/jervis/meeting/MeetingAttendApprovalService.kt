@@ -80,6 +80,30 @@ class MeetingAttendApprovalService(
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
     private var loopJob: Job? = null
 
+    // Per-connection last-seen presence timestamps reported by the browser pod.
+    // When presence is true and seen within PRESENCE_FRESH_WINDOW, the at-start
+    // approval fallback is suppressed — the user is already in the meeting.
+    private val presenceByConnection: MutableMap<String, Instant> = java.util.concurrent.ConcurrentHashMap()
+    private val PRESENCE_FRESH_WINDOW_S = 120L
+
+    fun recordUserPresence(
+        connectionId: String,
+        clientId: String?,
+        present: Boolean,
+    ) {
+        if (present) {
+            presenceByConnection[connectionId] = Instant.now()
+        } else {
+            presenceByConnection.remove(connectionId)
+        }
+        logger.debug { "MEETING_PRESENCE: connection=$connectionId present=$present" }
+    }
+
+    private fun isUserPresentAny(): Boolean {
+        val cutoff = Instant.now().minusSeconds(PRESENCE_FRESH_WINDOW_S)
+        return presenceByConnection.values.any { it.isAfter(cutoff) }
+    }
+
     @PostConstruct
     fun start() {
         if (!enabled) {
@@ -284,9 +308,16 @@ class MeetingAttendApprovalService(
             // Already a queue entry. Re-trigger only at the at-start moment
             // for still-PENDING approvals (the fallback push).
             if (existing.status == "PENDING" && shouldFireAtStartFallback(task, meta, now)) {
-                emitPushAndBubble(task, meta, atStart = true)
-                taskRepository.save(task.copy(lastActivityAt = now))
-                logger.info { "MEETING_ATTEND_REPUSH: taskId=$taskIdStr at-start fallback fired" }
+                if (isUserPresentAny()) {
+                    logger.info {
+                        "MEETING_ATTEND_SUPPRESSED: taskId=$taskIdStr — user already present in a meeting, skipping at-start push"
+                    }
+                    taskRepository.save(task.copy(lastActivityAt = now))
+                } else {
+                    emitPushAndBubble(task, meta, atStart = true)
+                    taskRepository.save(task.copy(lastActivityAt = now))
+                    logger.info { "MEETING_ATTEND_REPUSH: taskId=$taskIdStr at-start fallback fired" }
+                }
             }
             return
         }

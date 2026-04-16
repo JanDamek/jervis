@@ -25,6 +25,7 @@ These documents are the **single source of truth** and are kept up-to-date with 
 ### Implementation Details
 
 - **[implementation.md](implementation.md)** - Implementation details, conventions, patterns, best practices
+- **[inter-service-contracts.md](inter-service-contracts.md)** - **SSOT** for HTTP APIs between pods: Buf + Protobuf + ConnectRPC, Kotlin/Python codegen, CI drift enforcement
 
 ---
 
@@ -42,6 +43,7 @@ These documents are the **single source of truth** and are kept up-to-date with 
 | Architecture / module boundaries | `architecture.md`                                          |
 | Orchestrator behavior            | `orchestrator-final-spec.md` or `orchestrator-detailed.md` |
 | Implementation conventions       | `implementation.md`                                        |
+| Inter-service HTTP API (Kotlin↔Python, Python↔Python) | `inter-service-contracts.md` + regenerate proto |
 
 ### Pull Request Checklist
 
