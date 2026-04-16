@@ -63,8 +63,8 @@ fun RecordingSetupDialog(
     selectedProjectId: String?,
     audioDevices: List<AudioDevice>,
     systemAudioCapability: SystemAudioCapability,
-    helperDevices: List<DeviceInfoDto> = emptyList(),
-    onStart: (clientId: String, projectId: String?, audioInputType: AudioInputType, selectedDevice: AudioDevice?, title: String?, meetingType: MeetingTypeEnum, liveAssist: Boolean, helperDeviceId: String?) -> Unit,
+    @Suppress("UNUSED_PARAMETER") helperDevices: List<DeviceInfoDto> = emptyList(),
+    onStart: (clientId: String, projectId: String?, audioInputType: AudioInputType, selectedDevice: AudioDevice?, title: String?, meetingType: MeetingTypeEnum, liveAssist: Boolean, helperEnabled: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var clientId by remember { mutableStateOf(selectedClientId?.takeIf { it != "__global__" } ?: clients.firstOrNull()?.id ?: "") }
@@ -75,7 +75,6 @@ fun RecordingSetupDialog(
     var selectedType by remember { mutableStateOf(MeetingTypeEnum.MEETING) }
     var liveAssist by remember { mutableStateOf(false) }
     var helperEnabled by remember { mutableStateOf(false) }
-    var selectedHelperDeviceId by remember { mutableStateOf(helperDevices.firstOrNull()?.deviceId) }
 
     JFormDialog(
         visible = true,
@@ -85,8 +84,7 @@ fun RecordingSetupDialog(
                 captureSystemAudio -> AudioInputType.MIXED
                 else -> AudioInputType.MICROPHONE
             }
-            val helperDevice = if (helperEnabled) selectedHelperDeviceId else null
-            onStart(clientId, projectId, inputType, selectedDevice, title.ifBlank { null }, selectedType, liveAssist, helperDevice)
+            onStart(clientId, projectId, inputType, selectedDevice, title.ifBlank { null }, selectedType, liveAssist, helperEnabled)
         },
         onDismiss = onDismiss,
         confirmEnabled = clientId.isNotBlank(),
@@ -310,7 +308,8 @@ fun RecordingSetupDialog(
             }
         }
 
-        // Meeting Helper toggle + device picker
+        // Assistant toggle — pure on/off. Hints & transcript are broadcast to
+        // every signed-in device via the RPC event stream, so no device picker.
         Spacer(modifier = Modifier.height(4.dp))
         Row(
             modifier = Modifier
@@ -322,75 +321,18 @@ fun RecordingSetupDialog(
                 checked = helperEnabled,
                 onCheckedChange = {
                     helperEnabled = it
-                    // Helper requires live assist for real-time transcription
                     if (it) liveAssist = true
                 },
             )
             Spacer(modifier = Modifier.width(8.dp))
             Column {
-                Text("Meeting Helper", style = MaterialTheme.typography.bodyMedium)
+                Text("Asistent", style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    "Překlad + návrhy odpovědí na druhé zařízení",
+                    "Živý přepis + hinty na každém přihlášeném zařízení",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-
-        // Device picker (shown when helper is enabled)
-        if (helperEnabled && helperDevices.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Cílové zařízení:",
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(start = 48.dp),
-            )
-
-            var deviceExpanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
-                expanded = deviceExpanded,
-                onExpandedChange = { deviceExpanded = it },
-                modifier = Modifier.padding(start = 48.dp),
-            ) {
-                OutlinedTextField(
-                    value = helperDevices.find { it.deviceId == selectedHelperDeviceId }?.deviceName ?: "Vyberte zařízení...",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Zařízení") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = deviceExpanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
-                )
-                ExposedDropdownMenu(
-                    expanded = deviceExpanded,
-                    onDismissRequest = { deviceExpanded = false },
-                ) {
-                    helperDevices.forEach { device ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(device.deviceName)
-                                    Text(
-                                        "${device.deviceType} • ${device.platform}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            },
-                            onClick = {
-                                selectedHelperDeviceId = device.deviceId
-                                deviceExpanded = false
-                            },
-                        )
-                    }
-                }
-            }
-        } else if (helperEnabled && helperDevices.isEmpty()) {
-            Text(
-                text = "Žádná zařízení k dispozici. Připojte iPhone s Jervis aplikací.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(start = 48.dp, top = 4.dp),
-            )
         }
     }
 }

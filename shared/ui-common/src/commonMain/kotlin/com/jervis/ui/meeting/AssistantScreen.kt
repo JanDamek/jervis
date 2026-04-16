@@ -21,6 +21,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +51,8 @@ import com.jervis.ui.design.JervisSpacing
 fun AssistantScreen(
     messages: List<HelperMessageDto>,
     isConnected: Boolean,
+    ttsEnabled: Boolean = false,
+    onToggleTts: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val transcript = messages.filter { it.type == HelperMessageType.TRANSCRIPT }
@@ -93,7 +96,16 @@ fun AssistantScreen(
                 text = "${transcript.size} segmentů · ${hints.size} hintů",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
             )
+            // TTS toggle — device speaks hints aloud via xTTS v2 (user's voice)
+            Text(
+                text = "TTS",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Switch(checked = ttsEnabled, onCheckedChange = { onToggleTts() })
         }
 
         Spacer(modifier = Modifier.height(12.dp))

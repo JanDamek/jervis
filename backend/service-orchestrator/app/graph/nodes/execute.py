@@ -357,13 +357,17 @@ async def _prefetch_kb_context(
 # --- Claude companion (parallel deep-analysis agent) -------------------------
 
 def _should_use_companion(state: dict, task: CodingTask, step: CodingStep) -> bool:
-    """Trigger the companion for heavy analytical work, not for chatter."""
+    """Trigger the companion for heavy analytical work, not for chatter.
+
+    Reads complexity from state["task_complexity"] (set by intake node via the
+    classification LLM). CodingTask itself carries no complexity field.
+    """
     # Explicit opt-in via /deep prefix
-    prompt_text = (step.instructions or "") + " " + (task.description or "")
+    prompt_text = (step.instructions or "") + " " + (task.query or "")
     if "/deep" in prompt_text.lower():
         return True
-    # Complexity signal
-    complexity = (state.get("complexity") or task.complexity or "").lower()
+    # Complexity signal from intake classification
+    complexity = (state.get("task_complexity") or "").lower()
     if complexity in ("complex", "critical"):
         return True
     # Attachments (images / PDFs) — companion reads them natively, no VLM call
@@ -392,7 +396,7 @@ async def _run_companion_adhoc(
         f"Task ID: {task.id}",
         "",
         "## Goal",
-        step.instructions or task.description or "(no instructions)",
+        step.instructions or task.query or "(no instructions)",
     ]
     if project_context:
         brief_parts += ["", "## Project context", project_context]
@@ -420,7 +424,7 @@ async def _run_companion_adhoc(
     dispatch = await companion_runner.dispatch_adhoc(
         task_id=task.id,
         brief=brief,
-        context={"step_index": step.index, "source_urn": task.source_urn},
+        context={"step_index": step.index},
         attachments=attachments,
         client_id=state.get("client_id") or "",
         project_id=state.get("project_id"),

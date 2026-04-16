@@ -141,9 +141,15 @@ async def run_adhoc(workspace: Path) -> int:
                         print(text, flush=True)
             elif cls_name == "ResultMessage" or msg_type in ("result", "ResultMessage"):
                 subtype = getattr(message, "subtype", "unknown")
-                success = subtype == "success"
+                usage = getattr(message, "usage", None)
+                total_cost = getattr(message, "total_cost_usd", None)
+                num_turns = getattr(message, "num_turns", None)
+                is_err = getattr(message, "is_error", None)
+                result_text = getattr(message, "result", None)
+                _log(f"Result detail: subtype={subtype} is_error={is_err} turns={num_turns} cost={total_cost} usage={usage} result={str(result_text)[:400]}")
+                success = subtype == "success" and not is_err
                 if not success:
-                    error_msg = f"Agent finished with: {subtype}"
+                    error_msg = f"Agent finished: subtype={subtype} is_error={is_err} result={str(result_text)[:300]}"
         if not error_msg and not success:
             success = True
     except Exception as e:

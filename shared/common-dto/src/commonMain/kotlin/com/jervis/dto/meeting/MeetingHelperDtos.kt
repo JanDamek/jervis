@@ -36,7 +36,10 @@ data class HelperMessageDto(
 @Serializable
 data class HelperSessionStartDto(
     val meetingId: String,
-    val deviceId: String,
+    // deviceId is informational only — assistant hints are broadcast to every
+    // device of the user via the RPC event stream, so there is no reason to
+    // pick a specific target device. Kept on the DTO for legacy callers.
+    val deviceId: String = "",
     val sourceLang: String = "en",
     val targetLang: String = "cs",
 )

@@ -244,9 +244,12 @@ fun App(
             }
 
             Screen.Assistant -> {
+                val ttsEnabled by meetingViewModel.ttsEnabled.collectAsState()
                 com.jervis.ui.meeting.AssistantScreen(
                     messages = helperMessages,
                     isConnected = helperConnected,
+                    ttsEnabled = ttsEnabled,
+                    onToggleTts = { meetingViewModel.toggleTts() },
                 )
             }
         }

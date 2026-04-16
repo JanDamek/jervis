@@ -187,10 +187,22 @@ class MeetingHelperService(
         // for live transcript + assistant hints. Broadcasting goes via the RPC
         // event stream anyway, so listing all devices is safe.
         return deviceTokenRepository.findAll().toList()
+            .filter { it.deviceId.isNotBlank() }
             .map { doc ->
+                // Fallback label when deviceName is empty (most old rows):
+                //   desktop-Jan-MBP-2.localdomain-damekjan → "Desktop · Jan-MBP-2"
+                //   086459D3-...                         → "Ios · 086459d3"
+                val niceName = doc.deviceName.ifBlank {
+                    val hint = doc.deviceId
+                        .removePrefix("desktop-")
+                        .substringBefore(".localdomain")
+                        .substringBefore(".")
+                        .take(18)
+                    "${doc.platform.replaceFirstChar { it.uppercase() }} · $hint"
+                }
                 DeviceInfoDto(
                     deviceId = doc.deviceId,
-                    deviceName = doc.deviceName.ifBlank { doc.platform },
+                    deviceName = niceName,
                     deviceType = doc.deviceType.name,
                     platform = doc.platform,
                     capabilities = doc.capabilities,

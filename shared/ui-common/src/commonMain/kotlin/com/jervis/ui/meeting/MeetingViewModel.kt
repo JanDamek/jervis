@@ -172,6 +172,14 @@ class MeetingViewModel(
     private val _helperConnected = MutableStateFlow(false)
     val helperConnected: StateFlow<Boolean> = _helperConnected.asStateFlow()
 
+    /** TTS toggle — when on, the device speaks each incoming SUGGESTION/ANSWER
+     *  hint via the xTTS v2 GPU service (user's voice). Pure UI state here;
+     *  audio playback wiring lands with the orchestrator streaming refactor. */
+    private val _ttsEnabled = MutableStateFlow(false)
+    val ttsEnabled: StateFlow<Boolean> = _ttsEnabled.asStateFlow()
+
+    fun toggleTts() { _ttsEnabled.value = !_ttsEnabled.value }
+
     private var helperWsJob: Job? = null
     private var activeHelperDeviceId: String? = null
 
@@ -499,7 +507,7 @@ class MeetingViewModel(
         title: String? = null,
         meetingType: MeetingTypeEnum? = null,
         liveAssist: Boolean = false,
-        helperDeviceId: String? = null,
+        helperEnabled: Boolean = false,
     ) {
         if (clientId != null) lastClientId = clientId
         if (projectId != null) lastProjectId = projectId
@@ -534,28 +542,28 @@ class MeetingViewModel(
             )
             uploadService.registerSession(session)
 
-            println("[Meeting] Recording started: localId=$localId, liveAssist=$liveAssist, helper=${helperDeviceId != null}")
+            println("[Meeting] Recording started: localId=$localId, liveAssist=$liveAssist, helper=$helperEnabled")
             platformRecordingService.startBackgroundRecording(title ?: "Nahravani")
             startDurationUpdate()
             startChunkSaveJob(localId)
 
             // Start live assist dual pipeline — voice session for KB hints during recording
-            if (liveAssist || helperDeviceId != null) {
-                startLiveAssistSession(localId, clientId, projectId, helperDeviceId)
+            if (liveAssist || helperEnabled) {
+                startLiveAssistSession(localId, clientId, projectId, helperEnabled)
             }
 
-            // Start meeting helper session on server
-            if (helperDeviceId != null) {
-                activeHelperDeviceId = helperDeviceId
+            // Start meeting helper session on server — hints broadcast to every device
+            if (helperEnabled) {
+                activeHelperDeviceId = ""  // marker: helper was requested
                 scope.launch {
                     try {
                         repository.meetingHelper.startHelper(
                             com.jervis.dto.meeting.HelperSessionStartDto(
                                 meetingId = localId,
-                                deviceId = helperDeviceId,
+                                // deviceId intentionally blank — broadcast, not targeted.
                             )
                         )
-                        println("[Meeting] Helper session started for device=$helperDeviceId")
+                        println("[Meeting] Helper/companion session started (broadcast)")
                     } catch (e: Exception) {
                         println("[Meeting] Failed to start helper session: ${e.message}")
                     }
@@ -565,13 +573,12 @@ class MeetingViewModel(
     }
 
     @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
-    private fun startLiveAssistSession(meetingLocalId: String, clientId: String?, projectId: String?, helperDeviceId: String? = null) {
+    private fun startLiveAssistSession(meetingLocalId: String, clientId: String?, projectId: String?, helperEnabled: Boolean = false) {
         _liveAssistActive.value = true
         liveAssistJob = scope.launch {
             try {
                 val serverUrl = connectionManager.baseUrl.trimEnd('/')
-                val helperFlag = helperDeviceId != null
-                val sessionBody = """{"source":"meeting_assist","tts":false,"liveAssist":true,"meetingId":"$meetingLocalId","wearableNotify":true,"helperEnabled":$helperFlag}"""
+                val sessionBody = """{"source":"meeting_assist","tts":false,"liveAssist":true,"meetingId":"$meetingLocalId","wearableNotify":true,"helperEnabled":$helperEnabled}"""
 
                 postSseStream(
                     url = "$serverUrl/api/v1/voice/session",
