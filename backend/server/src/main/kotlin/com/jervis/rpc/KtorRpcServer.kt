@@ -27,8 +27,6 @@ import com.jervis.rpc.internal.installInternalBugTrackerApi
 import com.jervis.rpc.internal.installInternalO365CapabilitiesApi
 import com.jervis.rpc.internal.installInternalO365NotifyApi
 import com.jervis.rpc.internal.installInternalO365SessionApi
-import com.jervis.rpc.internal.installInternalWhatsAppSessionApi
-import com.jervis.rpc.internal.installInternalWhatsAppCapabilitiesApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import com.jervis.agent.AgentOrchestratorRpcImpl
 import com.jervis.agent.AgentQuestionRpcImpl
@@ -211,8 +209,8 @@ class KtorRpcServer(
                             installInternalO365NotifyApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService, deviceTokenRepository)
                             // O365 discovered resources + user-activity migrated to gRPC
                             // (jervis.server.Server{O365DiscoveredResources,UserActivity}Service).
-                            installInternalWhatsAppSessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
-                            installInternalWhatsAppCapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)
+                            // WhatsApp session events + capabilities migrated to gRPC
+                            // (jervis.server.ServerWhatsappSessionService).
                             // Connection relogin approval migrated to gRPC
                             // (jervis.server.ServerConnectionService).
 

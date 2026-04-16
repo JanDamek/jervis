@@ -12,11 +12,14 @@ RUN apt-get update --allow-insecure-repositories || true && \
     websockify \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY libs/jervis_contracts /libs/jervis_contracts
+RUN pip install --no-cache-dir --ignore-installed -e /libs/jervis_contracts
+
+COPY backend/service-whatsapp-browser/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir --ignore-installed -r requirements.txt
 
-COPY app/ app/
-COPY entrypoint.sh /entrypoint.sh
+COPY backend/service-whatsapp-browser/app/ app/
+COPY backend/service-whatsapp-browser/entrypoint.sh /entrypoint.sh
 
 # Create browser profiles directory (persistent via PVC)
 RUN mkdir -p /browser-profiles && \

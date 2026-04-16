@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerWhatsappSessionProto";
+
+// ServerWhatsappSessionService — inbound callbacks from the WhatsApp
+// browser pod: session state transitions (QR scan needed, session
+// expired) and one-shot capability discovery.
+service ServerWhatsappSessionService {
+  rpc SessionEvent(WhatsappSessionEventRequest) returns (WhatsappSessionEventResponse);
+  rpc CapabilitiesDiscovered(WhatsappCapabilitiesRequest) returns (WhatsappCapabilitiesResponse);
+}
+
+message WhatsappSessionEventRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string connection_id = 3;
+  string state = 4;            // "EXPIRED" | "PHONE_DISCONNECTED" | other (ignored)
+  string vnc_url = 5;
+}
+
+message WhatsappSessionEventResponse {
+  bool ok = 1;
+}
+
+message WhatsappCapabilitiesRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string connection_id = 3;
+  repeated string available_capabilities = 4;
+  int32 chat_count = 5;
+}
+
+message WhatsappCapabilitiesResponse {
+  bool ok = 1;
+}

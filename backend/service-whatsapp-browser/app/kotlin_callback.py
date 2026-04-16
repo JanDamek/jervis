@@ -1,27 +1,26 @@
 """Callback module for notifying Kotlin server about WhatsApp session state changes.
 
 When the WhatsApp session needs user attention (QR code scan, session expired),
-this module POSTs to the Kotlin server's internal API.
+this module calls the Kotlin server's gRPC surface.
 """
 
 from __future__ import annotations
 
 import logging
 
-import httpx
-
 from app.config import settings
+from app.grpc_clients import server_whatsapp_session_stub
+from jervis.server import whatsapp_session_pb2
+from jervis.common import types_pb2
+from jervis_contracts.interceptors import prepare_context
 
 logger = logging.getLogger("whatsapp-browser.callback")
 
-_client: httpx.AsyncClient | None = None
 
-
-async def _get_client() -> httpx.AsyncClient:
-    global _client
-    if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(timeout=10.0)
-    return _client
+def _ctx() -> types_pb2.RequestContext:
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    return ctx
 
 
 async def notify_session_state(
@@ -31,36 +30,23 @@ async def notify_session_state(
     *,
     vnc_url: str | None = None,
 ) -> None:
-    """POST session state change to Kotlin server. Fire-and-forget."""
+    """Push session state change to Kotlin server. Fire-and-forget."""
     if not settings.kotlin_server_url:
         return
-
-    url = f"{settings.kotlin_server_url}/internal/whatsapp/session-event"
-    payload = {
-        "clientId": client_id,
-        "connectionId": connection_id,
-        "state": state,
-        "vncUrl": vnc_url or f"{settings.novnc_external_url}/vnc-login",
-    }
-
     try:
-        client = await _get_client()
-        resp = await client.post(url, json=payload)
-        if resp.status_code < 300:
-            logger.info(
-                "Notified Kotlin server: state=%s for %s",
-                state, client_id,
-            )
-        else:
-            logger.warning(
-                "Kotlin callback returned %d for %s: %s",
-                resp.status_code, client_id, resp.text[:200],
-            )
-    except Exception as e:
-        logger.warning(
-            "Failed to notify Kotlin server for %s: %s",
-            client_id, e,
+        await server_whatsapp_session_stub().SessionEvent(
+            whatsapp_session_pb2.WhatsappSessionEventRequest(
+                ctx=_ctx(),
+                client_id=client_id,
+                connection_id=connection_id,
+                state=state,
+                vnc_url=vnc_url or f"{settings.novnc_external_url}/vnc-login",
+            ),
+            timeout=10.0,
         )
+        logger.info("Notified Kotlin server: state=%s for %s", state, client_id)
+    except Exception as e:
+        logger.warning("Failed to notify Kotlin server for %s: %s", client_id, e)
 
 
 async def notify_capabilities_discovered(
@@ -68,43 +54,27 @@ async def notify_capabilities_discovered(
     connection_id: str,
     available_capabilities: list[str],
 ) -> None:
-    """Push discovered capabilities to Kotlin server.
-
-    For WhatsApp, capabilities are always CHAT_READ (Phase 1).
-    """
+    """Push discovered capabilities to Kotlin server."""
     if not settings.kotlin_server_url:
         return
-
-    url = f"{settings.kotlin_server_url}/internal/whatsapp/capabilities-discovered"
-    payload = {
-        "clientId": client_id,
-        "connectionId": connection_id,
-        "availableCapabilities": available_capabilities,
-    }
-
     try:
-        client = await _get_client()
-        resp = await client.post(url, json=payload)
-        if resp.status_code < 300:
-            logger.info(
-                "Capabilities discovered for %s: %s",
-                client_id, available_capabilities,
-            )
-        else:
-            logger.warning(
-                "Capabilities callback returned %d for %s: %s",
-                resp.status_code, client_id, resp.text[:200],
-            )
-    except Exception as e:
-        logger.warning(
-            "Failed to push capabilities for %s: %s",
-            client_id, e,
+        await server_whatsapp_session_stub().CapabilitiesDiscovered(
+            whatsapp_session_pb2.WhatsappCapabilitiesRequest(
+                ctx=_ctx(),
+                client_id=client_id,
+                connection_id=connection_id,
+                available_capabilities=list(available_capabilities),
+            ),
+            timeout=10.0,
         )
+        logger.info(
+            "Capabilities discovered for %s: %s",
+            client_id, available_capabilities,
+        )
+    except Exception as e:
+        logger.warning("Failed to push capabilities for %s: %s", client_id, e)
 
 
 async def shutdown() -> None:
-    """Close the HTTP client on service shutdown."""
-    global _client
-    if _client and not _client.is_closed:
-        await _client.aclose()
-        _client = None
+    """No-op — kept for backward compatibility with the old httpx path."""
+    return None
