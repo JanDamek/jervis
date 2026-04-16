@@ -359,6 +359,13 @@ private data class O365NotifyRequest(
     val sender: String? = null,
     val preview: String? = null,
     val screenshot: String? = null,
+    // MFA number-match (product §17) — pod MUST send mfaCode when kind='mfa'.
+    // We surface it in the push payload + body so the user can approve on
+    // the phone without opening the app.
+    val mfaCode: String? = null,
+    // meeting_alone_check (product §10a) — MeetingDocument id for the
+    // orchestrator MCP meeting_alone_leave/stay chat bubble action.
+    val meetingId: String? = null,
 )
 
 private const val URGENT_DEDUP_WINDOW_MS = 60_000L
@@ -369,19 +376,25 @@ private fun priorityFor(kind: String): Int = when (kind) {
     "meeting_invite" -> 80
     "auth_request" -> 75
     "mfa" -> 70
+    "meeting_alone_check" -> 65
     "error" -> 60
     else -> 40
 }
 
 private fun alwaysPushFor(kind: String): Boolean = kind in setOf(
-    "urgent_message", "mfa", "auth_request", "meeting_invite",
+    "urgent_message", "mfa", "auth_request", "meeting_invite", "meeting_alone_check",
 )
 
 private fun titleFor(kind: String, req: O365NotifyRequest, connectionName: String): String = when (kind) {
     "urgent_message" -> "[$connectionName] Direct od ${req.sender ?: req.chatName ?: "?"}"
     "meeting_invite" -> "[$connectionName] Schůzka: ${req.chatName ?: "příchozí hovor"}"
+    "meeting_alone_check" -> "[$connectionName] V meetingu jsi sám — odejít?"
     "auth_request" -> "[$connectionName] Povolit přihlášení?"
-    "mfa" -> "[$connectionName] Dvoufaktorové ověření"
+    "mfa" -> {
+        val code = req.mfaCode?.takeIf { it.isNotBlank() }
+        if (code != null) "[$connectionName] Potvrď $code v Authenticatoru"
+        else "[$connectionName] Dvoufaktorové ověření"
+    }
     "error" -> "[$connectionName] Agent uvízl — potřebuje pomoc"
     else -> "[$connectionName] ${req.message.take(60)}"
 }
@@ -390,8 +403,13 @@ private fun czechDescription(kind: String, req: O365NotifyRequest, connectionNam
     val head = when (kind) {
         "urgent_message" -> "Nová přímá zpráva v připojení **$connectionName** od **${req.sender ?: req.chatName ?: "?"}**."
         "meeting_invite" -> "V připojení **$connectionName** zvoní hovor${req.chatName?.let { " v chatu **$it**" } ?: ""}. Mám se připojit a nahrát meeting?"
+        "meeting_alone_check" -> "V meetingu jsi sám — mám z něj Jervise odhlásit, nebo ještě počkat?"
         "auth_request" -> "Připojení **$connectionName** potřebuje mimo pracovní dobu schválit přihlášení."
-        "mfa" -> "Připojení **$connectionName** vyžaduje dvoufaktorové ověření."
+        "mfa" -> {
+            val code = req.mfaCode?.takeIf { it.isNotBlank() }
+            if (code != null) "Připojení **$connectionName**: potvrď číslo **$code** v Microsoft Authenticator."
+            else "Připojení **$connectionName** vyžaduje dvoufaktorové ověření."
+        }
         "error" -> "Agent připojení **$connectionName** se zasekl a potřebuje zásah. Originální popis (LLM):"
         else -> "Připojení **$connectionName**:"
     }
@@ -509,6 +527,8 @@ fun Routing.installInternalO365NotifyApi(
                         put("interruptAction", body.kind)
                         body.chatId?.let { put("chatId", it) }
                         body.chatName?.let { put("chatName", it) }
+                        body.mfaCode?.takeIf { it.isNotBlank() }?.let { put("mfaCode", it) }
+                        body.meetingId?.takeIf { it.isNotBlank() }?.let { put("meetingId", it) }
                     }
                     try {
                         fcmPushService.sendPushNotification(cid.toString(), "Microsoft 365", title, pushData)

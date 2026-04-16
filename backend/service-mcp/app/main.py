@@ -941,6 +941,33 @@ async def meeting_attend_status(task_id: str) -> str:
     return "\n".join(lines)
 
 
+# ── Off-hours relogin approval (product §18) ───────────────────────────
+
+
+@mcp.tool
+async def connection_approve_relogin(connection_id: str) -> str:
+    """Approve an off-hours relogin for an O365 / Teams connection.
+
+    Called when the user answers "ano přihlas to znova" to an `auth_request`
+    push outside work hours. Server posts
+    `/instruction/{connectionId} approve_relogin` to the pod agent, which
+    resumes the AUTHENTICATING flow (credential fill → MFA) even though the
+    work-hours / user-activity gate would normally block it (product §18).
+
+    Args:
+        connection_id: ConnectionDocument id from the auth_request push.
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/connections/{connection_id}/approve-relogin",
+            json={},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return f"Relogin approved: connectionId={connection_id} state={data.get('state', '?')}"
+
+
 @mcp.tool
 async def list_tasks(
     client_id: str = "",

@@ -32,6 +32,7 @@ import com.jervis.rpc.internal.installInternalMeetingAttendApi
 import com.jervis.rpc.internal.installInternalMeetingPresenceApi
 import com.jervis.rpc.internal.installInternalMeetingRecordingBridgeApi
 import com.jervis.rpc.internal.installInternalChatApprovalApi
+import com.jervis.rpc.internal.installInternalConnectionReloginApi
 import com.jervis.rpc.internal.installInternalVisualCaptureApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalBugTrackerApi
@@ -163,6 +164,7 @@ class KtorRpcServer(
     private val gitRepositoryService: com.jervis.git.service.GitRepositoryService,
     private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
     private val pendingTaskService: com.jervis.task.PendingTaskService,
+    private val httpClient: io.ktor.client.HttpClient,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -223,6 +225,7 @@ class KtorRpcServer(
                             installInternalUserActivityApi(notificationRpcImpl)
                             installInternalWhatsAppSessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalWhatsAppCapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)
+                            installInternalConnectionReloginApi(connectionRepository, httpClient)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
