@@ -36,13 +36,19 @@ async def query_user_activity_seconds(client_id: str) -> int:
     when unknown — conservative default keeps the pod cautious off-hours."""
     if not settings.kotlin_server_url:
         return 10 ** 9
-    url = f"{settings.kotlin_server_url}/internal/user/last-activity"
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(url, params={"clientId": client_id})
-            if resp.status_code == 200:
-                data = resp.json()
-                return int(data.get("last_active_seconds", 10 ** 9))
+        from app.grpc_clients import server_user_activity_stub
+        from jervis.server import o365_resources_pb2
+        from jervis.common import types_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_user_activity_stub().LastActivity(
+            o365_resources_pb2.LastActivityRequest(ctx=ctx, client_id=client_id),
+            timeout=5.0,
+        )
+        return int(resp.last_active_seconds)
     except Exception as e:
         logger.warning("last-activity query failed: %s", e)
     return 10 ** 9

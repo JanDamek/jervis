@@ -12,3 +12,6 @@ langgraph>=0.4.0
 langgraph-checkpoint-mongodb>=0.3.0
 langchain-core>=0.3.0
 pymongo>=4.8.0
+grpcio>=1.66.0
+grpcio-reflection>=1.66.0
+protobuf>=5.34,<7

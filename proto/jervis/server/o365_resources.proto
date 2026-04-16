@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerO365ResourcesProto";
+
+// Two tiny read-only services bundled under the "o365 resources" banner —
+// they share the domain (O365 discovery / user presence) and are both
+// called from the o365 browser pool agent.
+service ServerO365DiscoveredResourcesService {
+  rpc ListDiscovered(ListDiscoveredRequest) returns (ListDiscoveredResponse);
+}
+
+service ServerUserActivityService {
+  // Seconds since the client's UI was last active (inferred from last
+  // kRPC ping). Returns a very large number when unknown so callers
+  // stay conservative (teams-pod off-hours guard).
+  rpc LastActivity(LastActivityRequest) returns (LastActivityResponse);
+}
+
+message ListDiscoveredRequest {
+  jervis.common.RequestContext ctx = 1;
+  string connection_id = 2;
+  string resource_type = 3;   // "" = all types
+}
+
+message ListDiscoveredResponse {
+  repeated DiscoveredResource resources = 1;
+}
+
+message DiscoveredResource {
+  string external_id = 1;
+  string resource_type = 2;
+  string display_name = 3;
+  string description = 4;
+  string team_name = 5;
+  bool active = 6;
+  int64 discovered_at_epoch = 7;
+  int64 last_seen_at_epoch = 8;
+}
+
+message LastActivityRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+}
+
+message LastActivityResponse {
+  int64 last_active_seconds = 1;
+}
