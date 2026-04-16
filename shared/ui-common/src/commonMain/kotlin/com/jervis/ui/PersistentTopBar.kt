@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.filled.Refresh
@@ -118,6 +119,9 @@ fun PersistentTopBar(
     onNavigateToMeetings: () -> Unit,
     onQuickRecord: () -> Unit,
     onStopRecording: () -> Unit,
+    // Assistant (companion live hints during meeting)
+    assistantActive: Boolean = false,
+    onOpenAssistant: () -> Unit = {},
     // Paměťový graf panel toggle
     hasMemoryGraph: Boolean = false,
     onToggleThinkingGraphPanel: () -> Unit = {},
@@ -170,6 +174,16 @@ fun PersistentTopBar(
                 onGroupSelected = onGroupSelected,
                 modifier = Modifier.weight(1f),
             )
+
+            // Assistant toggle — visible whenever a companion/helper session is streaming hints
+            if (assistantActive) {
+                JIconButton(
+                    onClick = onOpenAssistant,
+                    icon = Icons.Default.Headphones,
+                    contentDescription = "Asistent běží — otevřít panel",
+                    tint = Color(0xFF2E7D32),
+                )
+            }
 
             // Quick record / stop button
             if (isRecording) {

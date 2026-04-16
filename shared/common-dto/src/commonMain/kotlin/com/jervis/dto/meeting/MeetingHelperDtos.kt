@@ -19,6 +19,8 @@ enum class HelperMessageType {
     WHITEBOARD_OCR,
     /** Monitor / screen OCR — code-aware text extraction. */
     SCREEN_OCR,
+    /** Live meeting transcript chunk (speaker + text). Rolled in the Assistant view, not shown as a bubble. */
+    TRANSCRIPT,
 }
 
 @Serializable

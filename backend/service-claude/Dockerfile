@@ -150,8 +150,10 @@ COPY backend/service-joern-mcp/server.py /opt/jervis/mcp/joern-server.py
 WORKDIR /opt/jervis/claude
 COPY backend/service-claude/build/libs/service-claude-*.jar jervis-claude.jar
 COPY backend/shared-entrypoints/entrypoint-job.sh /opt/jervis/entrypoint-job.sh
-RUN chmod +x /opt/jervis/entrypoint-job.sh
+COPY backend/shared-entrypoints/entrypoint-companion.sh /opt/jervis/entrypoint-companion.sh
+RUN chmod +x /opt/jervis/entrypoint-job.sh /opt/jervis/entrypoint-companion.sh
 COPY backend/service-claude/claude_sdk_runner.py /opt/jervis/claude_sdk_runner.py
+COPY backend/service-claude/companion_sdk_runner.py /opt/jervis/companion_sdk_runner.py
 
 # === Non-root user for Claude Code CLI (refuses --dangerously-skip-permissions as root) ===
 RUN useradd -m -s /bin/bash -u 1000 jervis && \

@@ -466,8 +466,21 @@ class CompanionRunner:
 
 
 def _utc_now_iso() -> str:
-    import datetime
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _event_is_stale(event: dict, max_age_seconds: float) -> bool:
+    ts = event.get("ts")
+    if not ts:
+        return False
+    try:
+        event_time = datetime.datetime.fromisoformat(ts)
+    except ValueError:
+        return False
+    if event_time.tzinfo is None:
+        event_time = event_time.replace(tzinfo=datetime.timezone.utc)
+    age = (datetime.datetime.now(datetime.timezone.utc) - event_time).total_seconds()
+    return age > max_age_seconds
 
 
 def _build_companion_claude_md(client_id: str, project_id: str | None, language: str, mode: str) -> str:

@@ -182,6 +182,10 @@ private fun HelperMessageCard(message: HelperMessageDto) {
             Color(0xFF0277BD).copy(alpha = 0.12f),
             "Obrazovka",
         )
+        HelperMessageType.TRANSCRIPT -> Pair(
+            MaterialTheme.colorScheme.surfaceVariant,
+            "Přepis",
+        )
     }
 
     val labelColor = when (message.type) {
@@ -192,6 +196,7 @@ private fun HelperMessageCard(message: HelperMessageDto) {
         HelperMessageType.VISUAL_INSIGHT -> Color(0xFF7B1FA2)
         HelperMessageType.WHITEBOARD_OCR -> Color(0xFFE65100)
         HelperMessageType.SCREEN_OCR -> Color(0xFF0277BD)
+        HelperMessageType.TRANSCRIPT -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Card(

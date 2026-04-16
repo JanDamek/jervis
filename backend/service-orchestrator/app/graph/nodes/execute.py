@@ -65,20 +65,21 @@ async def _execute_respond_step(
     evidence = state.get("evidence_pack", {})
     project_context = state.get("project_context", "")
 
-    wants_deep = _should_use_companion(state, task, step)
-    if wants_deep:
+    if _should_use_companion(state, task, step):
+        # Fail-fast: if the companion is requested and it doesn't answer,
+        # the task fails. No silent fallback to inline LLM — that would mask
+        # budget/auth/infra issues and produce a lower-quality answer labelled
+        # as if it came from the deep-analysis path.
         answer = await _run_companion_adhoc(state, task, step, evidence, project_context)
-        if answer:
-            step_result = StepResult(
-                step_index=step.index,
-                success=True,
-                summary=answer,
-                agent_type="companion",
-            )
-            existing = list(state.get("step_results", []))
-            existing.append(step_result.model_dump())
-            return {"step_results": existing, "final_result": answer}
-        logger.warning("Companion adhoc returned empty result, falling back to inline LLM")
+        step_result = StepResult(
+            step_index=step.index,
+            success=True,
+            summary=answer,
+            agent_type="companion",
+        )
+        existing = list(state.get("step_results", []))
+        existing.append(step_result.model_dump())
+        return {"step_results": existing, "final_result": answer}
 
     # Build context
     context_parts: list[str] = []
@@ -378,11 +379,12 @@ async def _run_companion_adhoc(
     evidence: dict,
     project_context: str,
 ) -> str:
-    """Dispatch an ad-hoc companion Job and wait for result.json.
+    """Dispatch an ad-hoc companion Job and block on its K8s terminal state.
 
-    Returns the free-form summary text, or empty string on failure.
+    Fail-fast: no polling, no orchestrator-side timeout, no silent fallback.
+    The Job's `active_deadline_seconds` is the hard cap and is enforced by
+    K8s itself. On failure/empty this function raises — the step fails.
     """
-    import asyncio as _asyncio
     from pathlib import Path as _Path
 
     brief_parts: list[str] = [
@@ -415,33 +417,13 @@ async def _run_companion_adhoc(
         if p.exists():
             attachments.append(p)
 
-    language = state.get("language") or "cs"
-    client_id = state.get("client_id") or ""
-    project_id = state.get("project_id")
-
-    try:
-        dispatch = await companion_runner.dispatch_adhoc(
-            task_id=task.id,
-            brief=brief,
-            context={"step_index": step.index, "source_urn": task.source_urn},
-            attachments=attachments,
-            client_id=client_id,
-            project_id=project_id,
-            language=language,
-        )
-    except Exception as e:
-        logger.warning("Companion dispatch failed: %s", e)
-        return ""
-
-    deadline = _asyncio.get_event_loop().time() + 30 * 60
-    while _asyncio.get_event_loop().time() < deadline:
-        status = job_runner.get_job_status(dispatch.job_name)
-        if status.get("status") == "succeeded":
-            result = companion_runner.collect_adhoc_result(dispatch.workspace_path) or {}
-            return (result.get("summary") or "").strip()
-        if status.get("status") == "failed":
-            logger.warning("Companion Job %s failed", dispatch.job_name)
-            return ""
-        await _asyncio.sleep(5)
-    logger.warning("Companion Job %s timed out", dispatch.job_name)
-    return ""
+    dispatch = await companion_runner.dispatch_adhoc(
+        task_id=task.id,
+        brief=brief,
+        context={"step_index": step.index, "source_urn": task.source_urn},
+        attachments=attachments,
+        client_id=state.get("client_id") or "",
+        project_id=state.get("project_id"),
+        language=state.get("language") or "cs",
+    )
+    return await companion_runner.wait_for_result(dispatch)

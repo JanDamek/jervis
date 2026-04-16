@@ -15,6 +15,8 @@ sealed class Screen {
     object Settings : Screen()
     object Meetings : Screen()
     object Calendar : Screen()
+    /** Full-screen Assistant view: live transcript + hints during an active meeting. */
+    object Assistant : Screen()
 }
 
 /**

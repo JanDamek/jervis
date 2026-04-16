@@ -19,11 +19,12 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agents.companion_runner import companion_runner
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -118,12 +119,27 @@ async def session_event(session_id: str, req: SessionEventRequest):
 
 
 @router.get("/session/{session_id}/stream")
-async def session_stream(session_id: str):
+async def session_stream(
+    session_id: str,
+    max_age_seconds: float | None = Query(
+        default=None,
+        description=(
+            "Drop outbox events older than N seconds. Default: "
+            "settings.companion_assistant_event_ttl_seconds (assistant-safe). "
+            "Pass 0 or a large value to disable TTL filtering."
+        ),
+    ),
+):
+    ttl = max_age_seconds if max_age_seconds is not None else settings.companion_assistant_event_ttl_seconds
+    effective_ttl: float | None = None if ttl <= 0 else float(ttl)
+
     stop_event = asyncio.Event()
 
     async def generator():
         try:
-            async for event in companion_runner.stream_outbox(session_id, stop_event=stop_event):
+            async for event in companion_runner.stream_outbox(
+                session_id, stop_event=stop_event, max_age_seconds=effective_ttl,
+            ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except asyncio.CancelledError:
             stop_event.set()
@@ -133,6 +149,6 @@ async def session_stream(session_id: str):
 
 
 @router.post("/session/{session_id}/stop")
-async def session_stop(session_id: str, grace_seconds: int = 15):
-    await companion_runner.stop_session(session_id, grace_seconds=grace_seconds)
+async def session_stop(session_id: str):
+    await companion_runner.stop_session(session_id)
     return {"ok": True}

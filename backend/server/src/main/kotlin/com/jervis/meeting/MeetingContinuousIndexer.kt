@@ -61,6 +61,7 @@ class MeetingContinuousIndexer(
     private val directoryStructureService: DirectoryStructureService,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val timeTrackingService: com.jervis.timetracking.TimeTrackingService,
+    private val companionAssistant: MeetingCompanionAssistant,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -328,6 +329,16 @@ class MeetingContinuousIndexer(
 
     private suspend fun transcribeContinuously() {
         while (true) {
+
+            // Pause batch transcription while a live companion session holds the
+            // Whisper GPU priority. Full meeting transcribe + diarization takes
+            // 5-30 minutes of GPU; it would block the 12s live probe cycle and
+            // starve the live assistant. Resumes automatically after companion stops.
+            if (companionAssistant.hasAnyActiveSession()) {
+                logger.debug { "transcribeContinuously: paused — companion assistant holds Whisper GPU" }
+                delay(POLL_DELAY_MS)
+                continue
+            }
 
             val meetings = meetingRepository
                 .findByStateAndDeletedIsFalseOrderByStoppedAtAsc(MeetingStateEnum.UPLOADED)

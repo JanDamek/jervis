@@ -65,12 +65,18 @@ class MeetingLiveUrgencyProbe(
     private val meetingRepository: MeetingRepository,
     private val whisperClient: WhisperTranscriptionClient,
     private val urgencyDetector: MeetingUrgencyDetector,
+    private val companionAssistant: MeetingCompanionAssistant,
+    private val helperService: MeetingHelperService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
 
     /** meetingId → byte offset already probed (inclusive of 44-byte WAV header). */
     private val probedOffsets = ConcurrentHashMap<String, Long>()
+
+    /** meetingId → absolute end second of the last pushed transcript segment.
+     *  Used to drop overlapping segments when probe uses backward audio overlap. */
+    private val lastEmittedEndSec = ConcurrentHashMap<String, Double>()
 
     /** Single active probe at a time — GPU is shared with the main pipeline. */
     private val probeMutex = Mutex()
@@ -96,7 +102,11 @@ class MeetingLiveUrgencyProbe(
             } catch (e: Exception) {
                 logger.warn(e) { "MeetingLiveUrgencyProbe: cycle failed" }
             }
-            delay(PROBE_INTERVAL_MS)
+            // Dynamic interval: if any meeting has a live companion session,
+            // shorten probe cadence to keep the assistant responsive.
+            val interval = if (companionAssistant.hasAnyActiveSession())
+                PROBE_INTERVAL_FAST_MS else PROBE_INTERVAL_MS
+            delay(interval)
         }
     }
 
@@ -112,6 +122,7 @@ class MeetingLiveUrgencyProbe(
         if (active.isEmpty()) {
             // Purge stale offset entries so the map doesn't leak across long idle periods.
             if (probedOffsets.isNotEmpty()) probedOffsets.clear()
+            if (lastEmittedEndSec.isNotEmpty()) lastEmittedEndSec.clear()
             return
         }
 
@@ -131,14 +142,24 @@ class MeetingLiveUrgencyProbe(
 
         val lastOffset = probedOffsets[meetingIdStr] ?: WAV_HEADER_SIZE.toLong()
         val newBytes = fileSize - lastOffset
-        if (newBytes < MIN_NEW_AUDIO_BYTES) return
+        val companionActive = companionAssistant.hasAnyActiveSession()
+        val minNewBytes = if (companionActive) MIN_NEW_AUDIO_BYTES_FAST else MIN_NEW_AUDIO_BYTES
+        if (newBytes < minNewBytes) return
+
+        // Backward audio overlap: re-transcribe the trailing OVERLAP_BYTES so Whisper
+        // can see the full context of words that were straddling the previous chunk
+        // boundary. Segments whose absolute end falls inside the already-emitted
+        // range are dropped via the lastEmittedEndSec dedup map below.
+        val overlapBytes = if (companionActive) OVERLAP_BYTES_FAST else OVERLAP_BYTES
+        val startOffset = maxOf(WAV_HEADER_SIZE.toLong(), lastOffset - overlapBytes)
+        val clipStartSecAbs = (startOffset - WAV_HEADER_SIZE).toDouble() / BYTES_PER_SECOND
 
         probeMutex.withLock {
             val tempPath = withContext(Dispatchers.IO) {
                 Files.createTempFile("jervis-live-probe-", ".wav")
             }
             try {
-                writeTailAsWav(audioPath, lastOffset, fileSize, tempPath)
+                writeTailAsWav(audioPath, startOffset, fileSize, tempPath)
                 val result = whisperClient.transcribe(
                     audioFilePath = tempPath.toString(),
                     meetingId = null, // no state mutation
@@ -151,15 +172,38 @@ class MeetingLiveUrgencyProbe(
                     return@withLock
                 }
                 val clientIdStr = meeting.clientId?.toString().orEmpty()
+                val lastEndSec = lastEmittedEndSec[meetingIdStr] ?: 0.0
+                var maxEndSec = lastEndSec
+                var emitted = 0
+                var skipped = 0
                 for (segment in result.segments) {
                     val text = segment.text.trim().takeIf { it.isNotBlank() } ?: continue
+                    val absStart = clipStartSecAbs + segment.start
+                    val absEnd = clipStartSecAbs + segment.end
+                    // Drop segments fully covered by the previously emitted range (0.3s tolerance).
+                    if (absEnd <= lastEndSec + 0.3) { skipped++; continue }
                     runCatching { urgencyDetector.analyzeSegment(meetingIdStr, clientIdStr, text) }
                         .onFailure { e -> logger.debug { "urgencyDetector failed: ${e.message}" } }
+                    runCatching { companionAssistant.forwardSegment(meetingIdStr, text) }
+                        .onFailure { e -> logger.debug { "companionAssistant.forwardSegment failed: ${e.message}" } }
+                    runCatching {
+                        helperService.pushMessage(
+                            meetingIdStr,
+                            com.jervis.dto.meeting.HelperMessageDto(
+                                type = com.jervis.dto.meeting.HelperMessageType.TRANSCRIPT,
+                                text = text,
+                                timestamp = java.time.Instant.now().toString(),
+                            ),
+                        )
+                    }.onFailure { e -> logger.debug { "helperService.pushMessage TRANSCRIPT failed: ${e.message}" } }
+                    if (absEnd > maxEndSec) maxEndSec = absEnd
+                    emitted++
                 }
+                if (maxEndSec > lastEndSec) lastEmittedEndSec[meetingIdStr] = maxEndSec
                 probedOffsets[meetingIdStr] = fileSize
                 logger.debug {
-                    "MeetingLiveUrgencyProbe: probed ${newBytes}B tail of $meetingIdStr, " +
-                        "${result.segments.size} segments, lang=${result.language}"
+                    "MeetingLiveUrgencyProbe: probed ${newBytes}B tail (overlap=${overlapBytes}B) of $meetingIdStr, " +
+                        "${result.segments.size} segs (emit=$emitted skip=$skipped) lang=${result.language}"
                 }
             } finally {
                 withContext(Dispatchers.IO) {
@@ -233,11 +277,20 @@ class MeetingLiveUrgencyProbe(
     }
 
     companion object {
+        /** Baseline probe cadence (no live assistant). */
         private const val PROBE_INTERVAL_MS = 45_000L
+        /** Fast cadence when a companion assistant session is active. */
+        private const val PROBE_INTERVAL_FAST_MS = 12_000L
         private const val WAV_HEADER_SIZE = 44
         private const val SAMPLE_RATE = 16_000
         private const val BYTES_PER_SECOND = 32_000 // 16kHz * 2B * 1ch
-        /** Skip probe if less than ~20 s of new audio accumulated. */
+        /** Skip baseline probe if less than ~20 s of new audio accumulated. */
         private const val MIN_NEW_AUDIO_BYTES = 20 * BYTES_PER_SECOND
+        /** Skip fast probe if less than ~8 s of new audio accumulated. */
+        private const val MIN_NEW_AUDIO_BYTES_FAST = 8 * BYTES_PER_SECOND
+        /** Backward overlap (baseline) — Whisper needs context to not cut words off. */
+        private const val OVERLAP_BYTES = 2 * BYTES_PER_SECOND
+        /** Fast-mode overlap — tighter to keep per-chunk cost low. */
+        private const val OVERLAP_BYTES_FAST = 2 * BYTES_PER_SECOND
     }
 }

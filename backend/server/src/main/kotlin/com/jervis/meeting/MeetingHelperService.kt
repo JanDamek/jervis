@@ -34,6 +34,8 @@ private val logger = KotlinLogging.logger {}
 class MeetingHelperService(
     private val deviceTokenRepository: DeviceTokenRepository,
     private val notificationRpc: NotificationRpcImpl,
+    private val meetingRepository: MeetingRepository,
+    private val companionAssistant: org.springframework.beans.factory.ObjectProvider<MeetingCompanionAssistant>,
 ) : IMeetingHelperService {
 
     /** Active helper sessions: meetingId → session info */
@@ -60,6 +62,21 @@ class MeetingHelperService(
         sessions[request.meetingId] = info
         logger.info { "Meeting helper started: meeting=${request.meetingId}, device=${request.deviceId}, ${request.sourceLang}→${request.targetLang}" }
 
+        // Spin up the Claude companion session for this meeting (live assistant).
+        // Lookup the meeting to seed brief with client/project/title.
+        runCatching {
+            val meeting = meetingRepository.findById(org.bson.types.ObjectId(request.meetingId))
+            companionAssistant.ifAvailable?.start(
+                meetingId = request.meetingId,
+                clientId = meeting?.clientId?.value?.toHexString().orEmpty(),
+                projectId = meeting?.projectId?.value?.toHexString(),
+                meetingTitle = meeting?.title,
+                userName = null,
+            )
+        }.onFailure { e ->
+            logger.warn(e) { "Failed to start companion assistant for meeting=${request.meetingId}" }
+        }
+
         // Push status message to connected device
         pushMessage(request.meetingId, HelperMessageDto(
             type = HelperMessageType.STATUS,
@@ -80,6 +97,8 @@ class MeetingHelperService(
                 text = "Asistence ukončena",
                 timestamp = java.time.Instant.now().toString(),
             ))
+            runCatching { companionAssistant.ifAvailable?.stop(meetingId) }
+                .onFailure { e -> logger.debug { "companionAssistant.stop failed: ${e.message}" } }
             logger.info { "Meeting helper stopped: meeting=$meetingId" }
             return true
         }
@@ -91,12 +110,12 @@ class MeetingHelperService(
     }
 
     override suspend fun listHelperDevices(): List<DeviceInfoDto> {
-        // List all devices that have "helper" capability or are iPhones/iPads
+        // Any known device is a valid helper target — desktop, mobile, wearable.
+        // The filter used to require capability="helper" or iPhone/iPad, which
+        // hid desktops from the picker even though they are the primary target
+        // for live transcript + assistant hints. Broadcasting goes via the RPC
+        // event stream anyway, so listing all devices is safe.
         return deviceTokenRepository.findAll().toList()
-            .filter { doc ->
-                doc.capabilities.contains("helper") ||
-                doc.deviceType in listOf(DeviceType.IPHONE, DeviceType.IPAD)
-            }
             .map { doc ->
                 DeviceInfoDto(
                     deviceId = doc.deviceId,

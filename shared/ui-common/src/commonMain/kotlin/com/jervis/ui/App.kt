@@ -147,6 +147,8 @@ fun App(
             hasEnvironment = environments.isNotEmpty(),
             onToggleEnvironmentPanel = viewModel.environment::togglePanel,
             userTaskCount = userTaskCount,
+            assistantActive = helperConnected || helperMessages.isNotEmpty(),
+            onOpenAssistant = { appNavigator.navigateTo(Screen.Assistant) },
         )
 
         // Global recording bar — full controls when recording
@@ -220,6 +222,13 @@ fun App(
                 SchedulerScreen(
                     repository = repository,
                     onBack = { appNavigator.goBack() },
+                )
+            }
+
+            Screen.Assistant -> {
+                com.jervis.ui.meeting.AssistantScreen(
+                    messages = helperMessages,
+                    isConnected = helperConnected,
                 )
             }
         }
