@@ -16,6 +16,7 @@ import grpc.aio
 from app.config import settings
 from jervis.server import (
     cache_pb2_grpc,
+    chat_approval_pb2_grpc,
     chat_context_pb2_grpc,
     filter_rules_pb2_grpc,
     guidelines_pb2_grpc,
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 _channel: Optional[grpc.aio.Channel] = None
 _cache_stub: Optional[cache_pb2_grpc.ServerCacheServiceStub] = None
+_chat_approval_stub: Optional[chat_approval_pb2_grpc.ServerChatApprovalServiceStub] = None
 _chat_context_stub: Optional[chat_context_pb2_grpc.ServerChatContextServiceStub] = None
 _filter_rules_stub: Optional[filter_rules_pb2_grpc.ServerFilterRulesServiceStub] = None
 _guidelines_stub: Optional[guidelines_pb2_grpc.ServerGuidelinesServiceStub] = None
@@ -111,3 +113,10 @@ def server_meetings_stub() -> meetings_pb2_grpc.ServerMeetingsServiceStub:
     if _meetings_stub is None:
         _meetings_stub = meetings_pb2_grpc.ServerMeetingsServiceStub(_get_channel())
     return _meetings_stub
+
+
+def server_chat_approval_stub() -> chat_approval_pb2_grpc.ServerChatApprovalServiceStub:
+    global _chat_approval_stub
+    if _chat_approval_stub is None:
+        _chat_approval_stub = chat_approval_pb2_grpc.ServerChatApprovalServiceStub(_get_channel())
+    return _chat_approval_stub

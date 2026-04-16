@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerChatApprovalProto";
+
+// ServerChatApprovalService — fan-out for pending chat approvals and
+// resolved-approval dismissals. Called fire-and-forget by the orchestrator
+// whenever `ApprovalRequiredInterrupt` is raised or resolved.
+service ServerChatApprovalService {
+  // Emit kRPC event + FCM + APNs push so all of the user's devices
+  // show an approval dialog.
+  rpc Broadcast(ApprovalBroadcastRequest) returns (ApprovalBroadcastResponse);
+
+  // Tell other devices their dialog is stale (first-wins dedupe).
+  rpc Resolved(ApprovalResolvedRequest) returns (ApprovalResolvedResponse);
+}
+
+message ApprovalBroadcastRequest {
+  jervis.common.RequestContext ctx = 1;
+  string approval_id = 2;
+  string action = 3;
+  string tool = 4;
+  string preview = 5;
+  string client_id = 6;
+  string project_id = 7;
+  string session_id = 8;
+}
+
+message ApprovalBroadcastResponse {
+  string status = 1;       // "ok" | "skipped"
+}
+
+message ApprovalResolvedRequest {
+  jervis.common.RequestContext ctx = 1;
+  string approval_id = 2;
+  bool approved = 3;
+  string action = 4;
+  string client_id = 5;
+}
+
+message ApprovalResolvedResponse {
+  string status = 1;
+}

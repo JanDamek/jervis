@@ -337,25 +337,26 @@ class KotlinServerClient:
             logger.debug("broadcast_chat_approval_request: no client_id, skipping")
             return False
         try:
-            client = await self._get_client()
-            resp = await client.post(
-                "/internal/chat/approvals/broadcast",
-                json={
-                    "approvalId": approval_id,
-                    "action": action,
-                    "tool": tool,
-                    "preview": preview,
-                    "clientId": client_id,
-                    "projectId": project_id,
-                    "sessionId": session_id,
-                },
+            from app.grpc_server_client import server_chat_approval_stub
+            from jervis.server import chat_approval_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            await server_chat_approval_stub().Broadcast(
+                chat_approval_pb2.ApprovalBroadcastRequest(
+                    ctx=ctx,
+                    approval_id=approval_id,
+                    action=action,
+                    tool=tool,
+                    preview=preview,
+                    client_id=client_id,
+                    project_id=project_id or "",
+                    session_id=session_id or "",
+                ),
+                timeout=5.0,
             )
-            if resp.status_code >= 400:
-                logger.warning(
-                    "broadcast_chat_approval_request non-ok: status=%s body=%s",
-                    resp.status_code, resp.text[:200],
-                )
-                return False
             return True
         except Exception as e:
             logger.warning("broadcast_chat_approval_request failed: %s", e)
@@ -368,25 +369,28 @@ class KotlinServerClient:
         action: str,
         client_id: str | None,
     ) -> bool:
-        """Tell Kotlin that an approval was resolved → dismiss stale dialogs elsewhere.
-
-        Fire-and-forget. Kotlin emits JervisEvent.UserTaskCancelled to the
-        clientId so other devices close their open ApprovalNotificationDialog.
-        """
+        """Tell Kotlin that an approval was resolved → dismiss stale dialogs elsewhere."""
         if not client_id:
             return False
         try:
-            client = await self._get_client()
-            resp = await client.post(
-                "/internal/chat/approvals/resolved",
-                json={
-                    "approvalId": approval_id,
-                    "approved": approved,
-                    "action": action,
-                    "clientId": client_id,
-                },
+            from app.grpc_server_client import server_chat_approval_stub
+            from jervis.server import chat_approval_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            await server_chat_approval_stub().Resolved(
+                chat_approval_pb2.ApprovalResolvedRequest(
+                    ctx=ctx,
+                    approval_id=approval_id,
+                    approved=approved,
+                    action=action,
+                    client_id=client_id,
+                ),
+                timeout=5.0,
             )
-            return resp.status_code < 400
+            return True
         except Exception as e:
             logger.debug("broadcast_chat_approval_resolved failed: %s", e)
             return False
