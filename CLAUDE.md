@@ -63,6 +63,14 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 
 **Forbidden:** `Card(elevation/surfaceVariant)`, `TopAppBar` directly, `IconButton` without 44dp size, duplicating `getCapabilityLabel()`, platform expect/actual for layout decisions.
 
+**Data flow — push-only (rule #9 in guidelines):** every live UI surface
+collects a kRPC `Flow<Snapshot>` (e.g. `subscribeSidebar`, `subscribeTask`,
+`subscribeToQueueStatus`) via `RpcConnectionManager.resilientFlow`. Server
+owns `MutableSharedFlow(replay=1)` per scope and emits on writes. No
+refresh buttons on live views, no event→pull round-trips, no `getXxx`
+on every reconnect. One-shot reads (pagination, file download) stay unary.
+SSOT: `docs/ui-design.md` §12 + `docs/structures.md` "UI Data Streams".
+
 ## Key Source Files
 
 > Full index of all source files is in **KB** (search: "Key Source Files Index").
