@@ -2,16 +2,27 @@ package com.jervis.task
 
 import com.jervis.dto.task.PagedPendingTasksResult
 import com.jervis.dto.task.PendingTaskDto
+import com.jervis.dto.task.SidebarSnapshot
+import com.jervis.dto.task.TaskSnapshot
 import com.jervis.service.task.IPendingTaskService
 
 import com.jervis.infrastructure.error.ErrorLogService
+import kotlinx.coroutines.flow.Flow
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
 @Component
 class PendingTaskRpcImpl(
     private val pendingTaskService: com.jervis.task.PendingTaskService,
+    private val sidebarStreamService: SidebarStreamService,
+    private val taskStreamService: TaskStreamService,
 ) : IPendingTaskService {
+    override fun subscribeSidebar(clientId: String?, showDone: Boolean): Flow<SidebarSnapshot> =
+        sidebarStreamService.subscribe(clientId, showDone)
+
+    override fun subscribeTask(taskId: String): Flow<TaskSnapshot> =
+        taskStreamService.subscribe(taskId)
+
     override suspend fun listTasks(
         taskType: String?,
         state: String?,

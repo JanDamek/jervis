@@ -27,7 +27,13 @@ class PendingTaskService(
     @org.springframework.context.annotation.Lazy
     private val chatRpcImpl: com.jervis.chat.ChatRpcImpl,
     private val pythonOrchestratorClient: com.jervis.agent.PythonOrchestratorClient,
+    private val sidebarStreamService: SidebarStreamService,
+    private val taskStreamService: TaskStreamService,
 ) : IPendingTaskService {
+    override fun subscribeSidebar(clientId: String?, showDone: Boolean) =
+        sidebarStreamService.subscribe(clientId, showDone)
+
+    override fun subscribeTask(taskId: String) = taskStreamService.subscribe(taskId)
     private val logger = mu.KotlinLogging.logger {}
     override suspend fun listTasks(
         taskType: String?,
@@ -194,8 +200,9 @@ class PendingTaskService(
             userQuestionContext = null,
         )
         val saved = taskRepository.save(updated)
-        // Stream-based sidebar push — no polling
-        try { chatRpcImpl.emitTaskListChanged(id, "DONE") } catch (_: Exception) {}
+        // Push new snapshot to sidebar + task streams — no polling, no event→pull.
+        sidebarStreamService.invalidate(saved.clientId.toString())
+        taskStreamService.invalidate(id)
         return saved.toPendingTaskDto()
     }
 
@@ -236,8 +243,9 @@ class PendingTaskService(
             needsQualification = true,
         )
         val saved = taskRepository.save(updated)
-        // Stream-based sidebar push — no polling
-        try { chatRpcImpl.emitTaskListChanged(id, "NEW") } catch (_: Exception) {}
+        // Push new snapshot to sidebar + task streams.
+        sidebarStreamService.invalidate(saved.clientId.toString())
+        taskStreamService.invalidate(id)
         return saved.toPendingTaskDto()
     }
 }

@@ -2,10 +2,29 @@ package com.jervis.service.task
 
 import com.jervis.dto.task.PagedPendingTasksResult
 import com.jervis.dto.task.PendingTaskDto
+import com.jervis.dto.task.SidebarSnapshot
+import com.jervis.dto.task.TaskSnapshot
+import kotlinx.coroutines.flow.Flow
 import kotlinx.rpc.annotations.Rpc
 
 @Rpc
 interface IPendingTaskService {
+    /**
+     * Push-only sidebar stream. Emits a new snapshot on every task write
+     * in the given scope. Guideline #9 — UI does not pull; this is the
+     * canonical source of the active-tasks sidebar.
+     *
+     * @param clientId filter by client (null = global scope)
+     * @param showDone true = DONE history; false = active states
+     */
+    fun subscribeSidebar(clientId: String?, showDone: Boolean): Flow<SidebarSnapshot>
+
+    /**
+     * Push-only per-task stream for the drill-in breadcrumb + brief.
+     * Emits on task state changes, content updates, and related-task updates.
+     */
+    fun subscribeTask(taskId: String): Flow<TaskSnapshot>
+
     suspend fun listTasks(
         taskType: String? = null,
         state: String? = null,

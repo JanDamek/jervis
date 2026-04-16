@@ -43,6 +43,8 @@ class TaskService(
     @Lazy private val notificationRpc: NotificationRpcImpl,
     @Lazy private val chatRpcImpl: com.jervis.chat.ChatRpcImpl,
     private val mongoTemplate: ReactiveMongoTemplate,
+    private val sidebarStreamService: SidebarStreamService,
+    private val taskStreamService: TaskStreamService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -432,13 +434,10 @@ class TaskService(
             }
         }
 
-        // Phase 5 stream-based sidebar: push TASK_LIST_CHANGED so the UI
-        // sidebar refreshes immediately. No polling.
-        try {
-            chatRpcImpl.emitTaskListChanged(taskId = task.id.toString(), newState = next.name)
-        } catch (e: Exception) {
-            logger.debug { "emitTaskListChanged failed (non-critical): ${e.message}" }
-        }
+        // Push fresh snapshots to sidebar + per-task stream — guideline #9
+        // (UI never pulls). The snapshot reflects the new state immediately.
+        sidebarStreamService.invalidate(saved.clientId.toString())
+        taskStreamService.invalidate(task.id.toString())
 
         return saved
     }
@@ -615,6 +614,8 @@ class TaskService(
         logger.info {
             "TASK_STATE_CONTENT_UPDATE: id=${task.id} from=$fromState to=$next type=${task.type}"
         }
+        sidebarStreamService.invalidate(saved.clientId.toString())
+        taskStreamService.invalidate(task.id.toString())
         return saved
     }
 
@@ -633,6 +634,8 @@ class TaskService(
             .set("kbEntities", kbEntities)
             .set("kbActionable", kbActionable)
         mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+        // Sidebar card shows kbSummary and related-entity count — refresh.
+        taskStreamService.invalidate(taskId.toString())
     }
 
     /**
@@ -655,6 +658,10 @@ class TaskService(
             .set("estimatedComplexity", estimatedComplexity)
             .set("qualifierPreparedContext", qualifierContext)
         mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+        // Sidebar sort order depends on priorityScore — refresh affected scopes.
+        taskStreamService.invalidate(taskId.toString())
+        // We don't know clientId here without another read; fall back to global.
+        sidebarStreamService.invalidate(null)
     }
 
     /**
@@ -681,6 +688,8 @@ class TaskService(
                 )
             }'"
         }
+        sidebarStreamService.invalidate(saved.clientId.toString())
+        taskStreamService.invalidate(task.id.toString())
         return saved
     }
 
