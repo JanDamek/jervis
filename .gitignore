@@ -23,3 +23,7 @@ __pycache__/
 *.egg-info/
 data/
 backend/service-knowledgebase/scripts/
+
+# uv workspace — keep uv.lock committed for reproducibility, ignore venv
+.venv/
+.python-version

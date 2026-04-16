@@ -1,0 +1,26 @@
+[project]
+name = "jervis-ollama-router"
+version = "0.1.0"
+description = "Jervis Ollama/LLM router with capability-aware dispatch. (Kotlin migration candidate)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "httpx>=0.28.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "prometheus-client>=0.21.0",
+    "motor>=3.6.0",
+    "grpcio>=1.66.0",
+    "grpcio-reflection>=1.66.0",
+    "protobuf>=5.34,<7",
+    "jervis-contracts",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

@@ -1,0 +1,25 @@
+[project]
+name = "jervis-mcp"
+version = "0.1.0"
+description = "Jervis MCP server — Model Context Protocol bridge. (Kotlin migration candidate)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2.0.0",
+    "httpx>=0.28.0",
+    "motor>=3.6.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "uvicorn>=0.34.0",
+    "grpcio>=1.66.0",
+    "grpcio-reflection>=1.66.0",
+    "protobuf>=5.34,<7",
+    "jervis-contracts",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

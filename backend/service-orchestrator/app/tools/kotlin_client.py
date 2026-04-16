@@ -679,36 +679,55 @@ class KotlinServerClient:
             return f"Error: {e}"
 
     async def list_unclassified_meetings(self) -> str:
-        """List unclassified meetings via Kotlin internal API."""
+        """List unclassified meetings via Kotlin gRPC."""
         try:
-            client = await self._get_client()
-            resp = await client.get("/internal/unclassified-meetings")
-            if resp.status_code == 200:
+            from app.grpc_server_client import server_meetings_stub
+            from jervis.server import meetings_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
 
-                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
-            return f"Error: {resp.status_code}"
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_meetings_stub().ListUnclassified(
+                meetings_pb2.ListUnclassifiedRequest(ctx=ctx),
+                timeout=5.0,
+            )
+            rows = [
+                {
+                    "id": m.id,
+                    "title": m.title,
+                    "startedAt": m.started_at_iso,
+                    "durationSeconds": m.duration_seconds,
+                }
+                for m in resp.meetings
+            ]
+            return json.dumps(rows, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.warning("Failed to list unclassified meetings: %s", e)
             return f"Error: {e}"
 
     async def get_meeting_transcript(self, meeting_id: str) -> str:
-        """Get meeting transcript (corrected preferred) via Kotlin internal API."""
+        """Get meeting transcript (corrected preferred) via Kotlin gRPC."""
         try:
-            client = await self._get_client()
-            resp = await client.get(f"/internal/meetings/{meeting_id}/transcript")
-            if resp.status_code == 200:
-                data = resp.json()
-                title = data.get("title", "")
-                state = data.get("state", "")
-                transcript = data.get("transcript", "")
-                fmt = data.get("format", "text")
-                if not transcript:
-                    return f"Meeting '{title}' ({state}): transcript not available yet."
-                header = f"# {title}\nState: {state} | Format: {fmt}\n\n"
-                return header + transcript
-            elif resp.status_code == 404:
-                return f"Meeting not found: {meeting_id}"
-            return f"Error: {resp.status_code}"
+            from app.grpc_server_client import server_meetings_stub
+            from jervis.server import meetings_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_meetings_stub().GetTranscript(
+                meetings_pb2.GetTranscriptRequest(ctx=ctx, meeting_id=meeting_id),
+                timeout=10.0,
+            )
+            title = resp.title
+            state = resp.state
+            transcript = resp.transcript
+            fmt = resp.format or "text"
+            if not transcript:
+                return f"Meeting '{title}' ({state}): transcript not available yet."
+            header = f"# {title}\nState: {state} | Format: {fmt}\n\n"
+            return header + transcript
         except Exception as e:
             logger.warning("Failed to get meeting transcript %s: %s", meeting_id, e)
             return f"Error: {e}"
@@ -720,31 +739,35 @@ class KotlinServerClient:
         state: str | None = None,
         limit: int = 20,
     ) -> str:
-        """List meetings via Kotlin internal API."""
+        """List meetings via Kotlin gRPC."""
         try:
-            client = await self._get_client()
-            params: dict = {"limit": limit}
-            if client_id:
-                params["client_id"] = client_id
-            if project_id:
-                params["project_id"] = project_id
-            if state:
-                params["state"] = state
-            resp = await client.get("/internal/meetings", params=params)
-            if resp.status_code == 200:
-                meetings = resp.json()
-                if not meetings:
-                    return "No meetings found."
-                lines = []
-                for m in meetings:
-                    dur = m.get("durationSeconds", "")
-                    dur_str = f" ({dur}s)" if dur else ""
-                    lines.append(
-                        f"- {m.get('title', '?')} (id={m['id']}) [{m.get('state', '?')}] "
-                        f"{m.get('startedAt', '')}{dur_str}"
-                    )
-                return "\n".join(lines)
-            return f"Error: {resp.status_code}"
+            from app.grpc_server_client import server_meetings_stub
+            from jervis.server import meetings_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_meetings_stub().ListMeetings(
+                meetings_pb2.ListMeetingsRequest(
+                    ctx=ctx,
+                    client_id=client_id or "",
+                    project_id=project_id or "",
+                    state=state or "",
+                    limit=limit,
+                ),
+                timeout=10.0,
+            )
+            if not resp.meetings:
+                return "No meetings found."
+            lines = []
+            for m in resp.meetings:
+                dur_str = f" ({m.duration_seconds}s)" if m.duration_seconds else ""
+                lines.append(
+                    f"- {m.title or '?'} (id={m.id}) [{m.state or '?'}] "
+                    f"{m.started_at_iso}{dur_str}"
+                )
+            return "\n".join(lines)
         except Exception as e:
             logger.warning("Failed to list meetings: %s", e)
             return f"Error: {e}"

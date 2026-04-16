@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerMeetingsProto";
+
+// ServerMeetingsService — read-side surface for meeting data consumed by
+// the orchestrator's chat tools (transcript retrieval, unclassified
+// listing). Classify / attend / recording / video / alone lifecycle
+// RPCs land in their own sibling services as those routing files
+// migrate.
+service ServerMeetingsService {
+  // Transcript (corrected preferred, raw fallback, segments fallback).
+  rpc GetTranscript(GetTranscriptRequest) returns (GetTranscriptResponse);
+
+  // List meetings with optional filters. `state` is the string form of
+  // MeetingStateEnum; empty means no filter.
+  rpc ListMeetings(ListMeetingsRequest) returns (ListMeetingsResponse);
+
+  // Shortcut used by the orchestrator's system-prompt builder.
+  rpc ListUnclassified(ListUnclassifiedRequest) returns (ListUnclassifiedResponse);
+}
+
+message GetTranscriptRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+}
+
+message GetTranscriptResponse {
+  string meeting_id = 1;
+  string title = 2;
+  string state = 3;
+  string transcript = 4;     // possibly empty
+  string format = 5;         // "text" | "segments" | ""
+  string error = 6;          // "No transcript available yet" or similar
+}
+
+message ListMeetingsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;      // empty = all
+  string project_id = 3;     // empty = any project
+  string state = 4;          // empty = no filter; MeetingStateEnum.name
+  int32 limit = 5;           // 0 → 20
+}
+
+message ListMeetingsResponse {
+  repeated MeetingSummary meetings = 1;
+}
+
+message MeetingSummary {
+  string id = 1;
+  string title = 2;
+  string state = 3;
+  string client_id = 4;
+  string project_id = 5;
+  string started_at_iso = 6;
+  string duration_seconds = 7;   // stringified to match the Ktor shape exactly
+  string meeting_type = 8;       // enum name, empty if unset
+}
+
+message ListUnclassifiedRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message ListUnclassifiedResponse {
+  repeated UnclassifiedMeeting meetings = 1;
+}
+
+message UnclassifiedMeeting {
+  string id = 1;
+  string title = 2;
+  string started_at_iso = 3;
+  string duration_seconds = 4;
+}

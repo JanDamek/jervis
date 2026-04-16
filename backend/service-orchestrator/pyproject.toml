@@ -1,0 +1,33 @@
+[project]
+name = "jervis-orchestrator"
+version = "0.1.0"
+description = "Jervis unified agentic orchestrator (LangGraph + LiteLLM)."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "langgraph>=0.4.0",
+    "langgraph-checkpoint-mongodb>=0.3.0",
+    "langchain-core>=0.3.0",
+    "litellm>=1.60.0",
+    "httpx>=0.28.0",
+    "kubernetes>=31.0.0",
+    "motor>=3.6.0",
+    "python-arango>=8.0.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "tiktoken>=0.7.0",
+    "sse-starlette>=2.2.0",
+    "grpcio>=1.66.0",
+    "grpcio-reflection>=1.66.0",
+    "protobuf>=5.34,<7",
+    "jervis-contracts",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

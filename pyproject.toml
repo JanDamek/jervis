@@ -1,0 +1,48 @@
+[project]
+name = "jervis-monorepo"
+version = "0.1.0"
+description = "Jervis monorepo — Kotlin backend + Python AI services (unified dev workspace)."
+requires-python = ">=3.11"
+
+# Monorepo root is a virtual workspace — no runtime deps of its own, just
+# a container for per-service members. Each member has its own pyproject.toml.
+# Runtime images (Dockerfile) install from per-service requirements.txt with
+# exact pins; this workspace uses `>=` for dev-time resolver flexibility.
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+    "libs/jervis_contracts",
+    "backend/service-correction",
+    "backend/service-document-extraction",
+    "backend/service-joern-mcp",
+    "backend/service-knowledgebase",
+    "backend/service-mcp",
+    "backend/service-o365-browser-pool",
+    "backend/service-ollama-router",
+    "backend/service-orchestrator",
+    "backend/service-tts",
+    "backend/service-visual-capture",
+    "backend/service-whatsapp-browser",
+]
+# NOTE: service-meeting-attender is intentionally excluded — scheduled for
+# deletion per project-next-session-todos.md #21 (architecturally wrong).
+
+[tool.uv.sources]
+jervis-contracts = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "debugpy>=1.8.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = []

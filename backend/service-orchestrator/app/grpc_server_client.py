@@ -19,6 +19,7 @@ from jervis.server import (
     chat_context_pb2_grpc,
     filter_rules_pb2_grpc,
     guidelines_pb2_grpc,
+    meetings_pb2_grpc,
     proactive_pb2_grpc,
     time_tracking_pb2_grpc,
     urgency_pb2_grpc,
@@ -31,6 +32,7 @@ _cache_stub: Optional[cache_pb2_grpc.ServerCacheServiceStub] = None
 _chat_context_stub: Optional[chat_context_pb2_grpc.ServerChatContextServiceStub] = None
 _filter_rules_stub: Optional[filter_rules_pb2_grpc.ServerFilterRulesServiceStub] = None
 _guidelines_stub: Optional[guidelines_pb2_grpc.ServerGuidelinesServiceStub] = None
+_meetings_stub: Optional[meetings_pb2_grpc.ServerMeetingsServiceStub] = None
 _proactive_stub: Optional[proactive_pb2_grpc.ServerProactiveServiceStub] = None
 _time_tracking_stub: Optional[time_tracking_pb2_grpc.ServerTimeTrackingServiceStub] = None
 _urgency_stub: Optional[urgency_pb2_grpc.ServerUrgencyServiceStub] = None
@@ -102,3 +104,10 @@ def server_time_tracking_stub() -> time_tracking_pb2_grpc.ServerTimeTrackingServ
     if _time_tracking_stub is None:
         _time_tracking_stub = time_tracking_pb2_grpc.ServerTimeTrackingServiceStub(_get_channel())
     return _time_tracking_stub
+
+
+def server_meetings_stub() -> meetings_pb2_grpc.ServerMeetingsServiceStub:
+    global _meetings_stub
+    if _meetings_stub is None:
+        _meetings_stub = meetings_pb2_grpc.ServerMeetingsServiceStub(_get_channel())
+    return _meetings_stub

@@ -22,7 +22,6 @@ import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalGitApi
 import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalProjectManagementApi
-import com.jervis.rpc.internal.installInternalMeetingApi
 import com.jervis.rpc.internal.installInternalMeetingAttendApi
 import com.jervis.rpc.internal.installInternalMeetingPresenceApi
 import com.jervis.rpc.internal.installInternalMeetingRecordingBridgeApi
@@ -206,7 +205,7 @@ class KtorRpcServer(
                             installInternalGitApi(gitRepoCreationService, projectService, applicationEventPublisher, backgroundEngine, gitRepositoryService)
                             installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)
                             // Cache invalidation migrated to gRPC (jervis.server.ServerCacheService).
-                            installInternalMeetingApi(meetingRpcImpl)
+                            // Meeting read surface migrated to gRPC (jervis.server.ServerMeetingsService).
                             installInternalMeetingAttendApi(taskRepository, meetingAttendApprovalService)
                             installInternalMeetingPresenceApi(meetingAttendApprovalService)
                             installInternalMeetingRecordingBridgeApi(meetingRpcImpl)
@@ -1485,27 +1484,8 @@ class KtorRpcServer(
                                 }
                             }
 
-                            // List unclassified meetings
-                            get("/internal/unclassified-meetings") {
-                                try {
-                                    val meetings = meetingRpcImpl.listUnclassifiedMeetings()
-                                    val meetingsJson = meetings.map { meeting ->
-                                        mapOf(
-                                            "id" to meeting.id,
-                                            "title" to (meeting.title ?: ""),
-                                            "startedAt" to meeting.startedAt.toString(),
-                                            "durationSeconds" to (meeting.durationSeconds?.toString() ?: "0"),
-                                        )
-                                    }
-                                    call.respondText(
-                                        Json.encodeToString<List<Map<String, String>>>(meetingsJson),
-                                        io.ktor.http.ContentType.Application.Json,
-                                    )
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to list unclassified meetings" }
-                                    call.respondText("[]", io.ktor.http.ContentType.Application.Json)
-                                }
-                            }
+                            // Unclassified meetings moved to gRPC
+                            // (jervis.server.ServerMeetingsService.ListUnclassified).
 
                             rpc("/rpc") {
                                 rpcConfig {
