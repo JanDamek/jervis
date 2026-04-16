@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerProactiveProto";
+
+// ServerProactiveService exposes scheduled proactive triggers — morning
+// briefing / overdue invoice check / weekly summary / VIP email alert.
+// Invoked by the Python orchestrator's scheduler; each RPC returns a
+// small typed result that callers log.
+service ServerProactiveService {
+  rpc MorningBriefing(MorningBriefingRequest) returns (MorningBriefingResponse);
+  rpc OverdueCheck(OverdueCheckRequest) returns (OverdueCheckResponse);
+  rpc WeeklySummary(WeeklySummaryRequest) returns (WeeklySummaryResponse);
+  rpc VipAlert(VipAlertRequest) returns (VipAlertResponse);
+}
+
+message MorningBriefingRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+}
+
+message MorningBriefingResponse {
+  string briefing = 1;      // truncated to 200 chars
+}
+
+message OverdueCheckRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message OverdueCheckResponse {
+  int32 overdue_count = 1;
+}
+
+message WeeklySummaryRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+}
+
+message WeeklySummaryResponse {
+  string summary = 1;       // truncated to 200 chars
+}
+
+message VipAlertRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string sender_name = 3;
+  string subject = 4;
+}
+
+message VipAlertResponse {
+  bool ok = 1;
+}

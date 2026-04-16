@@ -56,7 +56,6 @@ import com.jervis.meeting.installMeetingHelperApi
 import com.jervis.rpc.internal.installInternalFinanceApi
 import com.jervis.rpc.internal.installInternalTimeTrackingApi
 import com.jervis.rpc.internal.installInternalAttachmentApi
-import com.jervis.rpc.internal.installInternalProactiveApi
 import com.jervis.meeting.installWatchMeetingApi
 import com.jervis.preferences.DeviceTokenRpcImpl
 import com.jervis.preferences.SystemConfigRpcImpl
@@ -194,7 +193,7 @@ class KtorRpcServer(
                             installMeetingHelperApi(meetingHelperService)
                             installInternalFinanceApi(financialService, contractRepository)
                             installInternalTimeTrackingApi(timeTrackingService)
-                            installInternalProactiveApi(proactiveScheduler)
+                            // Proactive triggers migrated to gRPC (jervis.server.ServerProactiveService).
                             installInternalAttachmentApi(emailMessageIndexRepository, directoryStructureService)
 
                             // Internal REST API modules (Python orchestrator → Kotlin)

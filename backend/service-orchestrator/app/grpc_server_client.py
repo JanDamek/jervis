@@ -19,6 +19,7 @@ from jervis.server import (
     chat_context_pb2_grpc,
     filter_rules_pb2_grpc,
     guidelines_pb2_grpc,
+    proactive_pb2_grpc,
     urgency_pb2_grpc,
 )
 
@@ -29,6 +30,7 @@ _cache_stub: Optional[cache_pb2_grpc.ServerCacheServiceStub] = None
 _chat_context_stub: Optional[chat_context_pb2_grpc.ServerChatContextServiceStub] = None
 _filter_rules_stub: Optional[filter_rules_pb2_grpc.ServerFilterRulesServiceStub] = None
 _guidelines_stub: Optional[guidelines_pb2_grpc.ServerGuidelinesServiceStub] = None
+_proactive_stub: Optional[proactive_pb2_grpc.ServerProactiveServiceStub] = None
 _urgency_stub: Optional[urgency_pb2_grpc.ServerUrgencyServiceStub] = None
 
 
@@ -84,3 +86,10 @@ def server_chat_context_stub() -> chat_context_pb2_grpc.ServerChatContextService
     if _chat_context_stub is None:
         _chat_context_stub = chat_context_pb2_grpc.ServerChatContextServiceStub(_get_channel())
     return _chat_context_stub
+
+
+def server_proactive_stub() -> proactive_pb2_grpc.ServerProactiveServiceStub:
+    global _proactive_stub
+    if _proactive_stub is None:
+        _proactive_stub = proactive_pb2_grpc.ServerProactiveServiceStub(_get_channel())
+    return _proactive_stub
