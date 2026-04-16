@@ -877,18 +877,25 @@ async def meeting_presence_report(present: bool, meeting_stage_visible: bool) ->
     in-call stage rendered (distinguishes stage-visible from background
     presence like a calling screen).
     """
-    ctx = get_pod_context()
-    payload = {
-        "connectionId": ctx.connection_id,
-        "clientId": ctx.client_id,
-        "present": bool(present),
-        "meetingStageVisible": bool(meeting_stage_visible),
-    }
-    url = f"{settings.kotlin_server_url}/internal/meetings/attend/presence"
+    pod_ctx = get_pod_context()
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.post(url, json=payload)
-        return {"ok": resp.status_code < 300, "present": present}
+        from app.grpc_clients import server_meeting_attend_stub
+        from jervis.server import meeting_attend_pb2
+        from jervis.common import types_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        req_ctx = types_pb2.RequestContext()
+        prepare_context(req_ctx)
+        resp = await server_meeting_attend_stub().ReportPresence(
+            meeting_attend_pb2.PresenceRequest(
+                ctx=req_ctx,
+                connection_id=pod_ctx.connection_id or "",
+                client_id=pod_ctx.client_id or "",
+                present=bool(present),
+            ),
+            timeout=5.0,
+        )
+        return {"ok": resp.ok, "present": resp.present}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

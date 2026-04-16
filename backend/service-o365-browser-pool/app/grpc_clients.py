@@ -8,13 +8,14 @@ from typing import Optional
 import grpc.aio
 
 from app.config import settings
-from jervis.server import o365_resources_pb2_grpc
+from jervis.server import meeting_attend_pb2_grpc, o365_resources_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
 _channel: Optional[grpc.aio.Channel] = None
 _user_activity_stub: Optional[o365_resources_pb2_grpc.ServerUserActivityServiceStub] = None
 _discovered_stub: Optional[o365_resources_pb2_grpc.ServerO365DiscoveredResourcesServiceStub] = None
+_meeting_attend_stub: Optional[meeting_attend_pb2_grpc.ServerMeetingAttendServiceStub] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -46,3 +47,10 @@ def server_discovered_resources_stub() -> o365_resources_pb2_grpc.ServerO365Disc
     if _discovered_stub is None:
         _discovered_stub = o365_resources_pb2_grpc.ServerO365DiscoveredResourcesServiceStub(_get_channel())
     return _discovered_stub
+
+
+def server_meeting_attend_stub() -> meeting_attend_pb2_grpc.ServerMeetingAttendServiceStub:
+    global _meeting_attend_stub
+    if _meeting_attend_stub is None:
+        _meeting_attend_stub = meeting_attend_pb2_grpc.ServerMeetingAttendServiceStub(_get_channel())
+    return _meeting_attend_stub

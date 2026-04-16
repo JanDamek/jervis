@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerMeetingAttendProto";
+
+// ServerMeetingAttendService — approval flow for calendar-detected
+// meetings ("should Jervis attend?") + presence callbacks from the
+// browser pod. Consumed by MCP tools and the o365 browser pool agent.
+service ServerMeetingAttendService {
+  // CALENDAR_PROCESSING tasks in the next `hours_ahead` hours.
+  rpc ListUpcoming(ListUpcomingRequest) returns (ListUpcomingResponse);
+
+  // Approve / deny a meeting-attend task.
+  rpc Approve(AttendDecisionRequest) returns (AttendDecisionResponse);
+  rpc Deny(AttendDecisionRequest) returns (AttendDecisionResponse);
+
+  // Browser pod → server presence callback. present=true means the user
+  // is in any meeting context (stage/prejoin/lobby).
+  rpc ReportPresence(PresenceRequest) returns (PresenceResponse);
+}
+
+message ListUpcomingRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  int64 hours_ahead = 4;       // 0 → 24
+  int32 limit = 5;             // 0 → 50
+}
+
+message ListUpcomingResponse {
+  repeated UpcomingMeeting meetings = 1;
+}
+
+message UpcomingMeeting {
+  string task_id = 1;
+  string title = 2;
+  string client_id = 3;
+  string project_id = 4;
+  string start_time_iso = 5;
+  string end_time_iso = 6;
+  string provider = 7;
+  string join_url = 8;
+  string organizer = 9;
+  bool is_recurring = 10;
+}
+
+message AttendDecisionRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string reason = 3;           // used only by Deny; ignored by Approve
+}
+
+message AttendDecisionResponse {
+  string task_id = 1;
+  string status = 2;           // "APPROVED" | "DENIED"
+  string state = 3;            // TaskState.name
+  string reason = 4;
+}
+
+message PresenceRequest {
+  jervis.common.RequestContext ctx = 1;
+  string connection_id = 2;
+  string client_id = 3;
+  bool present = 4;
+}
+
+message PresenceResponse {
+  bool ok = 1;
+  bool present = 2;
+}

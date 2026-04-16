@@ -21,8 +21,6 @@ import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalProjectManagementApi
-import com.jervis.rpc.internal.installInternalMeetingAttendApi
-import com.jervis.rpc.internal.installInternalMeetingPresenceApi
 import com.jervis.rpc.internal.installInternalMeetingVideoApi
 import com.jervis.rpc.internal.installInternalChatApprovalApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
@@ -200,8 +198,8 @@ class KtorRpcServer(
                             installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)
                             // Cache invalidation migrated to gRPC (jervis.server.ServerCacheService).
                             // Meeting read surface migrated to gRPC (jervis.server.ServerMeetingsService).
-                            installInternalMeetingAttendApi(taskRepository, meetingAttendApprovalService)
-                            installInternalMeetingPresenceApi(meetingAttendApprovalService)
+                            // Meeting-attend approval + presence migrated to gRPC
+                            // (jervis.server.ServerMeetingAttendService).
                             // Meeting recording bridge migrated to gRPC (jervis.server.ServerMeetingRecordingBridgeService).
                             installInternalMeetingVideoApi(meetingRepository, directoryStructureService)
                             // Meeting-alone leave/stay migrated to gRPC (jervis.server.ServerMeetingAloneService).
