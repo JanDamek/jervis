@@ -18,7 +18,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
-import com.jervis.rpc.internal.installInternalChatContextApi
 import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalGitApi
 import com.jervis.rpc.internal.installInternalOpenRouterApi
@@ -199,7 +198,7 @@ class KtorRpcServer(
                             installInternalAttachmentApi(emailMessageIndexRepository, directoryStructureService)
 
                             // Internal REST API modules (Python orchestrator → Kotlin)
-                            installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl, preferenceService)
+                            // Chat context migrated to gRPC (jervis.server.ServerChatContextService).
                             installInternalTaskApi(taskRepository, taskService, userTaskService, preferenceService, pendingTaskService, fcmPushService, apnsPushService, chatRpcImpl)
                             // Guidelines + filter-rules + urgency migrated to gRPC
                             // (jervis.server.Server{Guidelines,FilterRules,Urgency}Service).

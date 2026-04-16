@@ -14,12 +14,19 @@ from typing import Optional
 import grpc.aio
 
 from app.config import settings
-from jervis.server import cache_pb2_grpc, filter_rules_pb2_grpc, guidelines_pb2_grpc, urgency_pb2_grpc
+from jervis.server import (
+    cache_pb2_grpc,
+    chat_context_pb2_grpc,
+    filter_rules_pb2_grpc,
+    guidelines_pb2_grpc,
+    urgency_pb2_grpc,
+)
 
 logger = logging.getLogger(__name__)
 
 _channel: Optional[grpc.aio.Channel] = None
 _cache_stub: Optional[cache_pb2_grpc.ServerCacheServiceStub] = None
+_chat_context_stub: Optional[chat_context_pb2_grpc.ServerChatContextServiceStub] = None
 _filter_rules_stub: Optional[filter_rules_pb2_grpc.ServerFilterRulesServiceStub] = None
 _guidelines_stub: Optional[guidelines_pb2_grpc.ServerGuidelinesServiceStub] = None
 _urgency_stub: Optional[urgency_pb2_grpc.ServerUrgencyServiceStub] = None
@@ -70,3 +77,10 @@ def server_urgency_stub() -> urgency_pb2_grpc.ServerUrgencyServiceStub:
     if _urgency_stub is None:
         _urgency_stub = urgency_pb2_grpc.ServerUrgencyServiceStub(_get_channel())
     return _urgency_stub
+
+
+def server_chat_context_stub() -> chat_context_pb2_grpc.ServerChatContextServiceStub:
+    global _chat_context_stub
+    if _chat_context_stub is None:
+        _chat_context_stub = chat_context_pb2_grpc.ServerChatContextServiceStub(_get_channel())
+    return _chat_context_stub

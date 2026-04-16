@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerChatContextProto";
+
+// ServerChatContextService provides runtime context the Python chat
+// handler injects into the LLM system prompt: clients+projects listing,
+// pending user tasks summary, unclassified meetings count, user
+// timezone. Read-only endpoints with small response payloads.
+service ServerChatContextService {
+  rpc ListClientsProjects(ClientsProjectsRequest) returns (ClientsProjectsResponse);
+  rpc PendingUserTasksSummary(PendingUserTasksRequest) returns (PendingUserTasksResponse);
+  rpc UnclassifiedMeetingsCount(UnclassifiedCountRequest) returns (UnclassifiedCountResponse);
+  rpc GetUserTimezone(UserTimezoneRequest) returns (UserTimezoneResponse);
+}
+
+message ClientsProjectsRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message ClientsProjectsResponse {
+  repeated ClientWithProjects clients = 1;
+}
+
+message ClientWithProjects {
+  string id = 1;
+  string name = 2;
+  repeated ProjectLite projects = 3;
+}
+
+message ProjectLite {
+  string id = 1;
+  string name = 2;
+}
+
+message PendingUserTasksRequest {
+  jervis.common.RequestContext ctx = 1;
+  int32 limit = 2;
+}
+
+message PendingUserTasksResponse {
+  int32 count = 1;
+  repeated PendingUserTask tasks = 2;
+}
+
+message PendingUserTask {
+  string id = 1;
+  string title = 2;
+  string question = 3;
+  string client_id = 4;
+  string project_id = 5;
+}
+
+message UnclassifiedCountRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message UnclassifiedCountResponse {
+  int32 count = 1;
+}
+
+message UserTimezoneRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message UserTimezoneResponse {
+  string timezone = 1;
+}

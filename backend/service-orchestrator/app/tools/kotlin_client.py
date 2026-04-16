@@ -756,11 +756,25 @@ class KotlinServerClient:
     async def get_clients_projects(self) -> list[dict]:
         """Get all clients with their projects (id, name) for LLM scope resolution."""
         try:
-            client = await self._get_client()
-            resp = await client.get("/internal/clients-projects")
-            if resp.status_code == 200:
-                return resp.json()
-            return []
+            from app.grpc_server_client import server_chat_context_stub
+            from jervis.server import chat_context_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_chat_context_stub().ListClientsProjects(
+                chat_context_pb2.ClientsProjectsRequest(ctx=ctx),
+                timeout=5.0,
+            )
+            return [
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "projects": [{"id": p.id, "name": p.name} for p in c.projects],
+                }
+                for c in resp.clients
+            ]
         except Exception as e:
             logger.warning("Failed to get clients-projects: %s", e)
             return []
@@ -768,14 +782,30 @@ class KotlinServerClient:
     async def get_pending_user_tasks_summary(self, limit: int = 3) -> dict:
         """Get pending user tasks count + top N for proactive mentions."""
         try:
-            client = await self._get_client()
-            resp = await client.get(
-                "/internal/pending-user-tasks/summary",
-                params={"limit": limit},
+            from app.grpc_server_client import server_chat_context_stub
+            from jervis.server import chat_context_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_chat_context_stub().PendingUserTasksSummary(
+                chat_context_pb2.PendingUserTasksRequest(ctx=ctx, limit=limit),
+                timeout=5.0,
             )
-            if resp.status_code == 200:
-                return resp.json()
-            return {"count": 0, "tasks": []}
+            return {
+                "count": resp.count,
+                "tasks": [
+                    {
+                        "id": t.id,
+                        "title": t.title,
+                        "question": t.question,
+                        "clientId": t.client_id,
+                        "projectId": t.project_id,
+                    }
+                    for t in resp.tasks
+                ],
+            }
         except Exception as e:
             logger.warning("Failed to get pending user tasks summary: %s", e)
             return {"count": 0, "tasks": []}
@@ -783,11 +813,18 @@ class KotlinServerClient:
     async def count_unclassified_meetings(self) -> int:
         """Get count of unclassified meetings."""
         try:
-            client = await self._get_client()
-            resp = await client.get("/internal/unclassified-meetings/count")
-            if resp.status_code == 200:
-                return resp.json().get("count", 0)
-            return 0
+            from app.grpc_server_client import server_chat_context_stub
+            from jervis.server import chat_context_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_chat_context_stub().UnclassifiedMeetingsCount(
+                chat_context_pb2.UnclassifiedCountRequest(ctx=ctx),
+                timeout=5.0,
+            )
+            return resp.count
         except Exception as e:
             logger.warning("Failed to count unclassified meetings: %s", e)
             return 0
@@ -795,11 +832,18 @@ class KotlinServerClient:
     async def get_user_timezone(self) -> str:
         """Get user timezone from GLOBAL preference (default: Europe/Prague)."""
         try:
-            client = await self._get_client()
-            resp = await client.get("/internal/user-timezone")
-            if resp.status_code == 200:
-                return resp.json().get("timezone", "Europe/Prague")
-            return "Europe/Prague"
+            from app.grpc_server_client import server_chat_context_stub
+            from jervis.server import chat_context_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_chat_context_stub().GetUserTimezone(
+                chat_context_pb2.UserTimezoneRequest(ctx=ctx),
+                timeout=5.0,
+            )
+            return resp.timezone or "Europe/Prague"
         except Exception as e:
             logger.warning("Failed to get user timezone: %s", e)
             return "Europe/Prague"
