@@ -454,49 +454,6 @@ async def router_status():
     }
 
 
-@app.post("/router/admin/decide")
-async def route_decision(request: Request):
-    """Routing decision endpoint for decision-only callers (orchestrator nodes
-    that dispatch via LiteLLM themselves).
-
-    Input (see KB agent://claude-code/task-routing-unified-design):
-      {
-        "capability": "chat",              # chat|thinking|coding|extraction|embedding|visual
-        "max_tier": "FREE",                # NONE|FREE|PAID|PREMIUM (or resolved from client_id)
-        "estimated_tokens": 5000,
-        "deadline_iso": "2026-04-15T12:34:56Z",  # absolute deadline; null = no pressure (BATCH)
-        "priority": "NORMAL",              # CASCADE|CRITICAL|NORMAL
-        "min_model_size": 0,               # 0=any, 14, 30, 120
-        "require_tools": false,
-        "skip_models": [...],
-        "client_id": "..."
-      }
-
-    Output: {"target": "local"|"openrouter", "model": "...", "api_base"|"api_key": "..."}
-    """
-    body = await request.json()
-
-    priority_str = (body.get("priority") or "NORMAL").upper()
-    priority_val = {
-        "CASCADE": Priority.CASCADE,
-        "CRITICAL": Priority.CRITICAL,
-        "NORMAL": Priority.NORMAL,
-    }.get(priority_str, Priority.NORMAL)
-
-    decision = await router.decide_route(
-        capability=body.get("capability", "chat"),
-        max_tier=body.get("max_tier", "NONE"),
-        estimated_tokens=body.get("estimated_tokens", 0),
-        deadline_iso=body.get("deadline_iso"),
-        priority=priority_val,
-        min_model_size=body.get("min_model_size", 0),
-        skip_models=body.get("skip_models"),
-        require_tools=body.get("require_tools", False),
-        client_id=body.get("client_id"),
-    )
-    return JSONResponse(content=decision)
-
-
 @app.get("/router/admin/max-context")
 async def route_max_context(request: Request):
     """Get max available context tokens for a given tier."""

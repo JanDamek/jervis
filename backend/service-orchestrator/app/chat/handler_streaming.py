@@ -34,6 +34,7 @@ async def call_llm(
     deadline_iso: str | None = None,
     priority: str = "NORMAL",
     min_model_size: int = 0,
+    extra_headers: dict[str, str] | None = None,
 ):
     """Call the router for an LLM completion.
 
@@ -51,6 +52,7 @@ async def call_llm(
         deadline_iso=deadline_iso,
         priority=priority,
         min_model_size=min_model_size,
+        extra_headers=extra_headers,
     )
     if timeout:
         return await asyncio.wait_for(coro, timeout=timeout)

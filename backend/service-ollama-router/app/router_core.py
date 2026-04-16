@@ -272,6 +272,7 @@ class OllamaRouter:
         skip_models: list[str] | None = None,
         require_tools: bool = False,
         client_id: str | None = None,
+        intent: str = "background",
     ) -> dict:
         """Unified routing decision. See KB agent://claude-code/task-routing-unified-design.
 
@@ -353,6 +354,24 @@ class OllamaRouter:
                         reason, cloud_model, bucket.value, max_tier, estimated_tokens, skip_models or [])
             api_key = await get_api_key()
             return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
+
+        # Intent gate: user-facing work (chat, assistant, voice, orchestrator step)
+        # MUST NOT occupy the GPU when a cloud tier is available. GPU capacity
+        # is reserved for background / night / qualifier / kb / indexing workloads.
+        # `tier=NONE` path was already returned above (cloud forbidden, local is
+        # the only option); this branch only fires when cloud is actually allowed.
+        _intent = (intent or "background").strip().lower()
+        _USER_FACING_INTENTS = ("user-waiting", "orchestrator", "voice", "assistant")
+        if _intent in _USER_FACING_INTENTS:
+            cloud = await _try_cloud(f"intent={_intent} — GPU reserved for background work")
+            if cloud:
+                return cloud
+            logger.warning(
+                "Route decision: intent=%s wanted cloud but none fits (tokens=%d, tier=%s) — "
+                "degrading to local GPU; background work will contend",
+                _intent, estimated_tokens, max_tier,
+            )
+            return local_fallback
 
         # VLM-specific escalation — when the only VLM GPU (p40-2) cannot serve
         # (whisper holding it, or VLM already in flight, or model still loading),
@@ -481,17 +500,39 @@ class OllamaRouter:
             min_size = int(headers.get("X-Min-Model-Size") or 0)
         except ValueError:
             min_size = 0
+        # Caller-side ceiling on cloud escalation. Falls back to NONE (local only)
+        # when the header is missing; `decide_route` still re-resolves against
+        # the client's cloud policy.
+        max_tier = (headers.get("X-Max-Tier") or "NONE").strip().upper() or "NONE"
+        # Caller-side skip list — orchestrator marks models that failed
+        # guards (template-leak, language-mismatch, zero-tools, …) so the
+        # router picks the next one in queue on retry.
+        skip_models_hdr = headers.get("X-Skip-Models") or ""
+        skip_models = [m.strip() for m in skip_models_hdr.split(",") if m.strip()] or None
+        # Tools on the body hint — pass through to cloud routing matrix.
+        require_tools = bool(body.get("tools"))
+        # Intent hint — declares *why* the call is happening.
+        #   user-waiting → user is blocking on the reply (chat, assistant, voice).
+        #                   GPU is reserved for background work; if tier ≠ NONE
+        #                   we MUST route via cloud so GPU stays free.
+        #   orchestrator → orchestrator pipeline step (same rule as user-waiting).
+        #   background / qualifier / kb / night / embedding / indexing →
+        #                   local preferred, cloud only when genuinely needed.
+        intent = (headers.get("X-Intent") or "").strip().lower() or "background"
 
         estimated_tokens = self._estimate_tokens(body)
 
         decision = await self.decide_route(
             capability=capability,
-            max_tier="NONE",  # resolved from client_id inside decide_route
+            max_tier=max_tier,
             estimated_tokens=estimated_tokens,
             deadline_iso=deadline_iso,
             priority=priority,
             min_model_size=min_size,
             client_id=client_id,
+            skip_models=skip_models,
+            require_tools=require_tools,
+            intent=intent,
         )
 
         if decision.get("target") == "openrouter":

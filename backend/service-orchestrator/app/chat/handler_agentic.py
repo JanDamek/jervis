@@ -22,7 +22,6 @@ from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, con
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.source_attribution import SourceTracker
 from app.chat.topic_tracker import detect_topics, update_conversation_topics, topic_metadata
-from app.llm.router_client import route_request
 from app.chat.handler_tools import (
     _GRAPH_TOOLS,
     extract_tool_calls,
@@ -332,11 +331,11 @@ async def run_agentic_loop(
 
         logger.info("Chat: iteration %d/%d", iteration + 1, effective_max_iterations)
 
-        tier = ModelTier.LOCAL_STANDARD  # Fixed 48k
         estimated = _estimate_tokens_total(messages, selected_tools)
 
-        # Capability-based routing: ask router for decision
-        # Detect image attachments → require "vision" capability
+        # Capability-based routing: router decides internally from /api/chat
+        # headers (X-Capability, X-Max-Tier, X-Client-Id, X-Skip-Models, …).
+        # No pre-call to /router/admin/decide — router is single source of truth.
         max_tier = getattr(request, "max_openrouter_tier", "NONE")
         has_images = any(
             isinstance(m.get("content"), list) and any(
@@ -345,18 +344,10 @@ async def run_agentic_loop(
             for m in messages if isinstance(m, dict)
         )
         route_capability = "visual" if has_images else "chat"
-        route = await route_request(
-            capability=route_capability,
-            max_tier=max_tier,
-            estimated_tokens=estimated,
-            deadline_iso=getattr(request, "deadline_iso", None),
-            priority=getattr(request, "priority", "NORMAL"),
-            skip_models=_skip_models or None,
-            require_tools=bool(selected_tools),
-            client_id=effective_client_id,
+        logger.info(
+            "Chat: estimated_tokens=%d capability=%s max_tier=%s skip_models=%s",
+            estimated, route_capability, max_tier, _skip_models or [],
         )
-        logger.info("Chat: estimated_tokens=%d → tier=%s, route=%s/%s (max_tier=%s)",
-                     estimated, tier.value, route.target, route.model or tier.value, max_tier)
 
         # Preempt background only on first iteration AND only when tier=NONE (local GPU only).
         # FREE/PAID/PREMIUM tiers use OpenRouter — no GPU contention with background tasks.
@@ -382,6 +373,9 @@ async def run_agentic_loop(
             }
             call_messages = messages + [tool_reminder]
 
+        _chat_headers: dict[str, str] = {"X-Intent": "user-waiting"}
+        if _skip_models:
+            _chat_headers["X-Skip-Models"] = ",".join(_skip_models)
         response = await call_llm(
             messages=call_messages, tools=selected_tools,
             max_tier=max_tier,
@@ -389,7 +383,10 @@ async def run_agentic_loop(
             client_id=effective_client_id,
             deadline_iso=getattr(request, "deadline_iso", None),
             priority=getattr(request, "priority", "NORMAL"),
+            extra_headers=_chat_headers,
         )
+        # Router filled `response.model` with the actual model it dispatched to.
+        _used_model = getattr(response, "model", "") or ""
 
         choice = response.choices[0]
         tool_calls, remaining_text = extract_tool_calls(choice.message)
@@ -415,15 +412,15 @@ async def run_agentic_loop(
                 logger.warning(
                     "HALLUCINATION_GUARD | template leak (raw ChatML tokens in reply) — model broken, skipping and retrying",
                 )
-                if route and route.model:
-                    if route.model not in _skip_models:
-                        _skip_models.append(route.model)
+                if _used_model:
+                    if _used_model not in _skip_models:
+                        _skip_models.append(_used_model)
                     _guard_failed_models.append({
-                        "model": route.model, "reason": "template_leak", "retry": _guard_retries,
+                        "model": _used_model, "reason": "template_leak", "retry": _guard_retries,
                     })
                     try:
                         from app.llm.router_client import report_model_error
-                        await report_model_error(route.model, "Template leak: raw ChatML tokens in response")
+                        await report_model_error(_used_model, "Template leak: raw ChatML tokens in response")
                     except Exception as _e:
                         logger.debug("report_model_error failed (non-fatal): %s", _e)
                 _guard_fallback_text = None  # do not surface the broken text
@@ -434,10 +431,10 @@ async def run_agentic_loop(
             if final_text and _guard_retries < 2 and detects_language_mismatch(request.message, final_text):
                 _guard_retries += 1
                 logger.warning("HALLUCINATION_GUARD | language mismatch — model responded in wrong language, retrying")
-                if route and route.model:
-                    if route.model not in _skip_models:
-                        _skip_models.append(route.model)
-                    _guard_failed_models.append({"model": route.model, "reason": "language_mismatch", "retry": _guard_retries})
+                if _used_model:
+                    if _used_model not in _skip_models:
+                        _skip_models.append(_used_model)
+                    _guard_failed_models.append({"model": _used_model, "reason": "language_mismatch", "retry": _guard_retries})
                     # Router tracks model failures internally via its dispatch
                     # outcomes. Hallucination-guard signals are orchestrator-
                     # level heuristics and are not reported back to the router.
@@ -458,12 +455,12 @@ async def run_agentic_loop(
                 if is_first_message and not is_simple_greeting:
                     _guard_retries += 1
                     logger.warning("HALLUCINATION_GUARD | zero tools used on first substantive query — retrying with next model")
-                    if route and route.model:
-                        if route.model not in _skip_models:
-                            _skip_models.append(route.model)
-                        _guard_failed_models.append({"model": route.model, "reason": "zero_tools", "retry": _guard_retries})
+                    if _used_model:
+                        if _used_model not in _skip_models:
+                            _skip_models.append(_used_model)
+                        _guard_failed_models.append({"model": _used_model, "reason": "zero_tools", "retry": _guard_retries})
                         from app.llm.router_client import report_model_error
-                        await report_model_error(route.model, "Zero tool usage: answered factual query without using any tools")
+                        await report_model_error(_used_model, "Zero tool usage: answered factual query without using any tools")
                     _guard_fallback_text = final_text
                     continue  # retry with next model
 
@@ -483,8 +480,8 @@ async def run_agentic_loop(
                         _guard_fallback_text = final_text
 
                     # Report current model as "failed" so router picks next model in queue
-                    if route and route.model:
-                        _failed_model = route.model
+                    if _used_model:
+                        _failed_model = _used_model
                         if _failed_model not in _skip_models:
                             _skip_models.append(_failed_model)
                         _guard_failed_models.append({
@@ -498,7 +495,7 @@ async def run_agentic_loop(
                             f"Hallucination guard: model refused to use tools ({_reason})",
                         )
                         logger.info("HALLUCINATION_GUARD | reported %s as failed, skip_models=%s → next model gets clean prompt",
-                                    route.model, _skip_models)
+                                    _used_model, _skip_models)
 
                     # Clean retry: do NOT append failed response to messages.
                     logger.info("HALLUCINATION_GUARD | clean retry — discarding failed response (%d chars), "
@@ -550,8 +547,8 @@ async def run_agentic_loop(
                                                  "NIKDY necituj thought-anchor:, thought-node: ani knowledge-node: labels."})
                 except Exception as _e:
                     logger.warning("HALLUCINATION_GUARD | forced kb_search failed: %s", _e)
-                if route and route.model and route.model not in _skip_models:
-                    _skip_models.append(route.model)
+                if _used_model and _used_model not in _skip_models:
+                    _skip_models.append(_used_model)
                 continue  # retry with kb_search data injected
 
             # If still has anchor labels after retry — strip them from final text
@@ -598,7 +595,7 @@ async def run_agentic_loop(
                 **({"contextTaskId": request.context_task_id} if request.context_task_id else {}),
                 **({"coding_agent_task_id": _ca_tid} if _ca_tid else {}),
                 **({"guard_failed_models": _guard_failed_models} if _guard_failed_models else {}),
-                **({"model": route.model} if route and route.model else {}),
+                **({"model": _used_model} if _used_model else {}),
                 **confidence_badge(fc_result),
                 **topic_metadata(topics),
                 **source_tracker.build_done_metadata(),

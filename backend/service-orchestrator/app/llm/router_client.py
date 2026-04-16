@@ -1,25 +1,22 @@
 """Thin compatibility layer over the unified router /api/chat surface.
 
-DESIGN: see KB agent://claude-code/task-routing-unified-design.
+The router is the single source of truth for model routing. There is no
+separate `/router/admin/decide` dry-run — callers must simply invoke
+`llm_provider.completion(capability=..., max_tier=..., client_id=...,
+extra_headers={"X-Intent": ...})` and the router picks local vs cloud
++ the concrete model when `/api/chat` arrives.
 
-The LEGACY orchestrator pattern was:
-    route = await route_request(...)     # asks /route-decision
-    llm_provider.completion(route=route, ...)  # dispatches with decided model
+`route_request()` is kept only as a thin, pure-Python stub so that legacy
+callers that still want to branch on "was this going local or cloud?"
+can compile. It returns a synthetic `RouteDecision` derived from the
+caller's `max_tier` — without any HTTP call.
 
-The UNIFIED pattern is:
-    llm_provider.completion(capability=..., deadline_iso=..., ...)  # one shot through /api/chat
-    # router decides + dispatches + retries + rate-limits internally
+`report_model_error()` / `report_model_success()` still exist as
+best-effort fire-and-forget feedback channels to the router's own
+model reputation tracker. They never block and never fail the caller.
 
-Full caller migration to the unified pattern is tracked in
-agent://claude-code/orchestrator-llm-unification-proposal. Until every
-caller is migrated we keep this thin adapter so existing imports keep
-working. It does NOT call a separate /route-decision endpoint — that
-endpoint has been deleted. It asks the router for a dry-run decision
-via /router/admin/decide so the caller can still reason about whether
-the target is local vs cloud, but the dispatch itself always happens
-through llm_provider.completion → /api/chat.
-
-Scheduled for removal together with the last caller migration.
+`get_max_context_tokens()` is a cheap GET kept for context-budget math
+on the caller side.
 """
 
 from __future__ import annotations
@@ -57,59 +54,23 @@ async def route_request(
     require_tools: bool = False,
     client_id: str | None = None,
 ) -> RouteDecision:
-    """Ask the router for a dry-run routing decision.
+    """Synthetic pre-dispatch hint — does NOT call the router.
 
-    The router picks local vs cloud + concrete model based on the new
-    (capability, tier, deadline, priority, min_model_size) inputs. This
-    wrapper is kept only so older call sites that need a RouteDecision
-    *before* dispatch (LiteLLM escape hatch) still compile. New call sites
-    should use llm_provider.completion() directly — it talks to /api/chat
-    where the decision + dispatch happen in one step.
+    Returns `target="openrouter"` whenever the caller allows any cloud tier,
+    otherwise `target="local"`. `model` is always `None` — the actual model
+    is selected by the router when `/api/chat` is hit via
+    `llm_provider.completion(...)`. Legacy callers that still branch on
+    `route.target` keep working; the branches now only influence which
+    `X-Intent` / `max_tier` headers the caller emits, not the dispatch
+    itself.
     """
-    url = f"{_router_base_url()}/router/admin/decide"
-    try:
-        payload: dict = {
-            "capability": capability,
-            "estimated_tokens": estimated_tokens,
-            "priority": priority,
-        }
-        if deadline_iso:
-            payload["deadline_iso"] = deadline_iso
-        if min_model_size:
-            payload["min_model_size"] = min_model_size
-        if client_id:
-            payload["client_id"] = client_id
-        if max_tier and max_tier != "NONE":
-            payload["max_tier"] = max_tier
-        if skip_models:
-            payload["skip_models"] = skip_models
-        if require_tools:
-            payload["require_tools"] = True
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            model = data.get("model")
-            target = data.get("target", "local")
-            # Preserve legacy litellm provider prefixes for callers that still
-            # pass model_override into llm_provider.completion().
-            if model and target == "openrouter" and not model.startswith("openrouter/"):
-                model = f"openrouter/{model}"
-            elif model and target == "local" and not model.startswith("ollama/"):
-                model = f"ollama/{model}"
-            return RouteDecision(
-                target=target,
-                model=model,
-                api_base=data.get("api_base"),
-                api_key=data.get("api_key"),
-            )
-    except Exception as e:
-        logger.warning("route_request dry-run failed (%s) — defaulting to local", e)
-        return RouteDecision(
-            target="local",
-            model=settings.default_local_model,
-            api_base=settings.ollama_url,
-        )
+    tier = (max_tier or "NONE").strip().upper()
+    return RouteDecision(
+        target="openrouter" if tier != "NONE" else "local",
+        model=None,
+        api_base=None,
+        api_key=None,
+    )
 
 
 # ── Model reputation reporting — optional, best-effort ──────────────────
@@ -155,25 +116,18 @@ async def report_model_success(
 async def wait_for_any_model_recovery(
     max_tier: str = "NONE", max_wait_s: float = 20.0,
 ) -> dict | None:
-    """Poll the router for any cloud model coming back online."""
-    import asyncio
-    import time
+    """Best-effort wait for the router to recover a cloud model.
 
-    deadline = time.monotonic() + max_wait_s
-    while time.monotonic() < deadline:
-        try:
-            decision = await route_request(
-                capability="chat",
-                max_tier=max_tier,
-                estimated_tokens=1000,
-            )
-            if decision.target == "openrouter" and decision.model:
-                waited = max_wait_s - (deadline - time.monotonic())
-                return {"model": decision.model, "waited": waited}
-        except Exception:
-            pass
-        await asyncio.sleep(1.0)
-    return None
+    Router tracks its own model outage + cooldown; we simply pause this many
+    seconds so retry logic lets the router try again. The exact "when did a
+    model come back" is not observable without the deleted decide endpoint.
+    """
+    import asyncio
+
+    if (max_tier or "NONE").strip().upper() == "NONE":
+        return None
+    await asyncio.sleep(min(max_wait_s, 5.0))
+    return {"model": None, "waited": min(max_wait_s, 5.0)}
 
 
 async def get_max_context_tokens(max_tier: str = "NONE") -> int:
