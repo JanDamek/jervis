@@ -17,7 +17,7 @@ from typing import AsyncIterator
 from bson import ObjectId
 
 from app.chat.drift import detect_drift
-from app.chat.hallucination_guard import needs_verification_retry, is_empty_promise, claims_no_web_access, detects_language_mismatch
+from app.chat.hallucination_guard import needs_verification_retry, is_empty_promise, claims_no_web_access, detects_language_mismatch, detects_template_leak
 from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, confidence_badge
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.source_attribution import SourceTracker
@@ -403,6 +403,31 @@ async def run_agentic_loop(
             if not final_text:
                 final_text = ""  # Will trigger hallucination guard or empty response handling
             logger.info("Chat: final answer after %d iterations (%d chars)", iteration + 1, len(final_text))
+
+            # Template-leak guard: if the response contains raw ChatML tokens
+            # (`<|im_start|>`, `<|im_end|>`, …) the model's chat template was
+            # corrupted — typically a prompt that barely fits num_ctx so Ollama
+            # trimmed the role markers. Skip this model and retry on the next
+            # one in the router queue. Router-side context-budget guard exists
+            # to prevent this for the common case; this catch covers the rest.
+            if final_text and _guard_retries < 2 and detects_template_leak(final_text):
+                _guard_retries += 1
+                logger.warning(
+                    "HALLUCINATION_GUARD | template leak (raw ChatML tokens in reply) — model broken, skipping and retrying",
+                )
+                if route and route.model:
+                    if route.model not in _skip_models:
+                        _skip_models.append(route.model)
+                    _guard_failed_models.append({
+                        "model": route.model, "reason": "template_leak", "retry": _guard_retries,
+                    })
+                    try:
+                        from app.llm.router_client import report_model_error
+                        await report_model_error(route.model, "Template leak: raw ChatML tokens in response")
+                    except Exception as _e:
+                        logger.debug("report_model_error failed (non-fatal): %s", _e)
+                _guard_fallback_text = None  # do not surface the broken text
+                continue  # retry with next model
 
             # Language mismatch guard: if user wrote Czech but model responded in English,
             # retry with next model. Applies regardless of tool usage.

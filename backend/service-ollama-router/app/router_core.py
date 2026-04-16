@@ -390,7 +390,12 @@ class OllamaRouter:
                         bucket.value, local_fallback["model"])
             return local_fallback
 
-        # bucket=NORMAL — local if GPU idle AND context fits, cloud on busy/oversize
+        # bucket=NORMAL — local if GPU idle AND context fits, cloud on busy/oversize.
+        # Safe context budget = 40_000: local models have fixed num_ctx=48k and must
+        # also fit tools schema (~3k) + generated output (~4k). At ≥40k prompt
+        # Ollama starts trimming the chat template → model emits raw `<|im_start|>`.
+        # Above this threshold we escalate to cloud regardless of bucket.
+        _LOCAL_CTX_SAFE_BUDGET = 40_000
         target_model = local_fallback["model"]
         whisper_busy = self.check_whisper_busy()
         qdepth = self._queue.queue_depth if self._queue else {}
@@ -401,14 +406,14 @@ class OllamaRouter:
             for b in self.gpu_pool.all_backends
             if target_model in GPU_MODEL_SETS.get(b.name, [])
         )
-        if bucket == _Bucket.NORMAL and estimated_tokens <= 48_000 and gpu_free:
-            logger.info("Route decision: bucket=NORMAL tier=%s ≤48k + GPU idle → local model=%s",
-                        max_tier, target_model)
+        if bucket == _Bucket.NORMAL and estimated_tokens <= _LOCAL_CTX_SAFE_BUDGET and gpu_free:
+            logger.info("Route decision: bucket=NORMAL tier=%s ≤%dk + GPU idle → local model=%s",
+                        max_tier, _LOCAL_CTX_SAFE_BUDGET // 1000, target_model)
             return local_fallback
 
         # bucket=NORMAL escalation (busy/oversize)
         if bucket == _Bucket.NORMAL:
-            reason = f"bucket=NORMAL escalation ({'>48k' if estimated_tokens > 48_000 else 'GPU busy'})"
+            reason = f"bucket=NORMAL escalation ({'>' + str(_LOCAL_CTX_SAFE_BUDGET // 1000) + 'k' if estimated_tokens > _LOCAL_CTX_SAFE_BUDGET else 'GPU busy'})"
             cloud = await _try_cloud(reason)
             if cloud:
                 return cloud
@@ -418,16 +423,24 @@ class OllamaRouter:
             )
             return local_fallback
 
-        # bucket=BATCH — local only; cloud only when no local model matches the
-        # requested capability/size at all (genuine gap in coverage matrix).
-        if local_model is not None:
+        # bucket=BATCH — local-preferred, but still honor the local context
+        # budget. An oversize prompt on a local model silently breaks the
+        # chat template (see safe-budget comment above). Escalate to cloud
+        # when the prompt no longer fits.
+        if local_model is not None and estimated_tokens <= _LOCAL_CTX_SAFE_BUDGET:
             logger.info("Route decision: bucket=BATCH → local model=%s (tier=%s, tokens=%d)",
                         target_model, max_tier, estimated_tokens)
             return local_fallback
-        cloud = await _try_cloud("bucket=BATCH no local model available for capability")
+        reason = (
+            f"bucket=BATCH oversize (tokens={estimated_tokens} > {_LOCAL_CTX_SAFE_BUDGET})"
+            if local_model is not None
+            else "bucket=BATCH no local model available for capability"
+        )
+        cloud = await _try_cloud(reason)
         if cloud:
             return cloud
-        logger.info("Route decision: bucket=BATCH no local nor cloud → fallback to orchestrator_model")
+        logger.info("Route decision: bucket=BATCH no cloud fits → local fallback (model=%s, tokens=%d)",
+                    target_model, estimated_tokens)
         return local_fallback
 
     # ── Unified single-entry dispatch ──────────────────────────────────

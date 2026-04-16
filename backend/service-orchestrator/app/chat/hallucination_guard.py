@@ -35,6 +35,29 @@ _PROMISE_PATTERN = re.compile(
 )
 
 
+# Raw ChatML / tokenizer template tokens. If any of these leaks into the
+# final response, the model's chat template was truncated / corrupted
+# (typically: prompt size close to num_ctx limit → Ollama trims the prefix →
+# the role-markers get lost → model emits a raw template token as "answer").
+_TEMPLATE_LEAK_PATTERN = re.compile(
+    r'<\|im_start\|>|<\|im_end\|>|<\|endoftext\|>|<\|im_sep\|>|'
+    r'<\|begin_of_text\|>|<\|end_of_text\|>|<\|eot_id\|>',
+)
+
+
+def detects_template_leak(response_text: str) -> bool:
+    """Return True if the response contains raw chat-template tokens.
+
+    These tokens never belong in a user-facing answer — their presence
+    means the model is broken for this prompt (context overflow, misuse
+    of tools, bad tokenizer config). The caller should skip this model
+    and retry.
+    """
+    if not response_text:
+        return False
+    return bool(_TEMPLATE_LEAK_PATTERN.search(response_text))
+
+
 def needs_verification_retry(response_text: str) -> str | None:
     """Check if a response contains unverified real-world claims.
 
