@@ -168,7 +168,6 @@ class KtorRpcServer(
     private val pendingTaskService: com.jervis.task.PendingTaskService,
     private val httpClient: io.ktor.client.HttpClient,
     private val meetingRepository: com.jervis.meeting.MeetingRepository,
-    private val directoryStructureService: com.jervis.infrastructure.storage.DirectoryStructureService,
     private val browserPodMeetingClient: com.jervis.meeting.BrowserPodMeetingClient,
 ) {
     private val logger = KotlinLogging.logger {}

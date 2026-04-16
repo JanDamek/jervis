@@ -75,11 +75,11 @@ data class MeetingDto(
     /** ISO timestamp of the most recent accepted video-chunk upload. */
     val lastChunkAt: String? = null,
     /** Timeline entries (frames + diarized segments) assembled during INDEXING. */
-    val timeline: List<MeetingTimelineDto> = emptyList(),
+    val timeline: List<MeetingTimelineEntryDto> = emptyList(),
 )
 
 @Serializable
-data class MeetingTimelineDto(
+data class MeetingTimelineEntryDto(
     val tsSec: Double,
     val diarizedText: String? = null,
     val diarizedSpeaker: String? = null,

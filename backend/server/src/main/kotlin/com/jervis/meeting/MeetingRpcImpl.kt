@@ -1113,7 +1113,7 @@ private fun MeetingDocument.toDto(
         chunksReceived = chunksReceived,
         lastChunkAt = lastChunkAt?.toString(),
         timeline = timeline.map { entry ->
-            com.jervis.dto.meeting.MeetingTimelineDto(
+            com.jervis.dto.meeting.MeetingTimelineEntryDto(
                 tsSec = entry.tsSec,
                 diarizedText = entry.diarizedText,
                 diarizedSpeaker = entry.diarizedSpeaker,

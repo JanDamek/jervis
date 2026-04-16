@@ -76,9 +76,10 @@ class BrowserPodMeetingClient(
                 }
                 true
             } else {
+                val bodySnippet = resp.bodyAsText().take(200)
                 logger.warn {
                     "BrowserPodMeetingClient: pod returned ${resp.status} " +
-                        "for task=${trigger.taskId}: ${resp.bodyAsText().take(200)}"
+                        "for task=${trigger.taskId}: $bodySnippet"
                 }
                 false
             }
