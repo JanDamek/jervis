@@ -14,11 +14,15 @@ RUN apt-get update --allow-insecure-repositories || true && \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+# Pod-to-pod Protobuf contracts.
+COPY libs/jervis_contracts /libs/jervis_contracts
+RUN pip install --no-cache-dir --ignore-installed -e /libs/jervis_contracts
+
+COPY backend/service-o365-browser-pool/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir --ignore-installed -r requirements.txt
 
-COPY app/ app/
-COPY entrypoint.sh /entrypoint.sh
+COPY backend/service-o365-browser-pool/app/ app/
+COPY backend/service-o365-browser-pool/entrypoint.sh /entrypoint.sh
 
 # Create browser profiles directory
 RUN mkdir -p /browser-profiles && \
