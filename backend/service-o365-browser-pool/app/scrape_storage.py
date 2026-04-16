@@ -13,12 +13,27 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 from app.config import settings
-from app.tab_manager import TabType
 
 logger = logging.getLogger("o365-browser-pool.storage")
+
+
+def _oid(value: str | None):
+    """Convert a hex string to ObjectId when possible — Kotlin expects ObjectId.
+
+    Stored IDs (connectionId, clientId) must match the converter on the Kotlin
+    side (MongoValueClassConverters). If the string isn't a valid ObjectId, we
+    fall back to the raw string so legacy data still works.
+    """
+    if not value:
+        return value
+    try:
+        return ObjectId(value)
+    except Exception:
+        return value
 
 
 class ScrapeStorage:
@@ -72,6 +87,31 @@ class ScrapeStorage:
             name="connection_type_idx",
         )
 
+        ledger = self._db["o365_message_ledger"]
+        await ledger.create_index(
+            [("connectionId", 1), ("chatId", 1)],
+            unique=True,
+            name="connection_chat_unique",
+        )
+        await ledger.create_index(
+            [("connectionId", 1), ("unreadCount", -1)],
+            name="connection_unread_idx",
+        )
+
+        calendar = self._db["scraped_calendar"]
+        await calendar.create_index(
+            [("connectionId", 1), ("externalId", 1)],
+            unique=True,
+            name="connection_event_unique",
+        )
+
+        mail = self._db["scraped_mail"]
+        await mail.create_index(
+            [("connectionId", 1), ("externalId", 1)],
+            unique=True,
+            name="connection_mail_unique",
+        )
+
         logger.info("ScrapeStorage connected to MongoDB")
 
     async def stop(self) -> None:
@@ -84,26 +124,27 @@ class ScrapeStorage:
         self,
         client_id: str,
         connection_id: str,
-        tab_type: TabType,
+        tab_name: str,
         data: dict,
     ) -> None:
-        """Upsert latest scrape result for a client+tab combination."""
+        """Upsert latest scrape result keyed by free-form tab name chosen by
+        the agent (`chat`, `mail`, `calendar`, …)."""
         if self._db is None:
             return
 
         now = datetime.now(timezone.utc)
         await self._db["o365_scrape_results"].update_one(
-            {"clientId": client_id, "tabType": tab_type.value},
+            {"clientId": _oid(client_id), "tabType": tab_name},
             {
                 "$set": {
-                    "connectionId": connection_id,
+                    "connectionId": _oid(connection_id),
                     "data": data,
                     "scrapedAt": now,
                     "updatedAt": now,
                 },
                 "$setOnInsert": {
-                    "clientId": client_id,
-                    "tabType": tab_type.value,
+                    "clientId": _oid(client_id),
+                    "tabType": tab_name,
                     "createdAt": now,
                 },
             },
@@ -140,11 +181,11 @@ class ScrapeStorage:
 
             try:
                 await self._db["o365_scrape_messages"].update_one(
-                    {"connectionId": connection_id, "messageHash": msg_hash},
+                    {"connectionId": _oid(connection_id), "messageHash": msg_hash},
                     {
                         "$setOnInsert": {
-                            "clientId": client_id,
-                            "connectionId": connection_id,
+                            "clientId": _oid(client_id),
+                            "connectionId": _oid(connection_id),
                             "messageHash": msg_hash,
                             "sender": msg.get("sender"),
                             "content": msg.get("content"),
@@ -179,6 +220,164 @@ class ScrapeStorage:
         """Backward-compatible wrapper for store_messages with type=chat."""
         return await self.store_messages(client_id, connection_id, messages, "chat")
 
+    async def store_message_row(
+        self,
+        *,
+        connection_id: str,
+        client_id: str,
+        chat_id: str,
+        chat_name: str,
+        message_id: str,
+        sender: str,
+        content: str,
+        timestamp: str | None,
+        is_mention: bool,
+        attachment_kind: str | None,
+    ) -> bool:
+        """Upsert a single observed message (agent-composed scraping).
+
+        Dedup key: (connectionId, messageHash) — matches the Kotlin
+        indexer's unique index. `messageHash` is set to `message_id` when
+        present, otherwise a content hash is computed.
+        """
+        if self._db is None:
+            return False
+        import hashlib as _hashlib
+        now = datetime.now(timezone.utc)
+        msg_hash = message_id or _hashlib.sha256(
+            f"{sender}|{timestamp}|{content}".encode(),
+        ).hexdigest()[:16]
+        try:
+            result = await self._db["o365_scrape_messages"].update_one(
+                {"connectionId": _oid(connection_id), "messageHash": msg_hash},
+                {
+                    "$setOnInsert": {
+                        "connectionId": _oid(connection_id),
+                        "clientId": _oid(client_id),
+                        "messageHash": msg_hash,
+                        "chatId": chat_id,
+                        "chatName": chat_name,
+                        "sender": sender,
+                        "content": content,
+                        "timestamp": timestamp,
+                        "isMention": is_mention,
+                        "attachmentKind": attachment_kind,
+                        "messageType": "chat",
+                        "state": "NEW",
+                        "createdAt": now,
+                    },
+                },
+                upsert=True,
+            )
+            return bool(result.upserted_id)
+        except Exception:
+            return False
+
+    async def store_discovered_resource(
+        self,
+        *,
+        connection_id: str,
+        client_id: str,
+        resource_type: str,
+        external_id: str,
+        display_name: str,
+        team_name: str | None = None,
+        description: str | None = None,
+    ) -> bool:
+        """Upsert a single discovered resource (chat, channel, team)."""
+        return (await self.store_discovered_resources(
+            connection_id, client_id,
+            [{
+                "id": external_id,
+                "name": display_name,
+                "description": description,
+                "type": resource_type,
+                "team_name": team_name,
+            }],
+        )) > 0
+
+    async def store_calendar_event(
+        self,
+        *,
+        connection_id: str,
+        client_id: str,
+        external_id: str,
+        title: str,
+        start: str | None,
+        end: str | None,
+        organizer: str | None,
+        join_url: str | None,
+    ) -> bool:
+        """Upsert an observed calendar event."""
+        if self._db is None:
+            return False
+        now = datetime.now(timezone.utc)
+        try:
+            result = await self._db["scraped_calendar"].update_one(
+                {"connectionId": _oid(connection_id), "externalId": external_id},
+                {
+                    "$set": {
+                        "clientId": _oid(client_id),
+                        "title": title,
+                        "startAt": start,
+                        "endAt": end,
+                        "organizer": organizer,
+                        "joinUrl": join_url,
+                        "updatedAt": now,
+                    },
+                    "$setOnInsert": {
+                        "connectionId": _oid(connection_id),
+                        "externalId": external_id,
+                        "createdAt": now,
+                    },
+                },
+                upsert=True,
+            )
+            return bool(result.upserted_id)
+        except Exception:
+            return False
+
+    async def store_mail_header(
+        self,
+        *,
+        connection_id: str,
+        client_id: str,
+        external_id: str,
+        sender: str,
+        subject: str,
+        received_at: str | None,
+        preview: str,
+        is_unread: bool,
+    ) -> bool:
+        """Upsert an observed mail header (metadata only, no body)."""
+        if self._db is None:
+            return False
+        now = datetime.now(timezone.utc)
+        try:
+            result = await self._db["scraped_mail"].update_one(
+                {"connectionId": _oid(connection_id), "externalId": external_id},
+                {
+                    "$set": {
+                        "clientId": _oid(client_id),
+                        "sender": sender,
+                        "subject": subject,
+                        "receivedAt": received_at,
+                        "preview": preview,
+                        "isUnread": is_unread,
+                        "updatedAt": now,
+                    },
+                    "$setOnInsert": {
+                        "connectionId": _oid(connection_id),
+                        "externalId": external_id,
+                        "createdAt": now,
+                    },
+                },
+                upsert=True,
+            )
+            return bool(result.upserted_id)
+        except Exception:
+            return False
+
     async def store_discovered_resources(
         self,
         connection_id: str,
@@ -202,7 +401,7 @@ class ScrapeStorage:
 
             try:
                 result = await self._db["o365_discovered_resources"].update_one(
-                    {"connectionId": connection_id, "externalId": external_id},
+                    {"connectionId": _oid(connection_id), "externalId": external_id},
                     {
                         "$set": {
                             "displayName": res.get("name", ""),
@@ -213,8 +412,8 @@ class ScrapeStorage:
                             "active": True,
                         },
                         "$setOnInsert": {
-                            "connectionId": connection_id,
-                            "clientId": client_id,
+                            "connectionId": _oid(connection_id),
+                            "clientId": _oid(client_id),
                             "externalId": external_id,
                             "discoveredAt": now,
                         },
@@ -245,6 +444,89 @@ class ScrapeStorage:
 
         return await self._db["o365_scrape_results"].find_one(
             {"clientId": client_id, "tabType": tab_type},
+            {"_id": 0},
+        )
+
+    async def ledger_upsert(
+        self,
+        connection_id: str,
+        client_id: str,
+        chat_id: str,
+        chat_name: str,
+        *,
+        is_direct: bool,
+        is_group: bool,
+        last_message_at: datetime | None,
+        unread_count: int,
+        unread_direct_count: int,
+    ) -> None:
+        """Upsert per-chat state. Pod is the sole writer."""
+        if self._db is None:
+            return
+        now = datetime.now(timezone.utc)
+        await self._db["o365_message_ledger"].update_one(
+            {"connectionId": _oid(connection_id), "chatId": chat_id},
+            {
+                "$set": {
+                    "clientId": _oid(client_id),
+                    "chatName": chat_name,
+                    "isDirect": is_direct,
+                    "isGroup": is_group,
+                    "lastMessageAt": last_message_at,
+                    "unreadCount": unread_count,
+                    "unreadDirectCount": unread_direct_count,
+                    "updatedAt": now,
+                },
+                "$setOnInsert": {
+                    "connectionId": _oid(connection_id),
+                    "chatId": chat_id,
+                    "createdAt": now,
+                },
+            },
+            upsert=True,
+        )
+
+    async def ledger_mark_seen(
+        self,
+        connection_id: str,
+        chat_id: str,
+    ) -> None:
+        """Reset unread counters for a chat after the pod finished reading it."""
+        if self._db is None:
+            return
+        now = datetime.now(timezone.utc)
+        await self._db["o365_message_ledger"].update_one(
+            {"connectionId": _oid(connection_id), "chatId": chat_id},
+            {"$set": {
+                "lastSeenAt": now,
+                "unreadCount": 0,
+                "unreadDirectCount": 0,
+            }},
+        )
+
+    async def ledger_mark_urgent_sent(
+        self,
+        connection_id: str,
+        chat_id: str,
+    ) -> None:
+        """Record that a push was emitted for this chat (dedup anchor)."""
+        if self._db is None:
+            return
+        now = datetime.now(timezone.utc)
+        await self._db["o365_message_ledger"].update_one(
+            {"connectionId": _oid(connection_id), "chatId": chat_id},
+            {"$set": {"lastUrgentAt": now, "lastNotifiedAt": now}},
+        )
+
+    async def ledger_get(
+        self,
+        connection_id: str,
+        chat_id: str,
+    ) -> dict | None:
+        if self._db is None:
+            return None
+        return await self._db["o365_message_ledger"].find_one(
+            {"connectionId": _oid(connection_id), "chatId": chat_id},
             {"_id": 0},
         )
 

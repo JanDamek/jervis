@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     scraper_email_interval: int = Field(default=900, validation_alias="O365_POOL_SCRAPER_EMAIL_INTERVAL")  # 15 min
     scraper_calendar_interval: int = Field(default=1800, validation_alias="O365_POOL_SCRAPER_CALENDAR_INTERVAL")  # 30 min
 
+    # Meeting recording — screenshot cadence for slide/presentation capture
+    meeting_screenshot_interval: int = Field(default=30, validation_alias="O365_POOL_MEETING_SCREENSHOT_INTERVAL")  # 30s
+
     # Kotlin server callback (for MFA/session notifications)
     kotlin_server_url: str = "http://jervis-server:5500"
 

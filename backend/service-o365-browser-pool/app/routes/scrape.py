@@ -1,17 +1,27 @@
-"""Scrape endpoints — manual trigger and result retrieval."""
+"""Scrape endpoints — diagnostic façade over the agent.
+
+The LangGraph agent runs autonomously and composes its own scraping via
+storage primitives. These endpoints exist only for diagnostics:
+
+- `GET /scrape/{client_id}/tabs` — list currently tracked tabs.
+- `GET /scrape/{client_id}/screenshot/{tab_name}` — raw JPEG of a tab.
+- `GET /scrape/{client_id}/inspect/{tab_name}?selector=...` — one-shot
+  generic scoped DOM query (debug helper only).
+
+No `/crawl`, no `/force-*`, no capability→URL map, no `TabType` enum.
+All of those are anti-patterns per docs/teams-pod-agent.md §15.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
+from app.agent import _dom_query
 from app.browser_manager import BrowserManager
 from app.scrape_storage import ScrapeStorage
-from app.screen_scraper import ScreenScraper
-from app.tab_manager import TabManager, TabType
-from app.teams_crawler import TeamsCrawler
+from app.tab_manager import TabRegistry
 
 logger = logging.getLogger("o365-browser-pool.scrape")
 
@@ -19,570 +29,52 @@ router = APIRouter(tags=["scrape"])
 
 
 def create_scrape_router(
-    screen_scraper: ScreenScraper,
-    tab_manager: TabManager,
-    teams_crawler: TeamsCrawler | None = None,
+    tab_registry: TabRegistry,
     browser_manager: BrowserManager | None = None,
     scrape_storage: ScrapeStorage | None = None,
 ) -> APIRouter:
 
-    # ── Teams crawler endpoints (registered FIRST to avoid {tab_type} catch-all) ──
+    @router.get("/scrape/{client_id}/tabs")
+    async def list_tabs(client_id: str) -> dict:
+        """List all tabs currently tracked by the agent."""
+        return {"client_id": client_id, "tabs": tab_registry.list(client_id)}
 
-    _crawl_tasks: dict[str, asyncio.Task] = {}
-
-    @router.post("/scrape/{client_id}/crawl")
-    async def trigger_crawl(client_id: str, body: dict | None = None) -> dict:
-        """Start systematic crawl of all Teams chats.
-
-        Body (optional): {"max_chats": 50, "max_scrolls_per_chat": 5}
-
-        Returns immediately — crawl runs in background.
-        Use GET /scrape/{client_id}/crawl to check status.
-        """
-        if not teams_crawler or not browser_manager:
-            raise HTTPException(status_code=501, detail="Crawler not available")
-
-        if client_id in _crawl_tasks and not _crawl_tasks[client_id].done():
-            return {"client_id": client_id, "status": "already_running"}
-
-        # Get the chat tab page
-        page = await tab_manager.get_tab(client_id, TabType.CHAT)
-        if not page:
-            # Fallback: get any page from the browser context
-            context = browser_manager.get_context(client_id)
-            if not context or not context.pages:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No browser page for client '{client_id}'",
-                )
-            page = context.pages[0]
-
-        body = body or {}
-        max_chats = body.get("max_chats", 50)
-        max_scrolls = body.get("max_scrolls_per_chat", 5)
-        connection_id = screen_scraper._connection_ids.get(client_id, client_id)
-
-        async def _run_crawl():
-            try:
-                return await teams_crawler.crawl_all_chats(
-                    page, client_id, connection_id, scrape_storage,
-                    max_chats=max_chats,
-                    max_scrolls_per_chat=max_scrolls,
-                )
-            except Exception as e:
-                logger.error("Crawl task failed for %s: %s", client_id, e)
-
-        task = asyncio.create_task(_run_crawl())
-        _crawl_tasks[client_id] = task
-
-        return {
-            "client_id": client_id,
-            "status": "started",
-            "max_chats": max_chats,
-            "max_scrolls_per_chat": max_scrolls,
-        }
-
-    @router.get("/scrape/{client_id}/crawl")
-    async def get_crawl_status(client_id: str) -> dict:
-        """Get crawl status/result for a client."""
-        task = _crawl_tasks.get(client_id)
-        if not task:
-            return {"client_id": client_id, "status": "not_started"}
-
-        if not task.done():
-            return {"client_id": client_id, "status": "running"}
-
-        # Task completed
-        try:
-            result = task.result()
-            if result:
-                return {
-                    "client_id": client_id,
-                    "status": "completed",
-                    "chats_found": result.chats_found,
-                    "chats_crawled": result.chats_crawled,
-                    "messages_extracted": result.messages_extracted,
-                    "errors": result.errors[:10],
-                }
-        except Exception as e:
-            return {"client_id": client_id, "status": "error", "error": str(e)}
-
-        return {"client_id": client_id, "status": "completed"}
-
-    # ── Screenshot endpoint (registered before {tab_type} catch-all) ──
-
-    @router.get("/scrape/{client_id}/screenshot/{tab_type}")
-    async def get_screenshot_by_tab(client_id: str, tab_type: str):
-        """Get raw screenshot JPEG for debugging. Path: /scrape/{id}/screenshot/{tab}"""
+    @router.get("/scrape/{client_id}/screenshot/{tab_name}")
+    async def get_screenshot_by_tab(client_id: str, tab_name: str):
+        """Raw JPEG screenshot of a registered tab — debug only."""
         from fastapi.responses import Response as RawResponse
+        page = tab_registry.get(client_id, tab_name)
+        if page is None:
+            raise HTTPException(status_code=404, detail=f"No tab named {tab_name!r}")
         try:
-            tt = TabType(tab_type)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid tab type: {tab_type}")
-
-        screenshot = await tab_manager.screenshot_tab(client_id, tt)
-        if not screenshot or len(screenshot) < 1000:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Screenshot failed or too small ({len(screenshot) if screenshot else 0} bytes)",
-            )
-        return RawResponse(content=screenshot, media_type="image/jpeg")
-
-    # ── Tab-specific endpoints (catch-all {tab_type}) ──
-
-    @router.get("/scrape/{client_id}/{tab_type}")
-    async def get_scrape_result(client_id: str, tab_type: str) -> dict:
-        """Get last VLM analysis result for a tab."""
-        try:
-            tt = TabType(tab_type)
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid tab type: {tab_type}. Use: chat, calendar, email",
-            )
-
-        result = screen_scraper.get_last_result(client_id, tt)
-        if not result:
-            return {"client_id": client_id, "tab_type": tab_type, "data": None}
-        return {"client_id": client_id, **result}
-
-    @router.post("/scrape/{client_id}/{tab_type}")
-    async def trigger_scrape(client_id: str, tab_type: str) -> dict:
-        """Manually trigger a screenshot + VLM analysis for a tab."""
-        try:
-            tt = TabType(tab_type)
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid tab type: {tab_type}. Use: chat, calendar, email",
-            )
-
-        if not tab_manager.has_tabs(client_id):
-            raise HTTPException(
-                status_code=404,
-                detail=f"No tabs set up for client '{client_id}'",
-            )
-
-        # Take screenshot
-        screenshot = await tab_manager.screenshot_tab(client_id, tt)
+            await page.bring_to_front()
+            screenshot = await page.screenshot(type="jpeg", quality=80, full_page=False)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Screenshot failed: {e}") from e
         if not screenshot:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Screenshot failed for {client_id}/{tab_type}",
-            )
-
-        # Analyze with VLM
-        from app.vlm_client import analyze_screenshot as vlm_analyze
-        from app.screen_scraper import _PROMPTS, _parse_vlm_response
-
-        prompt = _PROMPTS[tt]
-        try:
-            result_text = await vlm_analyze(screenshot, prompt)
-        except Exception as e:
-            raise HTTPException(
-                status_code=502,
-                detail=f"VLM analysis failed: {e}",
-            )
-
-        parsed = _parse_vlm_response(result_text)
-        return {
-            "client_id": client_id,
-            "tab_type": tab_type,
-            "data": parsed,
-            "raw": result_text if not parsed else None,
-        }
-
-    @router.get("/scrape/{client_id}")
-    async def get_all_scrape_results(client_id: str) -> dict:
-        """Get last VLM analysis results for all tabs."""
-        results = {}
-        for tt in TabType:
-            result = screen_scraper.get_last_result(client_id, tt)
-            results[tt.value] = result
-        return {"client_id": client_id, "tabs": results}
-
-    @router.get("/scrape/{client_id}/{tab_type}/screenshot")
-    async def get_screenshot(client_id: str, tab_type: str):
-        """Get raw screenshot JPEG for debugging."""
-        from fastapi.responses import Response as RawResponse
-        try:
-            tt = TabType(tab_type)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid tab type: {tab_type}")
-
-        screenshot = await tab_manager.screenshot_tab(client_id, tt)
-        if not screenshot or len(screenshot) < 1000:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Screenshot failed or too small ({len(screenshot) if screenshot else 0} bytes)",
-            )
-        if not screenshot[:2] == b"\xff\xd8":
-            raise HTTPException(
-                status_code=500,
-                detail="Screenshot is not valid JPEG data",
-            )
+            raise HTTPException(status_code=500, detail="Screenshot empty")
         return RawResponse(content=screenshot, media_type="image/jpeg")
 
-    @router.post("/scrape/{client_id}/{tab_type}/click")
-    async def click_tab(
-        client_id: str, tab_type: str, body: dict,
+    @router.get("/scrape/{client_id}/inspect/{tab_name}")
+    async def inspect_dom_debug(
+        client_id: str,
+        tab_name: str,
+        selector: str = Query(..., description="CSS selector"),
+        attrs: str = Query("", description="Comma-separated attribute names"),
+        max_matches: int = Query(50),
     ) -> dict:
-        """Click at coordinates on a tab. Body: {"x": 100, "y": 200}"""
-        try:
-            tt = TabType(tab_type)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid tab type: {tab_type}")
-
-        x = body.get("x", 0)
-        y = body.get("y", 0)
-        success = await tab_manager.click_at(client_id, tt, x, y)
-        return {"success": success, "x": x, "y": y}
-
-    # Discovery prompts per capability type
-    _DISCOVERY_PROMPTS = {
-        "CHAT": """Analyze this Microsoft Teams screenshot. Extract ALL visible items:
-1. Chats in the sidebar (name, last message preview)
-2. Teams and their channels
-3. Any other navigation items
-
-Return JSON:
-{
-  "resources": [
-    {"type": "chat", "id": "chat_<name_slug>", "name": "Chat Name", "description": "Last message preview"},
-    {"type": "channel", "id": "channel_<team>_<channel>", "name": "Team / Channel", "description": "Channel description"},
-    {"type": "team", "id": "team_<name_slug>", "name": "Team Name", "description": null}
-  ]
-}
-
-List EVERY visible item. Use slugified names for IDs (lowercase, dashes).""",
-
-        "EMAIL": """Analyze this Outlook Mail screenshot. Extract ALL visible items:
-1. Mail folders in the sidebar (Inbox, Sent, Drafts, etc.)
-2. Any visible emails in the list (sender, subject, date)
-
-Return JSON:
-{
-  "resources": [
-    {"type": "folder", "id": "folder_<name_slug>", "name": "Folder Name", "description": "N messages"},
-    {"type": "email", "id": "email_<index>", "name": "Subject", "description": "From: sender, Date: date"}
-  ]
-}
-
-List EVERY visible item. Use slugified names for IDs (lowercase, dashes).""",
-
-        "CALENDAR": """Analyze this Outlook Calendar screenshot. Extract ALL visible items:
-1. Calendar list in the sidebar (My calendars, Other calendars, etc.)
-2. Any visible events
-
-Return JSON:
-{
-  "resources": [
-    {"type": "calendar", "id": "cal_<name_slug>", "name": "Calendar Name", "description": "Owner or category"},
-    {"type": "event", "id": "event_<index>", "name": "Event Title", "description": "Time, attendees"}
-  ]
-}
-
-List EVERY visible item. Use slugified names for IDs (lowercase, dashes).""",
-    }
-
-    # Map capability prefix to TabType
-    _CAPABILITY_TO_TAB = {
-        "CHAT": TabType.CHAT,
-        "EMAIL": TabType.EMAIL,
-        "CALENDAR": TabType.CALENDAR,
-    }
-
-    @router.post("/scrape/{client_id}/discover")
-    async def discover_resources(client_id: str, body: dict | None = None) -> dict:
-        """Screenshot a tab and extract visible resources via VLM.
-
-        Body (optional): {"capability": "CHAT_READ"}
-
-        If capability is provided, discovers resources for that specific service.
-        If the tab for that capability is not available, returns empty resources
-        with service_unavailable=true (no error).
-
-        Without capability, defaults to CHAT discovery (legacy behavior).
-        """
-        body = body or {}
-        capability = body.get("capability")
-
-        # Determine which tab to screenshot based on capability
-        if capability:
-            cap_prefix = capability.split("_")[0]  # CHAT_READ → CHAT
-        else:
-            cap_prefix = "CHAT"  # Default to chat discovery
-
-        tab_type = _CAPABILITY_TO_TAB.get(cap_prefix)
-        if not tab_type:
-            return {
-                "client_id": client_id,
-                "resources": [],
-                "service_unavailable": True,
-                "message": f"Unknown capability prefix: {cap_prefix}",
-            }
-
-        # Check if the tab is available (service exists for this account)
-        available_tabs = tab_manager.get_available_tabs(client_id)
-        if tab_type not in available_tabs:
-            return {
-                "client_id": client_id,
-                "resources": [],
-                "service_unavailable": True,
-                "message": f"{cap_prefix} is not available for this account",
-            }
-
-        if not tab_manager.has_tabs(client_id):
-            return {
-                "client_id": client_id,
-                "resources": [],
-                "service_unavailable": True,
-                "message": "No tabs set up yet — capabilities still being discovered",
-            }
-
-        # Screenshot the appropriate tab
-        screenshot = await tab_manager.screenshot_tab(client_id, tab_type)
-        if not screenshot:
-            return {
-                "client_id": client_id,
-                "resources": [],
-                "message": f"Screenshot failed for {tab_type.value}",
-            }
-
-        from app.vlm_client import analyze_screenshot as vlm_analyze
-        from app.screen_scraper import _parse_vlm_response
-
-        discovery_prompt = _DISCOVERY_PROMPTS.get(cap_prefix, _DISCOVERY_PROMPTS["CHAT"])
-
-        try:
-            result_text = await vlm_analyze(screenshot, discovery_prompt)
-        except Exception as e:
-            raise HTTPException(
-                status_code=502,
-                detail=f"VLM discovery failed: {e}",
-            )
-
-        parsed = _parse_vlm_response(result_text)
-        if not parsed:
-            return {
-                "client_id": client_id,
-                "resources": [],
-                "raw": result_text,
-            }
-
-        return {
-            "client_id": client_id,
-            "resources": parsed.get("resources", []),
-        }
-
-    @router.post("/scrape/{client_id}/discover/search")
-    async def discover_search(client_id: str, body: dict) -> dict:
-        """Type a query in Teams search bar, screenshot results, extract via VLM.
-
-        Body: {"query": "search term"}
-        """
-        query = body.get("query", "")
-        if not query:
-            raise HTTPException(
-                status_code=400,
-                detail="Missing 'query' in request body",
-            )
-
-        if not tab_manager.has_tabs(client_id):
+        """Generic DOM query for debugging. Same helper the agent uses."""
+        page = tab_registry.get(client_id, tab_name)
+        if page is None:
             raise HTTPException(
                 status_code=404,
-                detail=f"No tabs set up for client '{client_id}'",
+                detail=f"No tab named {tab_name!r} for client '{client_id}'",
             )
-
-        page = await tab_manager.get_tab(client_id, TabType.CHAT)
-        if not page:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Chat tab not available for {client_id}",
-            )
-
-        import asyncio
-
-        # Click search bar and type query
-        try:
-            # Teams search bar — Ctrl+E or click the search box
-            await page.keyboard.press("Control+e")
-            await asyncio.sleep(1)
-            await page.keyboard.type(query, delay=50)
-            await asyncio.sleep(3)  # Wait for results to load
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Search interaction failed: {e}",
-            )
-
-        # Screenshot the search results
-        screenshot = await tab_manager.screenshot_tab(client_id, TabType.CHAT)
-        if not screenshot:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Screenshot failed after search for {client_id}",
-            )
-
-        # Clear search (Escape)
-        try:
-            await page.keyboard.press("Escape")
-        except Exception:
-            pass
-
-        from app.vlm_client import analyze_screenshot as vlm_analyze
-        from app.screen_scraper import _parse_vlm_response
-
-        search_prompt = f"""Analyze this Microsoft Teams search results screenshot.
-The search query was: "{query}"
-
-Extract ALL visible search results:
-- Chats, channels, teams, people, messages that match
-
-Return JSON:
-{{
-  "query": "{query}",
-  "resources": [
-    {{"type": "chat|channel|team|person", "id": "<slugified_id>", "name": "Display Name", "description": "Context/preview"}}
-  ]
-}}"""
-
-        try:
-            result_text = await vlm_analyze(screenshot, search_prompt)
-        except Exception as e:
-            raise HTTPException(
-                status_code=502,
-                detail=f"VLM search analysis failed: {e}",
-            )
-
-        parsed = _parse_vlm_response(result_text)
-        if not parsed:
-            return {
-                "client_id": client_id,
-                "query": query,
-                "resources": [],
-                "raw": result_text,
-            }
-
-        return {
-            "client_id": client_id,
-            "query": query,
-            "resources": parsed.get("resources", []),
-        }
-
-    @router.post("/scrape/{client_id}/backfill")
-    async def backfill_channel(client_id: str, body: dict) -> dict:
-        """Navigate to a channel and scroll back to capture historical messages.
-
-        Body: {"channel_name": "Team / Channel", "max_scrolls": 20}
-
-        The scraper navigates to the channel, scrolls up repeatedly,
-        takes screenshots, and extracts messages via VLM. Messages are
-        stored in o365_scrape_messages with state=NEW for the polling handler.
-        """
-        channel_name = body.get("channel_name", "")
-        if not channel_name:
-            raise HTTPException(
-                status_code=400,
-                detail="Missing 'channel_name' in request body",
-            )
-
-        max_scrolls = body.get("max_scrolls", 20)
-
-        if not tab_manager.has_tabs(client_id):
-            raise HTTPException(
-                status_code=404,
-                detail=f"No tabs set up for client '{client_id}'",
-            )
-
-        page = await tab_manager.get_tab(client_id, TabType.CHAT)
-        if not page:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Chat tab not available for {client_id}",
-            )
-
-        import asyncio
-        from app.vlm_client import analyze_screenshot as vlm_analyze
-        from app.screen_scraper import _PROMPTS, _parse_vlm_response
-
-        total_messages = 0
-        scrolls_done = 0
-
-        # Navigate to the channel using Teams search
-        try:
-            await page.keyboard.press("Control+e")
-            await asyncio.sleep(1)
-            await page.keyboard.type(channel_name, delay=50)
-            await asyncio.sleep(3)
-            await page.keyboard.press("Enter")
-            await asyncio.sleep(3)
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Navigation to channel failed: {e}",
-            )
-
-        # Scroll up and scrape repeatedly
-        for i in range(max_scrolls):
-            try:
-                # Screenshot current view
-                screenshot = await tab_manager.screenshot_tab(client_id, TabType.CHAT)
-                if not screenshot:
-                    break
-
-                # Extract messages via VLM
-                result_text = await vlm_analyze(screenshot, _PROMPTS[TabType.CHAT])
-                parsed = _parse_vlm_response(result_text)
-                if not parsed:
-                    break
-
-                # Check for login page
-                if parsed.get("login_page") or parsed.get("sign_in"):
-                    logger.warning("Login page detected during backfill for %s", client_id)
-                    break
-
-                # Store messages
-                open_conv = parsed.get("open_conversation", {})
-                if open_conv and open_conv.get("messages"):
-                    msgs = [
-                        {**m, "chat_name": open_conv.get("name", channel_name)}
-                        for m in open_conv["messages"]
-                    ]
-                    stored = await screen_scraper._storage.store_messages(
-                        client_id,
-                        screen_scraper._connection_ids.get(client_id, client_id),
-                        msgs,
-                        "chat",
-                    )
-                    total_messages += stored
-                else:
-                    # No messages found — likely at the top
-                    break
-
-                scrolls_done += 1
-
-                # Scroll up
-                await page.mouse.wheel(0, -3000)
-                await asyncio.sleep(2)
-
-            except Exception as e:
-                logger.warning(
-                    "Backfill scroll %d failed for %s: %s",
-                    i, client_id, e,
-                )
-                break
-
-        logger.info(
-            "Backfill complete for %s/%s: %d scrolls, %d messages",
-            client_id, channel_name, scrolls_done, total_messages,
+        await page.bring_to_front()
+        attr_list = [a.strip() for a in attrs.split(",") if a.strip()]
+        return await _dom_query.query(
+            page, selector=selector, attrs=attr_list,
+            text=True, max_matches=max_matches,
         )
-
-        return {
-            "client_id": client_id,
-            "channel_name": channel_name,
-            "scrolls_done": scrolls_done,
-            "messages_stored": total_messages,
-        }
 
     return router

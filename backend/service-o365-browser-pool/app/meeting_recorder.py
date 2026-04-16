@@ -171,6 +171,106 @@ class MeetingRecorder:
         )
         session.state = "DONE"
 
+    async def start_adhoc(
+        self,
+        *,
+        client_id: str,
+        page: Page,
+        title: str | None = None,
+    ) -> MeetingSession | None:
+        """Attach recording to an in-progress meeting the user started manually.
+
+        Unlike `join()`, this does NOT navigate or click — the user is already
+        in the meeting via VNC. We just allocate a MeetingDocument server-side,
+        grab audio from the existing PulseAudio sink, and stream screenshots
+        of the current page.
+
+        Returns the session, or None if a server-side meeting could not be
+        allocated. Deduplicates per client_id — if an ad-hoc session is already
+        running for this client, the existing one is returned.
+        """
+        existing = next(
+            (s for s in self._sessions.values()
+             if s.client_id == client_id and s.task_id.startswith("adhoc-")),
+            None,
+        )
+        if existing is not None:
+            return existing
+
+        # Create MeetingDocument server-side — taskId omitted = ad-hoc recording
+        try:
+            resp = await self._http.post(
+                f"{JERVIS_SERVER_URL}/internal/meeting/start-recording",
+                json={
+                    "clientId": client_id,
+                    "title": title or "Ad-hoc meeting",
+                    "meetingType": "MEETING",
+                },
+            )
+            resp.raise_for_status()
+            meeting = resp.json()
+            meeting_id = meeting.get("id")
+            if not meeting_id:
+                logger.error("Ad-hoc meeting start: server returned no id")
+                return None
+        except Exception as e:
+            logger.error("Ad-hoc meeting start failed: %s", e)
+            return None
+
+        task_id = f"adhoc-{meeting_id}"
+        # End-epoch set to +4h guard; watchdog stops when meeting_stage disappears
+        # (see stop_adhoc_for_client) or at the hard deadline.
+        end_epoch = time.time() + 4 * 3600
+        session = MeetingSession(
+            task_id=task_id,
+            meeting_id=meeting_id,
+            client_id=client_id,
+            join_url="",
+            end_epoch=end_epoch,
+            page=page,
+        )
+        self._sessions[task_id] = session
+
+        try:
+            await self._force_audio_routing()
+            await asyncio.sleep(1)
+
+            wav_path = f"/browser-profiles/meeting-{meeting_id}.wav"
+            session.ffmpeg_proc = await self._start_audio_capture(wav_path)
+            if session.ffmpeg_proc:
+                session.pump_task = asyncio.create_task(self._pump_audio(session))
+                session.state = "RECORDING"
+                logger.info(
+                    "AD-HOC meeting recording started: meeting=%s client=%s wav=%s",
+                    meeting_id, client_id, wav_path,
+                )
+
+            session.screenshot_task = asyncio.create_task(self._screenshot_loop(session))
+            session.watchdog_task = asyncio.create_task(self._watchdog(session))
+        except Exception as e:
+            session.state = "ERROR"
+            logger.error("Ad-hoc recording setup failed: %s", e)
+
+        return session
+
+    async def stop_adhoc_for_client(self, client_id: str) -> str | None:
+        """Stop any in-progress ad-hoc recording for the given client.
+
+        Called by the agent when `meeting_stage` becomes false. Returns the
+        stopped task_id, or None if nothing was running.
+        """
+        for s in list(self._sessions.values()):
+            if s.client_id == client_id and s.task_id.startswith("adhoc-"):
+                await self.stop(s.task_id)
+                return s.task_id
+        return None
+
+    def has_adhoc_session(self, client_id: str) -> bool:
+        return any(
+            s.client_id == client_id and s.task_id.startswith("adhoc-")
+            for s in self._sessions.values()
+        )
+
     def get_sessions(self) -> list[dict]:
         return [
             {
@@ -316,9 +416,10 @@ class MeetingRecorder:
 
     async def _screenshot_loop(self, session: MeetingSession) -> None:
         """Take periodic screenshots of the meeting."""
+        interval = max(5, getattr(settings, "meeting_screenshot_interval", 30))
         try:
             while True:
-                await asyncio.sleep(60)  # Every minute
+                await asyncio.sleep(interval)
                 if session.page and not session.page.is_closed():
                     try:
                         screenshot = await session.page.screenshot(type="jpeg", quality=70)

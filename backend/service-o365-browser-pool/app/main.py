@@ -1,11 +1,18 @@
-"""O365 Browser Pool – FastAPI entry point.
+"""O365 Browser Pool — FastAPI entry point.
 
-Pod is driven by a single PodAgent (see app/agent/pod_agent.py) that runs the
-entire lifecycle: login, MFA, monitoring, periodic scraping, instructions,
-recovery. No separate health/chat/login loops.
+Per-connection pod hosting a single LangGraph agent (`app/agent/graph.py`).
+The agent drives every behavior through tools + a system prompt:
+- navigation, login, MFA, retry-on-error, scraping, recording.
 
-Port 8090 serves ALL traffic — HTTP server starts immediately (never blocked
-by login).
+Infrastructure here is kept deliberately dumb:
+- launch Chromium + restore profile (browser_manager)
+- hold token interception hooks (token_extractor)
+- dumb name→page map (TabRegistry)
+- Mongo writes (scrape_storage)
+- Kotlin server notify hooks (kotlin_callback)
+
+No bootstrap loops, no retry logic, no tab-type mapping, no hard-coded
+URLs. All of that belongs in the agent.
 """
 
 from __future__ import annotations
@@ -19,27 +26,26 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI
 
-from app.agent.pod_agent import PodAgent
+from app import agent_registry
+from app.agent.persistence import init_checkpointer, shutdown_checkpointer
+from app.agent.runner import PodAgent
 from app.browser_manager import BrowserManager
 from app.config import settings
+from app.meeting_recorder import MeetingRecorder
 from app.pod_state import PodState, get_or_create_state_manager
 from app.routes.graph_proxy import create_graph_proxy_router
 from app.routes.health import create_health_router
 from app.routes.instruction import create_instruction_router
+from app.routes.meeting import create_meeting_router
 from app.routes.scrape import create_scrape_router
 from app.routes.session import create_session_router
 from app.routes.token import create_token_router
 from app.routes.vnc_auth import create_vnc_auth_router
-from app.routes.meeting import create_meeting_router
 from app.scrape_storage import ScrapeStorage
-from app.screen_scraper import ScreenScraper
-from app.teams_crawler import TeamsCrawler
-from app.tab_manager import TabManager
+from app.tab_manager import TabRegistry
 from app.token_extractor import TokenExtractor
 from app.vnc_auth import VncAuthManager
-from app.meeting_recorder import MeetingRecorder
 from app.vnc_proxy import create_vnc_proxy_router, create_vnc_static_middleware
-from app import agent_registry
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,10 +56,8 @@ logger = logging.getLogger("o365-browser-pool")
 browser_manager = BrowserManager()
 token_extractor = TokenExtractor()
 vnc_auth_manager = VncAuthManager()
-tab_manager = TabManager(token_extractor)
+tab_registry = TabRegistry()
 scrape_storage = ScrapeStorage()
-screen_scraper = ScreenScraper(browser_manager, tab_manager, scrape_storage)
-teams_crawler = TeamsCrawler()
 meeting_recorder = MeetingRecorder(browser_manager)
 
 
@@ -74,8 +78,10 @@ async def _wait_for_kotlin_server() -> None:
 
 
 async def _try_self_restore() -> None:
-    """Reload init config from PVC and start the agent. Runs in background;
-    the HTTP server already accepts requests."""
+    """Launch Chromium, attach TabRegistry, start the agent.
+
+    Everything else (login, scraping, tab naming) is the agent's job.
+    """
     config_path = Path(settings.profiles_dir) / "init-config.json"
     if not config_path.exists():
         logger.info("No init-config.json found — waiting for server init call")
@@ -97,25 +103,25 @@ async def _try_self_restore() -> None:
 
     try:
         context = await browser_manager.get_or_create_context(client_id)
-
-        # Persistent tabs — never close existing pages
-        existing_pages = [p for p in context.pages if not p.is_closed()]
-        if not existing_pages:
+        if not context.pages:
             await context.new_page()
-        for p in context.pages:
-            if not p.is_closed():
-                await token_extractor.setup_interception(client_id, p)
+        for page in context.pages:
+            if not page.is_closed():
+                await token_extractor.setup_interception(client_id, page)
+
+        tab_registry.attach_context(client_id, context)
 
         agent = PodAgent(
             client_id=client_id,
             connection_id=connection_id,
             browser_context=context,
             state_manager=state_manager,
+            tab_registry=tab_registry,
+            storage=scrape_storage,
             credentials=credentials,
             login_url=login_url,
             capabilities=capabilities,
-            scraper=screen_scraper,
-            tab_manager=tab_manager,
+            meeting_recorder=meeting_recorder,
         )
         agent_registry.register(client_id, agent)
         await agent.start()
@@ -133,21 +139,23 @@ async def lifespan(app: FastAPI):
     )
     await browser_manager.startup()
     await scrape_storage.start()
-    await screen_scraper.start()
+    try:
+        init_checkpointer()
+    except Exception:
+        logger.exception("LangGraph checkpointer init failed — agent will fail to start")
 
     if settings.connection_id:
         asyncio.create_task(_try_self_restore())
 
     yield
 
-    # Shutdown
     for ag in agent_registry.all():
         try:
             await ag.stop()
         except Exception:
             logger.exception("Agent stop failed")
-    await screen_scraper.stop()
     await scrape_storage.stop()
+    shutdown_checkpointer()
     await browser_manager.shutdown()
     from app.kotlin_callback import shutdown as callback_shutdown
     await callback_shutdown()
@@ -156,7 +164,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Jervis O365 Browser Pool",
-    version="0.4.0",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
@@ -164,14 +172,13 @@ app.include_router(create_health_router(browser_manager))
 app.include_router(create_token_router(token_extractor))
 app.include_router(
     create_session_router(
-        browser_manager, token_extractor, tab_manager, screen_scraper,
-        teams_crawler, scrape_storage,
+        browser_manager, token_extractor, tab_registry, scrape_storage,
+        meeting_recorder,
     )
 )
 app.include_router(create_graph_proxy_router(browser_manager, token_extractor))
 app.include_router(
-    create_scrape_router(screen_scraper, tab_manager, teams_crawler,
-                         browser_manager, scrape_storage)
+    create_scrape_router(tab_registry, browser_manager, scrape_storage)
 )
 app.include_router(create_meeting_router(meeting_recorder))
 app.include_router(create_instruction_router(browser_manager))
