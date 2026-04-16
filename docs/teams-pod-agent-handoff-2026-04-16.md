@@ -4,6 +4,61 @@
 captures the current state of the per-connection browser pod + LangGraph
 agent so the next session can pick up without re-discovering everything.
 
+> **UPDATE 2026-04-16 EVENING — Section A–E land-&-verify pass.**
+>
+> Sections A, B, C-pod, C-srv (partial), D (partial), E (partial) are
+> **committed**. Browser-pool image rebuilt + pushed; Unicorn pod runs the
+> new image. Remaining work per section:
+>
+> - **A** — deployed, verified via debug `/scrape/.../inspect/tab-1` which
+>   returns the new generic `{matches, count, url, truncated}` shape.
+>   Full agent LLM cycle blocked by ongoing router work (500
+>   `NameError priority`). Agent backs off 30 s and retries — nothing to
+>   fix in pod code.
+> - **B** — code complete (pod mfa_code validator + Kotlin push payload +
+>   MCP `connection_approve_relogin`). **Not deployed** (needs server
+>   Gradle build + rollout + MCP rebuild).
+> - **C-pod** — deployed: ffmpeg WebM segment pipeline (VP9 + Opus, 10 s
+>   chunks on `/browser-profiles/meeting-chunks/`), async upload loop,
+>   `watcher.py` end-detection (participant_count, alone_banner,
+>   meeting_ended_banner, user/agent alone thresholds).
+> - **C-srv** — code complete, **not deployed**: MeetingDocument schema
+>   extension (joinedByAgent, chunksReceived, lastChunkAt, webmPath,
+>   videoRetentionUntil, timeline), `InternalMeetingVideoRouting`
+>   (video-chunk + finalize), `InternalMeetingAloneRouting` (leave/stay +
+>   suppression), `BrowserPodMeetingClient`, `MeetingRecordingDispatcher`
+>   O365_BROWSER_POD route, `MeetingRecordingMonitor` (stuck + hard
+>   ceiling), `MeetingVideoRetentionJob` (nightly).
+> - **C-srv TODO** — `MeetingRecordingIndexer` (chunk concat + Whisper +
+>   pyannote + scene-detect + VLM per frame → timeline[]) is the one big
+>   remaining piece. Also: calendar indexers hooking
+>   `MeetingMetadata.connectionId`.
+> - **C-orch** — code complete in MCP (`meeting_alone_leave`,
+>   `meeting_alone_stay`, `connection_approve_relogin`); **not deployed**
+>   (MCP image rebuild).
+> - **D** — deployed partial: `context_store.py` + cold-start preamble
+>   loader (`compose_cold_start_preamble`) injected as HumanMessage every
+>   tick. Current-state block included (`pod_state`, tabs,
+>   `last_observation_*`). **LLM-driven cleanup distill pass** (compress
+>   old messages → session_summary, promote selectors → workingSelectors)
+>   is TODO.
+> - **E** — MeetingDto + server mapper + UI badge deployed in the
+>   code-base. Video player + timeline strip (E1–E3 of the design doc)
+>   are deferred — they need `MeetingRecordingIndexer` to produce the
+>   scene frames first and a platform-specific VideoPlayer component.
+>
+> **Deploy order for the next session:**
+>
+> 1. `./k8s/build_server.sh` — picks up MeetingDocument, dispatcher
+>    routing, video endpoints, alone-check, monitor, retention job, MCP
+>    C-srv-5 suppress cache.
+> 2. `./k8s/build_mcp.sh` — picks up MCP tools `meeting_alone_*` +
+>    `connection_approve_relogin`.
+> 3. Pod image already current — no rebuild needed.
+> 4. Verify first reasoning cycle on Unicorn once router is healthy.
+>
+> The original PM spec-rewrite block is kept below for reference.
+>
 > **UPDATE 2026-04-16 PM — spec rewrite session complete.**
 >
 > The whole architecture was critically reviewed and rewritten in one
