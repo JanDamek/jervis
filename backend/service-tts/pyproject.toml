@@ -6,7 +6,11 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.6",
     "uvicorn[standard]>=0.34.0",
-    "piper-tts==1.2.0",
+    # piper-tts + piper-phonemize have no macOS ARM64 wheels. TTS runs only on
+    # the Linux VD (GPU VM) per feedback-audio-services-on-vd.md, so the
+    # marker keeps Mac dev workspace resolvable while prod Docker (Linux)
+    # still installs the real package.
+    "piper-tts==1.2.0; sys_platform == 'linux'",
     "pydantic>=2.0",
 ]
 

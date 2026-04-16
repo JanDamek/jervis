@@ -17,11 +17,12 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 echo "Step 1/4: Applying ConfigMap..."
 kubectl apply -f "$SCRIPT_DIR/configmap.yaml" -n "${NAMESPACE}"
 
-# Docker Build
+# Docker Build — build context = PROJECT_ROOT so Dockerfile can COPY
+# libs/jervis_contracts/ (pod-to-pod contracts).
 echo "Step 2/4: Building Docker image..."
 docker build --platform linux/amd64 \
   -t "${IMAGE}" \
-  -f "${PROJECT_ROOT}/${DOCKERFILE}" "${PROJECT_ROOT}/backend/service-visual-capture"
+  -f "${PROJECT_ROOT}/${DOCKERFILE}" "${PROJECT_ROOT}"
 echo "✓ Docker image built"
 
 # Docker Push

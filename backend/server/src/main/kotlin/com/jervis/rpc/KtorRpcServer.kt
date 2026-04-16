@@ -28,7 +28,6 @@ import com.jervis.rpc.internal.installInternalMeetingRecordingBridgeApi
 import com.jervis.rpc.internal.installInternalMeetingAloneApi
 import com.jervis.rpc.internal.installInternalMeetingVideoApi
 import com.jervis.rpc.internal.installInternalChatApprovalApi
-import com.jervis.rpc.internal.installInternalVisualCaptureApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalBugTrackerApi
 import com.jervis.rpc.internal.installInternalO365CapabilitiesApi
@@ -212,7 +211,7 @@ class KtorRpcServer(
                             installInternalMeetingVideoApi(meetingRepository, directoryStructureService)
                             installInternalMeetingAloneApi(meetingRepository, browserPodMeetingClient)
                             installInternalChatApprovalApi(notificationRpcImpl, fcmPushService, apnsPushService)
-                            installInternalVisualCaptureApi(meetingHelperService)
+                            // Visual capture bridge migrated to gRPC (jervis.server.ServerVisualCaptureService).
                             installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
                             installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService, deviceTokenRepository)
                             installInternalO365CapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)

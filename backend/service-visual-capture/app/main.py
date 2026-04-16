@@ -142,33 +142,28 @@ async def _post_result(
     meeting_id: Optional[str],
     preset_name: str,
 ):
-    """POST VLM result to Kotlin server internal endpoint."""
-    global _http
-    if _http is None or _http.is_closed:
-        _http = httpx.AsyncClient(timeout=httpx.Timeout(10.0))
+    """Post VLM result to Kotlin server via gRPC."""
+    from app.grpc_clients import server_visual_capture_stub
+    from jervis.server import visual_capture_pb2
+    from jervis.common import types_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-    now = datetime.now(timezone.utc).isoformat()
-    payload = {
-        "meetingId": meeting_id,
-        "type": result.get("mode", "scene"),
-        "description": result.get("description", ""),
-        "ocrText": result.get("ocr_text", ""),
-        "presetName": preset_name,
-        "timestamp": now,
-        "model": result.get("model", ""),
-    }
-    headers = {}
-    if settings.internal_auth_token:
-        headers["Authorization"] = f"Bearer {settings.internal_auth_token}"
-
-    url = f"{settings.kotlin_server_url}/internal/visual-capture/result"
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
     try:
-        resp = await _http.post(url, json=payload, headers=headers)
-        if resp.status_code >= 400:
-            logger.warning(
-                "POST_RESULT: %s returned %d: %s",
-                url, resp.status_code, resp.text[:200],
-            )
+        await server_visual_capture_stub().PostResult(
+            visual_capture_pb2.VisualResultRequest(
+                ctx=ctx,
+                meeting_id=meeting_id or "",
+                type=result.get("mode", "scene"),
+                description=result.get("description", "") or "",
+                ocr_text=result.get("ocr_text", "") or "",
+                preset_name=preset_name or "",
+                timestamp_iso=datetime.now(timezone.utc).isoformat(),
+                model=result.get("model", "") or "",
+            ),
+            timeout=10.0,
+        )
     except Exception as e:
         logger.warning("POST_RESULT: failed — %s", e)
 
