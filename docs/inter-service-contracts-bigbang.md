@@ -42,7 +42,7 @@ It preserves the single-SSOT, breaking-change-enforcement core of the original d
 
 If you confirm Option A, `docs/inter-service-contracts.md` §2 (Stack) and §4 (Transport) are updated with a single commit. Everything else in that SSOT stays as written.
 
-**I need your pick on Option A / B / C before starting work.**
+**Option A is canonical as of Phase 0.** No further decision is open.
 
 ---
 
@@ -266,16 +266,20 @@ All are **unary request → stream response**. No client-streaming needed.
 
 ## 3. Phase order
 
-**Phase 0 — infrastructure** (1 PR)
+**Phase 0 — infrastructure** ✅ **MERGED** (commit `2a8908a2`)
 
-- `proto/` skeleton, `common/*.proto` only.
-- `shared:service-contracts` Gradle module, empty except `common`.
-- `libs/jervis_contracts/` Python package, empty except `common`.
-- Buf config (`buf.yaml`, `buf.gen.yaml`, `buf.lock`).
-- Top-level `Makefile` with `proto-lint`, `proto-breaking`, `proto-generate`, `proto-verify`.
-- CI workflow `.github/workflows/proto.yml` (or equivalent existing CI) enforcing the four checks.
-- All current services keep working — zero functional change.
-- **Exit criteria**: `make proto-verify` passes; Kotlin and Python builds green; `./k8s/build_all.sh` unchanged and green.
+Landed:
+
+- `proto/` skeleton with `jervis/common/{types,enums,errors,pagination,attachment}.proto`.
+- `shared:service-contracts` Gradle module — grpc-java 1.66.0 + grpc-kotlin-stub 1.4.1 + grpc-netty-shaded + grpc-services + protobuf-java/kotlin 4.34.1 + slf4j-api 2.0.17. `bufGenerate` Exec task invokes `buf generate` before compile.
+- `libs/jervis_contracts/` Python package. **Layout**: generated stubs under top-level `jervis/` namespace (matches `grpc_tools.protoc` absolute imports), hand-written helpers under `jervis_contracts/` (interceptors). Both trees committed.
+- Buf config (`buf.yaml` v2, `buf.gen.yaml`). **No `buf.lock`** — proto module has no external deps. **No Python plugins in `buf.gen.yaml`** — Python codegen is driven by `grpc_tools.protoc` via the Makefile (`buf.build/protocolbuffers/python` ships gencode ahead of the PyPI `protobuf` runtime; keeping local avoids VersionError on import).
+- Top-level `Makefile` with `proto-lint`, `proto-breaking`, `proto-generate` (which delegates to `proto-generate-kotlin` + `proto-generate-python`), `proto-verify`, `python-install-contracts`.
+- CI workflow `.github/workflows/proto.yml` — four checks: `buf lint`, `buf breaking` vs master, regen + drift check, full Kotlin + Python import smoke test.
+- `k8s/app_server.yaml`: container port 5501 + Service port 5501 exposed alongside 5500. **No readiness probe on 5501 in Phase 0** — the server doesn't bind until Phase 1, so a probe would kill the pod. Probe added in Phase 1.
+- **No Dockerfile edits in Phase 0.** Each `service-*/Dockerfile` gets `COPY libs/jervis_contracts /libs/jervis_contracts && pip install -e /libs/jervis_contracts` in the phase where that service first imports from the contracts package — never pre-installed. Same for `k8s/build_*.sh` (build context changes from `backend/service-X/` to `PROJECT_ROOT/` only when needed).
+
+Verified at merge: `make proto-verify` exit 0, `./gradlew :shared:service-contracts:build :backend:server:build` exit 0, `python3 -c 'from jervis.common import types_pb2; from jervis_contracts.interceptors import prepare_context'` exit 0.
 
 **Phase 1 — jádro: router + server**
 

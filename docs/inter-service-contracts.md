@@ -34,7 +34,7 @@
 | Transport | gRPC over HTTP/2 cleartext inside the cluster |
 | Kotlin message codegen | `protoc-gen-java` (from `grpc-java`) |
 | Kotlin RPC codegen | [`grpc-kotlin`](https://github.com/grpc/grpc-kotlin) (Google, coroutine-native) |
-| Python message + RPC codegen | [`grpcio` + `grpcio-tools`](https://grpc.io/docs/languages/python/) (Google, asyncio-native) |
+| Python message + RPC codegen | [`grpcio-tools`](https://grpc.io/docs/languages/python/) run **locally** from the top-level `Makefile` (not via a Buf remote plugin) |
 | Debug CLI | [`grpcurl`](https://github.com/fullstorydev/grpcurl) with server reflection enabled |
 
 Rationale:
@@ -43,6 +43,7 @@ Rationale:
 - **Buf over raw `protoc`** — canonical lint rules (`STANDARD`), `buf breaking` = CI guardrail blocking drift, per-module config, first-party Gradle plugin.
 - **`grpc-kotlin` over Wire** — Wire is excellent for KMP clients, but the server here is JVM-only and `grpc-kotlin` is the reference Google client with first-class coroutine support. Avoiding Wire also sidesteps the "Wire messages + grpc-java stubs" runtime seam.
 - **`grpcio-tools` over betterproto** — `grpcio` is Google's reference implementation, covers streaming/deadlines/cancellation/reflection, asyncio-native (`grpc.aio`). `betterproto` v1 is abandoned (last release 2021); `betterproto2` is sub-1.0 — neither is acceptable for the big-bang target.
+- **Python codegen runs locally (Makefile), not via the `buf.build/protocolbuffers/python` remote plugin.** The remote plugin has shipped gencode several versions ahead of the latest `protobuf` runtime published on PyPI in 2026 (gencode `7.34.1` vs runtime `6.33.6`), causing `google.protobuf.runtime_version.VersionError` on import. `python -m grpc_tools.protoc` pinned at the same version as every service's installed `grpcio` keeps gencode/runtime in lockstep. Kotlin/Java codegen stays on Buf remote plugins — there is no robust local alternative for `grpc-kotlin`.
 - **h2c inside cluster** — K8s ClusterIP services and every Python ASGI server speak HTTP/2 cleartext natively. No TLS termination inside the pod network; observability/tracing via standard gRPC interceptors.
 
 ### Versioning
@@ -298,15 +299,23 @@ Mapping to kRPC DTOs (when UI needs a slightly different shape) lives in a new t
 ```
 libs/jervis_contracts/
 ├── pyproject.toml
-├── jervis_contracts/
-│   ├── __init__.py
-│   └── _generated/           # `buf generate` output — committed
-│       ├── common/
-│       ├── router/
-│       ├── knowledgebase/
-│       └── ...
-└── tests/
+├── jervis/                        # generated Protobuf + gRPC stubs — committed
+│   ├── common/
+│   ├── router/
+│   ├── knowledgebase/
+│   └── ...
+└── jervis_contracts/              # hand-written helpers (interceptors, …)
+    ├── __init__.py
+    └── interceptors/
 ```
+
+The split has two roots on purpose: `grpc_tools.protoc` emits absolute
+imports (`from jervis.common import enums_pb2`), so the generated tree
+must be reachable as the top-level `jervis` package. Hand-written helpers
+live under `jervis_contracts/` so they never collide with generated names
+and the import surface is explicit (`from jervis.common import ...` for
+contract messages, `from jervis_contracts.interceptors import ...` for
+client/server middleware).
 
 `pyproject.toml` runtime deps: `grpcio`, `grpcio-tools`, `grpcio-reflection`, `protobuf`. Every Python service consumes the local package:
 
@@ -325,9 +334,10 @@ In Docker images the package is copied and `pip install -e /libs/jervis_contract
 ### Client usage example (Python)
 
 ```python
-from jervis_contracts.router import router_pb2, router_pb2_grpc
-from jervis_contracts.common.types_pb2 import RequestContext, Scope
-from jervis_contracts.common.enums_pb2 import Capability, Priority
+from jervis.router import admin_pb2, admin_pb2_grpc
+from jervis.common.types_pb2 import RequestContext, Scope
+from jervis.common.enums_pb2 import Capability, Priority
+from jervis_contracts.interceptors import ClientContextInterceptor, prepare_context
 import grpc
 
 async with grpc.aio.insecure_channel("ollama-router:5501") as channel:
@@ -352,7 +362,7 @@ No more `payload = {"capability": ..., "deadline_iso": ...}` dicts. Enum values 
 ```python
 import grpc
 from grpc_reflection.v1alpha import reflection
-from jervis_contracts.knowledgebase import retrieve_pb2, retrieve_pb2_grpc
+from jervis.knowledgebase import retrieve_pb2, retrieve_pb2_grpc
 
 class KnowledgebaseImpl(retrieve_pb2_grpc.KnowledgeRetrieveServiceServicer):
     async def Retrieve(self, request: retrieve_pb2.RetrieveRequest, context) -> retrieve_pb2.RetrieveResponse:
@@ -414,13 +424,11 @@ plugins:
   - remote: buf.build/grpc/kotlin
     out: ../shared/service-contracts/build/generated/source/buf/grpc-kotlin
 
-  # Python — messages
-  - remote: buf.build/protocolbuffers/python
-    out: ../libs/jervis_contracts/jervis_contracts/_generated
-
-  # Python — gRPC stubs (async via grpc.aio)
-  - remote: buf.build/grpc/python
-    out: ../libs/jervis_contracts/jervis_contracts/_generated
+  # Python is generated outside Buf — see Makefile `proto-generate-python`
+  # which invokes `python -m grpc_tools.protoc` directly so gencode tracks
+  # the installed `grpcio-tools` version (the `buf.build/protocolbuffers/
+  # python` remote plugin ships gencode ahead of the PyPI `protobuf`
+  # runtime, causing VersionError on import).
 ```
 
 ### `proto/buf.lock`
@@ -506,8 +514,8 @@ Generated files are **committed** to the repo. Rationale:
 
 Paths:
 
-- `shared/service-contracts/build/generated/…` — despite being under `build/`, this is gitignored exception: `!build/generated/**` in the module's `.gitignore`.
-- `libs/jervis_contracts/jervis_contracts/_generated/…` — plain committed directory.
+- `shared/service-contracts/build/generated/source/buf/…` — despite being under `build/`, this tree is un-ignored at the root `.gitignore` (`!shared/service-contracts/build/generated/source/buf/`) so IDEs resolve types on fresh checkout.
+- `libs/jervis_contracts/jervis/…` — plain committed directory; the `jervis_contracts/` sibling directory holds hand-written interceptors and is also committed.
 
 Formatters (ktlint, black, ruff) are configured to skip generated paths. Linters likewise.
 
