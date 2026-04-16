@@ -19,11 +19,15 @@ private val logger = KotlinLogging.logger {}
 private val json = Json { ignoreUnknownKeys = true }
 
 /**
- * Internal REST API for attachment operations — used by Python orchestrator.
+ * Blob side-channel for email attachments. Stays REST per
+ * `docs/inter-service-contracts.md` §2.3 (every file > ~1 MiB is carried
+ * by raw-bytes HTTP, not Protobuf). gRPC contracts that reference an
+ * attachment pass a `jervis.common.AttachmentRef` whose `storage_path`
+ * points into this endpoint.
  *
- * GET /internal/attachments/email/{emailId}        — list attachments for an email
- * GET /internal/attachments/email/{emailId}/{index} — download attachment binary
- * GET /internal/attachments/download?path=...      — download by storage path
+ * GET /internal/attachments/email/{emailId}         — list attachment metadata (JSON)
+ * GET /internal/attachments/email/{emailId}/{index} — download attachment bytes
+ * GET /internal/attachments/download?path=...       — download by storage path
  */
 fun Routing.installInternalAttachmentApi(
     emailRepository: EmailMessageIndexRepository,

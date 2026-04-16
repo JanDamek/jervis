@@ -24,7 +24,6 @@ import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalProjectManagementApi
 import com.jervis.rpc.internal.installInternalMeetingAttendApi
 import com.jervis.rpc.internal.installInternalMeetingPresenceApi
-import com.jervis.rpc.internal.installInternalMeetingRecordingBridgeApi
 import com.jervis.rpc.internal.installInternalMeetingVideoApi
 import com.jervis.rpc.internal.installInternalChatApprovalApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
@@ -204,7 +203,7 @@ class KtorRpcServer(
                             // Meeting read surface migrated to gRPC (jervis.server.ServerMeetingsService).
                             installInternalMeetingAttendApi(taskRepository, meetingAttendApprovalService)
                             installInternalMeetingPresenceApi(meetingAttendApprovalService)
-                            installInternalMeetingRecordingBridgeApi(meetingRpcImpl)
+                            // Meeting recording bridge migrated to gRPC (jervis.server.ServerMeetingRecordingBridgeService).
                             installInternalMeetingVideoApi(meetingRepository, directoryStructureService)
                             // Meeting-alone leave/stay migrated to gRPC (jervis.server.ServerMeetingAloneService).
                             installInternalChatApprovalApi(notificationRpcImpl, fcmPushService, apnsPushService)

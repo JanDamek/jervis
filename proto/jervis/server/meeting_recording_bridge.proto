@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerMeetingRecordingBridgeProto";
+
+// ServerMeetingRecordingBridgeService — inbound bridge for the
+// `service-meeting-attender` K8s pod. The attender captures meeting
+// audio on the user's behalf (§2B) and uploads PCM chunks here. Chunks
+// stay inline (base64, ~64 KiB PCM each — see docs/inter-service-contracts.md §2.3).
+service ServerMeetingRecordingBridgeService {
+  // Creates the MeetingDocument up-front; subsequent chunk uploads
+  // attach to the returned meeting_id.
+  rpc StartRecording(StartRecordingRequest) returns (StartRecordingResponse);
+
+  // Appends a base64 PCM frame. Returns the running chunk count.
+  rpc UploadChunk(UploadChunkRequest) returns (UploadChunkResponse);
+
+  // Fixes the WAV header and transitions the meeting to UPLOADED.
+  rpc FinalizeRecording(FinalizeRecordingRequest) returns (FinalizeRecordingResponse);
+}
+
+message StartRecordingRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string title = 4;
+  string meeting_type = 5;        // MeetingTypeEnum.name; empty → MEETING
+  string device_session_id = 6;
+  // Optional source CALENDAR_PROCESSING task id; the server links it
+  // via meetingMetadata.recordingMeetingId.
+  string task_id = 7;
+  // Who initiated the recording — 'user' (VNC click) or 'agent' (/instruction/).
+  string joined_by = 8;
+}
+
+message StartRecordingResponse {
+  string id = 1;
+  string state = 2;
+}
+
+message UploadChunkRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+  int32 chunk_index = 3;
+  string data = 4;                 // base64-encoded PCM
+  string mime_type = 5;            // default "audio/pcm"
+  bool is_last = 6;
+}
+
+message UploadChunkResponse {
+  string meeting_id = 1;
+  int32 chunk_count = 2;
+}
+
+message FinalizeRecordingRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+  string meeting_type = 3;         // MeetingTypeEnum.name; empty → MEETING
+  int64 duration_seconds = 4;
+  string title = 5;
+  string stop_reason = 6;
+}
+
+message FinalizeRecordingResponse {
+  string id = 1;
+  string state = 2;
+  int64 duration_seconds = 3;
+}

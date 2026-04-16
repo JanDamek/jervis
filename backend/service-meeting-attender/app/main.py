@@ -298,62 +298,74 @@ class AttenderManager:
             raise
 
     async def _create_meeting_on_server(self, request: AttendRequest) -> str:
-        """
-        Call the Kotlin server to create the MeetingDocument up-front so the
-        chunk uploads have a meetingId to attach to. Endpoint is the same
-        internal route used by `MeetingRpc.startRecording` (mirrors what the
-        desktop recorder does over kRPC).
-        """
-        assert self._http is not None
-        url = f"{JERVIS_SERVER_URL}/internal/meeting/start-recording"
-        payload = {
-            "clientId": request.client_id,
-            "projectId": request.project_id,
-            "title": request.title,
-            "meetingType": "MEETING",
-            "deviceSessionId": f"attender-{request.task_id}",
-            "audioInputType": "MIXED",
-            "taskId": request.task_id,  # bridge endpoint links it via meetingMetadata.recordingMeetingId
-        }
-        headers = {"Authorization": f"Bearer {INTERNAL_AUTH_TOKEN}"} if INTERNAL_AUTH_TOKEN else {}
+        """Create the MeetingDocument up-front via gRPC."""
+        from app.grpc_clients import server_meeting_recording_bridge_stub
+        from jervis.server import meeting_recording_bridge_pb2
+        from jervis.common import types_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
         try:
-            r = await self._http.post(url, json=payload, headers=headers)
-            r.raise_for_status()
-            return r.json()["id"]
+            resp = await server_meeting_recording_bridge_stub().StartRecording(
+                meeting_recording_bridge_pb2.StartRecordingRequest(
+                    ctx=ctx,
+                    client_id=request.client_id or "",
+                    project_id=request.project_id or "",
+                    title=request.title or "",
+                    meeting_type="MEETING",
+                    device_session_id=f"attender-{request.task_id}",
+                    task_id=request.task_id or "",
+                ),
+                timeout=30.0,
+            )
+            return resp.id
         except Exception as e:
             logger.exception("Failed to create meeting on server")
             raise HTTPException(status_code=502, detail=f"Server unreachable: {e}")
 
     async def _upload_chunk(self, session: AttendSession, b64: str) -> None:
-        assert self._http is not None
-        url = f"{JERVIS_SERVER_URL}/internal/meeting/upload-chunk"
-        payload = {
-            "meetingId": session.meeting_id,
-            "chunkIndex": session.chunks_sent,
-            "data": b64,
-            "mimeType": "audio/pcm",
-        }
-        headers = {"Authorization": f"Bearer {INTERNAL_AUTH_TOKEN}"} if INTERNAL_AUTH_TOKEN else {}
+        from app.grpc_clients import server_meeting_recording_bridge_stub
+        from jervis.server import meeting_recording_bridge_pb2
+        from jervis.common import types_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
         try:
-            r = await self._http.post(url, json=payload, headers=headers)
-            r.raise_for_status()
+            await server_meeting_recording_bridge_stub().UploadChunk(
+                meeting_recording_bridge_pb2.UploadChunkRequest(
+                    ctx=ctx,
+                    meeting_id=session.meeting_id,
+                    chunk_index=session.chunks_sent,
+                    data=b64,
+                    mime_type="audio/pcm",
+                ),
+                timeout=10.0,
+            )
         except Exception as e:
             logger.warning("Chunk upload failed (idx=%s): %s", session.chunks_sent, e)
 
     async def _finalize_meeting_on_server(self, session: AttendSession, reason: str) -> None:
-        assert self._http is not None
-        url = f"{JERVIS_SERVER_URL}/internal/meeting/finalize-recording"
+        from app.grpc_clients import server_meeting_recording_bridge_stub
+        from jervis.server import meeting_recording_bridge_pb2
+        from jervis.common import types_pb2
+        from jervis_contracts.interceptors import prepare_context
+
         duration = max(1, int(time.time() - session.started_at))
-        payload = {
-            "meetingId": session.meeting_id,
-            "meetingType": "MEETING",
-            "durationSeconds": duration,
-            "stopReason": reason,
-        }
-        headers = {"Authorization": f"Bearer {INTERNAL_AUTH_TOKEN}"} if INTERNAL_AUTH_TOKEN else {}
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
         try:
-            r = await self._http.post(url, json=payload, headers=headers)
-            r.raise_for_status()
+            await server_meeting_recording_bridge_stub().FinalizeRecording(
+                meeting_recording_bridge_pb2.FinalizeRecordingRequest(
+                    ctx=ctx,
+                    meeting_id=session.meeting_id,
+                    meeting_type="MEETING",
+                    duration_seconds=duration,
+                    stop_reason=reason,
+                ),
+                timeout=30.0,
+            )
         except Exception:
             logger.exception("Failed to finalize meeting on server")
 
