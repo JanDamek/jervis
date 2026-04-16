@@ -25,7 +25,7 @@ These documents are the **single source of truth** and are kept up-to-date with 
 ### Implementation Details
 
 - **[implementation.md](implementation.md)** - Implementation details, conventions, patterns, best practices
-- **[inter-service-contracts.md](inter-service-contracts.md)** - **SSOT** for HTTP APIs between pods: Buf + Protobuf + ConnectRPC, Kotlin/Python codegen, CI drift enforcement
+- **[inter-service-contracts.md](inter-service-contracts.md)** - **SSOT** for pod-to-pod APIs: Protobuf + Buf + gRPC over h2c, grpc-kotlin + grpcio codegen, RequestContext payload, CI drift enforcement
 
 ---
 

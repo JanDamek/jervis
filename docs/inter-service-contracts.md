@@ -25,24 +25,25 @@
 
 ## 2. Stack
 
-**Buf + Protobuf + ConnectRPC** (HTTP/1.1 + JSON body).
+**Protobuf + Buf + gRPC over HTTP/2 cleartext (h2c).**
 
 | Concern | Tool |
 |---|---|
 | Schema language | Protobuf (proto3) |
 | Linting, breaking-change detection, codegen orchestration | [Buf CLI](https://buf.build) |
-| Transport | [ConnectRPC](https://connectrpc.com) — HTTP/1.1 POST, JSON or proto body |
-| Kotlin message codegen | [`com.squareup.wire`](https://github.com/square/wire) |
-| Kotlin RPC codegen | [`connect-kotlin`](https://github.com/connectrpc/connect-kotlin) |
-| Python message codegen | [`betterproto`](https://github.com/danielgtaylor/python-betterproto) (async dataclasses) |
-| Python RPC codegen | [`connect-python`](https://github.com/connectrpc/connect-python) |
+| Transport | gRPC over HTTP/2 cleartext inside the cluster |
+| Kotlin message codegen | `protoc-gen-java` (from `grpc-java`) |
+| Kotlin RPC codegen | [`grpc-kotlin`](https://github.com/grpc/grpc-kotlin) (Google, coroutine-native) |
+| Python message + RPC codegen | [`grpcio` + `grpcio-tools`](https://grpc.io/docs/languages/python/) (Google, asyncio-native) |
+| Debug CLI | [`grpcurl`](https://github.com/fullstorydev/grpcurl) with server reflection enabled |
 
 Rationale:
 
-- **ConnectRPC over plain gRPC** — no HTTP/2 requirement, works with our existing Ktor and FastAPI ingress, debuggable with `curl` (JSON mode), streaming supported.
-- **Buf over raw `protoc`** — canonical lint rules, `buf breaking` = CI guardrail, per-module config.
-- **Wire over `protoc-gen-kotlin`** — idiomatic Kotlin data classes, KMP-ready, active Square maintenance.
-- **Betterproto over `protoc-gen-python`** — dataclasses with type hints, async-first, no legacy generated-code ugliness.
+- **gRPC over ConnectRPC** — Protobuf + gRPC is the industry-standard for pod-to-pod RPC: production-proven by Google/Netflix/Square for 10+ years, server-streaming is boring and reliable, deadline/cancellation semantics are canonical, observability tooling is mature. An April 2026 maturity audit flagged `connect-kotlin` as maintenance-only since March 2024 and `connect-python` as pre-1.0 beta with an in-flight 1.0 rewrite by Buf; adopting either as a big-bang target would force a second migration within the year.
+- **Buf over raw `protoc`** — canonical lint rules (`STANDARD`), `buf breaking` = CI guardrail blocking drift, per-module config, first-party Gradle plugin.
+- **`grpc-kotlin` over Wire** — Wire is excellent for KMP clients, but the server here is JVM-only and `grpc-kotlin` is the reference Google client with first-class coroutine support. Avoiding Wire also sidesteps the "Wire messages + grpc-java stubs" runtime seam.
+- **`grpcio-tools` over betterproto** — `grpcio` is Google's reference implementation, covers streaming/deadlines/cancellation/reflection, asyncio-native (`grpc.aio`). `betterproto` v1 is abandoned (last release 2021); `betterproto2` is sub-1.0 — neither is acceptable for the big-bang target.
+- **h2c inside cluster** — K8s ClusterIP services and every Python ASGI server speak HTTP/2 cleartext natively. No TLS termination inside the pod network; observability/tracing via standard gRPC interceptors.
 
 ### Versioning
 
@@ -59,10 +60,10 @@ proto/
 ├── buf.lock
 └── jervis/
     ├── common/
-    │   ├── types.proto          # Scope (client/project/group), IDs, timestamps, urns
-    │   ├── errors.proto         # Error envelope (rarely needed; Connect errors cover most)
+    │   ├── types.proto          # Scope, RequestContext (see §"No contract data in HTTP headers"), Urn, Timestamp, IDs
+    │   ├── errors.proto         # ErrorDetail message for gRPC status details
     │   ├── pagination.proto
-    │   └── enums.proto          # Capability, Priority, Kind, SourceType, SourceCredibility
+    │   └── enums.proto          # Capability, Priority, TierCap, Kind, SourceType, SourceCredibility
     ├── router/
     │   ├── decide.proto         # RouterService.Decide
     │   └── chat.proto           # RouterService.Chat (server-streaming tokens)
@@ -76,7 +77,7 @@ proto/
     │   ├── qualify.proto
     │   ├── approve.proto
     │   └── chat.proto
-    ├── server_callback/          # Kotlin server as ConnectRPC server, Python as client
+    ├── server_callback/          # Kotlin server as gRPC server, Python as client
     │   ├── progress.proto
     │   ├── status.proto
     │   ├── streaming_token.proto
@@ -116,40 +117,109 @@ Each subdirectory maps 1:1 to one `backend/service-*` pod. File naming follows t
 
 ## 4. Transport details
 
-### URL scheme
+### Wire protocol
 
-`POST /jervis.<domain>.<Service>/<Method>`
+gRPC over HTTP/2 cleartext (h2c). Standard gRPC path layout `/jervis.<domain>.<Service>/<Method>` with binary Protobuf body. No JSON on the wire.
 
 Examples:
 
-- `POST /jervis.router.RouterService/Decide`
-- `POST /jervis.knowledgebase.KnowledgebaseService/Retrieve`
-- `POST /jervis.orchestrator.OrchestratorService/Orchestrate` (server-streaming)
+- `/jervis.router.RouterService/Decide` (unary)
+- `/jervis.knowledgebase.KnowledgebaseService/Retrieve` (unary)
+- `/jervis.orchestrator.OrchestratorService/Orchestrate` (server-streaming)
 
-### Content-Type
+### Ports
 
-- `application/json` — default for debugging and human inspection. `curl -H 'Content-Type: application/json' -d '{"query":"..."}' http://kb:8080/jervis.knowledgebase.KnowledgebaseService/Retrieve` must work.
-- `application/proto` — opt-in for latency-sensitive paths (whisper streaming, router decide). Flip per-client via config flag, schema stays identical.
+- Kotlin server: existing Ktor `:5500` keeps kRPC/WebSocket for UI clients. A new listener `:5501` serves gRPC (in-process `ServerBuilder.forPort(5501)`), isolated from Ktor. Health/readiness probes for both ports added to K8s manifests in Phase 0.
+- Each Python pod exposes its existing ASGI port as h2c; FastAPI sidechannel (blob upload + vendor proxies like Ollama API) mounts on the same port via ASGI dispatch.
+
+### Debugging
+
+- **gRPC reflection enabled** on every server (`grpc-reflection`) so `grpcurl` discovers schemas at runtime.
+- `grpcurl -plaintext -d @ localhost:5501 jervis.router.RouterService/Decide < request.json` round-trips a hand-authored JSON body just like `curl` would against REST.
+- `grpcurl -plaintext localhost:5501 list` / `describe` for ad-hoc exploration.
+- Server logs emit the full RPC name on every request via a shared logging interceptor.
+
+### No contract data in HTTP headers
+
+**Rule**: every value that affects routing, authorization, business logic, or observability semantics lives **inside the proto payload**. HTTP headers carry transport metadata only (`Content-Type`, `Content-Length`, standard HTTP/2 pseudo-headers). Custom `X-*` headers are forbidden on contract-bearing traffic.
+
+Concretely, every existing custom header is migrated to a payload field:
+
+| Removed header | Payload field |
+|---|---|
+| `X-Client-Id` | `RequestContext.scope.client_id` |
+| `X-Capability` (routing hint) | `RequestContext.capability` |
+| `X-Ollama-Priority` | `RequestContext.priority` |
+| `X-Intent` | `RequestContext.intent` |
+| per-request deadline header | `RequestContext.deadline_iso` |
+| correlation / trace header | `RequestContext.request_id`, `RequestContext.trace` |
+
+Every request message that crosses a pod boundary starts with:
+
+```proto
+// jervis/common/types.proto
+message Scope {
+  string client_id = 1;
+  string project_id = 2;   // empty string = no project scope
+  string group_id  = 3;    // empty string = no group scope
+}
+
+message RequestContext {
+  Scope scope                  = 1;
+  Priority priority            = 2;   // BACKGROUND / FOREGROUND / CRITICAL (enums.proto)
+  Capability capability        = 3;   // routing hint (enums.proto)
+  string intent                = 4;   // free-form routing tag
+  string deadline_iso          = 5;   // RFC3339 UTC; "" = no deadline (falls back to priority)
+  TierCap max_tier             = 6;   // NONE / T1 / T2 cap for paid models
+  string request_id            = 7;   // correlation id, server-generated if empty
+  string task_id               = 8;   // related JERVIS task, "" if none
+  int64  issued_at_unix_ms     = 9;
+  map<string, string> trace    = 10;  // w3c-traceparent-style extras; no ABI guarantees
+}
+```
+
+And every RPC's request carries it as field 1:
+
+```proto
+message DecideRequest {
+  RequestContext ctx          = 1;
+  // RPC-specific fields follow
+  Capability target_capability = 2;   // what to decide — distinct from ctx.capability
+  int32 min_model_size_b       = 3;
+}
+```
+
+Rationale:
+
+- **One SSOT for cross-cutting semantics.** `buf breaking` catches drift in scope/priority/deadline the same way it catches drift in any other field. Headers were invisible to the schema checker.
+- **Uniform serialization.** Binary gRPC never has to parse string headers. JSON debugging (`grpcurl -d @`) shows every contract value in one place.
+- **No split between "routed by headers" and "routed by body"** — a router or middleware that wants to inspect the request unmarshals proto, period.
+- **Trivial auth extension** later: `RequestContext.credential` proto message if an internal service ever needs per-call auth beyond K8s network policy.
+
+Implementation enforcement: a shared interceptor on every client populates `ctx.request_id`, `ctx.issued_at_unix_ms`, and `ctx.trace`. A shared server interceptor validates `ctx.scope.client_id` is non-empty on every RPC except explicitly-marked unauthenticated ones (health checks). Both interceptors are ~30 LOC in `shared:service-contracts` (Kotlin) and `libs/jervis_contracts/` (Python).
 
 ### Streaming
 
-ConnectRPC supports server-streaming over HTTP/1.1 using the [Connect streaming protocol](https://connectrpc.com/docs/protocol/#streaming-rpcs). Used for:
+gRPC's server-streaming over HTTP/2 is the canonical mechanism. Used for:
 
 | RPC | Reason |
 |---|---|
-| `OrchestratorService.Orchestrate` | Progress events (`node_start`, `node_end`, `status_change`). Replaces current push-back POSTs to Kotlin server. |
+| `OrchestratorService.Orchestrate` | Progress events (`node_start`, `node_end`, `status_change`, `result`). Replaces current push-back POSTs to Kotlin server. |
 | `WhisperService.Transcribe` | Progressive segments as audio chunks are processed. |
 | `RouterService.Chat` | Token-by-token LLM streaming to UI. |
-| `TtsService.Speak` | PCM chunks. |
+| `OrchestratorChatService.Chat` | Chat tokens + tool calls + approvals. |
+| `VoiceService.Process` | Voice pipeline (preliminary answer, responding, tokens, TTS). |
+| `CompanionService.StreamSession` | Claude companion session events. |
+| `TtsService.SpeakStream` | PCM chunks. |
 
-No client-streaming and no bidirectional streaming until a concrete need appears. Current needs are all request/response or server-push.
+No client-streaming and no bidi until a concrete need appears. Deadlines (`grpc.Deadline`) are honored on every streaming RPC using `RequestContext.deadline_iso` — the client-side interceptor converts ISO to a gRPC deadline automatically.
 
 ### Replacing current push-back pattern
 
 Today the Python orchestrator pushes progress via POST to Kotlin `/internal/orchestrator-progress`. After migration:
 
-- **Preferred path**: Kotlin opens `Orchestrate` as a server-stream, holds it open for the duration of the task, and consumes events as the stream emits. One connection, typed events.
-- **Fallback path** (only if long-running disconnects prove fragile): keep a `server_callback` ConnectRPC service on the Kotlin side that Python calls. Same schema benefit — no more untyped dicts — but two connections.
+- **Preferred path**: Kotlin opens `Orchestrate` as a server-stream, holds it open for the duration of the task, and consumes events as the stream emits. One connection, typed events, automatic cancellation when the client disconnects.
+- **Fallback path** (only if long-running disconnects prove fragile): keep a `ServerOrchestratorCallbackService` gRPC service on the Kotlin side that Python calls. Same schema benefit — no more untyped dicts — but two connections.
 
 We start with the preferred streaming path. Fallback is pre-specified so there's no untyped regression if streaming must be abandoned.
 
@@ -161,7 +231,7 @@ We start with the preferred streaming path. Fallback is pre-specified so there's
 
 - **Target**: JVM only (server is JVM; UI does not speak these protocols).
 - **Source**: `proto/` (the monorepo single source).
-- **Output**: `com.jervis.contracts.<domain>.*` — data classes + ConnectRPC service interfaces + ConnectRPC client factories.
+- **Output**: `com.jervis.contracts.<domain>.*` — generated Protobuf messages (Java, Kotlin-friendly) + gRPC service stubs (`grpc-java`) + coroutine-native stubs (`grpc-kotlin`).
 - **Depends on**: `shared:common-dto` is NOT a dependency. `service-contracts` is independent. Server modules depend on both and map between them where needed (usually a thin mapper per domain).
 
 ### Gradle wiring
@@ -170,21 +240,20 @@ We start with the preferred streaming path. Fallback is pre-specified so there's
 // shared/service-contracts/build.gradle.kts
 plugins {
     kotlin("jvm")
-    id("com.squareup.wire")
     id("build.buf")        // Buf Gradle plugin wraps `buf generate`
 }
 
-wire {
-    kotlin {
-        out = layout.buildDirectory.dir("generated/source/wire").get().asFile.path
-    }
-}
-
 buf {
-    // Invokes `buf generate` with this module's buf.gen.yaml
+    // Invokes `buf generate` with proto/buf.gen.yaml as the source of truth
     generate {
         includeImports = true
     }
+}
+
+sourceSets.main {
+    java.srcDir(layout.buildDirectory.dir("generated/source/buf/java"))
+    java.srcDir(layout.buildDirectory.dir("generated/source/buf/grpc-java"))
+    kotlin.srcDir(layout.buildDirectory.dir("generated/source/buf/grpc-kotlin"))
 }
 
 tasks.named("compileKotlin") {
@@ -192,8 +261,12 @@ tasks.named("compileKotlin") {
 }
 
 dependencies {
-    api("com.connectrpc:connect-kotlin:0.8.+")
-    api("com.squareup.wire:wire-runtime:5.+")
+    api("io.grpc:grpc-protobuf:1.66.+")
+    api("io.grpc:grpc-stub:1.66.+")
+    api("io.grpc:grpc-kotlin-stub:1.4.+")
+    api("io.grpc:grpc-netty-shaded:1.66.+")
+    api("io.grpc:grpc-services:1.66.+")        // reflection for grpcurl
+    api("com.google.protobuf:protobuf-kotlin:4.28.+")
 }
 ```
 
@@ -208,9 +281,9 @@ dependencies {
 
 Old DTO files that are replaced (deleted, not renamed):
 
-- `PythonOrchestratorClient.kt` — DTOs move to generated, HTTP calls move to ConnectRPC client.
+- `PythonOrchestratorClient.kt` — DTOs and HTTP calls move to generated gRPC stubs.
 - `KnowledgeServiceRestClient.kt` — same.
-- `WhisperRestClient.kt`, `CorrectionClient.kt`, `CascadeLlmClient.kt` — same.
+- `WhisperRestClient.kt`, `CorrectionClient.kt`, `CascadeLlmClient.kt`, `PythonChatClient.kt`, `OrchestratorCompanionClient.kt`, `DocumentExtractionClient.kt` — same.
 
 Mapping to kRPC DTOs (when UI needs a slightly different shape) lives in a new thin module layer:
 
@@ -235,52 +308,70 @@ libs/jervis_contracts/
 └── tests/
 ```
 
-`pyproject.toml` has no runtime deps beyond `betterproto` and `connectrpc`. Every Python service consumes it:
+`pyproject.toml` runtime deps: `grpcio`, `grpcio-tools`, `grpcio-reflection`, `protobuf`. Every Python service consumes the local package:
 
 ```toml
 # backend/service-orchestrator/pyproject.toml (or requirements.txt)
 dependencies = [
     "jervis-contracts @ file://../../libs/jervis_contracts",  # editable
+    "grpcio>=1.66",
+    "grpcio-reflection>=1.66",
     ...
 ]
 ```
 
-In Docker images the package is copied and `pip install -e` is run before other deps.
+In Docker images the package is copied and `pip install -e /libs/jervis_contracts` is run before other deps.
 
 ### Client usage example (Python)
 
 ```python
-from jervis_contracts.router import RouterServiceClient, DecideRequest, Capability
-import httpx
+from jervis_contracts.router import router_pb2, router_pb2_grpc
+from jervis_contracts.common.types_pb2 import RequestContext, Scope
+from jervis_contracts.common.enums_pb2 import Capability, Priority
+import grpc
 
-client = RouterServiceClient(base_url="http://ollama-router:8080", http_client=httpx.AsyncClient())
-resp = await client.decide(DecideRequest(
-    capability=Capability.CAPABILITY_CHAT,
-    deadline_iso="2026-04-16T15:00:00Z",
-    min_model_size_b=7,
-))
+async with grpc.aio.insecure_channel("ollama-router:5501") as channel:
+    stub = router_pb2_grpc.RouterServiceStub(channel)
+    req = router_pb2.DecideRequest(
+        ctx=RequestContext(
+            scope=Scope(client_id="..."),
+            priority=Priority.PRIORITY_FOREGROUND,
+            capability=Capability.CAPABILITY_CHAT,
+            deadline_iso="2026-04-16T15:00:00Z",
+        ),
+        target_capability=Capability.CAPABILITY_CHAT,
+        min_model_size_b=7,
+    )
+    resp = await stub.Decide(req)
 ```
 
-No more `payload = {"capability": ..., "deadline_iso": ...}` dicts. Enum values come from the generated module; a typo is a Python syntax error, not a 422.
+No more `payload = {"capability": ..., "deadline_iso": ...}` dicts. Enum values come from the generated module; a typo is a Python attribute error, not a 422 at runtime.
 
 ### Server usage example (Python)
 
 ```python
-from connectrpc.server import ConnectWSGI
-from jervis_contracts.knowledgebase import (
-    KnowledgebaseServiceBase,
-    RetrieveRequest, RetrieveResponse,
-)
+import grpc
+from grpc_reflection.v1alpha import reflection
+from jervis_contracts.knowledgebase import retrieve_pb2, retrieve_pb2_grpc
 
-class KnowledgebaseImpl(KnowledgebaseServiceBase):
-    async def retrieve(self, req: RetrieveRequest) -> RetrieveResponse:
+class KnowledgebaseImpl(retrieve_pb2_grpc.KnowledgeRetrieveServiceServicer):
+    async def Retrieve(self, request: retrieve_pb2.RetrieveRequest, context) -> retrieve_pb2.RetrieveResponse:
         ...
 
-app = ConnectWSGI()
-app.register(KnowledgebaseImpl())
+async def serve():
+    server = grpc.aio.server()
+    retrieve_pb2_grpc.add_KnowledgeRetrieveServiceServicer_to_server(KnowledgebaseImpl(), server)
+    reflection.enable_server_reflection(
+        [retrieve_pb2.DESCRIPTOR.services_by_name["KnowledgeRetrieveService"].full_name,
+         reflection.SERVICE_NAME],
+        server,
+    )
+    server.add_insecure_port("[::]:5501")
+    await server.start()
+    await server.wait_for_termination()
 ```
 
-FastAPI is dropped for ConnectRPC services. If a service still needs REST endpoints (admin UI, health, file upload multipart), those mount on the same ASGI app as a separate router — ConnectRPC and REST coexist.
+FastAPI is kept only for the blob side channel (`PUT /blob/{type}/{id}` raw-bytes uploads) and vendor pass-through (Ollama REST proxy in `service-ollama-router`). Every contract-bearing endpoint becomes gRPC. FastAPI and gRPC can coexist on different ports in the same process; no shared ASGI dispatch needed.
 
 ---
 
@@ -311,22 +402,24 @@ lint:
 ```yaml
 version: v2
 plugins:
-  # Kotlin — messages (Wire)
-  - local: protoc-gen-wire
-    out: ../shared/service-contracts/build/generated/wire
-    opt:
-      - kotlin_package_for_java_package=true
+  # Kotlin/Java — messages
+  - remote: buf.build/protocolbuffers/java
+    out: ../shared/service-contracts/build/generated/source/buf/java
 
-  # Kotlin — RPC (Connect)
-  - remote: buf.build/connectrpc/kotlin
-    out: ../shared/service-contracts/build/generated/connect-kotlin
+  # Kotlin/Java — gRPC stubs (grpc-java)
+  - remote: buf.build/grpc/java
+    out: ../shared/service-contracts/build/generated/source/buf/grpc-java
 
-  # Python — messages (betterproto)
-  - local: protoc-gen-python_betterproto
+  # Kotlin — coroutine-native stubs (grpc-kotlin)
+  - remote: buf.build/grpc/kotlin
+    out: ../shared/service-contracts/build/generated/source/buf/grpc-kotlin
+
+  # Python — messages
+  - remote: buf.build/protocolbuffers/python
     out: ../libs/jervis_contracts/jervis_contracts/_generated
 
-  # Python — RPC (Connect)
-  - remote: buf.build/connectrpc/python
+  # Python — gRPC stubs (async via grpc.aio)
+  - remote: buf.build/grpc/python
     out: ../libs/jervis_contracts/jervis_contracts/_generated
 ```
 
@@ -453,14 +546,14 @@ Expected duration: 2–3 weeks of focused work. Each PR is deployable independen
 | Enum value | `UPPER_SNAKE_CASE` prefixed with enum name | `CAPABILITY_CHAT` |
 | Zero enum value | `<ENUM>_UNSPECIFIED = 0` (mandatory) | `CAPABILITY_UNSPECIFIED = 0` |
 
-Kotlin mapping (Wire):
+Kotlin mapping (grpc-kotlin + grpc-java):
 
-- Proto `jervis.router` → Kotlin `com.jervis.contracts.router`.
-- Proto `snake_case` fields → Kotlin `camelCase` properties.
+- Proto `jervis.router` → Java `com.jervis.contracts.router` (via `option java_package`) with `RouterServiceGrpcKt` coroutine stub and `RouterServiceGrpc` blocking/async stubs.
+- Proto `snake_case` fields → generated Java builders with `setSnakeCase` / `getSnakeCase`; Kotlin callers use idiomatic DSL `routerRequest { snakeCase = "..." }`.
 
-Python mapping (betterproto):
+Python mapping (grpcio-tools):
 
-- Proto `jervis.router` → Python `jervis_contracts.router`.
+- Proto `jervis.router` → Python `jervis_contracts.router` (with generated `router_pb2.py`, `router_pb2_grpc.py`).
 - Proto `snake_case` fields → Python `snake_case` (unchanged).
 
 ---
@@ -491,18 +584,18 @@ enum Capability {
 
 ## 14. Error handling
 
-ConnectRPC's built-in [error model](https://connectrpc.com/docs/protocol/#error-codes) is canonical. Services return standard codes:
+gRPC's built-in [status codes](https://grpc.io/docs/guides/status-codes/) are canonical. Services return standard codes:
 
-- `invalid_argument` — validation failure.
-- `not_found` — resource absent.
-- `unavailable` — downstream pod not ready.
-- `resource_exhausted` — rate limit, 503 from router.
-- `deadline_exceeded` — matches existing deadline-driven routing.
-- `internal` — unexpected.
+- `INVALID_ARGUMENT` — validation failure.
+- `NOT_FOUND` — resource absent.
+- `UNAVAILABLE` — downstream pod not ready.
+- `RESOURCE_EXHAUSTED` — rate limit, 503 from router.
+- `DEADLINE_EXCEEDED` — matches existing deadline-driven routing (auto-populated from `RequestContext.deadline_iso` via client interceptor).
+- `INTERNAL` — unexpected.
 
-Consumer-side, Wire/Connect-Kotlin surfaces this as `ConnectException`. Betterproto/Connect-Python surfaces it as `connectrpc.errors.ConnectError`. No custom error envelope at the application layer.
+Consumer-side: `grpc-kotlin` surfaces errors as `io.grpc.StatusException`; `grpcio` surfaces them as `grpc.RpcError` / `grpc.aio.AioRpcError`. No custom error envelope at the application layer.
 
-A shared `jervis.common.ErrorDetail` message exists for structured diagnostics when code alone is insufficient (e.g., router returns which model was tried):
+A shared `jervis.common.ErrorDetail` message carries structured diagnostics when code alone is insufficient (e.g., router returns which model was tried):
 
 ```proto
 message ErrorDetail {
@@ -511,7 +604,7 @@ message ErrorDetail {
 }
 ```
 
-Attached via ConnectRPC's `details` field, not via response body shape.
+Attached via gRPC status `details` field (`google.rpc.Status.details` / `io.grpc.protobuf.StatusProto`), not via response body shape.
 
 ---
 
@@ -520,7 +613,7 @@ Attached via ConnectRPC's `details` field, not via response body shape.
 - `shared/common-api` + `shared/common-dto` — kRPC/CBOR single source of truth for UI ↔ server. No proto involvement.
 - Push-only Flow streams for UI (`docs/ui-design.md` §12) — unchanged.
 - KB graph schema, Memory structures, Thought Map — unchanged.
-- K8s deployment, registry, ingress — unchanged. ConnectRPC fits existing HTTP ingress.
+- K8s deployment, registry, Traefik/nginx ingress — unchanged for external HTTP. Pod-to-pod gRPC stays inside the cluster over ClusterIP; no ingress hop.
 - Coding agent spawn pattern (K8s Jobs for Claude CLI, Aider, etc.) — unchanged.
 - Memory and MEMORY.md conventions — unchanged.
 
@@ -549,12 +642,14 @@ Attached via ConnectRPC's `details` field, not via response body shape.
 
 ---
 
-## 18. Open questions (to resolve before step 1)
+## 18. Open questions (to resolve during infra PR)
 
-- **ConnectRPC Python maturity**: verify `connect-python` supports server-streaming over HTTP/1.1 in the version we pin. If blocker, fall back to ConnectRPC streaming over HTTP/2 inside the cluster (still Connect protocol, just h2c). Adds nothing to spec — transport-only.
-- **Wire's KMP story**: confirm JVM-only output is what we want, or whether generating `common` + `jvm` source sets buys us anything (answer today: no — only the server consumes these contracts on JVM).
-- **Gradle Buf plugin**: two candidates — `build.buf.gradle` (first-party) and `com.google.protobuf` (legacy). Use first-party.
-- **Multipart upload** (currently in `KnowledgeServiceRestClient.uploadKbDocument`): proto doesn't model raw multipart. Options: (a) split into two calls — `RegisterDocument` (proto) + a thin REST `PUT /kb/blob/{id}` for the bytes; (b) use `bytes` field in proto and accept 30 MB messages. Recommend (a).
-- **SSE for MCP**: MCP ingress at `jervis-mcp.damek-soft.eu` uses SSE per spec. SSE stays REST (protocol requirement). Only internal MCP RPC goes through ConnectRPC if it exists.
+- **Gradle Buf plugin version pin**: `build.buf` 0.11.0 (Jan 2026) is the first-party Gradle plugin; pin exactly in Phase 0 to avoid surprise bumps.
+- **grpc-kotlin × Netty classloader**: run gRPC Netty on `:5501` isolated from Ktor `:5500`; use `grpc-netty-shaded` to avoid Netty version conflicts with any transitive Ktor Netty.
+- **Python FastAPI coexistence**: each Python service runs gRPC (`grpc.aio` on `:5501`) and FastAPI (for blob upload side-channel on the existing port) as two separate listeners in one process. Verify graceful shutdown coordinates both.
+- **Blob upload for KB documents**: resolved — split into `KnowledgeDocumentService.Register(hash, metadata)` (gRPC) + `PUT /blob/kb-doc/{hash}` (thin REST raw-bytes). Proto carries `blob_ref` string; REST carries bytes.
+- **MCP SSE**: stays REST (protocol requirement). Only the internal MCP RPC endpoints (if any) go through gRPC; SSE continues on its existing ingress.
+- **Ingress h2c**: not required for MVP because pod-to-pod gRPC stays inside the cluster (ClusterIP). If a future client needs gRPC from outside, Traefik supports h2c via configuration — revisit then.
+- **Public voice API (Siri/Watch)**: stays REST + multipart. A thin Kotlin handler unpacks multipart and fans out to the gRPC orchestrator internally.
 
-Each open question is tracked for resolution during the infrastructure PR (step 1 of §11). None blocks the decision — the overall architecture is final.
+None blocks the architecture decision — all are implementation detail for Phase 0.

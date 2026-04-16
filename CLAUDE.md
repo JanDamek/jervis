@@ -24,7 +24,7 @@
 | `docs/orchestrator-final-spec.md` | Python Orchestrator spec – async dispatch, approval flow, concurrency |
 | `docs/orchestrator-detailed.md` | **Orchestrator detailed reference** – complete technical description of all nodes, LLM, K8s Jobs, communication, state, approval flow |
 | `docs/thought-map-spec.md` | **Thought Map spec** – navigation layer over KB graph, spreading activation, ThoughtNodes/Edges/Anchors, maintenance, cold start |
-| `docs/inter-service-contracts.md` | **SSOT** for HTTP APIs between pods – Buf+Protobuf+ConnectRPC, codegen for Kotlin+Python, CI drift/breaking enforcement |
+| `docs/inter-service-contracts.md` | **SSOT** for pod-to-pod APIs – Protobuf + Buf + gRPC over h2c, grpc-kotlin + grpcio codegen, RequestContext payload (no X-* headers), CI drift/breaking enforcement |
 
 ## Workflow Rules
 
