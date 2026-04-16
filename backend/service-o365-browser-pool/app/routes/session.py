@@ -30,6 +30,7 @@ from app.models import (
     SessionStatus,
 )
 from app.pod_state import PodState, get_or_create_state_manager
+from app.context_store import ContextStore
 from app.scrape_storage import ScrapeStorage
 from app.tab_manager import TabRegistry
 from app.token_extractor import TokenExtractor
@@ -83,6 +84,7 @@ def create_session_router(
     tab_registry: TabRegistry,
     scrape_storage: ScrapeStorage,
     meeting_recorder: MeetingRecorder,
+    context_store: ContextStore,
 ) -> APIRouter:
 
     @router.get("/session/{client_id}")
@@ -150,6 +152,7 @@ def create_session_router(
             login_url=req.login_url,
             capabilities=req.capabilities or [],
             meeting_recorder=meeting_recorder,
+            context_store=context_store,
         )
         agent_registry.register(client_id, agent)
         await agent.start()

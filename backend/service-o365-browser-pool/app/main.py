@@ -41,6 +41,7 @@ from app.routes.scrape import create_scrape_router
 from app.routes.session import create_session_router
 from app.routes.token import create_token_router
 from app.routes.vnc_auth import create_vnc_auth_router
+from app.context_store import ContextStore
 from app.scrape_storage import ScrapeStorage
 from app.tab_manager import TabRegistry
 from app.token_extractor import TokenExtractor
@@ -58,6 +59,7 @@ token_extractor = TokenExtractor()
 vnc_auth_manager = VncAuthManager()
 tab_registry = TabRegistry()
 scrape_storage = ScrapeStorage()
+context_store = ContextStore()
 meeting_recorder = MeetingRecorder(browser_manager)
 
 
@@ -122,6 +124,7 @@ async def _try_self_restore() -> None:
             login_url=login_url,
             capabilities=capabilities,
             meeting_recorder=meeting_recorder,
+            context_store=context_store,
         )
         agent_registry.register(client_id, agent)
         await agent.start()
@@ -139,6 +142,7 @@ async def lifespan(app: FastAPI):
     )
     await browser_manager.startup()
     await scrape_storage.start()
+    await context_store.start()
     try:
         init_checkpointer()
     except Exception:
@@ -155,6 +159,7 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("Agent stop failed")
     await scrape_storage.stop()
+    await context_store.stop()
     shutdown_checkpointer()
     await browser_manager.shutdown()
     from app.kotlin_callback import shutdown as callback_shutdown
@@ -173,7 +178,7 @@ app.include_router(create_token_router(token_extractor))
 app.include_router(
     create_session_router(
         browser_manager, token_extractor, tab_registry, scrape_storage,
-        meeting_recorder,
+        meeting_recorder, context_store,
     )
 )
 app.include_router(create_graph_proxy_router(browser_manager, token_extractor))

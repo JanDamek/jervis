@@ -25,6 +25,7 @@ from app.agent.persistence import get_checkpointer
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.state import PodAgentState
 from app.agent.watcher import BrowserWatcher
+from app.context_store import ContextStore, compose_cold_start_preamble
 from app.pod_state import PodState, PodStateManager
 from app.scrape_storage import ScrapeStorage
 from app.tab_manager import TabRegistry
@@ -63,11 +64,13 @@ class PodAgent:
         login_url: str,
         capabilities: list[str],
         meeting_recorder=None,
+        context_store: ContextStore | None = None,
     ) -> None:
         self.client_id = client_id
         self.connection_id = connection_id
         self.login_url = login_url
         self.capabilities = capabilities
+        self.context_store = context_store
         self.ctx = ToolContext(
             client_id=client_id,
             connection_id=connection_id,
@@ -148,6 +151,23 @@ class PodAgent:
             return 60.0
         return TICK_AUTHENTICATING_S
 
+    async def _compose_system_prompt(self) -> str:
+        """Rebuild the SystemMessage every outer-loop entry (product §3b).
+        Prompt improvements + pattern promotions roll out without rewriting
+        the checkpoint. Falls back to static SYSTEM_PROMPT when no memory
+        store is wired."""
+        if self.context_store is None:
+            return SYSTEM_PROMPT
+        try:
+            preamble = await compose_cold_start_preamble(
+                self.context_store, connection_id=self.connection_id,
+            )
+        except Exception:
+            preamble = ""
+        if not preamble:
+            return SYSTEM_PROMPT
+        return f"{SYSTEM_PROMPT}\n\n{preamble}"
+
     def _initial_state(self) -> dict:
         return {
             "messages": [
@@ -205,14 +225,52 @@ class PodAgent:
                         msg.content,
                     )
 
-    def _next_input(self) -> HumanMessage:
-        """Return the next user message for the agent. Drains pending_inputs
-        first (instructions/MFA nudge), otherwise a simple 're-observe' prompt."""
+    async def _next_input(self) -> HumanMessage:
+        """Return the next user message for the agent.
+
+        Drains `pending_inputs` first (instructions / MFA nudge / watcher
+        alerts). Otherwise composes a fresh state + memory summary block
+        so the agent has current context every tick — mirrors product §3b
+        SystemMessage regeneration, but delivered as a HumanMessage since
+        MessagesState does not support in-place system replacement.
+        """
         if not self._pending_inputs.empty():
-            text = self._pending_inputs.get_nowait()
-        else:
-            text = "Re-observe the current DOM and decide the next step."
-        return HumanMessage(content=text)
+            return HumanMessage(content=self._pending_inputs.get_nowait())
+
+        preamble = ""
+        if self.context_store is not None:
+            try:
+                preamble = await compose_cold_start_preamble(
+                    self.context_store, connection_id=self.connection_id,
+                )
+            except Exception:
+                preamble = ""
+        state_block = self._current_state_block()
+        body_parts = [
+            "Re-observe the current DOM and decide the next step.",
+            state_block,
+        ]
+        if preamble:
+            body_parts.append(preamble)
+        return HumanMessage(content="\n\n".join(b for b in body_parts if b))
+
+    def _current_state_block(self) -> str:
+        """Compact current-state snapshot for the agent (product §3b)."""
+        sm = self.ctx.state_manager
+        tabs = self.ctx.tab_registry.list(self.ctx.client_id)
+        tab_lines = [
+            f"- {t['name']}: {t['url']}{' (closed)' if t.get('closed') else ''}"
+            for t in tabs[:10]
+        ]
+        tab_block = "\n".join(tab_lines) if tab_lines else "- (no tabs registered)"
+        return (
+            "CURRENT STATE:\n"
+            f"  pod_state: {sm.state.value}\n"
+            f"  last_app_state: {self.ctx.last_app_state}\n"
+            f"  last_observation_kind: {self.ctx.last_observation_kind or 'none'}\n"
+            f"  last_observation_at: {self.ctx.last_observation_at or 'never'}\n"
+            f"  tabs:\n{tab_block}"
+        )
 
     async def _run(self) -> None:
         logger.info("LangGraph PodAgent starting for %s", self.client_id)
@@ -252,7 +310,7 @@ class PodAgent:
                         invoke_input = seed
                         seed = None
                     else:
-                        invoke_input = {"messages": [self._next_input()]}
+                        invoke_input = {"messages": [await self._next_input()]}
 
                     async for event in self._graph.astream(
                         invoke_input, config=config, stream_mode="updates",
