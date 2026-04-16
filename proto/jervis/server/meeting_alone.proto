@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerMeetingAloneProto";
+
+// ServerMeetingAloneService — "alone in meeting" chat bubble resolution
+// (product §10a). Called by the MCP tool layer when the user answers an
+// alone-check push with "Odejít" (Leave) or "Zůstat" (Stay).
+service ServerMeetingAloneService {
+  // Dispatch `leave_meeting` to the pod agent; stops recording +
+  // clicks Leave in Teams + reports presence=false.
+  rpc Leave(LeaveRequest) returns (LeaveResponse);
+
+  // Suppress further alone-check pushes for `suppress_minutes`.
+  rpc Stay(StayRequest) returns (StayResponse);
+}
+
+message LeaveRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+  string reason = 3;           // default "user_asked_to_leave"
+}
+
+message LeaveResponse {
+  string meeting_id = 1;
+  string state = 2;            // "DISPATCHED" | "FAILED"
+  string reason = 3;
+}
+
+message StayRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+  int32 suppress_minutes = 3;  // clamped 1..180, default 30
+}
+
+message StayResponse {
+  string meeting_id = 1;
+  string state = 2;            // "SUPPRESSED"
+  int32 suppress_minutes = 3;
+}

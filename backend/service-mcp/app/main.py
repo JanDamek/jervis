@@ -986,18 +986,28 @@ async def meeting_alone_stay(meeting_id: str, suppress_minutes: int = 30) -> str
         suppress_minutes: How long to suppress further alone-check pushes
             (default 30, clamped 1..180).
     """
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/meetings/{meeting_id}/stay",
-            json={"suppressMinutes": suppress_minutes},
+    try:
+        from app.grpc_clients import server_meeting_alone_stub
+        from jervis.server import meeting_alone_pb2
+        from jervis.common import types_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_meeting_alone_stub().Stay(
+            meeting_alone_pb2.StayRequest(
+                ctx=ctx,
+                meeting_id=meeting_id,
+                suppress_minutes=suppress_minutes,
+            ),
+            timeout=30.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
         return (
-            f"Stay acknowledged: meetingId={meeting_id} "
-            f"suppressMinutes={data.get('suppressMinutes', suppress_minutes)}"
+            f"Stay acknowledged: meetingId={resp.meeting_id} "
+            f"suppressMinutes={resp.suppress_minutes}"
         )
+    except Exception as e:
+        return f"Error: {e}"
 
 
 # ── Off-hours relogin approval (product §18) ───────────────────────────
