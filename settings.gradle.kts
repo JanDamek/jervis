@@ -29,6 +29,7 @@ if (System.getenv("DOCKER_BUILD") != "true") {
         ":shared:common-dto",
         ":shared:common-api",
         ":shared:domain",
+        ":shared:service-contracts",
         ":shared:ui-common",
     )
 } else {
@@ -36,6 +37,7 @@ if (System.getenv("DOCKER_BUILD") != "true") {
         ":shared:common-dto",
         ":shared:common-api",
         ":shared:domain",
+        ":shared:service-contracts",
     )
 }
 

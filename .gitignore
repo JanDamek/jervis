@@ -1,6 +1,14 @@
 
 # Build artifacts
 build/
+# Keep generated Protobuf/gRPC stubs committed per docs/inter-service-contracts.md §10.
+!shared/service-contracts/build/
+shared/service-contracts/build/*
+!shared/service-contracts/build/generated/
+shared/service-contracts/build/generated/*
+!shared/service-contracts/build/generated/source/
+shared/service-contracts/build/generated/source/*
+!shared/service-contracts/build/generated/source/buf/
 .gradle/
 .kotlin/
 jervis backup/
@@ -12,5 +20,6 @@ xcuserdata/
 # Python
 __pycache__/
 *.pyc
+*.egg-info/
 data/
 backend/service-knowledgebase/scripts/

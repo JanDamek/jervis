@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package jervis.common;
+
+option java_package = "com.jervis.contracts.common";
+option java_multiple_files = true;
+option java_outer_classname = "EnumsProto";
+
+// LLM capability requested by caller (orchestrator, chat, pods).
+// Mirrors backend/service-ollama-router/app/models.py:Capability.
+enum Capability {
+  CAPABILITY_UNSPECIFIED = 0;
+  CAPABILITY_CHAT = 1;         // General conversation, Q&A
+  CAPABILITY_THINKING = 2;     // Reasoning, analysis, architecture
+  CAPABILITY_CODING = 3;       // Code generation/editing
+  CAPABILITY_EMBEDDING = 4;    // Text embeddings
+  CAPABILITY_VISUAL = 5;       // Image understanding (VLM)
+  CAPABILITY_EXTRACTION = 6;   // Lightweight LLM for KB extraction, qualification
+  CAPABILITY_TRANSLATION = 7;  // Reserved for future translation capability
+}
+
+// Request urgency for router + queue dispatch.
+// Canonical scale — exact mapping to buckets (REALTIME/URGENT/NORMAL/BATCH) is
+// private to the router, derived from (deadline - now, priority).
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0;
+  PRIORITY_BACKGROUND = 1;
+  PRIORITY_FOREGROUND = 2;
+  PRIORITY_CRITICAL = 3;
+}
+
+// Upper bound on paid-model tier for a request.
+// NONE = local only; T1 = cheap paid; T2 = expensive paid.
+enum TierCap {
+  TIER_CAP_UNSPECIFIED = 0;
+  TIER_CAP_NONE = 1;
+  TIER_CAP_T1 = 2;
+  TIER_CAP_T2 = 3;
+}
+
+// Provenance bucket for KB sources.
+enum SourceType {
+  SOURCE_TYPE_UNSPECIFIED = 0;
+  SOURCE_TYPE_CHAT = 1;
+  SOURCE_TYPE_MEETING = 2;
+  SOURCE_TYPE_EMAIL = 3;
+  SOURCE_TYPE_DOCUMENT = 4;
+  SOURCE_TYPE_CODE = 5;
+  SOURCE_TYPE_COMMIT = 6;
+  SOURCE_TYPE_ISSUE = 7;
+  SOURCE_TYPE_MESSAGE = 8;
+  SOURCE_TYPE_AGENT_NOTE = 9;
+  SOURCE_TYPE_DECISION = 10;
+  SOURCE_TYPE_EXTRACTION = 11;
+}
+
+// Credibility rating applied to extracted facts.
+enum SourceCredibility {
+  SOURCE_CREDIBILITY_UNSPECIFIED = 0;
+  SOURCE_CREDIBILITY_LOW = 1;
+  SOURCE_CREDIBILITY_MEDIUM = 2;
+  SOURCE_CREDIBILITY_HIGH = 3;
+  SOURCE_CREDIBILITY_VERIFIED = 4;
+}
+
+// Task lifecycle states — mirrors shared/common-dto TaskStateEnum.
+enum TaskState {
+  TASK_STATE_UNSPECIFIED = 0;
+  TASK_STATE_NEW = 1;
+  TASK_STATE_INDEXING = 2;
+  TASK_STATE_QUEUED = 3;
+  TASK_STATE_PROCESSING = 4;
+  TASK_STATE_CODING = 5;
+  TASK_STATE_USER_TASK = 6;
+  TASK_STATE_BLOCKED = 7;
+  TASK_STATE_DONE = 8;
+  TASK_STATE_ERROR = 9;
+}
+
+// KB graph node families — used by KnowledgeGraphService.
+enum GraphType {
+  GRAPH_TYPE_UNSPECIFIED = 0;
+  GRAPH_TYPE_ENTITY = 1;
+  GRAPH_TYPE_FACT = 2;
+  GRAPH_TYPE_CONCEPT = 3;
+  GRAPH_TYPE_CODE = 4;
+  GRAPH_TYPE_DOCUMENT = 5;
+  GRAPH_TYPE_THOUGHT = 6;
+}

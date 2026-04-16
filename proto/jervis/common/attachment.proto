@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package jervis.common;
+
+option java_package = "com.jervis.contracts.common";
+option java_multiple_files = true;
+option java_outer_classname = "AttachmentProto";
+
+// Reference to a blob stored on the side channel (PUT /blob/{type}/{id}).
+// Protobuf messages never carry raw bytes > 1 MiB — they carry this ref.
+// `storage_path` is the pod-local or shared path used by the side-channel
+// handler; consumers should treat it as opaque and fetch by blob_ref.
+message AttachmentRef {
+  string blob_ref = 1;      // hash or uuid identifying the blob
+  string filename = 2;
+  string mime = 3;
+  int64 size_bytes = 4;
+  string storage_path = 5;  // opaque; side-channel handler resolves it
+}

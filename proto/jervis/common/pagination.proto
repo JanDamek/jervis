@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package jervis.common;
+
+option java_package = "com.jervis.contracts.common";
+option java_multiple_files = true;
+option java_outer_classname = "PaginationProto";
+
+// Forward-only pagination request. Empty cursor = first page.
+message PageRequest {
+  int32 limit = 1;
+  string cursor = 2;
+}
+
+// Opaque cursor returned by the server; echoed back to fetch the next page.
+// `has_more` is the single authoritative end-of-stream signal.
+message PageCursor {
+  string next_cursor = 1;
+  bool has_more = 2;
+}

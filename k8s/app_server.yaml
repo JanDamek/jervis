@@ -113,7 +113,10 @@ spec:
           image: registry.damek-soft.eu/jandamek/jervis-server:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 5500
+            - name: http
+              containerPort: 5500          # Ktor — kRPC/WebSocket for UI
+            - name: grpc
+              containerPort: 5501          # gRPC — pod-to-pod contracts (wired in Phase 1)
           env:
             # Timezone — all backend services MUST run in UTC
             - name: TZ
@@ -308,3 +311,6 @@ spec:
     - name: http
       port: 5500
       targetPort: 5500
+    - name: grpc
+      port: 5501
+      targetPort: 5501

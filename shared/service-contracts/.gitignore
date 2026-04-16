@@ -1,0 +1,8 @@
+# Module-local ignore. Keeps `build/generated/source/buf/` committed so
+# IDEs resolve the gRPC types without running `buf generate` first.
+build/*
+!build/generated
+build/generated/*
+!build/generated/source
+build/generated/source/*
+!build/generated/source/buf

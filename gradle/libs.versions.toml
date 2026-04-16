@@ -30,6 +30,9 @@ firebase-admin = "9.4.2"
 google-services = "4.4.2"
 firebase-bom = "33.7.0"
 pushy = "0.15.4"
+grpc = "1.66.0"
+grpc-kotlin = "1.4.1"
+protobuf-kotlin = "4.34.1"
 
 [libraries]
 # Kotlin
@@ -89,7 +92,7 @@ ktor-server-websockets = { module = "io.ktor:ktor-server-websockets", version.re
 # Logging
 kotlin-logging = { module = "io.github.microutils:kotlin-logging-jvm", version.ref = "logging" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version = "1.5.21" }
-slf4j-api = { module = "org.slf4j:slf4j-api" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version = "2.0.17" }
 
 # Jackson
 jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin" }
@@ -98,6 +101,15 @@ jackson-dataformat-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-d
 # Weaviate & gRPC
 weaviate-client = { module = "io.weaviate:client", version.ref = "weaviate" }
 arangodb-driver = { module = "com.arangodb:arangodb-java-driver", version.ref = "arangodb" }
+
+# gRPC + Protobuf (pod-to-pod contracts — shared:service-contracts)
+grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
+grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
+grpc-kotlin-stub = { module = "io.grpc:grpc-kotlin-stub", version.ref = "grpc-kotlin" }
+grpc-netty-shaded = { module = "io.grpc:grpc-netty-shaded", version.ref = "grpc" }
+grpc-services = { module = "io.grpc:grpc-services", version.ref = "grpc" }
+protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf-kotlin" }
+protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref = "protobuf-kotlin" }
 
 # Netty native DNS resolver for macOS (version managed by Spring BOM)
 netty-resolver-dns-native-macos = { module = "io.netty:netty-resolver-dns-native-macos" }

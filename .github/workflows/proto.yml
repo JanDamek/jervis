@@ -1,0 +1,68 @@
+name: proto
+
+on:
+  pull_request:
+    paths:
+      - "proto/**"
+      - "shared/service-contracts/**"
+      - "libs/jervis_contracts/**"
+      - "Makefile"
+      - ".github/workflows/proto.yml"
+  push:
+    branches:
+      - master
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: "1.68.1"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: buf lint
+        run: make proto-lint
+
+      - name: buf breaking (vs master)
+        if: github.event_name == 'pull_request'
+        run: make proto-breaking
+
+      - name: Install grpcio-tools (for Python codegen)
+        run: |
+          python -m pip install --upgrade pip
+          pip install "grpcio-tools>=1.66"
+
+      - name: buf generate + drift check
+        run: |
+          make proto-generate
+          git diff --exit-code -- proto shared/service-contracts/build/generated libs/jervis_contracts/jervis
+
+      - name: Build shared:service-contracts
+        run: ./gradlew :shared:service-contracts:build --no-daemon
+        env:
+          DOCKER_BUILD: "true"
+
+      - name: Install Python contracts package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e libs/jervis_contracts
+
+      - name: Python import sanity
+        run: |
+          python -c "import jervis_contracts; import jervis_contracts.interceptors; print('ok')"

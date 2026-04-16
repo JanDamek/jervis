@@ -1,0 +1,19 @@
+version: v2
+clean: false
+plugins:
+  # Kotlin/Java — messages
+  - remote: buf.build/protocolbuffers/java
+    out: ../shared/service-contracts/build/generated/source/buf/java
+
+  # Kotlin/Java — gRPC stubs (grpc-java)
+  - remote: buf.build/grpc/java
+    out: ../shared/service-contracts/build/generated/source/buf/grpc-java
+
+  # Kotlin — coroutine-native stubs (grpc-kotlin)
+  - remote: buf.build/grpc/kotlin
+    out: ../shared/service-contracts/build/generated/source/buf/grpc-kotlin
+
+  # Python generation is done separately via `python -m grpc_tools.protoc`
+  # in the Makefile (`proto-generate` target) so that the gencode version
+  # always matches the installed `grpcio-tools` runtime — remote buf plugins
+  # have shipped gencode ahead of the PyPI `protobuf` runtime in the past.

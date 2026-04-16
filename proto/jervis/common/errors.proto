@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package jervis.common;
+
+option java_package = "com.jervis.contracts.common";
+option java_multiple_files = true;
+option java_outer_classname = "ErrorsProto";
+
+// Attached to gRPC `google.rpc.Status.details` when the status code
+// alone is not enough to explain the failure (e.g. router returns
+// which models were tried before giving up).
+message ErrorDetail {
+  string reason = 1;                 // machine-readable short code
+  map<string, string> metadata = 2;  // free-form context
+}

@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package jervis.common;
+
+import "jervis/common/enums.proto";
+
+option java_package = "com.jervis.contracts.common";
+option java_multiple_files = true;
+option java_outer_classname = "TypesProto";
+
+// Scope isolates a request to a single client / project / group.
+// Empty project_id or group_id means "not scoped to a project/group".
+message Scope {
+  string client_id = 1;
+  string project_id = 2;
+  string group_id = 3;
+}
+
+// RequestContext travels as field 1 of every pod-to-pod RPC request.
+// Carries every value that used to live in HTTP X-* headers so that
+// `buf breaking` governs the cross-cutting contract too.
+message RequestContext {
+  Scope scope = 1;
+  Priority priority = 2;
+  Capability capability = 3;
+  string intent = 4;
+  string deadline_iso = 5;         // RFC3339 UTC; empty = no deadline (falls back to priority)
+  TierCap max_tier = 6;
+  string request_id = 7;           // correlation id; server-generated if empty
+  string task_id = 8;              // related Jervis task id; empty if none
+  int64 issued_at_unix_ms = 9;     // populated by client interceptor
+  map<string, string> trace = 10;  // w3c traceparent-style extras; no ABI guarantees
+}
+
+// Uniform resource name: scheme://authority/path
+message Urn {
+  string scheme = 1;
+  string authority = 2;
+  string path = 3;
+}
+
+// Wall-clock instant, UTC. Use RFC3339 in `iso` for human-readability;
+// `unix_ms` is the authoritative numeric form when both are present.
+message Timestamp {
+  int64 unix_ms = 1;
+  string iso = 2;
+}
