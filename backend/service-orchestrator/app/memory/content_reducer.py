@@ -177,14 +177,12 @@ async def _single_pass_reduce(
     else:
         # Local-only path (no project rules available)
         from app.chat.handler_streaming import call_llm
-        from app.models import ModelTier
 
         response = await call_llm(
             messages=[
                 {"role": "system", "content": _SYSTEM_INSTRUCTION},
                 {"role": "user", "content": prompt},
             ],
-            tier=ModelTier.LOCAL_COMPACT,
             max_tokens=min(token_budget + 100, 4096),
             temperature=0.1,
             timeout=15.0,

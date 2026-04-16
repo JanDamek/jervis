@@ -383,8 +383,12 @@ async def run_agentic_loop(
             call_messages = messages + [tool_reminder]
 
         response = await call_llm(
-            messages=call_messages, tier=tier, tools=selected_tools, route=route,
-            max_tier=max_tier, estimated_tokens=estimated,
+            messages=call_messages, tools=selected_tools,
+            max_tier=max_tier,
+            capability=route_capability,
+            client_id=effective_client_id,
+            deadline_iso=getattr(request, "deadline_iso", None),
+            priority=getattr(request, "priority", "NORMAL"),
         )
 
         choice = response.choices[0]
@@ -613,8 +617,14 @@ async def run_agentic_loop(
                     "7. Respond in the SAME LANGUAGE as the user's message."
                 ),
             })
-            break_response = await call_llm(messages=messages, tier=tier, route=route,
-                                              max_tier=max_tier, estimated_tokens=estimated)
+            break_response = await call_llm(
+                messages=messages,
+                max_tier=max_tier,
+                capability=route_capability,
+                client_id=effective_client_id,
+                deadline_iso=getattr(request, "deadline_iso", None),
+                priority=getattr(request, "priority", "NORMAL"),
+            )
             raw_text = break_response.choices[0].message.content or ""
 
             # Strip any raw XML tool_call tags that FREE models sometimes generate in text
@@ -1000,8 +1010,14 @@ async def run_agentic_loop(
         ),
     })
     try:
-        final_resp = await call_llm(messages=messages, tier=tier, route=route,
-                                       max_tier=max_tier, estimated_tokens=estimated)
+        final_resp = await call_llm(
+            messages=messages,
+            max_tier=max_tier,
+            capability=route_capability,
+            client_id=effective_client_id,
+            deadline_iso=getattr(request, "deadline_iso", None),
+            priority=getattr(request, "priority", "NORMAL"),
+        )
         raw_text = final_resp.choices[0].message.content or ""
         import re as _re
         final_text = _re.sub(r'<tool_call>.*?</tool_call>', '', raw_text, flags=_re.DOTALL).strip()

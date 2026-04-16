@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 
 from app.config import estimate_tokens
 from app.memory.content_reducer import reduce_for_prompt, reduce_messages_for_prompt
-from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +175,6 @@ async def _merge_topic_blocks(topic: str, blocks: list[dict]) -> dict:
             {"role": "system", "content": "You are a memory consolidation assistant. Respond with valid JSON only."},
             {"role": "user", "content": prompt},
         ],
-        tier=ModelTier.LOCAL_COMPACT,
         max_tokens=512,
         temperature=0.1,
         timeout=10.0,
@@ -251,7 +249,6 @@ async def consolidate_affair_messages(
                 {"role": "system", "content": "Summarize the conversation thread concisely."},
                 {"role": "user", "content": prompt},
             ],
-            tier=ModelTier.LOCAL_COMPACT,
             max_tokens=256,
             temperature=0.1,
             timeout=8.0,

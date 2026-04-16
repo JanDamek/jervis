@@ -18,7 +18,6 @@ from datetime import datetime, timezone
 from bson import ObjectId
 
 from app.config import estimate_tokens
-from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +80,6 @@ async def _llm_detect_topics(
             {"role": "system", "content": "Extract conversation topics. Respond with JSON array only."},
             {"role": "user", "content": prompt},
         ],
-        tier=ModelTier.LOCAL_COMPACT,
         max_tokens=256,
         temperature=0.1,
         timeout=5.0,

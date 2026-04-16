@@ -6,7 +6,6 @@ import json
 import logging
 
 from app.chat.handler_streaming import call_llm
-from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,6 @@ async def generate_draft_response(
     try:
         response = await call_llm(
             messages=[{"role": "user", "content": prompt}],
-            tier=ModelTier.LOCAL_STANDARD,
             timeout=60,
         )
 

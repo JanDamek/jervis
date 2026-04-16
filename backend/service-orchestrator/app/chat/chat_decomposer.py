@@ -28,7 +28,6 @@ from app.agent.models import (
 from app.chat.handler_streaming import call_llm
 from app.config import settings
 from app.graph.nodes._helpers import parse_json_response
-from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -71,20 +70,6 @@ async def detect_and_decompose(
         return DecompositionResult(should_decompose=False, reason="too_short")
 
     try:
-        # Route decomposition via OpenRouter when client has cloud tier
-        route = None
-        tier = ModelTier.LOCAL_COMPACT
-        if max_openrouter_tier and max_openrouter_tier != "NONE":
-            from app.llm.router_client import route_request
-            route = await route_request(
-                capability="chat",
-                max_tier=max_openrouter_tier,
-                estimated_tokens=2000,
-                deadline_iso=deadline_iso,
-                priority=priority,
-                client_id=client_id,
-            )
-
         # Build messages with optional conversation context
         decompose_messages = [
             {
@@ -140,10 +125,12 @@ async def detect_and_decompose(
         response = await asyncio.wait_for(
             call_llm(
                 messages=decompose_messages,
-                tier=tier,
                 max_tokens=1024,
-                route=route,
                 max_tier=max_openrouter_tier,
+                deadline_iso=deadline_iso,
+                priority=priority,
+                client_id=client_id,
+                capability="chat",
             ),
             timeout=30.0,  # Decomposer is simple classification — 30s is plenty
         )

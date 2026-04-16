@@ -26,7 +26,6 @@ from app.chat.handler_streaming import call_llm, stream_text, save_assistant_mes
 from app.chat.models import ChatRequest, ChatStreamEvent
 from app.chat.system_prompt import build_system_prompt
 from app.chat.tools import CHAT_INITIAL_TOOLS
-from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -135,18 +134,12 @@ async def handle_chat_sse(
                                            client_id=request.active_client_id,
                                            project_id=request.active_project_id)
             try:
-                # Route greeting via OpenRouter when client has cloud tier
                 greeting_max_tier = getattr(request, "max_openrouter_tier", "NONE") or "NONE"
-                greeting_route = None
-                greeting_tier = ModelTier.LOCAL_COMPACT
-                if greeting_max_tier != "NONE":
-                    from app.llm.router_client import route_request as _route_req
-                    greeting_route = await _route_req(
-                        capability="chat", max_tier=greeting_max_tier, estimated_tokens=2000,
-                    )
                 resp = await call_llm(
-                    messages=messages, tier=greeting_tier,
-                    route=greeting_route, max_tier=greeting_max_tier,
+                    messages=messages,
+                    max_tier=greeting_max_tier,
+                    capability="chat",
+                    client_id=request.active_client_id,
                 )
                 text = resp.choices[0].message.content or ""
                 if text.strip():
