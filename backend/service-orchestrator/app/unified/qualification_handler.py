@@ -43,6 +43,10 @@ class QualifyRequest(BaseModel):
     project_name: str | None = None
     source_urn: str = ""
     max_openrouter_tier: str = "FREE"
+    # Urgency — Kotlin forwards TaskDocument.deadline so the qualifier's router
+    # call derives the right bucket. Null = BATCH (default for catchup jobs).
+    deadline_iso: str | None = None
+    priority: str = "NORMAL"
 
     # KB extraction results
     summary: str = ""
@@ -506,6 +510,8 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
     route = await route_request(
         capability="extraction",
         estimated_tokens=estimated_tokens_count,
+        deadline_iso=request.deadline_iso,
+        priority=request.priority,
         client_id=request.client_id,
     )
 
@@ -661,6 +667,8 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
                 route = await route_request(
                     capability="extraction",
                     estimated_tokens=estimate_tokens(prompt) + 200,
+                    deadline_iso=request.deadline_iso,
+                    priority=request.priority,
                     client_id=request.client_id,
                 )
 

@@ -51,7 +51,7 @@ async def classify_intent(text: str, client_id: str | None = None) -> IntentResu
         route = await route_request(
             capability="chat",
             estimated_tokens=200,
-            processing_mode="FOREGROUND",
+            priority="CASCADE",
             client_id=client_id,
         )
 

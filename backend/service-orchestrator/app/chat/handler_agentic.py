@@ -349,6 +349,8 @@ async def run_agentic_loop(
             capability=route_capability,
             max_tier=max_tier,
             estimated_tokens=estimated,
+            deadline_iso=getattr(request, "deadline_iso", None),
+            priority=getattr(request, "priority", "NORMAL"),
             skip_models=_skip_models or None,
             require_tools=bool(selected_tools),
             client_id=effective_client_id,

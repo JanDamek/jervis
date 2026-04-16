@@ -91,11 +91,12 @@ async def quick_respond(
                 "confidence": 0.6,
             })
 
-    # Step 2: Route to FREE model
+    # Step 2: Route to FREE model — voice is real-time, always CASCADE priority
+    # so the router bucket is REALTIME regardless of deadline.
     route = await route_request(
         capability="chat",
         estimated_tokens=500,
-        processing_mode="FOREGROUND",
+        priority="CASCADE",
         client_id=client_id,
     )
 

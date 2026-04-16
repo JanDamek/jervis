@@ -124,7 +124,10 @@ async def generate_hint(text: str, client_id: str = "", project_id: str = "", gr
         from app.llm.router_client import route_request
         import litellm
 
-        route = await route_request(capability="chat", estimated_tokens=300, client_id=client_id)
+        route = await route_request(
+            capability="chat", estimated_tokens=300,
+            priority="CASCADE", client_id=client_id,
+        )
         model = route.model if route.model else settings.default_local_model
 
         kwargs = {

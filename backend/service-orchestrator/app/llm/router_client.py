@@ -37,8 +37,6 @@ async def route_request(
     estimated_tokens: int = 0,
     deadline_iso: str | None = None,
     priority: str = "NORMAL",
-    processing_mode: str | None = None,
-    speed: str | None = None,
     min_model_size: int = 0,
     skip_models: list[str] | None = None,
     require_tools: bool = False,
@@ -56,8 +54,6 @@ async def route_request(
             None = no urgency pressure (router treats as BATCH).
         priority: "CASCADE" | "CRITICAL" | "NORMAL" — queue priority + REALTIME override.
         min_model_size: minimum local model size in billions (0 = any, 14, 30)
-        processing_mode / speed: DEPRECATED legacy — router's legacy shim translates them
-            to a synthetic deadline when `deadline_iso` is absent. Prefer deadline_iso.
         skip_models: model IDs to skip (already tried and failed in this request)
         require_tools: if True, only models with supportsTools=True are eligible
         client_id: router resolves tier from client's CloudModelPolicy in DB
@@ -74,10 +70,6 @@ async def route_request(
         }
         if deadline_iso:
             payload["deadline_iso"] = deadline_iso
-        elif speed:
-            payload["speed"] = speed
-        elif processing_mode:
-            payload["processing_mode"] = processing_mode
         if min_model_size:
             payload["min_model_size"] = min_model_size
         if client_id:

@@ -28,6 +28,8 @@ async def _bg_retry_with_next_model(
     max_tier: str,
     estimated_tokens: int,
     client_id: str | None = None,
+    deadline_iso: str | None = None,
+    priority: str = "NORMAL",
 ) -> object | None:
     """Try next cloud models after a background OpenRouter failure."""
     from app.llm.router_client import route_request
@@ -38,7 +40,8 @@ async def _bg_retry_with_next_model(
             capability="chat",
             max_tier=max_tier,
             estimated_tokens=estimated_tokens,
-            processing_mode="BACKGROUND",
+            deadline_iso=deadline_iso,
+            priority=priority,
             skip_models=skip_models,
             client_id=client_id,
         )

@@ -12,6 +12,7 @@ from langgraph.types import interrupt
 
 from app.agents.job_runner import job_runner
 from app.agents.workspace_manager import workspace_manager
+from app.agents.companion_runner import companion_runner
 from app.config import settings
 from app.tools.kotlin_client import kotlin_client
 from app.models import (
@@ -54,9 +55,30 @@ async def execute_step(state: dict) -> dict:
 async def _execute_respond_step(
     state: dict, task: CodingTask, step: CodingStep,
 ) -> dict:
-    """Execute an analytical/respond step — LLM + KB directly."""
+    """Execute an analytical/respond step — LLM + KB directly.
+
+    Deep-analysis path: if the task is COMPLEX/CRITICAL or the user prefixed the
+    request with `/deep`, delegate to the Claude companion (parallel K8s Job)
+    instead of the inline LLM pass. The companion returns free-form text in
+    result.json `summary`.
+    """
     evidence = state.get("evidence_pack", {})
     project_context = state.get("project_context", "")
+
+    wants_deep = _should_use_companion(state, task, step)
+    if wants_deep:
+        answer = await _run_companion_adhoc(state, task, step, evidence, project_context)
+        if answer:
+            step_result = StepResult(
+                step_index=step.index,
+                success=True,
+                summary=answer,
+                agent_type="companion",
+            )
+            existing = list(state.get("step_results", []))
+            existing.append(step_result.model_dump())
+            return {"step_results": existing, "final_result": answer}
+        logger.warning("Companion adhoc returned empty result, falling back to inline LLM")
 
     # Build context
     context_parts: list[str] = []
@@ -329,3 +351,97 @@ async def _prefetch_kb_context(
         files=files,
         processing_mode=processing_mode,
     )
+
+
+# --- Claude companion (parallel deep-analysis agent) -------------------------
+
+def _should_use_companion(state: dict, task: CodingTask, step: CodingStep) -> bool:
+    """Trigger the companion for heavy analytical work, not for chatter."""
+    # Explicit opt-in via /deep prefix
+    prompt_text = (step.instructions or "") + " " + (task.description or "")
+    if "/deep" in prompt_text.lower():
+        return True
+    # Complexity signal
+    complexity = (state.get("complexity") or task.complexity or "").lower()
+    if complexity in ("complex", "critical"):
+        return True
+    # Attachments (images / PDFs) — companion reads them natively, no VLM call
+    if state.get("companion_attachments"):
+        return True
+    return False
+
+
+async def _run_companion_adhoc(
+    state: dict,
+    task: CodingTask,
+    step: CodingStep,
+    evidence: dict,
+    project_context: str,
+) -> str:
+    """Dispatch an ad-hoc companion Job and wait for result.json.
+
+    Returns the free-form summary text, or empty string on failure.
+    """
+    import asyncio as _asyncio
+    from pathlib import Path as _Path
+
+    brief_parts: list[str] = [
+        "# Deep analysis task",
+        f"Task ID: {task.id}",
+        "",
+        "## Goal",
+        step.instructions or task.description or "(no instructions)",
+    ]
+    if project_context:
+        brief_parts += ["", "## Project context", project_context]
+    if evidence:
+        kb_bits = evidence.get("kb_results", []) or []
+        if kb_bits:
+            brief_parts.append("\n## Relevant KB")
+            for kr in kb_bits[:10]:
+                src = kr.get("source_urn") or kr.get("id") or ""
+                content = (kr.get("content") or "")[:2000]
+                brief_parts.append(f"- {src}: {content}")
+    brief_parts += [
+        "",
+        "## Expected output",
+        "Free-form markdown. No JSON. Respond in the language of the user unless the task is internal analytics.",
+    ]
+    brief = "\n".join(brief_parts)
+
+    attachments: list[_Path] = []
+    for path_str in state.get("companion_attachments", []) or []:
+        p = _Path(path_str)
+        if p.exists():
+            attachments.append(p)
+
+    language = state.get("language") or "cs"
+    client_id = state.get("client_id") or ""
+    project_id = state.get("project_id")
+
+    try:
+        dispatch = await companion_runner.dispatch_adhoc(
+            task_id=task.id,
+            brief=brief,
+            context={"step_index": step.index, "source_urn": task.source_urn},
+            attachments=attachments,
+            client_id=client_id,
+            project_id=project_id,
+            language=language,
+        )
+    except Exception as e:
+        logger.warning("Companion dispatch failed: %s", e)
+        return ""
+
+    deadline = _asyncio.get_event_loop().time() + 30 * 60
+    while _asyncio.get_event_loop().time() < deadline:
+        status = job_runner.get_job_status(dispatch.job_name)
+        if status.get("status") == "succeeded":
+            result = companion_runner.collect_adhoc_result(dispatch.workspace_path) or {}
+            return (result.get("summary") or "").strip()
+        if status.get("status") == "failed":
+            logger.warning("Companion Job %s failed", dispatch.job_name)
+            return ""
+        await _asyncio.sleep(5)
+    logger.warning("Companion Job %s timed out", dispatch.job_name)
+    return ""

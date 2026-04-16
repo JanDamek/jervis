@@ -37,6 +37,8 @@ async def call_llm(
     max_tier: str = "NONE",
     estimated_tokens: int = 0,
     client_id: str | None = None,
+    deadline_iso: str | None = None,
+    priority: str = "NORMAL",
 ):
     """Unified LLM completion call with optional timeout and route override.
 
@@ -84,7 +86,10 @@ async def call_llm(
         # Timeout fallback: if local GPU timed out, try cloud via router
         if route and route.target == "local":
             from app.llm.router_client import route_request
-            fallback = await route_request(capability="chat", estimated_tokens=48_000, client_id=client_id)
+            fallback = await route_request(
+                capability="chat", estimated_tokens=48_000,
+                deadline_iso=deadline_iso, priority=priority, client_id=client_id,
+            )
             if fallback.target == "openrouter" and fallback.model:
                 logger.info("Local GPU timeout, falling back to OpenRouter %s", fallback.model)
                 return await llm_provider.completion(
@@ -143,21 +148,23 @@ async def _retry_with_next_model(
     temperature: float,
     max_tier: str = "NONE",
     estimated_tokens: int = 0,
-    processing_mode: str = "FOREGROUND",
+    deadline_iso: str | None = None,
+    priority: str = "NORMAL",
     client_id: str | None = None,
 ):
     """Try next models in queue after a cloud model failure."""
     from app.llm.router_client import route_request, report_model_error
 
     skip_models = [failed_model]
-    extra_headers = foreground_headers(processing_mode) if processing_mode == "FOREGROUND" else None
+    extra_headers = foreground_headers("FOREGROUND")
 
     for attempt in range(_MAX_MODEL_RETRIES_SAFETY_CAP):
         fallback = await route_request(
             capability="chat",
             max_tier=max_tier,
             estimated_tokens=estimated_tokens,
-            processing_mode=processing_mode,
+            deadline_iso=deadline_iso,
+            priority=priority,
             skip_models=skip_models,
             require_tools=bool(tools),
             client_id=client_id,
@@ -224,7 +231,8 @@ async def _retry_with_next_model(
                 capability="chat",
                 max_tier=max_tier,
                 estimated_tokens=estimated_tokens,
-                processing_mode=processing_mode,
+                deadline_iso=deadline_iso,
+                priority=priority,
                 require_tools=bool(tools),
                 client_id=client_id,
             )
@@ -255,7 +263,7 @@ async def _retry_with_next_model(
             tools=tools,
             max_tokens=max_tokens,
             temperature=temperature,
-            extra_headers=foreground_headers(processing_mode),
+            extra_headers=foreground_headers("FOREGROUND"),
         )
     except Exception as local_err:
         logger.warning("Local GPU fallback also failed: %s", local_err)

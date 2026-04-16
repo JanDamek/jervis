@@ -219,19 +219,6 @@ async def api_chat(request: Request):
     return resp
 
 
-@app.post("/api/cascade")
-async def api_cascade(request: Request):
-    """DEPRECATED — use /api/generate with header `X-Priority: CASCADE` instead.
-
-    Retained for backward compatibility with any unmigrated caller. Will be
-    removed once all callers (server-side CascadeLlmClient already migrated)
-    stop hitting this path. Behavior is identical to the header-driven route.
-    """
-    body = await request.json()
-    logger.warning("DEPRECATED /api/cascade called — migrate to /api/generate with X-Priority: CASCADE")
-    return await router.cascade_route("/api/generate", body, http_request=request)
-
-
 @app.post("/api/embeddings")
 async def api_embeddings(request: Request):
     body = await request.json()
@@ -469,14 +456,15 @@ async def router_status():
 
 @app.post("/route-decision")
 async def route_decision(request: Request):
-    """Unified routing decision endpoint.
+    """Routing decision endpoint for decision-only callers (orchestrator nodes
+    that dispatch via LiteLLM themselves).
 
-    Preferred input (see KB agent://claude-code/task-routing-unified-design):
+    Input (see KB agent://claude-code/task-routing-unified-design):
       {
         "capability": "chat",              # chat|thinking|coding|extraction|embedding|visual
         "max_tier": "FREE",                # NONE|FREE|PAID|PREMIUM (or resolved from client_id)
         "estimated_tokens": 5000,
-        "deadline_iso": "2026-04-15T12:34:56Z",  # absolute deadline; null = no pressure
+        "deadline_iso": "2026-04-15T12:34:56Z",  # absolute deadline; null = no pressure (BATCH)
         "priority": "NORMAL",              # CASCADE|CRITICAL|NORMAL
         "min_model_size": 0,               # 0=any, 14, 30, 120
         "require_tools": false,
@@ -484,23 +472,9 @@ async def route_decision(request: Request):
         "client_id": "..."
       }
 
-    Legacy (accepted for migration until callers are updated):
-      - `processing_mode`: FOREGROUND → `deadline_iso = now+300s`, BACKGROUND → null
-      - `speed`: FAST → `deadline_iso = now+60s`, STANDARD → null, SLOW → null
-
     Output: {"target": "local"|"openrouter", "model": "...", "api_base"|"api_key": "..."}
     """
     body = await request.json()
-
-    # Legacy speed / processing_mode → deadline translation (removed once commit 6 lands)
-    deadline_iso = body.get("deadline_iso")
-    if deadline_iso is None:
-        legacy_speed = (body.get("speed") or "").upper()
-        legacy_mode = (body.get("processing_mode") or "").upper()
-        from datetime import datetime, timezone, timedelta
-        if legacy_speed == "FAST" or legacy_mode == "FOREGROUND":
-            deadline_iso = (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()
-        # STANDARD / BACKGROUND / SLOW / missing → None (BATCH bucket)
 
     priority_str = (body.get("priority") or "NORMAL").upper()
     priority_val = {
@@ -513,7 +487,7 @@ async def route_decision(request: Request):
         capability=body.get("capability", "chat"),
         max_tier=body.get("max_tier", "NONE"),
         estimated_tokens=body.get("estimated_tokens", 0),
-        deadline_iso=deadline_iso,
+        deadline_iso=body.get("deadline_iso"),
         priority=priority_val,
         min_model_size=body.get("min_model_size", 0),
         skip_models=body.get("skip_models"),

@@ -104,6 +104,16 @@ class Settings(BaseSettings):
     agent_timeout_claude: int = 1800
     agent_timeout_kilo: int = 1800
 
+    # Claude companion (parallel deep-analysis agent)
+    companion_max_concurrent_sessions: int = int(os.getenv("COMPANION_MAX_CONCURRENT_SESSIONS", "3"))
+    companion_max_adhoc_per_hour: int = int(os.getenv("COMPANION_MAX_ADHOC_PER_HOUR", "10"))
+    # Inbox tail sleep inside the Job runner between file reads. Small on purpose.
+    companion_inbox_poll_interval: float = float(os.getenv("COMPANION_INBOX_POLL_INTERVAL", "0.2"))
+    # Assistant hints are "into the ear" — anything older than this is stale.
+    # Orchestrator drops outbox events older than TTL when streaming to the
+    # assistant UI. Adjust per use-case via query param (/companion/session/.../stream?max_age_seconds=...).
+    companion_assistant_event_ttl_seconds: int = int(os.getenv("COMPANION_ASSISTANT_EVENT_TTL_SECONDS", "45"))
+
     # KILO agent model configuration
     kilo_model: str = os.getenv("KILO_MODEL", "qwen/qwen3-coder:free")
     kilo_fallback_model: str = os.getenv("KILO_FALLBACK_MODEL", "nvidia/llama-3.3-nemotron-super-49b-v1:free")

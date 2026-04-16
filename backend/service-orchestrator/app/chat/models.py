@@ -60,6 +60,12 @@ class ChatRequest(BaseModel):
     # Cloud routing policy (from CloudModelPolicy)
     max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID" / "PREMIUM" (compat: "PAID_LOW" / "PAID_HIGH")
 
+    # Urgency — chat is always a user-is-waiting interactive flow. Kotlin sets
+    # `deadline_iso` = now + ~5 min at message arrival so the router derives
+    # bucket=URGENT and prefers cloud when available (see task-routing-unified-design).
+    deadline_iso: str | None = None
+    priority: str = "NORMAL"            # CASCADE | CRITICAL | NORMAL
+
     # Client timezone (from device, e.g. "Europe/Prague", "Europe/London")
     client_timezone: str | None = None
 

@@ -48,6 +48,8 @@ async def detect_and_decompose(
     client_id: str = "",
     project_id: str = "",
     max_openrouter_tier: str = "NONE",
+    deadline_iso: str | None = None,
+    priority: str = "NORMAL",
 ) -> DecompositionResult:
     """Detect if a chat message should be decomposed into parallel graph vertices.
 
@@ -78,6 +80,8 @@ async def detect_and_decompose(
                 capability="chat",
                 max_tier=max_openrouter_tier,
                 estimated_tokens=2000,
+                deadline_iso=deadline_iso,
+                priority=priority,
                 client_id=client_id,
             )
 

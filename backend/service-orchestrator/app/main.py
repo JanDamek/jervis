@@ -261,6 +261,10 @@ app.include_router(meeting_helper_router)
 from app.proactive.routes import router as proactive_router
 app.include_router(proactive_router)
 
+# Register Claude companion router (adhoc + session lifecycle)
+from app.companion.routes import router as companion_router
+app.include_router(companion_router)
+
 
 # --- Voice Pipeline Endpoint ---
 

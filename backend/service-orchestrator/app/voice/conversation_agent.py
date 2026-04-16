@@ -117,7 +117,7 @@ class ConversationContextAgent:
         route = await route_request(
             capability="chat",
             estimated_tokens=800,
-            processing_mode="FOREGROUND",
+            priority="CASCADE",
             client_id=self.client_id,
         )
         model = route.model or "openrouter/auto"

@@ -182,10 +182,8 @@ async def llm_with_cloud_fallback(
     max_tier = rules.max_openrouter_tier if rules.max_openrouter_tier else "NONE"
 
     # Router resolves tier from client_id; max_tier as explicit override.
-    # Forward task urgency metadata so the router derives the correct bucket
-    # (REALTIME/URGENT/NORMAL/BATCH) from the absolute deadline rather than
-    # from the legacy processing_mode. processing_mode kept as legacy fallback
-    # when deadline is absent (older task flows that haven't been migrated).
+    # Forward task urgency metadata — deadline + priority is the only urgency
+    # signal, router derives bucket (REALTIME/URGENT/NORMAL/BATCH) internally.
     route = await route_request(
         capability=task.capability or "chat",
         max_tier=max_tier,
@@ -193,7 +191,6 @@ async def llm_with_cloud_fallback(
         deadline_iso=task.deadline_iso,
         priority=task.priority,
         min_model_size=task.min_model_size,
-        processing_mode=processing_mode,
         client_id=client_id,
     )
     logger.info(
@@ -232,7 +229,6 @@ async def llm_with_cloud_fallback(
                 deadline_iso=task.deadline_iso,
                 priority=task.priority,
                 min_model_size=task.min_model_size,
-                processing_mode=processing_mode,
                 skip_models=[route.model],
                 client_id=client_id,
             )
@@ -314,10 +310,13 @@ async def _escalate_to_cloud(
         # For OpenRouter, get a specific model via route_request (not "openrouter/auto")
         if auto_tier == ModelTier.CLOUD_OPENROUTER:
             route = await route_request(
-                capability="chat",
-                estimated_tokens=context_tokens, processing_mode="BACKGROUND",
+                capability=task.capability or "chat",
+                estimated_tokens=context_tokens,
+                deadline_iso=task.deadline_iso,
+                priority=task.priority,
+                min_model_size=task.min_model_size,
                 require_tools=bool(tools),
-                client_id=client_id,
+                client_id=task.client_id,
             )
             if route.target == "openrouter" and route.model:
                 return await llm_provider.completion(
