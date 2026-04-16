@@ -326,3 +326,14 @@ async def _stream_and_assemble(
 
 
 llm_provider = LlmProvider()
+
+
+async def refresh_openrouter_api_key() -> None:
+    """No-op shim — orchestrator no longer holds OpenRouter credentials.
+
+    The router (/api/chat → proxy_to_openrouter) owns the API key and refreshes
+    it from Kotlin server directly. This function is kept so the existing
+    `app.main.lifespan` startup import still resolves; a follow-up cleanup can
+    delete the call site.
+    """
+    return None
