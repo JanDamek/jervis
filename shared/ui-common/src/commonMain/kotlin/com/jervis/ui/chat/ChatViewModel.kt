@@ -42,6 +42,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -90,8 +92,41 @@ class ChatViewModel(
     private val _activeChatTaskName = MutableStateFlow<String?>(null)
     val activeChatTaskName: StateFlow<String?> = _activeChatTaskName.asStateFlow()
 
+    /**
+     * Live task state for the currently open drill-in — populated by the
+     * `subscribeTask(taskId)` stream. Guideline #9: no one-shot `getById`,
+     * no stale value; the server pushes on every state change so the
+     * breadcrumb (Otevřít znovu / Hotovo) always matches the sidebar.
+     */
     private val _activeChatTaskState = MutableStateFlow<String?>(null)
     val activeChatTaskState: StateFlow<String?> = _activeChatTaskState.asStateFlow()
+
+    /**
+     * Snapshot of the active drill-in task (task + related tasks). Pushed by
+     * the server whenever the task changes. Null when no task is open.
+     */
+    private val _taskSnapshot = MutableStateFlow<com.jervis.dto.task.TaskSnapshot?>(null)
+    val taskSnapshot: StateFlow<com.jervis.dto.task.TaskSnapshot?> = _taskSnapshot.asStateFlow()
+
+    /**
+     * Sidebar toggle: show active tasks or DONE history. Changing this
+     * re-opens the sidebar stream with the new parameter — no client-side
+     * filtering, DB does it.
+     */
+    private val _showDoneInSidebar = MutableStateFlow(false)
+    val showDoneInSidebar: StateFlow<Boolean> = _showDoneInSidebar.asStateFlow()
+
+    fun toggleShowDoneInSidebar() {
+        _showDoneInSidebar.value = !_showDoneInSidebar.value
+    }
+
+    /**
+     * Server-pushed sidebar snapshot. The stream re-opens on clientId /
+     * showDone change and on every RpcConnectionManager reconnect (via
+     * resilientFlow). Null until the first emit.
+     */
+    private val _sidebarSnapshot = MutableStateFlow<com.jervis.dto.task.SidebarSnapshot?>(null)
+    val sidebarSnapshot: StateFlow<com.jervis.dto.task.SidebarSnapshot?> = _sidebarSnapshot.asStateFlow()
 
     /** Phase 5 — chat sidebar split fraction (resizable rail). */
     private val _chatSidebarSplitFraction = MutableStateFlow(0.22f)
@@ -157,11 +192,9 @@ class ChatViewModel(
                 } else {
                     switchToMainChat()
                 }
-                _sidebarRefreshTrigger.value++ // force sidebar reload from server
+                // Sidebar snapshot is pushed by the server stream — no manual reload.
             } catch (e: Exception) {
                 println("ChatViewModel: markActiveTaskDone failed: ${e.message}")
-                // On failure, reload sidebar to restore the task
-                _sidebarRefreshTrigger.value++
             }
         }
     }
@@ -215,21 +248,12 @@ class ChatViewModel(
                 repository.call { services -> services.pendingTaskService.reopen(taskId, note) }
                 println("ChatViewModel: reopened task $taskId")
                 switchToTaskConversation(taskId, taskName)
-                _sidebarRefreshTrigger.value++ // force immediate sidebar reload
+                // Task + sidebar snapshots arrive automatically via streams.
             } catch (e: Exception) {
                 println("ChatViewModel: reopenActiveTask failed: ${e.message}")
             }
         }
     }
-
-    /**
-     * Phase 5 — incremented by any action that changes the sidebar content
-     * (markDone, reopen, sendMessage to task). The sidebar composable
-     * observes this and immediately triggers a reload instead of waiting
-     * for the 15s polling cycle.
-     */
-    private val _sidebarRefreshTrigger = MutableStateFlow(0)
-    val sidebarRefreshTrigger: StateFlow<Int> = _sidebarRefreshTrigger.asStateFlow()
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
@@ -431,6 +455,8 @@ class ChatViewModel(
     private var scopeWatchJob: Job? = null
     private var historyReloadJob: Job? = null
     private var progressTimeoutJob: Job? = null
+    private var sidebarStreamJob: Job? = null
+    private var taskStreamJob: Job? = null
 
     companion object {
         private val BACKOFF_DELAYS_MS = listOf(0L, 5_000L, 30_000L, 300_000L)
@@ -540,6 +566,40 @@ class ChatViewModel(
                 handleChatResponse(response)
             }
         }
+
+        // (C) Push-only sidebar stream — guideline #9. Server pushes fresh
+        //     SidebarSnapshot on every task write; UI renders via collectAsState.
+        //     The stream re-opens on (client, showDone) change and on reconnect.
+        //     Replaces listTasksPaged + _sidebarRefreshTrigger polling.
+        sidebarStreamJob?.cancel()
+        sidebarStreamJob = scope.launch {
+            combine(selectedClientId, _showDoneInSidebar) { cid, showDone -> cid to showDone }
+                .collectLatest { (cid, showDone) ->
+                    connectionManager.resilientFlow { services ->
+                        services.pendingTaskService.subscribeSidebar(cid, showDone)
+                    }.collect { snap -> _sidebarSnapshot.value = snap }
+                }
+        }
+
+        // (D) Per-task drill-in stream — active only when the user has opened
+        //     a task. Pushes TaskSnapshot (task + related) on every write,
+        //     so the breadcrumb state ("Otevřít znovu" / "Hotovo") is always
+        //     current. Fixes the stale _activeChatTaskState bug.
+        taskStreamJob?.cancel()
+        taskStreamJob = scope.launch {
+            _activeChatTaskId.collectLatest { taskId ->
+                if (taskId.isNullOrBlank()) {
+                    _taskSnapshot.value = null
+                    return@collectLatest
+                }
+                connectionManager.resilientFlow { services ->
+                    services.pendingTaskService.subscribeTask(taskId)
+                }.collect { snap ->
+                    _taskSnapshot.value = snap
+                    _activeChatTaskState.value = snap.task.state
+                }
+            }
+        }
     }
 
     /**
@@ -587,20 +647,19 @@ class ChatViewModel(
         persistDraftToServer(currentKey, currentText)
         _activeChatTaskId.value = taskId
         _activeChatTaskName.value = taskName
+        // _activeChatTaskState is now driven by the subscribeTask(taskId) stream
+        // (see taskStreamJob in subscribeToChatStream) — never cached here.
         _activeChatTaskState.value = null
         _inputText.value = drafts[taskId] ?: ""
         scope.launch {
             _isLoading.value = true
             try {
-                // Fetch the task itself so we can show its content + metadata
-                // as a synthetic "brief" header in the chat plane. Most tasks
-                // (indexed emails, schedules, scrapes) have NO chat messages
-                // attached, so without this header the user would just see
-                // an empty 'Začněte konverzaci' screen — useless.
+                // One-off read for the synthetic "brief" header (static fields
+                // — summary, sourceLabel, createdAt). The LIVE state used by
+                // the breadcrumb flows through the stream, not through this read.
                 val task = repository.call { services ->
                     services.pendingTaskService.getById(taskId)
                 }
-                _activeChatTaskState.value = task?.state
                 val history = repository.call { services ->
                     services.chatService.getTaskConversationHistory(taskId, limit = 200)
                 }
@@ -884,7 +943,9 @@ class ChatViewModel(
         scope.launch {
             try {
                 repository.call { services -> services.userTaskService.dismiss(taskId) }
-                // Reload from DB — dismissed item now filtered out by metadata.dismissed
+                // Reload chat bubbles from DB — dismissed item filtered out by metadata.dismissed.
+                // Sidebar refreshes via the server-pushed TASK_LIST_CHANGED event
+                // (see ChatResponseType.TASK_LIST_CHANGED handler). No client-side polling.
                 reloadForCurrentFilter()
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -905,7 +966,8 @@ class ChatViewModel(
                 // Switch back to Chat view after dismissing all actionable items
                 _showChat.value = true
                 _showNeedReaction.value = false
-                // Reload from DB — dismissed items now filtered out
+                // Reload from DB — dismissed items now filtered out.
+                // Sidebar refreshes via server-pushed TASK_LIST_CHANGED events.
                 reloadForCurrentFilter()
                 println("ChatViewModel: dismissAll — $count items dismissed")
             } catch (e: Exception) {
@@ -1435,11 +1497,9 @@ class ChatViewModel(
             }
 
             ChatResponseType.TASK_LIST_CHANGED -> {
-                // Phase 5 stream-based sidebar: server pushes this event
-                // after any task state change. Increment the trigger so the
-                // sidebar composable reloads immediately — no 15s polling.
-                _sidebarRefreshTrigger.value++
-                null  // Don't add as chat message
+                // Legacy event — sidebar + task streams push fresh snapshots
+                // directly now (guideline #9). Drop the signal silently.
+                null
             }
 
             else -> null

@@ -150,7 +150,9 @@ fun MainScreenView(
     onChatSidebarSplitChange: (Float) -> Unit = {},
     onMarkActiveTaskDone: () -> Unit = {},
     onReopenActiveTask: () -> Unit = {},
-    sidebarRefreshTrigger: Int = 0,
+    sidebarSnapshot: com.jervis.dto.task.SidebarSnapshot? = null,
+    showDoneInSidebar: Boolean = false,
+    onToggleShowDoneInSidebar: () -> Unit = {},
     sidebarRemovedTaskIds: Set<String> = emptySet(),
     modifier: Modifier = Modifier,
 ) {
@@ -395,11 +397,12 @@ fun MainScreenView(
                             maxFraction = 0.5f,
                             leftContent = { mod ->
                                 ChatTaskSidebar(
-                                    repository = repository,
+                                    snapshot = sidebarSnapshot,
+                                    showDone = showDoneInSidebar,
+                                    onToggleShowDone = onToggleShowDoneInSidebar,
                                     activeTaskId = activeChatTaskId,
                                     onTaskSelected = onChatTaskSelected,
                                     onMainChatSelected = onMainChatSelected,
-                                    refreshTrigger = sidebarRefreshTrigger,
                                     removedTaskIds = sidebarRemovedTaskIds,
                                     modifier = mod,
                                 )
@@ -419,7 +422,9 @@ fun MainScreenView(
                             drawerContent = {
                                 ModalDrawerSheet(modifier = Modifier.width(280.dp)) {
                                     ChatTaskSidebar(
-                                        repository = repository,
+                                        snapshot = sidebarSnapshot,
+                                        showDone = showDoneInSidebar,
+                                        onToggleShowDone = onToggleShowDoneInSidebar,
                                         activeTaskId = activeChatTaskId,
                                         onTaskSelected = { task ->
                                             onChatTaskSelected(task)
@@ -429,7 +434,6 @@ fun MainScreenView(
                                             onMainChatSelected()
                                             coroutineScope.launch { drawerState.close() }
                                         },
-                                        refreshTrigger = sidebarRefreshTrigger,
                                         removedTaskIds = sidebarRemovedTaskIds,
                                         modifier = Modifier.fillMaxSize(),
                                     )

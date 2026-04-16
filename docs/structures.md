@@ -650,10 +650,14 @@ tasks grouped into **collapsible sections** by pipeline stage:
 | Ceka na podulohy | BLOCKED | collapsed |
 | Chyby | ERROR | collapsed |
 
-**Stream-based refresh:** Server pushes `TASK_LIST_CHANGED` via SSE →
-`ChatViewModel` increments `sidebarRefreshTrigger` → sidebar reloads.
-No polling timer. Existing task list stays visible during refresh (no
-spinner flash — spinner only on initial empty load).
+**Push-only rendering (guideline #9):** the sidebar subscribes to
+`IPendingTaskService.subscribeSidebar(clientId, showDone)` — a kRPC
+`Flow<SidebarSnapshot>` fed by a per-scope `MutableSharedFlow(replay=1)`
+in `SidebarStreamService`. Server writes invalidate the flow via
+`TaskSaveEventListener` (Mongo `AfterSaveEvent`) + explicit calls from
+`TaskService.updateState`/`updateStateAndContent`/`markAsError`. UI just
+`collectAsState()`s the snapshot in `ChatViewModel.sidebarSnapshot`. No
+pull, no refresh button, no `TASK_LIST_CHANGED` event→reload.
 
 **Task brief title resolution** (in `ChatViewModel.switchToTaskConversation`):
 `summary` > `taskName` (if not "Unnamed Task") > first line of content > `sourceLabel`
