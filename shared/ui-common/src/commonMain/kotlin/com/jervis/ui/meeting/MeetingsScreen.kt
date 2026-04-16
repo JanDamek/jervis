@@ -100,17 +100,18 @@ fun MeetingsScreen(
         viewModel.loadUnclassifiedMeetings()
     }
 
-    // Load meetings + projects when global selection changes
-    // Skip "__global__" — it's not a valid MongoDB ObjectId, only used for global chat
+    // Load meetings + projects when global selection changes.
+    // Global scope ("__global__" or null) loads cross-client timeline —
+    // server `getMeetingTimeline(null, null)` returns meetings from all clients.
+    // Trash view and project loading still require a real client.
     LaunchedEffect(selectedClientId, selectedProjectId, showTrash) {
-        selectedClientId?.takeIf { it != "__global__" }?.let { clientId ->
-            if (showTrash) {
-                viewModel.loadDeletedMeetings(clientId, selectedProjectId)
-            } else {
-                viewModel.loadTimeline(clientId, selectedProjectId)
-            }
-            viewModel.loadProjects(clientId)
+        val realClientId = selectedClientId?.takeIf { it != "__global__" }
+        if (showTrash) {
+            realClientId?.let { viewModel.loadDeletedMeetings(it, selectedProjectId) }
+        } else {
+            viewModel.loadTimeline(realClientId, selectedProjectId)
         }
+        realClientId?.let { viewModel.loadProjects(it) }
     }
 
     // Subscribe to real-time events

@@ -236,7 +236,7 @@ class MeetingViewModel(
         }
     }
 
-    fun loadMeetings(clientId: String, projectId: String? = null, silent: Boolean = false) {
+    fun loadMeetings(clientId: String?, projectId: String? = null, silent: Boolean = false) {
         lastClientId = clientId
         lastProjectId = projectId
         scope.launch {
@@ -251,7 +251,7 @@ class MeetingViewModel(
         }
     }
 
-    fun loadTimeline(clientId: String, projectId: String? = null, silent: Boolean = false) {
+    fun loadTimeline(clientId: String?, projectId: String? = null, silent: Boolean = false) {
         lastClientId = clientId
         lastProjectId = projectId
         scope.launch {
@@ -278,17 +278,12 @@ class MeetingViewModel(
             _expandedGroups.value = _expandedGroups.value - key
             return
         }
-        val clientId = lastClientId
-        if (clientId == null) {
-            println("[Meeting] toggleGroup: lastClientId is null, cannot expand group key=$key")
-            _error.value = "Nelze rozbalit skupinu — není vybrán klient"
-            return
-        }
+        // Global scope (lastClientId == null) expands cross-client groups.
         scope.launch {
             _loadingGroups.value = _loadingGroups.value + key
             try {
                 val items = repository.meetings.listMeetingsByRange(
-                    clientId = clientId,
+                    clientId = lastClientId,
                     projectId = lastProjectId,
                     fromIso = group.periodStart,
                     toIso = group.periodEnd,

@@ -73,7 +73,9 @@ class MainViewModel(
     private val _projectGroups = MutableStateFlow<List<com.jervis.dto.project.ProjectGroupDto>>(emptyList())
     val projectGroups: StateFlow<List<com.jervis.dto.project.ProjectGroupDto>> = _projectGroups.asStateFlow()
 
-    private val _selectedClientId = MutableStateFlow<String?>(defaultClientId)
+    // Default scope is Global — user doesn't need to click to see everything.
+    // Individual screens that require a real client narrow via selectClient.
+    private val _selectedClientId = MutableStateFlow<String?>(defaultClientId ?: "__global__")
     val selectedClientId: StateFlow<String?> = _selectedClientId.asStateFlow()
 
     private val _selectedProjectId = MutableStateFlow<String?>(defaultProjectId)

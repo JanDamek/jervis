@@ -569,16 +569,16 @@ class ChatViewModel(
 
         // (C) Push-only sidebar stream — guideline #9. Server pushes fresh
         //     SidebarSnapshot on every task write; UI renders via collectAsState.
-        //     The stream re-opens on (client, showDone) change and on reconnect.
-        //     Replaces listTasksPaged + _sidebarRefreshTrigger polling.
+        //     Sidebar is ALWAYS GLOBAL (ignores scope) — user wants to see
+        //     everything Jervis is doing, not just the active client.
+        //     The stream re-opens only on showDone change and on reconnect.
         sidebarStreamJob?.cancel()
         sidebarStreamJob = scope.launch {
-            combine(selectedClientId, _showDoneInSidebar) { cid, showDone -> cid to showDone }
-                .collectLatest { (cid, showDone) ->
-                    connectionManager.resilientFlow { services ->
-                        services.pendingTaskService.subscribeSidebar(cid, showDone)
-                    }.collect { snap -> _sidebarSnapshot.value = snap }
-                }
+            _showDoneInSidebar.collectLatest { showDone ->
+                connectionManager.resilientFlow { services ->
+                    services.pendingTaskService.subscribeSidebar(null, showDone)
+                }.collect { snap -> _sidebarSnapshot.value = snap }
+            }
         }
 
         // (D) Per-task drill-in stream — active only when the user has opened

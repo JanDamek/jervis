@@ -21,6 +21,9 @@ interface MeetingRepository : CoroutineCrudRepository<MeetingDocument, ObjectId>
         projectId: ProjectId,
     ): Flow<MeetingDocument>
 
+    // Global (all clients) listing for Global scope in UI
+    fun findByDeletedIsFalseOrderByStartedAtDesc(): Flow<MeetingDocument>
+
     // Pipeline queries — only process non-deleted meetings
     fun findByStateAndDeletedIsFalseOrderByStoppedAtAsc(state: MeetingStateEnum): Flow<MeetingDocument>
 
@@ -64,6 +67,15 @@ interface MeetingRepository : CoroutineCrudRepository<MeetingDocument, ObjectId>
         startedAt: java.time.Instant,
     ): Flow<MeetingDocument>
 
+    // Global timeline queries (all clients)
+    fun findByDeletedIsFalseAndStartedAtGreaterThanEqualOrderByStartedAtDesc(
+        startedAt: java.time.Instant,
+    ): Flow<MeetingDocument>
+
+    fun findByDeletedIsFalseAndStartedAtLessThanOrderByStartedAtDesc(
+        startedAt: java.time.Instant,
+    ): Flow<MeetingDocument>
+
     // Deduplication: find active meeting with same client + type (for idempotent startRecording)
     @Query("{ 'clientId': ?0, 'meetingType': ?1, 'state': { '\$in': ['RECORDING', 'UPLOADING'] }, 'deleted': false }")
     suspend fun findActiveByClientIdAndMeetingType(
@@ -93,6 +105,12 @@ interface MeetingRepository : CoroutineCrudRepository<MeetingDocument, ObjectId>
     fun listMeetingsInRangeForProject(
         clientId: ClientId,
         projectId: ProjectId,
+        from: java.time.Instant,
+        to: java.time.Instant,
+    ): Flow<MeetingDocument>
+
+    @Query("{ 'deleted': false, 'startedAt': { \$gte: ?0, \$lt: ?1 } }", sort = "{ 'startedAt': -1 }")
+    fun listMeetingsInRangeAllClients(
         from: java.time.Instant,
         to: java.time.Instant,
     ): Flow<MeetingDocument>

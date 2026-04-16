@@ -30,8 +30,9 @@ interface IMeetingService {
 
     suspend fun cancelRecording(meetingId: String): Boolean
 
+    /** List meetings. Pass `clientId = null` for Global scope (all clients). */
     suspend fun listMeetings(
-        clientId: String,
+        clientId: String?,
         projectId: String?,
     ): List<MeetingDto>
 
@@ -73,15 +74,17 @@ interface IMeetingService {
 
     suspend fun listUnclassifiedMeetings(): List<MeetingDto>
 
+    /** Timeline with current week + older groups. Pass `clientId = null` for Global scope. */
     suspend fun getMeetingTimeline(
-        clientId: String,
+        clientId: String?,
         projectId: String?,
     ): MeetingTimelineDto
 
     suspend fun mergeMeetings(request: MeetingMergeDto): MeetingDto
 
+    /** Range-bounded listing for older-group expansion. Pass `clientId = null` for Global. */
     suspend fun listMeetingsByRange(
-        clientId: String,
+        clientId: String?,
         projectId: String?,
         fromIso: String,
         toIso: String,

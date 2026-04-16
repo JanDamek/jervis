@@ -49,6 +49,14 @@ class MeetingRpcImpl(
     private val taskRepository: com.jervis.task.TaskRepository,
 ) : IMeetingService {
 
+    /**
+     * UI sends "__global__" sentinel when user picks Global scope (all clients).
+     * An empty string may also arrive if the client is reset. Either one maps
+     * to `null` so queries run unscoped.
+     */
+    private fun normalizeClientId(clientId: String?): ClientId? =
+        clientId?.takeIf { it.isNotBlank() && it != "__global__" }?.let { ClientId.fromString(it) }
+
     override suspend fun startRecording(request: MeetingCreateDto): MeetingDto {
         val clientId = request.clientId?.let { ClientId.fromString(it) }
         val projectId = request.projectId?.let { ProjectId.fromString(it) }
@@ -187,13 +195,15 @@ class MeetingRpcImpl(
         return true
     }
 
-    override suspend fun listMeetings(clientId: String, projectId: String?): List<MeetingDto> {
-        val cid = ClientId.fromString(clientId)
-        val meetings = if (projectId != null) {
-            val pid = ProjectId.fromString(projectId)
-            meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseOrderByStartedAtDesc(cid, pid)
-        } else {
-            meetingRepository.findByClientIdAndDeletedIsFalseOrderByStartedAtDesc(cid)
+    override suspend fun listMeetings(clientId: String?, projectId: String?): List<MeetingDto> {
+        val cid = normalizeClientId(clientId)
+        val meetings = when {
+            cid != null && projectId != null -> {
+                val pid = ProjectId.fromString(projectId)
+                meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseOrderByStartedAtDesc(cid, pid)
+            }
+            cid != null -> meetingRepository.findByClientIdAndDeletedIsFalseOrderByStartedAtDesc(cid)
+            else -> meetingRepository.findByDeletedIsFalseOrderByStartedAtDesc()
         }
         return meetings.toList().map { it.toDto() }
     }
@@ -851,8 +861,8 @@ class MeetingRpcImpl(
         return saved.toDto()
     }
 
-    override suspend fun getMeetingTimeline(clientId: String, projectId: String?): MeetingTimelineDto {
-        val cid = ClientId.fromString(clientId)
+    override suspend fun getMeetingTimeline(clientId: String?, projectId: String?): MeetingTimelineDto {
+        val cid = normalizeClientId(clientId)
         val pid = projectId?.let { ProjectId.fromString(it) }
         val now = Instant.now()
 
@@ -862,17 +872,23 @@ class MeetingRpcImpl(
             .atStartOfDay(java.time.ZoneOffset.UTC)
             .toInstant()
 
-        val currentWeekMeetings = if (pid != null) {
-            meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtGreaterThanEqualOrderByStartedAtDesc(cid, pid, weekStart)
-        } else {
-            meetingRepository.findByClientIdAndDeletedIsFalseAndStartedAtGreaterThanEqualOrderByStartedAtDesc(cid, weekStart)
+        val currentWeekMeetings = when {
+            cid != null && pid != null ->
+                meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtGreaterThanEqualOrderByStartedAtDesc(cid, pid, weekStart)
+            cid != null ->
+                meetingRepository.findByClientIdAndDeletedIsFalseAndStartedAtGreaterThanEqualOrderByStartedAtDesc(cid, weekStart)
+            else ->
+                meetingRepository.findByDeletedIsFalseAndStartedAtGreaterThanEqualOrderByStartedAtDesc(weekStart)
         }.toList().map { it.toSummaryDto() }
 
         // Fetch older meetings (before current week) — DB-filtered, not full scan
-        val olderMeetings = if (pid != null) {
-            meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtLessThanOrderByStartedAtDesc(cid, pid, weekStart)
-        } else {
-            meetingRepository.findByClientIdAndDeletedIsFalseAndStartedAtLessThanOrderByStartedAtDesc(cid, weekStart)
+        val olderMeetings = when {
+            cid != null && pid != null ->
+                meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtLessThanOrderByStartedAtDesc(cid, pid, weekStart)
+            cid != null ->
+                meetingRepository.findByClientIdAndDeletedIsFalseAndStartedAtLessThanOrderByStartedAtDesc(cid, weekStart)
+            else ->
+                meetingRepository.findByDeletedIsFalseAndStartedAtLessThanOrderByStartedAtDesc(weekStart)
         }.toList()
 
         val thirtyDaysAgo = now.minus(java.time.Duration.ofDays(30))
@@ -921,20 +937,22 @@ class MeetingRpcImpl(
     }
 
     override suspend fun listMeetingsByRange(
-        clientId: String,
+        clientId: String?,
         projectId: String?,
         fromIso: String,
         toIso: String,
     ): List<MeetingSummaryDto> {
-        val cid = ClientId.fromString(clientId)
+        val cid = normalizeClientId(clientId)
         val from = Instant.parse(fromIso)
         val to = Instant.parse(toIso)
         logger.debug { "listMeetingsByRange client=$clientId project=$projectId from=$fromIso to=$toIso" }
-        val meetings = if (projectId != null) {
-            val pid = ProjectId.fromString(projectId)
-            meetingRepository.listMeetingsInRangeForProject(cid, pid, from, to)
-        } else {
-            meetingRepository.listMeetingsInRange(cid, from, to)
+        val meetings = when {
+            cid != null && projectId != null -> {
+                val pid = ProjectId.fromString(projectId)
+                meetingRepository.listMeetingsInRangeForProject(cid, pid, from, to)
+            }
+            cid != null -> meetingRepository.listMeetingsInRange(cid, from, to)
+            else -> meetingRepository.listMeetingsInRangeAllClients(from, to)
         }
         val result = meetings.toList().map { it.toSummaryDto() }
         logger.debug { "listMeetingsByRange returned ${result.size} items" }
