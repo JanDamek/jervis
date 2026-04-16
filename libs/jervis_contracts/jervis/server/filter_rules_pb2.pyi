@@ -1,0 +1,63 @@
+from jervis.common import types_pb2 as _types_pb2
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import message as _message
+from collections.abc import Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+
+DESCRIPTOR: _descriptor.FileDescriptor
+
+class CreateFilterRuleRequest(_message.Message):
+    __slots__ = ("ctx", "source_type", "condition_type", "condition_value", "action", "description", "client_id", "project_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    SOURCE_TYPE_FIELD_NUMBER: _ClassVar[int]
+    CONDITION_TYPE_FIELD_NUMBER: _ClassVar[int]
+    CONDITION_VALUE_FIELD_NUMBER: _ClassVar[int]
+    ACTION_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    source_type: str
+    condition_type: str
+    condition_value: str
+    action: str
+    description: str
+    client_id: str
+    project_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., source_type: _Optional[str] = ..., condition_type: _Optional[str] = ..., condition_value: _Optional[str] = ..., action: _Optional[str] = ..., description: _Optional[str] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ...) -> None: ...
+
+class ListFilterRulesRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "project_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    project_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ...) -> None: ...
+
+class RemoveFilterRuleRequest(_message.Message):
+    __slots__ = ("ctx", "rule_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    RULE_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    rule_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., rule_id: _Optional[str] = ...) -> None: ...
+
+class FilterRulePayload(_message.Message):
+    __slots__ = ("body_json",)
+    BODY_JSON_FIELD_NUMBER: _ClassVar[int]
+    body_json: str
+    def __init__(self, body_json: _Optional[str] = ...) -> None: ...
+
+class FilterRuleListPayload(_message.Message):
+    __slots__ = ("body_json",)
+    BODY_JSON_FIELD_NUMBER: _ClassVar[int]
+    body_json: str
+    def __init__(self, body_json: _Optional[str] = ...) -> None: ...
+
+class RemoveFilterRuleResponse(_message.Message):
+    __slots__ = ("removed",)
+    REMOVED_FIELD_NUMBER: _ClassVar[int]
+    removed: bool
+    def __init__(self, removed: bool = ...) -> None: ...

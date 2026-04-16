@@ -877,17 +877,22 @@ class KotlinServerClient:
     ) -> dict:
         """Get merged guidelines for a client+project context (GLOBAL → CLIENT → PROJECT)."""
         try:
-            client = await self._get_client()
-            params: dict = {}
-            if client_id:
-                params["clientId"] = client_id
-            if project_id:
-                params["projectId"] = project_id
-            resp = await client.get("/internal/guidelines/merged", params=params)
-            if resp.status_code == 200:
-                return resp.json()
-            logger.warning("Failed to get merged guidelines: %s", resp.status_code)
-            return {}
+            from app.grpc_server_client import server_guidelines_stub
+            from jervis.server import guidelines_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_guidelines_stub().GetMerged(
+                guidelines_pb2.GetMergedRequest(
+                    ctx=ctx,
+                    client_id=client_id or "",
+                    project_id=project_id or "",
+                ),
+                timeout=5.0,
+            )
+            return json.loads(resp.body_json) if resp.body_json else {}
         except Exception as e:
             logger.warning("Failed to get merged guidelines: %s", e)
             return {}
@@ -900,16 +905,31 @@ class KotlinServerClient:
     ) -> str:
         """Get guidelines for a specific scope (raw, unmerged)."""
         try:
-            client = await self._get_client()
-            params: dict = {"scope": scope}
-            if client_id:
-                params["clientId"] = client_id
-            if project_id:
-                params["projectId"] = project_id
-            resp = await client.get("/internal/guidelines", params=params)
-            if resp.status_code == 200:
-                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
-            return f"Error: {resp.status_code}"
+            from app.grpc_server_client import server_guidelines_stub
+            from jervis.server import guidelines_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            scope_enum_map = {
+                "GLOBAL": guidelines_pb2.GUIDELINES_SCOPE_GLOBAL,
+                "CLIENT": guidelines_pb2.GUIDELINES_SCOPE_CLIENT,
+                "PROJECT": guidelines_pb2.GUIDELINES_SCOPE_PROJECT,
+            }
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_guidelines_stub().Get(
+                guidelines_pb2.GetRequest(
+                    ctx=ctx,
+                    scope=scope_enum_map.get(scope, guidelines_pb2.GUIDELINES_SCOPE_GLOBAL),
+                    client_id=client_id or "",
+                    project_id=project_id or "",
+                ),
+                timeout=5.0,
+            )
+            if not resp.body_json:
+                return "{}"
+            doc = json.loads(resp.body_json)
+            return json.dumps(doc, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.warning("Failed to get guidelines: %s", e)
             return f"Error: {e}"
@@ -924,20 +944,26 @@ class KotlinServerClient:
     ) -> str:
         """Update a single category of guidelines for a given scope."""
         try:
-            client = await self._get_client()
+            from app.grpc_server_client import server_guidelines_stub
+            from jervis.server import guidelines_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
             payload = {
                 "scope": scope,
                 "clientId": client_id,
                 "projectId": project_id,
                 category: rules,
             }
-            resp = await client.post(
-                "/internal/guidelines",
-                json=payload,
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_guidelines_stub().Set(
+                guidelines_pb2.SetRequest(ctx=ctx, update_json=json.dumps(payload)),
+                timeout=10.0,
             )
-            if resp.status_code == 200:
-                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
-            return f"Error: {resp.status_code} - {resp.text}"
+            if resp.body_json:
+                return json.dumps(json.loads(resp.body_json), ensure_ascii=False, indent=2)
+            return ""
         except Exception as e:
             logger.warning("Failed to update guideline: %s", e)
             return f"Error: {e}"
@@ -956,22 +982,29 @@ class KotlinServerClient:
         client_id: str | None = None,
         project_id: str | None = None,
     ) -> str:
-        """Create a filtering rule via Kotlin internal API."""
+        """Create a filtering rule via Kotlin gRPC."""
         try:
-            client = await self._get_client()
-            payload = {
-                "sourceType": source_type,
-                "conditionType": condition_type,
-                "conditionValue": condition_value,
-                "action": action,
-                "description": description,
-                "clientId": client_id,
-                "projectId": project_id,
-            }
-            resp = await client.post("/internal/filter-rules", json=payload)
-            if resp.status_code == 200:
-                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
-            return f"Error: {resp.status_code}"
+            from app.grpc_server_client import server_filter_rules_stub
+            from jervis.server import filter_rules_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_filter_rules_stub().Create(
+                filter_rules_pb2.CreateFilterRuleRequest(
+                    ctx=ctx,
+                    source_type=source_type,
+                    condition_type=condition_type,
+                    condition_value=condition_value,
+                    action=action,
+                    description=description or "",
+                    client_id=client_id or "",
+                    project_id=project_id or "",
+                ),
+                timeout=5.0,
+            )
+            return json.dumps(json.loads(resp.body_json), ensure_ascii=False, indent=2) if resp.body_json else ""
         except Exception as e:
             logger.warning("Failed to create filter rule: %s", e)
             return f"Error: {e}"
@@ -981,33 +1014,46 @@ class KotlinServerClient:
         client_id: str | None = None,
         project_id: str | None = None,
     ) -> str:
-        """List active filtering rules via Kotlin internal API."""
+        """List active filtering rules via Kotlin gRPC."""
         try:
-            client = await self._get_client()
-            params: dict = {}
-            if client_id:
-                params["clientId"] = client_id
-            if project_id:
-                params["projectId"] = project_id
-            resp = await client.get("/internal/filter-rules", params=params)
-            if resp.status_code == 200:
-                rules = resp.json()
-                if not rules:
-                    return "Žádná aktivní filtrační pravidla."
-                return json.dumps(rules, ensure_ascii=False, indent=2)
-            return f"Error: {resp.status_code}"
+            from app.grpc_server_client import server_filter_rules_stub
+            from jervis.server import filter_rules_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_filter_rules_stub().List(
+                filter_rules_pb2.ListFilterRulesRequest(
+                    ctx=ctx,
+                    client_id=client_id or "",
+                    project_id=project_id or "",
+                ),
+                timeout=5.0,
+            )
+            rules = json.loads(resp.body_json) if resp.body_json else []
+            if not rules:
+                return "Žádná aktivní filtrační pravidla."
+            return json.dumps(rules, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.warning("Failed to list filter rules: %s", e)
             return f"Error: {e}"
 
     async def remove_filter_rule(self, rule_id: str) -> str:
-        """Remove a filtering rule by ID via Kotlin internal API."""
+        """Remove a filtering rule by ID via Kotlin gRPC."""
         try:
-            client = await self._get_client()
-            resp = await client.delete(f"/internal/filter-rules/{rule_id}")
-            if resp.status_code == 200:
-                return f"Pravidlo {rule_id} odstraněno."
-            return f"Error: {resp.status_code}"
+            from app.grpc_server_client import server_filter_rules_stub
+            from jervis.server import filter_rules_pb2
+            from jervis.common import types_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_filter_rules_stub().Remove(
+                filter_rules_pb2.RemoveFilterRuleRequest(ctx=ctx, rule_id=rule_id),
+                timeout=5.0,
+            )
+            return f"Pravidlo {rule_id} odstraněno." if resp.removed else f"Pravidlo {rule_id} nenalezeno."
         except Exception as e:
             logger.warning("Failed to remove filter rule %s: %s", rule_id, e)
             return f"Error: {e}"

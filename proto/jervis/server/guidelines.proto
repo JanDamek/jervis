@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerGuidelinesProto";
+
+// ServerGuidelinesService is the gRPC surface for operational-
+// guidelines CRUD: coding/git/review/communication/approval/general
+// rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
+// context. The rule tree itself is large and all consumers (orchestrator,
+// correction, LLM router prompt-builder) treat it as opaque JSON —
+// serialization stays kotlinx.serialization against `shared/common-dto`
+// types. Proto-typing the full tree would duplicate the schema in two
+// places; instead we carry the serialized document body as a field and
+// let consumers parse it with their native JSON library.
+service ServerGuidelinesService {
+  // Merged result for a client+project context (GLOBAL → CLIENT → PROJECT
+  // deep-merge). Body is `MergedGuidelinesDto` encoded as JSON.
+  rpc GetMerged(GetMergedRequest) returns (GuidelinesPayload);
+
+  // Raw (unmerged) document for one explicit scope. Body is
+  // `GuidelinesDocumentDto` encoded as JSON.
+  rpc Get(GetRequest) returns (GuidelinesPayload);
+
+  // Partial update of a scope — `update_json` is `GuidelinesUpdateRequest`
+  // encoded as JSON. Response carries the updated `GuidelinesDocumentDto`.
+  rpc Set(SetRequest) returns (GuidelinesPayload);
+}
+
+enum GuidelinesScope {
+  GUIDELINES_SCOPE_UNSPECIFIED = 0;
+  GUIDELINES_SCOPE_GLOBAL = 1;
+  GUIDELINES_SCOPE_CLIENT = 2;
+  GUIDELINES_SCOPE_PROJECT = 3;
+}
+
+message GetMergedRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+}
+
+message GetRequest {
+  jervis.common.RequestContext ctx = 1;
+  GuidelinesScope scope = 2;
+  string client_id = 3;
+  string project_id = 4;
+}
+
+message SetRequest {
+  jervis.common.RequestContext ctx = 1;
+  string update_json = 2;   // `GuidelinesUpdateRequest` kotlinx-serialized
+}
+
+message GuidelinesPayload {
+  string body_json = 1;     // `GuidelinesDocumentDto` or `MergedGuidelinesDto`
+}

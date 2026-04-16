@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerFilterRulesProto";
+
+// ServerFilterRulesService exposes the filtering-rules CRUD surface used
+// by the orchestrator agent's tool set. Rule documents carry the same
+// shape as `shared/common-dto` FilteringRule — we keep the body as JSON
+// for the same reason as ServerGuidelinesService (nested rule tree lives
+// under kotlinx.serialization SSOT; typing it twice adds no value for
+// consumers that pass it through).
+service ServerFilterRulesService {
+  rpc Create(CreateFilterRuleRequest) returns (FilterRulePayload);
+  rpc List(ListFilterRulesRequest) returns (FilterRuleListPayload);
+  rpc Remove(RemoveFilterRuleRequest) returns (RemoveFilterRuleResponse);
+}
+
+message CreateFilterRuleRequest {
+  jervis.common.RequestContext ctx = 1;
+  string source_type = 2;        // FilterSourceType name
+  string condition_type = 3;     // FilterConditionType name
+  string condition_value = 4;
+  string action = 5;             // FilterAction name (default IGNORE)
+  string description = 6;
+  string client_id = 7;
+  string project_id = 8;
+}
+
+message ListFilterRulesRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+}
+
+message RemoveFilterRuleRequest {
+  jervis.common.RequestContext ctx = 1;
+  string rule_id = 2;
+}
+
+message FilterRulePayload {
+  string body_json = 1;          // kotlinx-serialized FilteringRule
+}
+
+message FilterRuleListPayload {
+  string body_json = 1;          // kotlinx-serialized List<FilteringRule>
+}
+
+message RemoveFilterRuleResponse {
+  bool removed = 1;
+}

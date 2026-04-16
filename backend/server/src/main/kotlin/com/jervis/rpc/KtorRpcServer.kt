@@ -20,10 +20,8 @@ import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalChatContextApi
 import com.jervis.rpc.internal.installInternalEnvironmentApi
-import com.jervis.rpc.internal.installInternalFilterRulesApi
 import com.jervis.rpc.internal.installInternalUrgencyApi
 import com.jervis.rpc.internal.installInternalGitApi
-import com.jervis.rpc.internal.installInternalGuidelinesApi
 import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalProjectManagementApi
 import com.jervis.rpc.internal.installInternalMeetingApi
@@ -205,8 +203,8 @@ class KtorRpcServer(
                             // Internal REST API modules (Python orchestrator → Kotlin)
                             installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl, preferenceService)
                             installInternalTaskApi(taskRepository, taskService, userTaskService, preferenceService, pendingTaskService, fcmPushService, apnsPushService, chatRpcImpl)
-                            installInternalGuidelinesApi(guidelinesService)
-                            installInternalFilterRulesApi(filteringRulesService)
+                            // Guidelines + filter-rules CRUD migrated to gRPC
+                            // (jervis.server.ServerGuidelinesService + ServerFilterRulesService).
                             installInternalUrgencyApi(urgencyConfigRpcImpl, taskRepository)
                             installInternalEnvironmentApi(environmentService, environmentK8sService)
                             installInternalOpenRouterApi(openRouterSettingsRpcImpl)

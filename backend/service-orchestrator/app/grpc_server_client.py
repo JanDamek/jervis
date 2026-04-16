@@ -14,12 +14,14 @@ from typing import Optional
 import grpc.aio
 
 from app.config import settings
-from jervis.server import cache_pb2_grpc
+from jervis.server import cache_pb2_grpc, filter_rules_pb2_grpc, guidelines_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
 _channel: Optional[grpc.aio.Channel] = None
 _cache_stub: Optional[cache_pb2_grpc.ServerCacheServiceStub] = None
+_filter_rules_stub: Optional[filter_rules_pb2_grpc.ServerFilterRulesServiceStub] = None
+_guidelines_stub: Optional[guidelines_pb2_grpc.ServerGuidelinesServiceStub] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -46,3 +48,17 @@ def server_cache_stub() -> cache_pb2_grpc.ServerCacheServiceStub:
     if _cache_stub is None:
         _cache_stub = cache_pb2_grpc.ServerCacheServiceStub(_get_channel())
     return _cache_stub
+
+
+def server_guidelines_stub() -> guidelines_pb2_grpc.ServerGuidelinesServiceStub:
+    global _guidelines_stub
+    if _guidelines_stub is None:
+        _guidelines_stub = guidelines_pb2_grpc.ServerGuidelinesServiceStub(_get_channel())
+    return _guidelines_stub
+
+
+def server_filter_rules_stub() -> filter_rules_pb2_grpc.ServerFilterRulesServiceStub:
+    global _filter_rules_stub
+    if _filter_rules_stub is None:
+        _filter_rules_stub = filter_rules_pb2_grpc.ServerFilterRulesServiceStub(_get_channel())
+    return _filter_rules_stub
