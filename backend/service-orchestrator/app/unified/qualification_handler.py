@@ -24,7 +24,6 @@ from pydantic import BaseModel, Field
 
 from app.config import settings, estimate_tokens
 from app.llm.provider import llm_provider
-from app.llm.router_client import route_request
 from app.tools.executor import execute_tool
 from app.unified.tool_sets import ToolTier, get_tools
 
@@ -505,18 +504,10 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
         {"role": "user", "content": user_content},
     ]
 
-    # Route to extraction model (8b on GPU-2) — frees GPU-1 for orchestrator/chat
-    estimated_tokens_count = estimate_tokens(system_prompt) + estimate_tokens(request.content) + 500
-    route = await route_request(
-        capability="extraction",
-        estimated_tokens=estimated_tokens_count,
-        deadline_iso=request.deadline_iso,
-        priority=request.priority,
-        client_id=request.client_id,
-    )
-
-    model_override = route.model
-    api_base_override = route.api_base
+    # Router picks the model via /api/chat. X-Intent=qualifier lets the
+    # router keep this on GPU when idle and escalate to cloud only when
+    # oversize / busy. No pre-call decision.
+    _qual_headers = {"X-Intent": "qualifier"}
 
     for iteration in range(MAX_ITERATIONS):
         logger.info(
@@ -528,9 +519,11 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
         response = await llm_provider.completion(
             messages=messages,
             tools=tools if iteration < MAX_ITERATIONS - 1 else [],  # no tools on last iteration
-            model_override=model_override,
-            api_base_override=api_base_override,
-            api_key_override=route.api_key,
+            capability="extraction",
+            deadline_iso=request.deadline_iso,
+            priority=request.priority,
+            client_id=request.client_id,
+            extra_headers=_qual_headers,
         )
 
         assistant_msg = response.choices[0].message
@@ -664,23 +657,17 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
             )
 
             try:
-                route = await route_request(
-                    capability="extraction",
-                    estimated_tokens=estimate_tokens(prompt) + 200,
-                    deadline_iso=request.deadline_iso,
-                    priority=request.priority,
-                    client_id=request.client_id,
-                )
-
                 response = await llm_provider.completion(
                     messages=[
                         {"role": "system", "content": "Odpovídej pouze platným JSON."},
                         {"role": "user", "content": prompt},
                     ],
                     tools=[],
-                    model_override=route.model,
-                    api_base_override=route.api_base,
-                    api_key_override=route.api_key,
+                    capability="extraction",
+                    deadline_iso=request.deadline_iso,
+                    priority=request.priority,
+                    client_id=request.client_id,
+                    extra_headers={"X-Intent": "qualifier"},
                 )
 
                 import json as _json

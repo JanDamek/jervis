@@ -13,19 +13,23 @@ Key principles:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
 import httpx
-import litellm
 
 from app.config import settings
-from app.llm.router_client import route_request
 from app.voice.models import VoiceStreamEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _router_chat_url() -> str:
+    base = settings.ollama_url.rstrip("/").replace("/v1", "").replace("/api", "")
+    return f"{base}/api/chat"
 
 
 @dataclass
@@ -113,38 +117,46 @@ class ConversationContextAgent:
         system_prompt = self._build_system_prompt()
         messages = self._build_messages()
 
-        # 4. Route to LLM — use PAID for quality Czech responses
-        route = await route_request(
-            capability="chat",
-            estimated_tokens=800,
-            priority="CASCADE",
-            client_id=self.client_id,
-        )
-        model = route.model or "openrouter/auto"
-        logger.info("CONV_AGENT: using model=%s, kb_context=%d chars", model, len(self.kb_context))
-
-        kwargs = {
-            "model": model,
+        # 4. Stream via router /api/chat — router decides model from headers.
+        #    X-Intent=voice marks this as user-waiting, X-Priority=CASCADE
+        #    keeps bucket=REALTIME.
+        logger.info("CONV_AGENT: streaming via router, kb_context=%d chars", len(self.kb_context))
+        body = {
             "messages": [{"role": "system", "content": system_prompt}] + messages,
-            "temperature": 0.3,
-            "max_tokens": 250,
             "stream": True,
+            "options": {"temperature": 0.3, "num_predict": 250},
         }
-        if route.api_base:
-            kwargs["api_base"] = route.api_base
-        if route.api_key:
-            kwargs["api_key"] = route.api_key
+        req_headers = {
+            "X-Capability": "chat",
+            "X-Priority": "CASCADE",
+            "X-Intent": "voice",
+        }
+        if self.client_id:
+            req_headers["X-Client-Id"] = self.client_id
 
         # 5. Stream response
         response_text = ""
         try:
-            response = await litellm.acompletion(**kwargs)
-            async for chunk in response:
-                delta = chunk.choices[0].delta
-                if delta and delta.content:
-                    token = delta.content
-                    response_text += token
-                    yield VoiceStreamEvent(event="token", data={"text": token})
+            timeout = httpx.Timeout(connect=5, read=None, write=5, pool=10)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream(
+                    "POST", _router_chat_url(), json=body, headers=req_headers,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.strip():
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        msg = chunk.get("message") or {}
+                        token = msg.get("content") or ""
+                        if token:
+                            response_text += token
+                            yield VoiceStreamEvent(event="token", data={"text": token})
+                        if chunk.get("done"):
+                            break
         except Exception as e:
             logger.error("CONV_AGENT: LLM failed: %s", e)
             response_text = "Omlouvám se, nepodařilo se mi odpovědět."

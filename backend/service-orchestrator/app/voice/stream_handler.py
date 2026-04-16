@@ -120,33 +120,24 @@ async def generate_hint(text: str, client_id: str = "", project_id: str = "", gr
         if not kb_context or "(no relevant results found)" in kb_context or "(KB search unavailable)" in kb_context:
             return None
 
-        # Build concise hint from KB context (max 2 sentences)
-        from app.llm.router_client import route_request
-        import litellm
+        # Build concise hint from KB context (max 2 sentences).
+        # Router picks the model; X-Intent=voice → user-waiting rule.
+        from app.llm.provider import llm_provider
 
-        route = await route_request(
-            capability="chat", estimated_tokens=300,
-            priority="CASCADE", client_id=client_id,
-        )
-        model = route.model if route.model else settings.default_local_model
-
-        kwargs = {
-            "model": model,
-            "messages": [
+        resp = await llm_provider.completion(
+            messages=[
                 {"role": "system", "content": "Jsi stručný asistent. Ze znalostní báze vyber nejrelevantnější info k tématu a odpověz MAX 2 věty česky. Pokud nic relevantního, odpověz prázdně."},
                 {"role": "user", "content": f"Téma: {text}\n\nKB:\n{kb_context[:600]}"},
             ],
-            "temperature": 0.0,
-            "max_tokens": 150,
-        }
-        if route.api_base:
-            kwargs["api_base"] = route.api_base
-        if route.api_key:
-            kwargs["api_key"] = route.api_key
+            capability="chat",
+            priority="CASCADE",
+            client_id=client_id,
+            temperature=0.0,
+            max_tokens=150,
+            extra_headers={"X-Intent": "voice"},
+        )
 
-        resp = await litellm.acompletion(**kwargs)
-
-        hint = resp.choices[0].message.content.strip()
+        hint = (resp.choices[0].message.content or "").strip()
         if hint and len(hint) > 5:
             return hint
         return None

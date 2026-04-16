@@ -23,7 +23,6 @@ from app.config import (
     CONTENT_TRUNCATION_CHARS,
 )
 from app.llm.provider import llm_provider, TIER_CONFIG
-from app.llm.router_client import route_request, report_model_error, report_model_success
 from app.models import (
     CodingTask,
     ModelTier,
@@ -161,13 +160,19 @@ async def llm_with_cloud_fallback(
     temperature: float = 0.1,
     tools: list | None = None,
 ) -> object:
-    """Call LLM through the router — routing (local vs cloud) happens inside /api/chat.
+    """Call LLM through the router — router decides local vs cloud + model.
 
-    Background: GPU first if free + context ≤48k, else OpenRouter FREE queue.
-    NONE tier: always local GPU.
-    Cloud fallback on any local failure (timeout, empty response, error).
+    Intent is derived from `state["processing_mode"]`:
+      FOREGROUND  → "orchestrator" (user waiting; router prefers cloud)
+      BACKGROUND  → "background"   (nightly work; router prefers GPU)
+      QUALIFICATION → "qualifier"  (same as background, GPU OK)
+
+    On empty / failed response we retry once by adding the failed model to
+    the X-Skip-Models header so the router picks the next one. On a hard
+    failure the call propagates to `_escalate_to_cloud` which asks the user
+    via interrupt for explicit approval when needed.
     """
-    from app.llm.router_client import route_request, report_model_error, report_model_success
+    from app.llm.router_client import report_model_error, report_model_success
 
     rules = ProjectRules(**state["rules"])
     task = CodingTask(**state["task"])
@@ -181,113 +186,83 @@ async def llm_with_cloud_fallback(
 
     max_tier = rules.max_openrouter_tier if rules.max_openrouter_tier else "NONE"
 
-    # Router resolves tier from client_id; max_tier as explicit override.
-    # Forward task urgency metadata — deadline + priority is the only urgency
-    # signal, router derives bucket (REALTIME/URGENT/NORMAL/BATCH) internally.
-    route = await route_request(
-        capability=task.capability or "chat",
-        max_tier=max_tier,
-        estimated_tokens=context_tokens,
-        deadline_iso=task.deadline_iso,
-        priority=task.priority,
-        min_model_size=task.min_model_size,
-        client_id=client_id,
-    )
-    logger.info(
-        "llm_with_cloud_fallback: route=%s/%s (tokens=%d, mode=%s, max_tier=%s)",
-        route.target, route.model, context_tokens, processing_mode, max_tier,
-    )
+    intent_map = {
+        "FOREGROUND": "orchestrator",
+        "QUALIFICATION": "qualifier",
+        "BACKGROUND": "background",
+    }
+    intent = intent_map.get(processing_mode, "background")
+    capability = task.capability or "chat"
 
-    # Route decision: OpenRouter → use cloud directly (GPU busy or context >48k)
-    if route.target == "openrouter" and route.model:
+    # Context overflow guard — the router also enforces a 40k safe budget on
+    # local models, but truncating here keeps the payload small when the
+    # router does end up on local. Use LOCAL_STANDARD num_ctx as the ceiling.
+    tier_config = TIER_CONFIG.get(ModelTier.LOCAL_STANDARD, {})
+    local_ctx_limit = tier_config.get("num_ctx", DEFAULT_TIER_CONTEXT)
+    if context_tokens > local_ctx_limit:
+        logger.info(
+            "CONTEXT_OVERFLOW_HINT | estimated=%d > local limit=%d — router will escalate to cloud",
+            context_tokens, local_ctx_limit,
+        )
+        if max_tier == "NONE":
+            messages = _truncate_messages_to_budget(messages, local_ctx_limit - max_tokens)
+
+    def _build_headers(skip: list[str] | None) -> dict[str, str]:
+        h = dict(priority_headers(state))
+        h["X-Intent"] = intent
+        h["X-Max-Tier"] = max_tier
+        if skip:
+            h["X-Skip-Models"] = ",".join(skip)
+        return h
+
+    skip_models: list[str] = []
+    last_err: Exception | None = None
+
+    for attempt in range(3):
         try:
+            logger.info(
+                "llm_with_cloud_fallback: attempt=%d capability=%s intent=%s max_tier=%s tokens=%d skip=%s",
+                attempt + 1, capability, intent, max_tier, context_tokens, skip_models,
+            )
             response = await llm_provider.completion(
                 messages=messages,
-                tier=ModelTier.CLOUD_OPENROUTER,
+                capability=capability,
+                deadline_iso=task.deadline_iso,
+                priority=task.priority,
+                client_id=client_id,
+                max_tier=max_tier,
+                min_model_size=task.min_model_size,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 tools=tools,
-                model_override=route.model,
-                api_key_override=route.api_key,
+                extra_headers=_build_headers(skip_models),
             )
             message = response.choices[0].message
             content = message.content
             tool_calls = getattr(message, "tool_calls", None)
+            used_model = getattr(response, "model", "") or ""
+
             if (not content or not content.strip()) and not tool_calls:
-                await report_model_error(route.model, "Empty response")
-                raise ValueError(f"Empty response from cloud model {route.model}")
-            await report_model_success(route.model)
+                if used_model:
+                    await report_model_error(used_model, "Empty response")
+                    if used_model not in skip_models:
+                        skip_models.append(used_model)
+                raise ValueError(f"Empty response from {used_model or 'LLM'}")
+
+            if used_model:
+                await report_model_success(used_model)
             return response
+
         except Exception as e:
-            await report_model_error(route.model, str(e)[:500])
-            logger.warning("Cloud model %s failed: %s — trying next model", route.model, e)
-            # Try next cloud model (skip the failed one) — same urgency metadata.
-            fallback = await route_request(
-                capability=task.capability or "chat",
-                max_tier=max_tier,
-                estimated_tokens=context_tokens,
-                deadline_iso=task.deadline_iso,
-                priority=task.priority,
-                min_model_size=task.min_model_size,
-                skip_models=[route.model],
-                client_id=client_id,
-            )
-            if fallback.target == "openrouter" and fallback.model:
-                try:
-                    response = await llm_provider.completion(
-                        messages=messages,
-                        tier=ModelTier.CLOUD_OPENROUTER,
-                        max_tokens=max_tokens,
-                        temperature=temperature,
-                        tools=tools,
-                        model_override=fallback.model,
-                        api_key_override=fallback.api_key,
-                    )
-                    await report_model_success(fallback.model)
-                    return response
-                except Exception as e2:
-                    await report_model_error(fallback.model, str(e2)[:500])
-                    logger.warning("Cloud fallback %s also failed: %s — trying local GPU", fallback.model, e2)
-            else:
-                logger.warning("No cloud fallback available, trying local GPU")
+            last_err = e
+            logger.warning("llm_with_cloud_fallback attempt=%d failed: %s", attempt + 1, e)
 
-    # Route decision: local GPU (GPU is free + context ≤48k, or NONE tier)
-    headers = priority_headers(state)
-    local_tier = ModelTier.LOCAL_STANDARD
-
-    # W-14: Context overflow guard — ensure messages fit selected tier
-    tier_config = TIER_CONFIG.get(local_tier, {})
-    tier_ctx_limit = tier_config.get("num_ctx", DEFAULT_TIER_CONTEXT)
-    if context_tokens > tier_ctx_limit:
-        logger.warning(
-            "CONTEXT_OVERFLOW | estimated=%d tokens > tier %s limit=%d | truncating messages",
-            context_tokens, local_tier.value, tier_ctx_limit,
-        )
-        messages = _truncate_messages_to_budget(messages, tier_ctx_limit - max_tokens)
-
-    try:
-        response = await llm_provider.completion(
-            messages=messages, tier=local_tier,
-            max_tokens=max_tokens, temperature=temperature, tools=tools,
-            extra_headers=headers,
-            model_override=route.model if route.target == "local" else None,
-            api_base_override=route.api_base if route.target == "local" else None,
-        )
-        message = response.choices[0].message
-        content = message.content
-        tool_calls = getattr(message, "tool_calls", None)
-
-        if (not content or not content.strip()) and not tool_calls:
-            raise ValueError("Empty response from local model")
-        return response
-    except Exception as e:
-        logger.warning("Local LLM failed (tier=%s): %s", local_tier.value, e)
-        logger.debug("Local LLM exception details:", exc_info=True)
-        return await _escalate_to_cloud(
-            task, auto, context_tokens, task_type,
-            messages, max_tokens, temperature, tools,
-            reason=f"Lokální model selhal: {str(e)[:200]}",
-        )
+    logger.warning("llm_with_cloud_fallback: exhausted retries (skip=%s), escalating", skip_models)
+    return await _escalate_to_cloud(
+        task, auto, context_tokens, task_type,
+        messages, max_tokens, temperature, tools,
+        reason=f"Router LLM calls failed: {str(last_err)[:200]}",
+    )
 
 
 async def _escalate_to_cloud(
@@ -303,30 +278,28 @@ async def _escalate_to_cloud(
 ) -> object:
     """Escalate to cloud with auto/interrupt logic."""
 
-    # 1. Try auto-enabled providers
+    # 1. Try auto-enabled providers — router picks the concrete model.
     auto_tier = _suggest_cloud_tier(context_tokens, auto_providers_set, task_type)
     if auto_tier:
         logger.info("Auto-escalating to %s (auto_providers=%s)", auto_tier.value, auto_providers_set)
-        # For OpenRouter, get a specific model via route_request (not "openrouter/auto")
-        if auto_tier == ModelTier.CLOUD_OPENROUTER:
-            route = await route_request(
-                capability=task.capability or "chat",
-                estimated_tokens=context_tokens,
-                deadline_iso=task.deadline_iso,
-                priority=task.priority,
-                min_model_size=task.min_model_size,
-                require_tools=bool(tools),
-                client_id=task.client_id,
-            )
-            if route.target == "openrouter" and route.model:
-                return await llm_provider.completion(
-                    messages=messages, tier=auto_tier,
-                    max_tokens=max_tokens, temperature=temperature, tools=tools,
-                    model_override=route.model, api_key_override=route.api_key,
-                )
+        tier_hint = {
+            ModelTier.CLOUD_OPENROUTER: "FREE",
+            ModelTier.CLOUD_REASONING: "PAID",
+            ModelTier.CLOUD_CODING: "PAID",
+            ModelTier.CLOUD_LARGE_CONTEXT: "PAID",
+            ModelTier.CLOUD_PREMIUM: "PREMIUM",
+        }.get(auto_tier, "FREE")
         return await llm_provider.completion(
-            messages=messages, tier=auto_tier,
-            max_tokens=max_tokens, temperature=temperature, tools=tools,
+            messages=messages,
+            capability=task.capability or "chat",
+            deadline_iso=task.deadline_iso,
+            priority=task.priority,
+            client_id=task.client_id,
+            max_tier=tier_hint,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            tools=tools,
+            extra_headers={"X-Intent": "orchestrator"},
         )
 
     # 2. Check if any provider is available at all (has API key)
@@ -358,9 +331,24 @@ async def _escalate_to_cloud(
         raise RuntimeError(f"{reason}. Uživatel zamítl eskalaci na cloud.")
 
     logger.info("Cloud escalation approved by user → %s", available_tier.value)
+    tier_hint = {
+        ModelTier.CLOUD_OPENROUTER: "FREE",
+        ModelTier.CLOUD_REASONING: "PAID",
+        ModelTier.CLOUD_CODING: "PAID",
+        ModelTier.CLOUD_LARGE_CONTEXT: "PAID",
+        ModelTier.CLOUD_PREMIUM: "PREMIUM",
+    }.get(available_tier, "PAID")
     return await llm_provider.completion(
-        messages=messages, tier=available_tier,
-        max_tokens=max_tokens, temperature=temperature, tools=tools,
+        messages=messages,
+        capability=task.capability or "chat",
+        deadline_iso=task.deadline_iso,
+        priority=task.priority,
+        client_id=task.client_id,
+        max_tier=tier_hint,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        tools=tools,
+        extra_headers={"X-Intent": "orchestrator"},
     )
 
 

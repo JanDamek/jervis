@@ -10,10 +10,7 @@ from __future__ import annotations
 import json
 import logging
 
-import litellm
-
-from app.config import settings
-from app.llm.router_client import route_request
+from app.llm.provider import llm_provider
 from app.voice.models import VoiceIntent, IntentResult
 
 logger = logging.getLogger(__name__)
@@ -48,30 +45,16 @@ async def classify_intent(text: str, client_id: str | None = None) -> IntentResu
         )
 
     try:
-        route = await route_request(
+        response = await llm_provider.completion(
+            messages=[{"role": "user", "content": CLASSIFY_PROMPT.format(text=text)}],
             capability="chat",
-            estimated_tokens=200,
             priority="CASCADE",
             client_id=client_id,
+            temperature=0.0,
+            max_tokens=150,
+            extra_headers={"X-Intent": "voice"},
         )
-
-        model = route.model or "openrouter/auto"
-        api_base = route.api_base
-        api_key = route.api_key
-
-        kwargs = {
-            "model": model,
-            "messages": [{"role": "user", "content": CLASSIFY_PROMPT.format(text=text)}],
-            "temperature": 0.0,
-            "max_tokens": 150,
-        }
-        if api_base:
-            kwargs["api_base"] = api_base
-        if api_key:
-            kwargs["api_key"] = api_key
-
-        response = await litellm.acompletion(**kwargs)
-        content = response.choices[0].message.content.strip()
+        content = (response.choices[0].message.content or "").strip()
 
         # Parse JSON response
         # Handle markdown code blocks

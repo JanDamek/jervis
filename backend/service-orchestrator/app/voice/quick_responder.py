@@ -7,17 +7,21 @@ Pipeline: KB search → FREE LLM answer → optional TTS.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import AsyncIterator
 
 import httpx
-import litellm
 
 from app.config import settings
-from app.llm.router_client import route_request
 from app.voice.models import VoiceStreamEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _router_chat_url() -> str:
+    base = settings.ollama_url.rstrip("/").replace("/v1", "").replace("/api", "")
+    return f"{base}/api/chat"
 
 QUICK_ANSWER_PROMPT = """You are Jervis, a Czech AI assistant. Answer the question briefly and directly.
 Use the provided knowledge base context if relevant. Always respond in Czech.
@@ -91,42 +95,46 @@ async def quick_respond(
                 "confidence": 0.6,
             })
 
-    # Step 2: Route to FREE model — voice is real-time, always CASCADE priority
-    # so the router bucket is REALTIME regardless of deadline.
-    route = await route_request(
-        capability="chat",
-        estimated_tokens=500,
-        priority="CASCADE",
-        client_id=client_id,
-    )
-
-    model = route.model or "openrouter/auto"
-
-    kwargs = {
-        "model": model,
-        "messages": [{"role": "user", "content": QUICK_ANSWER_PROMPT.format(context=context, query=query)}],
-        "temperature": 0.3,
-        "max_tokens": 300,
-        "stream": True,
-    }
-    if route.api_base:
-        kwargs["api_base"] = route.api_base
-    if route.api_key:
-        kwargs["api_key"] = route.api_key
-
-    # Step 3: Stream response tokens
+    # Step 2: Stream response via router /api/chat — router decides the model
+    # from headers (X-Intent=voice → user-waiting rule → cloud when tier≠NONE,
+    # local otherwise). X-Priority=CASCADE keeps bucket=REALTIME.
     yield VoiceStreamEvent(event="responding", data={})
+
+    body = {
+        "messages": [{"role": "user", "content": QUICK_ANSWER_PROMPT.format(context=context, query=query)}],
+        "stream": True,
+        "options": {"temperature": 0.3, "num_predict": 300},
+    }
+    headers = {
+        "X-Capability": "chat",
+        "X-Priority": "CASCADE",
+        "X-Intent": "voice",
+    }
+    if client_id:
+        headers["X-Client-Id"] = client_id
 
     response_text = ""
     try:
-        response = await litellm.acompletion(**kwargs)
-        async for chunk in response:
-            delta = chunk.choices[0].delta
-            if delta and delta.content:
-                token = delta.content
-                response_text += token
-                yield VoiceStreamEvent(event="token", data={"text": token})
-
+        timeout = httpx.Timeout(connect=5, read=None, write=5, pool=10)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST", _router_chat_url(), json=body, headers=headers,
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    msg = chunk.get("message") or {}
+                    token = msg.get("content") or ""
+                    if token:
+                        response_text += token
+                        yield VoiceStreamEvent(event="token", data={"text": token})
+                    if chunk.get("done"):
+                        break
     except Exception as e:
         logger.warning("Quick LLM response failed: %s", e)
         response_text = f"Omlouvám se, nepodařilo se vygenerovat odpověď: {e}"
