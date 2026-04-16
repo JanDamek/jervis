@@ -2,12 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Python dependencies
-COPY requirements.txt .
+# Pod-to-pod Protobuf contracts package.
+COPY libs/jervis_contracts /libs/jervis_contracts
+RUN pip install --no-cache-dir -e /libs/jervis_contracts
+
+COPY backend/service-mcp/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Application code
-COPY app/ app/
+COPY backend/service-mcp/app/ app/
 
 RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /app
 USER 1000

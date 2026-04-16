@@ -14,12 +14,13 @@ IMAGE="${REGISTRY}/${SERVICE_NAME}:latest"
 
 echo "=== Building and deploying ${SERVICE_NAME} (Python) ==="
 
-# Docker Build
+# Docker Build — build context = PROJECT_ROOT so Dockerfile can COPY
+# libs/jervis_contracts/ (pod-to-pod contracts).
 echo "Step 1/3: Building Docker image..."
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 docker build --platform linux/amd64 \
   -t "${IMAGE}" \
-  -f "${PROJECT_ROOT}/${DOCKERFILE}" "${PROJECT_ROOT}/backend/service-mcp"
+  -f "${PROJECT_ROOT}/${DOCKERFILE}" "${PROJECT_ROOT}"
 
 echo "✓ Docker image built"
 

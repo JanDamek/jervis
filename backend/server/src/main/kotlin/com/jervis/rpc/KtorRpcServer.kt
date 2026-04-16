@@ -30,7 +30,6 @@ import com.jervis.rpc.internal.installInternalMeetingRecordingBridgeApi
 import com.jervis.rpc.internal.installInternalMeetingAloneApi
 import com.jervis.rpc.internal.installInternalMeetingVideoApi
 import com.jervis.rpc.internal.installInternalChatApprovalApi
-import com.jervis.rpc.internal.installInternalConnectionReloginApi
 import com.jervis.rpc.internal.installInternalVisualCaptureApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalBugTrackerApi
@@ -226,7 +225,8 @@ class KtorRpcServer(
                             installInternalUserActivityApi(notificationRpcImpl)
                             installInternalWhatsAppSessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalWhatsAppCapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)
-                            installInternalConnectionReloginApi(connectionRepository, httpClient)
+                            // Connection relogin approval migrated to gRPC
+                            // (jervis.server.ServerConnectionService).
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)

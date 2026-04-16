@@ -1016,15 +1016,21 @@ async def connection_approve_relogin(connection_id: str) -> str:
     Args:
         connection_id: ConnectionDocument id from the auth_request push.
     """
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/connections/{connection_id}/approve-relogin",
-            json={},
+    try:
+        from app.grpc_clients import server_connection_stub
+        from jervis.server import connection_pb2
+        from jervis.common import types_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_connection_stub().ApproveRelogin(
+            connection_pb2.ApproveReloginRequest(ctx=ctx, connection_id=connection_id),
+            timeout=30.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        return f"Relogin approved: connectionId={connection_id} state={data.get('state', '?')}"
+        return f"Relogin approved: connectionId={resp.connection_id} state={resp.state}"
+    except Exception as e:
+        return f"Error: {e}"
 
 
 @mcp.tool

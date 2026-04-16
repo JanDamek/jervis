@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerConnectionProto";
+
+// Connection-lifecycle RPCs — currently just off-hours relogin approval.
+// Kept as a standalone service because the domain is clearly "what does
+// the server do on behalf of connections"; more lifecycle endpoints
+// (health check, capabilities refresh, manual relogin trigger) land here
+// as they migrate.
+service ServerConnectionService {
+  // Dispatch `approve_relogin` to the pod agent for the given connection.
+  rpc ApproveRelogin(ApproveReloginRequest) returns (ApproveReloginResponse);
+}
+
+message ApproveReloginRequest {
+  jervis.common.RequestContext ctx = 1;
+  string connection_id = 2;
+}
+
+message ApproveReloginResponse {
+  string connection_id = 1;
+  string state = 2;         // "DISPATCHED" on success
+  int32 pod_status = 3;     // HTTP status returned by the pod's /instruction
+  string error = 4;
+}
