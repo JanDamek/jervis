@@ -55,3 +55,6 @@ internal fun formatChatTimestamp(isoString: String): String {
     if (timeStart < 0) return ""
     return isoString.substring(timeStart + 1).take(5)
 }
+
+/** Short HH:MM extraction from an ISO timestamp for inline labels. */
+internal fun formatTime(isoString: String): String = formatChatTimestamp(isoString)

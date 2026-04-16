@@ -289,6 +289,21 @@ internal fun MeetingDetailView(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    if (meeting.joinedByAgent) {
+                        Text(
+                            text = "Jervis se připojil",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    if (meeting.state == MeetingStateEnum.RECORDING && meeting.chunksReceived > 0) {
+                        Text(
+                            text = "Nahráváno: ${meeting.chunksReceived} úseků" +
+                                (meeting.lastChunkAt?.let { " · poslední " + formatTime(it) } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

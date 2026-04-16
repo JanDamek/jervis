@@ -1109,6 +1109,18 @@ private fun MeetingDocument.toDto(
         deleted = deleted,
         deletedAt = deletedAt?.toString(),
         mergeSuggestion = mergeSuggestion,
+        joinedByAgent = joinedByAgent,
+        chunksReceived = chunksReceived,
+        lastChunkAt = lastChunkAt?.toString(),
+        timeline = timeline.map { entry ->
+            com.jervis.dto.meeting.MeetingTimelineDto(
+                tsSec = entry.tsSec,
+                diarizedText = entry.diarizedText,
+                diarizedSpeaker = entry.diarizedSpeaker,
+                frameThumbPath = entry.frameThumbPath,
+                frameDescription = entry.frameDescription,
+            )
+        },
     )
 
 /**

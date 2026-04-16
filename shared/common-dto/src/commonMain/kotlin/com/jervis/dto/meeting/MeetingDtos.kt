@@ -66,6 +66,25 @@ data class MeetingDto(
     val deletedAt: String? = null,
     /** Merge suggestion after classify/edit — other meeting with same key + overlapping time. */
     val mergeSuggestion: MergeSuggestionDto? = null,
+
+    // ── Pod-recorded meetings (product §10a) ──────────────────────────
+    /** True when Jervis auto-joined via a browser pod (vs user-recorded audio). */
+    val joinedByAgent: Boolean = false,
+    /** Number of WebM chunks streamed from the pod so far. */
+    val chunksReceived: Int = 0,
+    /** ISO timestamp of the most recent accepted video-chunk upload. */
+    val lastChunkAt: String? = null,
+    /** Timeline entries (frames + diarized segments) assembled during INDEXING. */
+    val timeline: List<MeetingTimelineDto> = emptyList(),
+)
+
+@Serializable
+data class MeetingTimelineDto(
+    val tsSec: Double,
+    val diarizedText: String? = null,
+    val diarizedSpeaker: String? = null,
+    val frameThumbPath: String? = null,
+    val frameDescription: String? = null,
 )
 
 @Serializable
