@@ -500,8 +500,12 @@ class ChatRpcImpl(
         } else emptyList()
 
         // ── Scope-aware path: use ReactiveMongoTemplate with dynamic Criteria ──
+        // Normalize Global sentinel — user asking for Global scope ("__global__")
+        // wants ALL messages across clients, not clientId equality on literal "__global__".
+        val normalizedClientId = filterClientId?.takeIf { it.isNotBlank() && it != "__global__" }
+        val normalizedProjectId = filterProjectId?.takeIf { it.isNotBlank() && it != "__global__" }
         if (filterClientId != null) {
-            val groupProjectIds = if (filterGroupId != null) {
+            val groupProjectIds = if (filterGroupId != null && filterGroupId != "__global__") {
                 projectRepository.findByGroupIdAndActiveTrue(com.jervis.common.types.ProjectGroupId.fromString(filterGroupId))
                     .toList()
                     .map { it.id.toString() }
@@ -512,15 +516,15 @@ class ChatRpcImpl(
                 conversationId = session.id,
                 limit = limit,
                 beforeId = beforeId,
-                filterClientId = filterClientId,
-                filterProjectId = filterProjectId,
+                filterClientId = normalizedClientId,
+                filterProjectId = normalizedProjectId,
                 groupProjectIds = groupProjectIds,
                 showChat = showChat,
                 showTasks = showTasks,
                 showNeedReaction = showNeedReaction,
             )
             val dtos = messages.map { msg ->
-                val outOfScope = filterClientId != null && msg.clientId != null && msg.clientId != filterClientId
+                val outOfScope = normalizedClientId != null && msg.clientId != null && msg.clientId != normalizedClientId
                 msg.toChatMessageDto(taskGraphExistsService, isOutOfScope = outOfScope)
             }
             // Merge USER_TASKs (global) with scoped chat messages, chronological order.
