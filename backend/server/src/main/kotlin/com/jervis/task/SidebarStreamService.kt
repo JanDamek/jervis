@@ -36,16 +36,25 @@ class SidebarStreamService(
     private val flows = ConcurrentHashMap<String, MutableSharedFlow<SidebarSnapshot>>()
 
     fun subscribe(clientId: String?, showDone: Boolean): Flow<SidebarSnapshot> {
-        val key = scopeKey(clientId, showDone)
+        val normalized = normalizeClientId(clientId)
+        val key = scopeKey(normalized, showDone)
         val flow = flows.computeIfAbsent(key) {
             MutableSharedFlow(replay = 1, extraBufferCapacity = 16)
         }
         return flow.onSubscription {
             if (flow.replayCache.isEmpty()) {
-                emit(buildSnapshot(clientId, showDone))
+                emit(buildSnapshot(normalized, showDone))
             }
         }
     }
+
+    /**
+     * UI passes "__global__" as the sentinel for "no client filter". The
+     * sidebar service does DB ObjectId() parsing, which throws on that value
+     * — map it to null here so the snapshot covers all clients.
+     */
+    private fun normalizeClientId(clientId: String?): String? =
+        clientId?.takeIf { it.isNotBlank() && it != "__global__" }
 
     /**
      * Emit a fresh snapshot to every affected scope. Called from service-layer
@@ -53,13 +62,14 @@ class SidebarStreamService(
      * [PendingTaskService.reopen], requalifier route in [com.jervis.chat.ChatRpcImpl]).
      */
     fun invalidate(clientId: String?) {
+        val normalized = normalizeClientId(clientId)
         scope.launch {
             try {
-                emitFor(clientId, showDone = false)
-                emitFor(clientId, showDone = true)
+                emitFor(normalized, showDone = false)
+                emitFor(normalized, showDone = true)
                 // Global scope (null) must also refresh — subscribers with no
                 // filter see tasks across all clients.
-                if (!clientId.isNullOrBlank()) {
+                if (!normalized.isNullOrBlank()) {
                     emitFor(null, showDone = false)
                     emitFor(null, showDone = true)
                 }
