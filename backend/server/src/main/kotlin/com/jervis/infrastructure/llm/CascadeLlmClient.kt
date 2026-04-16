@@ -19,10 +19,10 @@ import org.springframework.stereotype.Component
 private val logger = KotlinLogging.logger {}
 
 /**
- * Server-only LLM client using /api/cascade endpoint on ollama-router.
+ * Server-only LLM client for short, chat-style prompts.
  *
- * Highest priority (CASCADE=-1), instant routing through GPU-1 → GPU-2 → OpenRouter.
- * Router decides which model to use — server never specifies a model.
+ * Contract: send `X-Capability: chat` + `X-Client-Id` (when available) +
+ * the payload. Router picks model / local vs cloud / retries.
  *
  * Used for: merge project AI text resolution, voice quick KB lookup.
  * NOT for orchestrator or external callers.
@@ -43,10 +43,13 @@ class CascadeLlmClient(
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /**
-     * Send a prompt via cascade routing. Router decides the model.
-     * Returns generated text or null on failure.
+     * Send a prompt via the router. Router decides the model.
+     *
+     * @param prompt user content
+     * @param system optional system message
+     * @param clientId tenant — router resolves tier from CloudModelPolicy
      */
-    suspend fun prompt(prompt: String, system: String? = null): String? {
+    suspend fun prompt(prompt: String, system: String? = null, clientId: String? = null): String? {
         val body = buildMap<String, Any?> {
             put("prompt", prompt)
             if (system != null) put("system", system)
@@ -54,12 +57,10 @@ class CascadeLlmClient(
         }
 
         return try {
-            // Unified entrypoint: /api/generate with X-Priority: CASCADE selects the
-            // latency-optimized cascade path (try GPU-1 → GPU-2 → OpenRouter FREE →
-            // PAID → PREMIUM → queue). Replaces the dedicated /api/cascade endpoint.
             val response = client.post("$routerUrl/api/generate") {
                 contentType(ContentType.Application.Json)
-                header("X-Priority", "CASCADE")
+                header("X-Capability", "chat")
+                if (clientId != null) header("X-Client-Id", clientId)
                 setBody(Json.encodeToString(kotlinx.serialization.serializer<Map<String, Any?>>(), body))
             }
             val text = response.bodyAsText()

@@ -97,10 +97,12 @@ class RagService:
                 pass
 
     async def _embed_with_priority(self, text: str | list[str], priority: int | None = None) -> list[float] | list[list[float]]:
-        """Embed text with priority header for router.
+        """Embed text through the router.
 
-        Priority passed explicitly by callers (from X-Ollama-Priority header passthrough).
-        If None, no header is sent (router defaults to NORMAL).
+        Caller contract is minimal — `X-Capability: embedding` + payload.
+        The `priority` arg is kept for backward compatibility and logging;
+        the router now manages queue priority internally based on capability
+        (embedding runs in its own queue, separate from LLM/VLM).
 
         Uses a semaphore (MAX_CONCURRENT_EMBEDDINGS=5) to prevent GPU starvation
         when many ingest requests arrive simultaneously.
@@ -108,18 +110,15 @@ class RagService:
         is_batch = isinstance(text, list)
         prompt = text if is_batch else [text]
 
-        # Use explicit priority if provided, otherwise fall back to default
-        effective_priority = priority if priority is not None else self.embedding_priority
-
         url = f"{settings.OLLAMA_EMBEDDING_BASE_URL}/api/embed"
         payload = {
             "model": settings.EMBEDDING_MODEL,
             "input": prompt,
         }
-        headers = {"X-Ollama-Priority": str(effective_priority)} if effective_priority is not None else {}
+        headers = {"Content-Type": "application/json", "X-Capability": "embedding"}
 
-        logger.info("RAG: EMBEDDING model=%s priority=%s (explicit=%s default=%s) semaphore_free=%d/%d",
-                    settings.EMBEDDING_MODEL, effective_priority, priority, self.embedding_priority,
+        logger.info("RAG: EMBEDDING model=%s semaphore_free=%d/%d",
+                    settings.EMBEDDING_MODEL,
                     self._embedding_semaphore._value, self._max_concurrent)
 
         max_retries = 2

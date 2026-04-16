@@ -883,6 +883,7 @@ class CorrectionAgent:
                 "POST",
                 f"{self.ollama_url}/api/chat",
                 json=payload,
+                headers={"X-Capability": "extraction"},
             ) as response:
                 response.raise_for_status()
 

@@ -863,6 +863,15 @@ class DocumentExtractor:
         return ExtractedDocument(text=text, method="vlm", metadata={"type": "image"})
 
     async def _call_vlm(self, image_bytes: bytes, max_tier: str) -> str:
+        """Extract text + visual description via router VLM.
+
+        The caller contract is minimal — capability `visual` tells the router
+        it's a VLM call; the router picks the concrete model. The legacy
+        `max_tier` arg is kept on the signature for backward compatibility
+        with higher-level code paths that still thread it through, but it
+        isn't sent to the router (the router resolves tier from client_id —
+        `X-Client-Id` can be added here once the extract API surfaces it).
+        """
         b64 = base64.b64encode(image_bytes).decode("ascii")
 
         prompt = ("Extract all text, data, and describe all visual elements "
@@ -870,25 +879,25 @@ class DocumentExtractor:
                   "Preserve the original language. Output plain text.")
 
         payload = {
-            "model": "qwen2.5-vl:32b",
-            "messages": [{"role": "user", "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
-            ]}],
-            "max_tokens": 4096,
-            "temperature": 0,
+            "prompt": prompt,
+            "images": [b64],
+            "stream": False,
         }
-
-        headers = {"X-Max-Tier": max_tier}
+        headers = {
+            "Content-Type": "application/json",
+            "X-Capability": "visual",
+        }
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
-                f"{self.router_url}/v1/chat/completions",
+                f"{self.router_url}/api/generate",
                 json=payload, headers=headers,
             )
             resp.raise_for_status()
             data = resp.json()
 
-        text = data["choices"][0]["message"]["content"]
-        logger.info("VLM response: %d chars (tier=%s)", len(text), max_tier)
+        text = data.get("response") or ""
+        if not text and "choices" in data:
+            text = data["choices"][0]["message"]["content"]
+        logger.info("VLM response: %d chars", len(text))
         return text
