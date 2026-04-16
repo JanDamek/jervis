@@ -178,29 +178,17 @@ class RouterChatModel(BaseChatModel):
             bind_kwargs["tool_choice"] = tool_choice
         return self.bind(**bind_kwargs, **kwargs)
 
-    async def _decide(self, estimated_tokens: int) -> dict:
-        body: dict[str, Any] = {
-            "capability": self.capability,
-            "estimated_tokens": estimated_tokens,
-            "processing_mode": self.processing_mode,
-            "require_tools": True,
-        }
-        if self.client_id:
-            body["client_id"] = self.client_id
-        async with httpx.AsyncClient(timeout=10) as client:
-            try:
-                resp = await client.post(
-                    f"{settings.ollama_router_url}/router/admin/decide",
-                    json=body,
-                )
-                if resp.status_code == 200:
-                    return resp.json()
-                logger.warning("route decision HTTP %d: %s", resp.status_code, resp.text[:200])
-            except Exception as e:
-                logger.warning("route decision failed: %s", e)
+    async def _decide(self, estimated_tokens: int = 0) -> dict:
+        """Synthetic pre-dispatch hint — the router is the single source of
+        truth (no separate /router/admin/decide endpoint). We always target
+        the router's /api/chat with the model hint; the router picks local
+        vs cloud internally based on capability + client tier. Mirrors
+        service-orchestrator/app/llm/router_client.route_request().
+        """
+        model = "qwen3-vl-tool:latest" if self.capability == "visual" else "qwen3-coder-tool:latest"
         return {
             "target": "local",
-            "model": "qwen3-coder-tool:latest",
+            "model": model,
             "api_base": settings.ollama_router_url,
         }
 
