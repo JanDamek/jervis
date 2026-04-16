@@ -1,6 +1,6 @@
 """VLM client — calls vision language model via ollama-router.
 
-Uses /route-decision endpoint to let the router choose the model
+Uses /router/admin/decide endpoint to let the router choose the model
 based on capability and client/project tier.
 """
 
@@ -72,7 +72,7 @@ async def _get_route_decision(
     async with httpx.AsyncClient(timeout=10) as client:
         try:
             resp = await client.post(
-                f"{settings.ollama_router_url}/route-decision",
+                f"{settings.ollama_router_url}/router/admin/decide",
                 json={
                     "capability": capability,
                     "estimated_tokens": estimated_tokens,

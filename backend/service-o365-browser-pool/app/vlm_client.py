@@ -77,7 +77,7 @@ async def _get_route_decision(
             else:
                 body["max_tier"] = max_tier
             resp = await client.post(
-                f"{settings.ollama_router_url}/route-decision",
+                f"{settings.ollama_router_url}/router/admin/decide",
                 json=body,
             )
             if resp.status_code == 200:
