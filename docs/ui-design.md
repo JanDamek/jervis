@@ -1944,3 +1944,155 @@ When "Přepsat konfiguraci klienta" unchecked → all nulls sent → entity stor
 - `screens/settings/sections/GitSettings.kt` -- dead code, removed
 - `screens/settings/sections/LogsSettings.kt` -- dead code, replaced by ErrorLogsScreen
 - `screens/settings/sections/SchedulerSettings.kt` -- dead code, replaced by SchedulerScreen
+
+---
+
+## 12) Reactive data streams — push-only architecture
+
+**SSOT for rule #9 in `docs/guidelines.md`.**
+
+Every live UI surface consumes data **only** through kRPC `Flow<Snapshot>`
+subscriptions. The server owns a per-scope `MutableSharedFlow<Snapshot>(replay=1)`,
+emits a fully-rendered snapshot on every relevant write, and the UI `collect`s
+into a `StateFlow` that Compose renders reactively. No refresh buttons on live
+views, no event→pull round-trips, no one-shot `getXxx()` that the screen reopens
+on focus.
+
+### 12.1) Stream endpoint catalog
+
+| Screen / panel | RPC interface | Stream method | Snapshot DTO |
+|---|---|---|---|
+| Chat task sidebar | `IPendingTaskService` | `subscribeSidebar(clientId: String?)` | `SidebarSnapshot(sections: List<SidebarSection>, doneCount: Int)` |
+| Task drill-in (breadcrumb + brief) | `IPendingTaskService` | `subscribeTask(taskId: String)` | `TaskSnapshot(task: PendingTaskDto, relatedTasks: List<PendingTaskDto>, conversationEvents: List<ProgressEvent>)` |
+| Main chat history | `IChatService` | `subscribeChatHistory(scope: ChatScope, filter: ChatFilter)` | `ChatHistoryDto` |
+| Task conversation | `IChatService` | `subscribeTaskConversation(taskId: String)` | `ConversationSnapshot(messages: List<ChatMessage>, progress: List<ProgressEvent>)` |
+| Queue (fg/bg) | `IQueueService` | `subscribeQueue()` | `QueueSnapshot(foreground: List<PendingQueueItem>, background: List<PendingQueueItem>, activity: List<ActivityEntry>)` |
+| Meeting detail | `IMeetingService` | `subscribeMeeting(meetingId: String)` | `MeetingSnapshot(meeting: MeetingDto, transcriptionProgress: Double?, correctionProgress: Double?, recordingState: String)` |
+| User tasks (K reakci) | `IUserTaskService` | `subscribeUserTasks(clientId: String?)` | `List<UserTaskListItemDto>` |
+| Notification signals (badges, toasts) | `INotificationService` | `subscribeToEvents(clientId: String)` | `JervisEvent` — **only signals**, not data |
+
+**Rule of thumb:** a Compose screen/panel that renders live data opens **at
+most 2 streams** (data stream + optional dedicated progress stream). Anything
+more means your snapshot is too narrow — widen the DTO.
+
+### 12.2) ViewModel pattern
+
+```kotlin
+class ChatSidebarViewModel(
+    private val repository: JervisRepository,
+    private val scope: CoroutineScope,
+    private val clientId: StateFlow<String?>,
+) {
+    private val _sidebar = MutableStateFlow<SidebarSnapshot?>(null)
+    val sidebar: StateFlow<SidebarSnapshot?> = _sidebar.asStateFlow()
+
+    init {
+        // One collector per scope change — previous collector cancels automatically
+        // thanks to collectLatest. Reconnect handled by repository layer (below).
+        scope.launch {
+            clientId.collectLatest { id ->
+                repository.streamingCall { services ->
+                    services.pendingTasks.subscribeSidebar(id).collect { snap ->
+                        _sidebar.value = snap
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+```kotlin
+// Composable
+@Composable
+fun ChatTaskSidebar(viewModel: ChatSidebarViewModel, ...) {
+    val snap by viewModel.sidebar.collectAsState()
+    if (snap == null) { JCenteredLoading(); return }
+    LazyColumn { /* render snap.sections */ }
+}
+```
+
+### 12.3) Server pattern
+
+```kotlin
+@Service
+class SidebarStreamService(
+    private val taskRepository: TaskRepository,
+    private val projectionMapper: SidebarProjectionMapper,
+) {
+    // One flow per scope key (clientId or global "")
+    private val scopes = ConcurrentHashMap<String, MutableSharedFlow<SidebarSnapshot>>()
+
+    fun subscribe(clientId: String?): Flow<SidebarSnapshot> {
+        val key = clientId.orEmpty()
+        val flow = scopes.computeIfAbsent(key) {
+            MutableSharedFlow(replay = 1, extraBufferCapacity = 8).also {
+                // Lazy seed: on first subscriber, compute + emit snapshot
+            }
+        }
+        return flow.onSubscription {
+            if (flow.replayCache.isEmpty()) emit(buildSnapshot(clientId))
+        }
+    }
+
+    // Called from TaskService.save() / markDone() / reopen() hooks
+    suspend fun invalidate(clientId: String?) {
+        val snap = buildSnapshot(clientId)
+        scopes[clientId.orEmpty()]?.emit(snap)
+        // also emit to global scope if this write affects it
+        scopes[""]?.emit(buildSnapshot(null))
+    }
+
+    private suspend fun buildSnapshot(clientId: String?): SidebarSnapshot = /* DB query + projection */
+}
+```
+
+**Invalidation trigger points** (all live in Kotlin server, not UI):
+- `TaskRepository.save/delete` → `sidebarStreamService.invalidate(task.clientId)` + per-task flow emit
+- `ChatMessageRepository.save` → `chatStreamService.invalidate(scope)` + task-conversation emit
+- Orchestrator progress callback → append to `TaskSnapshot.conversationEvents` + emit
+- Mongo change streams for collections not written through services (rare)
+
+### 12.4) Reconnect
+
+`RpcConnectionManager` exposes `generation: StateFlow<Int>`. On every
+successful reconnect, generation bumps. All streaming ViewModels are wrapped so
+that their `collect {}` is restarted from the new kRPC session. `replay=1` on
+the server delivers the current snapshot immediately — UI never flashes empty.
+
+```kotlin
+// JervisRepository.streamingCall helper
+suspend fun <T> streamingCall(block: suspend (Services) -> T) {
+    rpcConnectionManager.generation.collect { _ ->
+        val services = awaitConnected()
+        try { block(services) } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { /* log + loop will retry on next generation bump */ }
+    }
+}
+```
+
+### 12.5) What becomes unary (non-Flow) RPC
+
+These stay unary because they are writes or one-shot historical reads:
+
+- `markDone`, `reopen`, `sendMessage`, `cancel`, `dismiss` — writes, return `Ack`/updated DTO
+- `listDoneTasksPaged(page, pageSize)` — archive pagination, not a live view
+- `getMeetingTranscript(id)` — download of a finalized artifact
+- `downloadFile` — binary stream, separate concern
+- Settings CRUD (`createClient`, `updateProject`, …) — static config forms
+
+### 12.6) Removed / forbidden patterns
+
+Replaced by streams:
+
+- `LaunchedEffect(refreshTrigger) { loadActive() }` in any live view
+- `_sidebarRefreshTrigger: MutableStateFlow<Int>` (any "bump-to-reload" counter)
+- `reloadForCurrentFilter()` on filter change — filter is now a stream param
+- `JRefreshButton` inside chat/sidebar/queue/meeting (kept only for Settings CRUD)
+- `INotificationService.subscribeToEvents` handler that calls `listXxx()` / `getXxx()`
+- Loading the task's current state via `getById(taskId)` when opening a chat
+  drill-in — `subscribeTask(taskId)` replaces it
+- Comment "polls every 15s" or "wait for next polling cycle"
+
+SSOT rule: if you're adding `LaunchedEffect { service.listXxx(...) }` for a live
+view, stop — add a stream instead.

@@ -128,6 +128,98 @@ Reason: two representations of the same thing (deadline + speed) drift out of
 sync. Canonical SSOT: `docs/architecture.md#urgency--deadline-scheduling`
 and KB `agent://claude-code/task-routing-unified-design`.
 
+### 9. Push-only data flows — UI never pulls, server pushes ready snapshots
+
+**Every screen opens one or more kRPC `Flow<Snapshot>` streams and `collect`s.
+The server pushes a fully-rendered snapshot on every relevant state change.
+No refresh buttons, no reload triggers, no event→pull round-trips.**
+
+✅ **DO:**
+```kotlin
+// RPC interface (shared/common-api)
+@Rpc
+interface IPendingTaskService {
+    fun subscribeSidebar(clientId: String?): Flow<SidebarSnapshot>
+    fun subscribeTask(taskId: String): Flow<TaskSnapshot>
+}
+
+// ViewModel
+init {
+    scope.launch {
+        repository.pendingTasks.subscribeSidebar(clientId).collect { snap ->
+            _sidebar.value = snap
+        }
+    }
+}
+```
+
+❌ **DON'T:**
+- `LaunchedEffect(refreshTrigger) { loadActive() }` — pull-on-event
+- `JRefreshButton` in a live data view — the stream IS the refresh
+- SSE/JervisEvent handler that calls `listTasksPaged` / `getChatHistory`
+- Unary RPC returning a snapshot list for a live view — must be a Flow
+- Caching the snapshot on screen open via `getById` — re-read goes stale
+
+**Server side** (`backend/server`): each scope owns a
+`MutableSharedFlow<Snapshot>(replay=1)` and emits a new snapshot whenever the
+underlying data changes (repository save hooks or Mongo change streams).
+Subscribers get the replayed latest on connect and every subsequent change.
+
+**Filter/scope is a stream parameter**, not a client-side filter. Changing the
+filter opens a new stream; the old collector cancels.
+
+**Write operations** (markDone, reopen, sendMessage, cancel…) remain unary
+and return only an `Ack`/domain object. The UI sees the change via the
+already-open subscription — never re-fetch after write.
+
+**Reconnect**: kRPC-over-WebSocket reconnects on `RpcConnectionManager.generation++`.
+ViewModels restart collectors in the reconnect handler; `replay=1` delivers the
+current snapshot immediately so the UI is never empty.
+
+**Still allowed (explicitly):**
+- Unary RPC for ingestion / writes / one-shot reads (file download, "load more"
+  pagination for historical data like "Hotové úlohy" archive)
+- `JRefreshButton` in Settings CRUD forms (static config, not a live view)
+- `LaunchedEffect(param)` that **opens** a stream — only the initial subscribe
+  is a launch; the data flow itself is push
+
+SSOT: `docs/ui-design.md` §"Reactive data streams".
+
+### 10. Per-connection browser pods (Teams, WhatsApp, future O365-likes)
+
+**One pod per Connection. Autonomous ReAct agent. DOM-first. Router-only LLM.**
+
+- **Autonomy:** one pod = one `ConnectionDocument._id`. The agent decides when
+  and what to observe, scrape, notify. Server never pulls from pod — the pod
+  pushes and writes directly to Mongo.
+- **DOM-first observation:** `inspect_dom` is the primary observation tool
+  (with shadow DOM pierce, read-only). `look_at_screen` (VLM) is a fallback
+  for ambiguous DOM, login screens, and a 5-minute silence sanity scan. Never
+  default to VLM when DOM works.
+- **Persistent tabs:** the agent never closes and reopens tabs — login tab +
+  siblings share auth cookies for the whole session.
+- **Router-only LLM/VLM:** all calls go through `jervis-ollama-router`
+  (`/route-decision`). No provider-direct calls, no hardcoded tiers. Pass
+  `client_id` + capability; router resolves the rest.
+- **Message ledger:** pod owns `<provider>_message_ledger` (per connection +
+  chat): `lastSeenAt`, `unreadCount`, `unreadDirectCount`, `lastUrgentAt`. The
+  server reads for UI badges and urgency triggers.
+- **Direct message = urgent:** any 1:1 message fires `kind=urgent_message`
+  via `POST /internal/<provider>/notify` → USER_TASK `priorityScore=95`,
+  `alwaysPush=true`, FCM+APNs. Server dedups per `(connectionId, chatId)` in
+  a 60s window.
+- **Discovered resources → project assignment:** pod writes to
+  `<provider>_discovered_resources`. UI lists them via
+  `GET /internal/<provider>/discovered-resources` and the user binds each to a
+  `Project` via `ProjectResource`. No auto-binding.
+- **Read-only phase:** Phase 1 capabilities are `*_READ` only. No
+  `CHAT_SEND` / `EMAIL_SEND` / `CALENDAR_WRITE` mappings in pod code until the
+  send phase lands with approval flow.
+- **No legacy:** if you rename/retire a module, delete the file. No
+  `@Deprecated` shims, no re-exports, no "legacy fallback" branches.
+
+SSOT specs: `docs/teams-pod-agent.md`, `docs/whatsapp-connection-design.md`.
+
 ---
 
 ## Architecture Quick Reference

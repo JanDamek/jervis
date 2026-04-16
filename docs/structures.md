@@ -1181,6 +1181,113 @@ For Python orchestrator task flow see [orchestrator-final-spec.md § 9](orchestr
 
 ---
 
+## UI Data Streams — Push-Only Server Architecture
+
+**Rule #9 in `docs/guidelines.md`. UI pattern SSOT in `docs/ui-design.md` §12.**
+
+Every live UI surface subscribes to a kRPC `Flow<Snapshot>`. The server owns the
+invalidation and pushes already-rendered snapshots. UI never pulls.
+
+### Architecture
+
+```
+┌────────── Write sources ──────────┐
+│  Repository.save()                │
+│  Repository.delete()              │    emit(snapshot)
+│  Mongo change streams             │  ─────────────┐
+│  Orchestrator progress callbacks  │                │
+│  Kb progress callbacks            │                ▼
+└───────────────────────────────────┘   ┌──────────────────────────┐
+                                         │  Per-scope StreamService │
+                                         │  MutableSharedFlow<Snap> │
+                                         │  (replay = 1)            │
+                                         └──────────┬───────────────┘
+                                                    │ Flow<Snap>  (kRPC over WS)
+                                                    ▼
+                                         ┌──────────────────────────┐
+                                         │   UI ViewModel.collect{} │
+                                         │   → StateFlow → Compose  │
+                                         └──────────────────────────┘
+```
+
+### Stream registry
+
+| Scope key | Service | Snapshot | Invalidated by |
+|---|---|---|---|
+| `sidebar/{clientId\|""}` | `SidebarStreamService` | `SidebarSnapshot` | `TaskRepository.save/delete`, markDone, reopen |
+| `task/{taskId}` | `TaskStreamService` | `TaskSnapshot` | task save, progress event, related-task save |
+| `chat/{clientId}/{projectId}/{filter}` | `ChatStreamService` | `ChatHistoryDto` | `ChatMessageRepository.save`, task markDone/reopen |
+| `conversation/{taskId}` | `ChatStreamService` | `ConversationSnapshot` | chat message save, progress event |
+| `queue` | `QueueStreamService` | `QueueSnapshot` | task state transitions (QUEUED ↔ PROCESSING ↔ DONE) |
+| `meeting/{meetingId}` | `MeetingStreamService` | `MeetingSnapshot` | meeting save, transcription progress, correction progress |
+| `userTasks/{clientId\|""}` | `UserTaskStreamService` | `List<UserTaskListItemDto>` | `UserTaskService.*` |
+
+### Invalidation rules
+
+1. **Write-path ownership.** Only the service that owns the write invalidates.
+   `TaskService.markDone()` calls `sidebarStreamService.invalidate(task.clientId)`
+   and `taskStreamService.invalidate(task.id)` and, if the task is linked to a
+   main chat conversation, `chatStreamService.invalidate(scope)`.
+2. **Cross-scope fan-out.** A write affecting the global sidebar also emits to
+   the client-scoped flow (and vice versa). `StreamService.invalidate` resolves
+   all affected scope keys in one call.
+3. **Coalescing.** `MutableSharedFlow(extraBufferCapacity = 8)` — bursts of
+   writes collapse on the consumer side (slow subscriber sees latest, not every
+   intermediate). Do NOT rely on seeing every individual emit.
+4. **Lazy snapshot compute.** Snapshot is built only when a subscriber is
+   attached. `onSubscription { if (replayCache.isEmpty()) emit(build()) }`. No
+   work happens for scopes no one watches.
+5. **No user ACL in snapshot path.** Snapshot is built for `(clientId,
+   projectId)` scope — if the UI switches scope, it opens a new stream.
+
+### Filter as stream parameter
+
+A filter (`ChatFilter`, `TaskTypeFilter`) is part of the stream method
+signature. The UI emits a new `clientId`/`filter` value → `collectLatest`
+cancels the old stream and opens a new one. The server computes the snapshot
+for the new filter and emits immediately. No `reloadForCurrentFilter()` logic
+in UI code.
+
+### Writes never return snapshots
+
+Write RPCs (`markDone`, `reopen`, `sendMessage`, `cancel`, `dismiss`,
+`approveApproval`, …) return only an `Ack` or the updated domain DTO. They
+NEVER return a list/history. UI consumers see the change via the subscription
+they already hold — there is no post-write refresh.
+
+### Reconnect
+
+`RpcConnectionManager.generation: StateFlow<Int>` bumps on every successful
+reconnect. `JervisRepository.streamingCall` wraps a collector so each
+generation restart re-subscribes to the stream. With `replay = 1` on the
+server, the UI receives the current snapshot on the new socket without any
+manual "refresh after reconnect" code.
+
+### What stays unary
+
+- `listDoneTasksPaged`, `getMeetingTranscript`, file download — historical reads
+- `markDone`, `reopen`, settings CRUD, etc. — writes
+- `getById` is allowed ONLY when the result is used as a one-off input for a
+  write op; for live rendering, use `subscribeTask(id)` instead
+
+### Legacy patterns removed
+
+- `IPendingTaskService.listTasksPaged(state = …)` for the live sidebar —
+  replaced by `subscribeSidebar`
+- `IChatService.getChatHistory(...)` for the main chat live view — replaced by
+  `subscribeChatHistory`
+- `INotificationService.subscribeToEvents` → UI handler calling `getXxx()` —
+  event signals stay, but they no longer trigger pulls. Data lives on its own
+  stream
+- `_sidebarRefreshTrigger`, `refreshTrigger: Int`, `LaunchedEffect(refreshTrigger)`
+- `JRefreshButton` on chat/sidebar/queue/meeting/userTasks views (still OK in
+  Settings CRUD)
+- `getById(taskId)` in `ChatViewModel.switchToTaskConversation` — replaced by
+  `subscribeTask(taskId)` (fixes stale `_activeChatTaskState` bug)
+- `15s polling cycle` comment and any implicit poll loop
+
+---
+
 ## Ollama Router Architecture (Priority-Based GPU Routing)
 
 All services call a single endpoint – the **Ollama Router** (:11430) – which routes to GPU backends (p40-1: LLM 30b, p40-2: embedding + extraction 8b/14b + VLM + whisper) based on priority, capability, and `GPU_MODEL_SETS`.
