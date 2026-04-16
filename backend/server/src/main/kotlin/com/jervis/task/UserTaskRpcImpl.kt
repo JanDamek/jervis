@@ -248,6 +248,7 @@ class UserTaskRpcImpl(
                 taskRepository.save(updated)
                 logger.info { "USER_TASK_DISMISSED | taskId=$taskId | previousState=${task.state} | title=${task.taskName}" }
                 notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
+                // Sidebar snapshot is pushed automatically by TaskSaveEventListener → SidebarStreamService.
                 dismissed = true
             }
         } catch (_: Exception) {
@@ -302,6 +303,7 @@ class UserTaskRpcImpl(
             val updated = task.copy(state = TaskStateEnum.DONE)
             taskRepository.save(updated)
             notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
+            // Sidebar snapshot pushed by TaskSaveEventListener → SidebarStreamService.
             count++
         }
 

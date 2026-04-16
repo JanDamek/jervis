@@ -34,5 +34,4 @@ enum class ChatResponseType {
     URGENT_ALERT,       // Urgent notification pushed to chat (email, deadline, etc.)
     THINKING_GRAPH_UPDATE,  // Thinking graph (TaskGraph) update from chat planning
     THOUGHT_CONTEXT,        // Thought Map activated context (proactive spreading activation)
-    TASK_LIST_CHANGED,      // Phase 5: task state changed — sidebar must refresh (stream-based, no polling)
 }

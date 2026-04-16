@@ -943,9 +943,8 @@ class ChatViewModel(
         scope.launch {
             try {
                 repository.call { services -> services.userTaskService.dismiss(taskId) }
-                // Reload chat bubbles from DB — dismissed item filtered out by metadata.dismissed.
-                // Sidebar refreshes via the server-pushed TASK_LIST_CHANGED event
-                // (see ChatResponseType.TASK_LIST_CHANGED handler). No client-side polling.
+                // Reload chat bubbles — dismissed item filtered out by metadata.dismissed.
+                // Sidebar snapshot arrives via the subscribeSidebar stream automatically.
                 reloadForCurrentFilter()
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -966,8 +965,8 @@ class ChatViewModel(
                 // Switch back to Chat view after dismissing all actionable items
                 _showChat.value = true
                 _showNeedReaction.value = false
-                // Reload from DB — dismissed items now filtered out.
-                // Sidebar refreshes via server-pushed TASK_LIST_CHANGED events.
+                // Reload chat — dismissed items filtered at DB.
+                // Sidebar snapshot arrives via the subscribeSidebar stream automatically.
                 reloadForCurrentFilter()
                 println("ChatViewModel: dismissAll — $count items dismissed")
             } catch (e: Exception) {
@@ -1494,12 +1493,6 @@ class ChatViewModel(
                     thoughtCount = thoughtIds.size,
                 )
                 null  // Don't add as chat message — shown in side panel
-            }
-
-            ChatResponseType.TASK_LIST_CHANGED -> {
-                // Legacy event — sidebar + task streams push fresh snapshots
-                // directly now (guideline #9). Drop the signal silently.
-                null
             }
 
             else -> null

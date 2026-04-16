@@ -66,26 +66,6 @@ class ChatRpcImpl(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
-    /**
-     * Phase 5 stream-based sidebar: emit a lightweight TASK_LIST_CHANGED
-     * event so the UI sidebar refreshes immediately after any task state
-     * change. Called from TaskService.updateState, PendingTaskService.markDone/
-     * reopen, and the re-qualifier route in sendMessage. No polling needed.
-     */
-    suspend fun emitTaskListChanged(taskId: String? = null, newState: String? = null) {
-        chatEventStream.emit(
-            ChatResponseDto(
-                message = "",
-                type = ChatResponseType.TASK_LIST_CHANGED,
-                metadata = buildMap {
-                    taskId?.let { put("taskId", it) }
-                    newState?.let { put("newState", it) }
-                    put("timestamp", java.time.Instant.now().toString())
-                },
-            ),
-        )
-    }
-
     override fun subscribeToChatEvents(): Flow<ChatResponseDto> = flow {
         logger.info { "CHAT_SUBSCRIBE: Client connected to chat events" }
 
