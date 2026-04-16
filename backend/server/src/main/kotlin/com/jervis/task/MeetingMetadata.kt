@@ -51,6 +51,14 @@ data class MeetingMetadata(
      * `null` until the desktop confirms recording started.
      */
     val recordingMeetingId: String? = null,
+    /**
+     * O365 / Teams ConnectionDocument id — set by the calendar indexer when
+     * the meeting comes from a connection-owned calendar. Used by
+     * MeetingRecordingDispatcher to route TEAMS meetings directly to the
+     * corresponding browser pod via `/instruction/{connectionId}` (product
+     * §10a) instead of the desktop loopback recorder or attender pod.
+     */
+    val connectionId: String? = null,
 )
 
 /**

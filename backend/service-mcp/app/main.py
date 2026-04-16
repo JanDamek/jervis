@@ -941,6 +941,65 @@ async def meeting_attend_status(task_id: str) -> str:
     return "\n".join(lines)
 
 
+# ── User-joined meeting alone-check (product §10a) ─────────────────────
+
+
+@mcp.tool
+async def meeting_alone_leave(meeting_id: str, reason: str = "user_asked_to_leave") -> str:
+    """Leave a meeting the user is alone in.
+
+    Resolves the `meeting_alone_check` push when the user reacts "Odejít"
+    (bubble button) or says "vypadni z meetingu" / "ten meeting už je
+    prázdný". Server dispatches `leave_meeting` to the pod agent via
+    `/instruction/{connectionId}`; the pod stops recording, clicks Leave,
+    and reports presence=false.
+
+    Args:
+        meeting_id: MeetingDocument id from the alone-check push.
+        reason: Short reason stored with the leave (default
+            'user_asked_to_leave').
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/meetings/{meeting_id}/leave",
+            json={"reason": reason},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return (
+            f"Leave dispatched: meetingId={meeting_id} "
+            f"state={data.get('state', '?')} reason={reason}"
+        )
+
+
+@mcp.tool
+async def meeting_alone_stay(meeting_id: str, suppress_minutes: int = 30) -> str:
+    """Keep Jervis in the meeting even though the user is alone.
+
+    Resolves the `meeting_alone_check` push when the user reacts "Zůstat"
+    or says "nech to ještě běžet". Server stops further alone-check pushes
+    for `suppress_minutes` (default 30) so the pod's watcher does not spam.
+
+    Args:
+        meeting_id: MeetingDocument id from the alone-check push.
+        suppress_minutes: How long to suppress further alone-check pushes
+            (default 30, clamped 1..180).
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/meetings/{meeting_id}/stay",
+            json={"suppressMinutes": suppress_minutes},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return (
+            f"Stay acknowledged: meetingId={meeting_id} "
+            f"suppressMinutes={data.get('suppressMinutes', suppress_minutes)}"
+        )
+
+
 # ── Off-hours relogin approval (product §18) ───────────────────────────
 
 

@@ -71,6 +71,29 @@ data class MeetingDocument(
     val fullyProcessed: Boolean = false,
     /** Device session ID for multi-device deduplication (future: merge recordings from multiple devices). */
     val deviceSessionId: String? = null,
+
+    // ── Pod-recorded meetings (product §10a) ──────────────────────────
+    /** True when the agent auto-joined via /instruction/ (vs user-joined via VNC). */
+    val joinedByAgent: Boolean = false,
+    /** Number of WebM chunks received so far — grows during RECORDING. */
+    val chunksReceived: Int = 0,
+    /** Timestamp of most recent accepted video-chunk POST. */
+    val lastChunkAt: Instant? = null,
+    /** Filesystem path of the assembled WebM on the server (set at FINALIZING). */
+    val webmPath: String? = null,
+    /** Retention cutoff — cleanup job drops the WebM after this, keeps metadata + transcript. */
+    val videoRetentionUntil: Instant? = null,
+    /** Timeline entries assembled during INDEXING — `{ts, diarizedSegment?, frameThumbPath?, frameDescription?}`. */
+    val timeline: List<MeetingTimelineEntry> = emptyList(),
+)
+
+/** One point on the meeting timeline — either a diarized speech segment or a scene-change frame. */
+data class MeetingTimelineEntry(
+    val tsSec: Double,
+    val diarizedText: String? = null,
+    val diarizedSpeaker: String? = null,
+    val frameThumbPath: String? = null,
+    val frameDescription: String? = null,
 )
 
 data class CorrectionChatMessage(

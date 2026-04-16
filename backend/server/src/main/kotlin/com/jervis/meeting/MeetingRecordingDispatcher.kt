@@ -57,6 +57,7 @@ class MeetingRecordingDispatcher(
     private val approvalQueueRepository: ApprovalQueueRepository,
     private val notificationRpc: NotificationRpcImpl,
     private val attenderClient: MeetingAttenderClient,
+    private val browserPodMeetingClient: BrowserPodMeetingClient,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val isStarted = AtomicBoolean(false)
@@ -110,14 +111,19 @@ class MeetingRecordingDispatcher(
                 timestamp = now.toString(),
             )
 
-            // Prefer the desktop loopback recorder when the user has an
-            // active event-stream subscription (a desktop or mobile app is
-            // online and listening). Otherwise fall back to the K8s
-            // attender pod which captures audio headlessly.
+            // Routing priority (product §10a):
+            //   1. O365_BROWSER_POD — Teams meeting with a known
+            //      ConnectionDocument id; dispatch to the pod's agent.
+            //   2. DESKTOP — desktop/mobile app online, loopback audio.
+            //   3. ATTENDER_POD — headless fallback (read-only audio).
             val clientIdStr = task.clientId.toString()
             val dispatchKind: String
             val dispatchOk: Boolean
-            if (notificationRpc.hasActiveSubscribers(clientIdStr)) {
+            val podConnectionId = metadata.connectionId?.takeIf { it.isNotBlank() }
+            if (podConnectionId != null && metadata.provider == com.jervis.task.MeetingProvider.TEAMS) {
+                dispatchOk = browserPodMeetingClient.dispatchJoin(podConnectionId, event)
+                dispatchKind = "O365_BROWSER_POD"
+            } else if (notificationRpc.hasActiveSubscribers(clientIdStr)) {
                 notificationRpc.emitEvent(clientIdStr, event)
                 dispatchKind = "DESKTOP"
                 dispatchOk = true

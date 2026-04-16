@@ -1,175 +1,72 @@
-"""Meeting recorder — joins Teams meetings using existing browser session.
+"""Meeting recorder — WebM chunk pipeline with disk-backed upload queue.
 
-Uses the already-authenticated browser context from the browser pool to join
-a Teams meeting as the logged-in user (not as guest). Captures audio via
-PulseAudio virtual sink + ffmpeg, uploads chunks to Kotlin server.
+Product §10a: records Teams meetings happening inside the pod's Chromium
+(via VNC display :99). ffmpeg muxes a VP9 video stream (x11grab at
+`O365_POOL_MEETING_FPS`) + an Opus audio stream (PulseAudio
+`jervis_audio.monitor`) into a WebM segment stream, 10-second chunks
+written to `/browser-profiles/meeting-chunks/<meeting_id>/`.
+
+An async upload loop posts each chunk to
+`POST /internal/meeting/{id}/video-chunk?chunkIndex=<N>` with indefinite
+retry (3 s poll, 2 s failure delay). On
+`stop_meeting_recording`/`leave_meeting` the pipeline flushes the queue
+and calls `POST /internal/meeting/{id}/finalize`.
+
+No "join" tool here — scheduled meetings join via `/instruction/`
+(server → agent → tools), ad-hoc meetings are attached when the user
+clicks Join via VNC (agent detects `meeting_stage` rising).
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
+import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import httpx
-from playwright.async_api import BrowserContext, Page
+from playwright.async_api import Page
 
 from app.browser_manager import BrowserManager
 from app.config import settings
 
 logger = logging.getLogger("o365-browser-pool.meeting")
 
-CHUNK_SECONDS = 5
-SAMPLE_RATE = 16000
-BYTES_PER_CHUNK = SAMPLE_RATE * 2 * CHUNK_SECONDS  # 16-bit mono PCM
 
-JERVIS_SERVER_URL = getattr(settings, "jervis_server_url", "http://jervis-server:5500")
+JERVIS_SERVER_URL = getattr(settings, "kotlin_server_url", "http://jervis-server:5500")
 
 
 @dataclass
 class MeetingSession:
-    task_id: str
-    meeting_id: str
+    task_id: str              # "adhoc-<meeting_id>" or server-supplied
+    meeting_id: str           # MeetingDocument._id
     client_id: str
-    join_url: str
-    end_epoch: float
+    connection_id: str
+    chunk_dir: Path
     page: Page | None = None
     ffmpeg_proc: asyncio.subprocess.Process | None = None
-    pump_task: asyncio.Task | None = None
-    watchdog_task: asyncio.Task | None = None
-    screenshot_task: asyncio.Task | None = None
-    chunks_sent: int = 0
-    state: str = "STARTING"
+    upload_task: asyncio.Task | None = None
+    state: str = "STARTING"   # STARTING | RECORDING | FINALIZING | DONE | ERROR
+    joined_by: str = "agent"  # "user" | "agent"
+    title: str | None = None
+    started_at: float = field(default_factory=time.time)
+    chunks_uploaded: int = 0
+    last_chunk_uploaded_index: int = -1
+    last_ack_at: float | None = None
 
 
 class MeetingRecorder:
-    """Records Teams meetings using existing browser pool session."""
+    """Manages at most one active recording per client (1 pod = 1 client)."""
 
     def __init__(self, browser_manager: BrowserManager) -> None:
         self._bm = browser_manager
-        self._sessions: dict[str, MeetingSession] = {}
+        self._sessions: dict[str, MeetingSession] = {}       # task_id → session
         self._http = httpx.AsyncClient(timeout=30)
 
-    async def join(
-        self,
-        task_id: str,
-        client_id: str,
-        meeting_id: str,
-        join_url: str,
-        end_time_epoch: float,
-    ) -> MeetingSession:
-        if task_id in self._sessions:
-            return self._sessions[task_id]
-
-        session = MeetingSession(
-            task_id=task_id,
-            meeting_id=meeting_id,
-            client_id=client_id,
-            join_url=join_url,
-            end_epoch=end_time_epoch,
-        )
-        self._sessions[task_id] = session
-
-        # Notify server that recording started
-        await self._notify_server(
-            "/internal/meeting/start-recording",
-            {"meetingId": meeting_id, "taskId": task_id},
-        )
-
-        # Open meeting in new tab using existing authenticated context
-        context = self._bm.get_context(client_id)
-        if not context:
-            # Fallback: use any available context
-            context = self._bm.get_context()
-
-        if not context:
-            session.state = "ERROR"
-            logger.error("No browser context available for meeting join")
-            return session
-
-        try:
-            page = await context.new_page()
-            session.page = page
-
-            # Navigate to meeting join link
-            logger.info("Meeting JOIN: navigating to %s", join_url)
-            await page.goto(join_url, wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(5)
-
-            # Try to click "Join now" / "Pripojit se" button
-            await self._click_join_button(page)
-            session.state = "JOINED"
-            logger.info("Meeting JOINED: %s (task=%s)", meeting_id, task_id)
-
-            # Force all Chrome audio to our capture sink
-            await self._force_audio_routing()
-            await asyncio.sleep(2)
-
-            # Start audio capture — write directly to PVC for persistence
-            wav_path = f"/browser-profiles/meeting-{meeting_id}.wav"
-            session.ffmpeg_proc = await self._start_audio_capture(wav_path)
-            if session.ffmpeg_proc:
-                session.pump_task = asyncio.create_task(self._pump_audio(session))
-                session.state = "RECORDING"
-                logger.info("Meeting RECORDING: audio → %s", wav_path)
-
-            # Start screenshot loop
-            session.screenshot_task = asyncio.create_task(self._screenshot_loop(session))
-
-            # Start watchdog (auto-stop at end_time)
-            session.watchdog_task = asyncio.create_task(self._watchdog(session))
-
-        except Exception as e:
-            session.state = "ERROR"
-            logger.error("Meeting join failed: %s", e)
-
-        return session
-
-    async def stop(self, task_id: str) -> None:
-        session = self._sessions.pop(task_id, None)
-        if not session:
-            return
-
-        logger.info("Meeting STOP: %s (chunks=%d)", session.meeting_id, session.chunks_sent)
-        session.state = "STOPPING"
-
-        # Cancel tasks
-        for task in [session.pump_task, session.watchdog_task, session.screenshot_task]:
-            if task:
-                task.cancel()
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
-
-        # Kill ffmpeg
-        if session.ffmpeg_proc:
-            try:
-                session.ffmpeg_proc.kill()
-                await session.ffmpeg_proc.wait()
-            except Exception:
-                pass
-
-        # Close meeting tab
-        if session.page and not session.page.is_closed():
-            try:
-                await session.page.close()
-            except Exception:
-                pass
-
-        # Notify server
-        duration = max(0, int(time.time() - (session.end_epoch - 3 * 3600)))
-        await self._notify_server(
-            "/internal/meeting/finalize-recording",
-            {
-                "meetingId": session.meeting_id,
-                "taskId": session.task_id,
-                "durationSeconds": session.chunks_sent * CHUNK_SECONDS,
-            },
-        )
-        session.state = "DONE"
+    # ---- Public API ------------------------------------------------------
 
     async def start_adhoc(
         self,
@@ -177,99 +74,81 @@ class MeetingRecorder:
         client_id: str,
         page: Page,
         title: str | None = None,
+        joined_by: str = "user",
+        meeting_id: str | None = None,
+        connection_id: str | None = None,
     ) -> MeetingSession | None:
-        """Attach recording to an in-progress meeting the user started manually.
+        """Start (or reattach) a recording.
 
-        Unlike `join()`, this does NOT navigate or click — the user is already
-        in the meeting via VNC. We just allocate a MeetingDocument server-side,
-        grab audio from the existing PulseAudio sink, and stream screenshots
-        of the current page.
-
-        Returns the session, or None if a server-side meeting could not be
-        allocated. Deduplicates per client_id — if an ad-hoc session is already
-        running for this client, the existing one is returned.
+        When `meeting_id` is None, a new MeetingDocument is allocated
+        server-side. `joined_by` distinguishes user-joined (VNC) from
+        agent-joined (/instruction/) so the server + alone-check logic can
+        branch appropriately.
         """
-        existing = next(
-            (s for s in self._sessions.values()
-             if s.client_id == client_id and s.task_id.startswith("adhoc-")),
-            None,
-        )
+        existing = self._active_for_client(client_id)
         if existing is not None:
+            logger.info("MEETING: reusing active session %s", existing.meeting_id)
             return existing
 
-        # Create MeetingDocument server-side — taskId omitted = ad-hoc recording
-        try:
-            resp = await self._http.post(
-                f"{JERVIS_SERVER_URL}/internal/meeting/start-recording",
-                json={
-                    "clientId": client_id,
-                    "title": title or "Ad-hoc meeting",
-                    "meetingType": "MEETING",
-                },
+        if meeting_id is None:
+            allocated = await self._allocate_meeting(
+                client_id=client_id, title=title, joined_by=joined_by,
             )
-            resp.raise_for_status()
-            meeting = resp.json()
-            meeting_id = meeting.get("id")
-            if not meeting_id:
-                logger.error("Ad-hoc meeting start: server returned no id")
+            if allocated is None:
                 return None
-        except Exception as e:
-            logger.error("Ad-hoc meeting start failed: %s", e)
-            return None
+            meeting_id = allocated
 
         task_id = f"adhoc-{meeting_id}"
-        # End-epoch set to +4h guard; watchdog stops when meeting_stage disappears
-        # (see stop_adhoc_for_client) or at the hard deadline.
-        end_epoch = time.time() + 4 * 3600
+        chunk_dir = Path(settings.meeting_chunk_dir) / meeting_id
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+
         session = MeetingSession(
             task_id=task_id,
             meeting_id=meeting_id,
             client_id=client_id,
-            join_url="",
-            end_epoch=end_epoch,
+            connection_id=connection_id or client_id,
+            chunk_dir=chunk_dir,
             page=page,
+            joined_by=joined_by,
+            title=title,
         )
         self._sessions[task_id] = session
 
         try:
             await self._force_audio_routing()
-            await asyncio.sleep(1)
-
-            wav_path = f"/browser-profiles/meeting-{meeting_id}.wav"
-            session.ffmpeg_proc = await self._start_audio_capture(wav_path)
-            if session.ffmpeg_proc:
-                session.pump_task = asyncio.create_task(self._pump_audio(session))
-                session.state = "RECORDING"
-                logger.info(
-                    "AD-HOC meeting recording started: meeting=%s client=%s wav=%s",
-                    meeting_id, client_id, wav_path,
-                )
-
-            session.screenshot_task = asyncio.create_task(self._screenshot_loop(session))
-            session.watchdog_task = asyncio.create_task(self._watchdog(session))
+            await asyncio.sleep(0.5)
+            session.ffmpeg_proc = await self._start_ffmpeg(session)
+            if session.ffmpeg_proc is None:
+                session.state = "ERROR"
+                return session
+            session.state = "RECORDING"
+            session.upload_task = asyncio.create_task(self._upload_loop(session))
+            logger.info(
+                "MEETING_RECORDING_STARTED: meeting=%s client=%s joined_by=%s dir=%s",
+                meeting_id, client_id, joined_by, chunk_dir,
+            )
         except Exception as e:
             session.state = "ERROR"
-            logger.error("Ad-hoc recording setup failed: %s", e)
+            logger.error("Meeting start failed: %s", e)
 
         return session
 
     async def stop_adhoc_for_client(self, client_id: str) -> str | None:
-        """Stop any in-progress ad-hoc recording for the given client.
+        session = self._active_for_client(client_id)
+        if session is None:
+            return None
+        await self._stop_session(session)
+        return session.task_id
 
-        Called by the agent when `meeting_stage` becomes false. Returns the
-        stopped task_id, or None if nothing was running.
-        """
+    async def stop_by_meeting_id(self, meeting_id: str) -> str | None:
         for s in list(self._sessions.values()):
-            if s.client_id == client_id and s.task_id.startswith("adhoc-"):
-                await self.stop(s.task_id)
+            if s.meeting_id == meeting_id:
+                await self._stop_session(s)
                 return s.task_id
         return None
 
     def has_adhoc_session(self, client_id: str) -> bool:
-        return any(
-            s.client_id == client_id and s.task_id.startswith("adhoc-")
-            for s in self._sessions.values()
-        )
+        return self._active_for_client(client_id) is not None
 
     def get_sessions(self) -> list[dict]:
         return [
@@ -277,65 +156,47 @@ class MeetingRecorder:
                 "task_id": s.task_id,
                 "meeting_id": s.meeting_id,
                 "state": s.state,
-                "chunks_sent": s.chunks_sent,
+                "chunks_uploaded": s.chunks_uploaded,
+                "joined_by": s.joined_by,
             }
             for s in self._sessions.values()
         ]
 
-    async def _click_join_button(self, page: Page) -> None:
-        """Try to find and click the Join/Pripojit button."""
-        join_selectors = [
-            'button[data-tid="prejoin-join-button"]',
-            'button:has-text("Join now")',
-            'button:has-text("Pripojit se")',
-            'button:has-text("Pripojit")',
-            'button:has-text("Join")',
-            '#prejoin-join-button',
-        ]
-        for attempt in range(6):
-            for selector in join_selectors:
-                try:
-                    btn = page.locator(selector).first
-                    if await btn.is_visible(timeout=2000):
-                        # Mute mic before joining
-                        try:
-                            mic_btn = page.locator(
-                                'button[data-tid="toggle-mute"], '
-                                'button[aria-label*="Mic"], '
-                                'button[aria-label*="Mikrofon"]'
-                            ).first
-                            if await mic_btn.is_visible(timeout=1000):
-                                await mic_btn.click()
-                                logger.info("Meeting: muted microphone")
-                        except Exception:
-                            pass
+    # ---- Internal --------------------------------------------------------
 
-                        # Disable camera
-                        try:
-                            cam_btn = page.locator(
-                                'button[data-tid="toggle-video"], '
-                                'button[aria-label*="Camera"], '
-                                'button[aria-label*="Kamera"]'
-                            ).first
-                            if await cam_btn.is_visible(timeout=1000):
-                                await cam_btn.click()
-                                logger.info("Meeting: disabled camera")
-                        except Exception:
-                            pass
+    def _active_for_client(self, client_id: str) -> MeetingSession | None:
+        return next(
+            (s for s in self._sessions.values()
+             if s.client_id == client_id and s.state in ("STARTING", "RECORDING")),
+            None,
+        )
 
-                        await btn.click()
-                        logger.info("Meeting: clicked join button (%s)", selector)
-                        await asyncio.sleep(5)
-                        return
-                except Exception:
-                    continue
-            logger.debug("Meeting: join button not found, attempt %d/6", attempt + 1)
-            await asyncio.sleep(3)
-
-        logger.warning("Meeting: could not find join button, may be in lobby")
+    async def _allocate_meeting(
+        self, *, client_id: str, title: str | None, joined_by: str,
+    ) -> str | None:
+        try:
+            resp = await self._http.post(
+                f"{JERVIS_SERVER_URL}/internal/meeting/start-recording",
+                json={
+                    "clientId": client_id,
+                    "title": title or "Ad-hoc meeting",
+                    "meetingType": "MEETING",
+                    "joinedBy": joined_by,
+                },
+            )
+            resp.raise_for_status()
+            meeting_id = resp.json().get("id")
+            if not meeting_id:
+                logger.error("Ad-hoc meeting start: server returned no id")
+                return None
+            return meeting_id
+        except Exception as e:
+            logger.error("Ad-hoc meeting start failed: %s", e)
+            return None
 
     async def _force_audio_routing(self) -> None:
-        """Move all PulseAudio sink-inputs to jervis_audio capture sink."""
+        """Move all PulseAudio sink-inputs to jervis_audio capture sink so
+        the meeting audio is captured by our ffmpeg pipeline."""
         try:
             proc = await asyncio.create_subprocess_shell(
                 "for idx in $(pactl list sink-inputs short | awk '{print $1}'); do "
@@ -344,117 +205,214 @@ class MeetingRecorder:
                 stderr=asyncio.subprocess.DEVNULL,
             )
             await proc.wait()
-            logger.info("Audio routing: forced all sink-inputs to jervis_audio")
         except Exception as e:
             logger.warning("Audio routing failed: %s", e)
 
-    async def _start_audio_capture(self, wav_path: str | None = None) -> asyncio.subprocess.Process | None:
-        """Start ffmpeg capturing from PulseAudio virtual sink.
+    async def _start_ffmpeg(self, session: MeetingSession) -> asyncio.subprocess.Process | None:
+        """Start the ffmpeg WebM segment pipeline.
 
-        If wav_path is given, writes WAV to file (persistent) AND pipes raw PCM
-        to stdout for chunk upload. If not, only pipes to stdout.
+        Video: x11grab from :99 at O365_POOL_MEETING_FPS → VP9 realtime.
+        Audio: PulseAudio jervis_audio.monitor → Opus.
+        Container: webm segment, `chunk_seconds` seconds per file.
+        Output pattern: <dir>/chunk_%06d.webm — a filesystem watcher picks
+        them up, the upload loop ships them in order.
         """
+        fps = max(1, int(settings.meeting_fps))
+        chunk_s = max(5, int(settings.meeting_chunk_seconds))
+        display = os.environ.get("DISPLAY", ":99")
+        output = str(session.chunk_dir / "chunk_%06d.webm")
+
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "warning",
+            # Video
+            "-f", "x11grab", "-framerate", str(fps), "-i", display,
+            # Audio
+            "-f", "pulse", "-i", "jervis_audio.monitor",
+            # Encoders
+            "-c:v", "libvpx-vp9", "-b:v", "600k",
+            "-deadline", "realtime", "-cpu-used", "8", "-row-mt", "1",
+            "-c:a", "libopus", "-b:a", "64k",
+            # Segment muxer
+            "-f", "segment", "-segment_format", "webm",
+            "-segment_time", str(chunk_s), "-reset_timestamps", "1",
+            output,
+        ]
         try:
-            if wav_path:
-                # Tee: write WAV to file + pipe raw PCM for chunk upload
-                proc = await asyncio.create_subprocess_exec(
-                    "ffmpeg", "-y",
-                    "-f", "pulse",
-                    "-i", "jervis_audio.monitor",
-                    "-ac", "1", "-ar", str(SAMPLE_RATE),
-                    wav_path,
-                    "-ac", "1", "-ar", str(SAMPLE_RATE),
-                    "-f", "s16le", "pipe:1",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.DEVNULL,
-                )
-            else:
-                proc = await asyncio.create_subprocess_exec(
-                    "ffmpeg", "-y",
-                    "-f", "pulse",
-                    "-i", "jervis_audio.monitor",
-                    "-ac", "1", "-ar", str(SAMPLE_RATE),
-                    "-f", "s16le", "pipe:1",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.DEVNULL,
-                )
-            logger.info("ffmpeg audio capture started (PID=%d, file=%s)", proc.pid, wav_path or "pipe-only")
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            logger.info(
+                "MEETING_FFMPEG_STARTED: pid=%d dir=%s fps=%d chunk=%ds",
+                proc.pid, session.chunk_dir, fps, chunk_s,
+            )
+            # Lightweight stderr drain so ffmpeg never blocks on a full pipe.
+            asyncio.create_task(self._drain_stderr(proc, session.meeting_id))
             return proc
         except Exception as e:
-            logger.error("Failed to start ffmpeg audio capture: %s", e)
+            logger.error("ffmpeg start failed: %s", e)
             return None
 
-    async def _pump_audio(self, session: MeetingSession) -> None:
-        """Read audio chunks from ffmpeg and upload to server."""
+    async def _drain_stderr(
+        self, proc: asyncio.subprocess.Process, meeting_id: str,
+    ) -> None:
+        if proc.stderr is None:
+            return
+        while True:
+            line = await proc.stderr.readline()
+            if not line:
+                break
+            text = line.decode(errors="ignore").rstrip()
+            if text:
+                logger.debug("ffmpeg[%s] %s", meeting_id[:8], text)
+
+    async def _upload_loop(self, session: MeetingSession) -> None:
+        """Poll the chunk dir for completed segments, post each in order.
+
+        We only upload the files whose index is strictly less than the
+        newest one ffmpeg is currently writing — otherwise we could grab a
+        partial WebM. The max committed index is `(max_on_disk - 1)`.
+        """
+        poll_s = max(1, int(settings.meeting_upload_poll_seconds))
+        retry_s = max(1, int(settings.meeting_upload_retry_seconds))
+        next_index = 0
         try:
-            while session.ffmpeg_proc and session.ffmpeg_proc.stdout:
-                data = await session.ffmpeg_proc.stdout.readexactly(BYTES_PER_CHUNK)
-                b64 = base64.b64encode(data).decode()
-                await self._notify_server(
-                    "/internal/meeting/upload-chunk",
-                    {
-                        "meetingId": session.meeting_id,
-                        "chunkIndex": session.chunks_sent,
-                        "data": b64,
-                        "mimeType": "audio/pcm",
-                    },
+            while session.state in ("RECORDING", "FINALIZING"):
+                disk_max = self._max_chunk_index(session.chunk_dir)
+                # Only upload indexes strictly below disk_max (finished files).
+                upload_through = (
+                    disk_max if session.state == "FINALIZING" else disk_max - 1
                 )
-                session.chunks_sent += 1
-                if session.chunks_sent % 12 == 0:  # Log every minute
-                    logger.info(
-                        "Meeting audio: %d chunks (%d min) for %s",
-                        session.chunks_sent,
-                        session.chunks_sent * CHUNK_SECONDS // 60,
-                        session.meeting_id,
-                    )
-        except asyncio.IncompleteReadError:
-            logger.info("Meeting audio stream ended")
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.error("Audio pump error: %s", e)
-
-    async def _screenshot_loop(self, session: MeetingSession) -> None:
-        """Take periodic screenshots of the meeting."""
-        interval = max(5, getattr(settings, "meeting_screenshot_interval", 30))
-        try:
-            while True:
-                await asyncio.sleep(interval)
-                if session.page and not session.page.is_closed():
+                while next_index <= upload_through:
+                    chunk_path = session.chunk_dir / f"chunk_{next_index:06d}.webm"
+                    if not chunk_path.exists():
+                        next_index += 1
+                        continue
+                    uploaded = await self._upload_chunk(session, chunk_path, next_index)
+                    if not uploaded:
+                        await asyncio.sleep(retry_s)
+                        break  # retry same chunk next tick
+                    # Free disk space after successful upload
                     try:
-                        screenshot = await session.page.screenshot(type="jpeg", quality=70)
-                        b64 = base64.b64encode(screenshot).decode()
-                        await self._notify_server(
-                            "/internal/meeting/upload-screenshot",
-                            {
-                                "meetingId": session.meeting_id,
-                                "data": b64,
-                                "mimeType": "image/jpeg",
-                                "timestamp": int(time.time()),
-                            },
-                        )
-                        logger.debug("Meeting screenshot uploaded for %s", session.meeting_id)
-                    except Exception as e:
-                        logger.debug("Screenshot failed: %s", e)
+                        chunk_path.unlink()
+                    except OSError:
+                        pass
+                    session.chunks_uploaded += 1
+                    session.last_chunk_uploaded_index = next_index
+                    session.last_ack_at = time.time()
+                    next_index += 1
+                await asyncio.sleep(poll_s)
         except asyncio.CancelledError:
             raise
+        except Exception:
+            logger.exception("Upload loop crashed for meeting %s", session.meeting_id)
 
-    async def _watchdog(self, session: MeetingSession) -> None:
-        """Auto-stop when meeting end time is reached."""
+    async def _upload_chunk(
+        self, session: MeetingSession, path: Path, index: int,
+    ) -> bool:
+        url = f"{JERVIS_SERVER_URL}/internal/meeting/{session.meeting_id}/video-chunk"
         try:
-            while True:
-                await asyncio.sleep(30)
-                if time.time() >= session.end_epoch:
-                    logger.info("Meeting end time reached for %s", session.meeting_id)
-                    await self.stop(session.task_id)
-                    return
-        except asyncio.CancelledError:
-            raise
-
-    async def _notify_server(self, path: str, payload: dict) -> None:
+            data = path.read_bytes()
+        except OSError as e:
+            logger.warning("chunk read failed path=%s: %s", path, e)
+            return False
         try:
-            resp = await self._http.post(f"{JERVIS_SERVER_URL}{path}", json=payload)
-            if resp.status_code >= 400:
-                logger.warning("Server %s returned %d: %s", path, resp.status_code, resp.text[:200])
+            resp = await self._http.post(
+                url,
+                params={"chunkIndex": str(index)},
+                content=data,
+                headers={"Content-Type": "video/webm"},
+            )
+            if resp.status_code < 300:
+                return True
+            logger.warning(
+                "chunk upload HTTP %d meeting=%s idx=%d body=%s",
+                resp.status_code, session.meeting_id, index, resp.text[:200],
+            )
+            return False
         except Exception as e:
-            logger.warning("Server notify failed %s: %s", path, e)
+            logger.debug("chunk upload exception meeting=%s idx=%d: %s",
+                         session.meeting_id, index, e)
+            return False
+
+    def _max_chunk_index(self, chunk_dir: Path) -> int:
+        max_idx = -1
+        try:
+            for p in chunk_dir.iterdir():
+                if not p.is_file() or not p.name.startswith("chunk_"):
+                    continue
+                try:
+                    idx = int(p.stem.split("_")[1])
+                except (IndexError, ValueError):
+                    continue
+                if idx > max_idx:
+                    max_idx = idx
+        except OSError:
+            pass
+        return max_idx
+
+    async def _stop_session(self, session: MeetingSession) -> None:
+        if session.state in ("FINALIZING", "DONE"):
+            return
+        session.state = "FINALIZING"
+        logger.info(
+            "MEETING_STOP: meeting=%s uploaded=%d",
+            session.meeting_id, session.chunks_uploaded,
+        )
+
+        # 1. Terminate ffmpeg so it flushes the last segment.
+        if session.ffmpeg_proc is not None:
+            try:
+                session.ffmpeg_proc.terminate()
+                await asyncio.wait_for(session.ffmpeg_proc.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                session.ffmpeg_proc.kill()
+                await session.ffmpeg_proc.wait()
+            except Exception:
+                pass
+
+        # 2. Let upload loop drain remaining chunks (up to ~60s).
+        drain_deadline = time.time() + 60
+        while time.time() < drain_deadline:
+            pending = self._count_pending(session.chunk_dir)
+            if pending == 0:
+                break
+            await asyncio.sleep(2)
+
+        # 3. Cancel upload loop.
+        if session.upload_task is not None:
+            session.upload_task.cancel()
+            try:
+                await session.upload_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        # 4. Post finalize.
+        try:
+            resp = await self._http.post(
+                f"{JERVIS_SERVER_URL}/internal/meeting/{session.meeting_id}/finalize",
+                json={
+                    "chunksUploaded": session.chunks_uploaded,
+                    "joinedBy": session.joined_by,
+                },
+            )
+            if resp.status_code >= 400:
+                logger.warning(
+                    "finalize HTTP %d meeting=%s body=%s",
+                    resp.status_code, session.meeting_id, resp.text[:200],
+                )
+        except Exception as e:
+            logger.warning("finalize failed meeting=%s: %s", session.meeting_id, e)
+
+        session.state = "DONE"
+        self._sessions.pop(session.task_id, None)
+
+    def _count_pending(self, chunk_dir: Path) -> int:
+        try:
+            return sum(
+                1 for p in chunk_dir.iterdir()
+                if p.is_file() and p.name.startswith("chunk_") and p.suffix == ".webm"
+            )
+        except OSError:
+            return 0

@@ -480,6 +480,20 @@ fun Routing.installInternalO365NotifyApi(
                 urgentDedupCache[key] = now
             }
 
+            // Alone-check suppression (product §10a) — if the user already
+            // answered "Zůstat", swallow further alone_check pushes until
+            // the window expires.
+            if (body.kind == "meeting_alone_check" && body.meetingId != null &&
+                isAloneSuppressed(body.meetingId)
+            ) {
+                logger.debug { "Suppressed meeting_alone_check for ${body.meetingId}" }
+                call.respondText(
+                    """{"status":"suppressed"}""",
+                    ContentType.Application.Json, HttpStatusCode.OK,
+                )
+                return@post
+            }
+
             val clientIds = try {
                 deviceTokenRepository?.findAll()?.toList()
                     ?.map { it.clientId }?.distinct()

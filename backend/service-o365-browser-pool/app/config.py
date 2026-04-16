@@ -48,6 +48,28 @@ class Settings(BaseSettings):
     # Meeting recording — screenshot cadence for slide/presentation capture
     meeting_screenshot_interval: int = Field(default=30, validation_alias="O365_POOL_MEETING_SCREENSHOT_INTERVAL")  # 30s
 
+    # Meeting WebM pipeline (product §10a)
+    meeting_fps: int = Field(default=5, validation_alias="O365_POOL_MEETING_FPS")
+    meeting_chunk_seconds: int = Field(default=10, validation_alias="O365_POOL_MEETING_CHUNK_SECONDS")
+    meeting_chunk_dir: str = Field(default="/browser-profiles/meeting-chunks", validation_alias="O365_POOL_MEETING_CHUNK_DIR")
+    meeting_upload_poll_seconds: int = Field(default=3, validation_alias="O365_POOL_MEETING_UPLOAD_POLL_S")
+    meeting_upload_retry_seconds: int = Field(default=2, validation_alias="O365_POOL_MEETING_UPLOAD_RETRY_S")
+
+    # Meeting end-detection thresholds (product §10a)
+    meeting_prestart_wait_min: int = Field(default=15, validation_alias="O365_POOL_MEETING_PRESTART_WAIT_MIN")
+    meeting_late_arrival_alone_min: int = Field(default=1, validation_alias="O365_POOL_MEETING_LATE_ARRIVAL_ALONE_MIN")
+    meeting_alone_after_activity_min: int = Field(default=2, validation_alias="O365_POOL_MEETING_ALONE_AFTER_ACTIVITY_MIN")
+    meeting_user_alone_notify_wait_min: int = Field(default=5, validation_alias="O365_POOL_MEETING_USER_ALONE_NOTIFY_WAIT_MIN")
+
+    # Agent LLM context budget (product §3b)
+    context_trim_tokens: int = Field(default=12000, validation_alias="O365_POOL_CONTEXT_TRIM_TOKENS")
+    context_system_cap: int = Field(default=6000, validation_alias="O365_POOL_CONTEXT_SYSTEM_CAP")
+    context_max_msgs: int = Field(default=100, validation_alias="O365_POOL_CONTEXT_MAX_MSGS")
+    context_max_tokens: int = Field(default=40000, validation_alias="O365_POOL_CONTEXT_MAX_TOKENS")
+
+    # Pod watcher (background sensor, product §10a)
+    watcher_interval_seconds: int = Field(default=2, validation_alias="O365_POOL_WATCHER_INTERVAL_S")
+
     # Kotlin server callback (for MFA/session notifications)
     kotlin_server_url: str = "http://jervis-server:5500"
 

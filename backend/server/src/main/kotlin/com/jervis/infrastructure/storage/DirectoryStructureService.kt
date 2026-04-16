@@ -291,6 +291,43 @@ class DirectoryStructureService(
         return dir.resolve(fileName)
     }
 
+    /**
+     * Directory holding raw WebM chunks streamed from the browser pod
+     * during RECORDING. Layout:
+     *   <meetings-dir>/meeting_<hex>_chunks/chunk_000001.webm
+     *                                       chunk_000002.webm
+     *                                       ...
+     * Each chunk is a valid standalone WebM segment produced by the pod's
+     * ffmpeg segment muxer. The indexer later concatenates them into one
+     * `meeting_<hex>.webm` for the player.
+     */
+    fun meetingVideoChunkDir(meetingId: ObjectId, clientId: ClientId?, projectId: ProjectId?): Path {
+        val dirName = "meeting_${meetingId.toHexString()}_chunks"
+        val parent = when {
+            projectId != null && clientId != null -> projectMeetingsDir(clientId, projectId)
+            clientId != null -> clientAudioDir(clientId)
+            else -> workspaceRoot().resolve("unclassified").resolve("meetings").also {
+                createDirectoryIfNotExists(it)
+            }
+        }
+        val dir = parent.resolve(dirName)
+        createDirectoryIfNotExists(dir)
+        return dir
+    }
+
+    /** Final concatenated WebM path (populated by the indexer). */
+    fun meetingVideoFile(meetingId: ObjectId, clientId: ClientId?, projectId: ProjectId?): Path {
+        val fileName = "meeting_${meetingId.toHexString()}.webm"
+        val parent = when {
+            projectId != null && clientId != null -> projectMeetingsDir(clientId, projectId)
+            clientId != null -> clientAudioDir(clientId)
+            else -> workspaceRoot().resolve("unclassified").resolve("meetings").also {
+                createDirectoryIfNotExists(it)
+            }
+        }
+        return parent.resolve(fileName)
+    }
+
     fun resolveProjectPath(
         clientId: ClientId,
         projectId: ProjectId,

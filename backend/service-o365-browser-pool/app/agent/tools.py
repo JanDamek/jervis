@@ -919,16 +919,39 @@ async def start_meeting_recording(
     if page is None:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     session = await ctx.meeting_recorder.start_adhoc(
-        client_id=ctx.client_id, page=page, title=title or None,
+        client_id=ctx.client_id,
+        page=page,
+        title=title or None,
+        joined_by=joined_by,
+        meeting_id=meeting_id or None,
+        connection_id=ctx.connection_id,
     )
     if session is None:
         return {"ok": False, "error": "failed to allocate meeting"}
+    # Tell the background watcher we now own a live meeting so it can
+    # start end-detection bookkeeping on the correct tab.
+    if ctx.watcher is not None:
+        resolved_tab = tab_name or ""
+        if not resolved_tab:
+            for entry in ctx.tab_registry.list(ctx.client_id):
+                if entry.get("name") and not entry.get("closed"):
+                    resolved_tab = entry["name"]
+                    break
+        try:
+            ctx.watcher.set_active_meeting(
+                meeting_id=session.meeting_id,
+                tab_name=resolved_tab,
+                joined_by=session.joined_by,
+            )
+        except Exception:
+            pass
     return {
         "ok": True,
         "meeting_id": session.meeting_id,
         "task_id": session.task_id,
         "state": session.state,
-        "joined_by": joined_by,
+        "joined_by": session.joined_by,
+        "chunks_uploaded": session.chunks_uploaded,
     }
 
 
@@ -939,9 +962,17 @@ async def stop_meeting_recording(meeting_id: str = "") -> dict:
     ctx = get_pod_context()
     if ctx.meeting_recorder is None:
         return {"ok": False, "error": "meeting_recorder not wired"}
-    task_id = await ctx.meeting_recorder.stop_adhoc_for_client(ctx.client_id)
+    if meeting_id:
+        task_id = await ctx.meeting_recorder.stop_by_meeting_id(meeting_id)
+    else:
+        task_id = await ctx.meeting_recorder.stop_adhoc_for_client(ctx.client_id)
     if task_id is None:
         return {"ok": False, "error": "no recording running"}
+    if ctx.watcher is not None:
+        try:
+            ctx.watcher.clear_active_meeting()
+        except Exception:
+            pass
     return {"ok": True, "task_id": task_id}
 
 

@@ -24,6 +24,7 @@ from app.agent.graph import build_pod_graph
 from app.agent.persistence import get_checkpointer
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.state import PodAgentState
+from app.agent.watcher import BrowserWatcher
 from app.pod_state import PodState, PodStateManager
 from app.scrape_storage import ScrapeStorage
 from app.tab_manager import TabRegistry
@@ -83,6 +84,17 @@ class PodAgent:
         self._pending_inputs: asyncio.Queue[str] = asyncio.Queue()
         self._backoff_s = LLM_BACKOFF_S
         self._graph = None
+        # Background DOM watcher (product §10a) — sensor only, pushes
+        # priority HumanMessages via our push_instruction queue.
+        self.watcher = BrowserWatcher(
+            get_tabs=lambda: [
+                (name, self.ctx.tab_registry.get(self.ctx.client_id, name))
+                for entry in self.ctx.tab_registry.list(self.ctx.client_id)
+                for name in [entry["name"]]
+            ],
+            push_instruction=self.push_instruction,
+        )
+        self.ctx.watcher = self.watcher
 
     # ---- Lifecycle -------------------------------------------------------
 
@@ -90,10 +102,15 @@ class PodAgent:
         if self._task and not self._task.done():
             return
         self._stop.clear()
+        await self.watcher.start()
         self._task = asyncio.create_task(self._run())
 
     async def stop(self) -> None:
         self._stop.set()
+        try:
+            await self.watcher.stop()
+        except Exception:
+            pass
         if self._task:
             try:
                 await asyncio.wait_for(self._task, timeout=10)

@@ -1,52 +1,29 @@
-"""Meeting join + recording routes for browser pool."""
+"""Meeting recording routes — debug only.
+
+Scheduled meeting joins come in via `/instruction/{connectionId}`
+(server → agent as HumanMessage). The agent composes navigate + join via
+tools. Ad-hoc recordings attach when the background watcher detects
+`meeting_stage` rising. There is no /meeting/join direct RPC path —
+per docs/teams-pod-agent.md §15 hard rule.
+"""
 
 from __future__ import annotations
 
 import logging
-import time
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter
 
 from app.meeting_recorder import MeetingRecorder
 
 logger = logging.getLogger("o365-browser-pool.meeting")
 
 
-class MeetingJoinRequest(BaseModel):
-    task_id: str
-    client_id: str
-    meeting_id: str
-    join_url: str
-    end_time_epoch: float
-
-
 def create_meeting_router(recorder: MeetingRecorder) -> APIRouter:
     router = APIRouter(tags=["meeting"])
 
-    @router.post("/meeting/join")
-    async def join_meeting(req: MeetingJoinRequest) -> dict:
-        session = await recorder.join(
-            task_id=req.task_id,
-            client_id=req.client_id,
-            meeting_id=req.meeting_id,
-            join_url=req.join_url,
-            end_time_epoch=req.end_time_epoch,
-        )
-        return {
-            "task_id": session.task_id,
-            "meeting_id": session.meeting_id,
-            "state": session.state,
-            "chunks_sent": session.chunks_sent,
-        }
-
-    @router.post("/meeting/stop")
-    async def stop_meeting(task_id: str) -> dict:
-        await recorder.stop(task_id)
-        return {"status": "stopped", "task_id": task_id}
-
     @router.get("/meeting/sessions")
     async def list_sessions() -> dict:
+        """Read-only diagnostic: list all in-flight recording sessions."""
         return {"sessions": recorder.get_sessions()}
 
     return router

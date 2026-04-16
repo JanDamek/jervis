@@ -149,6 +149,8 @@ private data class BridgeStartRequest(
     val deviceSessionId: String? = null,
     /** Optional source CALENDAR_PROCESSING task id; sets meetingMetadata.recordingMeetingId. */
     val taskId: String? = null,
+    /** Who initiated the recording — 'user' (VNC click) or 'agent' (/instruction/). */
+    val joinedBy: String? = null,
 )
 
 @Serializable

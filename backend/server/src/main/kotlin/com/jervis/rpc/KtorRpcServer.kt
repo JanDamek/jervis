@@ -31,6 +31,8 @@ import com.jervis.rpc.internal.installInternalMeetingApi
 import com.jervis.rpc.internal.installInternalMeetingAttendApi
 import com.jervis.rpc.internal.installInternalMeetingPresenceApi
 import com.jervis.rpc.internal.installInternalMeetingRecordingBridgeApi
+import com.jervis.rpc.internal.installInternalMeetingAloneApi
+import com.jervis.rpc.internal.installInternalMeetingVideoApi
 import com.jervis.rpc.internal.installInternalChatApprovalApi
 import com.jervis.rpc.internal.installInternalConnectionReloginApi
 import com.jervis.rpc.internal.installInternalVisualCaptureApi
@@ -165,6 +167,9 @@ class KtorRpcServer(
     private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
     private val pendingTaskService: com.jervis.task.PendingTaskService,
     private val httpClient: io.ktor.client.HttpClient,
+    private val meetingRepository: com.jervis.meeting.MeetingRepository,
+    private val directoryStructureService: com.jervis.infrastructure.storage.DirectoryStructureService,
+    private val browserPodMeetingClient: com.jervis.meeting.BrowserPodMeetingClient,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -215,6 +220,8 @@ class KtorRpcServer(
                             installInternalMeetingAttendApi(taskRepository, meetingAttendApprovalService)
                             installInternalMeetingPresenceApi(meetingAttendApprovalService)
                             installInternalMeetingRecordingBridgeApi(meetingRpcImpl)
+                            installInternalMeetingVideoApi(meetingRepository, directoryStructureService)
+                            installInternalMeetingAloneApi(meetingRepository, browserPodMeetingClient)
                             installInternalChatApprovalApi(notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalVisualCaptureApi(meetingHelperService)
                             installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
