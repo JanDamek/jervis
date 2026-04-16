@@ -18,7 +18,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
-import com.jervis.rpc.internal.installInternalCacheApi
 import com.jervis.rpc.internal.installInternalChatContextApi
 import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalFilterRulesApi
@@ -214,7 +213,7 @@ class KtorRpcServer(
                             installInternalProjectManagementApi(clientService, projectService, connectionService, projectTemplateService)
                             installInternalGitApi(gitRepoCreationService, projectService, applicationEventPublisher, backgroundEngine, gitRepositoryService)
                             installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)
-                            installInternalCacheApi(guidelinesService)
+                            // Cache invalidation migrated to gRPC (jervis.server.ServerCacheService).
                             installInternalMeetingApi(meetingRpcImpl)
                             installInternalMeetingAttendApi(taskRepository, meetingAttendApprovalService)
                             installInternalMeetingPresenceApi(meetingAttendApprovalService)

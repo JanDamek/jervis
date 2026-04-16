@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerCacheProto";
+
+// ServerCacheService is the gRPC surface of the Kotlin server's in-memory
+// cache invalidation. Called by the Python orchestrator after writing to
+// a Mongo collection that has a Kotlin-side cache (today: `guidelines`).
+service ServerCacheService {
+  // Drop the in-memory cache for `collection`. Unknown collection = no-op.
+  rpc Invalidate(CacheInvalidateRequest) returns (CacheInvalidateResponse);
+}
+
+message CacheInvalidateRequest {
+  jervis.common.RequestContext ctx = 1;
+  string collection = 2;
+}
+
+message CacheInvalidateResponse {
+  bool ok = 1;
+}
