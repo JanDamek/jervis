@@ -161,7 +161,7 @@ async def llm_with_cloud_fallback(
     temperature: float = 0.1,
     tools: list | None = None,
 ) -> object:
-    """Call LLM using router's /route-decision for smart GPU/cloud routing.
+    """Call LLM through the router — routing (local vs cloud) happens inside /api/chat.
 
     Background: GPU first if free + context ≤48k, else OpenRouter FREE queue.
     NONE tier: always local GPU.

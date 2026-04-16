@@ -173,7 +173,7 @@ class OpenRouterSettingsRpcImpl(
     override suspend fun getModelErrors(): List<ModelErrorDto> {
         return try {
             val baseUrl = routerUrl.trimEnd('/')
-            val response: JsonObject = httpClient.get("$baseUrl/route-decision/model-errors").body()
+            val response: JsonObject = httpClient.get("$baseUrl/router/admin/model-errors").body()
             response.entries.map { (modelId, value) ->
                 val obj = value.jsonObject
                 ModelErrorDto(
@@ -198,7 +198,7 @@ class OpenRouterSettingsRpcImpl(
     override suspend fun resetModelError(modelId: String): Boolean {
         return try {
             val baseUrl = routerUrl.trimEnd('/')
-            val response: JsonObject = httpClient.post("$baseUrl/route-decision/model-reset") {
+            val response: JsonObject = httpClient.post("$baseUrl/router/admin/model-reset") {
                 contentType(ContentType.Application.Json)
                 setBody(mapOf("model_id" to modelId))
             }.body()
@@ -216,7 +216,7 @@ class OpenRouterSettingsRpcImpl(
     override suspend fun testModel(modelId: String): ModelTestResultDto {
         return try {
             val baseUrl = routerUrl.trimEnd('/')
-            val response: JsonObject = httpClient.post("$baseUrl/route-decision/test-model") {
+            val response: JsonObject = httpClient.post("$baseUrl/router/admin/test-model") {
                 contentType(ContentType.Application.Json)
                 setBody(mapOf("model_id" to modelId))
             }.body()
@@ -240,7 +240,7 @@ class OpenRouterSettingsRpcImpl(
     override suspend fun getModelStats(): List<ModelStatsDto> {
         return try {
             val baseUrl = routerUrl.trimEnd('/')
-            val response: JsonObject = httpClient.get("$baseUrl/route-decision/model-stats").body()
+            val response: JsonObject = httpClient.get("$baseUrl/router/admin/model-stats").body()
             response.entries.map { (modelId, value) ->
                 val obj = value.jsonObject
                 ModelStatsDto(

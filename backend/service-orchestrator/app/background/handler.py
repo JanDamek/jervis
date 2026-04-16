@@ -13,60 +13,15 @@ import uuid
 from app.background.tools import ALL_BACKGROUND_TOOLS
 from app.config import settings, estimate_tokens
 from app.llm.provider import llm_provider
-from app.models import ModelTier, OrchestrateRequest
+from app.models import OrchestrateRequest
 from app.tools.kotlin_client import kotlin_client
 
 logger = logging.getLogger(__name__)
 
-_BG_MAX_MODEL_RETRIES = 2
-
-
-async def _bg_retry_with_next_model(
-    original_error: Exception,
-    failed_model: str,
-    messages: list[dict],
-    max_tier: str,
-    estimated_tokens: int,
-    client_id: str | None = None,
-    deadline_iso: str | None = None,
-    priority: str = "NORMAL",
-) -> object | None:
-    """Try next cloud models after a background OpenRouter failure."""
-    from app.llm.router_client import route_request
-
-    skip_models = [failed_model]
-    for attempt in range(_BG_MAX_MODEL_RETRIES):
-        fallback = await route_request(
-            capability="chat",
-            max_tier=max_tier,
-            estimated_tokens=estimated_tokens,
-            deadline_iso=deadline_iso,
-            priority=priority,
-            skip_models=skip_models,
-            client_id=client_id,
-        )
-        if fallback.target != "openrouter" or not fallback.model or fallback.model in skip_models:
-            logger.warning("No more cloud models available after %s failed (skip=%s)",
-                           failed_model, skip_models)
-            return None
-
-        logger.info("Background: model %s failed, trying fallback %s (attempt %d/%d)",
-                     failed_model, fallback.model, attempt + 1, _BG_MAX_MODEL_RETRIES)
-        try:
-            return await llm_provider.completion(
-                messages=messages,
-                tier=ModelTier.CLOUD_OPENROUTER,
-                max_tokens=settings.default_output_tokens,
-                temperature=0.2,
-                tools=ALL_BACKGROUND_TOOLS,
-                model_override=fallback.model,
-                api_key_override=fallback.api_key,
-            )
-        except Exception as retry_err:
-            logger.warning("Background: fallback model %s also failed: %s", fallback.model, retry_err)
-            skip_models.append(fallback.model)
-
-    return None
+# Cross-model retry on cloud failure now lives inside the router — it picks
+# the next cloud model (find_cloud_model_for_context + skip_models). The old
+# _bg_retry_with_next_model helper was removed with the LiteLLM-in-orchestrator
+# stack.
 
 
 async def _run_graph_agent_background(

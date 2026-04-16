@@ -409,8 +409,9 @@ async def run_agentic_loop(
                     if route.model not in _skip_models:
                         _skip_models.append(route.model)
                     _guard_failed_models.append({"model": route.model, "reason": "language_mismatch", "retry": _guard_retries})
-                    from app.llm.router_client import report_model_error
-                    await report_model_error(route.model, "Language mismatch: responded in English to Czech query")
+                    # Router tracks model failures internally via its dispatch
+                    # outcomes. Hallucination-guard signals are orchestrator-
+                    # level heuristics and are not reported back to the router.
                 _guard_fallback_text = final_text
                 continue  # retry with next model
 

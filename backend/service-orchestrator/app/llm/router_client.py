@@ -1,8 +1,25 @@
-"""Router client — asks the ollama-router for routing decisions.
+"""Thin compatibility layer over the unified router /api/chat surface.
 
-Replaces openrouter_resolver.py. All routing logic is now in the router;
-the orchestrator only declares what capability it needs and the router
-decides local vs cloud.
+DESIGN: see KB agent://claude-code/task-routing-unified-design.
+
+The LEGACY orchestrator pattern was:
+    route = await route_request(...)     # asks /route-decision
+    llm_provider.completion(route=route, ...)  # dispatches with decided model
+
+The UNIFIED pattern is:
+    llm_provider.completion(capability=..., deadline_iso=..., ...)  # one shot through /api/chat
+    # router decides + dispatches + retries + rate-limits internally
+
+Full caller migration to the unified pattern is tracked in
+agent://claude-code/orchestrator-llm-unification-proposal. Until every
+caller is migrated we keep this thin adapter so existing imports keep
+working. It does NOT call a separate /route-decision endpoint — that
+endpoint has been deleted. It asks the router for a dry-run decision
+via /router/admin/decide so the caller can still reason about whether
+the target is local vs cloud, but the dispatch itself always happens
+through llm_provider.completion → /api/chat.
+
+Scheduled for removal together with the last caller migration.
 """
 
 from __future__ import annotations
@@ -19,15 +36,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RouteDecision:
-    """Routing decision from the router."""
-    target: str          # "local" or "openrouter"
+    target: str = "local"           # "local" | "openrouter"
     model: str | None = None
     api_base: str | None = None
-    api_key: str | None = None  # OpenRouter API key (from DB settings via router)
+    api_key: str | None = None
 
 
 def _router_base_url() -> str:
-    """Derive router base URL from settings.ollama_url."""
     return settings.ollama_url.rstrip("/").replace("/v1", "").replace("/api", "")
 
 
@@ -42,26 +57,16 @@ async def route_request(
     require_tools: bool = False,
     client_id: str | None = None,
 ) -> RouteDecision:
-    """Ask router for routing decision. Urgency is carried by `deadline_iso` + `priority`;
-    the router derives its internal bucket from them. See KB
-    `agent://claude-code/task-routing-unified-design`.
+    """Ask the router for a dry-run routing decision.
 
-    Args:
-        capability: "thinking", "coding", "chat", "extraction", "embedding", "visual"
-        max_tier: explicit tier override. Prefer client_id.
-        estimated_tokens: estimated context size in tokens
-        deadline_iso: absolute ISO-8601 deadline (e.g. from TaskDocument.deadline).
-            None = no urgency pressure (router treats as BATCH).
-        priority: "CASCADE" | "CRITICAL" | "NORMAL" — queue priority + REALTIME override.
-        min_model_size: minimum local model size in billions (0 = any, 14, 30)
-        skip_models: model IDs to skip (already tried and failed in this request)
-        require_tools: if True, only models with supportsTools=True are eligible
-        client_id: router resolves tier from client's CloudModelPolicy in DB
-
-    Returns:
-        RouteDecision with target, model, and optional api_base/api_key.
+    The router picks local vs cloud + concrete model based on the new
+    (capability, tier, deadline, priority, min_model_size) inputs. This
+    wrapper is kept only so older call sites that need a RouteDecision
+    *before* dispatch (LiteLLM escape hatch) still compile. New call sites
+    should use llm_provider.completion() directly — it talks to /api/chat
+    where the decision + dispatch happen in one step.
     """
-    url = f"{_router_base_url()}/route-decision"
+    url = f"{_router_base_url()}/router/admin/decide"
     try:
         payload: dict = {
             "capability": capability,
@@ -80,15 +85,14 @@ async def route_request(
             payload["skip_models"] = skip_models
         if require_tools:
             payload["require_tools"] = True
-        # Timeout 90s: router waits max 65s for rate limit slot + 25s margin
-        async with httpx.AsyncClient(timeout=90.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
-            target = data.get("target", "local")
             model = data.get("model")
-            # Add litellm provider prefix: router returns raw model IDs,
-            # litellm needs provider prefix (openrouter/, ollama/, etc.)
+            target = data.get("target", "local")
+            # Preserve legacy litellm provider prefixes for callers that still
+            # pass model_override into llm_provider.completion().
             if model and target == "openrouter" and not model.startswith("openrouter/"):
                 model = f"openrouter/{model}"
             elif model and target == "local" and not model.startswith("ollama/"):
@@ -100,7 +104,7 @@ async def route_request(
                 api_key=data.get("api_key"),
             )
     except Exception as e:
-        logger.warning("Failed to get route decision from %s: %s — defaulting to local", url, e)
+        logger.warning("route_request dry-run failed (%s) — defaulting to local", e)
         return RouteDecision(
             target="local",
             model=settings.default_local_model,
@@ -108,11 +112,16 @@ async def route_request(
         )
 
 
+# ── Model reputation reporting — optional, best-effort ──────────────────
+# Router already tracks its own dispatch outcomes. These helpers exist so
+# orchestrator-side heuristics (hallucination guard, language mismatch) can
+# still nudge the router's model-error table. Not required for correctness.
+
+
 async def report_model_error(model_id: str, error_message: str = "") -> dict:
-    """Report a model error to router. Returns error state."""
-    url = f"{_router_base_url()}/route-decision/model-error"
+    url = f"{_router_base_url()}/router/admin/model-error"
     try:
-        payload = {"model_id": model_id}
+        payload: dict = {"model_id": model_id}
         if error_message:
             payload["error_message"] = error_message[:500]
         async with httpx.AsyncClient(timeout=3.0) as client:
@@ -120,7 +129,7 @@ async def report_model_error(model_id: str, error_message: str = "") -> dict:
             resp.raise_for_status()
             return resp.json()
     except Exception as e:
-        logger.warning("Failed to report model error: %s", e)
+        logger.debug("report_model_error best-effort: %s", e)
         return {}
 
 
@@ -128,8 +137,7 @@ async def report_model_success(
     model_id: str, duration_s: float = 0.0,
     input_tokens: int = 0, output_tokens: int = 0,
 ) -> None:
-    """Report successful model call to router (resets error counter + records stats)."""
-    url = f"{_router_base_url()}/route-decision/model-success"
+    url = f"{_router_base_url()}/router/admin/model-success"
     try:
         payload: dict = {"model_id": model_id}
         if duration_s > 0:
@@ -141,55 +149,40 @@ async def report_model_success(
         async with httpx.AsyncClient(timeout=3.0) as client:
             await client.post(url, json=payload)
     except Exception as e:
-        logger.warning("Failed to report model success: %s", e)
+        logger.debug("report_model_success best-effort: %s", e)
 
 
 async def wait_for_any_model_recovery(
     max_tier: str = "NONE", max_wait_s: float = 20.0,
 ) -> dict | None:
-    """Block until any cloud model in the tier becomes available again.
-
-    Used as a last-resort step before falling back to local GPU when all
-    cloud models in the queue are temporarily paused (429). Polls the
-    router every second until a model recovers or max_wait_s elapses.
-
-    Returns: {"model": "...", "waited": float_seconds} on success, None on timeout.
-    """
+    """Poll the router for any cloud model coming back online."""
     import asyncio
     import time
 
     deadline = time.monotonic() + max_wait_s
-    poll_interval = 1.0
-
     while time.monotonic() < deadline:
-        # Try a "soft" route request: if any model is available, router returns it.
         try:
             decision = await route_request(
                 capability="chat",
                 max_tier=max_tier,
-                estimated_tokens=1000,  # tiny — just probing availability
+                estimated_tokens=1000,
             )
             if decision.target == "openrouter" and decision.model:
                 waited = max_wait_s - (deadline - time.monotonic())
                 return {"model": decision.model, "waited": waited}
         except Exception:
             pass
-        await asyncio.sleep(poll_interval)
-
+        await asyncio.sleep(1.0)
     return None
 
 
 async def get_max_context_tokens(max_tier: str = "NONE") -> int:
-    """Ask router for max context tokens available for a given tier.
-
-    Used to know when context needs chunking (via Gemini direct call).
-    """
-    url = f"{_router_base_url()}/route-decision/max-context?max_tier={max_tier}"
+    url = f"{_router_base_url()}/router/admin/max-context?max_tier={max_tier}"
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             return resp.json().get("max_context_tokens", 48_000)
     except Exception as e:
-        logger.warning("Failed to get max context tokens: %s — defaulting to 48k", e)
+        logger.debug("get_max_context_tokens best-effort: %s", e)
         return 48_000

@@ -53,7 +53,7 @@ async def get_route(
             api_base=_router_base_url(),
         )
 
-    url = f"{_router_base_url()}/route-decision"
+    url = f"{_router_base_url()}/router/admin/decide"
     try:
         payload = {
             "capability": capability,

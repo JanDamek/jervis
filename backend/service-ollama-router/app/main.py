@@ -454,7 +454,7 @@ async def router_status():
     }
 
 
-@app.post("/route-decision")
+@app.post("/router/admin/decide")
 async def route_decision(request: Request):
     """Routing decision endpoint for decision-only callers (orchestrator nodes
     that dispatch via LiteLLM themselves).
@@ -497,7 +497,7 @@ async def route_decision(request: Request):
     return JSONResponse(content=decision)
 
 
-@app.get("/route-decision/max-context")
+@app.get("/router/admin/max-context")
 async def route_max_context(request: Request):
     """Get max available context tokens for a given tier."""
     max_tier = request.query_params.get("max_tier", "NONE")
@@ -506,7 +506,7 @@ async def route_max_context(request: Request):
     return JSONResponse(content={"max_context_tokens": max_ctx})
 
 
-@app.post("/route-decision/model-error")
+@app.post("/router/admin/model-error")
 async def report_model_error_endpoint(request: Request):
     """Report a model error (called by orchestrator after provider 400/500).
 
@@ -528,7 +528,7 @@ async def report_model_error_endpoint(request: Request):
     })
 
 
-@app.post("/route-decision/model-success")
+@app.post("/router/admin/model-success")
 async def report_model_success_endpoint(request: Request):
     """Report a successful model call (resets error counter + records stats).
 
@@ -546,21 +546,21 @@ async def report_model_success_endpoint(request: Request):
     return JSONResponse(content={"model_id": model_id, "reset": True})
 
 
-@app.get("/route-decision/model-errors")
+@app.get("/router/admin/model-errors")
 async def get_model_errors_endpoint():
     """Get current model error state (for UI monitoring)."""
     from .openrouter_catalog import get_model_errors
     return JSONResponse(content=get_model_errors())
 
 
-@app.get("/route-decision/model-stats")
+@app.get("/router/admin/model-stats")
 async def get_model_stats_endpoint():
     """Get usage statistics for all models (call count, avg response time)."""
     from .openrouter_catalog import get_model_stats
     return JSONResponse(content=get_model_stats())
 
 
-@app.post("/route-decision/invalidate-client-tier")
+@app.post("/router/internal/invalidate-client-tier")
 async def invalidate_client_tier_endpoint(request: Request):
     """Invalidate cached client tier after client update on server.
 
@@ -577,7 +577,7 @@ async def invalidate_client_tier_endpoint(request: Request):
     return JSONResponse(content={"invalidated": client_id or "all"})
 
 
-@app.post("/route-decision/model-reset")
+@app.post("/router/admin/model-reset")
 async def reset_model_error_endpoint(request: Request):
     """Re-enable a disabled model (called from UI after manual testing).
 
@@ -590,14 +590,14 @@ async def reset_model_error_endpoint(request: Request):
     return JSONResponse(content={"model_id": model_id, "re_enabled": was_disabled})
 
 
-@app.get("/route-decision/rate-limits")
+@app.get("/router/admin/rate-limits")
 async def get_rate_limits_endpoint():
     """Get current rate limit status for OpenRouter queues."""
     from .rate_limiter import get_rate_limit_status
     return JSONResponse(content=get_rate_limit_status())
 
 
-@app.post("/route-decision/test-model")
+@app.post("/router/admin/test-model")
 async def test_model_endpoint(request: Request):
     """Send a tiny completion to an OpenRouter model to verify it responds.
 
