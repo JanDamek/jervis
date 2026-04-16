@@ -240,6 +240,7 @@ class PodAgent:
                     async for event in self._graph.astream(
                         invoke_input, config=config, stream_mode="updates",
                     ):
+                        logger.info("graph event keys=%r", list(event.keys()) if isinstance(event, dict) else type(event).__name__)
                         self._log_graph_event(event)
                         if self._stop.is_set():
                             break
