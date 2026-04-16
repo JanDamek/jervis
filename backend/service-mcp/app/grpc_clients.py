@@ -13,12 +13,17 @@ from typing import Optional
 import grpc.aio
 
 from app.config import settings
-from jervis.server import connection_pb2_grpc, meeting_alone_pb2_grpc
+from jervis.server import (
+    connection_pb2_grpc,
+    git_pb2_grpc,
+    meeting_alone_pb2_grpc,
+)
 
 logger = logging.getLogger(__name__)
 
 _channel: Optional[grpc.aio.Channel] = None
 _connection_stub: Optional[connection_pb2_grpc.ServerConnectionServiceStub] = None
+_git_stub: Optional[git_pb2_grpc.ServerGitServiceStub] = None
 _meeting_alone_stub: Optional[meeting_alone_pb2_grpc.ServerMeetingAloneServiceStub] = None
 
 
@@ -51,3 +56,10 @@ def server_meeting_alone_stub() -> meeting_alone_pb2_grpc.ServerMeetingAloneServ
     if _meeting_alone_stub is None:
         _meeting_alone_stub = meeting_alone_pb2_grpc.ServerMeetingAloneServiceStub(_get_channel())
     return _meeting_alone_stub
+
+
+def server_git_stub() -> git_pb2_grpc.ServerGitServiceStub:
+    global _git_stub
+    if _git_stub is None:
+        _git_stub = git_pb2_grpc.ServerGitServiceStub(_get_channel())
+    return _git_stub

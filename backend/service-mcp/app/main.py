@@ -2399,30 +2399,36 @@ async def create_git_repository(
         connection_id: Specific connection ID to use (empty = auto-detect)
         is_private: Whether the repository should be private (default: true)
     """
-    body: dict = {
-        "clientId": client_id,
-        "name": name,
-        "isPrivate": is_private,
-    }
-    if description:
-        body["description"] = description
-    if connection_id:
-        body["connectionId"] = connection_id
+    try:
+        import json as _json
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/git/repos",
-            json=body,
+        from app.grpc_clients import server_git_stub
+        from jervis.server import git_pb2
+        from jervis.common import types_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_git_stub().CreateRepository(
+            git_pb2.CreateRepositoryRequest(
+                ctx=ctx,
+                client_id=client_id,
+                connection_id=connection_id or "",
+                name=name,
+                description=description or "",
+                is_private=is_private,
+            ),
+            timeout=60.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
+        data = _json.loads(resp.body_json) if resp.body_json else {}
         return (
             f"Repository created: {data.get('fullName', name)}\n"
             f"  Clone URL: {data.get('cloneUrl', '?')}\n"
             f"  Web URL: {data.get('htmlUrl', '?')}\n"
             f"  Provider: {data.get('provider', '?')}"
         )
+    except Exception as e:
+        return f"Error: {e}"
 
 
 @mcp.tool
@@ -2435,17 +2441,23 @@ async def init_workspace(project_id: str) -> str:
     Args:
         project_id: ID of the project to initialize workspace for
     """
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/git/init-workspace",
-            json={"projectId": project_id},
+    try:
+        from app.grpc_clients import server_git_stub
+        from jervis.server import git_pb2
+        from jervis.common import types_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_git_stub().InitWorkspace(
+            git_pb2.InitWorkspaceRequest(ctx=ctx, project_id=project_id),
+            timeout=30.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        if data.get("ok"):
+        if resp.ok:
             return f"Workspace initialization triggered for project {project_id}"
-        return f"Error: {data.get('error', 'unknown')}"
+        return f"Error: {resp.error or 'unknown'}"
+    except Exception as e:
+        return f"Error: {e}"
 
 
 # ── O365 Teams Tools ────────────────────────────────────────────────────

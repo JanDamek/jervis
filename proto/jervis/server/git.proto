@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerGitProto";
+
+// ServerGitService — git repository lifecycle (create via GitHub/GitLab
+// API, clone into the project workspace). Called by MCP tools.
+service ServerGitService {
+  rpc CreateRepository(CreateRepositoryRequest) returns (CreateRepositoryResponse);
+  rpc InitWorkspace(InitWorkspaceRequest) returns (InitWorkspaceResponse);
+  rpc GetWorkspaceStatus(WorkspaceStatusRequest) returns (WorkspaceStatusResponse);
+}
+
+message CreateRepositoryRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string connection_id = 3;   // empty = resolve from client's default provider
+  string name = 4;
+  string description = 5;
+  bool is_private = 6;
+}
+
+message CreateRepositoryResponse {
+  // Mirror of com.jervis.git.GitRepoCreationResult — body carried as JSON
+  // so the MCP tool can forward the full provider response without
+  // double-typing every field here.
+  string body_json = 1;
+}
+
+message InitWorkspaceRequest {
+  jervis.common.RequestContext ctx = 1;
+  string project_id = 2;
+}
+
+message InitWorkspaceResponse {
+  bool ok = 1;
+  string project_id = 2;
+  string status = 3;           // WorkspaceStatus.name | "UNKNOWN"
+  string workspace_path = 4;
+  string error = 5;
+}
+
+message WorkspaceStatusRequest {
+  jervis.common.RequestContext ctx = 1;
+  string project_id = 2;
+}
+
+message WorkspaceStatusResponse {
+  string project_id = 1;
+  string status = 2;           // WorkspaceStatus.name | "NONE"
+  string workspace_path = 3;
+  string error = 4;
+}
