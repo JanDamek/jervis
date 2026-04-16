@@ -29,17 +29,12 @@ async def call_llm(
     temperature: float = 0.1,
     timeout: float | None = None,
     capability: str = "chat",
-    max_tier: str = "NONE",
     client_id: str | None = None,
-    deadline_iso: str | None = None,
-    priority: str = "NORMAL",
-    min_model_size: int = 0,
-    extra_headers: dict[str, str] | None = None,
 ):
-    """Call the router for an LLM completion.
+    """Thin wrapper over `llm_provider.completion()`.
 
-    Routing (local vs cloud), cross-model retry, and rate limiting all happen
-    inside the router. This helper only adds an optional top-level timeout.
+    Only routing signal is `capability`; tier / model / retries are the
+    router's responsibility. Optional `timeout` adds a caller-level ceiling.
     """
     coro = llm_provider.completion(
         messages=messages,
@@ -48,11 +43,6 @@ async def call_llm(
         max_tokens=max_tokens,
         temperature=temperature,
         client_id=client_id,
-        max_tier=max_tier,
-        deadline_iso=deadline_iso,
-        priority=priority,
-        min_model_size=min_model_size,
-        extra_headers=extra_headers,
     )
     if timeout:
         return await asyncio.wait_for(coro, timeout=timeout)

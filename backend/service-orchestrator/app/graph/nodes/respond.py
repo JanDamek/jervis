@@ -474,51 +474,67 @@ async def _stream_answer_to_ui(state: dict, answer: str) -> None:
 async def _stream_answer_realtime(state: dict, messages: list[dict], context_tokens: int) -> str:
     """W-12: Stream LLM answer in real-time, emitting tokens as they arrive.
 
-    Uses llm_provider.stream_completion() for actual token streaming.
-    Returns the complete answer text after streaming completes.
+    Posts directly to the router's `/api/chat` with streaming enabled and
+    forwards each token to the UI via kotlin_client. Caller contract is the
+    minimal one — capability + client_id — router picks the model.
     """
-    from app.graph.nodes._helpers import priority_headers
-    from app.llm.provider import _SEMAPHORE_LOCAL
+    import json as _json
+
+    import httpx
 
     task = CodingTask(**state["task"])
-    client_id = state.get("client_id", "")
+    client_id = state.get("client_id", "") or ""
     project_id = state.get("project_id")
+    capability = (task.capability or "chat").lower()
     message_id = f"stream-{uuid.uuid4().hex[:12]}"
 
-    escalation = llm_provider.escalation
-    local_tier = escalation.select_local_tier(context_tokens)
-    headers = priority_headers(state)
+    router_base = settings.ollama_url.rstrip("/").replace("/v1", "").replace("/api", "")
+    url = f"{router_base}/api/chat"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Capability": capability,
+    }
+    if client_id:
+        headers["X-Client-Id"] = client_id
+    body = {
+        "messages": messages,
+        "stream": True,
+        "options": {
+            "temperature": 0.1,
+            "num_predict": settings.default_output_tokens,
+        },
+    }
 
+    content_parts: list[str] = []
+    emitted = 0
     try:
-        async with _SEMAPHORE_LOCAL:
-            stream = await llm_provider.stream_completion(
-                messages=messages,
-                tier=local_tier,
-                max_tokens=settings.default_output_tokens,
-                temperature=0.1,
-                extra_headers=headers,
-            )
+        timeout = httpx.Timeout(connect=10, read=None, write=10, pool=30)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("POST", url, json=body, headers=headers) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        chunk = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+                    msg = chunk.get("message") or {}
+                    token = msg.get("content") or ""
+                    if token:
+                        content_parts.append(token)
+                        ok = await kotlin_client.emit_streaming_token(
+                            task_id=task.id,
+                            client_id=client_id,
+                            project_id=project_id,
+                            token=token,
+                            message_id=message_id,
+                        )
+                        if ok:
+                            emitted += 1
+                    if chunk.get("done"):
+                        break
 
-        content_parts: list[str] = []
-        emitted = 0
-
-        async for chunk in stream:
-            delta = chunk.choices[0].delta if chunk.choices else None
-            if delta and delta.content:
-                token = delta.content
-                content_parts.append(token)
-
-                ok = await kotlin_client.emit_streaming_token(
-                    task_id=task.id,
-                    client_id=client_id,
-                    project_id=project_id,
-                    token=token,
-                    message_id=message_id,
-                )
-                if ok:
-                    emitted += 1
-
-        # Emit final token
         await kotlin_client.emit_streaming_token(
             task_id=task.id,
             client_id=client_id,
@@ -537,7 +553,6 @@ async def _stream_answer_realtime(state: dict, messages: list[dict], context_tok
 
     except Exception as e:
         logger.warning("REALTIME_STREAM_FAILED | falling back to batch: %s", e)
-        # Fallback: return empty to trigger batch generation
         return ""
 
 

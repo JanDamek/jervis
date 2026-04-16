@@ -121,7 +121,7 @@ async def generate_hint(text: str, client_id: str = "", project_id: str = "", gr
             return None
 
         # Build concise hint from KB context (max 2 sentences).
-        # Router picks the model; X-Intent=voice → user-waiting rule.
+        # Router picks the model from capability + client tier.
         from app.llm.provider import llm_provider
 
         resp = await llm_provider.completion(
@@ -130,11 +130,9 @@ async def generate_hint(text: str, client_id: str = "", project_id: str = "", gr
                 {"role": "user", "content": f"Téma: {text}\n\nKB:\n{kb_context[:600]}"},
             ],
             capability="chat",
-            priority="CASCADE",
             client_id=client_id,
             temperature=0.0,
             max_tokens=150,
-            extra_headers={"X-Intent": "voice"},
         )
 
         hint = (resp.choices[0].message.content or "").strip()

@@ -265,83 +265,55 @@ class OllamaRouter:
     # ── Capability-based route decision ────────────────────────────────
 
     async def decide_route(
-        self, capability: str, max_tier: str, estimated_tokens: int,
-        deadline_iso: str | None = None,
-        priority: Priority = Priority.NORMAL,
-        min_model_size: int = 0,
-        skip_models: list[str] | None = None,
-        require_tools: bool = False,
+        self,
+        capability: str,
+        estimated_tokens: int = 0,
         client_id: str | None = None,
-        intent: str = "background",
+        require_tools: bool = False,
     ) -> dict:
-        """Unified routing decision. See KB agent://claude-code/task-routing-unified-design.
-
-        Inputs:
-          capability       — chat | thinking | coding | extraction | embedding | visual
-          max_tier         — NONE | FREE | PAID | PREMIUM (or resolved from client_id)
-          estimated_tokens — body token estimate
-          deadline_iso     — absolute response deadline (ISO-8601). None = no pressure (BATCH).
-          priority         — CASCADE | CRITICAL | NORMAL (queue priority + REALTIME override).
-          min_model_size   — minimum local model size in billions (0 = any, 14, 30, 120)
-
-        Urgency is derived internally via `_bucket_from_deadline`. There is NO
-        `speed` parameter — speed is a private router concept only.
+        """Router's single routing decision. Caller sends only `capability`
+        and `client_id`; everything else — tier, model, retries, cooldowns —
+        is figured out here.
 
         Rules (applied in order):
-          tier == NONE                 → local only (queue if busy)
-          capability == embedding      → local only (data locality)
-          capability == vlm + GPU blocked → cloud preferred
-          bucket == REALTIME           → cloud PREMIUM/PAID, else local with preempt
-          bucket == URGENT             → cloud preferred, local fallback
-          bucket == NORMAL             → local if GPU free + ≤48k ctx, cloud on busy
-          bucket == BATCH              → local only, cloud only if no local model fits
-        """
-        bucket = _bucket_from_deadline(deadline_iso, priority)
 
-        # Resolve tier: client_id takes precedence over explicit max_tier
-        if client_id and (not max_tier or max_tier == "NONE"):
+          capability == embedding / embed    → local only (data locality, cost)
+          client tier == NONE                → local only (cloud forbidden)
+          capability == visual / vision / vlm
+            + VLM GPU blocked                → cloud if any, else queue locally
+          capability in {chat, thinking}     → cloud (user-facing: GPU reserved
+                                                for background work)
+          capability in {coding, extraction} → local if GPU idle AND the prompt
+                                                fits the safe 40k budget,
+                                                otherwise escalate to cloud
+
+        The 40k budget (vs the raw 48k num_ctx) leaves headroom for tools
+        schema + generated output, which is what qwen3-coder-tool:30b needs
+        to avoid chat-template truncation → raw `<|im_start|>` leak.
+        """
+        cap_lower = (capability or "").strip().lower()
+        api_base = f"http://jervis-ollama-router:{settings.router_port}"
+
+        # Resolve tier from client's CloudModelPolicy.
+        if client_id:
             from app.client_tier_cache import resolve_client_tier
             max_tier = await resolve_client_tier(client_id)
-
+        else:
+            max_tier = "NONE"
         max_tier = normalize_tier(max_tier)
         tier_level = TIER_LEVELS.get(max_tier, 0)
 
-        # Strip litellm provider prefixes from skip_models
-        if skip_models:
-            skip_models = [m.removeprefix("openrouter/").removeprefix("ollama/") for m in skip_models]
-
-        # Find local model honoring min_model_size
-        local_model = self._find_local_model_for_capability(capability, min_model_size=min_model_size)
-        api_base = f"http://jervis-ollama-router:{settings.router_port}"
+        local_model = self._find_local_model_for_capability(cap_lower, min_model_size=0)
         local_fallback = {
             "target": "local",
             "model": local_model or settings.orchestrator_model,
             "api_base": api_base,
         }
 
-        # tier=NONE → cloud is forbidden, always local (queue if needed).
-        if tier_level == 0:
-            if local_model is None:
-                logger.warning(
-                    "Route decision: tier=NONE but no local model for capability=%s min_size=%d — fallback to %s",
-                    capability, min_model_size, settings.orchestrator_model,
-                )
-            logger.info("Route decision: tier=NONE → local model=%s (cap=%s, min_size=%d)",
-                        capability, local_fallback["model"], min_model_size)
-            return local_fallback
-
-        # Embeddings NEVER escalate to cloud (data-locality + cost). Always local, queue if busy.
-        # Applies to both legacy "embedding" and short alias "embed".
-        cap_lower = (capability or "").strip().lower()
-        if cap_lower in ("embedding", "embed"):
-            logger.info("Route decision: embedding capability → local only (never cloud), model=%s",
-                        local_fallback["model"])
-            return local_fallback
-
         async def _try_cloud(reason: str) -> dict | None:
             cloud_model = await find_cloud_model_for_context(
-                estimated_tokens, tier_level, skip_models,
-                capability=capability, require_tools=require_tools,
+                estimated_tokens, tier_level, None,
+                capability=cap_lower, require_tools=require_tools,
             )
             if not cloud_model:
                 return None
@@ -350,33 +322,23 @@ class OllamaRouter:
             if not slot_ok:
                 logger.warning("Route decision: %s → rate limit on %s queue, falling back to local", reason, queue)
                 return None
-            logger.info("Route decision: %s → cloud %s (bucket=%s, tier=%s, tokens=%d, skip=%s)",
-                        reason, cloud_model, bucket.value, max_tier, estimated_tokens, skip_models or [])
+            logger.info("Route decision: %s → cloud %s (tier=%s, tokens=%d)",
+                        reason, cloud_model, max_tier, estimated_tokens)
             api_key = await get_api_key()
             return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
 
-        # Intent gate: user-facing work (chat, assistant, voice, orchestrator step)
-        # MUST NOT occupy the GPU when a cloud tier is available. GPU capacity
-        # is reserved for background / night / qualifier / kb / indexing workloads.
-        # `tier=NONE` path was already returned above (cloud forbidden, local is
-        # the only option); this branch only fires when cloud is actually allowed.
-        _intent = (intent or "background").strip().lower()
-        _USER_FACING_INTENTS = ("user-waiting", "orchestrator", "voice", "assistant")
-        if _intent in _USER_FACING_INTENTS:
-            cloud = await _try_cloud(f"intent={_intent} — GPU reserved for background work")
-            if cloud:
-                return cloud
-            logger.warning(
-                "Route decision: intent=%s wanted cloud but none fits (tokens=%d, tier=%s) — "
-                "degrading to local GPU; background work will contend",
-                _intent, estimated_tokens, max_tier,
-            )
+        # 1. Embeddings NEVER go to cloud — data locality + cost.
+        if cap_lower in ("embedding", "embed"):
+            logger.info("Route decision: embedding → local (%s)", local_fallback["model"])
             return local_fallback
 
-        # VLM-specific escalation — when the only VLM GPU (p40-2) cannot serve
-        # (whisper holding it, or VLM already in flight, or model still loading),
-        # try cloud immediately regardless of bucket. Without this the request
-        # would queue behind whisper / VLM and block deadline-driven paths.
+        # 2. Client has no cloud tier → local is the only option.
+        if tier_level == 0:
+            logger.info("Route decision: tier=NONE → local (cap=%s, model=%s)",
+                        cap_lower, local_fallback["model"])
+            return local_fallback
+
+        # 3. VLM — local VLM GPU preferred; escalate to cloud when blocked.
         _VLM_CAPS = ("visual", "vision", "vlm")
         if cap_lower in _VLM_CAPS:
             whisper_busy = self.check_whisper_busy()
@@ -389,31 +351,32 @@ class OllamaRouter:
                 for b in self.gpu_pool.all_backends
             )
             if vlm_gpu_blocked:
-                reason = (
+                cloud = await _try_cloud(
                     "VLM GPU busy (whisper)" if whisper_busy else "VLM GPU busy / loading"
                 )
-                cloud = await _try_cloud(f"VLM forced escalation — {reason}")
                 if cloud:
                     return cloud
-                logger.warning(
-                    "VLM requested but local GPU blocked AND no cloud VLM fits — queuing on local (expect delay)"
-                )
-                # Fall through to normal logic → will queue locally
-
-        # bucket=REALTIME or URGENT → cloud preferred first
-        if bucket in (_Bucket.REALTIME, _Bucket.URGENT):
-            cloud = await _try_cloud(f"bucket={bucket.value} tier={max_tier}")
-            if cloud:
-                return cloud
-            logger.info("Route decision: bucket=%s no cloud fits → local fallback (model=%s)",
-                        bucket.value, local_fallback["model"])
+                logger.warning("VLM blocked locally and no cloud VLM fits — queuing on local")
+            logger.info("Route decision: visual → local VLM (%s)", local_fallback["model"])
             return local_fallback
 
-        # bucket=NORMAL — local if GPU idle AND context fits, cloud on busy/oversize.
-        # Safe context budget = 40_000: local models have fixed num_ctx=48k and must
-        # also fit tools schema (~3k) + generated output (~4k). At ≥40k prompt
-        # Ollama starts trimming the chat template → model emits raw `<|im_start|>`.
-        # Above this threshold we escalate to cloud regardless of bucket.
+        # 4. User-facing capabilities (chat, thinking) → cloud always when the
+        #    client allows it. GPU stays free for background / qualifier / KB.
+        _USER_FACING = ("chat", "thinking")
+        if cap_lower in _USER_FACING:
+            cloud = await _try_cloud(f"capability={cap_lower} (user-facing) tier={max_tier}")
+            if cloud:
+                return cloud
+            logger.warning(
+                "Route decision: capability=%s wanted cloud but none fits (tokens=%d, tier=%s) — "
+                "degrading to local; background work may contend",
+                cap_lower, estimated_tokens, max_tier,
+            )
+            return local_fallback
+
+        # 5. Background capabilities (coding, extraction and the rest) —
+        #    local when GPU is idle and the prompt fits the safe 40k budget;
+        #    escalate to cloud on busy or oversize.
         _LOCAL_CTX_SAFE_BUDGET = 40_000
         target_model = local_fallback["model"]
         whisper_busy = self.check_whisper_busy()
@@ -425,41 +388,23 @@ class OllamaRouter:
             for b in self.gpu_pool.all_backends
             if target_model in GPU_MODEL_SETS.get(b.name, [])
         )
-        if bucket == _Bucket.NORMAL and estimated_tokens <= _LOCAL_CTX_SAFE_BUDGET and gpu_free:
-            logger.info("Route decision: bucket=NORMAL tier=%s ≤%dk + GPU idle → local model=%s",
-                        max_tier, _LOCAL_CTX_SAFE_BUDGET // 1000, target_model)
+        if local_model is not None and estimated_tokens <= _LOCAL_CTX_SAFE_BUDGET and gpu_free:
+            logger.info("Route decision: capability=%s → local model=%s (tokens=%d, tier=%s)",
+                        cap_lower, target_model, estimated_tokens, max_tier)
             return local_fallback
 
-        # bucket=NORMAL escalation (busy/oversize)
-        if bucket == _Bucket.NORMAL:
-            reason = f"bucket=NORMAL escalation ({'>' + str(_LOCAL_CTX_SAFE_BUDGET // 1000) + 'k' if estimated_tokens > _LOCAL_CTX_SAFE_BUDGET else 'GPU busy'})"
-            cloud = await _try_cloud(reason)
-            if cloud:
-                return cloud
-            logger.info(
-                "Route decision: NORMAL tier=%s no cloud fits → local fallback (model=%s, tokens=%d)",
-                max_tier, target_model, estimated_tokens,
-            )
-            return local_fallback
-
-        # bucket=BATCH — local-preferred, but still honor the local context
-        # budget. An oversize prompt on a local model silently breaks the
-        # chat template (see safe-budget comment above). Escalate to cloud
-        # when the prompt no longer fits.
-        if local_model is not None and estimated_tokens <= _LOCAL_CTX_SAFE_BUDGET:
-            logger.info("Route decision: bucket=BATCH → local model=%s (tier=%s, tokens=%d)",
-                        target_model, max_tier, estimated_tokens)
-            return local_fallback
         reason = (
-            f"bucket=BATCH oversize (tokens={estimated_tokens} > {_LOCAL_CTX_SAFE_BUDGET})"
-            if local_model is not None
-            else "bucket=BATCH no local model available for capability"
+            f"capability={cap_lower} oversize (tokens={estimated_tokens} > {_LOCAL_CTX_SAFE_BUDGET})"
+            if estimated_tokens > _LOCAL_CTX_SAFE_BUDGET
+            else f"capability={cap_lower} GPU busy"
         )
         cloud = await _try_cloud(reason)
         if cloud:
             return cloud
-        logger.info("Route decision: bucket=BATCH no cloud fits → local fallback (model=%s, tokens=%d)",
-                    target_model, estimated_tokens)
+        logger.info(
+            "Route decision: %s → local fallback (model=%s, tokens=%d)",
+            reason, target_model, estimated_tokens,
+        )
         return local_fallback
 
     # ── Unified single-entry dispatch ──────────────────────────────────
@@ -470,69 +415,32 @@ class OllamaRouter:
         body: dict,
         http_request,
     ) -> Response:
-        """Single-pass route + dispatch driven by request headers.
+        """Single-pass route + dispatch.
 
-        Reads routing metadata from headers:
-          X-Capability       chat | thinking | coding | extraction | embedding | visual
-                             (falls back to detect_capability_from_body when missing)
-          X-Deadline-Iso     absolute ISO-8601 deadline (null = BATCH)
-          X-Priority         CASCADE | CRITICAL | NORMAL (default NORMAL)
-          X-Client-Id        resolves tier via CloudModelPolicy
-          X-Min-Model-Size   minimum local model size in billions (default 0)
+        Caller contract is minimal:
+          X-Capability  chat | thinking | coding | extraction | embedding | visual
+                        (falls back to detect_capability_from_body when missing)
+          X-Client-Id   resolves tier via CloudModelPolicy
 
-        Decides local vs cloud in one function (no /route-decision + /api/*
-        round-trip) and dispatches: cloud → proxy_to_openrouter streamed;
-        local → existing queue.submit which streams from the GPU.
+        Everything else — tier resolution, bucket/urgency, local vs cloud,
+        concrete model, retries, cooldowns — is the router's job. Model
+        reputation is tracked internally via report_model_error/success;
+        callers don't pass skip lists.
         """
         headers = http_request.headers
         capability = (headers.get("X-Capability") or "").strip().lower()
         if not capability:
             capability = detect_capability_from_body(api_path, body)
-        deadline_iso = headers.get("X-Deadline-Iso") or None
-        priority_str = (headers.get("X-Priority") or "NORMAL").upper()
-        priority = {
-            "CASCADE": Priority.CASCADE,
-            "CRITICAL": Priority.CRITICAL,
-            "NORMAL": Priority.NORMAL,
-        }.get(priority_str, Priority.NORMAL)
         client_id = headers.get("X-Client-Id") or None
-        try:
-            min_size = int(headers.get("X-Min-Model-Size") or 0)
-        except ValueError:
-            min_size = 0
-        # Caller-side ceiling on cloud escalation. Falls back to NONE (local only)
-        # when the header is missing; `decide_route` still re-resolves against
-        # the client's cloud policy.
-        max_tier = (headers.get("X-Max-Tier") or "NONE").strip().upper() or "NONE"
-        # Caller-side skip list — orchestrator marks models that failed
-        # guards (template-leak, language-mismatch, zero-tools, …) so the
-        # router picks the next one in queue on retry.
-        skip_models_hdr = headers.get("X-Skip-Models") or ""
-        skip_models = [m.strip() for m in skip_models_hdr.split(",") if m.strip()] or None
-        # Tools on the body hint — pass through to cloud routing matrix.
         require_tools = bool(body.get("tools"))
-        # Intent hint — declares *why* the call is happening.
-        #   user-waiting → user is blocking on the reply (chat, assistant, voice).
-        #                   GPU is reserved for background work; if tier ≠ NONE
-        #                   we MUST route via cloud so GPU stays free.
-        #   orchestrator → orchestrator pipeline step (same rule as user-waiting).
-        #   background / qualifier / kb / night / embedding / indexing →
-        #                   local preferred, cloud only when genuinely needed.
-        intent = (headers.get("X-Intent") or "").strip().lower() or "background"
 
         estimated_tokens = self._estimate_tokens(body)
 
         decision = await self.decide_route(
             capability=capability,
-            max_tier=max_tier,
             estimated_tokens=estimated_tokens,
-            deadline_iso=deadline_iso,
-            priority=priority,
-            min_model_size=min_size,
             client_id=client_id,
-            skip_models=skip_models,
             require_tools=require_tools,
-            intent=intent,
         )
 
         if decision.get("target") == "openrouter":

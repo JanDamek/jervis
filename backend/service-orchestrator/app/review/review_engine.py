@@ -242,7 +242,7 @@ Review Checklist:
     try:
         response = await llm_provider.completion(
             messages=messages,
-            tier=ModelTier.LOCAL_MEDIUM,
+            capability="coding",
             max_tokens=2048,
             temperature=0.1,
         )

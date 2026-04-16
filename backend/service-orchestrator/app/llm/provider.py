@@ -106,28 +106,19 @@ def _router_base() -> str:
 def _build_headers(
     *,
     capability: str,
-    deadline_iso: str | None,
-    priority: str,
     client_id: str | None,
-    min_model_size: int,
-    max_tier: str | None,
-    extra: dict[str, str] | None = None,
 ) -> dict[str, str]:
+    """Minimal caller contract: client identifies the tenant (so the router
+    resolves tier + quota from CloudModelPolicy), capability tells the router
+    what kind of model is needed. Everything else — tier, bucket, skip list,
+    model selection, escalation, retries — is the router's job.
+    """
     headers: dict[str, str] = {
         "Content-Type": "application/json",
         "X-Capability": capability,
-        "X-Priority": priority or "NORMAL",
     }
-    if deadline_iso:
-        headers["X-Deadline-Iso"] = deadline_iso
     if client_id:
         headers["X-Client-Id"] = client_id
-    if min_model_size > 0:
-        headers["X-Min-Model-Size"] = str(min_model_size)
-    if max_tier and max_tier != "NONE":
-        headers["X-Max-Tier"] = max_tier
-    if extra:
-        headers.update(extra)
     return headers
 
 
@@ -173,47 +164,28 @@ class LlmProvider:
         messages: list[dict],
         *,
         capability: str = "chat",
-        deadline_iso: str | None = None,
-        priority: str = "NORMAL",
         client_id: str | None = None,
-        max_tier: str = "NONE",
-        min_model_size: int = 0,
         tools: list[dict] | None = None,
-        tool_choice: str | None = None,
         temperature: float = 0.1,
         max_tokens: int = 8192,
-        extra_headers: dict[str, str] | None = None,
-        tier: ModelTier | None = None,             # Backward-compat: ignored.
-        model_override: str | None = None,         # Backward-compat: ignored.
-        api_base_override: str | None = None,      # Backward-compat: ignored.
-        api_key_override: str | None = None,       # Backward-compat: ignored.
     ) -> CompletionResponse:
         """Send an LLM chat request through the router.
+
+        The caller contract is intentionally minimal — only the payload,
+        the tenant (client_id) and the capability. The router resolves tier
+        from the client's CloudModelPolicy, picks local vs cloud, selects
+        the concrete model, handles retries / cooldowns / queue priority,
+        and streams back the response.
 
         Args:
             messages: OpenAI-style chat messages.
             capability: chat | thinking | coding | extraction | embedding | visual.
-            deadline_iso: absolute ISO-8601 deadline (or None for BATCH).
-            priority: CASCADE | CRITICAL | NORMAL.
-            client_id: resolves tier from CloudModelPolicy server-side.
-            max_tier: explicit tier override.
-            min_model_size: minimum local model size in billions.
-            tools: OpenAI tool schema, passed through to /api/chat.
-            tool_choice: ignored by Ollama chat today, reserved.
+            client_id: resolves tier from CloudModelPolicy on the router side.
+            tools: OpenAI tool schema — body-level, not a routing signal.
             temperature / max_tokens: Ollama `options`.
-            extra_headers: additional HTTP headers (ignored for now).
-            tier: legacy ModelTier — ignored, the router decides.
         """
         url = f"{_router_base()}/api/chat"
-        headers = _build_headers(
-            capability=capability,
-            deadline_iso=deadline_iso,
-            priority=priority,
-            client_id=client_id,
-            min_model_size=min_model_size,
-            max_tier=max_tier,
-            extra=extra_headers,
-        )
+        headers = _build_headers(capability=capability, client_id=client_id)
         body: dict[str, Any] = {
             "messages": messages,
             "stream": True,

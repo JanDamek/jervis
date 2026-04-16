@@ -22,6 +22,7 @@ from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, con
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.source_attribution import SourceTracker
 from app.chat.topic_tracker import detect_topics, update_conversation_topics, topic_metadata
+from app.llm.router_client import report_model_error
 from app.chat.handler_tools import (
     _GRAPH_TOOLS,
     extract_tool_calls,
@@ -333,10 +334,10 @@ async def run_agentic_loop(
 
         estimated = _estimate_tokens_total(messages, selected_tools)
 
-        # Capability-based routing: router decides internally from /api/chat
-        # headers (X-Capability, X-Max-Tier, X-Client-Id, X-Skip-Models, …).
-        # No pre-call to /router/admin/decide — router is single source of truth.
-        max_tier = getattr(request, "max_openrouter_tier", "NONE")
+        # Caller contract: messages + capability + client_id. Router resolves
+        # everything else from the client's CloudModelPolicy (tier, tool-forcing
+        # reminders per-tier, etc.). Visual capability is inferred from image
+        # attachments in the payload.
         has_images = any(
             isinstance(m.get("content"), list) and any(
                 p.get("type") == "image_url" for p in m["content"] if isinstance(p, dict)
@@ -345,23 +346,15 @@ async def run_agentic_loop(
         )
         route_capability = "visual" if has_images else "chat"
         logger.info(
-            "Chat: estimated_tokens=%d capability=%s max_tier=%s skip_models=%s",
-            estimated, route_capability, max_tier, _skip_models or [],
+            "Chat: estimated_tokens=%d capability=%s skip_models=%s",
+            estimated, route_capability, _skip_models or [],
         )
 
-        # Preempt background only on first iteration AND only when tier=NONE (local GPU only).
-        # FREE/PAID/PREMIUM tiers use OpenRouter — no GPU contention with background tasks.
-        if iteration == 0 and max_tier == "NONE":
-            try:
-                from app.tools.kotlin_client import kotlin_client
-                await kotlin_client.register_foreground_start()
-            except Exception as e:
-                logger.warning("Failed to register foreground start: %s", e)
-
-        # For FREE models: inject tool-forcing reminder as last system message
-        # Small models ignore system prompt at 29k context — this reminder is close to the end
+        # Inject tool-forcing reminder on first iteration when tools exist.
+        # Applies regardless of tier — small or distracted models sometimes
+        # ignore tool schemas otherwise.
         call_messages = messages
-        if max_tier in ("FREE", "NONE") and iteration == 0 and selected_tools:
+        if iteration == 0 and selected_tools:
             tool_reminder = {
                 "role": "system",
                 "content": (
@@ -373,17 +366,18 @@ async def run_agentic_loop(
             }
             call_messages = messages + [tool_reminder]
 
-        _chat_headers: dict[str, str] = {"X-Intent": "user-waiting"}
-        if _skip_models:
-            _chat_headers["X-Skip-Models"] = ",".join(_skip_models)
+        # Report previously failed models to the router so its internal
+        # selection skips them on this retry.
+        for _m in _skip_models:
+            try:
+                await report_model_error(_m, "orchestrator guard skip")
+            except Exception:
+                pass
+
         response = await call_llm(
             messages=call_messages, tools=selected_tools,
-            max_tier=max_tier,
             capability=route_capability,
             client_id=effective_client_id,
-            deadline_iso=getattr(request, "deadline_iso", None),
-            priority=getattr(request, "priority", "NORMAL"),
-            extra_headers=_chat_headers,
         )
         # Router filled `response.model` with the actual model it dispatched to.
         _used_model = getattr(response, "model", "") or ""
@@ -419,7 +413,7 @@ async def run_agentic_loop(
                         "model": _used_model, "reason": "template_leak", "retry": _guard_retries,
                     })
                     try:
-                        from app.llm.router_client import report_model_error
+
                         await report_model_error(_used_model, "Template leak: raw ChatML tokens in response")
                     except Exception as _e:
                         logger.debug("report_model_error failed (non-fatal): %s", _e)
@@ -459,7 +453,7 @@ async def run_agentic_loop(
                         if _used_model not in _skip_models:
                             _skip_models.append(_used_model)
                         _guard_failed_models.append({"model": _used_model, "reason": "zero_tools", "retry": _guard_retries})
-                        from app.llm.router_client import report_model_error
+
                         await report_model_error(_used_model, "Zero tool usage: answered factual query without using any tools")
                     _guard_fallback_text = final_text
                     continue  # retry with next model
@@ -489,7 +483,7 @@ async def run_agentic_loop(
                             "reason": _reason,
                             "retry": _guard_retries,
                         })
-                        from app.llm.router_client import report_model_error
+
                         await report_model_error(
                             _failed_model,
                             f"Hallucination guard: model refused to use tools ({_reason})",
@@ -641,11 +635,8 @@ async def run_agentic_loop(
             })
             break_response = await call_llm(
                 messages=messages,
-                max_tier=max_tier,
                 capability=route_capability,
                 client_id=effective_client_id,
-                deadline_iso=getattr(request, "deadline_iso", None),
-                priority=getattr(request, "priority", "NORMAL"),
             )
             raw_text = break_response.choices[0].message.content or ""
 
@@ -1034,11 +1025,8 @@ async def run_agentic_loop(
     try:
         final_resp = await call_llm(
             messages=messages,
-            max_tier=max_tier,
             capability=route_capability,
             client_id=effective_client_id,
-            deadline_iso=getattr(request, "deadline_iso", None),
-            priority=getattr(request, "priority", "NORMAL"),
         )
         raw_text = final_resp.choices[0].message.content or ""
         import re as _re

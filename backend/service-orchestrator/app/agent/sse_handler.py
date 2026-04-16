@@ -134,10 +134,8 @@ async def handle_chat_sse(
                                            client_id=request.active_client_id,
                                            project_id=request.active_project_id)
             try:
-                greeting_max_tier = getattr(request, "max_openrouter_tier", "NONE") or "NONE"
                 resp = await call_llm(
                     messages=messages,
-                    max_tier=greeting_max_tier,
                     capability="chat",
                     client_id=request.active_client_id,
                 )

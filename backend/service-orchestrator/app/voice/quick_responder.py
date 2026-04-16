@@ -95,9 +95,8 @@ async def quick_respond(
                 "confidence": 0.6,
             })
 
-    # Step 2: Stream response via router /api/chat — router decides the model
-    # from headers (X-Intent=voice → user-waiting rule → cloud when tier≠NONE,
-    # local otherwise). X-Priority=CASCADE keeps bucket=REALTIME.
+    # Step 2: Stream response via router /api/chat — capability + client
+    # is the whole routing signal; router resolves tier and picks a model.
     yield VoiceStreamEvent(event="responding", data={})
 
     body = {
@@ -106,9 +105,8 @@ async def quick_respond(
         "options": {"temperature": 0.3, "num_predict": 300},
     }
     headers = {
+        "Content-Type": "application/json",
         "X-Capability": "chat",
-        "X-Priority": "CASCADE",
-        "X-Intent": "voice",
     }
     if client_id:
         headers["X-Client-Id"] = client_id

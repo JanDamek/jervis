@@ -172,73 +172,28 @@ def _get_priority_header(request: Request) -> int | None:
 
 # ── Standard Ollama API – transparent proxy ─────────────────────────────
 
-def _unified_routing_headers_present(request: Request) -> bool:
-    """Unified single-entry routing is active when the caller sends any of the
-    routing metadata headers. Without them the endpoint falls back to the legacy
-    local-only queue flow (used by pre-migration callers)."""
-    h = request.headers
-    return any(
-        h.get(name) is not None
-        for name in ("X-Deadline-Iso", "X-Capability", "X-Client-Id", "X-Min-Model-Size")
-    )
-
-
 @app.post("/api/generate")
 async def api_generate(request: Request):
     body = await request.json()
-    # X-Priority: CASCADE activates the latency-optimized cascade path
-    # (GPU-1 → GPU-2 → OpenRouter FREE → PAID → PREMIUM → queue, no preempt).
-    # Replaces the deprecated /api/cascade endpoint.
-    if (request.headers.get("X-Priority") or "").upper() == "CASCADE":
-        return await router.cascade_route("/api/generate", body, http_request=request)
-    if _unified_routing_headers_present(request):
-        return await router.decide_and_dispatch("/api/generate", body, http_request=request)
-    priority = _get_priority_header(request)
-    start = time.monotonic()
-    resp = await router.route_request("/api/generate", body, priority, http_request=request)
-    duration = time.monotonic() - start
-    model = body.get("model", "unknown")
-    target = "gpu" if "running_gpu" in str(getattr(resp, '_body', '')) else "cpu"
-    m.requests_total.labels(target=target, model=model, priority=str(priority or "auto")).inc()
-    m.requests_duration.labels(target=target, model=model).observe(duration)
-    return resp
+    return await router.decide_and_dispatch("/api/generate", body, http_request=request)
 
 
 @app.post("/api/chat")
 async def api_chat(request: Request):
     body = await request.json()
-    if _unified_routing_headers_present(request):
-        return await router.decide_and_dispatch("/api/chat", body, http_request=request)
-    priority = _get_priority_header(request)
-    start = time.monotonic()
-    resp = await router.route_request("/api/chat", body, priority, http_request=request)
-    duration = time.monotonic() - start
-    model = body.get("model", "unknown")
-    m.requests_total.labels(target="routed", model=model, priority=str(priority or "auto")).inc()
-    m.requests_duration.labels(target="routed", model=model).observe(duration)
-    return resp
+    return await router.decide_and_dispatch("/api/chat", body, http_request=request)
 
 
 @app.post("/api/embeddings")
 async def api_embeddings(request: Request):
     body = await request.json()
-    priority = _get_priority_header(request)
-    resp = await router.route_request("/api/embeddings", body, priority, http_request=request)
-    model = body.get("model", "unknown")
-    m.requests_total.labels(target="routed", model=model, priority=str(priority or "auto")).inc()
-    return resp
+    return await router.decide_and_dispatch("/api/embeddings", body, http_request=request)
 
 
 @app.post("/api/embed")
 async def api_embed(request: Request):
     body = await request.json()
-    if _unified_routing_headers_present(request):
-        return await router.decide_and_dispatch("/api/embed", body, http_request=request)
-    priority = _get_priority_header(request)
-    resp = await router.route_request("/api/embed", body, priority, http_request=request)
-    model = body.get("model", "unknown")
-    m.requests_total.labels(target="routed", model=model, priority=str(priority or "auto")).inc()
-    return resp
+    return await router.decide_and_dispatch("/api/embed", body, http_request=request)
 
 
 @app.post("/api/show")

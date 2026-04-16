@@ -126,9 +126,6 @@ async def detect_and_decompose(
             call_llm(
                 messages=decompose_messages,
                 max_tokens=1024,
-                max_tier=max_openrouter_tier,
-                deadline_iso=deadline_iso,
-                priority=priority,
                 client_id=client_id,
                 capability="chat",
             ),

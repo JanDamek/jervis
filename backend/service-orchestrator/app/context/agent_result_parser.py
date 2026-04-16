@@ -80,7 +80,7 @@ async def _summarize_with_llm(text: str) -> str:
 
     response = await llm_provider.completion(
         messages=messages,
-        tier=ModelTier.LOCAL_COMPACT,
+        capability="extraction",
         temperature=0.1,
     )
 

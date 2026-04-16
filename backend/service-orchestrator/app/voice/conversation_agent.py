@@ -117,9 +117,8 @@ class ConversationContextAgent:
         system_prompt = self._build_system_prompt()
         messages = self._build_messages()
 
-        # 4. Stream via router /api/chat — router decides model from headers.
-        #    X-Intent=voice marks this as user-waiting, X-Priority=CASCADE
-        #    keeps bucket=REALTIME.
+        # 4. Stream via router /api/chat — capability + client resolves the
+        #    tier and picks a model.
         logger.info("CONV_AGENT: streaming via router, kb_context=%d chars", len(self.kb_context))
         body = {
             "messages": [{"role": "system", "content": system_prompt}] + messages,
@@ -127,9 +126,8 @@ class ConversationContextAgent:
             "options": {"temperature": 0.3, "num_predict": 250},
         }
         req_headers = {
+            "Content-Type": "application/json",
             "X-Capability": "chat",
-            "X-Priority": "CASCADE",
-            "X-Intent": "voice",
         }
         if self.client_id:
             req_headers["X-Client-Id"] = self.client_id

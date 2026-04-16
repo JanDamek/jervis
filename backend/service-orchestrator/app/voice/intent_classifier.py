@@ -48,11 +48,9 @@ async def classify_intent(text: str, client_id: str | None = None) -> IntentResu
         response = await llm_provider.completion(
             messages=[{"role": "user", "content": CLASSIFY_PROMPT.format(text=text)}],
             capability="chat",
-            priority="CASCADE",
             client_id=client_id,
             temperature=0.0,
             max_tokens=150,
-            extra_headers={"X-Intent": "voice"},
         )
         content = (response.choices[0].message.content or "").strip()
 

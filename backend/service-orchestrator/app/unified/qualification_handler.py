@@ -507,23 +507,19 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
     # Router picks the model via /api/chat. X-Intent=qualifier lets the
     # router keep this on GPU when idle and escalate to cloud only when
     # oversize / busy. No pre-call decision.
-    _qual_headers = {"X-Intent": "qualifier"}
-
     for iteration in range(MAX_ITERATIONS):
         logger.info(
             "QUALIFY_ITERATION | task=%s | iter=%d/%d",
             request.task_id, iteration + 1, MAX_ITERATIONS,
         )
 
-        # Call LLM
+        # Call LLM — capability=extraction signals the router this is
+        # background work (qualifier); it picks local GPU when idle.
         response = await llm_provider.completion(
             messages=messages,
             tools=tools if iteration < MAX_ITERATIONS - 1 else [],  # no tools on last iteration
             capability="extraction",
-            deadline_iso=request.deadline_iso,
-            priority=request.priority,
             client_id=request.client_id,
-            extra_headers=_qual_headers,
         )
 
         assistant_msg = response.choices[0].message
@@ -664,10 +660,7 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
                     ],
                     tools=[],
                     capability="extraction",
-                    deadline_iso=request.deadline_iso,
-                    priority=request.priority,
                     client_id=request.client_id,
-                    extra_headers={"X-Intent": "qualifier"},
                 )
 
                 import json as _json
