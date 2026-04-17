@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerMergeRequestProto";
+
+// ServerMergeRequestService owns MR/PR lifecycle on the task surface:
+// created by the coding pipeline after a successful job, diffed by the
+// code review pipeline, commented on (summary + inline file:line) by
+// reviewers. Vendor dispatch (GitHub vs GitLab) lives on the Kotlin side
+// — Python speaks to a single stub.
+service ServerMergeRequestService {
+  rpc ResolveReviewLanguage(ResolveReviewLanguageRequest)
+      returns (ResolveReviewLanguageResponse);
+
+  rpc CreateMergeRequest(CreateMergeRequestRequest)
+      returns (CreateMergeRequestResponse);
+
+  rpc GetMergeRequestDiff(GetMergeRequestDiffRequest)
+      returns (GetMergeRequestDiffResponse);
+
+  rpc PostMrComment(PostMrCommentRequest) returns (PostMrCommentResponse);
+
+  rpc PostMrInlineComments(PostMrInlineCommentsRequest)
+      returns (PostMrInlineCommentsResponse);
+}
+
+// ── Review language ─────────────────────────────────────────────────────
+
+message ResolveReviewLanguageRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;   // optional
+}
+
+message ResolveReviewLanguageResponse {
+  string language = 1;     // e.g. "English" (never blank)
+}
+
+// ── Create MR ───────────────────────────────────────────────────────────
+
+message CreateMergeRequestRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string branch = 3;                  // source branch; required
+  string target_branch = 4;           // blank → "main"
+  string title = 5;
+  string description = 6;             // blank = null
+}
+
+message CreateMergeRequestResponse {
+  bool ok = 1;
+  string url = 2;
+  string error = 3;
+}
+
+// ── Diff ────────────────────────────────────────────────────────────────
+
+message GetMergeRequestDiffRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+}
+
+message GetMergeRequestDiffResponse {
+  bool ok = 1;
+  repeated DiffEntry diffs = 2;
+  string error = 3;
+}
+
+message DiffEntry {
+  string old_path = 1;
+  string new_path = 2;
+  bool new_file = 3;
+  bool deleted_file = 4;
+  bool renamed_file = 5;
+  string diff = 6;
+}
+
+// ── Summary / regular comment ───────────────────────────────────────────
+
+message PostMrCommentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string comment = 3;
+  string merge_request_url = 4;       // blank = use task.mergeRequestUrl
+}
+
+message PostMrCommentResponse {
+  bool ok = 1;
+  string error = 2;
+}
+
+// ── Inline review comments ──────────────────────────────────────────────
+
+message PostMrInlineCommentsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string summary = 3;
+  string verdict = 4;                 // "APPROVE" / "REQUEST_CHANGES" / "COMMENT"
+  string merge_request_url = 5;       // blank = use task.mergeRequestUrl
+  repeated InlineComment comments = 6;
+}
+
+message InlineComment {
+  string file = 1;
+  int32 line = 2;     // ≤ 0 = skipped (orphan / whole-file comment)
+  string body = 3;
+}
+
+message PostMrInlineCommentsResponse {
+  bool ok = 1;
+  string error = 2;
+}

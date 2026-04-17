@@ -1141,54 +1141,88 @@ class KotlinServerClient:
         title: str = "",
         description: str | None = None,
     ) -> dict:
-        """Create MR/PR via Kotlin internal API (resolves provider from project)."""
+        """Create MR/PR via gRPC (resolves provider from project)."""
         try:
-            client = await self._get_client()
-            payload: dict = {
-                "branch": branch,
-                "title": title or f"Coding: {task_id[:12]}",
-            }
-            if target_branch:
-                payload["targetBranch"] = target_branch
-            if description:
-                payload["description"] = description
-            resp = await client.post(
-                f"/internal/tasks/{task_id}/create-merge-request",
-                json=payload,
+            from app.grpc_server_client import server_merge_request_stub
+            from jervis.common import types_pb2
+            from jervis.server import merge_request_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_merge_request_stub().CreateMergeRequest(
+                merge_request_pb2.CreateMergeRequestRequest(
+                    ctx=ctx,
+                    task_id=task_id,
+                    branch=branch,
+                    target_branch=target_branch or "",
+                    title=title or f"Coding: {task_id[:12]}",
+                    description=description or "",
+                ),
+                timeout=60.0,
             )
-            if resp.status_code == 200:
-                return resp.json()
-            logger.warning("create_merge_request failed: %d %s", resp.status_code, resp.text[:200])
-            return {"ok": False, "error": f"HTTP {resp.status_code}"}
+            if resp.ok:
+                return {"ok": True, "url": resp.url}
+            logger.warning("create_merge_request failed: %s", resp.error)
+            return {"ok": False, "error": resp.error}
         except Exception as e:
             logger.warning("Failed to create MR for task %s: %s", task_id, e)
             return {"ok": False, "error": str(e)}
 
     async def get_merge_request_diff(self, task_id: str) -> list[dict] | None:
-        """Fetch MR/PR diff via Kotlin internal API. Returns list of diff entries or None on error."""
+        """Fetch MR/PR diff via gRPC. Returns list of diff entries or None on error."""
         try:
-            client = await self._get_client()
-            resp = await client.get(f"/internal/tasks/{task_id}/merge-request-diff")
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("ok"):
-                    return data.get("diffs", [])
-            logger.warning("get_merge_request_diff failed: %d %s", resp.status_code, resp.text[:200])
+            from app.grpc_server_client import server_merge_request_stub
+            from jervis.common import types_pb2
+            from jervis.server import merge_request_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_merge_request_stub().GetMergeRequestDiff(
+                merge_request_pb2.GetMergeRequestDiffRequest(
+                    ctx=ctx,
+                    task_id=task_id,
+                ),
+                timeout=60.0,
+            )
+            if resp.ok:
+                return [
+                    {
+                        "oldPath": d.old_path,
+                        "newPath": d.new_path,
+                        "newFile": d.new_file,
+                        "deletedFile": d.deleted_file,
+                        "renamedFile": d.renamed_file,
+                        "diff": d.diff,
+                    }
+                    for d in resp.diffs
+                ]
+            logger.warning("get_merge_request_diff failed: %s", resp.error)
             return None
         except Exception as e:
             logger.warning("Failed to get MR diff for task %s: %s", task_id, e)
             return None
 
     async def get_review_language(self, client_id: str, project_id: str | None = None) -> str:
-        """Resolve review language via Kotlin internal API (project → group → client → default)."""
+        """Resolve review language via gRPC (project → group → client → default)."""
         try:
-            client = await self._get_client()
-            params = {"clientId": client_id}
-            if project_id:
-                params["projectId"] = project_id
-            resp = await client.get("/internal/resolve-review-language", params=params)
-            if resp.status_code == 200:
-                return resp.json().get("language", "English")
+            from app.grpc_server_client import server_merge_request_stub
+            from jervis.common import types_pb2
+            from jervis.server import merge_request_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_merge_request_stub().ResolveReviewLanguage(
+                merge_request_pb2.ResolveReviewLanguageRequest(
+                    ctx=ctx,
+                    client_id=client_id,
+                    project_id=project_id or "",
+                ),
+                timeout=10.0,
+            )
+            return resp.language or "English"
         except Exception as e:
             logger.debug("Failed to resolve review language: %s", e)
         return "English"
@@ -1203,19 +1237,35 @@ class KotlinServerClient:
     ) -> bool:
         """Post inline review comments on MR/PR (file:line level)."""
         try:
-            client = await self._get_client()
-            payload: dict = {
-                "summary": summary,
-                "verdict": verdict,
-                "comments": comments or [],
-            }
-            if merge_request_url:
-                payload["mergeRequestUrl"] = merge_request_url
-            resp = await client.post(
-                f"/internal/tasks/{task_id}/post-mr-inline-comments",
-                json=payload,
+            from app.grpc_server_client import server_merge_request_stub
+            from jervis.common import types_pb2
+            from jervis.server import merge_request_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            proto_comments = [
+                merge_request_pb2.InlineComment(
+                    file=c.get("file", ""),
+                    line=int(c.get("line") or 0),
+                    body=c.get("body", ""),
+                )
+                for c in (comments or [])
+            ]
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_merge_request_stub().PostMrInlineComments(
+                merge_request_pb2.PostMrInlineCommentsRequest(
+                    ctx=ctx,
+                    task_id=task_id,
+                    summary=summary,
+                    verdict=verdict,
+                    merge_request_url=merge_request_url or "",
+                    comments=proto_comments,
+                ),
+                timeout=60.0,
             )
-            return resp.status_code == 200
+            if not resp.ok:
+                logger.warning("post_mr_inline_comments failed: %s", resp.error)
+            return resp.ok
         except Exception as e:
             logger.warning("Failed to post inline comments for task %s: %s", task_id, e)
             return False
@@ -1226,17 +1276,27 @@ class KotlinServerClient:
         comment: str,
         merge_request_url: str | None = None,
     ) -> bool:
-        """Post a comment on an existing MR/PR via Kotlin internal API."""
+        """Post a comment on an existing MR/PR via gRPC."""
         try:
-            client = await self._get_client()
-            payload: dict = {"comment": comment}
-            if merge_request_url:
-                payload["mergeRequestUrl"] = merge_request_url
-            resp = await client.post(
-                f"/internal/tasks/{task_id}/post-mr-comment",
-                json=payload,
+            from app.grpc_server_client import server_merge_request_stub
+            from jervis.common import types_pb2
+            from jervis.server import merge_request_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_merge_request_stub().PostMrComment(
+                merge_request_pb2.PostMrCommentRequest(
+                    ctx=ctx,
+                    task_id=task_id,
+                    comment=comment,
+                    merge_request_url=merge_request_url or "",
+                ),
+                timeout=60.0,
             )
-            return resp.status_code == 200
+            if not resp.ok:
+                logger.warning("post_mr_comment failed: %s", resp.error)
+            return resp.ok
         except Exception as e:
             logger.warning("Failed to post MR comment for task %s: %s", task_id, e)
             return False

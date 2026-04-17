@@ -23,6 +23,7 @@ from jervis.server import (
     finance_pb2_grpc,
     guidelines_pb2_grpc,
     meetings_pb2_grpc,
+    merge_request_pb2_grpc,
     proactive_pb2_grpc,
     project_management_pb2_grpc,
     time_tracking_pb2_grpc,
@@ -46,6 +47,7 @@ _project_management_stub: Optional[
     project_management_pb2_grpc.ServerProjectManagementServiceStub
 ] = None
 _bug_tracker_stub: Optional[bug_tracker_pb2_grpc.ServerBugTrackerServiceStub] = None
+_merge_request_stub: Optional[merge_request_pb2_grpc.ServerMergeRequestServiceStub] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -157,3 +159,14 @@ def server_bug_tracker_stub() -> bug_tracker_pb2_grpc.ServerBugTrackerServiceStu
             _get_channel()
         )
     return _bug_tracker_stub
+
+
+def server_merge_request_stub() -> (
+    merge_request_pb2_grpc.ServerMergeRequestServiceStub
+):
+    global _merge_request_stub
+    if _merge_request_stub is None:
+        _merge_request_stub = merge_request_pb2_grpc.ServerMergeRequestServiceStub(
+            _get_channel()
+        )
+    return _merge_request_stub

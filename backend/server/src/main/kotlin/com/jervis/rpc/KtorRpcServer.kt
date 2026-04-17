@@ -20,7 +20,6 @@ import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalMeetingVideoApi
-import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalO365CapabilitiesApi
 import com.jervis.rpc.internal.installInternalO365NotifyApi
 import com.jervis.rpc.internal.installInternalO365SessionApi
@@ -116,7 +115,6 @@ class KtorRpcServer(
     private val applicationEventPublisher: org.springframework.context.ApplicationEventPublisher,
     private val gitHubClient: com.jervis.git.client.GitHubClient,
     private val gitLabClient: com.jervis.git.client.GitLabClient,
-    private val reviewLanguageResolver: com.jervis.infrastructure.llm.ReviewLanguageResolver,
     private val whisperRestClient: com.jervis.meeting.WhisperRestClient,
     private val whisperProperties: com.jervis.infrastructure.config.properties.WhisperProperties,
     private val ttsProperties: com.jervis.infrastructure.config.properties.TtsProperties,
@@ -186,7 +184,8 @@ class KtorRpcServer(
                             // Clients/projects/connections + project-advisor recommendations
                             // migrated to gRPC (jervis.server.ServerProjectManagementService).
                             // Git repo + workspace ops migrated to gRPC (jervis.server.ServerGitService).
-                            installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)
+                            // Merge request / PR surface + review language migrated to gRPC
+                            // (jervis.server.ServerMergeRequestService).
                             // Cache invalidation migrated to gRPC (jervis.server.ServerCacheService).
                             // Meeting read surface migrated to gRPC (jervis.server.ServerMeetingsService).
                             // Meeting-attend approval + presence migrated to gRPC
