@@ -786,19 +786,26 @@ class KotlinServerClient:
         project_id: str | None = None,
         title: str | None = None,
     ) -> str:
-        """Classify meeting via Kotlin internal API."""
+        """Classify meeting via gRPC."""
         try:
-            client = await self._get_client()
-            resp = await client.post(
-                "/internal/classify-meeting",
-                json={
-                    "meetingId": meeting_id,
-                    "clientId": client_id,
-                    "projectId": project_id,
-                    "title": title,
-                },
+            from app.grpc_server_client import server_meetings_stub
+            from jervis.common import types_pb2
+            from jervis.server import meetings_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_meetings_stub().ClassifyMeeting(
+                meetings_pb2.ClassifyMeetingRequest(
+                    ctx=ctx,
+                    meeting_id=meeting_id,
+                    client_id=client_id,
+                    project_id=project_id or "",
+                    title=title or "",
+                ),
+                timeout=30.0,
             )
-            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+            return json.dumps({"ok": resp.ok, "meetingId": resp.meeting_id, "error": resp.error})
         except Exception as e:
             logger.warning("Failed to classify meeting: %s", e)
             return f"Error: {e}"

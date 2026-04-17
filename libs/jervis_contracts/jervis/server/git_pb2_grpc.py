@@ -27,7 +27,8 @@ if _version_not_supported:
 
 class ServerGitServiceStub(object):
     """ServerGitService — git repository lifecycle (create via GitHub/GitLab
-    API, clone into the project workspace). Called by MCP tools.
+    API, clone into the project workspace). Also hosts GPG key lookup for
+    agent commit signing (coding agent Jobs need the client's active key).
     """
 
     def __init__(self, channel):
@@ -51,11 +52,17 @@ class ServerGitServiceStub(object):
                 request_serializer=jervis_dot_server_dot_git__pb2.WorkspaceStatusRequest.SerializeToString,
                 response_deserializer=jervis_dot_server_dot_git__pb2.WorkspaceStatusResponse.FromString,
                 _registered_method=True)
+        self.GetGpgKey = channel.unary_unary(
+                '/jervis.server.ServerGitService/GetGpgKey',
+                request_serializer=jervis_dot_server_dot_git__pb2.GetGpgKeyRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_git__pb2.GetGpgKeyResponse.FromString,
+                _registered_method=True)
 
 
 class ServerGitServiceServicer(object):
     """ServerGitService — git repository lifecycle (create via GitHub/GitLab
-    API, clone into the project workspace). Called by MCP tools.
+    API, clone into the project workspace). Also hosts GPG key lookup for
+    agent commit signing (coding agent Jobs need the client's active key).
     """
 
     def CreateRepository(self, request, context):
@@ -71,6 +78,12 @@ class ServerGitServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def GetWorkspaceStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetGpgKey(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -94,6 +107,11 @@ def add_ServerGitServiceServicer_to_server(servicer, server):
                     request_deserializer=jervis_dot_server_dot_git__pb2.WorkspaceStatusRequest.FromString,
                     response_serializer=jervis_dot_server_dot_git__pb2.WorkspaceStatusResponse.SerializeToString,
             ),
+            'GetGpgKey': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetGpgKey,
+                    request_deserializer=jervis_dot_server_dot_git__pb2.GetGpgKeyRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_git__pb2.GetGpgKeyResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'jervis.server.ServerGitService', rpc_method_handlers)
@@ -104,7 +122,8 @@ def add_ServerGitServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class ServerGitService(object):
     """ServerGitService — git repository lifecycle (create via GitHub/GitLab
-    API, clone into the project workspace). Called by MCP tools.
+    API, clone into the project workspace). Also hosts GPG key lookup for
+    agent commit signing (coding agent Jobs need the client's active key).
     """
 
     @staticmethod
@@ -178,6 +197,33 @@ class ServerGitService(object):
             '/jervis.server.ServerGitService/GetWorkspaceStatus',
             jervis_dot_server_dot_git__pb2.WorkspaceStatusRequest.SerializeToString,
             jervis_dot_server_dot_git__pb2.WorkspaceStatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetGpgKey(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerGitService/GetGpgKey',
+            jervis_dot_server_dot_git__pb2.GetGpgKeyRequest.SerializeToString,
+            jervis_dot_server_dot_git__pb2.GetGpgKeyResponse.FromString,
             options,
             channel_credentials,
             insecure,

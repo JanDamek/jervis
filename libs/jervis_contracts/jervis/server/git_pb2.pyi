@@ -69,3 +69,31 @@ class WorkspaceStatusResponse(_message.Message):
     workspace_path: str
     error: str
     def __init__(self, project_id: _Optional[str] = ..., status: _Optional[str] = ..., workspace_path: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...
+
+class GetGpgKeyRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "gpg_key_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    GPG_KEY_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    gpg_key_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., gpg_key_id: _Optional[str] = ...) -> None: ...
+
+class GetGpgKeyResponse(_message.Message):
+    __slots__ = ("has_key", "key_id", "user_name", "user_email", "private_key_armored", "passphrase", "error")
+    HAS_KEY_FIELD_NUMBER: _ClassVar[int]
+    KEY_ID_FIELD_NUMBER: _ClassVar[int]
+    USER_NAME_FIELD_NUMBER: _ClassVar[int]
+    USER_EMAIL_FIELD_NUMBER: _ClassVar[int]
+    PRIVATE_KEY_ARMORED_FIELD_NUMBER: _ClassVar[int]
+    PASSPHRASE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    has_key: bool
+    key_id: str
+    user_name: str
+    user_email: str
+    private_key_armored: str
+    passphrase: str
+    error: str
+    def __init__(self, has_key: bool = ..., key_id: _Optional[str] = ..., user_name: _Optional[str] = ..., user_email: _Optional[str] = ..., private_key_armored: _Optional[str] = ..., passphrase: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...

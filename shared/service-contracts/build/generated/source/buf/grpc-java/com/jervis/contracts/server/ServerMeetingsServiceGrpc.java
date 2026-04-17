@@ -112,6 +112,37 @@ public final class ServerMeetingsServiceGrpc {
     return getListUnclassifiedMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ClassifyMeetingRequest,
+      com.jervis.contracts.server.ClassifyMeetingResponse> getClassifyMeetingMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ClassifyMeeting",
+      requestType = com.jervis.contracts.server.ClassifyMeetingRequest.class,
+      responseType = com.jervis.contracts.server.ClassifyMeetingResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ClassifyMeetingRequest,
+      com.jervis.contracts.server.ClassifyMeetingResponse> getClassifyMeetingMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ClassifyMeetingRequest, com.jervis.contracts.server.ClassifyMeetingResponse> getClassifyMeetingMethod;
+    if ((getClassifyMeetingMethod = ServerMeetingsServiceGrpc.getClassifyMeetingMethod) == null) {
+      synchronized (ServerMeetingsServiceGrpc.class) {
+        if ((getClassifyMeetingMethod = ServerMeetingsServiceGrpc.getClassifyMeetingMethod) == null) {
+          ServerMeetingsServiceGrpc.getClassifyMeetingMethod = getClassifyMeetingMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ClassifyMeetingRequest, com.jervis.contracts.server.ClassifyMeetingResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ClassifyMeeting"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.ClassifyMeetingRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.ClassifyMeetingResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerMeetingsServiceMethodDescriptorSupplier("ClassifyMeeting"))
+              .build();
+        }
+      }
+    }
+    return getClassifyMeetingMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -212,6 +243,16 @@ public final class ServerMeetingsServiceGrpc {
         io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListUnclassifiedResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListUnclassifiedMethod(), responseObserver);
     }
+
+    /**
+     * <pre>
+     * Re-classify an already-ingested meeting — orchestrator tool entry.
+     * </pre>
+     */
+    default void classifyMeeting(com.jervis.contracts.server.ClassifyMeetingRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ClassifyMeetingResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getClassifyMeetingMethod(), responseObserver);
+    }
   }
 
   /**
@@ -288,6 +329,17 @@ public final class ServerMeetingsServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getListUnclassifiedMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * Re-classify an already-ingested meeting — orchestrator tool entry.
+     * </pre>
+     */
+    public void classifyMeeting(com.jervis.contracts.server.ClassifyMeetingRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ClassifyMeetingResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getClassifyMeetingMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -343,6 +395,16 @@ public final class ServerMeetingsServiceGrpc {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getListUnclassifiedMethod(), getCallOptions(), request);
     }
+
+    /**
+     * <pre>
+     * Re-classify an already-ingested meeting — orchestrator tool entry.
+     * </pre>
+     */
+    public com.jervis.contracts.server.ClassifyMeetingResponse classifyMeeting(com.jervis.contracts.server.ClassifyMeetingRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getClassifyMeetingMethod(), getCallOptions(), request);
+    }
   }
 
   /**
@@ -397,6 +459,16 @@ public final class ServerMeetingsServiceGrpc {
     public com.jervis.contracts.server.ListUnclassifiedResponse listUnclassified(com.jervis.contracts.server.ListUnclassifiedRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getListUnclassifiedMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Re-classify an already-ingested meeting — orchestrator tool entry.
+     * </pre>
+     */
+    public com.jervis.contracts.server.ClassifyMeetingResponse classifyMeeting(com.jervis.contracts.server.ClassifyMeetingRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getClassifyMeetingMethod(), getCallOptions(), request);
     }
   }
 
@@ -456,11 +528,23 @@ public final class ServerMeetingsServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getListUnclassifiedMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * Re-classify an already-ingested meeting — orchestrator tool entry.
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ClassifyMeetingResponse> classifyMeeting(
+        com.jervis.contracts.server.ClassifyMeetingRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getClassifyMeetingMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_GET_TRANSCRIPT = 0;
   private static final int METHODID_LIST_MEETINGS = 1;
   private static final int METHODID_LIST_UNCLASSIFIED = 2;
+  private static final int METHODID_CLASSIFY_MEETING = 3;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -490,6 +574,10 @@ public final class ServerMeetingsServiceGrpc {
         case METHODID_LIST_UNCLASSIFIED:
           serviceImpl.listUnclassified((com.jervis.contracts.server.ListUnclassifiedRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListUnclassifiedResponse>) responseObserver);
+          break;
+        case METHODID_CLASSIFY_MEETING:
+          serviceImpl.classifyMeeting((com.jervis.contracts.server.ClassifyMeetingRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ClassifyMeetingResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -530,6 +618,13 @@ public final class ServerMeetingsServiceGrpc {
               com.jervis.contracts.server.ListUnclassifiedRequest,
               com.jervis.contracts.server.ListUnclassifiedResponse>(
                 service, METHODID_LIST_UNCLASSIFIED)))
+        .addMethod(
+          getClassifyMeetingMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.ClassifyMeetingRequest,
+              com.jervis.contracts.server.ClassifyMeetingResponse>(
+                service, METHODID_CLASSIFY_MEETING)))
         .build();
   }
 
@@ -581,6 +676,7 @@ public final class ServerMeetingsServiceGrpc {
               .addMethod(getGetTranscriptMethod())
               .addMethod(getListMeetingsMethod())
               .addMethod(getListUnclassifiedMethod())
+              .addMethod(getClassifyMeetingMethod())
               .build();
         }
       }

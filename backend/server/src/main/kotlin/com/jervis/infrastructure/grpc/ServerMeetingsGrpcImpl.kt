@@ -1,5 +1,7 @@
 package com.jervis.infrastructure.grpc
 
+import com.jervis.contracts.server.ClassifyMeetingRequest
+import com.jervis.contracts.server.ClassifyMeetingResponse
 import com.jervis.contracts.server.GetTranscriptRequest
 import com.jervis.contracts.server.GetTranscriptResponse
 import com.jervis.contracts.server.ListMeetingsRequest
@@ -9,6 +11,7 @@ import com.jervis.contracts.server.ListUnclassifiedResponse
 import com.jervis.contracts.server.MeetingSummary
 import com.jervis.contracts.server.ServerMeetingsServiceGrpcKt
 import com.jervis.contracts.server.UnclassifiedMeeting
+import com.jervis.dto.meeting.MeetingClassifyDto
 import com.jervis.meeting.MeetingRpcImpl
 import io.grpc.Status
 import io.grpc.StatusException
@@ -114,6 +117,29 @@ class ServerMeetingsGrpcImpl(
             emptyList()
         }
         return ListUnclassifiedResponse.newBuilder().addAllMeetings(items).build()
+    }
+
+    override suspend fun classifyMeeting(request: ClassifyMeetingRequest): ClassifyMeetingResponse {
+        return try {
+            val dto = MeetingClassifyDto(
+                meetingId = request.meetingId,
+                clientId = request.clientId,
+                projectId = request.projectId.takeIf { it.isNotBlank() },
+                title = request.title.takeIf { it.isNotBlank() },
+            )
+            val result = meetingRpcImpl.classifyMeeting(dto)
+            ClassifyMeetingResponse.newBuilder()
+                .setOk(true)
+                .setMeetingId(result.id)
+                .build()
+        } catch (e: Exception) {
+            logger.warn(e) { "CLASSIFY_MEETING_ERROR id=${request.meetingId}" }
+            ClassifyMeetingResponse.newBuilder()
+                .setOk(false)
+                .setMeetingId(request.meetingId)
+                .setError(e.message.orEmpty())
+                .build()
+        }
     }
 
     private fun formatTimestamp(seconds: Double): String {

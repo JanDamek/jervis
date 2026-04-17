@@ -54,6 +54,11 @@ class ServerMeetingsServiceStub(object):
                 request_serializer=jervis_dot_server_dot_meetings__pb2.ListUnclassifiedRequest.SerializeToString,
                 response_deserializer=jervis_dot_server_dot_meetings__pb2.ListUnclassifiedResponse.FromString,
                 _registered_method=True)
+        self.ClassifyMeeting = channel.unary_unary(
+                '/jervis.server.ServerMeetingsService/ClassifyMeeting',
+                request_serializer=jervis_dot_server_dot_meetings__pb2.ClassifyMeetingRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_meetings__pb2.ClassifyMeetingResponse.FromString,
+                _registered_method=True)
 
 
 class ServerMeetingsServiceServicer(object):
@@ -86,6 +91,13 @@ class ServerMeetingsServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ClassifyMeeting(self, request, context):
+        """Re-classify an already-ingested meeting — orchestrator tool entry.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ServerMeetingsServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -103,6 +115,11 @@ def add_ServerMeetingsServiceServicer_to_server(servicer, server):
                     servicer.ListUnclassified,
                     request_deserializer=jervis_dot_server_dot_meetings__pb2.ListUnclassifiedRequest.FromString,
                     response_serializer=jervis_dot_server_dot_meetings__pb2.ListUnclassifiedResponse.SerializeToString,
+            ),
+            'ClassifyMeeting': grpc.unary_unary_rpc_method_handler(
+                    servicer.ClassifyMeeting,
+                    request_deserializer=jervis_dot_server_dot_meetings__pb2.ClassifyMeetingRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_meetings__pb2.ClassifyMeetingResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -191,6 +208,33 @@ class ServerMeetingsService(object):
             '/jervis.server.ServerMeetingsService/ListUnclassified',
             jervis_dot_server_dot_meetings__pb2.ListUnclassifiedRequest.SerializeToString,
             jervis_dot_server_dot_meetings__pb2.ListUnclassifiedResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ClassifyMeeting(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerMeetingsService/ClassifyMeeting',
+            jervis_dot_server_dot_meetings__pb2.ClassifyMeetingRequest.SerializeToString,
+            jervis_dot_server_dot_meetings__pb2.ClassifyMeetingResponse.FromString,
             options,
             channel_credentials,
             insecure,

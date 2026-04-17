@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+import "jervis/server/orchestrator_progress.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerKbCallbacksProto";
+
+// ServerKbCallbacksService hosts the reverse callbacks the async KB
+// ingest pipeline pushes into the Kotlin server. KB-progress streams
+// step-level events during ingest; KB-done signals completion (either
+// success with extraction outputs or terminal error). The result tree
+// has intentionally wide legacy routing hints — see
+// memory/architecture-kb-no-qualification.md for why the server no
+// longer branches on them.
+service ServerKbCallbacksService {
+  rpc KbProgress(KbProgressRequest) returns (AckResponse);
+  rpc KbDone(KbDoneRequest) returns (AckResponse);
+}
+
+// ── KbProgress ──────────────────────────────────────────────────────────
+
+message KbProgressRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string client_id = 3;
+  string step = 4;
+  string message = 5;
+  map<string, string> metadata = 6;
+}
+
+// ── KbDone ──────────────────────────────────────────────────────────────
+
+message KbDoneRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string client_id = 3;
+  string status = 4;               // "done" / "error"
+  string error = 5;                // populated when status=error
+  KbCompletionResult result = 6;   // unset on error
+}
+
+message KbCompletionResult {
+  string status = 1;
+  int32 chunks_count = 2;
+  int32 nodes_created = 3;
+  int32 edges_created = 4;
+  int32 attachments_processed = 5;
+  int32 attachments_failed = 6;
+  string summary = 7;
+  repeated string entities = 8;
+  // Legacy routing hints — HINTS ONLY; never branch on them server-side.
+  bool has_actionable_content = 9;
+  repeated string suggested_actions = 10;
+  bool has_future_deadline = 11;
+  string suggested_deadline = 12;
+  bool is_assigned_to_me = 13;
+  string urgency = 14;
+  string action_type = 15;
+  string estimated_complexity = 16;
+  string suggested_agent = 17;
+  repeated string affected_files = 18;
+  repeated string related_kb_nodes = 19;
+}

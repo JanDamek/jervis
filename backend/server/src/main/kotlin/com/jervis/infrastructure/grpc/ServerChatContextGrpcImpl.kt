@@ -1,6 +1,12 @@
 package com.jervis.infrastructure.grpc
 
+import com.jervis.chat.ChatMessageService
+import com.jervis.chat.ChatService
+import com.jervis.chat.MessageRole
 import com.jervis.client.ClientService
+import com.jervis.contracts.server.ActiveChatTopicsRequest
+import com.jervis.contracts.server.ActiveChatTopicsResponse
+import com.jervis.contracts.server.ChatTopicMessage
 import com.jervis.contracts.server.ClientWithProjects
 import com.jervis.contracts.server.ClientsProjectsRequest
 import com.jervis.contracts.server.ClientsProjectsResponse
@@ -32,6 +38,8 @@ class ServerChatContextGrpcImpl(
     private val userTaskService: UserTaskService,
     private val meetingRpcImpl: MeetingRpcImpl,
     private val preferenceService: PreferenceService,
+    private val chatService: ChatService,
+    private val chatMessageService: ChatMessageService,
 ) : ServerChatContextServiceGrpcKt.ServerChatContextServiceCoroutineImplBase() {
     private val logger = KotlinLogging.logger {}
 
@@ -104,6 +112,33 @@ class ServerChatContextGrpcImpl(
         } catch (e: Exception) {
             logger.warn(e) { "CHAT_CONTEXT_TIMEZONE failed" }
             UserTimezoneResponse.newBuilder().setTimezone("Europe/Prague").build()
+        }
+    }
+
+    override suspend fun getActiveChatTopics(
+        request: ActiveChatTopicsRequest,
+    ): ActiveChatTopicsResponse {
+        return try {
+            val limit = if (request.maxMessages > 0) request.maxMessages else 10
+            val session = chatService.getOrCreateActiveSession()
+            val messages = chatMessageService.getLastMessages(session.id, limit)
+            val builder = ActiveChatTopicsResponse.newBuilder()
+                .setClientId(session.lastClientId ?: "")
+                .setProjectId(session.lastProjectId ?: "")
+            messages
+                .filter { it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT }
+                .forEach { msg ->
+                    builder.addTopics(
+                        ChatTopicMessage.newBuilder()
+                            .setRole(msg.role.name.lowercase())
+                            .setContent(msg.content)
+                            .build(),
+                    )
+                }
+            builder.build()
+        } catch (e: Exception) {
+            logger.warn(e) { "CHAT_CONTEXT_ACTIVE_TOPICS failed" }
+            ActiveChatTopicsResponse.newBuilder().build()
         }
     }
 }

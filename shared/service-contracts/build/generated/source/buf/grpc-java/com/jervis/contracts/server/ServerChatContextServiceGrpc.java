@@ -142,6 +142,37 @@ public final class ServerChatContextServiceGrpc {
     return getGetUserTimezoneMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ActiveChatTopicsRequest,
+      com.jervis.contracts.server.ActiveChatTopicsResponse> getGetActiveChatTopicsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "GetActiveChatTopics",
+      requestType = com.jervis.contracts.server.ActiveChatTopicsRequest.class,
+      responseType = com.jervis.contracts.server.ActiveChatTopicsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ActiveChatTopicsRequest,
+      com.jervis.contracts.server.ActiveChatTopicsResponse> getGetActiveChatTopicsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ActiveChatTopicsRequest, com.jervis.contracts.server.ActiveChatTopicsResponse> getGetActiveChatTopicsMethod;
+    if ((getGetActiveChatTopicsMethod = ServerChatContextServiceGrpc.getGetActiveChatTopicsMethod) == null) {
+      synchronized (ServerChatContextServiceGrpc.class) {
+        if ((getGetActiveChatTopicsMethod = ServerChatContextServiceGrpc.getGetActiveChatTopicsMethod) == null) {
+          ServerChatContextServiceGrpc.getGetActiveChatTopicsMethod = getGetActiveChatTopicsMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ActiveChatTopicsRequest, com.jervis.contracts.server.ActiveChatTopicsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetActiveChatTopics"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.ActiveChatTopicsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.ActiveChatTopicsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerChatContextServiceMethodDescriptorSupplier("GetActiveChatTopics"))
+              .build();
+        }
+      }
+    }
+    return getGetActiveChatTopicsMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -238,6 +269,17 @@ public final class ServerChatContextServiceGrpc {
         io.grpc.stub.StreamObserver<com.jervis.contracts.server.UserTimezoneResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetUserTimezoneMethod(), responseObserver);
     }
+
+    /**
+     * <pre>
+     * Active chat session topics — last-N messages of the active chat so the
+     * qualification agent knows what the user is currently working on.
+     * </pre>
+     */
+    default void getActiveChatTopics(com.jervis.contracts.server.ActiveChatTopicsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ActiveChatTopicsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetActiveChatTopicsMethod(), responseObserver);
+    }
   }
 
   /**
@@ -310,6 +352,18 @@ public final class ServerChatContextServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetUserTimezoneMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * Active chat session topics — last-N messages of the active chat so the
+     * qualification agent knows what the user is currently working on.
+     * </pre>
+     */
+    public void getActiveChatTopics(com.jervis.contracts.server.ActiveChatTopicsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ActiveChatTopicsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetActiveChatTopicsMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -361,6 +415,17 @@ public final class ServerChatContextServiceGrpc {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getGetUserTimezoneMethod(), getCallOptions(), request);
     }
+
+    /**
+     * <pre>
+     * Active chat session topics — last-N messages of the active chat so the
+     * qualification agent knows what the user is currently working on.
+     * </pre>
+     */
+    public com.jervis.contracts.server.ActiveChatTopicsResponse getActiveChatTopics(com.jervis.contracts.server.ActiveChatTopicsRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getGetActiveChatTopicsMethod(), getCallOptions(), request);
+    }
   }
 
   /**
@@ -411,6 +476,17 @@ public final class ServerChatContextServiceGrpc {
     public com.jervis.contracts.server.UserTimezoneResponse getUserTimezone(com.jervis.contracts.server.UserTimezoneRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetUserTimezoneMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Active chat session topics — last-N messages of the active chat so the
+     * qualification agent knows what the user is currently working on.
+     * </pre>
+     */
+    public com.jervis.contracts.server.ActiveChatTopicsResponse getActiveChatTopics(com.jervis.contracts.server.ActiveChatTopicsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetActiveChatTopicsMethod(), getCallOptions(), request);
     }
   }
 
@@ -467,12 +543,25 @@ public final class ServerChatContextServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetUserTimezoneMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * Active chat session topics — last-N messages of the active chat so the
+     * qualification agent knows what the user is currently working on.
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ActiveChatTopicsResponse> getActiveChatTopics(
+        com.jervis.contracts.server.ActiveChatTopicsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetActiveChatTopicsMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_LIST_CLIENTS_PROJECTS = 0;
   private static final int METHODID_PENDING_USER_TASKS_SUMMARY = 1;
   private static final int METHODID_UNCLASSIFIED_MEETINGS_COUNT = 2;
   private static final int METHODID_GET_USER_TIMEZONE = 3;
+  private static final int METHODID_GET_ACTIVE_CHAT_TOPICS = 4;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -506,6 +595,10 @@ public final class ServerChatContextServiceGrpc {
         case METHODID_GET_USER_TIMEZONE:
           serviceImpl.getUserTimezone((com.jervis.contracts.server.UserTimezoneRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.server.UserTimezoneResponse>) responseObserver);
+          break;
+        case METHODID_GET_ACTIVE_CHAT_TOPICS:
+          serviceImpl.getActiveChatTopics((com.jervis.contracts.server.ActiveChatTopicsRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ActiveChatTopicsResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -553,6 +646,13 @@ public final class ServerChatContextServiceGrpc {
               com.jervis.contracts.server.UserTimezoneRequest,
               com.jervis.contracts.server.UserTimezoneResponse>(
                 service, METHODID_GET_USER_TIMEZONE)))
+        .addMethod(
+          getGetActiveChatTopicsMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.ActiveChatTopicsRequest,
+              com.jervis.contracts.server.ActiveChatTopicsResponse>(
+                service, METHODID_GET_ACTIVE_CHAT_TOPICS)))
         .build();
   }
 
@@ -605,6 +705,7 @@ public final class ServerChatContextServiceGrpc {
               .addMethod(getPendingUserTasksSummaryMethod())
               .addMethod(getUnclassifiedMeetingsCountMethod())
               .addMethod(getGetUserTimezoneMethod())
+              .addMethod(getGetActiveChatTopicsMethod())
               .build();
         }
       }

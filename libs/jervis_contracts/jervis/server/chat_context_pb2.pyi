@@ -90,3 +90,29 @@ class UserTimezoneResponse(_message.Message):
     TIMEZONE_FIELD_NUMBER: _ClassVar[int]
     timezone: str
     def __init__(self, timezone: _Optional[str] = ...) -> None: ...
+
+class ActiveChatTopicsRequest(_message.Message):
+    __slots__ = ("ctx", "max_messages")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    MAX_MESSAGES_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    max_messages: int
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., max_messages: _Optional[int] = ...) -> None: ...
+
+class ActiveChatTopicsResponse(_message.Message):
+    __slots__ = ("client_id", "project_id", "topics")
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    TOPICS_FIELD_NUMBER: _ClassVar[int]
+    client_id: str
+    project_id: str
+    topics: _containers.RepeatedCompositeFieldContainer[ChatTopicMessage]
+    def __init__(self, client_id: _Optional[str] = ..., project_id: _Optional[str] = ..., topics: _Optional[_Iterable[_Union[ChatTopicMessage, _Mapping]]] = ...) -> None: ...
+
+class ChatTopicMessage(_message.Message):
+    __slots__ = ("role", "content")
+    ROLE_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_FIELD_NUMBER: _ClassVar[int]
+    role: str
+    content: str
+    def __init__(self, role: _Optional[str] = ..., content: _Optional[str] = ...) -> None: ...

@@ -56,6 +56,16 @@ public final class ServerGitProto extends com.google.protobuf.GeneratedFile {
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_WorkspaceStatusResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_GetGpgKeyRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_GetGpgKeyRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_GetGpgKeyResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_GetGpgKeyResponse_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -86,7 +96,16 @@ public final class ServerGitProto extends com.google.protobuf.GeneratedFile {
       "\"\215\001\n\027WorkspaceStatusResponse\022\035\n\nproject_" +
       "id\030\001 \001(\tR\tprojectId\022\026\n\006status\030\002 \001(\tR\006sta" +
       "tus\022%\n\016workspace_path\030\003 \001(\tR\rworkspacePa" +
-      "th\022\024\n\005error\030\004 \001(\tR\005error2\270\002\n\020ServerGitSe" +
+      "th\022\024\n\005error\030\004 \001(\tR\005error\"~\n\020GetGpgKeyReq" +
+      "uest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Reques" +
+      "tContextR\003ctx\022\033\n\tclient_id\030\002 \001(\tR\010client" +
+      "Id\022\034\n\ngpg_key_id\030\003 \001(\tR\010gpgKeyId\"\345\001\n\021Get" +
+      "GpgKeyResponse\022\027\n\007has_key\030\001 \001(\010R\006hasKey\022" +
+      "\025\n\006key_id\030\002 \001(\tR\005keyId\022\033\n\tuser_name\030\003 \001(" +
+      "\tR\010userName\022\035\n\nuser_email\030\004 \001(\tR\tuserEma" +
+      "il\022.\n\023private_key_armored\030\005 \001(\tR\021private" +
+      "KeyArmored\022\036\n\npassphrase\030\006 \001(\tR\npassphra" +
+      "se\022\024\n\005error\030\007 \001(\tR\005error2\210\003\n\020ServerGitSe" +
       "rvice\022c\n\020CreateRepository\022&.jervis.serve" +
       "r.CreateRepositoryRequest\032\'.jervis.serve" +
       "r.CreateRepositoryResponse\022Z\n\rInitWorksp" +
@@ -94,7 +113,9 @@ public final class ServerGitProto extends com.google.protobuf.GeneratedFile {
       "\032$.jervis.server.InitWorkspaceResponse\022c" +
       "\n\022GetWorkspaceStatus\022%.jervis.server.Wor" +
       "kspaceStatusRequest\032&.jervis.server.Work" +
-      "spaceStatusResponseB/\n\033com.jervis.contra" +
+      "spaceStatusResponse\022N\n\tGetGpgKey\022\037.jervi" +
+      "s.server.GetGpgKeyRequest\032 .jervis.serve" +
+      "r.GetGpgKeyResponseB/\n\033com.jervis.contra" +
       "cts.serverB\016ServerGitProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
@@ -138,6 +159,18 @@ public final class ServerGitProto extends com.google.protobuf.GeneratedFile {
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_WorkspaceStatusResponse_descriptor,
         new java.lang.String[] { "ProjectId", "Status", "WorkspacePath", "Error", });
+    internal_static_jervis_server_GetGpgKeyRequest_descriptor =
+      getDescriptor().getMessageType(6);
+    internal_static_jervis_server_GetGpgKeyRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_GetGpgKeyRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "GpgKeyId", });
+    internal_static_jervis_server_GetGpgKeyResponse_descriptor =
+      getDescriptor().getMessageType(7);
+    internal_static_jervis_server_GetGpgKeyResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_GetGpgKeyResponse_descriptor,
+        new java.lang.String[] { "HasKey", "KeyId", "UserName", "UserEmail", "PrivateKeyArmored", "Passphrase", "Error", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

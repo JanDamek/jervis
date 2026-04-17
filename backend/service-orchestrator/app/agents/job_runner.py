@@ -441,27 +441,32 @@ class JobRunner:
         }
 
     async def _fetch_gpg_key(self, client_id: str, gpg_key_id: str | None = None) -> dict | None:
-        """Fetch GPG key from Kotlin server for commit signing.
-
-        Args:
-            client_id: Client ID (used as fallback lookup).
-            gpg_key_id: Specific GPG key ID from project/client git config.
-                        If provided, server looks up by key ID first.
-        """
+        """Fetch GPG key from Kotlin server for commit signing."""
         try:
-            params = {}
-            if gpg_key_id:
-                params["gpgKeyId"] = gpg_key_id
-            async with httpx.AsyncClient(timeout=10) as http:
-                resp = await http.get(
-                    f"{settings.kotlin_server_url}/internal/gpg-key/{client_id}",
-                    params=params,
-                )
-                if resp.status_code != 200:
-                    return None
-                data = resp.json()
-                if data.get("keyId"):
-                    return data
+            from app.grpc_server_client import server_git_stub
+            from jervis.common import types_pb2
+            from jervis.server import git_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_git_stub().GetGpgKey(
+                git_pb2.GetGpgKeyRequest(
+                    ctx=ctx,
+                    client_id=client_id,
+                    gpg_key_id=gpg_key_id or "",
+                ),
+                timeout=10.0,
+            )
+            if not resp.has_key:
+                return None
+            return {
+                "keyId": resp.key_id,
+                "userName": resp.user_name,
+                "userEmail": resp.user_email,
+                "privateKeyArmored": resp.private_key_armored,
+                "passphrase": resp.passphrase or None,
+            }
         except Exception as e:
             logger.warning("Failed to fetch GPG key for client %s: %s", client_id, e)
         return None

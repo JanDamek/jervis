@@ -23,6 +23,9 @@ service ServerMeetingsService {
 
   // Shortcut used by the orchestrator's system-prompt builder.
   rpc ListUnclassified(ListUnclassifiedRequest) returns (ListUnclassifiedResponse);
+
+  // Re-classify an already-ingested meeting — orchestrator tool entry.
+  rpc ClassifyMeeting(ClassifyMeetingRequest) returns (ClassifyMeetingResponse);
 }
 
 message GetTranscriptRequest {
@@ -75,4 +78,20 @@ message UnclassifiedMeeting {
   string title = 2;
   string started_at_iso = 3;
   string duration_seconds = 4;
+}
+
+// ── ClassifyMeeting ─────────────────────────────────────────────────────
+
+message ClassifyMeetingRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+  string client_id = 3;
+  string project_id = 4;     // blank = leave as-is
+  string title = 5;          // blank = leave as-is
+}
+
+message ClassifyMeetingResponse {
+  bool ok = 1;
+  string meeting_id = 2;
+  string error = 3;
 }

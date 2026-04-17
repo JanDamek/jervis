@@ -81,6 +81,21 @@ public final class ServerChatContextProto extends com.google.protobuf.GeneratedF
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_UserTimezoneResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ActiveChatTopicsRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ActiveChatTopicsRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ActiveChatTopicsResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ActiveChatTopicsResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ChatTopicMessage_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ChatTopicMessage_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -115,19 +130,30 @@ public final class ServerChatContextProto extends com.google.protobuf.GeneratedF
       "\"F\n\023UserTimezoneRequest\022/\n\003ctx\030\001 \001(\0132\035.j" +
       "ervis.common.RequestContextR\003ctx\"2\n\024User" +
       "TimezoneResponse\022\032\n\010timezone\030\001 \001(\tR\010time" +
-      "zone2\270\003\n\030ServerChatContextService\022d\n\023Lis" +
-      "tClientsProjects\022%.jervis.server.Clients" +
-      "ProjectsRequest\032&.jervis.server.ClientsP" +
-      "rojectsResponse\022j\n\027PendingUserTasksSumma" +
-      "ry\022&.jervis.server.PendingUserTasksReque" +
-      "st\032\'.jervis.server.PendingUserTasksRespo" +
-      "nse\022n\n\031UnclassifiedMeetingsCount\022\'.jervi" +
-      "s.server.UnclassifiedCountRequest\032(.jerv" +
-      "is.server.UnclassifiedCountResponse\022Z\n\017G" +
-      "etUserTimezone\022\".jervis.server.UserTimez" +
-      "oneRequest\032#.jervis.server.UserTimezoneR" +
-      "esponseB7\n\033com.jervis.contracts.serverB\026" +
-      "ServerChatContextProtoP\001b\006proto3"
+      "zone\"m\n\027ActiveChatTopicsRequest\022/\n\003ctx\030\001" +
+      " \001(\0132\035.jervis.common.RequestContextR\003ctx" +
+      "\022!\n\014max_messages\030\002 \001(\005R\013maxMessages\"\217\001\n\030" +
+      "ActiveChatTopicsResponse\022\033\n\tclient_id\030\001 " +
+      "\001(\tR\010clientId\022\035\n\nproject_id\030\002 \001(\tR\tproje" +
+      "ctId\0227\n\006topics\030\003 \003(\0132\037.jervis.server.Cha" +
+      "tTopicMessageR\006topics\"@\n\020ChatTopicMessag" +
+      "e\022\022\n\004role\030\001 \001(\tR\004role\022\030\n\007content\030\002 \001(\tR\007" +
+      "content2\240\004\n\030ServerChatContextService\022d\n\023" +
+      "ListClientsProjects\022%.jervis.server.Clie" +
+      "ntsProjectsRequest\032&.jervis.server.Clien" +
+      "tsProjectsResponse\022j\n\027PendingUserTasksSu" +
+      "mmary\022&.jervis.server.PendingUserTasksRe" +
+      "quest\032\'.jervis.server.PendingUserTasksRe" +
+      "sponse\022n\n\031UnclassifiedMeetingsCount\022\'.je" +
+      "rvis.server.UnclassifiedCountRequest\032(.j" +
+      "ervis.server.UnclassifiedCountResponse\022Z" +
+      "\n\017GetUserTimezone\022\".jervis.server.UserTi" +
+      "mezoneRequest\032#.jervis.server.UserTimezo" +
+      "neResponse\022f\n\023GetActiveChatTopics\022&.jerv" +
+      "is.server.ActiveChatTopicsRequest\032\'.jerv" +
+      "is.server.ActiveChatTopicsResponseB7\n\033co" +
+      "m.jervis.contracts.serverB\026ServerChatCon" +
+      "textProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -200,6 +226,24 @@ public final class ServerChatContextProto extends com.google.protobuf.GeneratedF
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_UserTimezoneResponse_descriptor,
         new java.lang.String[] { "Timezone", });
+    internal_static_jervis_server_ActiveChatTopicsRequest_descriptor =
+      getDescriptor().getMessageType(11);
+    internal_static_jervis_server_ActiveChatTopicsRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ActiveChatTopicsRequest_descriptor,
+        new java.lang.String[] { "Ctx", "MaxMessages", });
+    internal_static_jervis_server_ActiveChatTopicsResponse_descriptor =
+      getDescriptor().getMessageType(12);
+    internal_static_jervis_server_ActiveChatTopicsResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ActiveChatTopicsResponse_descriptor,
+        new java.lang.String[] { "ClientId", "ProjectId", "Topics", });
+    internal_static_jervis_server_ChatTopicMessage_descriptor =
+      getDescriptor().getMessageType(13);
+    internal_static_jervis_server_ChatTopicMessage_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ChatTopicMessage_descriptor,
+        new java.lang.String[] { "Role", "Content", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

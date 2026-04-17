@@ -94,3 +94,27 @@ class UnclassifiedMeeting(_message.Message):
     started_at_iso: str
     duration_seconds: str
     def __init__(self, id: _Optional[str] = ..., title: _Optional[str] = ..., started_at_iso: _Optional[str] = ..., duration_seconds: _Optional[str] = ...) -> None: ...
+
+class ClassifyMeetingRequest(_message.Message):
+    __slots__ = ("ctx", "meeting_id", "client_id", "project_id", "title")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    MEETING_ID_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    meeting_id: str
+    client_id: str
+    project_id: str
+    title: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., meeting_id: _Optional[str] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ..., title: _Optional[str] = ...) -> None: ...
+
+class ClassifyMeetingResponse(_message.Message):
+    __slots__ = ("ok", "meeting_id", "error")
+    OK_FIELD_NUMBER: _ClassVar[int]
+    MEETING_ID_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    ok: bool
+    meeting_id: str
+    error: str
+    def __init__(self, ok: bool = ..., meeting_id: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...

@@ -23,6 +23,7 @@ from jervis.server import (
     filter_rules_pb2_grpc,
     finance_pb2_grpc,
     foreground_pb2_grpc,
+    git_pb2_grpc,
     guidelines_pb2_grpc,
     meetings_pb2_grpc,
     merge_request_pb2_grpc,
@@ -58,6 +59,7 @@ _foreground_stub: Optional[foreground_pb2_grpc.ServerForegroundServiceStub] = No
 _orchestrator_progress_stub: Optional[
     orchestrator_progress_pb2_grpc.ServerOrchestratorProgressServiceStub
 ] = None
+_git_stub: Optional[git_pb2_grpc.ServerGitServiceStub] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -216,3 +218,10 @@ def server_orchestrator_progress_stub() -> (
             )
         )
     return _orchestrator_progress_stub
+
+
+def server_git_stub() -> git_pb2_grpc.ServerGitServiceStub:
+    global _git_stub
+    if _git_stub is None:
+        _git_stub = git_pb2_grpc.ServerGitServiceStub(_get_channel())
+    return _git_stub

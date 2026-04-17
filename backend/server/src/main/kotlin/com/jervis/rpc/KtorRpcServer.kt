@@ -95,9 +95,7 @@ class KtorRpcServer(
     private val agentQuestionRpcImpl: AgentQuestionRpcImpl,
     private val autoResponseSettingsRpcImpl: AutoResponseSettingsRpcImpl,
     private val guidelinesService: com.jervis.guidelines.GuidelinesService,
-    private val filteringRulesService: com.jervis.filtering.FilteringRulesService,
     private val chatService: com.jervis.chat.ChatService,
-    private val chatMessageService: com.jervis.chat.ChatMessageService,
     // Dependencies for internal routing modules (injected, used by install*Api extensions)
     private val projectService: com.jervis.project.ProjectService,
     private val connectionService: com.jervis.connection.ConnectionService,
@@ -122,7 +120,6 @@ class KtorRpcServer(
     private val fcmPushService: com.jervis.infrastructure.notification.FcmPushService,
     private val apnsPushService: com.jervis.infrastructure.notification.ApnsPushService,
     private val preferenceService: com.jervis.preferences.PreferenceService,
-    private val pythonOrchestratorClient: com.jervis.agent.PythonOrchestratorClient,
     private val gitRepositoryService: com.jervis.git.service.GitRepositoryService,
     private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
     private val pendingTaskService: com.jervis.task.PendingTaskService,
@@ -290,43 +287,7 @@ class KtorRpcServer(
                             // thinking-graph-update) migrated to gRPC
                             // (jervis.server.ServerOrchestratorProgressService).
 
-                            // Internal endpoint: orchestrator fetches GPG key for agent commit signing
-                            get("/internal/gpg-key/{clientId}") {
-                                val clientId = call.parameters["clientId"] ?: return@get call.respondText(
-                                    "{\"ok\":false,\"error\":\"Missing clientId\"}",
-                                    io.ktor.http.ContentType.Application.Json,
-                                    HttpStatusCode.BadRequest,
-                                )
-                                val gpgKeyId = call.request.queryParameters["gpgKeyId"]
-                                try {
-                                    val keyInfo = gpgCertificateRpcImpl.getActiveKey(clientId, gpgKeyId)
-                                    if (keyInfo != null) {
-                                        val json = kotlinx.serialization.json.Json.encodeToString(
-                                            GpgKeyResponse.serializer(),
-                                            GpgKeyResponse(
-                                                keyId = keyInfo.keyId,
-                                                userName = keyInfo.userName,
-                                                userEmail = keyInfo.userEmail,
-                                                privateKeyArmored = keyInfo.privateKeyArmored,
-                                                passphrase = keyInfo.passphrase,
-                                            ),
-                                        )
-                                        call.respondText(json, io.ktor.http.ContentType.Application.Json)
-                                    } else {
-                                        call.respondText(
-                                            "{\"ok\":true,\"key\":null}",
-                                            io.ktor.http.ContentType.Application.Json,
-                                        )
-                                    }
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to fetch GPG key for client $clientId" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
+                            // GPG key lookup migrated to gRPC (jervis.server.ServerGitService.GetGpgKey).
 
                             // GPU idle notification from Ollama Router migrated to gRPC
                             // (jervis.server.ServerGpuIdleService).
@@ -341,235 +302,11 @@ class KtorRpcServer(
                             // tasks/by-state + agent-completed + agent-dispatched migrated to
                             // gRPC (jervis.server.ServerTaskApiService.{TasksByState,
                             // AgentDispatched, AgentCompleted}).
-                            // Internal endpoint: Python orchestrator streams LLM tokens (legacy, no-op)
-                            post("/internal/streaming-token") {
-                                try {
-                                    call.receive<StreamingTokenRequest>() // consume body
-                                    call.respondText(
-                                        "{\"ok\":true}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                    )
-                                } catch (e: Exception) {
-                                    logger.debug(e) { "Failed to emit streaming token" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
+                            // /internal/streaming-token (legacy no-op) removed — the orchestrator's
+                            // token streaming path goes through the chat pushback stream directly.
 
-                            // Internal endpoint: KB microservice pushes progress events here (real-time)
-                            post("/internal/kb-progress") {
-                                try {
-                                    val body = call.receive<KbProgressCallback>()
-                                    launch {
-                                        // 1. Persist step to DB for history
-                                        val taskId = com.jervis.common.types.TaskId(org.bson.types.ObjectId(body.taskId))
-                                        taskService.appendQualificationStep(
-                                            taskId,
-                                            com.jervis.task.QualificationStepRecord(
-                                                timestamp = java.time.Instant.now(),
-                                                step = body.step,
-                                                message = body.message,
-                                                metadata = (body.metadata ?: emptyMap()) + ("agent" to "simple_qualifier"),
-                                            ),
-                                        )
-                                        // 2. Emit to live event stream for real-time UI
-                                        notificationRpcImpl.emitQualificationProgress(
-                                            taskId = body.taskId,
-                                            clientId = body.clientId,
-                                            message = body.message,
-                                            step = body.step,
-                                            metadata = (body.metadata ?: emptyMap()) + ("agent" to "simple_qualifier"),
-                                        )
-                                    }
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to process KB progress callback" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            // Internal endpoint: KB microservice signals async processing completion
-                            post("/internal/kb-done") {
-                                try {
-                                    val body = call.receive<KbCompletionCallback>()
-                                    logger.info { "KB_DONE_CALLBACK: taskId=${body.taskId} status=${body.status}" }
-
-                                    launch {
-                                        try {
-                                            val taskId = com.jervis.common.types.TaskId(ObjectId(body.taskId))
-                                            val task = taskRepository.getById(taskId)
-
-                                            if (task == null) {
-                                                logger.error { "KB_DONE_CALLBACK: task not found taskId=${body.taskId}" }
-                                                return@launch
-                                            }
-
-                                            if (task.state != com.jervis.dto.task.TaskStateEnum.INDEXING) {
-                                                logger.warn { "KB_DONE_CALLBACK: task not in INDEXING state taskId=${body.taskId} state=${task.state}" }
-                                                return@launch
-                                            }
-
-                                            if (body.status == "error") {
-                                                val errorMsg = body.error ?: "KB processing failed"
-                                                logger.error { "KB_DONE_CALLBACK: KB reported error taskId=${body.taskId} error=$errorMsg" }
-                                                taskService.markAsError(task, errorMsg)
-
-                                                // Emit final progress step
-                                                taskService.appendQualificationStep(
-                                                    taskId,
-                                                    com.jervis.task.QualificationStepRecord(
-                                                        timestamp = java.time.Instant.now(),
-                                                        step = "error",
-                                                        message = "KB chyba: $errorMsg",
-                                                        metadata = mapOf("agent" to "simple_qualifier"),
-                                                    ),
-                                                )
-                                                notificationRpcImpl.emitQualificationProgress(
-                                                    taskId = body.taskId,
-                                                    clientId = body.clientId,
-                                                    message = "KB chyba: $errorMsg",
-                                                    step = "error",
-                                                    metadata = mapOf("agent" to "simple_qualifier"),
-                                                )
-                                                return@launch
-                                            }
-
-                                            // Parse result and run routing
-                                            val r = body.result
-                                            if (r == null) {
-                                                taskService.markAsError(task, "KB returned done but no result")
-                                                return@launch
-                                            }
-
-                                            // Save KB extraction outputs (summary + entities) to
-                                            // the task document so the Python /qualify agent has them
-                                            // as input. kbActionable is forced to false here — KB has
-                                            // no authority over actionability.
-                                            taskService.saveKbResult(
-                                                taskId,
-                                                kbSummary = r.summary,
-                                                kbEntities = r.entities,
-                                                kbActionable = false,
-                                            )
-
-                                            // Evaluate user filtering rules. These are USER-configured
-                                            // rules ("always urgent from X", "ignore newsletters from Y")
-                                            // and are NOT a KB decision — they live in Kotlin and are
-                                            // independent of KB output. We still skip the qualifier on
-                                            // an explicit IGNORE rule because there is no point asking
-                                            // the LLM to re-evaluate something the user said to skip.
-                                            // @mention overrides IGNORE.
-                                            val filterAction = try {
-                                                val sourceType = com.jervis.qualifier.KbDoneRouter.extractSourceType(task.sourceUrn)
-                                                filteringRulesService.evaluate(
-                                                    sourceType = sourceType,
-                                                    subject = r.summary,
-                                                    body = task.content,
-                                                    labels = r.entities,
-                                                )
-                                            } catch (e: Exception) {
-                                                logger.warn(e) { "KB_DONE_CALLBACK: filter eval failed taskId=${body.taskId} (non-fatal)" }
-                                                null
-                                            }
-
-                                            if (filterAction == com.jervis.dto.filtering.FilterAction.IGNORE && !task.mentionsJervis) {
-                                                taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
-                                                logger.info { "KB_DONE_CALLBACK: filtered IGNORE taskId=${body.taskId} (user rule)" }
-                                                return@launch
-                                            }
-
-                                            // 2026-04-11 — KB MUST NOT make routing decisions.
-                                            // The previous fast-path
-                                            //     if (!r.hasActionableContent && !task.mentionsJervis)
-                                            //         { state=DONE; return }
-                                            // gave the KB extraction layer authority over
-                                            // whether the task gets routed at all. KB has no tools
-                                            // for that decision (no kb_search at decision time, no
-                                            // user history, no active task awareness) — only the
-                                            // Python /qualify agent does. Removed the fast-path.
-                                            // Every KB-done callback now ALWAYS dispatches to /qualify,
-                                            // and the qualifier itself decides DONE/QUEUED/USER_TASK/...
-                                            //
-                                            // The KB-supplied fields (hasActionableContent, urgency,
-                                            // suggestedActions, ...) are passed to /qualify as HINTS
-                                            // only — never as authoritative routing signals. They
-                                            // will be removed from the wire format in a follow-up
-                                            // refactor (see memory: architecture-kb-no-qualification.md).
-
-                                            // Always dispatch to Python /qualify — qualifier decides
-                                            // DONE / QUEUED / URGENT_ALERT / ESCALATE / DECOMPOSE.
-                                            try {
-                                                val qualifyRequest = com.jervis.agent.QualifyRequestDto(
-                                                    taskId = body.taskId,
-                                                    clientId = body.clientId,
-                                                    sourceUrn = task.sourceUrn.value,
-                                                    summary = r.summary,
-                                                    entities = r.entities,
-                                                    suggestedActions = r.suggestedActions,
-                                                    urgency = r.urgency,
-                                                    actionType = r.actionType,
-                                                    estimatedComplexity = r.estimatedComplexity,
-                                                    isAssignedToMe = r.isAssignedToMe,
-                                                    hasFutureDeadline = r.hasFutureDeadline,
-                                                    suggestedDeadline = r.suggestedDeadline,
-                                                    suggestedAgent = r.suggestedAgent,
-                                                    affectedFiles = r.affectedFiles,
-                                                    relatedKbNodes = r.relatedKbNodes,
-                                                    hasAttachments = task.hasAttachments,
-                                                    attachmentCount = task.attachmentCount,
-                                                    attachments = task.attachments.mapIndexed { idx, att ->
-                                                        com.jervis.agent.QualifyAttachmentDto(
-                                                            filename = att.filename,
-                                                            contentType = att.mimeType,
-                                                            size = att.sizeBytes,
-                                                            index = idx,
-                                                        )
-                                                    },
-                                                    content = task.content,
-                                                    mentionsJervis = task.mentionsJervis,
-                                                )
-                                                val qualifyResponse = pythonOrchestratorClient.qualify(qualifyRequest)
-                                                if (qualifyResponse != null) {
-                                                    logger.info {
-                                                        "KB_DONE_CALLBACK: taskId=${body.taskId} → dispatched to /qualify " +
-                                                            "threadId=${qualifyResponse.threadId}"
-                                                    }
-                                                } else {
-                                                    // Fallback: if /qualify fails, go straight to QUEUED
-                                                    taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
-                                                    logger.warn {
-                                                        "KB_DONE_CALLBACK: taskId=${body.taskId} → /qualify failed, fallback to QUEUED"
-                                                    }
-                                                }
-                                            } catch (e: Exception) {
-                                                // Fallback: if /qualify fails, go straight to QUEUED
-                                                logger.warn(e) {
-                                                    "KB_DONE_CALLBACK: taskId=${body.taskId} → /qualify dispatch failed, fallback to QUEUED"
-                                                }
-                                                taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
-                                            }
-                                        } catch (e: Exception) {
-                                            logger.error(e) { "KB_DONE_CALLBACK: failed to process result taskId=${body.taskId}" }
-                                        }
-                                    }
-
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to process KB completion callback" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
+                            // KB progress + KB done reverse callbacks migrated to gRPC
+                            // (jervis.server.ServerKbCallbacksService).
 
                             // Qualification-done migrated to gRPC
                             // (jervis.server.ServerOrchestratorProgressService.QualificationDone).
@@ -578,59 +315,14 @@ class KtorRpcServer(
                             // Foreground GPU reservation (foreground-start/end/chat-on-cloud)
                             // migrated to gRPC (jervis.server.ServerForegroundService).
 
-                            // Active chat topics for qualification agent
-                            get("/internal/active-chat-topics") {
-                                try {
-                                    val session = chatService.getOrCreateActiveSession()
-                                    val messages = chatMessageService.getLastMessages(session.id, 10)
-                                    val topicsJson = kotlinx.serialization.json.buildJsonObject {
-                                        put("clientId", kotlinx.serialization.json.JsonPrimitive(session.lastClientId ?: ""))
-                                        put("projectId", kotlinx.serialization.json.JsonPrimitive(session.lastProjectId ?: ""))
-                                        put("topics", kotlinx.serialization.json.buildJsonArray {
-                                            messages
-                                                .filter { it.role == com.jervis.chat.MessageRole.USER || it.role == com.jervis.chat.MessageRole.ASSISTANT }
-                                                .forEach { msg ->
-                                                    add(kotlinx.serialization.json.buildJsonObject {
-                                                        put("role", kotlinx.serialization.json.JsonPrimitive(msg.role.name.lowercase()))
-                                                        put("content", kotlinx.serialization.json.JsonPrimitive(msg.content))
-                                                    })
-                                                }
-                                        })
-                                    }
-                                    call.respondText(topicsJson.toString(), io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to get active chat topics" }
-                                    call.respondText("""{"topics":[],"clientId":"","projectId":""}""", io.ktor.http.ContentType.Application.Json)
-                                }
-                            }
+                            // Active chat topics migrated to gRPC
+                            // (jervis.server.ServerChatContextService.GetActiveChatTopics).
 
                             // create-background-task + dispatch-coding-agent + user-tasks + respond-to-user-task
                             // + dismiss-user-tasks migrated to gRPC (jervis.server.ServerTaskApiService).
 
-                            // Classify meeting
-                            post("/internal/classify-meeting") {
-                                try {
-                                    val body = call.receive<ClassifyMeetingRequest>()
-                                    val dto = com.jervis.dto.meeting.MeetingClassifyDto(
-                                        meetingId = body.meetingId,
-                                        clientId = body.clientId,
-                                        projectId = body.projectId,
-                                        title = body.title,
-                                    )
-                                    val result = meetingRpcImpl.classifyMeeting(dto)
-                                    call.respondText(
-                                        """{"ok":true,"meetingId":"${result.id}"}""",
-                                        io.ktor.http.ContentType.Application.Json,
-                                    )
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to classify meeting" }
-                                    call.respondText(
-                                        """{"error":"${e.message}"}""",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
+                            // Classify meeting migrated to gRPC
+                            // (jervis.server.ServerMeetingsService.ClassifyMeeting).
 
                             // Unclassified meetings moved to gRPC
                             // (jervis.server.ServerMeetingsService.ListUnclassified).
@@ -695,62 +387,6 @@ class KtorRpcServer(
     }
 }
 
-@kotlinx.serialization.Serializable
-data class KbProgressCallback(
-    val taskId: String,
-    val clientId: String,
-    val step: String,
-    val message: String,
-    val metadata: Map<String, String>? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class KbCompletionCallback(
-    val taskId: String,
-    val clientId: String,
-    val status: String, // "done" or "error"
-    val error: String? = null,
-    val result: KbCompletionResult? = null,
-)
-
-/**
- * KB ingest completion payload returned by the Python KB service.
- *
- * 2026-04-11 KB-no-qualification refactor:
- *   KB returns ONLY extraction outputs (summary, entities, counts).
- *   The fields below tagged "LEGACY routing hint" remain in the wire
- *   format for backward compatibility with persisted callbacks but
- *   the Kotlin server's qualification flow no longer treats them as
- *   authoritative. The Python /qualify agent (full toolset) is the
- *   single source of truth for routing decisions.
- *
- *   See memory/architecture-kb-no-qualification.md for the rule.
- */
-@kotlinx.serialization.Serializable
-data class KbCompletionResult(
-    val status: String = "success",
-    @kotlinx.serialization.SerialName("chunks_count") val chunksCount: Int = 0,
-    @kotlinx.serialization.SerialName("nodes_created") val nodesCreated: Int = 0,
-    @kotlinx.serialization.SerialName("edges_created") val edgesCreated: Int = 0,
-    @kotlinx.serialization.SerialName("attachments_processed") val attachmentsProcessed: Int = 0,
-    @kotlinx.serialization.SerialName("attachments_failed") val attachmentsFailed: Int = 0,
-    // === Extraction outputs (KB authority) ===
-    val summary: String = "",
-    val entities: List<String> = emptyList(),
-    // === LEGACY routing hints — neutral defaults, do NOT branch on these ===
-    val hasActionableContent: Boolean = false,
-    val suggestedActions: List<String> = emptyList(),
-    val hasFutureDeadline: Boolean = false,
-    val suggestedDeadline: String? = null,
-    val isAssignedToMe: Boolean = false,
-    val urgency: String = "normal",
-    @kotlinx.serialization.SerialName("action_type") val actionType: String? = null,
-    @kotlinx.serialization.SerialName("estimated_complexity") val estimatedComplexity: String? = null,
-    @kotlinx.serialization.SerialName("suggested_agent") val suggestedAgent: String? = null,
-    @kotlinx.serialization.SerialName("affected_files") val affectedFiles: List<String> = emptyList(),
-    @kotlinx.serialization.SerialName("related_kb_nodes") val relatedKbNodes: List<String> = emptyList(),
-)
-
 /**
  * Phase 3: A single sub-task requested by the qualifier when it returns
  * decision=DECOMPOSE. The Kotlin server creates a child TaskDocument for each
@@ -769,33 +405,6 @@ data class SubTaskRequest(
     val content: String,
     val phase: String? = null,
     @kotlinx.serialization.SerialName("order_in_phase") val orderInPhase: Int = 0,
-)
-
-@kotlinx.serialization.Serializable
-data class GpgKeyResponse(
-    val keyId: String,
-    val userName: String,
-    val userEmail: String,
-    val privateKeyArmored: String,
-    val passphrase: String? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class StreamingTokenRequest(
-    val taskId: String,
-    val clientId: String,
-    val projectId: String = "",
-    val token: String,
-    val messageId: String,
-    val isFinal: Boolean = false,
-)
-
-@kotlinx.serialization.Serializable
-data class ClassifyMeetingRequest(
-    val meetingId: String,
-    val clientId: String,
-    val projectId: String? = null,
-    val title: String? = null,
 )
 
 

@@ -17,6 +17,10 @@ service ServerChatContextService {
   rpc PendingUserTasksSummary(PendingUserTasksRequest) returns (PendingUserTasksResponse);
   rpc UnclassifiedMeetingsCount(UnclassifiedCountRequest) returns (UnclassifiedCountResponse);
   rpc GetUserTimezone(UserTimezoneRequest) returns (UserTimezoneResponse);
+
+  // Active chat session topics — last-N messages of the active chat so the
+  // qualification agent knows what the user is currently working on.
+  rpc GetActiveChatTopics(ActiveChatTopicsRequest) returns (ActiveChatTopicsResponse);
 }
 
 message ClientsProjectsRequest {
@@ -70,4 +74,20 @@ message UserTimezoneRequest {
 
 message UserTimezoneResponse {
   string timezone = 1;
+}
+
+message ActiveChatTopicsRequest {
+  jervis.common.RequestContext ctx = 1;
+  int32 max_messages = 2;       // <=0 → 10
+}
+
+message ActiveChatTopicsResponse {
+  string client_id = 1;
+  string project_id = 2;
+  repeated ChatTopicMessage topics = 3;
+}
+
+message ChatTopicMessage {
+  string role = 1;              // "user" / "assistant"
+  string content = 2;
 }

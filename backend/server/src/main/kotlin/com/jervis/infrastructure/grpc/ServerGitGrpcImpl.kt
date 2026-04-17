@@ -4,11 +4,14 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.contracts.server.CreateRepositoryRequest
 import com.jervis.contracts.server.CreateRepositoryResponse
+import com.jervis.contracts.server.GetGpgKeyRequest
+import com.jervis.contracts.server.GetGpgKeyResponse
 import com.jervis.contracts.server.InitWorkspaceRequest
 import com.jervis.contracts.server.InitWorkspaceResponse
 import com.jervis.contracts.server.ServerGitServiceGrpcKt
 import com.jervis.contracts.server.WorkspaceStatusRequest
 import com.jervis.contracts.server.WorkspaceStatusResponse
+import com.jervis.git.rpc.GpgCertificateRpcImpl
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.git.GitRepoCreationResult
 import com.jervis.git.GitRepositoryCreationService
@@ -30,6 +33,7 @@ class ServerGitGrpcImpl(
     private val projectService: ProjectService,
     private val backgroundEngine: BackgroundEngine,
     private val gitRepositoryService: GitRepositoryService,
+    private val gpgCertificateRpcImpl: GpgCertificateRpcImpl,
 ) : ServerGitServiceGrpcKt.ServerGitServiceCoroutineImplBase() {
     private val logger = KotlinLogging.logger {}
     private val json = Json { encodeDefaults = true; ignoreUnknownKeys = true }
@@ -89,6 +93,30 @@ class ServerGitGrpcImpl(
             .setWorkspacePath(path)
             .setError(err)
             .build()
+    }
+
+    override suspend fun getGpgKey(request: GetGpgKeyRequest): GetGpgKeyResponse {
+        return try {
+            val keyInfo = gpgCertificateRpcImpl.getActiveKey(
+                request.clientId,
+                request.gpgKeyId.takeIf { it.isNotBlank() },
+            )
+            if (keyInfo == null) {
+                GetGpgKeyResponse.newBuilder().setHasKey(false).build()
+            } else {
+                GetGpgKeyResponse.newBuilder()
+                    .setHasKey(true)
+                    .setKeyId(keyInfo.keyId)
+                    .setUserName(keyInfo.userName)
+                    .setUserEmail(keyInfo.userEmail)
+                    .setPrivateKeyArmored(keyInfo.privateKeyArmored)
+                    .setPassphrase(keyInfo.passphrase.orEmpty())
+                    .build()
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to fetch GPG key for client ${request.clientId}" }
+            GetGpgKeyResponse.newBuilder().setHasKey(false).setError(e.message.orEmpty()).build()
+        }
     }
 
     override suspend fun getWorkspaceStatus(request: WorkspaceStatusRequest): WorkspaceStatusResponse {

@@ -716,54 +716,78 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
 
     async def _post_progress_callback(
         self,
-        callback_url: str,
+        callback_url: str,   # kept for signature compatibility; ignored now
         task_id: str,
         client_id: str,
         step: str,
         message: str,
         metadata: dict,
     ):
-        """POST progress event to Kotlin server callback (fire-and-forget, non-blocking).
-        Uses persistent HTTP client (_callback_http) for connection reuse."""
-        if not self._callback_http:
-            return
+        """Push KB progress to Kotlin server via gRPC (fire-and-forget)."""
         try:
-            await self._callback_http.post(callback_url, json={
-                "taskId": task_id,
-                "clientId": client_id,
-                "step": step,
-                "message": message,
-                "metadata": metadata,
-            })
+            from app.grpc_server_client import build_request_context, server_kb_callbacks_stub
+            from jervis.server import kb_callbacks_pb2
+
+            await server_kb_callbacks_stub().KbProgress(
+                kb_callbacks_pb2.KbProgressRequest(
+                    ctx=build_request_context(),
+                    task_id=task_id,
+                    client_id=client_id,
+                    step=step,
+                    message=message,
+                    metadata={str(k): str(v) for k, v in (metadata or {}).items()},
+                ),
+                timeout=5.0,
+            )
         except Exception as e:
             logger.debug("KB progress callback failed: %s", e)
 
     async def _post_completion_callback(
         self,
-        callback_url: str,
+        callback_url: str,   # kept for signature compatibility; ignored now
         task_id: str,
         client_id: str,
         status: str,
         result: dict | None = None,
         error: str | None = None,
     ):
-        """POST completion/error event to Kotlin server when async processing finishes."""
-        if not self._callback_http:
-            logger.warning("No callback HTTP client — cannot notify server for task %s", task_id)
-            return
-        payload = {
-            "taskId": task_id,
-            "clientId": client_id,
-            "status": status,
-        }
-        if result is not None:
-            payload["result"] = result
-        if error is not None:
-            payload["error"] = error
+        """Push KB completion/error to Kotlin server via gRPC."""
         try:
-            resp = await self._callback_http.post(callback_url, json=payload)
-            if resp.status_code >= 400:
-                logger.error("KB completion callback returned %d for task %s", resp.status_code, task_id)
+            from app.grpc_server_client import build_request_context, server_kb_callbacks_stub
+            from jervis.server import kb_callbacks_pb2
+
+            req = kb_callbacks_pb2.KbDoneRequest(
+                ctx=build_request_context(),
+                task_id=task_id,
+                client_id=client_id,
+                status=status,
+                error=error or "",
+            )
+            if result is not None:
+                req.result.CopyFrom(
+                    kb_callbacks_pb2.KbCompletionResult(
+                        status=str(result.get("status", "success")),
+                        chunks_count=int(result.get("chunks_count") or 0),
+                        nodes_created=int(result.get("nodes_created") or 0),
+                        edges_created=int(result.get("edges_created") or 0),
+                        attachments_processed=int(result.get("attachments_processed") or 0),
+                        attachments_failed=int(result.get("attachments_failed") or 0),
+                        summary=str(result.get("summary") or ""),
+                        entities=list(result.get("entities") or []),
+                        has_actionable_content=bool(result.get("hasActionableContent") or False),
+                        suggested_actions=list(result.get("suggestedActions") or []),
+                        has_future_deadline=bool(result.get("hasFutureDeadline") or False),
+                        suggested_deadline=str(result.get("suggestedDeadline") or ""),
+                        is_assigned_to_me=bool(result.get("isAssignedToMe") or False),
+                        urgency=str(result.get("urgency") or "normal"),
+                        action_type=str(result.get("action_type") or ""),
+                        estimated_complexity=str(result.get("estimated_complexity") or ""),
+                        suggested_agent=str(result.get("suggested_agent") or ""),
+                        affected_files=list(result.get("affected_files") or []),
+                        related_kb_nodes=list(result.get("related_kb_nodes") or []),
+                    ),
+                )
+            await server_kb_callbacks_stub().KbDone(req, timeout=10.0)
         except Exception as e:
             logger.error("KB completion callback failed for task %s: %s", task_id, e)
 

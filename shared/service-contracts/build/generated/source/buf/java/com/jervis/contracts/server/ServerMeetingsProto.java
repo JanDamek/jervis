@@ -66,6 +66,16 @@ public final class ServerMeetingsProto extends com.google.protobuf.GeneratedFile
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_UnclassifiedMeeting_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ClassifyMeetingRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ClassifyMeetingRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ClassifyMeetingResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ClassifyMeetingResponse_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -104,16 +114,26 @@ public final class ServerMeetingsProto extends com.google.protobuf.GeneratedFile
       "\001\n\023UnclassifiedMeeting\022\016\n\002id\030\001 \001(\tR\002id\022\024" +
       "\n\005title\030\002 \001(\tR\005title\022$\n\016started_at_iso\030\003" +
       " \001(\tR\014startedAtIso\022)\n\020duration_seconds\030\004" +
-      " \001(\tR\017durationSeconds2\261\002\n\025ServerMeetings" +
-      "Service\022Z\n\rGetTranscript\022#.jervis.server" +
-      ".GetTranscriptRequest\032$.jervis.server.Ge" +
-      "tTranscriptResponse\022W\n\014ListMeetings\022\".je" +
-      "rvis.server.ListMeetingsRequest\032#.jervis" +
-      ".server.ListMeetingsResponse\022c\n\020ListUncl" +
-      "assified\022&.jervis.server.ListUnclassifie" +
-      "dRequest\032\'.jervis.server.ListUnclassifie" +
-      "dResponseB4\n\033com.jervis.contracts.server" +
-      "B\023ServerMeetingsProtoP\001b\006proto3"
+      " \001(\tR\017durationSeconds\"\272\001\n\026ClassifyMeetin" +
+      "gRequest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Re" +
+      "questContextR\003ctx\022\035\n\nmeeting_id\030\002 \001(\tR\tm" +
+      "eetingId\022\033\n\tclient_id\030\003 \001(\tR\010clientId\022\035\n" +
+      "\nproject_id\030\004 \001(\tR\tprojectId\022\024\n\005title\030\005 " +
+      "\001(\tR\005title\"^\n\027ClassifyMeetingResponse\022\016\n" +
+      "\002ok\030\001 \001(\010R\002ok\022\035\n\nmeeting_id\030\002 \001(\tR\tmeeti" +
+      "ngId\022\024\n\005error\030\003 \001(\tR\005error2\223\003\n\025ServerMee" +
+      "tingsService\022Z\n\rGetTranscript\022#.jervis.s" +
+      "erver.GetTranscriptRequest\032$.jervis.serv" +
+      "er.GetTranscriptResponse\022W\n\014ListMeetings" +
+      "\022\".jervis.server.ListMeetingsRequest\032#.j" +
+      "ervis.server.ListMeetingsResponse\022c\n\020Lis" +
+      "tUnclassified\022&.jervis.server.ListUnclas" +
+      "sifiedRequest\032\'.jervis.server.ListUnclas" +
+      "sifiedResponse\022`\n\017ClassifyMeeting\022%.jerv" +
+      "is.server.ClassifyMeetingRequest\032&.jervi" +
+      "s.server.ClassifyMeetingResponseB4\n\033com." +
+      "jervis.contracts.serverB\023ServerMeetingsP" +
+      "rotoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -168,6 +188,18 @@ public final class ServerMeetingsProto extends com.google.protobuf.GeneratedFile
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_UnclassifiedMeeting_descriptor,
         new java.lang.String[] { "Id", "Title", "StartedAtIso", "DurationSeconds", });
+    internal_static_jervis_server_ClassifyMeetingRequest_descriptor =
+      getDescriptor().getMessageType(8);
+    internal_static_jervis_server_ClassifyMeetingRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ClassifyMeetingRequest_descriptor,
+        new java.lang.String[] { "Ctx", "MeetingId", "ClientId", "ProjectId", "Title", });
+    internal_static_jervis_server_ClassifyMeetingResponse_descriptor =
+      getDescriptor().getMessageType(9);
+    internal_static_jervis_server_ClassifyMeetingResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ClassifyMeetingResponse_descriptor,
+        new java.lang.String[] { "Ok", "MeetingId", "Error", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

@@ -5,7 +5,8 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 /**
  * <pre>
  * ServerGitService — git repository lifecycle (create via GitHub/GitLab
- * API, clone into the project workspace). Called by MCP tools.
+ * API, clone into the project workspace). Also hosts GPG key lookup for
+ * agent commit signing (coding agent Jobs need the client's active key).
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -109,6 +110,37 @@ public final class ServerGitServiceGrpc {
     return getGetWorkspaceStatusMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.GetGpgKeyRequest,
+      com.jervis.contracts.server.GetGpgKeyResponse> getGetGpgKeyMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "GetGpgKey",
+      requestType = com.jervis.contracts.server.GetGpgKeyRequest.class,
+      responseType = com.jervis.contracts.server.GetGpgKeyResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.GetGpgKeyRequest,
+      com.jervis.contracts.server.GetGpgKeyResponse> getGetGpgKeyMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetGpgKeyRequest, com.jervis.contracts.server.GetGpgKeyResponse> getGetGpgKeyMethod;
+    if ((getGetGpgKeyMethod = ServerGitServiceGrpc.getGetGpgKeyMethod) == null) {
+      synchronized (ServerGitServiceGrpc.class) {
+        if ((getGetGpgKeyMethod = ServerGitServiceGrpc.getGetGpgKeyMethod) == null) {
+          ServerGitServiceGrpc.getGetGpgKeyMethod = getGetGpgKeyMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetGpgKeyRequest, com.jervis.contracts.server.GetGpgKeyResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetGpgKey"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.GetGpgKeyRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.GetGpgKeyResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerGitServiceMethodDescriptorSupplier("GetGpgKey"))
+              .build();
+        }
+      }
+    }
+    return getGetGpgKeyMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -171,7 +203,8 @@ public final class ServerGitServiceGrpc {
   /**
    * <pre>
    * ServerGitService — git repository lifecycle (create via GitHub/GitLab
-   * API, clone into the project workspace). Called by MCP tools.
+   * API, clone into the project workspace). Also hosts GPG key lookup for
+   * agent commit signing (coding agent Jobs need the client's active key).
    * </pre>
    */
   public interface AsyncService {
@@ -196,13 +229,21 @@ public final class ServerGitServiceGrpc {
         io.grpc.stub.StreamObserver<com.jervis.contracts.server.WorkspaceStatusResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetWorkspaceStatusMethod(), responseObserver);
     }
+
+    /**
+     */
+    default void getGpgKey(com.jervis.contracts.server.GetGpgKeyRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GetGpgKeyResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetGpgKeyMethod(), responseObserver);
+    }
   }
 
   /**
    * Base class for the server implementation of the service ServerGitService.
    * <pre>
    * ServerGitService — git repository lifecycle (create via GitHub/GitLab
-   * API, clone into the project workspace). Called by MCP tools.
+   * API, clone into the project workspace). Also hosts GPG key lookup for
+   * agent commit signing (coding agent Jobs need the client's active key).
    * </pre>
    */
   public static abstract class ServerGitServiceImplBase
@@ -217,7 +258,8 @@ public final class ServerGitServiceGrpc {
    * A stub to allow clients to do asynchronous rpc calls to service ServerGitService.
    * <pre>
    * ServerGitService — git repository lifecycle (create via GitHub/GitLab
-   * API, clone into the project workspace). Called by MCP tools.
+   * API, clone into the project workspace). Also hosts GPG key lookup for
+   * agent commit signing (coding agent Jobs need the client's active key).
    * </pre>
    */
   public static final class ServerGitServiceStub
@@ -256,13 +298,22 @@ public final class ServerGitServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetWorkspaceStatusMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void getGpgKey(com.jervis.contracts.server.GetGpgKeyRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GetGpgKeyResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetGpgKeyMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service ServerGitService.
    * <pre>
    * ServerGitService — git repository lifecycle (create via GitHub/GitLab
-   * API, clone into the project workspace). Called by MCP tools.
+   * API, clone into the project workspace). Also hosts GPG key lookup for
+   * agent commit signing (coding agent Jobs need the client's active key).
    * </pre>
    */
   public static final class ServerGitServiceBlockingV2Stub
@@ -298,13 +349,21 @@ public final class ServerGitServiceGrpc {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getGetWorkspaceStatusMethod(), getCallOptions(), request);
     }
+
+    /**
+     */
+    public com.jervis.contracts.server.GetGpgKeyResponse getGpgKey(com.jervis.contracts.server.GetGpgKeyRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getGetGpgKeyMethod(), getCallOptions(), request);
+    }
   }
 
   /**
    * A stub to allow clients to do limited synchronous rpc calls to service ServerGitService.
    * <pre>
    * ServerGitService — git repository lifecycle (create via GitHub/GitLab
-   * API, clone into the project workspace). Called by MCP tools.
+   * API, clone into the project workspace). Also hosts GPG key lookup for
+   * agent commit signing (coding agent Jobs need the client's active key).
    * </pre>
    */
   public static final class ServerGitServiceBlockingStub
@@ -340,13 +399,21 @@ public final class ServerGitServiceGrpc {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetWorkspaceStatusMethod(), getCallOptions(), request);
     }
+
+    /**
+     */
+    public com.jervis.contracts.server.GetGpgKeyResponse getGpgKey(com.jervis.contracts.server.GetGpgKeyRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetGpgKeyMethod(), getCallOptions(), request);
+    }
   }
 
   /**
    * A stub to allow clients to do ListenableFuture-style rpc calls to service ServerGitService.
    * <pre>
    * ServerGitService — git repository lifecycle (create via GitHub/GitLab
-   * API, clone into the project workspace). Called by MCP tools.
+   * API, clone into the project workspace). Also hosts GPG key lookup for
+   * agent commit signing (coding agent Jobs need the client's active key).
    * </pre>
    */
   public static final class ServerGitServiceFutureStub
@@ -385,11 +452,20 @@ public final class ServerGitServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetWorkspaceStatusMethod(), getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.GetGpgKeyResponse> getGpgKey(
+        com.jervis.contracts.server.GetGpgKeyRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetGpgKeyMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_CREATE_REPOSITORY = 0;
   private static final int METHODID_INIT_WORKSPACE = 1;
   private static final int METHODID_GET_WORKSPACE_STATUS = 2;
+  private static final int METHODID_GET_GPG_KEY = 3;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -419,6 +495,10 @@ public final class ServerGitServiceGrpc {
         case METHODID_GET_WORKSPACE_STATUS:
           serviceImpl.getWorkspaceStatus((com.jervis.contracts.server.WorkspaceStatusRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.server.WorkspaceStatusResponse>) responseObserver);
+          break;
+        case METHODID_GET_GPG_KEY:
+          serviceImpl.getGpgKey((com.jervis.contracts.server.GetGpgKeyRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.GetGpgKeyResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -459,6 +539,13 @@ public final class ServerGitServiceGrpc {
               com.jervis.contracts.server.WorkspaceStatusRequest,
               com.jervis.contracts.server.WorkspaceStatusResponse>(
                 service, METHODID_GET_WORKSPACE_STATUS)))
+        .addMethod(
+          getGetGpgKeyMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.GetGpgKeyRequest,
+              com.jervis.contracts.server.GetGpgKeyResponse>(
+                service, METHODID_GET_GPG_KEY)))
         .build();
   }
 
@@ -510,6 +597,7 @@ public final class ServerGitServiceGrpc {
               .addMethod(getCreateRepositoryMethod())
               .addMethod(getInitWorkspaceMethod())
               .addMethod(getGetWorkspaceStatusMethod())
+              .addMethod(getGetGpgKeyMethod())
               .build();
         }
       }

@@ -58,6 +58,11 @@ class ServerChatContextServiceStub(object):
                 request_serializer=jervis_dot_server_dot_chat__context__pb2.UserTimezoneRequest.SerializeToString,
                 response_deserializer=jervis_dot_server_dot_chat__context__pb2.UserTimezoneResponse.FromString,
                 _registered_method=True)
+        self.GetActiveChatTopics = channel.unary_unary(
+                '/jervis.server.ServerChatContextService/GetActiveChatTopics',
+                request_serializer=jervis_dot_server_dot_chat__context__pb2.ActiveChatTopicsRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_chat__context__pb2.ActiveChatTopicsResponse.FromString,
+                _registered_method=True)
 
 
 class ServerChatContextServiceServicer(object):
@@ -91,6 +96,14 @@ class ServerChatContextServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetActiveChatTopics(self, request, context):
+        """Active chat session topics — last-N messages of the active chat so the
+        qualification agent knows what the user is currently working on.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ServerChatContextServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -113,6 +126,11 @@ def add_ServerChatContextServiceServicer_to_server(servicer, server):
                     servicer.GetUserTimezone,
                     request_deserializer=jervis_dot_server_dot_chat__context__pb2.UserTimezoneRequest.FromString,
                     response_serializer=jervis_dot_server_dot_chat__context__pb2.UserTimezoneResponse.SerializeToString,
+            ),
+            'GetActiveChatTopics': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetActiveChatTopics,
+                    request_deserializer=jervis_dot_server_dot_chat__context__pb2.ActiveChatTopicsRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_chat__context__pb2.ActiveChatTopicsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -227,6 +245,33 @@ class ServerChatContextService(object):
             '/jervis.server.ServerChatContextService/GetUserTimezone',
             jervis_dot_server_dot_chat__context__pb2.UserTimezoneRequest.SerializeToString,
             jervis_dot_server_dot_chat__context__pb2.UserTimezoneResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetActiveChatTopics(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerChatContextService/GetActiveChatTopics',
+            jervis_dot_server_dot_chat__context__pb2.ActiveChatTopicsRequest.SerializeToString,
+            jervis_dot_server_dot_chat__context__pb2.ActiveChatTopicsResponse.FromString,
             options,
             channel_credentials,
             insecure,

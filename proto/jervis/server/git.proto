@@ -9,11 +9,13 @@ option java_multiple_files = true;
 option java_outer_classname = "ServerGitProto";
 
 // ServerGitService — git repository lifecycle (create via GitHub/GitLab
-// API, clone into the project workspace). Called by MCP tools.
+// API, clone into the project workspace). Also hosts GPG key lookup for
+// agent commit signing (coding agent Jobs need the client's active key).
 service ServerGitService {
   rpc CreateRepository(CreateRepositoryRequest) returns (CreateRepositoryResponse);
   rpc InitWorkspace(InitWorkspaceRequest) returns (InitWorkspaceResponse);
   rpc GetWorkspaceStatus(WorkspaceStatusRequest) returns (WorkspaceStatusResponse);
+  rpc GetGpgKey(GetGpgKeyRequest) returns (GetGpgKeyResponse);
 }
 
 message CreateRepositoryRequest {
@@ -56,3 +58,22 @@ message WorkspaceStatusResponse {
   string workspace_path = 3;
   string error = 4;
 }
+
+// ── GetGpgKey ───────────────────────────────────────────────────────────
+
+message GetGpgKeyRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string gpg_key_id = 3;       // blank = active key
+}
+
+message GetGpgKeyResponse {
+  bool has_key = 1;            // false + no other fields set when no active key
+  string key_id = 2;
+  string user_name = 3;
+  string user_email = 4;
+  string private_key_armored = 5;
+  string passphrase = 6;
+  string error = 7;
+}
+
