@@ -580,37 +580,75 @@ async def _handle_answer_blocked_vertex(args, _client_id, _project_id, _kotlin_c
     return f"Failed to unblock vertex {vertex_id} — either it doesn't exist or is not blocked."
 
 
-async def _handle_finance_summary(args, client_id, _project_id, kotlin_client):
+async def _handle_finance_summary(args, client_id, _project_id, _kotlin_client):
     """Get financial summary for a client."""
     cid = args.get("client_id") or client_id
     if not cid:
         return "Error: client_id is required."
-    from_date = args.get("from_date")
-    to_date = args.get("to_date")
-    params = {"client_id": cid}
-    if from_date:
-        params["from"] = from_date
-    if to_date:
-        params["to"] = to_date
-    return await kotlin_client.get("/internal/finance/summary", params=params)
+    from app.grpc_server_client import server_finance_stub
+    from jervis.common import types_pb2
+    from jervis.server import finance_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    req = finance_pb2.GetFinancialSummaryRequest(
+        ctx=ctx,
+        client_id=cid,
+        from_date=args.get("from_date") or "",
+        to_date=args.get("to_date") or "",
+    )
+    resp = await server_finance_stub().GetSummary(req, timeout=30.0)
+    return {
+        "totalIncome": resp.total_income,
+        "totalExpenses": resp.total_expenses,
+        "totalPaymentsReceived": resp.total_payments_received,
+        "outstandingInvoices": resp.outstanding_invoices,
+        "overdueInvoices": resp.overdue_invoices,
+        "overdueAmount": resp.overdue_amount,
+        "recordCount": resp.record_count,
+    }
 
 
-async def _handle_list_invoices(args, _client_id, _project_id, kotlin_client):
+async def _handle_list_invoices(args, _client_id, _project_id, _kotlin_client):
     """List financial records for a client."""
     cid = args.get("client_id")
     if not cid:
         return "Error: client_id is required."
-    status = args.get("status")
-    type_ = args.get("type")
-    params = {"client_id": cid}
-    if status:
-        params["status"] = status
-    if type_:
-        params["type"] = type_
-    return await kotlin_client.get("/internal/finance/records", params=params)
+    from app.grpc_server_client import server_finance_stub
+    from jervis.common import types_pb2
+    from jervis.server import finance_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    req = finance_pb2.ListFinancialRecordsRequest(
+        ctx=ctx,
+        client_id=cid,
+        status=args.get("status") or "",
+        type=args.get("type") or "",
+    )
+    resp = await server_finance_stub().ListRecords(req, timeout=30.0)
+    return [
+        {
+            "id": r.id,
+            "type": r.type,
+            "amount": r.amount,
+            "currency": r.currency,
+            "amountCzk": r.amount_czk,
+            "invoiceNumber": r.invoice_number or None,
+            "variableSymbol": r.variable_symbol or None,
+            "counterpartyName": r.counterparty_name or None,
+            "status": r.status,
+            "issueDate": r.issue_date or None,
+            "dueDate": r.due_date or None,
+            "description": r.description,
+        }
+        for r in resp.records
+    ]
 
 
-async def _handle_record_payment(args, client_id, _project_id, kotlin_client):
+async def _handle_record_payment(args, client_id, _project_id, _kotlin_client):
     """Record a payment and attempt auto-matching."""
     import datetime
 
@@ -620,31 +658,62 @@ async def _handle_record_payment(args, client_id, _project_id, kotlin_client):
     amount = args.get("amount")
     if not amount:
         return "Error: amount is required."
-    payload = {
-        "clientId": cid,
-        "type": "PAYMENT",
-        "amount": float(amount),
-        "amountCzk": float(amount),
-        "variableSymbol": args.get("variable_symbol"),
-        "counterpartyName": args.get("counterparty_name"),
-        "counterpartyAccount": args.get("counterparty_account"),
-        "paymentDate": args.get("payment_date") or datetime.date.today().isoformat(),
-        "sourceUrn": "chat",
-        "description": args.get("description", ""),
-    }
-    return await kotlin_client.post("/internal/finance/record", json=payload)
+    from app.grpc_server_client import server_finance_stub
+    from jervis.common import types_pb2
+    from jervis.server import finance_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    req = finance_pb2.CreateFinancialRecordRequest(
+        ctx=ctx,
+        client_id=cid,
+        type="PAYMENT",
+        amount=float(amount),
+        amount_czk=float(amount),
+        variable_symbol=args.get("variable_symbol") or "",
+        counterparty_name=args.get("counterparty_name") or "",
+        counterparty_account=args.get("counterparty_account") or "",
+        payment_date=args.get("payment_date") or datetime.date.today().isoformat(),
+        source_urn="chat",
+        description=args.get("description", ""),
+    )
+    resp = await server_finance_stub().CreateRecord(req, timeout=30.0)
+    return {"status": "ok", "id": resp.id, "matched": resp.matched}
 
 
-async def _handle_list_contracts(args, client_id, _project_id, kotlin_client):
+async def _handle_list_contracts(args, client_id, _project_id, _kotlin_client):
     """List contracts for a client."""
     cid = args.get("client_id") or client_id
-    active_only = args.get("active_only", True)
-    params = {}
-    if cid:
-        params["client_id"] = cid
-    if active_only:
-        params["active_only"] = "true"
-    return await kotlin_client.get("/internal/finance/contracts", params=params)
+    active_only = bool(args.get("active_only", True))
+    from app.grpc_server_client import server_finance_stub
+    from jervis.common import types_pb2
+    from jervis.server import finance_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    req = finance_pb2.ListContractsRequest(
+        ctx=ctx,
+        client_id=cid or "",
+        active_only=active_only,
+    )
+    resp = await server_finance_stub().ListContracts(req, timeout=30.0)
+    return [
+        {
+            "id": c.id,
+            "clientId": c.client_id,
+            "counterparty": c.counterparty,
+            "type": c.type,
+            "rate": c.rate,
+            "rateUnit": c.rate_unit,
+            "currency": c.currency,
+            "startDate": c.start_date,
+            "endDate": c.end_date or None,
+            "status": c.status,
+        }
+        for c in resp.contracts
+    ]
 
 
 async def _handle_log_time(args, client_id, _project_id, _kotlin_client):

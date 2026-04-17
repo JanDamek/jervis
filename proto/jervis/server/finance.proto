@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerFinanceProto";
+
+// ServerFinanceService exposes the per-client financial surface consumed
+// by the orchestrator's chat tools (summary, list records, record payment,
+// list contracts). Contract creation and overdue re-scan are not migrated
+// because they have no Python consumer.
+service ServerFinanceService {
+  rpc GetSummary(GetFinancialSummaryRequest) returns (GetFinancialSummaryResponse);
+  rpc ListRecords(ListFinancialRecordsRequest) returns (ListFinancialRecordsResponse);
+  rpc CreateRecord(CreateFinancialRecordRequest) returns (CreateFinancialRecordResponse);
+  rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
+}
+
+// ── Summary ──────────────────────────────────────────────────────────────
+
+message GetFinancialSummaryRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  // Optional RFC3339 date range (YYYY-MM-DD). Empty = unbounded.
+  string from_date = 3;
+  string to_date = 4;
+}
+
+message GetFinancialSummaryResponse {
+  double total_income = 1;
+  double total_expenses = 2;
+  double total_payments_received = 3;
+  int32 outstanding_invoices = 4;
+  int32 overdue_invoices = 5;
+  double overdue_amount = 6;
+  int32 record_count = 7;
+}
+
+// ── List records ─────────────────────────────────────────────────────────
+
+message ListFinancialRecordsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  // Optional server-side filters. Empty string = no filter.
+  string status = 3;   // FinancialStatus enum name
+  string type = 4;     // FinancialType enum name
+}
+
+message ListFinancialRecordsResponse {
+  repeated FinancialRecord records = 1;
+}
+
+message FinancialRecord {
+  string id = 1;
+  string type = 2;           // FinancialType enum name
+  double amount = 3;
+  string currency = 4;
+  double amount_czk = 5;
+  string invoice_number = 6;
+  string variable_symbol = 7;
+  string counterparty_name = 8;
+  string status = 9;         // FinancialStatus enum name
+  string issue_date = 10;    // YYYY-MM-DD; empty if absent
+  string due_date = 11;
+  string description = 12;
+}
+
+// ── Create record ────────────────────────────────────────────────────────
+
+message CreateFinancialRecordRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;        // optional
+  string type = 4;              // FinancialType enum name
+  double amount = 5;
+  string currency = 6;          // blank = CZK
+  double amount_czk = 7;        // 0 = fallback to amount
+  // Optional pricing / identification fields. Blank / 0 = omit.
+  double vat_rate = 8;
+  double vat_amount = 9;
+  string invoice_number = 10;
+  string variable_symbol = 11;
+  string counterparty_name = 12;
+  string counterparty_ico = 13;
+  string counterparty_account = 14;
+  string issue_date = 15;
+  string due_date = 16;
+  string payment_date = 17;
+  string source_urn = 18;       // blank → "orchestrator"
+  string description = 19;
+}
+
+message CreateFinancialRecordResponse {
+  string id = 1;
+  bool matched = 2;
+}
+
+// ── List contracts ───────────────────────────────────────────────────────
+
+message ListContractsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;    // optional; empty + active_only=true => all active
+  bool active_only = 3;
+}
+
+message ListContractsResponse {
+  repeated Contract contracts = 1;
+}
+
+message Contract {
+  string id = 1;
+  string client_id = 2;
+  string counterparty = 3;
+  string type = 4;          // ContractType enum name
+  double rate = 5;
+  string rate_unit = 6;     // RateUnit enum name
+  string currency = 7;
+  string start_date = 8;    // YYYY-MM-DD
+  string end_date = 9;      // blank if open-ended
+  string status = 10;       // ContractStatus enum name
+}

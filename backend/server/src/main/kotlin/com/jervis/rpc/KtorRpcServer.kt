@@ -40,7 +40,6 @@ import com.jervis.git.rpc.GpgCertificateRpcImpl
 import com.jervis.git.rpc.JobLogsRpcImpl
 import com.jervis.guidelines.GuidelinesRpcImpl
 import com.jervis.meeting.installMeetingHelperApi
-import com.jervis.rpc.internal.installInternalFinanceApi
 import com.jervis.rpc.internal.installInternalAttachmentApi
 import com.jervis.meeting.installWatchMeetingApi
 import com.jervis.preferences.DeviceTokenRpcImpl
@@ -141,7 +140,6 @@ class KtorRpcServer(
     private val apnsPushService: com.jervis.infrastructure.notification.ApnsPushService,
     private val preferenceService: com.jervis.preferences.PreferenceService,
     private val pythonOrchestratorClient: com.jervis.agent.PythonOrchestratorClient,
-    private val contractRepository: com.jervis.finance.ContractRepository,
     private val gitRepositoryService: com.jervis.git.service.GitRepositoryService,
     private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
     private val pendingTaskService: com.jervis.task.PendingTaskService,
@@ -177,7 +175,7 @@ class KtorRpcServer(
                             installVoiceChatApi(taskRepository, taskService, whisperRestClient, whisperProperties, chatService, ttsProperties)
                             installWatchMeetingApi(meetingRpcImpl)
                             installMeetingHelperApi(meetingHelperService)
-                            installInternalFinanceApi(financialService, contractRepository)
+                            // Finance surface migrated to gRPC (jervis.server.ServerFinanceService).
                             // Time tracking + proactive triggers migrated to gRPC
                             // (jervis.server.Server{TimeTracking,Proactive}Service).
                             installInternalAttachmentApi(emailMessageIndexRepository, directoryStructureService)

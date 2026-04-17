@@ -19,6 +19,7 @@ from jervis.server import (
     chat_approval_pb2_grpc,
     chat_context_pb2_grpc,
     filter_rules_pb2_grpc,
+    finance_pb2_grpc,
     guidelines_pb2_grpc,
     meetings_pb2_grpc,
     proactive_pb2_grpc,
@@ -38,6 +39,7 @@ _meetings_stub: Optional[meetings_pb2_grpc.ServerMeetingsServiceStub] = None
 _proactive_stub: Optional[proactive_pb2_grpc.ServerProactiveServiceStub] = None
 _time_tracking_stub: Optional[time_tracking_pb2_grpc.ServerTimeTrackingServiceStub] = None
 _urgency_stub: Optional[urgency_pb2_grpc.ServerUrgencyServiceStub] = None
+_finance_stub: Optional[finance_pb2_grpc.ServerFinanceServiceStub] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -120,3 +122,10 @@ def server_chat_approval_stub() -> chat_approval_pb2_grpc.ServerChatApprovalServ
     if _chat_approval_stub is None:
         _chat_approval_stub = chat_approval_pb2_grpc.ServerChatApprovalServiceStub(_get_channel())
     return _chat_approval_stub
+
+
+def server_finance_stub() -> finance_pb2_grpc.ServerFinanceServiceStub:
+    global _finance_stub
+    if _finance_stub is None:
+        _finance_stub = finance_pb2_grpc.ServerFinanceServiceStub(_get_channel())
+    return _finance_stub
