@@ -19,7 +19,6 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalEnvironmentApi
-import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalProjectManagementApi
 import com.jervis.rpc.internal.installInternalMeetingVideoApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
@@ -189,7 +188,8 @@ class KtorRpcServer(
                             // Guidelines + filter-rules + urgency migrated to gRPC
                             // (jervis.server.Server{Guidelines,FilterRules,Urgency}Service).
                             installInternalEnvironmentApi(environmentService, environmentK8sService)
-                            installInternalOpenRouterApi(openRouterSettingsRpcImpl)
+                            // OpenRouter settings + model-stats persistence migrated to gRPC
+                            // (jervis.server.ServerOpenRouterSettingsService).
                             installInternalProjectManagementApi(clientService, projectService, connectionService, projectTemplateService)
                             // Git repo + workspace ops migrated to gRPC (jervis.server.ServerGitService).
                             installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)

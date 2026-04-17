@@ -6,12 +6,15 @@ are centralized. Cached for 60s to avoid hammering the Kotlin server.
 
 from __future__ import annotations
 
+import json as _json
 import logging
 import time
 
-import httpx
+import grpc
 
-from .config import settings
+from jervis.server import openrouter_settings_pb2
+
+from .grpc_server_client import build_request_context, server_openrouter_stub
 
 logger = logging.getLogger("ollama-router.openrouter")
 
@@ -91,17 +94,22 @@ async def _fetch_openrouter_settings() -> dict | None:
     if _openrouter_settings_cache is not None and (now - _openrouter_settings_ts) < _OPENROUTER_SETTINGS_TTL:
         return _openrouter_settings_cache
 
-    url = f"{settings.kotlin_server_url.rstrip('/')}/internal/openrouter-settings"
-
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            _openrouter_settings_cache = resp.json()
-            _openrouter_settings_ts = now
-            logger.debug("Fetched OpenRouter settings: %d queues",
-                         len(_openrouter_settings_cache.get("modelQueues", [])))
-            return _openrouter_settings_cache
+        stub = server_openrouter_stub()
+        req = openrouter_settings_pb2.GetOpenRouterSettingsRequest(
+            ctx=build_request_context()
+        )
+        resp = await stub.GetSettings(req, timeout=5.0)
+        _openrouter_settings_cache = _json.loads(resp.body_json)
+        _openrouter_settings_ts = now
+        logger.debug(
+            "Fetched OpenRouter settings: %d queues",
+            len(_openrouter_settings_cache.get("modelQueues", [])),
+        )
+        return _openrouter_settings_cache
+    except grpc.aio.AioRpcError as e:
+        logger.warning("Failed to fetch OpenRouter settings: gRPC %s: %s", e.code(), e.details())
+        return _openrouter_settings_cache  # Return stale cache if available
     except Exception as e:
         logger.warning("Failed to fetch OpenRouter settings: %s", e)
         return _openrouter_settings_cache  # Return stale cache if available
@@ -439,14 +447,19 @@ async def persist_stats() -> None:
     stats = get_model_stats()
     if not stats:
         return
-    url = f"{settings.kotlin_server_url.rstrip('/')}/internal/openrouter-model-stats"
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, json=stats)
-            if resp.status_code == 200:
-                logger.info("Persisted stats for %d models to MongoDB", len(stats))
-            else:
-                logger.warning("Failed to persist stats: HTTP %d", resp.status_code)
+        stub = server_openrouter_stub()
+        req = openrouter_settings_pb2.PersistModelStatsRequest(
+            ctx=build_request_context(),
+            stats_json=_json.dumps(stats),
+        )
+        resp = await stub.PersistModelStats(req, timeout=10.0)
+        if resp.ok:
+            logger.info("Persisted stats for %d models to MongoDB", resp.models)
+        else:
+            logger.warning("Router-side stats persist returned ok=false")
+    except grpc.aio.AioRpcError as e:
+        logger.warning("Failed to persist stats: gRPC %s: %s", e.code(), e.details())
     except Exception as e:
         logger.warning("Failed to persist stats: %s", e)
 

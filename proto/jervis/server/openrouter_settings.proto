@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerOpenRouterSettingsProto";
+
+// ServerOpenRouterSettingsService is a reverse callback surface: the
+// ollama-router (router) calls the Kotlin server to (a) fetch settings
+// including model queues + persisted per-model stats, and (b) push back
+// in-memory stats periodically for MongoDB persistence.
+//
+// Payloads are opaque JSON strings because the router never inspects
+// deeply-nested DTO trees beyond a handful of well-known top-level keys
+// (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
+// mirroring the entire OpenRouterSettingsDto tree into proto, which the
+// contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
+// explicitly advises against for deep DTO trees with passthrough consumers.
+service ServerOpenRouterSettingsService {
+  // Fetch OpenRouter settings JSON (mirrors the former
+  // GET /internal/openrouter-settings).
+  rpc GetSettings(GetOpenRouterSettingsRequest)
+      returns (GetOpenRouterSettingsResponse);
+
+  // Persist per-model call stats pushed from the router's in-memory
+  // tracker (mirrors the former POST /internal/openrouter-model-stats).
+  //
+  // stats_json shape: {"<model_id>": {"call_count": N,
+  //   "total_time_s": F, "total_input_tokens": N, "total_output_tokens": N,
+  //   "tokens_per_s": F, "last_call": F}, ...}
+  rpc PersistModelStats(PersistModelStatsRequest)
+      returns (PersistModelStatsResponse);
+}
+
+message GetOpenRouterSettingsRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message GetOpenRouterSettingsResponse {
+  // OpenRouterSettingsDto serialized to JSON. See backend Kotlin DTO for
+  // the authoritative shape.
+  string body_json = 1;
+}
+
+message PersistModelStatsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string stats_json = 2;
+}
+
+message PersistModelStatsResponse {
+  bool ok = 1;
+  // Count of models for which stats were applied (mirrors the former
+  // "models": N HTTP response field).
+  int32 models = 2;
+}
