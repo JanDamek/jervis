@@ -1451,31 +1451,35 @@ async def environment_list(client_id: str = "") -> str:
     Args:
         client_id: Filter by client ID (leave empty for all environments)
     """
-    params = {}
-    if client_id:
-        params["clientId"] = client_id
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(
-            f"{settings.kotlin_server_url}/internal/environments",
-            params=params,
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().ListEnvironments(
+            environment_pb2.ListEnvironmentsRequest(ctx=ctx, client_id=client_id or ""),
+            timeout=30.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        envs = resp.json()
-        if not envs:
-            return "No environments found."
-        lines = []
-        for env in envs:
-            components = env.get("components", [])
-            infra = sum(1 for c in components if c.get("type") != "PROJECT")
-            apps = sum(1 for c in components if c.get("type") == "PROJECT")
-            tier = env.get("tier", "DEV")
-            lines.append(
-                f"- {env['name']} [{tier}] (id={env['id']})\n"
-                f"  namespace={env['namespace']}, state={env['state']}\n"
-                f"  components: {len(components)} ({infra} infra, {apps} app)"
-            )
-        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    envs = json.loads(resp.items_json)
+    if not envs:
+        return "No environments found."
+    lines = []
+    for env in envs:
+        components = env.get("components", [])
+        infra = sum(1 for c in components if c.get("type") != "PROJECT")
+        apps = sum(1 for c in components if c.get("type") == "PROJECT")
+        tier = env.get("tier", "DEV")
+        lines.append(
+            f"- {env['name']} [{tier}] (id={env['id']})\n"
+            f"  namespace={env['namespace']}, state={env['state']}\n"
+            f"  components: {len(components)} ({infra} infra, {apps} app)"
+        )
+    return "\n".join(lines)
 
 
 @mcp.tool
@@ -1488,55 +1492,62 @@ async def environment_get(environment_id: str) -> str:
     Args:
         environment_id: The environment ID
     """
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}",
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().GetEnvironment(
+            environment_pb2.GetEnvironmentRequest(ctx=ctx, environment_id=environment_id),
+            timeout=30.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    env = json.loads(resp.body_json)
+    lines = [
+        f"Environment: {env['name']}",
+        f"ID: {env['id']}",
+        f"Tier: {env.get('tier', 'DEV')}",
+        f"Namespace: {env['namespace']}",
+        f"State: {env['state']}",
+        f"Client: {env['clientId']}",
+    ]
+    if env.get("groupId"):
+        lines.append(f"Group: {env['groupId']}")
+    if env.get("projectId"):
+        lines.append(f"Project: {env['projectId']}")
+    if env.get("description"):
+        lines.append(f"Description: {env['description']}")
+    lines.append(f"Storage: {env.get('storageSizeGi', 5)}Gi")
 
-        lines = [
-            f"Environment: {env['name']}",
-            f"ID: {env['id']}",
-            f"Tier: {env.get('tier', 'DEV')}",
-            f"Namespace: {env['namespace']}",
-            f"State: {env['state']}",
-            f"Client: {env['clientId']}",
-        ]
-        if env.get("groupId"):
-            lines.append(f"Group: {env['groupId']}")
-        if env.get("projectId"):
-            lines.append(f"Project: {env['projectId']}")
-        if env.get("description"):
-            lines.append(f"Description: {env['description']}")
-        lines.append(f"Storage: {env.get('storageSizeGi', 5)}Gi")
+    components = env.get("components", [])
+    if components:
+        lines.append(f"\nComponents ({len(components)}):")
+        for comp in components:
+            state_str = f" [{comp.get('componentState', 'PENDING')}]" if comp.get("componentState") else ""
+            img = comp.get("image") or "(no image)"
+            lines.append(f"  - {comp['name']} ({comp['type']}){state_str}")
+            lines.append(f"    image: {img}")
+            if comp.get("ports"):
+                ports_str = ", ".join(
+                    f"{p['containerPort']}" + (f":{p['servicePort']}" if p.get('servicePort') else "")
+                    for p in comp["ports"]
+                )
+                lines.append(f"    ports: {ports_str}")
+            if comp.get("envVars"):
+                lines.append(f"    env: {len(comp['envVars'])} vars")
+            if comp.get("sourceRepo"):
+                lines.append(f"    source: {comp['sourceRepo']}@{comp.get('sourceBranch', 'main')}")
+            if comp.get("dockerfilePath"):
+                lines.append(f"    dockerfile: {comp['dockerfilePath']}")
 
-        components = env.get("components", [])
-        if components:
-            lines.append(f"\nComponents ({len(components)}):")
-            for comp in components:
-                state_str = f" [{comp.get('componentState', 'PENDING')}]" if comp.get("componentState") else ""
-                img = comp.get("image") or "(no image)"
-                lines.append(f"  - {comp['name']} ({comp['type']}){state_str}")
-                lines.append(f"    image: {img}")
-                if comp.get("ports"):
-                    ports_str = ", ".join(
-                        f"{p['containerPort']}" + (f":{p['servicePort']}" if p.get('servicePort') else "")
-                        for p in comp["ports"]
-                    )
-                    lines.append(f"    ports: {ports_str}")
-                if comp.get("envVars"):
-                    lines.append(f"    env: {len(comp['envVars'])} vars")
-                if comp.get("sourceRepo"):
-                    lines.append(f"    source: {comp['sourceRepo']}@{comp.get('sourceBranch', 'main')}")
-                if comp.get("dockerfilePath"):
-                    lines.append(f"    dockerfile: {comp['dockerfilePath']}")
+    if env.get("agentInstructions"):
+        lines.append(f"\nAgent Instructions:\n{env['agentInstructions']}")
 
-        if env.get("agentInstructions"):
-            lines.append(f"\nAgent Instructions:\n{env['agentInstructions']}")
-
-        return "\n".join(lines)
+    return "\n".join(lines)
 
 
 @mcp.tool
@@ -1563,31 +1574,36 @@ async def environment_create(
         agent_instructions: Free-text instructions for agents about this environment
         storage_size_gi: PVC storage size in Gi (default 5)
     """
-    body = {
-        "clientId": client_id,
-        "name": name,
-        "tier": tier.upper(),
-        "description": description or None,
-        "agentInstructions": agent_instructions or None,
-        "storageSizeGi": storage_size_gi,
-    }
-    if namespace:
-        body["namespace"] = namespace
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/environments",
-            json=body,
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().CreateEnvironment(
+            environment_pb2.CreateEnvironmentRequest(
+                ctx=ctx,
+                client_id=client_id,
+                name=name,
+                namespace=namespace or "",
+                tier=tier.upper(),
+                description=description or "",
+                agent_instructions=agent_instructions or "",
+                storage_size_gi=storage_size_gi,
+            ),
+            timeout=30.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
-        return (
-            f"Environment created: {env['name']} (id={env['id']})\n"
-            f"Namespace: {env['namespace']}\n"
-            f"State: {env['state']}\n"
-            f"Use environment_add_component to add infrastructure, then environment_deploy to provision."
-        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    env = json.loads(resp.body_json)
+    return (
+        f"Environment created: {env['name']} (id={env['id']})\n"
+        f"Namespace: {env['namespace']}\n"
+        f"State: {env['state']}\n"
+        f"Use environment_add_component to add infrastructure, then environment_deploy to provision."
+    )
 
 
 @mcp.tool
@@ -1599,13 +1615,21 @@ async def environment_delete(environment_id: str) -> str:
     Args:
         environment_id: The environment ID to delete
     """
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.delete(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}",
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        await server_environment_stub().DeleteEnvironment(
+            environment_pb2.DeleteEnvironmentRequest(ctx=ctx, environment_id=environment_id),
+            timeout=60.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        return f"Environment {environment_id} deleted."
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    return f"Environment {environment_id} deleted."
 
 
 @mcp.tool
@@ -1641,44 +1665,47 @@ async def environment_add_component(
         source_branch: Git branch (for PROJECT type)
         dockerfile_path: Path to Dockerfile in repo (for PROJECT type)
     """
-    body: dict = {
-        "name": name,
-        "type": component_type.upper(),
-    }
-    if image:
-        body["image"] = image
-    if version:
-        body["version"] = version
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
     try:
-        extra_env = json.loads(env_vars) if env_vars and env_vars != "{}" else None
-        if extra_env:
-            body["envVars"] = extra_env
+        extra_env = json.loads(env_vars) if env_vars and env_vars != "{}" else {}
     except json.JSONDecodeError:
         return f"Error: Invalid JSON for env_vars: {env_vars}"
-    if source_repo:
-        body["sourceRepo"] = source_repo
-    if source_branch:
-        body["sourceBranch"] = source_branch
-    if dockerfile_path:
-        body["dockerfilePath"] = dockerfile_path
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/components",
-            json=body,
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().AddComponent(
+            environment_pb2.AddComponentRequest(
+                ctx=ctx,
+                environment_id=environment_id,
+                name=name,
+                type=component_type.upper(),
+                image=image or "",
+                version=version or "",
+                env_vars=extra_env,
+                source_repo=source_repo or "",
+                source_branch=source_branch or "",
+                dockerfile_path=dockerfile_path or "",
+                start_order_auto=True,
+            ),
+            timeout=30.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
-        comp = next((c for c in env.get("components", []) if c["name"] == name), None)
-        if comp:
-            return (
-                f"Component added: {comp['name']} ({comp['type']})\n"
-                f"Image: {comp.get('image', '(none)')}\n"
-                f"Ports: {', '.join(str(p['containerPort']) for p in comp.get('ports', []))}\n"
-                f"Total components: {len(env['components'])}"
-            )
-        return f"Component added. Total components: {len(env.get('components', []))}"
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    env = json.loads(resp.body_json)
+    comp = next((c for c in env.get("components", []) if c["name"] == name), None)
+    if comp:
+        return (
+            f"Component added: {comp['name']} ({comp['type']})\n"
+            f"Image: {comp.get('image', '(none)')}\n"
+            f"Ports: {', '.join(str(p['containerPort']) for p in comp.get('ports', []))}\n"
+            f"Total components: {len(env['components'])}"
+        )
+    return f"Component added. Total components: {len(env.get('components', []))}"
 
 
 @mcp.tool
@@ -1708,37 +1735,41 @@ async def environment_configure(
         source_branch: Git branch
         dockerfile_path: Path to Dockerfile
     """
-    body: dict = {}
-    if image:
-        body["image"] = image
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
     try:
-        extra_env = json.loads(env_vars) if env_vars and env_vars != "{}" else None
-        if extra_env:
-            body["envVars"] = extra_env
+        extra_env = json.loads(env_vars) if env_vars and env_vars != "{}" else {}
+        has_env_vars = bool(extra_env)
     except json.JSONDecodeError:
         return f"Error: Invalid JSON for env_vars: {env_vars}"
-    if cpu_limit:
-        body["cpuLimit"] = cpu_limit
-    if memory_limit:
-        body["memoryLimit"] = memory_limit
-    if source_repo:
-        body["sourceRepo"] = source_repo
-    if source_branch:
-        body["sourceBranch"] = source_branch
-    if dockerfile_path:
-        body["dockerfilePath"] = dockerfile_path
-
-    if not body:
+    if not any([image, has_env_vars, cpu_limit, memory_limit, source_repo, source_branch, dockerfile_path]):
         return "Error: No configuration changes provided."
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.put(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/components/{component_name}",
-            json=body,
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        await server_environment_stub().ConfigureComponent(
+            environment_pb2.ConfigureComponentRequest(
+                ctx=ctx,
+                environment_id=environment_id,
+                component_name=component_name,
+                image=image or "",
+                env_vars=extra_env,
+                has_env_vars=has_env_vars,
+                cpu_limit=cpu_limit or "",
+                memory_limit=memory_limit or "",
+                source_repo=source_repo or "",
+                source_branch=source_branch or "",
+                dockerfile_path=dockerfile_path or "",
+            ),
+            timeout=30.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        return f"Component '{component_name}' updated."
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    return f"Component '{component_name}' updated."
 
 
 @mcp.tool
@@ -1751,19 +1782,27 @@ async def environment_deploy(environment_id: str) -> str:
     Args:
         environment_id: The environment ID to deploy
     """
-    async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/deploy",
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().DeployEnvironment(
+            environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
+            timeout=120.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
-        return (
-            f"Environment deployed: {env['name']}\n"
-            f"Namespace: {env['namespace']}\n"
-            f"State: {env['state']}\n"
-            f"Use get_namespace_status('{env['namespace']}') to check health."
-        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    env = json.loads(resp.body_json)
+    return (
+        f"Environment deployed: {env['name']}\n"
+        f"Namespace: {env['namespace']}\n"
+        f"State: {env['state']}\n"
+        f"Use get_namespace_status('{env['namespace']}') to check health."
+    )
 
 
 @mcp.tool
@@ -1776,14 +1815,22 @@ async def environment_stop(environment_id: str) -> str:
     Args:
         environment_id: The environment ID to stop
     """
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/stop",
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().StopEnvironment(
+            environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
+            timeout=60.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
-        return f"Environment stopped: {env['name']} (state={env['state']})"
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    env = json.loads(resp.body_json)
+    return f"Environment stopped: {env['name']} (state={env['state']})"
 
 
 @mcp.tool
@@ -1795,27 +1842,34 @@ async def environment_status(environment_id: str) -> str:
     Args:
         environment_id: The environment ID
     """
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/status",
-        )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        status = resp.json()
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-        lines = [
-            f"Environment Status:",
-            f"Namespace: {status['namespace']}",
-            f"State: {status['state']}",
-        ]
-        for comp in status.get("componentStatuses", []):
-            ready = "READY" if comp.get("ready") else "NOT READY"
-            avail = comp.get("availableReplicas", 0)
-            total = comp.get("replicas", 0)
-            lines.append(f"  - {comp['name']}: {ready} ({avail}/{total})")
-            if comp.get("message"):
-                lines.append(f"    {comp['message']}")
-        return "\n".join(lines)
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().GetEnvironmentStatus(
+            environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
+            timeout=30.0,
+        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    status = json.loads(resp.body_json)
+    lines = [
+        f"Environment Status:",
+        f"Namespace: {status['namespace']}",
+        f"State: {status['state']}",
+    ]
+    for comp in status.get("componentStatuses", []):
+        ready = "READY" if comp.get("ready") else "NOT READY"
+        avail = comp.get("availableReplicas", 0)
+        total = comp.get("replicas", 0)
+        lines.append(f"  - {comp['name']}: {ready} ({avail}/{total})")
+        if comp.get("message"):
+            lines.append(f"    {comp['message']}")
+    return "\n".join(lines)
 
 
 @mcp.tool
@@ -1828,14 +1882,22 @@ async def environment_sync(environment_id: str) -> str:
     Args:
         environment_id: The environment ID to sync
     """
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/sync",
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().SyncEnvironment(
+            environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
+            timeout=60.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
-        return f"Environment synced: {env['name']} (state={env['state']})"
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    env = json.loads(resp.body_json)
+    return f"Environment synced: {env['name']} (state={env['state']})"
 
 
 @mcp.tool
@@ -1863,31 +1925,35 @@ async def environment_clone(
         target_group_id: Assign clone to a group (uses source group if empty)
         target_project_id: Assign clone to a project (uses source project if empty)
     """
-    body: dict = {"newName": new_name}
-    if new_namespace:
-        body["newNamespace"] = new_namespace
-    if new_tier:
-        body["newTier"] = new_tier.upper()
-    if target_client_id:
-        body["targetClientId"] = target_client_id
-    if target_group_id:
-        body["targetGroupId"] = target_group_id
-    if target_project_id:
-        body["targetProjectId"] = target_project_id
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/clone",
-            json=body,
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().CloneEnvironment(
+            environment_pb2.CloneEnvironmentRequest(
+                ctx=ctx,
+                environment_id=environment_id,
+                new_name=new_name,
+                new_namespace=new_namespace or "",
+                new_tier=(new_tier or "").upper(),
+                target_client_id=target_client_id or "",
+                target_group_id=target_group_id or "",
+                target_project_id=target_project_id or "",
+            ),
+            timeout=30.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
-        return (
-            f"Environment cloned: {env['name']} (id={env['id']})\n"
-            f"Tier: {env.get('tier', 'DEV')}, Namespace: {env['namespace']}\n"
-            f"State: {env['state']} — use environment_deploy to provision."
-        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    env = json.loads(resp.body_json)
+    return (
+        f"Environment cloned: {env['name']} (id={env['id']})\n"
+        f"Tier: {env.get('tier', 'DEV')}, Namespace: {env['namespace']}\n"
+        f"State: {env['state']} — use environment_deploy to provision."
+    )
 
 
 @mcp.tool
@@ -1913,23 +1979,33 @@ async def environment_add_property_mapping(
         target_component: ID of the infrastructure component (source of connection info)
         value_template: Value template with placeholders ({host}, {port}, {env:VAR_NAME})
     """
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/property-mappings",
-            json={
-                "projectComponentId": project_component,
-                "propertyName": property_name,
-                "targetComponentId": target_component,
-                "valueTemplate": value_template,
-            },
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().AddPropertyMapping(
+            environment_pb2.AddPropertyMappingRequest(
+                ctx=ctx,
+                environment_id=environment_id,
+                project_component_id=project_component,
+                property_name=property_name,
+                target_component_id=target_component,
+                value_template=value_template,
+            ),
+            timeout=30.0,
         )
-        if resp.status_code == 409:
+    except Exception as e:
+        msg = str(e)
+        if "already exists" in msg:
             return f"Mapping for '{property_name}' already exists."
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
-        count = len(env.get("propertyMappings", []))
-        return f"Property mapping added: {property_name} → {target_component}. Total mappings: {count}."
+        return f"Error: {msg[:300]}"
+    env = json.loads(resp.body_json)
+    count = len(env.get("propertyMappings", []))
+    return f"Property mapping added: {property_name} → {target_component}. Total mappings: {count}."
 
 
 @mcp.tool
@@ -1943,20 +2019,27 @@ async def environment_auto_suggest_mappings(environment_id: str) -> str:
     Args:
         environment_id: The environment ID
     """
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/property-mappings/auto-suggest",
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().AutoSuggestPropertyMappings(
+            environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
+            timeout=30.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
-        added = resp.headers.get("X-Mappings-Added", "?")
-        total = len(env.get("propertyMappings", []))
-        return (
-            f"Auto-suggested mappings for '{env['name']}'.\n"
-            f"Added: {added}, Total: {total}.\n"
-            f"Use environment_deploy to provision and resolve values."
-        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    env = json.loads(resp.body_json)
+    total = len(env.get("propertyMappings", []))
+    return (
+        f"Auto-suggested mappings for '{env['name']}'.\n"
+        f"Added: {resp.mappings_added}, Total: {total}.\n"
+        f"Use environment_deploy to provision and resolve values."
+    )
 
 
 @mcp.tool
@@ -1977,23 +2060,33 @@ async def environment_discover_namespace(
         name: Optional human-readable name (defaults to env-{namespace})
         tier: Environment tier — DEV, STAGING, PROD (default: DEV)
     """
-    async with httpx.AsyncClient(timeout=60) as client:
-        payload = {"namespace": namespace, "clientId": client_id, "tier": tier}
-        if name:
-            payload["name"] = name
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/environments/discover",
-            json=payload,
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().DiscoverNamespace(
+            environment_pb2.DiscoverNamespaceRequest(
+                ctx=ctx,
+                namespace=namespace,
+                client_id=client_id,
+                name=name or "",
+                tier=tier,
+            ),
+            timeout=60.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
-        comp_count = len(env.get("components", []))
-        return (
-            f"Discovered namespace '{namespace}' → environment '{env['name']}' (id={env['id']}).\n"
-            f"Found {comp_count} components. State: {env.get('state', '?')}.\n"
-            f"Agent RBAC configured for namespace."
-        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    env = json.loads(resp.body_json)
+    comp_count = len(env.get("components", []))
+    return (
+        f"Discovered namespace '{namespace}' → environment '{env['name']}' (id={env['id']}).\n"
+        f"Found {comp_count} components. State: {env.get('state', '?')}.\n"
+        f"Agent RBAC configured for namespace."
+    )
 
 
 @mcp.tool
@@ -2016,27 +2109,34 @@ async def environment_replicate(
         new_tier: Override tier (DEV/STAGING/PROD, defaults to source tier)
         target_client_id: Optional different client ID for the clone
     """
-    async with httpx.AsyncClient(timeout=120) as client:
-        payload: dict = {"newName": new_name}
-        if new_namespace:
-            payload["newNamespace"] = new_namespace
-        if new_tier:
-            payload["newTier"] = new_tier
-        if target_client_id:
-            payload["targetClientId"] = target_client_id
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/replicate",
-            json=payload,
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().ReplicateEnvironment(
+            environment_pb2.ReplicateEnvironmentRequest(
+                ctx=ctx,
+                environment_id=environment_id,
+                new_name=new_name,
+                new_namespace=new_namespace or "",
+                new_tier=new_tier or "",
+                target_client_id=target_client_id or "",
+            ),
+            timeout=120.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
-        comp_count = len(env.get("components", []))
-        return (
-            f"Replicated environment → '{env['name']}' (id={env['id']}).\n"
-            f"Namespace: {env.get('namespace')}, {comp_count} components deployed.\n"
-            f"State: {env.get('state', '?')}."
-        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    env = json.loads(resp.body_json)
+    comp_count = len(env.get("components", []))
+    return (
+        f"Replicated environment → '{env['name']}' (id={env['id']}).\n"
+        f"Namespace: {env.get('namespace')}, {comp_count} components deployed.\n"
+        f"State: {env.get('state', '?')}."
+    )
 
 
 @mcp.tool
@@ -2050,20 +2150,28 @@ async def environment_sync_from_k8s(environment_id: str) -> str:
     Args:
         environment_id: The environment ID to sync
     """
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/sync-from-k8s",
+    from app.grpc_clients import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_stub().SyncFromK8s(
+            environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
+            timeout=60.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        env = resp.json()
-        comp_count = len(env.get("components", []))
-        running = sum(1 for c in env.get("components", []) if c.get("componentState") == "RUNNING")
-        return (
-            f"Synced from K8s: '{env['name']}' (ns={env.get('namespace')}).\n"
-            f"{comp_count} components total, {running} running.\n"
-            f"Jervis DB now matches K8s state."
-        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    env = json.loads(resp.body_json)
+    comp_count = len(env.get("components", []))
+    running = sum(1 for c in env.get("components", []) if c.get("componentState") == "RUNNING")
+    return (
+        f"Synced from K8s: '{env['name']}' (ns={env.get('namespace')}).\n"
+        f"{comp_count} components total, {running} running.\n"
+        f"Jervis DB now matches K8s state."
+    )
 
 
 # ── Environment / K8s Tools ──────────────────────────────────────────────

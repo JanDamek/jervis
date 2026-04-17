@@ -1,0 +1,188 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerEnvironmentProto";
+
+// ServerEnvironmentService covers the full `environments` CRUD +
+// provisioning surface used by MCP and orchestrator tools.
+//
+// EnvironmentDto is a deep tree with components / port mappings / property
+// mappings / status subtrees. Instead of mirroring it into proto we keep
+// `body_json` opaque — all Python callers either pretty-print the body
+// or read a handful of fields (`id`, `name`, `state`, `components[].name`).
+// Typed fields live on *requests* so CI catches missing params.
+service ServerEnvironmentService {
+  rpc ListEnvironments(ListEnvironmentsRequest) returns (EnvironmentListResponse);
+  rpc GetEnvironment(GetEnvironmentRequest) returns (EnvironmentResponse);
+  rpc CreateEnvironment(CreateEnvironmentRequest) returns (EnvironmentResponse);
+  rpc DeleteEnvironment(DeleteEnvironmentRequest) returns (DeleteEnvironmentResponse);
+
+  rpc AddComponent(AddComponentRequest) returns (EnvironmentResponse);
+  rpc ConfigureComponent(ConfigureComponentRequest) returns (EnvironmentResponse);
+
+  rpc DeployEnvironment(EnvironmentIdRequest) returns (EnvironmentResponse);
+  rpc StopEnvironment(EnvironmentIdRequest) returns (EnvironmentResponse);
+  rpc SyncEnvironment(EnvironmentIdRequest) returns (EnvironmentResponse);
+  rpc GetEnvironmentStatus(EnvironmentIdRequest) returns (EnvironmentStatusResponse);
+
+  rpc CloneEnvironment(CloneEnvironmentRequest) returns (EnvironmentResponse);
+
+  rpc AddPropertyMapping(AddPropertyMappingRequest) returns (EnvironmentResponse);
+  rpc AutoSuggestPropertyMappings(EnvironmentIdRequest) returns (AutoSuggestPropertyMappingsResponse);
+
+  rpc DiscoverNamespace(DiscoverNamespaceRequest) returns (EnvironmentResponse);
+  rpc ReplicateEnvironment(ReplicateEnvironmentRequest) returns (EnvironmentResponse);
+  rpc SyncFromK8s(EnvironmentIdRequest) returns (EnvironmentResponse);
+
+  rpc ListComponentTemplates(ListComponentTemplatesRequest) returns (ListComponentTemplatesResponse);
+}
+
+// ── Common responses ────────────────────────────────────────────────────
+
+message EnvironmentResponse {
+  // EnvironmentDto serialized to JSON. Full schema lives in shared/common-dto.
+  string body_json = 1;
+}
+
+message EnvironmentListResponse {
+  // Array of EnvironmentDto JSON objects.
+  string items_json = 1;
+}
+
+message EnvironmentStatusResponse {
+  // EnvironmentStatusDto JSON (namespace health, per-component pod states).
+  string body_json = 1;
+}
+
+message DeleteEnvironmentResponse {
+  bool ok = 1;
+}
+
+// ── List / get ──────────────────────────────────────────────────────────
+
+message ListEnvironmentsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;          // empty = unfiltered (superuser)
+}
+
+message GetEnvironmentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string environment_id = 2;
+}
+
+message EnvironmentIdRequest {
+  jervis.common.RequestContext ctx = 1;
+  string environment_id = 2;
+}
+
+// ── Create / delete ─────────────────────────────────────────────────────
+
+message CreateEnvironmentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string name = 3;
+  string namespace = 4;          // empty → slugified from name
+  string tier = 5;               // EnvironmentTier enum name; blank → DEV
+  string description = 6;
+  string agent_instructions = 7;
+  int32 storage_size_gi = 8;     // 0 → 5Gi default
+}
+
+message DeleteEnvironmentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string environment_id = 2;
+}
+
+// ── Components ──────────────────────────────────────────────────────────
+
+message AddComponentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string environment_id = 2;
+  string name = 3;
+  string type = 4;               // ComponentType enum name
+  string image = 5;
+  string version = 6;
+  map<string, string> env_vars = 7;
+  string source_repo = 8;
+  string source_branch = 9;
+  string dockerfile_path = 10;
+  int32 start_order = 11;        // < 0 = auto (append at end)
+  bool start_order_auto = 12;    // convenience flag; true → ignore start_order
+}
+
+message ConfigureComponentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string environment_id = 2;
+  string component_name = 3;     // component id or display name
+  // Each field: blank/empty collection = leave unchanged.
+  string image = 4;
+  map<string, string> env_vars = 5;
+  bool has_env_vars = 6;         // true → merge env_vars even if empty map
+  string cpu_limit = 7;
+  string memory_limit = 8;
+  string source_repo = 9;
+  string source_branch = 10;
+  string dockerfile_path = 11;
+}
+
+// ── Clone / replicate / discover ────────────────────────────────────────
+
+message CloneEnvironmentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string environment_id = 2;
+  string new_name = 3;
+  string new_namespace = 4;      // empty = slugify from new_name
+  string new_tier = 5;
+  string target_client_id = 6;
+  string target_group_id = 7;
+  string target_project_id = 8;
+}
+
+message ReplicateEnvironmentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string environment_id = 2;
+  string new_name = 3;
+  string new_namespace = 4;
+  string new_tier = 5;
+  string target_client_id = 6;
+}
+
+message DiscoverNamespaceRequest {
+  jervis.common.RequestContext ctx = 1;
+  string namespace = 2;
+  string client_id = 3;
+  string name = 4;
+  string tier = 5;
+}
+
+// ── Property mappings ───────────────────────────────────────────────────
+
+message AddPropertyMappingRequest {
+  jervis.common.RequestContext ctx = 1;
+  string environment_id = 2;
+  string project_component_id = 3;
+  string property_name = 4;
+  string target_component_id = 5;
+  string value_template = 6;
+}
+
+message AutoSuggestPropertyMappingsResponse {
+  string body_json = 1;
+  int32 mappings_added = 2;
+}
+
+// ── Component templates ─────────────────────────────────────────────────
+
+message ListComponentTemplatesRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message ListComponentTemplatesResponse {
+  // Array of template JSON objects (type, versions[], defaultPorts[], …).
+  string items_json = 1;
+}

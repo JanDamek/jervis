@@ -19,6 +19,7 @@ from jervis.server import (
     cache_pb2_grpc,
     chat_approval_pb2_grpc,
     chat_context_pb2_grpc,
+    environment_pb2_grpc,
     filter_rules_pb2_grpc,
     finance_pb2_grpc,
     guidelines_pb2_grpc,
@@ -48,6 +49,7 @@ _project_management_stub: Optional[
 ] = None
 _bug_tracker_stub: Optional[bug_tracker_pb2_grpc.ServerBugTrackerServiceStub] = None
 _merge_request_stub: Optional[merge_request_pb2_grpc.ServerMergeRequestServiceStub] = None
+_environment_stub: Optional[environment_pb2_grpc.ServerEnvironmentServiceStub] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -170,3 +172,12 @@ def server_merge_request_stub() -> (
             _get_channel()
         )
     return _merge_request_stub
+
+
+def server_environment_stub() -> environment_pb2_grpc.ServerEnvironmentServiceStub:
+    global _environment_stub
+    if _environment_stub is None:
+        _environment_stub = environment_pb2_grpc.ServerEnvironmentServiceStub(
+            _get_channel()
+        )
+    return _environment_stub

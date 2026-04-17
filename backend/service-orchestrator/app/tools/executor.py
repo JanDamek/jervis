@@ -2952,30 +2952,40 @@ _KOTLIN_INTERNAL_URL = settings.kotlin_server_url
 _O365_GATEWAY_URL = settings.o365_gateway_url
 
 
+def _env_stub_imports():
+    from app.grpc_server_client import server_environment_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    return server_environment_stub(), environment_pb2, ctx
+
+
 async def _execute_environment_list(client_id: str) -> str:
     """List environments, optionally filtered by client."""
-    params = {}
-    if client_id:
-        params["clientId"] = client_id
+    import json as _json
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(f"{_KOTLIN_INTERNAL_URL}/internal/environments", params=params)
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            envs = resp.json()
-            if not envs:
-                return "No environments found."
-            lines = []
-            for env in envs:
-                comps = env.get("components", [])
-                infra = sum(1 for c in comps if c.get("type") != "PROJECT")
-                apps = len(comps) - infra
-                lines.append(
-                    f"- {env['name']} (id={env['id']})\n"
-                    f"  ns={env['namespace']}, state={env['state']}, "
-                    f"components: {len(comps)} ({infra} infra, {apps} app)"
-                )
-            return "\n".join(lines)
+        stub, environment_pb2, ctx = _env_stub_imports()
+        resp = await stub.ListEnvironments(
+            environment_pb2.ListEnvironmentsRequest(ctx=ctx, client_id=client_id or ""),
+            timeout=30.0,
+        )
+        envs = _json.loads(resp.items_json)
+        if not envs:
+            return "No environments found."
+        lines = []
+        for env in envs:
+            comps = env.get("components", [])
+            infra = sum(1 for c in comps if c.get("type") != "PROJECT")
+            apps = len(comps) - infra
+            lines.append(
+                f"- {env['name']} (id={env['id']})\n"
+                f"  ns={env['namespace']}, state={env['state']}, "
+                f"components: {len(comps)} ({infra} infra, {apps} app)"
+            )
+        return "\n".join(lines)
     except Exception as e:
         return f"Error listing environments: {str(e)[:300]}"
 
@@ -2984,24 +2994,26 @@ async def _execute_environment_get(environment_id: str) -> str:
     """Get detailed environment info."""
     if not environment_id:
         return "Error: environment_id is required."
+    import json as _json
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}")
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            env = resp.json()
-            lines = [
-                f"Environment: {env['name']} (id={env['id']})",
-                f"Namespace: {env['namespace']}",
-                f"State: {env['state']}",
-                f"Storage: {env.get('storageSizeGi', 5)}Gi",
-            ]
-            for comp in env.get("components", []):
-                state = comp.get("componentState", "PENDING")
-                lines.append(f"  - {comp['name']} ({comp['type']}) [{state}] image={comp.get('image', 'N/A')}")
-            if env.get("agentInstructions"):
-                lines.append(f"\nAgent Instructions:\n{env['agentInstructions']}")
-            return "\n".join(lines)
+        stub, environment_pb2, ctx = _env_stub_imports()
+        resp = await stub.GetEnvironment(
+            environment_pb2.GetEnvironmentRequest(ctx=ctx, environment_id=environment_id),
+            timeout=30.0,
+        )
+        env = _json.loads(resp.body_json)
+        lines = [
+            f"Environment: {env['name']} (id={env['id']})",
+            f"Namespace: {env['namespace']}",
+            f"State: {env['state']}",
+            f"Storage: {env.get('storageSizeGi', 5)}Gi",
+        ]
+        for comp in env.get("components", []):
+            state = comp.get("componentState", "PENDING")
+            lines.append(f"  - {comp['name']} ({comp['type']}) [{state}] image={comp.get('image', 'N/A')}")
+        if env.get("agentInstructions"):
+            lines.append(f"\nAgent Instructions:\n{env['agentInstructions']}")
+        return "\n".join(lines)
     except Exception as e:
         return f"Error getting environment: {str(e)[:300]}"
 
@@ -3014,26 +3026,28 @@ async def _execute_environment_create(
     """Create a new environment."""
     if not name:
         return "Error: name is required."
-    body: dict = {"clientId": client_id, "name": name, "storageSizeGi": storage_size_gi}
-    if namespace:
-        body["namespace"] = namespace
-    if tier:
-        body["tier"] = tier.upper()
-    if description:
-        body["description"] = description
-    if agent_instructions:
-        body["agentInstructions"] = agent_instructions
+    import json as _json
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/environments", json=body)
-            if resp.status_code not in (200, 201):
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            env = resp.json()
-            return (
-                f"Created environment: {env['name']} (id={env['id']})\n"
-                f"Namespace: {env['namespace']}, State: {env['state']}\n"
-                f"Next: use environment_add_component, then environment_deploy."
-            )
+        stub, environment_pb2, ctx = _env_stub_imports()
+        resp = await stub.CreateEnvironment(
+            environment_pb2.CreateEnvironmentRequest(
+                ctx=ctx,
+                client_id=client_id or "",
+                name=name,
+                namespace=namespace or "",
+                tier=(tier or "").upper(),
+                description=description or "",
+                agent_instructions=agent_instructions or "",
+                storage_size_gi=storage_size_gi,
+            ),
+            timeout=30.0,
+        )
+        env = _json.loads(resp.body_json)
+        return (
+            f"Created environment: {env['name']} (id={env['id']})\n"
+            f"Namespace: {env['namespace']}, State: {env['state']}\n"
+            f"Next: use environment_add_component, then environment_deploy."
+        )
     except Exception as e:
         return f"Error creating environment: {str(e)[:300]}"
 
@@ -3047,33 +3061,33 @@ async def _execute_environment_add_component(
     """Add component to environment."""
     if not environment_id or not name or not component_type:
         return "Error: environment_id, name, and component_type are required."
-    body: dict = {"name": name, "type": component_type.upper()}
-    if image:
-        body["image"] = image
-    if version:
-        body["version"] = version
+    import json as _json
+    env_vars_map: dict = {}
     if env_vars:
         try:
-            import json as _json
-            body["envVars"] = _json.loads(env_vars)
+            env_vars_map = _json.loads(env_vars)
         except Exception:
             return f"Error: Invalid JSON for env_vars: {env_vars}"
-    if source_repo:
-        body["sourceRepo"] = source_repo
-    if source_branch:
-        body["sourceBranch"] = source_branch
-    if dockerfile_path:
-        body["dockerfilePath"] = dockerfile_path
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/components",
-                json=body,
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            env = resp.json()
-            return f"Component '{name}' added. Total components: {len(env.get('components', []))}"
+        stub, environment_pb2, ctx = _env_stub_imports()
+        resp = await stub.AddComponent(
+            environment_pb2.AddComponentRequest(
+                ctx=ctx,
+                environment_id=environment_id,
+                name=name,
+                type=component_type.upper(),
+                image=image or "",
+                version=version or "",
+                env_vars=env_vars_map,
+                source_repo=source_repo or "",
+                source_branch=source_branch or "",
+                dockerfile_path=dockerfile_path or "",
+                start_order_auto=True,
+            ),
+            timeout=30.0,
+        )
+        env = _json.loads(resp.body_json)
+        return f"Component '{name}' added. Total components: {len(env.get('components', []))}"
     except Exception as e:
         return f"Error adding component: {str(e)[:300]}"
 
@@ -3088,114 +3102,118 @@ async def _execute_environment_configure(
     """Update component configuration."""
     if not environment_id or not component_name:
         return "Error: environment_id and component_name are required."
-    body: dict = {}
-    if image:
-        body["image"] = image
+    import json as _json
+    env_vars_map: dict = {}
+    has_env_vars = False
     if env_vars:
         try:
-            import json as _json
-            body["envVars"] = _json.loads(env_vars)
+            env_vars_map = _json.loads(env_vars)
+            has_env_vars = True
         except Exception:
             return f"Error: Invalid JSON for env_vars: {env_vars}"
-    if cpu_limit:
-        body["cpuLimit"] = cpu_limit
-    if memory_limit:
-        body["memoryLimit"] = memory_limit
-    if source_repo:
-        body["sourceRepo"] = source_repo
-    if source_branch:
-        body["sourceBranch"] = source_branch
-    if dockerfile_path:
-        body["dockerfilePath"] = dockerfile_path
-    if not body:
+    if not any([image, has_env_vars, cpu_limit, memory_limit, source_repo, source_branch, dockerfile_path]):
         return "Error: No configuration changes provided."
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.put(
-                f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/components/{component_name}",
-                json=body,
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            return f"Component '{component_name}' updated. Use environment_sync to apply changes."
+        stub, environment_pb2, ctx = _env_stub_imports()
+        await stub.ConfigureComponent(
+            environment_pb2.ConfigureComponentRequest(
+                ctx=ctx,
+                environment_id=environment_id,
+                component_name=component_name,
+                image=image or "",
+                env_vars=env_vars_map,
+                has_env_vars=has_env_vars,
+                cpu_limit=cpu_limit or "",
+                memory_limit=memory_limit or "",
+                source_repo=source_repo or "",
+                source_branch=source_branch or "",
+                dockerfile_path=dockerfile_path or "",
+            ),
+            timeout=30.0,
+        )
+        return f"Component '{component_name}' updated. Use environment_sync to apply changes."
     except Exception as e:
         return f"Error configuring component: {str(e)[:300]}"
 
 
 async def _execute_environment_deploy(environment_id: str) -> str:
-    """Provision/deploy environment to K8s."""
     if not environment_id:
         return "Error: environment_id is required."
+    import json as _json
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/deploy")
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            env = resp.json()
-            return f"Deployed: {env['name']} (ns={env['namespace']}, state={env['state']})"
+        stub, environment_pb2, ctx = _env_stub_imports()
+        resp = await stub.DeployEnvironment(
+            environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
+            timeout=120.0,
+        )
+        env = _json.loads(resp.body_json)
+        return f"Deployed: {env['name']} (ns={env['namespace']}, state={env['state']})"
     except Exception as e:
         return f"Error deploying environment: {str(e)[:300]}"
 
 
 async def _execute_environment_stop(environment_id: str) -> str:
-    """Stop/deprovision environment."""
     if not environment_id:
         return "Error: environment_id is required."
+    import json as _json
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/stop")
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            env = resp.json()
-            return f"Stopped: {env['name']} (state={env['state']})"
+        stub, environment_pb2, ctx = _env_stub_imports()
+        resp = await stub.StopEnvironment(
+            environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
+            timeout=60.0,
+        )
+        env = _json.loads(resp.body_json)
+        return f"Stopped: {env['name']} (state={env['state']})"
     except Exception as e:
         return f"Error stopping environment: {str(e)[:300]}"
 
 
 async def _execute_environment_status(environment_id: str) -> str:
-    """Get environment deployment status."""
     if not environment_id:
         return "Error: environment_id is required."
+    import json as _json
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/status")
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            status = resp.json()
-            lines = [f"State: {status['state']}, Namespace: {status['namespace']}"]
-            for comp in status.get("componentStatuses", []):
-                ready = "READY" if comp.get("ready") else "NOT READY"
-                lines.append(f"  - {comp['name']}: {ready} ({comp.get('availableReplicas', 0)}/{comp.get('replicas', 0)})")
-            return "\n".join(lines)
+        stub, environment_pb2, ctx = _env_stub_imports()
+        resp = await stub.GetEnvironmentStatus(
+            environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
+            timeout=30.0,
+        )
+        status = _json.loads(resp.body_json)
+        lines = [f"State: {status['state']}, Namespace: {status['namespace']}"]
+        for comp in status.get("componentStatuses", []):
+            ready = "READY" if comp.get("ready") else "NOT READY"
+            lines.append(f"  - {comp['name']}: {ready} ({comp.get('availableReplicas', 0)}/{comp.get('replicas', 0)})")
+        return "\n".join(lines)
     except Exception as e:
         return f"Error getting status: {str(e)[:300]}"
 
 
 async def _execute_environment_sync(environment_id: str) -> str:
-    """Sync environment resources from DB to K8s."""
     if not environment_id:
         return "Error: environment_id is required."
+    import json as _json
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/sync")
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            env = resp.json()
-            return f"Synced: {env['name']} (state={env['state']})"
+        stub, environment_pb2, ctx = _env_stub_imports()
+        resp = await stub.SyncEnvironment(
+            environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
+            timeout=60.0,
+        )
+        env = _json.loads(resp.body_json)
+        return f"Synced: {env['name']} (state={env['state']})"
     except Exception as e:
         return f"Error syncing environment: {str(e)[:300]}"
 
 
 async def _execute_environment_delete(environment_id: str) -> str:
-    """Delete environment and its K8s resources."""
     if not environment_id:
         return "Error: environment_id is required."
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.delete(f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}")
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            return f"Environment {environment_id} deleted."
+        stub, environment_pb2, ctx = _env_stub_imports()
+        await stub.DeleteEnvironment(
+            environment_pb2.DeleteEnvironmentRequest(ctx=ctx, environment_id=environment_id),
+            timeout=60.0,
+        )
+        return f"Environment {environment_id} deleted."
     except Exception as e:
         return f"Error deleting environment: {str(e)[:300]}"
 
@@ -3205,32 +3223,29 @@ async def _execute_environment_clone(
     new_tier: str | None = None, target_client_id: str | None = None,
     target_project_id: str | None = None,
 ) -> str:
-    """Clone environment to a new scope."""
     if not environment_id or not new_name:
         return "Error: environment_id and new_name are required."
-    body: dict = {"newName": new_name}
-    if new_namespace:
-        body["newNamespace"] = new_namespace
-    if new_tier:
-        body["newTier"] = new_tier.upper()
-    if target_client_id:
-        body["targetClientId"] = target_client_id
-    if target_project_id:
-        body["targetProjectId"] = target_project_id
+    import json as _json
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/clone",
-                json=body,
-            )
-            if resp.status_code not in (200, 201):
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            env = resp.json()
-            return (
-                f"Cloned: {env['name']} (id={env['id']})\n"
-                f"Tier: {env.get('tier', 'DEV')}, Namespace: {env['namespace']}\n"
-                f"State: {env['state']} — use environment_deploy to provision."
-            )
+        stub, environment_pb2, ctx = _env_stub_imports()
+        resp = await stub.CloneEnvironment(
+            environment_pb2.CloneEnvironmentRequest(
+                ctx=ctx,
+                environment_id=environment_id,
+                new_name=new_name,
+                new_namespace=new_namespace or "",
+                new_tier=(new_tier or "").upper(),
+                target_client_id=target_client_id or "",
+                target_project_id=target_project_id or "",
+            ),
+            timeout=30.0,
+        )
+        env = _json.loads(resp.body_json)
+        return (
+            f"Cloned: {env['name']} (id={env['id']})\n"
+            f"Tier: {env.get('tier', 'DEV')}, Namespace: {env['namespace']}\n"
+            f"State: {env['state']} — use environment_deploy to provision."
+        )
     except Exception as e:
         return f"Error cloning environment: {str(e)[:300]}"
 
@@ -3239,50 +3254,49 @@ async def _execute_environment_add_property_mapping(
     environment_id: str, project_component: str, property_name: str,
     target_component: str, value_template: str,
 ) -> str:
-    """Add a property mapping to an environment."""
     if not environment_id or not project_component or not property_name or not target_component or not value_template:
         return "Error: all parameters are required (environment_id, project_component, property_name, target_component, value_template)."
+    import json as _json
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/property-mappings",
-                json={
-                    "projectComponentId": project_component,
-                    "propertyName": property_name,
-                    "targetComponentId": target_component,
-                    "valueTemplate": value_template,
-                },
-            )
-            if resp.status_code == 409:
-                return f"Mapping for '{property_name}' already exists."
-            if resp.status_code not in (200, 201):
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            env = resp.json()
-            count = len(env.get("propertyMappings", []))
-            return f"Property mapping added: {property_name} → {target_component}. Total mappings: {count}."
+        stub, environment_pb2, ctx = _env_stub_imports()
+        resp = await stub.AddPropertyMapping(
+            environment_pb2.AddPropertyMappingRequest(
+                ctx=ctx,
+                environment_id=environment_id,
+                project_component_id=project_component,
+                property_name=property_name,
+                target_component_id=target_component,
+                value_template=value_template,
+            ),
+            timeout=30.0,
+        )
+        env = _json.loads(resp.body_json)
+        count = len(env.get("propertyMappings", []))
+        return f"Property mapping added: {property_name} → {target_component}. Total mappings: {count}."
     except Exception as e:
-        return f"Error adding property mapping: {str(e)[:300]}"
+        msg = str(e)
+        if "already exists" in msg:
+            return f"Mapping for '{property_name}' already exists."
+        return f"Error adding property mapping: {msg[:300]}"
 
 
 async def _execute_environment_auto_suggest_mappings(environment_id: str) -> str:
-    """Auto-suggest property mappings for all PROJECT×INFRA pairs."""
     if not environment_id:
         return "Error: environment_id is required."
+    import json as _json
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/property-mappings/auto-suggest",
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            env = resp.json()
-            added = resp.headers.get("X-Mappings-Added", "?")
-            total = len(env.get("propertyMappings", []))
-            return (
-                f"Auto-suggested mappings for '{env['name']}'.\n"
-                f"Added: {added}, Total: {total}.\n"
-                f"Use environment_deploy to provision and resolve values."
-            )
+        stub, environment_pb2, ctx = _env_stub_imports()
+        resp = await stub.AutoSuggestPropertyMappings(
+            environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
+            timeout=30.0,
+        )
+        env = _json.loads(resp.body_json)
+        total = len(env.get("propertyMappings", []))
+        return (
+            f"Auto-suggested mappings for '{env['name']}'.\n"
+            f"Added: {resp.mappings_added}, Total: {total}.\n"
+            f"Use environment_deploy to provision and resolve values."
+        )
     except Exception as e:
         return f"Error auto-suggesting mappings: {str(e)[:300]}"
 

@@ -18,7 +18,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
-import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalMeetingVideoApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import com.jervis.agent.AgentOrchestratorRpcImpl
@@ -82,8 +81,6 @@ class KtorRpcServer(
     private val environmentResourceRpcImpl: EnvironmentResourceRpcImpl,
     private val gpgCertificateRpcImpl: GpgCertificateRpcImpl,
     private val environmentResourceService: com.jervis.environment.EnvironmentResourceService,
-    private val environmentService: com.jervis.environment.EnvironmentService,
-    private val environmentK8sService: com.jervis.environment.EnvironmentK8sService,
     private val orchestratorWorkflowTracker: com.jervis.agent.OrchestratorWorkflowTracker,
     private val orchestratorStatusHandler: com.jervis.agent.OrchestratorStatusHandler,
     private val oauth2Service: com.jervis.infrastructure.oauth2.OAuth2Service,
@@ -175,7 +172,8 @@ class KtorRpcServer(
                             installInternalTaskApi(taskRepository, taskService, userTaskService, preferenceService, pendingTaskService, fcmPushService, apnsPushService, chatRpcImpl)
                             // Guidelines + filter-rules + urgency migrated to gRPC
                             // (jervis.server.Server{Guidelines,FilterRules,Urgency}Service).
-                            installInternalEnvironmentApi(environmentService, environmentK8sService)
+                            // Environment CRUD + provisioning migrated to gRPC
+                            // (jervis.server.ServerEnvironmentService).
                             // OpenRouter settings + model-stats persistence migrated to gRPC
                             // (jervis.server.ServerOpenRouterSettingsService).
                             // Clients/projects/connections + project-advisor recommendations
