@@ -1,0 +1,213 @@
+syntax = "proto3";
+
+package jervis.knowledgebase;
+
+import "jervis/common/types.proto";
+import "jervis/knowledgebase/retrieve.proto";
+
+option java_package = "com.jervis.contracts.knowledgebase";
+option java_multiple_files = true;
+option java_outer_classname = "KnowledgeGraphProto";
+
+// KnowledgeGraphService — graph traversal, node lookup, alias resolution
+// and Thought Map RPCs. Writes live in ingest.proto / maintenance.proto.
+service KnowledgeGraphService {
+  rpc Traverse(TraversalRequest) returns (GraphNodeList);
+  rpc GetNode(GetNodeRequest) returns (GraphNode);
+  rpc SearchNodes(SearchNodesRequest) returns (GraphNodeList);
+  rpc GetNodeEvidence(GetNodeRequest) returns (EvidencePack);
+  rpc ListQueryEntities(ListQueryEntitiesRequest) returns (EntityList);
+  rpc ResolveAlias(ResolveAliasRequest) returns (AliasResolveResult);
+  rpc ListAliases(ListAliasesRequest) returns (AliasList);
+  rpc GetAliasStats(AliasStatsRequest) returns (AliasStats);
+  rpc RegisterAlias(RegisterAliasRequest) returns (AliasAck);
+  rpc MergeAlias(MergeAliasRequest) returns (AliasAck);
+  rpc ThoughtTraverse(ThoughtTraversalRequest) returns (ThoughtTraversalResult);
+  rpc ThoughtReinforce(ThoughtReinforceRequest) returns (ThoughtAck);
+  rpc ThoughtCreate(ThoughtCreateRequest) returns (ThoughtAck);
+  rpc ThoughtBootstrap(ThoughtBootstrapRequest) returns (ThoughtAck);
+  rpc ThoughtMaintain(ThoughtMaintenanceRequest) returns (ThoughtAck);
+  rpc ThoughtStats(ThoughtStatsRequest) returns (ThoughtStatsResult);
+}
+
+// ── Graph node lookup ──────────────────────────────────────────────────
+
+message GraphNode {
+  string id = 1;
+  string key = 2;
+  string label = 3;
+  map<string, string> properties = 4;
+}
+
+message GraphNodeList {
+  repeated GraphNode nodes = 1;
+}
+
+message GetNodeRequest {
+  jervis.common.RequestContext ctx = 1;
+  string node_key = 2;
+  string client_id = 3;
+  string project_id = 4;
+  string group_id = 5;
+}
+
+message SearchNodesRequest {
+  jervis.common.RequestContext ctx = 1;
+  string query = 2;
+  string client_id = 3;
+  string project_id = 4;
+  string group_id = 5;
+  int32 max_results = 6;
+  string node_type = 7;           // optional filter
+}
+
+message ListQueryEntitiesRequest {
+  jervis.common.RequestContext ctx = 1;
+  string query = 2;
+  string client_id = 3;
+  string project_id = 4;
+  string group_id = 5;
+}
+
+message EntityList {
+  repeated string entities = 1;
+}
+
+// ── Alias registry ─────────────────────────────────────────────────────
+
+message ResolveAliasRequest {
+  jervis.common.RequestContext ctx = 1;
+  string alias = 2;
+  string client_id = 3;
+  string project_id = 4;
+}
+
+message AliasResolveResult {
+  bool found = 1;
+  string canonical_key = 2;
+  string canonical_label = 3;
+}
+
+message ListAliasesRequest {
+  jervis.common.RequestContext ctx = 1;
+  string canonical_key = 2;
+}
+
+message AliasList {
+  repeated string aliases = 1;
+}
+
+message AliasStatsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+}
+
+message AliasStats {
+  int32 total_aliases = 1;
+  int32 total_canonicals = 2;
+  map<string, int32> by_type = 3;
+}
+
+message RegisterAliasRequest {
+  jervis.common.RequestContext ctx = 1;
+  string alias = 2;
+  string canonical_key = 3;
+  string client_id = 4;
+  string project_id = 5;
+}
+
+message MergeAliasRequest {
+  jervis.common.RequestContext ctx = 1;
+  string from_key = 2;
+  string into_key = 3;
+  string client_id = 4;
+  string project_id = 5;
+}
+
+message AliasAck {
+  bool ok = 1;
+  string error = 2;
+}
+
+// ── Thought Map ────────────────────────────────────────────────────────
+
+message ThoughtTraversalRequest {
+  jervis.common.RequestContext ctx = 1;
+  string query = 2;
+  string client_id = 3;
+  string project_id = 4;
+  string group_id = 5;
+  int32 max_results = 6;
+  double floor = 7;
+  int32 max_depth = 8;
+  int32 entry_top_k = 9;
+}
+
+message ThoughtTraversalResult {
+  repeated ThoughtEntry thoughts = 1;
+  repeated ThoughtEntry knowledge = 2;
+  repeated string activated_thought_ids = 3;
+  repeated string activated_edge_ids = 4;
+}
+
+message ThoughtEntry {
+  string id = 1;
+  string label = 2;
+  string summary = 3;
+  string node_type = 4;
+  double activation = 5;
+  map<string, string> metadata = 6;
+}
+
+message ThoughtReinforceRequest {
+  jervis.common.RequestContext ctx = 1;
+  repeated string thought_keys = 2;
+  repeated string edge_keys = 3;
+}
+
+message ThoughtCreateRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string group_id = 4;
+  repeated ThoughtSeed thoughts = 5;
+}
+
+message ThoughtSeed {
+  string label = 1;
+  string summary = 2;
+  string thought_type = 3;
+  repeated string related_entities = 4;
+}
+
+message ThoughtBootstrapRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string group_id = 4;
+}
+
+message ThoughtMaintenanceRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string mode = 3;      // "light" | "heavy"
+}
+
+message ThoughtAck {
+  bool ok = 1;
+  string detail = 2;
+}
+
+message ThoughtStatsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+}
+
+message ThoughtStatsResult {
+  int32 total_thoughts = 1;
+  int32 active_thoughts = 2;
+  int32 total_edges = 3;
+  double avg_activation = 4;
+}

@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package jervis.knowledgebase;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.knowledgebase";
+option java_multiple_files = true;
+option java_outer_classname = "KnowledgeQueueProto";
+
+// KnowledgeQueueService — visibility into the asynchronous extraction /
+// ingest queue. Read-only for external consumers; items are added via
+// KnowledgeIngestService.IngestQueue.
+service KnowledgeQueueService {
+  rpc ListQueue(QueueListRequest) returns (QueueList);
+}
+
+message QueueListRequest {
+  jervis.common.RequestContext ctx = 1;
+  int32 limit = 2;
+}
+
+message QueueList {
+  repeated QueueItem items = 1;
+  int32 total = 2;
+}
+
+message QueueItem {
+  string id = 1;
+  string source_urn = 2;
+  string client_id = 3;
+  string project_id = 4;
+  string state = 5;           // queued | running | done | failed
+  int32 retry_count = 6;
+  string submitted_at_iso = 7;
+  string started_at_iso = 8;
+  string finished_at_iso = 9;
+  string error = 10;
+}

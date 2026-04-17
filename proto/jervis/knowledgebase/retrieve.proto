@@ -1,0 +1,157 @@
+syntax = "proto3";
+
+package jervis.knowledgebase;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.knowledgebase";
+option java_multiple_files = true;
+option java_outer_classname = "KnowledgeRetrieveProto";
+
+// KnowledgeRetrieveService — vector + graph hybrid retrieval over the KB.
+// Read-side RPCs only; ingestion lives in ingest.proto, graph walks live
+// in graph.proto.
+service KnowledgeRetrieveService {
+  rpc Retrieve(RetrievalRequest) returns (EvidencePack);
+  rpc RetrieveSimple(RetrievalRequest) returns (EvidencePack);
+  rpc RetrieveHybrid(HybridRetrievalRequest) returns (HybridEvidencePack);
+  rpc AnalyzeCode(TraversalRequest) returns (JoernAnalyzeResult);
+  rpc JoernScan(JoernScanRequest) returns (JoernScanResult);
+  rpc ListChunksByKind(ListByKindRequest) returns (ChunkList);
+}
+
+// ── Standard retrieval ──────────────────────────────────────────────────
+
+message RetrievalRequest {
+  jervis.common.RequestContext ctx = 1;
+  string query = 2;
+  string client_id = 3;
+  string project_id = 4;   // "" = client-level / global
+  string group_id = 5;
+  string as_of_iso = 6;    // RFC3339; "" = now
+  double min_confidence = 7;
+  int32 max_results = 8;
+  bool expand_graph = 9;
+  repeated string kinds = 10;
+}
+
+message EvidencePack {
+  repeated EvidenceItem items = 1;
+}
+
+message EvidenceItem {
+  string content = 1;
+  double score = 2;
+  string source_urn = 3;
+  string credibility = 4;
+  string branch_scope = 5;
+  map<string, string> metadata = 6;
+}
+
+// ── Hybrid retrieval ────────────────────────────────────────────────────
+
+message HybridRetrievalRequest {
+  jervis.common.RequestContext ctx = 1;
+  string query = 2;
+  string client_id = 3;
+  string project_id = 4;
+  string group_id = 5;
+  int32 max_results = 6;
+  double min_confidence = 7;
+  bool expand_graph = 8;
+  bool extract_entities = 9;
+  bool use_rrf = 10;
+  int32 max_graph_hops = 11;
+  int32 max_seeds = 12;
+  double diversity_factor = 13;
+}
+
+message HybridEvidencePack {
+  repeated HybridEvidenceItem items = 1;
+  int32 total_found = 2;
+  repeated string query_entities = 3;
+  repeated string seed_nodes = 4;
+}
+
+message HybridEvidenceItem {
+  string content = 1;
+  double combined_score = 2;
+  string source_urn = 3;
+  double rag_score = 4;
+  double graph_score = 5;
+  double entity_score = 6;
+  double credibility_boost = 7;
+  string source = 8;            // "rag" | "graph" | "entity"
+  string credibility = 9;
+  string branch_scope = 10;
+  string branch_role = 11;
+  int32 graph_distance = 12;
+  repeated string graph_refs = 13;
+  string matched_entity = 14;
+  map<string, string> metadata = 15;
+}
+
+// ── Traversal (forwarded to analyze/code) ───────────────────────────────
+
+message TraversalRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string group_id = 4;
+  string start_key = 5;
+  TraversalSpec spec = 6;
+}
+
+message TraversalSpec {
+  string direction = 1;        // "OUTBOUND" / "INBOUND" / "ANY"
+  int32 min_depth = 2;
+  int32 max_depth = 3;
+  string edge_collection = 4;
+}
+
+message JoernAnalyzeResult {
+  string status = 1;
+  string output = 2;
+  string warnings = 3;
+  int32 exit_code = 4;
+}
+
+// ── Joern prebuilt scans ────────────────────────────────────────────────
+
+message JoernScanRequest {
+  jervis.common.RequestContext ctx = 1;
+  string scan_type = 2;        // security | dataflow | callgraph | complexity
+  string client_id = 3;
+  string project_id = 4;
+  string workspace_path = 5;
+}
+
+message JoernScanResult {
+  string status = 1;
+  string scan_type = 2;
+  string output = 3;
+  string warnings = 4;
+  int32 exit_code = 5;
+}
+
+// ── List chunks by kind ─────────────────────────────────────────────────
+
+message ListByKindRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string kind = 4;
+  int32 max_results = 5;
+}
+
+message ChunkList {
+  repeated Chunk items = 1;
+}
+
+message Chunk {
+  string id = 1;
+  string content = 2;
+  string source_urn = 3;
+  string kind = 4;
+  map<string, string> metadata = 5;
+}

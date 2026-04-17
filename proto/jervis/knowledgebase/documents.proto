@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package jervis.knowledgebase;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.knowledgebase";
+option java_multiple_files = true;
+option java_outer_classname = "KnowledgeDocumentProto";
+
+// KnowledgeDocumentService — KB document upload / register / list / reindex.
+// Raw bytes travel over the blob side channel (PUT /blob/kb-doc/{hash});
+// the proto only carries the metadata + blob reference.
+service KnowledgeDocumentService {
+  rpc Upload(DocumentUploadRequest) returns (Document);
+  rpc Register(DocumentRegisterRequest) returns (Document);
+  rpc List(DocumentListRequest) returns (DocumentList);
+  rpc Get(DocumentId) returns (Document);
+  rpc Update(DocumentUpdateRequest) returns (Document);
+  rpc Delete(DocumentId) returns (DocumentAck);
+  rpc Reindex(DocumentId) returns (DocumentAck);
+  rpc ExtractText(DocumentExtractRequest) returns (DocumentExtractResult);
+}
+
+enum DocumentState {
+  DOCUMENT_STATE_UNSPECIFIED = 0;
+  DOCUMENT_STATE_UPLOADED = 1;
+  DOCUMENT_STATE_EXTRACTED = 2;
+  DOCUMENT_STATE_INDEXED = 3;
+  DOCUMENT_STATE_FAILED = 4;
+}
+
+enum DocumentCategory {
+  DOCUMENT_CATEGORY_UNSPECIFIED = 0;
+  DOCUMENT_CATEGORY_TECHNICAL = 1;
+  DOCUMENT_CATEGORY_BUSINESS = 2;
+  DOCUMENT_CATEGORY_LEGAL = 3;
+  DOCUMENT_CATEGORY_PROCESS = 4;
+  DOCUMENT_CATEGORY_MEETING_NOTES = 5;
+  DOCUMENT_CATEGORY_REPORT = 6;
+  DOCUMENT_CATEGORY_SPECIFICATION = 7;
+  DOCUMENT_CATEGORY_OTHER = 8;
+}
+
+// ── Common messages ────────────────────────────────────────────────────
+
+message Document {
+  string id = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string filename = 4;
+  string mime_type = 5;
+  int64 size_bytes = 6;
+  string storage_path = 7;
+  DocumentState state = 8;
+  DocumentCategory category = 9;
+  string title = 10;
+  string description = 11;
+  repeated string tags = 12;
+  string extracted_text_preview = 13;
+  int32 page_count = 14;
+  string content_hash = 15;
+  string source_urn = 16;
+  string error_message = 17;
+  repeated string rag_chunks = 18;
+  string uploaded_at_iso = 19;
+  string indexed_at_iso = 20;
+}
+
+message DocumentId {
+  jervis.common.RequestContext ctx = 1;
+  string id = 2;
+}
+
+message DocumentList {
+  repeated Document items = 1;
+}
+
+message DocumentAck {
+  bool ok = 1;
+  string error = 2;
+}
+
+// ── Upload — inline bytes up to ~1 MiB, blob_ref beyond that ───────────
+
+message DocumentUploadRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string filename = 4;
+  string mime_type = 5;
+  int64 size_bytes = 6;
+  string storage_path = 7;
+  string title = 8;
+  string description = 9;
+  DocumentCategory category = 10;
+  repeated string tags = 11;
+  string content_hash = 12;
+  bytes data = 13;          // inline payload
+  string blob_ref = 14;     // or pointer to side-channel blob (preferred)
+}
+
+// ── Register an already-stored document (no bytes on wire) ─────────────
+
+message DocumentRegisterRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string filename = 4;
+  string mime_type = 5;
+  int64 size_bytes = 6;
+  string storage_path = 7;
+  string title = 8;
+  string description = 9;
+  DocumentCategory category = 10;
+  repeated string tags = 11;
+  string content_hash = 12;
+}
+
+message DocumentListRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+}
+
+message DocumentUpdateRequest {
+  jervis.common.RequestContext ctx = 1;
+  string id = 2;
+  string title = 3;
+  string description = 4;
+  DocumentCategory category = 5;
+  repeated string tags = 6;
+  // Field mask: which fields were explicitly set. Server updates only
+  // fields that appear in the mask; absent fields stay as-is.
+  repeated string field_mask = 7;
+}
+
+// ── Extract text (reuses extracted content from upload pipeline) ──────
+
+message DocumentExtractRequest {
+  jervis.common.RequestContext ctx = 1;
+  string id = 2;
+  bool force_reextract = 3;
+}
+
+message DocumentExtractResult {
+  string status = 1;
+  string text = 2;
+  int32 page_count = 3;
+  string content_hash = 4;
+  string error = 5;
+}

@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package jervis.knowledgebase;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.knowledgebase";
+option java_multiple_files = true;
+option java_outer_classname = "KnowledgeMaintenanceProto";
+
+// KnowledgeMaintenanceService — batch / retag maintenance. Long-running
+// operations are synchronous here (caller already dispatches them from
+// a background worker); streaming progress goes via
+// ServerKbCallbacksService.KbProgress on the callback channel.
+service KnowledgeMaintenanceService {
+  rpc RunBatch(MaintenanceBatchRequest) returns (MaintenanceResult);
+  rpc RetagProject(RetagProjectRequest) returns (MaintenanceResult);
+  rpc RetagGroup(RetagGroupRequest) returns (MaintenanceResult);
+}
+
+message MaintenanceBatchRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string group_id = 4;
+  repeated string operations = 5;  // e.g. ["dedupe", "reembed", "gc"]
+  int32 limit = 6;
+  bool dry_run = 7;
+}
+
+message RetagProjectRequest {
+  jervis.common.RequestContext ctx = 1;
+  string source_project_id = 2;
+  string target_project_id = 3;
+}
+
+message RetagGroupRequest {
+  jervis.common.RequestContext ctx = 1;
+  string project_id = 2;
+  string new_group_id = 3;
+}
+
+message MaintenanceResult {
+  string status = 1;
+  int32 scanned = 2;
+  int32 modified = 3;
+  int32 deleted = 4;
+  string detail = 5;
+}

@@ -1,0 +1,271 @@
+syntax = "proto3";
+
+package jervis.knowledgebase;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.knowledgebase";
+option java_multiple_files = true;
+option java_outer_classname = "KnowledgeIngestProto";
+
+// KnowledgeIngestService — content ingestion into KB (RAG chunks +
+// graph nodes). FullIngest variants carry the main text inline; binary
+// attachments travel over the blob side channel (PUT /blob/kb-doc/{id})
+// and are referenced via AttachmentRef.blob_ref.
+service KnowledgeIngestService {
+  rpc Ingest(IngestRequest) returns (IngestResult);
+  rpc IngestImmediate(IngestRequest) returns (IngestResult);
+  rpc IngestQueue(IngestRequest) returns (IngestQueueAck);
+  rpc IngestFile(IngestFileRequest) returns (IngestResult);
+  rpc IngestFull(FullIngestRequest) returns (FullIngestResult);
+  rpc IngestFullAsync(AsyncFullIngestRequest) returns (AsyncIngestAck);
+  rpc IngestGitStructure(GitStructureIngestRequest) returns (GitStructureIngestResult);
+  rpc IngestGitCommits(GitCommitIngestRequest) returns (GitCommitIngestResult);
+  rpc IngestCpg(CpgIngestRequest) returns (CpgIngestResult);
+  rpc Crawl(CrawlRequest) returns (IngestResult);
+  rpc Purge(PurgeRequest) returns (PurgeResult);
+}
+
+// ── Simple ingest ──────────────────────────────────────────────────────
+
+message IngestRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string group_id = 4;
+  string source_urn = 5;
+  string kind = 6;
+  string content = 7;
+  map<string, string> metadata = 8;
+  string observed_at_iso = 9;    // RFC3339
+  string max_tier = 10;          // OpenRouter tier — NONE/FREE/PAID/PREMIUM
+  string credibility = 11;       // SourceCredibility enum value, "" = auto
+  string branch_scope = 12;
+  string branch_role = 13;
+}
+
+message IngestResult {
+  string status = 1;
+  int32 chunks_count = 2;
+  int32 nodes_created = 3;
+  int32 edges_created = 4;
+  repeated string chunk_ids = 5;
+  repeated string entity_keys = 6;
+}
+
+message IngestQueueAck {
+  bool ok = 1;
+  string queue_id = 2;
+}
+
+// ── Inline file ingest ─────────────────────────────────────────────────
+
+message IngestFileRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string group_id = 4;
+  string source_urn = 5;
+  string filename = 6;
+  string content_type = 7;
+  bytes data = 8;                // inline <= ~1 MiB; above uses blob_ref
+  string blob_ref = 9;           // optional — side-channel blob handle
+  map<string, string> metadata = 10;
+}
+
+// ── Full ingest (document + summary + extraction) ──────────────────────
+
+message FullIngestRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string group_id = 4;
+  string source_urn = 5;
+  string source_type = 6;                       // SourceType enum value
+  string subject = 7;
+  string content = 8;
+  map<string, string> metadata = 9;
+  string observed_at_iso = 10;
+  string max_tier = 11;
+  string credibility = 12;
+  string branch_scope = 13;
+  string branch_role = 14;
+  repeated FullIngestAttachment attachments = 15;
+}
+
+message FullIngestAttachment {
+  string filename = 1;
+  string content_type = 2;
+  bytes data = 3;                 // inline <= ~1 MiB
+  string blob_ref = 4;            // or reference to blob side channel
+}
+
+message FullIngestResult {
+  string status = 1;
+  int32 chunks_count = 2;
+  int32 nodes_created = 3;
+  int32 edges_created = 4;
+  int32 attachments_processed = 5;
+  int32 attachments_failed = 6;
+  string summary = 7;
+  repeated string entities = 8;
+  // Legacy qualification-hint fields — always neutral post-2026-04-11.
+  bool has_actionable_content = 9;
+  repeated string suggested_actions = 10;
+  bool has_future_deadline = 11;
+  string suggested_deadline = 12;
+  bool is_assigned_to_me = 13;
+  string urgency = 14;
+  string error = 15;
+}
+
+message AsyncFullIngestRequest {
+  jervis.common.RequestContext ctx = 1;
+  FullIngestRequest request = 2;
+  string task_id = 3;
+  string client_id = 4;
+  int32 priority = 5;       // 0 = default
+  string max_tier = 6;
+  // callback path is implicit — KB resolves callback base from config and
+  // calls ServerKbCallbacksService.KbDone when processing finishes.
+}
+
+message AsyncIngestAck {
+  bool accepted = 1;
+  string detail = 2;
+}
+
+// ── Git structural ingest ──────────────────────────────────────────────
+
+message GitStructureIngestRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string repository_identifier = 4;
+  string branch = 5;
+  string default_branch = 6;
+  repeated GitBranchInfo branches = 7;
+  repeated GitFileInfo files = 8;
+  repeated GitClassInfo classes = 9;
+  repeated GitFileContent file_contents = 10;
+  map<string, string> metadata = 11;
+}
+
+message GitFileInfo {
+  string path = 1;
+  string extension = 2;
+  string language = 3;
+  int64 size_bytes = 4;
+}
+
+message GitBranchInfo {
+  string name = 1;
+  bool is_default = 2;
+  string status = 3;              // active | merged | stale
+  string last_commit_hash = 4;
+}
+
+message GitClassInfo {
+  string name = 1;
+  string qualified_name = 2;
+  string file_path = 3;
+  string visibility = 4;
+  bool is_interface = 5;
+  repeated string methods = 6;
+}
+
+message GitFileContent {
+  string path = 1;
+  string content = 2;
+}
+
+message GitStructureIngestResult {
+  string status = 1;
+  int32 nodes_created = 2;
+  int32 edges_created = 3;
+  int32 nodes_updated = 4;
+  string repository_key = 5;
+  string branch_key = 6;
+  int32 files_indexed = 7;
+  int32 classes_indexed = 8;
+  int32 methods_indexed = 9;
+}
+
+// ── Git commits ingest ─────────────────────────────────────────────────
+
+message GitCommitIngestRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string repository_identifier = 4;
+  string branch = 5;
+  repeated GitCommitInfo commits = 6;
+  string diff_content = 7;
+}
+
+message GitCommitInfo {
+  string hash = 1;
+  string message = 2;
+  string author = 3;
+  string date = 4;
+  string branch = 5;
+  string parent_hash = 6;
+  repeated string files_modified = 7;
+  repeated string files_created = 8;
+  repeated string files_deleted = 9;
+}
+
+message GitCommitIngestResult {
+  string status = 1;
+  int32 commits_ingested = 2;
+  int32 nodes_created = 3;
+  int32 edges_created = 4;
+  int32 rag_chunks = 5;
+}
+
+// ── Joern CPG ingest ───────────────────────────────────────────────────
+
+message CpgIngestRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string branch = 4;
+  string workspace_path = 5;
+}
+
+message CpgIngestResult {
+  string status = 1;
+  int32 methods_enriched = 2;
+  int32 extends_edges = 3;
+  int32 calls_edges = 4;
+  int32 uses_type_edges = 5;
+}
+
+// ── Crawl ──────────────────────────────────────────────────────────────
+
+message CrawlRequest {
+  jervis.common.RequestContext ctx = 1;
+  string url = 2;
+  int32 max_depth = 3;
+  bool allow_external_domains = 4;
+  string client_id = 5;
+  string project_id = 6;
+  string group_id = 7;
+}
+
+// ── Purge ──────────────────────────────────────────────────────────────
+
+message PurgeRequest {
+  jervis.common.RequestContext ctx = 1;
+  string source_urn = 2;
+  string client_id = 3;
+}
+
+message PurgeResult {
+  string status = 1;
+  int32 chunks_deleted = 2;
+  int32 nodes_cleaned = 3;
+  int32 edges_cleaned = 4;
+  int32 nodes_deleted = 5;
+  int32 edges_deleted = 6;
+}
