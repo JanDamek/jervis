@@ -22,6 +22,7 @@ from jervis.server import (
     environment_pb2_grpc,
     filter_rules_pb2_grpc,
     finance_pb2_grpc,
+    foreground_pb2_grpc,
     guidelines_pb2_grpc,
     meetings_pb2_grpc,
     merge_request_pb2_grpc,
@@ -52,6 +53,7 @@ _bug_tracker_stub: Optional[bug_tracker_pb2_grpc.ServerBugTrackerServiceStub] = 
 _merge_request_stub: Optional[merge_request_pb2_grpc.ServerMergeRequestServiceStub] = None
 _environment_stub: Optional[environment_pb2_grpc.ServerEnvironmentServiceStub] = None
 _task_api_stub: Optional[task_api_pb2_grpc.ServerTaskApiServiceStub] = None
+_foreground_stub: Optional[foreground_pb2_grpc.ServerForegroundServiceStub] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -190,3 +192,10 @@ def server_task_api_stub() -> task_api_pb2_grpc.ServerTaskApiServiceStub:
     if _task_api_stub is None:
         _task_api_stub = task_api_pb2_grpc.ServerTaskApiServiceStub(_get_channel())
     return _task_api_stub
+
+
+def server_foreground_stub() -> foreground_pb2_grpc.ServerForegroundServiceStub:
+    global _foreground_stub
+    if _foreground_stub is None:
+        _foreground_stub = foreground_pb2_grpc.ServerForegroundServiceStub(_get_channel())
+    return _foreground_stub

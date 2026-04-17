@@ -1171,56 +1171,8 @@ class KtorRpcServer(
                             }
 
                             // --- Chat internal endpoints (Python → Kotlin) ---
-
-                            // GPU reservation: Python registers start/end of chat processing
-                            post("/internal/foreground-start") {
-                                try {
-                                    backgroundEngine.reserveGpuForChat()
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to reserve GPU for chat" }
-                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
-                                }
-                            }
-                            post("/internal/reserve-gpu-for-chat") {
-                                try {
-                                    backgroundEngine.reserveGpuForChat()
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to reserve GPU for chat" }
-                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
-                                }
-                            }
-
-                            post("/internal/foreground-end") {
-                                try {
-                                    backgroundEngine.releaseGpuForChat()
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to release GPU for chat" }
-                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
-                                }
-                            }
-                            post("/internal/release-gpu-for-chat") {
-                                try {
-                                    backgroundEngine.releaseGpuForChat()
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to release GPU for chat" }
-                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
-                                }
-                            }
-
-                            // Chat on cloud: GPU remains available for background tasks
-                            post("/internal/chat-on-cloud") {
-                                try {
-                                    backgroundEngine.reportChatOnCloud()
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to report chat-on-cloud" }
-                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
-                                }
-                            }
+                            // Foreground GPU reservation (foreground-start/end/chat-on-cloud)
+                            // migrated to gRPC (jervis.server.ServerForegroundService).
 
                             // Active chat topics for qualification agent
                             get("/internal/active-chat-topics") {

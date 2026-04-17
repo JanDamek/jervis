@@ -398,8 +398,16 @@ class KotlinServerClient:
     async def register_foreground_start(self) -> bool:
         """Register foreground chat start — preempts background tasks."""
         try:
-            client = await self._get_client()
-            await client.post("/internal/foreground-start")
+            from app.grpc_server_client import server_foreground_stub
+            from jervis.common import types_pb2
+            from jervis.server import foreground_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            await server_foreground_stub().ForegroundStart(
+                foreground_pb2.ForegroundStartRequest(ctx=ctx), timeout=5.0,
+            )
             return True
         except Exception as e:
             logger.warning("Failed to register foreground start: %s", e)
@@ -408,8 +416,16 @@ class KotlinServerClient:
     async def register_foreground_end(self) -> bool:
         """Register foreground chat end — allows background tasks to resume."""
         try:
-            client = await self._get_client()
-            await client.post("/internal/foreground-end")
+            from app.grpc_server_client import server_foreground_stub
+            from jervis.common import types_pb2
+            from jervis.server import foreground_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            await server_foreground_stub().ForegroundEnd(
+                foreground_pb2.ForegroundEndRequest(ctx=ctx), timeout=5.0,
+            )
             return True
         except Exception as e:
             logger.warning("Failed to register foreground end: %s", e)
