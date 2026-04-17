@@ -16,6 +16,7 @@ from app.config import settings
 from jervis.server import (
     bug_tracker_pb2_grpc,
     connection_pb2_grpc,
+    environment_k8s_pb2_grpc,
     environment_pb2_grpc,
     git_pb2_grpc,
     meeting_alone_pb2_grpc,
@@ -37,6 +38,9 @@ _project_management_stub: Optional[
 _bug_tracker_stub: Optional[bug_tracker_pb2_grpc.ServerBugTrackerServiceStub] = None
 _environment_stub: Optional[environment_pb2_grpc.ServerEnvironmentServiceStub] = None
 _task_api_stub: Optional[task_api_pb2_grpc.ServerTaskApiServiceStub] = None
+_environment_k8s_stub: Optional[
+    environment_k8s_pb2_grpc.ServerEnvironmentK8sServiceStub
+] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -120,3 +124,14 @@ def server_task_api_stub() -> task_api_pb2_grpc.ServerTaskApiServiceStub:
     if _task_api_stub is None:
         _task_api_stub = task_api_pb2_grpc.ServerTaskApiServiceStub(_get_channel())
     return _task_api_stub
+
+
+def server_environment_k8s_stub() -> (
+    environment_k8s_pb2_grpc.ServerEnvironmentK8sServiceStub
+):
+    global _environment_k8s_stub
+    if _environment_k8s_stub is None:
+        _environment_k8s_stub = environment_k8s_pb2_grpc.ServerEnvironmentK8sServiceStub(
+            _get_channel()
+        )
+    return _environment_k8s_stub

@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerEnvironmentK8sProto";
+
+// ServerEnvironmentK8sService exposes per-namespace Kubernetes inspection
+// ops (pods, deployments, logs, scale/restart) used by the MCP server's
+// K8s tools. The EnvironmentResourceService already owns the allow-list
+// guard; pod logs are a plain text passthrough so the response stays a
+// string field.
+service ServerEnvironmentK8sService {
+  rpc ListNamespaceResources(ListNamespaceResourcesRequest) returns (ListNamespaceResourcesResponse);
+  rpc GetPodLogs(GetPodLogsRequest) returns (GetPodLogsResponse);
+  rpc GetDeploymentStatus(GetDeploymentStatusRequest) returns (GetDeploymentStatusResponse);
+  rpc ScaleDeployment(ScaleDeploymentRequest) returns (ScaleDeploymentResponse);
+  rpc RestartDeployment(RestartDeploymentRequest) returns (RestartDeploymentResponse);
+  rpc GetNamespaceStatus(GetNamespaceStatusRequest) returns (GetNamespaceStatusResponse);
+}
+
+// ── ListNamespaceResources ──────────────────────────────────────────────
+
+message ListNamespaceResourcesRequest {
+  jervis.common.RequestContext ctx = 1;
+  string namespace = 2;
+  string type = 3;                 // "all" / "pods" / "deployments" / "services" / "secrets"
+}
+
+message ListNamespaceResourcesResponse {
+  bool ok = 1;
+  string error = 2;                // populated on 403/500
+  // K8sResourceListDto JSON (resources grouped by type).
+  string data_json = 3;
+}
+
+// ── GetPodLogs ──────────────────────────────────────────────────────────
+
+message GetPodLogsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string namespace = 2;
+  string pod_name = 3;
+  int32 tail_lines = 4;            // <=0 → 100
+}
+
+message GetPodLogsResponse {
+  bool ok = 1;
+  string error = 2;
+  string logs = 3;                 // plain text
+}
+
+// ── GetDeploymentStatus ─────────────────────────────────────────────────
+
+message GetDeploymentStatusRequest {
+  jervis.common.RequestContext ctx = 1;
+  string namespace = 2;
+  string deployment_name = 3;
+}
+
+message GetDeploymentStatusResponse {
+  bool ok = 1;
+  string error = 2;
+  string data_json = 3;            // K8sDeploymentDetailDto JSON
+}
+
+// ── ScaleDeployment ─────────────────────────────────────────────────────
+
+message ScaleDeploymentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string namespace = 2;
+  string deployment_name = 3;
+  int32 replicas = 4;
+}
+
+message ScaleDeploymentResponse {
+  bool ok = 1;
+  string error = 2;
+  string message = 3;              // "Scaled X to N replicas"
+}
+
+// ── RestartDeployment ───────────────────────────────────────────────────
+
+message RestartDeploymentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string namespace = 2;
+  string deployment_name = 3;
+}
+
+message RestartDeploymentResponse {
+  bool ok = 1;
+  string error = 2;
+  string message = 3;
+}
+
+// ── GetNamespaceStatus ──────────────────────────────────────────────────
+
+message GetNamespaceStatusRequest {
+  jervis.common.RequestContext ctx = 1;
+  string namespace = 2;
+}
+
+message GetNamespaceStatusResponse {
+  bool ok = 1;
+  string error = 2;
+  string data_json = 3;            // K8sNamespaceStatusDto JSON
+}

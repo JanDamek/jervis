@@ -79,7 +79,6 @@ class KtorRpcServer(
     private val environmentRpcImpl: EnvironmentRpcImpl,
     private val environmentResourceRpcImpl: EnvironmentResourceRpcImpl,
     private val gpgCertificateRpcImpl: GpgCertificateRpcImpl,
-    private val environmentResourceService: com.jervis.environment.EnvironmentResourceService,
     private val orchestratorWorkflowTracker: com.jervis.agent.OrchestratorWorkflowTracker,
     private val orchestratorStatusHandler: com.jervis.agent.OrchestratorStatusHandler,
     private val oauth2Service: com.jervis.infrastructure.oauth2.OAuth2Service,
@@ -489,162 +488,8 @@ class KtorRpcServer(
                             // GPU idle notification from Ollama Router migrated to gRPC
                             // (jervis.server.ServerGpuIdleService).
 
-                            // --- Internal endpoints: environment resource inspection (MCP server calls these) ---
-
-                            get("/internal/environment/{ns}/resources") {
-                                val ns = call.parameters["ns"] ?: return@get call.respondText(
-                                    "{\"ok\":false,\"error\":\"Missing namespace\"}",
-                                    io.ktor.http.ContentType.Application.Json,
-                                    HttpStatusCode.BadRequest,
-                                )
-                                val type = call.request.queryParameters["type"] ?: "all"
-                                try {
-                                    val resources = environmentResourceService.listResources(ns, type)
-                                    val jsonStr = kotlinx.serialization.json.Json.encodeToString(
-                                        kotlinx.serialization.json.JsonElement.serializer(),
-                                        toJsonElement(mapOf("ok" to true, "data" to resources)),
-                                    )
-                                    call.respondText(jsonStr, io.ktor.http.ContentType.Application.Json)
-                                } catch (e: IllegalStateException) {
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.Forbidden,
-                                    )
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to list resources in $ns" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            get("/internal/environment/{ns}/pods/{name}/logs") {
-                                val ns = call.parameters["ns"] ?: return@get call.respondText(
-                                    "{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                val name = call.parameters["name"] ?: return@get call.respondText(
-                                    "{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                val tail = call.request.queryParameters["tail"]?.toIntOrNull() ?: 100
-                                try {
-                                    val logs = environmentResourceService.getPodLogs(ns, name, tail)
-                                    call.respondText(logs, io.ktor.http.ContentType.Text.Plain)
-                                } catch (e: IllegalStateException) {
-                                    call.respondText(
-                                        "Access denied: ${e.message}",
-                                        io.ktor.http.ContentType.Text.Plain,
-                                        HttpStatusCode.Forbidden,
-                                    )
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to get pod logs for $name in $ns" }
-                                    call.respondText(
-                                        "Error: ${e.message}",
-                                        io.ktor.http.ContentType.Text.Plain,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            get("/internal/environment/{ns}/deployments/{name}") {
-                                val ns = call.parameters["ns"] ?: return@get call.respondText(
-                                    "{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                val name = call.parameters["name"] ?: return@get call.respondText(
-                                    "{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                try {
-                                    val details = environmentResourceService.getDeploymentDetails(ns, name)
-                                    val jsonStr = kotlinx.serialization.json.Json.encodeToString(
-                                        kotlinx.serialization.json.JsonElement.serializer(),
-                                        toJsonElement(mapOf("ok" to true, "data" to details)),
-                                    )
-                                    call.respondText(jsonStr, io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to get deployment $name in $ns" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            post("/internal/environment/{ns}/deployments/{name}/scale") {
-                                val ns = call.parameters["ns"] ?: return@post call.respondText(
-                                    "{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                val name = call.parameters["name"] ?: return@post call.respondText(
-                                    "{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                try {
-                                    val body = call.receive<ScaleRequest>()
-                                    environmentResourceService.scaleDeployment(ns, name, body.replicas)
-                                    call.respondText(
-                                        "{\"ok\":true,\"message\":\"Scaled $name to ${body.replicas} replicas\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                    )
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to scale $name in $ns" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            post("/internal/environment/{ns}/deployments/{name}/restart") {
-                                val ns = call.parameters["ns"] ?: return@post call.respondText(
-                                    "{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                val name = call.parameters["name"] ?: return@post call.respondText(
-                                    "{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                try {
-                                    environmentResourceService.restartDeployment(ns, name)
-                                    call.respondText(
-                                        "{\"ok\":true,\"message\":\"Restart triggered for $name\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                    )
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to restart $name in $ns" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            get("/internal/environment/{ns}/status") {
-                                val ns = call.parameters["ns"] ?: return@get call.respondText(
-                                    "{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                try {
-                                    val status = environmentResourceService.getNamespaceStatus(ns)
-                                    val jsonStr = kotlinx.serialization.json.Json.encodeToString(
-                                        kotlinx.serialization.json.JsonElement.serializer(),
-                                        toJsonElement(mapOf("ok" to true, "data" to status)),
-                                    )
-                                    call.respondText(jsonStr, io.ktor.http.ContentType.Application.Json)
-                                } catch (e: IllegalStateException) {
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.Forbidden,
-                                    )
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to get namespace status for $ns" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
+                            // Per-namespace K8s ops (resources, logs, deployments, scale, restart,
+                            // status) migrated to gRPC (jervis.server.ServerEnvironmentK8sService).
 
                             // Internal endpoint: orchestrator creates tracker issues
                             post("/internal/tracker/create-issue") {
@@ -1341,11 +1186,6 @@ data class TrackerUpdateIssueRequest(
     val issueKey: String,
     val status: String? = null,
     val comment: String? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class ScaleRequest(
-    val replicas: Int,
 )
 
 @kotlinx.serialization.Serializable

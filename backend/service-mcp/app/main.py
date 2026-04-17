@@ -2196,42 +2196,51 @@ async def list_namespace_resources(namespace: str, resource_type: str = "all") -
         namespace: K8s namespace to inspect
         resource_type: Filter by type — "all", "pods", "deployments", "services", "secrets"
     """
-    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(f"{base}/resources", params={"type": resource_type})
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        if not data.get("ok"):
-            return f"Error: {data.get('error', 'unknown')}"
+    from app.grpc_clients import server_environment_k8s_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_k8s_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-        resources = data.get("data", {})
-        lines = [f"Namespace: {namespace}", ""]
-        for rtype, items in resources.items():
-            lines.append(f"## {rtype.title()} ({len(items)})")
-            for item in items:
-                name = item.get("name", "?")
-                if rtype == "pods":
-                    phase = item.get("phase", "?")
-                    ready = "READY" if item.get("ready") else "NOT READY"
-                    restarts = item.get("restartCount", 0)
-                    lines.append(f"  - {name}: {phase} ({ready}, restarts={restarts})")
-                elif rtype == "deployments":
-                    avail = item.get("availableReplicas", 0)
-                    total = item.get("replicas", 0)
-                    image = item.get("image", "?")
-                    lines.append(f"  - {name}: {avail}/{total} ready ({image})")
-                elif rtype == "services":
-                    svc_type = item.get("type", "?")
-                    ports = item.get("ports", [])
-                    lines.append(f"  - {name}: {svc_type} ({', '.join(ports) if ports else 'no ports'})")
-                elif rtype == "secrets":
-                    keys = item.get("keys", [])
-                    lines.append(f"  - {name}: keys={keys}")
-                else:
-                    lines.append(f"  - {name}")
-            lines.append("")
-        return "\n".join(lines)
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_k8s_stub().ListNamespaceResources(
+            environment_k8s_pb2.ListNamespaceResourcesRequest(
+                ctx=ctx, namespace=namespace, type=resource_type,
+            ),
+            timeout=30.0,
+        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Error: {resp.error or 'unknown'}"
+    resources = json.loads(resp.data_json) if resp.data_json else {}
+    lines = [f"Namespace: {namespace}", ""]
+    for rtype, items in resources.items():
+        lines.append(f"## {rtype.title()} ({len(items)})")
+        for item in items:
+            name = item.get("name", "?")
+            if rtype == "pods":
+                phase = item.get("phase", "?")
+                ready = "READY" if item.get("ready") else "NOT READY"
+                restarts = item.get("restartCount", 0)
+                lines.append(f"  - {name}: {phase} ({ready}, restarts={restarts})")
+            elif rtype == "deployments":
+                avail = item.get("availableReplicas", 0)
+                total = item.get("replicas", 0)
+                image = item.get("image", "?")
+                lines.append(f"  - {name}: {avail}/{total} ready ({image})")
+            elif rtype == "services":
+                svc_type = item.get("type", "?")
+                ports = item.get("ports", [])
+                lines.append(f"  - {name}: {svc_type} ({', '.join(ports) if ports else 'no ports'})")
+            elif rtype == "secrets":
+                keys = item.get("keys", [])
+                lines.append(f"  - {name}: keys={keys}")
+            else:
+                lines.append(f"  - {name}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 @mcp.tool
@@ -2243,15 +2252,26 @@ async def get_pod_logs(namespace: str, pod_name: str, tail_lines: int = 100) -> 
         pod_name: Name of the pod
         tail_lines: Number of recent log lines to return (max 1000)
     """
-    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(
-            f"{base}/pods/{pod_name}/logs",
-            params={"tail": min(tail_lines, 1000)},
+    from app.grpc_clients import server_environment_k8s_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_k8s_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_k8s_stub().GetPodLogs(
+            environment_k8s_pb2.GetPodLogsRequest(
+                ctx=ctx, namespace=namespace, pod_name=pod_name,
+                tail_lines=min(tail_lines, 1000),
+            ),
+            timeout=30.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        return resp.text
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Error: {resp.error or 'unknown'}"
+    return resp.logs
 
 
 @mcp.tool
@@ -2262,40 +2282,47 @@ async def get_deployment_status(namespace: str, name: str) -> str:
         namespace: K8s namespace
         name: Deployment name
     """
-    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(f"{base}/deployments/{name}")
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        if not data.get("ok"):
-            return f"Error: {data.get('error', 'unknown')}"
+    from app.grpc_clients import server_environment_k8s_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_k8s_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-        d = data.get("data", {})
-        lines = [
-            f"Deployment: {d.get('name', '?')}",
-            f"Namespace: {d.get('namespace', '?')}",
-            f"Image: {d.get('image', '?')}",
-            f"Replicas: {d.get('availableReplicas', 0)}/{d.get('replicas', 0)} ready",
-            f"Status: {'HEALTHY' if d.get('ready') else 'UNHEALTHY'}",
-            "",
-        ]
-
-        conditions = d.get("conditions", [])
-        if conditions:
-            lines.append("Conditions:")
-            for c in conditions:
-                lines.append(f"  - {c.get('type')}: {c.get('status')} ({c.get('reason', '')})")
-                if c.get("message"):
-                    lines.append(f"    {c['message']}")
-            lines.append("")
-
-        events = d.get("events", [])
-        if events:
-            lines.append("Recent Events:")
-            for ev in events:
-                lines.append(f"  [{ev.get('type', '?')}] {ev.get('reason', '?')}: {ev.get('message', '')}")
-        return "\n".join(lines)
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_k8s_stub().GetDeploymentStatus(
+            environment_k8s_pb2.GetDeploymentStatusRequest(
+                ctx=ctx, namespace=namespace, deployment_name=name,
+            ),
+            timeout=30.0,
+        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Error: {resp.error or 'unknown'}"
+    d = json.loads(resp.data_json) if resp.data_json else {}
+    lines = [
+        f"Deployment: {d.get('name', '?')}",
+        f"Namespace: {d.get('namespace', '?')}",
+        f"Image: {d.get('image', '?')}",
+        f"Replicas: {d.get('availableReplicas', 0)}/{d.get('replicas', 0)} ready",
+        f"Status: {'HEALTHY' if d.get('ready') else 'UNHEALTHY'}",
+        "",
+    ]
+    conditions = d.get("conditions", [])
+    if conditions:
+        lines.append("Conditions:")
+        for c in conditions:
+            lines.append(f"  - {c.get('type')}: {c.get('status')} ({c.get('reason', '')})")
+            if c.get("message"):
+                lines.append(f"    {c['message']}")
+        lines.append("")
+    events = d.get("events", [])
+    if events:
+        lines.append("Recent Events:")
+        for ev in events:
+            lines.append(f"  [{ev.get('type', '?')}] {ev.get('reason', '?')}: {ev.get('message', '')}")
+    return "\n".join(lines)
 
 
 @mcp.tool
@@ -2309,16 +2336,25 @@ async def scale_deployment(namespace: str, name: str, replicas: int) -> str:
     """
     if replicas < 0 or replicas > 10:
         return "Error: replicas must be between 0 and 10"
-    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{base}/deployments/{name}/scale",
-            json={"replicas": replicas},
+    from app.grpc_clients import server_environment_k8s_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_k8s_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_k8s_stub().ScaleDeployment(
+            environment_k8s_pb2.ScaleDeploymentRequest(
+                ctx=ctx, namespace=namespace, deployment_name=name, replicas=replicas,
+            ),
+            timeout=30.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        return data.get("message", "Scaled successfully") if data.get("ok") else f"Error: {data.get('error')}"
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Error: {resp.error or 'unknown'}"
+    return resp.message or "Scaled successfully"
 
 
 @mcp.tool
@@ -2329,13 +2365,25 @@ async def restart_deployment(namespace: str, name: str) -> str:
         namespace: K8s namespace
         name: Deployment name
     """
-    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{base}/deployments/{name}/restart")
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        return data.get("message", "Restart triggered") if data.get("ok") else f"Error: {data.get('error')}"
+    from app.grpc_clients import server_environment_k8s_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_k8s_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_k8s_stub().RestartDeployment(
+            environment_k8s_pb2.RestartDeploymentRequest(
+                ctx=ctx, namespace=namespace, deployment_name=name,
+            ),
+            timeout=30.0,
+        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Error: {resp.error or 'unknown'}"
+    return resp.message or "Restart triggered"
 
 
 @mcp.tool
@@ -2347,39 +2395,43 @@ async def get_namespace_status(namespace: str) -> str:
     Args:
         namespace: K8s namespace to inspect
     """
-    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(f"{base}/status")
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        if not data.get("ok"):
-            return f"Error: {data.get('error', 'unknown')}"
+    from app.grpc_clients import server_environment_k8s_stub
+    from jervis.common import types_pb2
+    from jervis.server import environment_k8s_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-        s = data.get("data", {})
-        healthy = s.get("healthy", False)
-        pods = s.get("pods", {})
-        deps = s.get("deployments", {})
-        svcs = s.get("services", {})
-
-        lines = [
-            f"Namespace: {s.get('namespace', '?')}",
-            f"Overall: {'HEALTHY' if healthy else 'UNHEALTHY'}",
-            "",
-            f"Pods: {pods.get('running', 0)}/{pods.get('total', 0)} running",
-            f"Deployments: {deps.get('ready', 0)}/{deps.get('total', 0)} ready",
-            f"Services: {svcs.get('total', 0)}",
-        ]
-
-        crashing = pods.get("crashing", [])
-        if crashing:
-            lines.extend(["", "CRASHING PODS:"])
-            for pod in crashing:
-                lines.append(f"  - {pod}")
-            lines.append("")
-            lines.append("Use get_pod_logs(namespace, pod_name) to inspect logs from crashing pods.")
-
-        return "\n".join(lines)
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_environment_k8s_stub().GetNamespaceStatus(
+            environment_k8s_pb2.GetNamespaceStatusRequest(ctx=ctx, namespace=namespace),
+            timeout=30.0,
+        )
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Error: {resp.error or 'unknown'}"
+    s = json.loads(resp.data_json) if resp.data_json else {}
+    healthy = s.get("healthy", False)
+    pods = s.get("pods", {})
+    deps = s.get("deployments", {})
+    svcs = s.get("services", {})
+    lines = [
+        f"Namespace: {s.get('namespace', '?')}",
+        f"Overall: {'HEALTHY' if healthy else 'UNHEALTHY'}",
+        "",
+        f"Pods: {pods.get('running', 0)}/{pods.get('total', 0)} running",
+        f"Deployments: {deps.get('ready', 0)}/{deps.get('total', 0)} ready",
+        f"Services: {svcs.get('total', 0)}",
+    ]
+    crashing = pods.get("crashing", [])
+    if crashing:
+        lines.extend(["", "CRASHING PODS:"])
+        for pod in crashing:
+            lines.append(f"  - {pod}")
+        lines.append("")
+        lines.append("Use get_pod_logs(namespace, pod_name) to inspect logs from crashing pods.")
+    return "\n".join(lines)
 
 
 # ── Project Management Tools ─────────────────────────────────────────────
