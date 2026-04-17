@@ -4,14 +4,11 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 
 /**
  * <pre>
- * ServerTaskApiService covers the core task CRUD + queue inspection +
- * chat-agent helpers. The broader task surface (agent-dispatched /
- * agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
- * create-background-task) lives on KtorRpcServer inline and migrates in
- * a follow-up slice.
- * Task list responses use `items_json` because TaskDocument is a deep
- * tree that Python only reads at the surface (id/title/state/clientId).
- * Typed fields live on requests only.
+ * ServerTaskApiService covers the full task surface — CRUD, queue,
+ * coding-agent dispatch + completion callbacks, user-task helpers,
+ * chat-agent plumbing. Task list responses use `items_json` because
+ * TaskDocument is a deep tree that Python only reads at the surface
+ * (id/title/state/clientId). Typed fields live on requests only.
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -487,6 +484,285 @@ public final class ServerTaskApiServiceGrpc {
     return getPushBackgroundResultMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.TasksByStateRequest,
+      com.jervis.contracts.server.TaskListResponse> getTasksByStateMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "TasksByState",
+      requestType = com.jervis.contracts.server.TasksByStateRequest.class,
+      responseType = com.jervis.contracts.server.TaskListResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.TasksByStateRequest,
+      com.jervis.contracts.server.TaskListResponse> getTasksByStateMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.TasksByStateRequest, com.jervis.contracts.server.TaskListResponse> getTasksByStateMethod;
+    if ((getTasksByStateMethod = ServerTaskApiServiceGrpc.getTasksByStateMethod) == null) {
+      synchronized (ServerTaskApiServiceGrpc.class) {
+        if ((getTasksByStateMethod = ServerTaskApiServiceGrpc.getTasksByStateMethod) == null) {
+          ServerTaskApiServiceGrpc.getTasksByStateMethod = getTasksByStateMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.TasksByStateRequest, com.jervis.contracts.server.TaskListResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "TasksByState"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.TasksByStateRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.TaskListResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerTaskApiServiceMethodDescriptorSupplier("TasksByState"))
+              .build();
+        }
+      }
+    }
+    return getTasksByStateMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.AgentDispatchedRequest,
+      com.jervis.contracts.server.SimpleTaskActionResponse> getAgentDispatchedMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "AgentDispatched",
+      requestType = com.jervis.contracts.server.AgentDispatchedRequest.class,
+      responseType = com.jervis.contracts.server.SimpleTaskActionResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.AgentDispatchedRequest,
+      com.jervis.contracts.server.SimpleTaskActionResponse> getAgentDispatchedMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.AgentDispatchedRequest, com.jervis.contracts.server.SimpleTaskActionResponse> getAgentDispatchedMethod;
+    if ((getAgentDispatchedMethod = ServerTaskApiServiceGrpc.getAgentDispatchedMethod) == null) {
+      synchronized (ServerTaskApiServiceGrpc.class) {
+        if ((getAgentDispatchedMethod = ServerTaskApiServiceGrpc.getAgentDispatchedMethod) == null) {
+          ServerTaskApiServiceGrpc.getAgentDispatchedMethod = getAgentDispatchedMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.AgentDispatchedRequest, com.jervis.contracts.server.SimpleTaskActionResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "AgentDispatched"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.AgentDispatchedRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.SimpleTaskActionResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerTaskApiServiceMethodDescriptorSupplier("AgentDispatched"))
+              .build();
+        }
+      }
+    }
+    return getAgentDispatchedMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.TaskIdRequest,
+      com.jervis.contracts.server.SimpleTaskActionResponse> getAgentCompletedMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "AgentCompleted",
+      requestType = com.jervis.contracts.server.TaskIdRequest.class,
+      responseType = com.jervis.contracts.server.SimpleTaskActionResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.TaskIdRequest,
+      com.jervis.contracts.server.SimpleTaskActionResponse> getAgentCompletedMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.TaskIdRequest, com.jervis.contracts.server.SimpleTaskActionResponse> getAgentCompletedMethod;
+    if ((getAgentCompletedMethod = ServerTaskApiServiceGrpc.getAgentCompletedMethod) == null) {
+      synchronized (ServerTaskApiServiceGrpc.class) {
+        if ((getAgentCompletedMethod = ServerTaskApiServiceGrpc.getAgentCompletedMethod) == null) {
+          ServerTaskApiServiceGrpc.getAgentCompletedMethod = getAgentCompletedMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.TaskIdRequest, com.jervis.contracts.server.SimpleTaskActionResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "AgentCompleted"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.TaskIdRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.SimpleTaskActionResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerTaskApiServiceMethodDescriptorSupplier("AgentCompleted"))
+              .build();
+        }
+      }
+    }
+    return getAgentCompletedMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.CreateBackgroundTaskRequest,
+      com.jervis.contracts.server.CreateBackgroundTaskResponse> getCreateBackgroundTaskMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "CreateBackgroundTask",
+      requestType = com.jervis.contracts.server.CreateBackgroundTaskRequest.class,
+      responseType = com.jervis.contracts.server.CreateBackgroundTaskResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.CreateBackgroundTaskRequest,
+      com.jervis.contracts.server.CreateBackgroundTaskResponse> getCreateBackgroundTaskMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.CreateBackgroundTaskRequest, com.jervis.contracts.server.CreateBackgroundTaskResponse> getCreateBackgroundTaskMethod;
+    if ((getCreateBackgroundTaskMethod = ServerTaskApiServiceGrpc.getCreateBackgroundTaskMethod) == null) {
+      synchronized (ServerTaskApiServiceGrpc.class) {
+        if ((getCreateBackgroundTaskMethod = ServerTaskApiServiceGrpc.getCreateBackgroundTaskMethod) == null) {
+          ServerTaskApiServiceGrpc.getCreateBackgroundTaskMethod = getCreateBackgroundTaskMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.CreateBackgroundTaskRequest, com.jervis.contracts.server.CreateBackgroundTaskResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "CreateBackgroundTask"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.CreateBackgroundTaskRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.CreateBackgroundTaskResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerTaskApiServiceMethodDescriptorSupplier("CreateBackgroundTask"))
+              .build();
+        }
+      }
+    }
+    return getCreateBackgroundTaskMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.DispatchCodingAgentRequest,
+      com.jervis.contracts.server.DispatchCodingAgentResponse> getDispatchCodingAgentMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "DispatchCodingAgent",
+      requestType = com.jervis.contracts.server.DispatchCodingAgentRequest.class,
+      responseType = com.jervis.contracts.server.DispatchCodingAgentResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.DispatchCodingAgentRequest,
+      com.jervis.contracts.server.DispatchCodingAgentResponse> getDispatchCodingAgentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.DispatchCodingAgentRequest, com.jervis.contracts.server.DispatchCodingAgentResponse> getDispatchCodingAgentMethod;
+    if ((getDispatchCodingAgentMethod = ServerTaskApiServiceGrpc.getDispatchCodingAgentMethod) == null) {
+      synchronized (ServerTaskApiServiceGrpc.class) {
+        if ((getDispatchCodingAgentMethod = ServerTaskApiServiceGrpc.getDispatchCodingAgentMethod) == null) {
+          ServerTaskApiServiceGrpc.getDispatchCodingAgentMethod = getDispatchCodingAgentMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.DispatchCodingAgentRequest, com.jervis.contracts.server.DispatchCodingAgentResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "DispatchCodingAgent"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.DispatchCodingAgentRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.DispatchCodingAgentResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerTaskApiServiceMethodDescriptorSupplier("DispatchCodingAgent"))
+              .build();
+        }
+      }
+    }
+    return getDispatchCodingAgentMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ListUserTasksRequest,
+      com.jervis.contracts.server.TaskListResponse> getListUserTasksMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ListUserTasks",
+      requestType = com.jervis.contracts.server.ListUserTasksRequest.class,
+      responseType = com.jervis.contracts.server.TaskListResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ListUserTasksRequest,
+      com.jervis.contracts.server.TaskListResponse> getListUserTasksMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListUserTasksRequest, com.jervis.contracts.server.TaskListResponse> getListUserTasksMethod;
+    if ((getListUserTasksMethod = ServerTaskApiServiceGrpc.getListUserTasksMethod) == null) {
+      synchronized (ServerTaskApiServiceGrpc.class) {
+        if ((getListUserTasksMethod = ServerTaskApiServiceGrpc.getListUserTasksMethod) == null) {
+          ServerTaskApiServiceGrpc.getListUserTasksMethod = getListUserTasksMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListUserTasksRequest, com.jervis.contracts.server.TaskListResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListUserTasks"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.ListUserTasksRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.TaskListResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerTaskApiServiceMethodDescriptorSupplier("ListUserTasks"))
+              .build();
+        }
+      }
+    }
+    return getListUserTasksMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.TaskIdRequest,
+      com.jervis.contracts.server.UserTaskResponse> getGetUserTaskMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "GetUserTask",
+      requestType = com.jervis.contracts.server.TaskIdRequest.class,
+      responseType = com.jervis.contracts.server.UserTaskResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.TaskIdRequest,
+      com.jervis.contracts.server.UserTaskResponse> getGetUserTaskMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.TaskIdRequest, com.jervis.contracts.server.UserTaskResponse> getGetUserTaskMethod;
+    if ((getGetUserTaskMethod = ServerTaskApiServiceGrpc.getGetUserTaskMethod) == null) {
+      synchronized (ServerTaskApiServiceGrpc.class) {
+        if ((getGetUserTaskMethod = ServerTaskApiServiceGrpc.getGetUserTaskMethod) == null) {
+          ServerTaskApiServiceGrpc.getGetUserTaskMethod = getGetUserTaskMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.TaskIdRequest, com.jervis.contracts.server.UserTaskResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetUserTask"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.TaskIdRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.UserTaskResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerTaskApiServiceMethodDescriptorSupplier("GetUserTask"))
+              .build();
+        }
+      }
+    }
+    return getGetUserTaskMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.RespondToUserTaskRequest,
+      com.jervis.contracts.server.SimpleTaskActionResponse> getRespondToUserTaskMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "RespondToUserTask",
+      requestType = com.jervis.contracts.server.RespondToUserTaskRequest.class,
+      responseType = com.jervis.contracts.server.SimpleTaskActionResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.RespondToUserTaskRequest,
+      com.jervis.contracts.server.SimpleTaskActionResponse> getRespondToUserTaskMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.RespondToUserTaskRequest, com.jervis.contracts.server.SimpleTaskActionResponse> getRespondToUserTaskMethod;
+    if ((getRespondToUserTaskMethod = ServerTaskApiServiceGrpc.getRespondToUserTaskMethod) == null) {
+      synchronized (ServerTaskApiServiceGrpc.class) {
+        if ((getRespondToUserTaskMethod = ServerTaskApiServiceGrpc.getRespondToUserTaskMethod) == null) {
+          ServerTaskApiServiceGrpc.getRespondToUserTaskMethod = getRespondToUserTaskMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.RespondToUserTaskRequest, com.jervis.contracts.server.SimpleTaskActionResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "RespondToUserTask"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.RespondToUserTaskRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.SimpleTaskActionResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerTaskApiServiceMethodDescriptorSupplier("RespondToUserTask"))
+              .build();
+        }
+      }
+    }
+    return getRespondToUserTaskMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.DismissUserTasksRequest,
+      com.jervis.contracts.server.DismissUserTasksResponse> getDismissUserTasksMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "DismissUserTasks",
+      requestType = com.jervis.contracts.server.DismissUserTasksRequest.class,
+      responseType = com.jervis.contracts.server.DismissUserTasksResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.DismissUserTasksRequest,
+      com.jervis.contracts.server.DismissUserTasksResponse> getDismissUserTasksMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.DismissUserTasksRequest, com.jervis.contracts.server.DismissUserTasksResponse> getDismissUserTasksMethod;
+    if ((getDismissUserTasksMethod = ServerTaskApiServiceGrpc.getDismissUserTasksMethod) == null) {
+      synchronized (ServerTaskApiServiceGrpc.class) {
+        if ((getDismissUserTasksMethod = ServerTaskApiServiceGrpc.getDismissUserTasksMethod) == null) {
+          ServerTaskApiServiceGrpc.getDismissUserTasksMethod = getDismissUserTasksMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.DismissUserTasksRequest, com.jervis.contracts.server.DismissUserTasksResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "DismissUserTasks"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.DismissUserTasksRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.DismissUserTasksResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerTaskApiServiceMethodDescriptorSupplier("DismissUserTasks"))
+              .build();
+        }
+      }
+    }
+    return getDismissUserTasksMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -548,19 +824,19 @@ public final class ServerTaskApiServiceGrpc {
 
   /**
    * <pre>
-   * ServerTaskApiService covers the core task CRUD + queue inspection +
-   * chat-agent helpers. The broader task surface (agent-dispatched /
-   * agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
-   * create-background-task) lives on KtorRpcServer inline and migrates in
-   * a follow-up slice.
-   * Task list responses use `items_json` because TaskDocument is a deep
-   * tree that Python only reads at the surface (id/title/state/clientId).
-   * Typed fields live on requests only.
+   * ServerTaskApiService covers the full task surface — CRUD, queue,
+   * coding-agent dispatch + completion callbacks, user-task helpers,
+   * chat-agent plumbing. Task list responses use `items_json` because
+   * TaskDocument is a deep tree that Python only reads at the surface
+   * (id/title/state/clientId). Typed fields live on requests only.
    * </pre>
    */
   public interface AsyncService {
 
     /**
+     * <pre>
+     * Core task CRUD
+     * </pre>
      */
     default void createTask(com.jervis.contracts.server.CreateTaskRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.server.CreateTaskResponse> responseObserver) {
@@ -664,19 +940,88 @@ public final class ServerTaskApiServiceGrpc {
         io.grpc.stub.StreamObserver<com.jervis.contracts.server.PushBackgroundResultResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getPushBackgroundResultMethod(), responseObserver);
     }
+
+    /**
+     * <pre>
+     * AgentTaskWatcher helpers (agent-job lifecycle)
+     * </pre>
+     */
+    default void tasksByState(com.jervis.contracts.server.TasksByStateRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.TaskListResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getTasksByStateMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void agentDispatched(com.jervis.contracts.server.AgentDispatchedRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.SimpleTaskActionResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getAgentDispatchedMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void agentCompleted(com.jervis.contracts.server.TaskIdRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.SimpleTaskActionResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getAgentCompletedMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Chat-agent helpers
+     * </pre>
+     */
+    default void createBackgroundTask(com.jervis.contracts.server.CreateBackgroundTaskRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.CreateBackgroundTaskResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCreateBackgroundTaskMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void dispatchCodingAgent(com.jervis.contracts.server.DispatchCodingAgentRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.DispatchCodingAgentResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getDispatchCodingAgentMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * User-task lookup + response + dismiss
+     * </pre>
+     */
+    default void listUserTasks(com.jervis.contracts.server.ListUserTasksRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.TaskListResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListUserTasksMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void getUserTask(com.jervis.contracts.server.TaskIdRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UserTaskResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetUserTaskMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void respondToUserTask(com.jervis.contracts.server.RespondToUserTaskRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.SimpleTaskActionResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getRespondToUserTaskMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void dismissUserTasks(com.jervis.contracts.server.DismissUserTasksRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.DismissUserTasksResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getDismissUserTasksMethod(), responseObserver);
+    }
   }
 
   /**
    * Base class for the server implementation of the service ServerTaskApiService.
    * <pre>
-   * ServerTaskApiService covers the core task CRUD + queue inspection +
-   * chat-agent helpers. The broader task surface (agent-dispatched /
-   * agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
-   * create-background-task) lives on KtorRpcServer inline and migrates in
-   * a follow-up slice.
-   * Task list responses use `items_json` because TaskDocument is a deep
-   * tree that Python only reads at the surface (id/title/state/clientId).
-   * Typed fields live on requests only.
+   * ServerTaskApiService covers the full task surface — CRUD, queue,
+   * coding-agent dispatch + completion callbacks, user-task helpers,
+   * chat-agent plumbing. Task list responses use `items_json` because
+   * TaskDocument is a deep tree that Python only reads at the surface
+   * (id/title/state/clientId). Typed fields live on requests only.
    * </pre>
    */
   public static abstract class ServerTaskApiServiceImplBase
@@ -690,14 +1035,11 @@ public final class ServerTaskApiServiceGrpc {
   /**
    * A stub to allow clients to do asynchronous rpc calls to service ServerTaskApiService.
    * <pre>
-   * ServerTaskApiService covers the core task CRUD + queue inspection +
-   * chat-agent helpers. The broader task surface (agent-dispatched /
-   * agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
-   * create-background-task) lives on KtorRpcServer inline and migrates in
-   * a follow-up slice.
-   * Task list responses use `items_json` because TaskDocument is a deep
-   * tree that Python only reads at the surface (id/title/state/clientId).
-   * Typed fields live on requests only.
+   * ServerTaskApiService covers the full task surface — CRUD, queue,
+   * coding-agent dispatch + completion callbacks, user-task helpers,
+   * chat-agent plumbing. Task list responses use `items_json` because
+   * TaskDocument is a deep tree that Python only reads at the surface
+   * (id/title/state/clientId). Typed fields live on requests only.
    * </pre>
    */
   public static final class ServerTaskApiServiceStub
@@ -714,6 +1056,9 @@ public final class ServerTaskApiServiceGrpc {
     }
 
     /**
+     * <pre>
+     * Core task CRUD
+     * </pre>
      */
     public void createTask(com.jervis.contracts.server.CreateTaskRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.server.CreateTaskResponse> responseObserver) {
@@ -832,19 +1177,97 @@ public final class ServerTaskApiServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getPushBackgroundResultMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * AgentTaskWatcher helpers (agent-job lifecycle)
+     * </pre>
+     */
+    public void tasksByState(com.jervis.contracts.server.TasksByStateRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.TaskListResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getTasksByStateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void agentDispatched(com.jervis.contracts.server.AgentDispatchedRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.SimpleTaskActionResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getAgentDispatchedMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void agentCompleted(com.jervis.contracts.server.TaskIdRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.SimpleTaskActionResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getAgentCompletedMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Chat-agent helpers
+     * </pre>
+     */
+    public void createBackgroundTask(com.jervis.contracts.server.CreateBackgroundTaskRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.CreateBackgroundTaskResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getCreateBackgroundTaskMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void dispatchCodingAgent(com.jervis.contracts.server.DispatchCodingAgentRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.DispatchCodingAgentResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getDispatchCodingAgentMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * User-task lookup + response + dismiss
+     * </pre>
+     */
+    public void listUserTasks(com.jervis.contracts.server.ListUserTasksRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.TaskListResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getListUserTasksMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getUserTask(com.jervis.contracts.server.TaskIdRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UserTaskResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetUserTaskMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void respondToUserTask(com.jervis.contracts.server.RespondToUserTaskRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.SimpleTaskActionResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getRespondToUserTaskMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void dismissUserTasks(com.jervis.contracts.server.DismissUserTasksRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.DismissUserTasksResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getDismissUserTasksMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service ServerTaskApiService.
    * <pre>
-   * ServerTaskApiService covers the core task CRUD + queue inspection +
-   * chat-agent helpers. The broader task surface (agent-dispatched /
-   * agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
-   * create-background-task) lives on KtorRpcServer inline and migrates in
-   * a follow-up slice.
-   * Task list responses use `items_json` because TaskDocument is a deep
-   * tree that Python only reads at the surface (id/title/state/clientId).
-   * Typed fields live on requests only.
+   * ServerTaskApiService covers the full task surface — CRUD, queue,
+   * coding-agent dispatch + completion callbacks, user-task helpers,
+   * chat-agent plumbing. Task list responses use `items_json` because
+   * TaskDocument is a deep tree that Python only reads at the surface
+   * (id/title/state/clientId). Typed fields live on requests only.
    * </pre>
    */
   public static final class ServerTaskApiServiceBlockingV2Stub
@@ -861,6 +1284,9 @@ public final class ServerTaskApiServiceGrpc {
     }
 
     /**
+     * <pre>
+     * Core task CRUD
+     * </pre>
      */
     public com.jervis.contracts.server.CreateTaskResponse createTask(com.jervis.contracts.server.CreateTaskRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
@@ -964,19 +1390,88 @@ public final class ServerTaskApiServiceGrpc {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getPushBackgroundResultMethod(), getCallOptions(), request);
     }
+
+    /**
+     * <pre>
+     * AgentTaskWatcher helpers (agent-job lifecycle)
+     * </pre>
+     */
+    public com.jervis.contracts.server.TaskListResponse tasksByState(com.jervis.contracts.server.TasksByStateRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getTasksByStateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.SimpleTaskActionResponse agentDispatched(com.jervis.contracts.server.AgentDispatchedRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getAgentDispatchedMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.SimpleTaskActionResponse agentCompleted(com.jervis.contracts.server.TaskIdRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getAgentCompletedMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Chat-agent helpers
+     * </pre>
+     */
+    public com.jervis.contracts.server.CreateBackgroundTaskResponse createBackgroundTask(com.jervis.contracts.server.CreateBackgroundTaskRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getCreateBackgroundTaskMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.DispatchCodingAgentResponse dispatchCodingAgent(com.jervis.contracts.server.DispatchCodingAgentRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getDispatchCodingAgentMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * User-task lookup + response + dismiss
+     * </pre>
+     */
+    public com.jervis.contracts.server.TaskListResponse listUserTasks(com.jervis.contracts.server.ListUserTasksRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getListUserTasksMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.UserTaskResponse getUserTask(com.jervis.contracts.server.TaskIdRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getGetUserTaskMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.SimpleTaskActionResponse respondToUserTask(com.jervis.contracts.server.RespondToUserTaskRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getRespondToUserTaskMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.DismissUserTasksResponse dismissUserTasks(com.jervis.contracts.server.DismissUserTasksRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getDismissUserTasksMethod(), getCallOptions(), request);
+    }
   }
 
   /**
    * A stub to allow clients to do limited synchronous rpc calls to service ServerTaskApiService.
    * <pre>
-   * ServerTaskApiService covers the core task CRUD + queue inspection +
-   * chat-agent helpers. The broader task surface (agent-dispatched /
-   * agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
-   * create-background-task) lives on KtorRpcServer inline and migrates in
-   * a follow-up slice.
-   * Task list responses use `items_json` because TaskDocument is a deep
-   * tree that Python only reads at the surface (id/title/state/clientId).
-   * Typed fields live on requests only.
+   * ServerTaskApiService covers the full task surface — CRUD, queue,
+   * coding-agent dispatch + completion callbacks, user-task helpers,
+   * chat-agent plumbing. Task list responses use `items_json` because
+   * TaskDocument is a deep tree that Python only reads at the surface
+   * (id/title/state/clientId). Typed fields live on requests only.
    * </pre>
    */
   public static final class ServerTaskApiServiceBlockingStub
@@ -993,6 +1488,9 @@ public final class ServerTaskApiServiceGrpc {
     }
 
     /**
+     * <pre>
+     * Core task CRUD
+     * </pre>
      */
     public com.jervis.contracts.server.CreateTaskResponse createTask(com.jervis.contracts.server.CreateTaskRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
@@ -1096,19 +1594,88 @@ public final class ServerTaskApiServiceGrpc {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getPushBackgroundResultMethod(), getCallOptions(), request);
     }
+
+    /**
+     * <pre>
+     * AgentTaskWatcher helpers (agent-job lifecycle)
+     * </pre>
+     */
+    public com.jervis.contracts.server.TaskListResponse tasksByState(com.jervis.contracts.server.TasksByStateRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getTasksByStateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.SimpleTaskActionResponse agentDispatched(com.jervis.contracts.server.AgentDispatchedRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getAgentDispatchedMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.SimpleTaskActionResponse agentCompleted(com.jervis.contracts.server.TaskIdRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getAgentCompletedMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Chat-agent helpers
+     * </pre>
+     */
+    public com.jervis.contracts.server.CreateBackgroundTaskResponse createBackgroundTask(com.jervis.contracts.server.CreateBackgroundTaskRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getCreateBackgroundTaskMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.DispatchCodingAgentResponse dispatchCodingAgent(com.jervis.contracts.server.DispatchCodingAgentRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getDispatchCodingAgentMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * User-task lookup + response + dismiss
+     * </pre>
+     */
+    public com.jervis.contracts.server.TaskListResponse listUserTasks(com.jervis.contracts.server.ListUserTasksRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getListUserTasksMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.UserTaskResponse getUserTask(com.jervis.contracts.server.TaskIdRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetUserTaskMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.SimpleTaskActionResponse respondToUserTask(com.jervis.contracts.server.RespondToUserTaskRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getRespondToUserTaskMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.DismissUserTasksResponse dismissUserTasks(com.jervis.contracts.server.DismissUserTasksRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getDismissUserTasksMethod(), getCallOptions(), request);
+    }
   }
 
   /**
    * A stub to allow clients to do ListenableFuture-style rpc calls to service ServerTaskApiService.
    * <pre>
-   * ServerTaskApiService covers the core task CRUD + queue inspection +
-   * chat-agent helpers. The broader task surface (agent-dispatched /
-   * agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
-   * create-background-task) lives on KtorRpcServer inline and migrates in
-   * a follow-up slice.
-   * Task list responses use `items_json` because TaskDocument is a deep
-   * tree that Python only reads at the surface (id/title/state/clientId).
-   * Typed fields live on requests only.
+   * ServerTaskApiService covers the full task surface — CRUD, queue,
+   * coding-agent dispatch + completion callbacks, user-task helpers,
+   * chat-agent plumbing. Task list responses use `items_json` because
+   * TaskDocument is a deep tree that Python only reads at the surface
+   * (id/title/state/clientId). Typed fields live on requests only.
    * </pre>
    */
   public static final class ServerTaskApiServiceFutureStub
@@ -1125,6 +1692,9 @@ public final class ServerTaskApiServiceGrpc {
     }
 
     /**
+     * <pre>
+     * Core task CRUD
+     * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.CreateTaskResponse> createTask(
         com.jervis.contracts.server.CreateTaskRequest request) {
@@ -1243,6 +1813,87 @@ public final class ServerTaskApiServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getPushBackgroundResultMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * AgentTaskWatcher helpers (agent-job lifecycle)
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.TaskListResponse> tasksByState(
+        com.jervis.contracts.server.TasksByStateRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getTasksByStateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.SimpleTaskActionResponse> agentDispatched(
+        com.jervis.contracts.server.AgentDispatchedRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getAgentDispatchedMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.SimpleTaskActionResponse> agentCompleted(
+        com.jervis.contracts.server.TaskIdRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getAgentCompletedMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * Chat-agent helpers
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.CreateBackgroundTaskResponse> createBackgroundTask(
+        com.jervis.contracts.server.CreateBackgroundTaskRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getCreateBackgroundTaskMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.DispatchCodingAgentResponse> dispatchCodingAgent(
+        com.jervis.contracts.server.DispatchCodingAgentRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getDispatchCodingAgentMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * User-task lookup + response + dismiss
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.TaskListResponse> listUserTasks(
+        com.jervis.contracts.server.ListUserTasksRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getListUserTasksMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.UserTaskResponse> getUserTask(
+        com.jervis.contracts.server.TaskIdRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetUserTaskMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.SimpleTaskActionResponse> respondToUserTask(
+        com.jervis.contracts.server.RespondToUserTaskRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getRespondToUserTaskMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.DismissUserTasksResponse> dismissUserTasks(
+        com.jervis.contracts.server.DismissUserTasksRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getDismissUserTasksMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_CREATE_TASK = 0;
@@ -1260,6 +1911,15 @@ public final class ServerTaskApiServiceGrpc {
   private static final int METHODID_SET_PRIORITY = 12;
   private static final int METHODID_PUSH_NOTIFICATION = 13;
   private static final int METHODID_PUSH_BACKGROUND_RESULT = 14;
+  private static final int METHODID_TASKS_BY_STATE = 15;
+  private static final int METHODID_AGENT_DISPATCHED = 16;
+  private static final int METHODID_AGENT_COMPLETED = 17;
+  private static final int METHODID_CREATE_BACKGROUND_TASK = 18;
+  private static final int METHODID_DISPATCH_CODING_AGENT = 19;
+  private static final int METHODID_LIST_USER_TASKS = 20;
+  private static final int METHODID_GET_USER_TASK = 21;
+  private static final int METHODID_RESPOND_TO_USER_TASK = 22;
+  private static final int METHODID_DISMISS_USER_TASKS = 23;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1337,6 +1997,42 @@ public final class ServerTaskApiServiceGrpc {
         case METHODID_PUSH_BACKGROUND_RESULT:
           serviceImpl.pushBackgroundResult((com.jervis.contracts.server.PushBackgroundResultRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.server.PushBackgroundResultResponse>) responseObserver);
+          break;
+        case METHODID_TASKS_BY_STATE:
+          serviceImpl.tasksByState((com.jervis.contracts.server.TasksByStateRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.TaskListResponse>) responseObserver);
+          break;
+        case METHODID_AGENT_DISPATCHED:
+          serviceImpl.agentDispatched((com.jervis.contracts.server.AgentDispatchedRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.SimpleTaskActionResponse>) responseObserver);
+          break;
+        case METHODID_AGENT_COMPLETED:
+          serviceImpl.agentCompleted((com.jervis.contracts.server.TaskIdRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.SimpleTaskActionResponse>) responseObserver);
+          break;
+        case METHODID_CREATE_BACKGROUND_TASK:
+          serviceImpl.createBackgroundTask((com.jervis.contracts.server.CreateBackgroundTaskRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.CreateBackgroundTaskResponse>) responseObserver);
+          break;
+        case METHODID_DISPATCH_CODING_AGENT:
+          serviceImpl.dispatchCodingAgent((com.jervis.contracts.server.DispatchCodingAgentRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.DispatchCodingAgentResponse>) responseObserver);
+          break;
+        case METHODID_LIST_USER_TASKS:
+          serviceImpl.listUserTasks((com.jervis.contracts.server.ListUserTasksRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.TaskListResponse>) responseObserver);
+          break;
+        case METHODID_GET_USER_TASK:
+          serviceImpl.getUserTask((com.jervis.contracts.server.TaskIdRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.UserTaskResponse>) responseObserver);
+          break;
+        case METHODID_RESPOND_TO_USER_TASK:
+          serviceImpl.respondToUserTask((com.jervis.contracts.server.RespondToUserTaskRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.SimpleTaskActionResponse>) responseObserver);
+          break;
+        case METHODID_DISMISS_USER_TASKS:
+          serviceImpl.dismissUserTasks((com.jervis.contracts.server.DismissUserTasksRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.DismissUserTasksResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -1461,6 +2157,69 @@ public final class ServerTaskApiServiceGrpc {
               com.jervis.contracts.server.PushBackgroundResultRequest,
               com.jervis.contracts.server.PushBackgroundResultResponse>(
                 service, METHODID_PUSH_BACKGROUND_RESULT)))
+        .addMethod(
+          getTasksByStateMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.TasksByStateRequest,
+              com.jervis.contracts.server.TaskListResponse>(
+                service, METHODID_TASKS_BY_STATE)))
+        .addMethod(
+          getAgentDispatchedMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.AgentDispatchedRequest,
+              com.jervis.contracts.server.SimpleTaskActionResponse>(
+                service, METHODID_AGENT_DISPATCHED)))
+        .addMethod(
+          getAgentCompletedMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.TaskIdRequest,
+              com.jervis.contracts.server.SimpleTaskActionResponse>(
+                service, METHODID_AGENT_COMPLETED)))
+        .addMethod(
+          getCreateBackgroundTaskMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.CreateBackgroundTaskRequest,
+              com.jervis.contracts.server.CreateBackgroundTaskResponse>(
+                service, METHODID_CREATE_BACKGROUND_TASK)))
+        .addMethod(
+          getDispatchCodingAgentMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.DispatchCodingAgentRequest,
+              com.jervis.contracts.server.DispatchCodingAgentResponse>(
+                service, METHODID_DISPATCH_CODING_AGENT)))
+        .addMethod(
+          getListUserTasksMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.ListUserTasksRequest,
+              com.jervis.contracts.server.TaskListResponse>(
+                service, METHODID_LIST_USER_TASKS)))
+        .addMethod(
+          getGetUserTaskMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.TaskIdRequest,
+              com.jervis.contracts.server.UserTaskResponse>(
+                service, METHODID_GET_USER_TASK)))
+        .addMethod(
+          getRespondToUserTaskMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.RespondToUserTaskRequest,
+              com.jervis.contracts.server.SimpleTaskActionResponse>(
+                service, METHODID_RESPOND_TO_USER_TASK)))
+        .addMethod(
+          getDismissUserTasksMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.DismissUserTasksRequest,
+              com.jervis.contracts.server.DismissUserTasksResponse>(
+                service, METHODID_DISMISS_USER_TASKS)))
         .build();
   }
 
@@ -1524,6 +2283,15 @@ public final class ServerTaskApiServiceGrpc {
               .addMethod(getSetPriorityMethod())
               .addMethod(getPushNotificationMethod())
               .addMethod(getPushBackgroundResultMethod())
+              .addMethod(getTasksByStateMethod())
+              .addMethod(getAgentDispatchedMethod())
+              .addMethod(getAgentCompletedMethod())
+              .addMethod(getCreateBackgroundTaskMethod())
+              .addMethod(getDispatchCodingAgentMethod())
+              .addMethod(getListUserTasksMethod())
+              .addMethod(getGetUserTaskMethod())
+              .addMethod(getRespondToUserTaskMethod())
+              .addMethod(getDismissUserTasksMethod())
               .build();
         }
       }

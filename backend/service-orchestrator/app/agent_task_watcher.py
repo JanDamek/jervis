@@ -13,9 +13,19 @@ import logging
 
 from app.agents.job_runner import job_runner
 from app.config import settings
+from app.grpc_server_client import server_task_api_stub
 from app.tools.kotlin_client import kotlin_client
+from jervis.common import types_pb2
+from jervis.server import task_api_pb2
+from jervis_contracts.interceptors import prepare_context
 
 logger = logging.getLogger(__name__)
+
+
+def _new_ctx() -> types_pb2.RequestContext:
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    return ctx
 
 
 class AgentTaskWatcher:
@@ -60,18 +70,21 @@ class AgentTaskWatcher:
 
     async def _poll_once(self):
         """Single poll iteration — find waiting tasks, check jobs, resume if done."""
-        # Query Kotlin server for tasks in CODING state
-        import httpx
+        import json as _json
+
+        from app.grpc_server_client import server_task_api_stub
+        from jervis.common import types_pb2
+        from jervis.server import task_api_pb2
+        from jervis_contracts.interceptors import prepare_context
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(
-                    f"{settings.kotlin_server_url}/internal/tasks/by-state",
-                    params={"state": "CODING"},
-                )
-                if resp.status_code != 200:
-                    return
-                tasks = resp.json()
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().TasksByState(
+                task_api_pb2.TasksByStateRequest(ctx=ctx, state="CODING"),
+                timeout=15.0,
+            )
+            tasks = _json.loads(resp.items_json)
         except Exception as e:
             logger.debug("Failed to fetch CODING tasks: %s", e)
             return
@@ -157,14 +170,10 @@ class AgentTaskWatcher:
                 # Direct coding task — three-step: CODING→PROCESSING→(MR)→DONE
                 # Step 1: agent-completed moves CODING→PROCESSING
                 try:
-                    async with httpx.AsyncClient(timeout=15) as client:
-                        await client.post(
-                            f"{settings.kotlin_server_url}/internal/tasks/{task_id}/agent-completed",
-                            json={
-                                "agentJobState": job_status,
-                                "result": result,
-                            },
-                        )
+                    await server_task_api_stub().AgentCompleted(
+                        task_api_pb2.TaskIdRequest(ctx=_new_ctx(), task_id=task_id),
+                        timeout=15.0,
+                    )
                 except Exception as e:
                     logger.error("Failed to mark agent-completed for direct task %s: %s", task_id, e)
 
@@ -249,14 +258,10 @@ class AgentTaskWatcher:
             else:
                 # Graph-based task — update state and resume orchestration graph
                 try:
-                    async with httpx.AsyncClient(timeout=15) as client:
-                        await client.post(
-                            f"{settings.kotlin_server_url}/internal/tasks/{task_id}/agent-completed",
-                            json={
-                                "agentJobState": job_status,
-                                "result": result,
-                            },
-                        )
+                    await server_task_api_stub().AgentCompleted(
+                        task_api_pb2.TaskIdRequest(ctx=_new_ctx(), task_id=task_id),
+                        timeout=15.0,
+                    )
                 except Exception as e:
                     logger.error("Failed to update task %s after agent completion: %s", task_id, e)
                     continue
@@ -297,11 +302,10 @@ class AgentTaskWatcher:
 
         # Mark task completed (CODING→PROCESSING→DONE)
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                await client.post(
-                    f"{settings.kotlin_server_url}/internal/tasks/{task_id}/agent-completed",
-                    json={"agentJobState": job_status, "result": result},
-                )
+            await server_task_api_stub().AgentCompleted(
+                task_api_pb2.TaskIdRequest(ctx=_new_ctx(), task_id=task_id),
+                timeout=15.0,
+            )
         except Exception as e:
             logger.error("Failed to mark review agent-completed %s: %s", task_id, e)
 
@@ -539,27 +543,27 @@ class AgentTaskWatcher:
         )
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(
-                    f"{settings.kotlin_server_url}/internal/dispatch-coding-agent",
-                    json={
-                        "taskDescription": fix_instructions,
-                        "clientId": client_id,
-                        "projectId": project_id or "",
-                        "sourceUrn": f"code-review-fix:{original_task_id}",
-                        "mergeRequestUrl": mr_url,
-                    },
+            resp = await server_task_api_stub().DispatchCodingAgent(
+                task_api_pb2.DispatchCodingAgentRequest(
+                    ctx=_new_ctx(),
+                    task_description=fix_instructions,
+                    client_id=client_id,
+                    project_id=project_id or "",
+                    source_urn=f"code-review-fix:{original_task_id}",
+                    merge_request_url=mr_url,
+                ),
+                timeout=15.0,
+            )
+            if resp.dispatched:
+                logger.info(
+                    "FIX_TASK_CREATED | original=%s | round=%d | task=%s",
+                    original_task_id, review_round + 1, resp.task_id,
                 )
-                if resp.status_code == 200:
-                    logger.info(
-                        "FIX_TASK_CREATED | original=%s | round=%d",
-                        original_task_id, review_round + 1,
-                    )
-                else:
-                    logger.warning(
-                        "FIX_TASK_CREATE_FAILED | original=%s | status=%d",
-                        original_task_id, resp.status_code,
-                    )
+            else:
+                logger.warning(
+                    "FIX_TASK_CREATE_FAILED | original=%s | error=%s",
+                    original_task_id, resp.error,
+                )
         except Exception as e:
             logger.warning("Failed to create fix task: %s", e)
 

@@ -26,15 +26,11 @@ if _version_not_supported:
 
 
 class ServerTaskApiServiceStub(object):
-    """ServerTaskApiService covers the core task CRUD + queue inspection +
-    chat-agent helpers. The broader task surface (agent-dispatched /
-    agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
-    create-background-task) lives on KtorRpcServer inline and migrates in
-    a follow-up slice.
-
-    Task list responses use `items_json` because TaskDocument is a deep
-    tree that Python only reads at the surface (id/title/state/clientId).
-    Typed fields live on requests only.
+    """ServerTaskApiService covers the full task surface — CRUD, queue,
+    coding-agent dispatch + completion callbacks, user-task helpers,
+    chat-agent plumbing. Task list responses use `items_json` because
+    TaskDocument is a deep tree that Python only reads at the surface
+    (id/title/state/clientId). Typed fields live on requests only.
     """
 
     def __init__(self, channel):
@@ -118,22 +114,64 @@ class ServerTaskApiServiceStub(object):
                 request_serializer=jervis_dot_server_dot_task__api__pb2.PushBackgroundResultRequest.SerializeToString,
                 response_deserializer=jervis_dot_server_dot_task__api__pb2.PushBackgroundResultResponse.FromString,
                 _registered_method=True)
+        self.TasksByState = channel.unary_unary(
+                '/jervis.server.ServerTaskApiService/TasksByState',
+                request_serializer=jervis_dot_server_dot_task__api__pb2.TasksByStateRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_task__api__pb2.TaskListResponse.FromString,
+                _registered_method=True)
+        self.AgentDispatched = channel.unary_unary(
+                '/jervis.server.ServerTaskApiService/AgentDispatched',
+                request_serializer=jervis_dot_server_dot_task__api__pb2.AgentDispatchedRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_task__api__pb2.SimpleTaskActionResponse.FromString,
+                _registered_method=True)
+        self.AgentCompleted = channel.unary_unary(
+                '/jervis.server.ServerTaskApiService/AgentCompleted',
+                request_serializer=jervis_dot_server_dot_task__api__pb2.TaskIdRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_task__api__pb2.SimpleTaskActionResponse.FromString,
+                _registered_method=True)
+        self.CreateBackgroundTask = channel.unary_unary(
+                '/jervis.server.ServerTaskApiService/CreateBackgroundTask',
+                request_serializer=jervis_dot_server_dot_task__api__pb2.CreateBackgroundTaskRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_task__api__pb2.CreateBackgroundTaskResponse.FromString,
+                _registered_method=True)
+        self.DispatchCodingAgent = channel.unary_unary(
+                '/jervis.server.ServerTaskApiService/DispatchCodingAgent',
+                request_serializer=jervis_dot_server_dot_task__api__pb2.DispatchCodingAgentRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_task__api__pb2.DispatchCodingAgentResponse.FromString,
+                _registered_method=True)
+        self.ListUserTasks = channel.unary_unary(
+                '/jervis.server.ServerTaskApiService/ListUserTasks',
+                request_serializer=jervis_dot_server_dot_task__api__pb2.ListUserTasksRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_task__api__pb2.TaskListResponse.FromString,
+                _registered_method=True)
+        self.GetUserTask = channel.unary_unary(
+                '/jervis.server.ServerTaskApiService/GetUserTask',
+                request_serializer=jervis_dot_server_dot_task__api__pb2.TaskIdRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_task__api__pb2.UserTaskResponse.FromString,
+                _registered_method=True)
+        self.RespondToUserTask = channel.unary_unary(
+                '/jervis.server.ServerTaskApiService/RespondToUserTask',
+                request_serializer=jervis_dot_server_dot_task__api__pb2.RespondToUserTaskRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_task__api__pb2.SimpleTaskActionResponse.FromString,
+                _registered_method=True)
+        self.DismissUserTasks = channel.unary_unary(
+                '/jervis.server.ServerTaskApiService/DismissUserTasks',
+                request_serializer=jervis_dot_server_dot_task__api__pb2.DismissUserTasksRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_task__api__pb2.DismissUserTasksResponse.FromString,
+                _registered_method=True)
 
 
 class ServerTaskApiServiceServicer(object):
-    """ServerTaskApiService covers the core task CRUD + queue inspection +
-    chat-agent helpers. The broader task surface (agent-dispatched /
-    agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
-    create-background-task) lives on KtorRpcServer inline and migrates in
-    a follow-up slice.
-
-    Task list responses use `items_json` because TaskDocument is a deep
-    tree that Python only reads at the surface (id/title/state/clientId).
-    Typed fields live on requests only.
+    """ServerTaskApiService covers the full task surface — CRUD, queue,
+    coding-agent dispatch + completion callbacks, user-task helpers,
+    chat-agent plumbing. Task list responses use `items_json` because
+    TaskDocument is a deep tree that Python only reads at the surface
+    (id/title/state/clientId). Typed fields live on requests only.
     """
 
     def CreateTask(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Core task CRUD
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -222,6 +260,63 @@ class ServerTaskApiServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def TasksByState(self, request, context):
+        """AgentTaskWatcher helpers (agent-job lifecycle)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AgentDispatched(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AgentCompleted(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CreateBackgroundTask(self, request, context):
+        """Chat-agent helpers
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DispatchCodingAgent(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListUserTasks(self, request, context):
+        """User-task lookup + response + dismiss
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetUserTask(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RespondToUserTask(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DismissUserTasks(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ServerTaskApiServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -300,6 +395,51 @@ def add_ServerTaskApiServiceServicer_to_server(servicer, server):
                     request_deserializer=jervis_dot_server_dot_task__api__pb2.PushBackgroundResultRequest.FromString,
                     response_serializer=jervis_dot_server_dot_task__api__pb2.PushBackgroundResultResponse.SerializeToString,
             ),
+            'TasksByState': grpc.unary_unary_rpc_method_handler(
+                    servicer.TasksByState,
+                    request_deserializer=jervis_dot_server_dot_task__api__pb2.TasksByStateRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_task__api__pb2.TaskListResponse.SerializeToString,
+            ),
+            'AgentDispatched': grpc.unary_unary_rpc_method_handler(
+                    servicer.AgentDispatched,
+                    request_deserializer=jervis_dot_server_dot_task__api__pb2.AgentDispatchedRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_task__api__pb2.SimpleTaskActionResponse.SerializeToString,
+            ),
+            'AgentCompleted': grpc.unary_unary_rpc_method_handler(
+                    servicer.AgentCompleted,
+                    request_deserializer=jervis_dot_server_dot_task__api__pb2.TaskIdRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_task__api__pb2.SimpleTaskActionResponse.SerializeToString,
+            ),
+            'CreateBackgroundTask': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateBackgroundTask,
+                    request_deserializer=jervis_dot_server_dot_task__api__pb2.CreateBackgroundTaskRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_task__api__pb2.CreateBackgroundTaskResponse.SerializeToString,
+            ),
+            'DispatchCodingAgent': grpc.unary_unary_rpc_method_handler(
+                    servicer.DispatchCodingAgent,
+                    request_deserializer=jervis_dot_server_dot_task__api__pb2.DispatchCodingAgentRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_task__api__pb2.DispatchCodingAgentResponse.SerializeToString,
+            ),
+            'ListUserTasks': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListUserTasks,
+                    request_deserializer=jervis_dot_server_dot_task__api__pb2.ListUserTasksRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_task__api__pb2.TaskListResponse.SerializeToString,
+            ),
+            'GetUserTask': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetUserTask,
+                    request_deserializer=jervis_dot_server_dot_task__api__pb2.TaskIdRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_task__api__pb2.UserTaskResponse.SerializeToString,
+            ),
+            'RespondToUserTask': grpc.unary_unary_rpc_method_handler(
+                    servicer.RespondToUserTask,
+                    request_deserializer=jervis_dot_server_dot_task__api__pb2.RespondToUserTaskRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_task__api__pb2.SimpleTaskActionResponse.SerializeToString,
+            ),
+            'DismissUserTasks': grpc.unary_unary_rpc_method_handler(
+                    servicer.DismissUserTasks,
+                    request_deserializer=jervis_dot_server_dot_task__api__pb2.DismissUserTasksRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_task__api__pb2.DismissUserTasksResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'jervis.server.ServerTaskApiService', rpc_method_handlers)
@@ -309,15 +449,11 @@ def add_ServerTaskApiServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class ServerTaskApiService(object):
-    """ServerTaskApiService covers the core task CRUD + queue inspection +
-    chat-agent helpers. The broader task surface (agent-dispatched /
-    agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
-    create-background-task) lives on KtorRpcServer inline and migrates in
-    a follow-up slice.
-
-    Task list responses use `items_json` because TaskDocument is a deep
-    tree that Python only reads at the surface (id/title/state/clientId).
-    Typed fields live on requests only.
+    """ServerTaskApiService covers the full task surface — CRUD, queue,
+    coding-agent dispatch + completion callbacks, user-task helpers,
+    chat-agent plumbing. Task list responses use `items_json` because
+    TaskDocument is a deep tree that Python only reads at the surface
+    (id/title/state/clientId). Typed fields live on requests only.
     """
 
     @staticmethod
@@ -715,6 +851,249 @@ class ServerTaskApiService(object):
             '/jervis.server.ServerTaskApiService/PushBackgroundResult',
             jervis_dot_server_dot_task__api__pb2.PushBackgroundResultRequest.SerializeToString,
             jervis_dot_server_dot_task__api__pb2.PushBackgroundResultResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def TasksByState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerTaskApiService/TasksByState',
+            jervis_dot_server_dot_task__api__pb2.TasksByStateRequest.SerializeToString,
+            jervis_dot_server_dot_task__api__pb2.TaskListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AgentDispatched(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerTaskApiService/AgentDispatched',
+            jervis_dot_server_dot_task__api__pb2.AgentDispatchedRequest.SerializeToString,
+            jervis_dot_server_dot_task__api__pb2.SimpleTaskActionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AgentCompleted(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerTaskApiService/AgentCompleted',
+            jervis_dot_server_dot_task__api__pb2.TaskIdRequest.SerializeToString,
+            jervis_dot_server_dot_task__api__pb2.SimpleTaskActionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreateBackgroundTask(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerTaskApiService/CreateBackgroundTask',
+            jervis_dot_server_dot_task__api__pb2.CreateBackgroundTaskRequest.SerializeToString,
+            jervis_dot_server_dot_task__api__pb2.CreateBackgroundTaskResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DispatchCodingAgent(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerTaskApiService/DispatchCodingAgent',
+            jervis_dot_server_dot_task__api__pb2.DispatchCodingAgentRequest.SerializeToString,
+            jervis_dot_server_dot_task__api__pb2.DispatchCodingAgentResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListUserTasks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerTaskApiService/ListUserTasks',
+            jervis_dot_server_dot_task__api__pb2.ListUserTasksRequest.SerializeToString,
+            jervis_dot_server_dot_task__api__pb2.TaskListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetUserTask(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerTaskApiService/GetUserTask',
+            jervis_dot_server_dot_task__api__pb2.TaskIdRequest.SerializeToString,
+            jervis_dot_server_dot_task__api__pb2.UserTaskResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RespondToUserTask(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerTaskApiService/RespondToUserTask',
+            jervis_dot_server_dot_task__api__pb2.RespondToUserTaskRequest.SerializeToString,
+            jervis_dot_server_dot_task__api__pb2.SimpleTaskActionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DismissUserTasks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerTaskApiService/DismissUserTasks',
+            jervis_dot_server_dot_task__api__pb2.DismissUserTasksRequest.SerializeToString,
+            jervis_dot_server_dot_task__api__pb2.DismissUserTasksResponse.FromString,
             options,
             channel_credentials,
             insecure,

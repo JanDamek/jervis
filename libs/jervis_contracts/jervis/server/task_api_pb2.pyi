@@ -323,3 +323,137 @@ class PushBackgroundResultResponse(_message.Message):
     ok: bool
     error: str
     def __init__(self, ok: bool = ..., error: _Optional[str] = ...) -> None: ...
+
+class TasksByStateRequest(_message.Message):
+    __slots__ = ("ctx", "state")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    state: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., state: _Optional[str] = ...) -> None: ...
+
+class AgentDispatchedRequest(_message.Message):
+    __slots__ = ("ctx", "task_id", "job_name", "workspace_path", "agent_type")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    TASK_ID_FIELD_NUMBER: _ClassVar[int]
+    JOB_NAME_FIELD_NUMBER: _ClassVar[int]
+    WORKSPACE_PATH_FIELD_NUMBER: _ClassVar[int]
+    AGENT_TYPE_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    task_id: str
+    job_name: str
+    workspace_path: str
+    agent_type: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., task_id: _Optional[str] = ..., job_name: _Optional[str] = ..., workspace_path: _Optional[str] = ..., agent_type: _Optional[str] = ...) -> None: ...
+
+class CreateBackgroundTaskRequest(_message.Message):
+    __slots__ = ("ctx", "title", "description", "client_id", "project_id", "priority")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    PRIORITY_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    title: str
+    description: str
+    client_id: str
+    project_id: str
+    priority: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., title: _Optional[str] = ..., description: _Optional[str] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ..., priority: _Optional[str] = ...) -> None: ...
+
+class CreateBackgroundTaskResponse(_message.Message):
+    __slots__ = ("task_id", "title")
+    TASK_ID_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    task_id: str
+    title: str
+    def __init__(self, task_id: _Optional[str] = ..., title: _Optional[str] = ...) -> None: ...
+
+class DispatchCodingAgentRequest(_message.Message):
+    __slots__ = ("ctx", "task_description", "client_id", "project_id", "source_urn", "review_round", "merge_request_url", "agent_preference")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    TASK_DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    SOURCE_URN_FIELD_NUMBER: _ClassVar[int]
+    REVIEW_ROUND_FIELD_NUMBER: _ClassVar[int]
+    MERGE_REQUEST_URL_FIELD_NUMBER: _ClassVar[int]
+    AGENT_PREFERENCE_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    task_description: str
+    client_id: str
+    project_id: str
+    source_urn: str
+    review_round: int
+    merge_request_url: str
+    agent_preference: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., task_description: _Optional[str] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ..., source_urn: _Optional[str] = ..., review_round: _Optional[int] = ..., merge_request_url: _Optional[str] = ..., agent_preference: _Optional[str] = ...) -> None: ...
+
+class DispatchCodingAgentResponse(_message.Message):
+    __slots__ = ("task_id", "dispatched", "error")
+    TASK_ID_FIELD_NUMBER: _ClassVar[int]
+    DISPATCHED_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    task_id: str
+    dispatched: bool
+    error: str
+    def __init__(self, task_id: _Optional[str] = ..., dispatched: bool = ..., error: _Optional[str] = ...) -> None: ...
+
+class ListUserTasksRequest(_message.Message):
+    __slots__ = ("ctx", "query", "max_results")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    QUERY_FIELD_NUMBER: _ClassVar[int]
+    MAX_RESULTS_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    query: str
+    max_results: int
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., query: _Optional[str] = ..., max_results: _Optional[int] = ...) -> None: ...
+
+class UserTaskResponse(_message.Message):
+    __slots__ = ("ok", "error", "id", "title", "state", "question", "context", "client_id")
+    OK_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    ID_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    QUESTION_FIELD_NUMBER: _ClassVar[int]
+    CONTEXT_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    ok: bool
+    error: str
+    id: str
+    title: str
+    state: str
+    question: str
+    context: str
+    client_id: str
+    def __init__(self, ok: bool = ..., error: _Optional[str] = ..., id: _Optional[str] = ..., title: _Optional[str] = ..., state: _Optional[str] = ..., question: _Optional[str] = ..., context: _Optional[str] = ..., client_id: _Optional[str] = ...) -> None: ...
+
+class RespondToUserTaskRequest(_message.Message):
+    __slots__ = ("ctx", "task_id", "response")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    TASK_ID_FIELD_NUMBER: _ClassVar[int]
+    RESPONSE_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    task_id: str
+    response: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., task_id: _Optional[str] = ..., response: _Optional[str] = ...) -> None: ...
+
+class DismissUserTasksRequest(_message.Message):
+    __slots__ = ("ctx", "task_ids")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    TASK_IDS_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    task_ids: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., task_ids: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class DismissUserTasksResponse(_message.Message):
+    __slots__ = ("ok", "dismissed", "error")
+    OK_FIELD_NUMBER: _ClassVar[int]
+    DISMISSED_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    ok: bool
+    dismissed: int
+    error: str
+    def __init__(self, ok: bool = ..., dismissed: _Optional[int] = ..., error: _Optional[str] = ...) -> None: ...

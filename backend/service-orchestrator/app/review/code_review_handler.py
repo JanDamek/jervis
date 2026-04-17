@@ -167,33 +167,35 @@ async def run_code_review(
 
     # 8. Dispatch review agent K8s Job
     try:
-        import httpx
-        from app.config import settings
+        from app.grpc_server_client import server_task_api_stub
+        from jervis.common import types_pb2
+        from jervis.server import task_api_pb2
+        from jervis_contracts.interceptors import prepare_context
 
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                f"{settings.kotlin_server_url}/internal/dispatch-coding-agent",
-                json={
-                    "taskDescription": review_instructions,
-                    "clientId": client_id,
-                    "projectId": project_id or "",
-                    "sourceUrn": f"code-review:{task_id}",
-                    "mergeRequestUrl": mr_url,
-                },
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_task_api_stub().DispatchCodingAgent(
+            task_api_pb2.DispatchCodingAgentRequest(
+                ctx=ctx,
+                task_description=review_instructions,
+                client_id=client_id,
+                project_id=project_id or "",
+                source_urn=f"code-review:{task_id}",
+                merge_request_url=mr_url,
+            ),
+            timeout=15.0,
+        )
+        if resp.dispatched:
+            logger.info(
+                "CODE_REVIEW_DISPATCHED | original_task=%s | review_task=%s | round=%d",
+                task_id, resp.task_id, review_round,
             )
-            if resp.status_code == 200:
-                result = resp.json()
-                logger.info(
-                    "CODE_REVIEW_DISPATCHED | original_task=%s | review_task=%s | round=%d",
-                    task_id, result.get("taskId", ""), review_round,
-                )
-                return {"dispatched": True, "review_task_id": result.get("taskId")}
-            else:
-                logger.warning(
-                    "CODE_REVIEW_DISPATCH_FAILED | task=%s | status=%d | body=%s",
-                    task_id, resp.status_code, resp.text[:200],
-                )
-                return {"dispatched": False, "reason": f"HTTP {resp.status_code}"}
+            return {"dispatched": True, "review_task_id": resp.task_id}
+        logger.warning(
+            "CODE_REVIEW_DISPATCH_FAILED | task=%s | error=%s",
+            task_id, resp.error,
+        )
+        return {"dispatched": False, "reason": resp.error or "unknown"}
     except Exception as e:
         logger.warning("Failed to dispatch review agent for task %s: %s", task_id, e)
         return {"dispatched": False, "reason": str(e)}

@@ -5,13 +5,21 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.common.types.SourceUrn
 import com.jervis.common.types.TaskId
+import com.jervis.contracts.server.AgentDispatchedRequest
+import com.jervis.contracts.server.CreateBackgroundTaskRequest
+import com.jervis.contracts.server.CreateBackgroundTaskResponse
 import com.jervis.contracts.server.CreateTaskRequest
 import com.jervis.contracts.server.CreateTaskResponse
 import com.jervis.contracts.server.CreateWorkPlanRequest
 import com.jervis.contracts.server.CreateWorkPlanResponse
+import com.jervis.contracts.server.DismissUserTasksRequest
+import com.jervis.contracts.server.DismissUserTasksResponse
+import com.jervis.contracts.server.DispatchCodingAgentRequest
+import com.jervis.contracts.server.DispatchCodingAgentResponse
 import com.jervis.contracts.server.GetQueueRequest
 import com.jervis.contracts.server.GetTaskResponse
 import com.jervis.contracts.server.GetTaskStatusResponse
+import com.jervis.contracts.server.ListUserTasksRequest
 import com.jervis.contracts.server.PushBackgroundResultRequest
 import com.jervis.contracts.server.PushBackgroundResultResponse
 import com.jervis.contracts.server.PushNotificationRequest
@@ -19,6 +27,7 @@ import com.jervis.contracts.server.PushNotificationResponse
 import com.jervis.contracts.server.RecentTasksRequest
 import com.jervis.contracts.server.RespondToTaskRequest
 import com.jervis.contracts.server.RespondToTaskResponse
+import com.jervis.contracts.server.RespondToUserTaskRequest
 import com.jervis.contracts.server.SearchTasksRequest
 import com.jervis.contracts.server.ServerTaskApiServiceGrpcKt
 import com.jervis.contracts.server.SetPriorityRequest
@@ -27,6 +36,9 @@ import com.jervis.contracts.server.SimpleTaskActionResponse
 import com.jervis.contracts.server.TaskIdRequest
 import com.jervis.contracts.server.TaskListResponse
 import com.jervis.contracts.server.TaskNoteRequest
+import com.jervis.contracts.server.TasksByStateRequest
+import com.jervis.contracts.server.UserTaskResponse
+import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.task.TaskStateEnum
 import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.infrastructure.notification.ApnsPushService
@@ -37,6 +49,7 @@ import com.jervis.task.ProcessingMode
 import com.jervis.task.TaskDocument
 import com.jervis.task.TaskRepository
 import com.jervis.task.TaskService
+import com.jervis.task.UserTaskRpcImpl
 import com.jervis.task.UserTaskService
 import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.encodeToString
@@ -54,6 +67,7 @@ class ServerTaskApiGrpcImpl(
     private val taskRepository: TaskRepository,
     private val taskService: TaskService,
     private val userTaskService: UserTaskService,
+    private val userTaskRpcImpl: UserTaskRpcImpl,
     private val preferenceService: PreferenceService,
     private val pendingTaskService: PendingTaskService,
     private val fcmPushService: FcmPushService,
@@ -491,6 +505,228 @@ class ServerTaskApiGrpcImpl(
         "this_week" -> Instant.now().minus(Duration.ofDays(7))
         "this_month" -> Instant.now().minus(Duration.ofDays(30))
         else -> Instant.now().atZone(userZone).toLocalDate().atStartOfDay(userZone).toInstant()
+    }
+
+    // ── Inline task routes (migrated from KtorRpcServer) ──
+
+    override suspend fun tasksByState(request: TasksByStateRequest): TaskListResponse {
+        val state = try {
+            TaskStateEnum.valueOf(request.state)
+        } catch (_: Exception) {
+            return TaskListResponse.newBuilder().setItemsJson("[]").build()
+        }
+        val items = mutableListOf<Map<String, Any?>>()
+        taskRepository.findByStateOrderByCreatedAtAsc(state).collect { task ->
+            items.add(
+                mapOf(
+                    "id" to task.id.toString(),
+                    "agentJobName" to task.agentJobName,
+                    "orchestratorThreadId" to task.orchestratorThreadId,
+                    "agentJobStartedAt" to task.agentJobStartedAt?.toString(),
+                    "sourceUrn" to task.sourceUrn?.value,
+                    "agentJobWorkspacePath" to task.agentJobWorkspacePath,
+                    "agentJobAgentType" to task.agentJobAgentType,
+                    "taskName" to task.taskName,
+                    "content" to task.content,
+                    "clientId" to task.clientId.toString(),
+                    "projectId" to task.projectId?.toString(),
+                    "mergeRequestUrl" to task.mergeRequestUrl,
+                ),
+            )
+        }
+        return TaskListResponse.newBuilder()
+            .setItemsJson(encodeAnyListToJson(items))
+            .build()
+    }
+
+    override suspend fun agentDispatched(request: AgentDispatchedRequest): SimpleTaskActionResponse {
+        val taskId = TaskId(ObjectId(request.taskId))
+        val task = taskRepository.getById(taskId)
+            ?: return SimpleTaskActionResponse.newBuilder().setOk(false)
+                .setTaskId(request.taskId).setError("Task not found").build()
+        val updated = task.copy(
+            state = TaskStateEnum.CODING,
+            agentJobName = request.jobName,
+            agentJobState = "RUNNING",
+            agentJobStartedAt = Instant.now(),
+            agentJobWorkspacePath = request.workspacePath.takeIf { it.isNotBlank() },
+            agentJobAgentType = request.agentType.takeIf { it.isNotBlank() },
+        )
+        taskRepository.save(updated)
+        logger.info { "AGENT_DISPATCHED | taskId=${request.taskId} job=${request.jobName} type=${request.agentType}" }
+        return SimpleTaskActionResponse.newBuilder().setOk(true)
+            .setTaskId(request.taskId).setState("CODING").build()
+    }
+
+    override suspend fun agentCompleted(request: TaskIdRequest): SimpleTaskActionResponse {
+        val taskId = TaskId(ObjectId(request.taskId))
+        val task = taskRepository.getById(taskId)
+            ?: return SimpleTaskActionResponse.newBuilder().setOk(false)
+                .setTaskId(request.taskId).setError("Task not found").build()
+        val updated = task.copy(
+            state = TaskStateEnum.PROCESSING,
+            agentJobState = "COMPLETED",
+        )
+        taskRepository.save(updated)
+        logger.info { "AGENT_COMPLETED | taskId=${request.taskId}" }
+        return SimpleTaskActionResponse.newBuilder().setOk(true)
+            .setTaskId(request.taskId).setState("PROCESSING").build()
+    }
+
+    override suspend fun createBackgroundTask(
+        request: CreateBackgroundTaskRequest,
+    ): CreateBackgroundTaskResponse {
+        val clientId = ClientId.fromString(request.clientId)
+        val projectId = request.projectId.takeIf { it.isNotBlank() }?.let { ProjectId.fromString(it) }
+        val correlationId = ObjectId().toHexString()
+        val task = taskService.createTask(
+            taskType = TaskTypeEnum.INSTANT,
+            content = request.description,
+            clientId = clientId,
+            correlationId = correlationId,
+            sourceUrn = SourceUrn("chat:background-task"),
+            projectId = projectId,
+            state = TaskStateEnum.QUEUED,
+            taskName = request.title,
+        )
+        logger.info { "BACKGROUND_TASK_CREATED | id=${task.id} title=${request.title}" }
+        return CreateBackgroundTaskResponse.newBuilder()
+            .setTaskId(task.id.toString())
+            .setTitle(request.title)
+            .build()
+    }
+
+    override suspend fun dispatchCodingAgent(
+        request: DispatchCodingAgentRequest,
+    ): DispatchCodingAgentResponse {
+        return try {
+            val clientId = ClientId.fromString(request.clientId)
+            val projectId = ProjectId.fromString(request.projectId)
+            val correlationId = ObjectId().toHexString()
+            val sourceUrn = request.sourceUrn.takeIf { it.isNotBlank() } ?: "chat:coding-agent"
+            var task = taskService.createTask(
+                taskType = TaskTypeEnum.INSTANT,
+                content = request.taskDescription,
+                clientId = clientId,
+                correlationId = correlationId,
+                sourceUrn = SourceUrn(sourceUrn),
+                projectId = projectId,
+                state = TaskStateEnum.QUEUED,
+                taskName = request.taskDescription.take(100),
+            )
+            if (request.mergeRequestUrl.isNotBlank()) {
+                task = task.copy(mergeRequestUrl = request.mergeRequestUrl)
+                taskRepository.save(task)
+            }
+            logger.info { "CODING_AGENT_DISPATCHED | taskId=${task.id}" }
+            DispatchCodingAgentResponse.newBuilder()
+                .setTaskId(task.id.toString())
+                .setDispatched(true)
+                .build()
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to dispatch coding agent" }
+            DispatchCodingAgentResponse.newBuilder()
+                .setDispatched(false)
+                .setError(e.message.orEmpty())
+                .build()
+        }
+    }
+
+    override suspend fun listUserTasks(request: ListUserTasksRequest): TaskListResponse {
+        val limit = if (request.maxResults > 0) request.maxResults else 5
+        val result = userTaskService.findPagedTasks(
+            query = request.query.takeIf { it.isNotBlank() },
+            offset = 0,
+            limit = limit,
+        )
+        val items = result.items.map { task ->
+            mapOf(
+                "id" to task.id.toString(),
+                "title" to (task.sourceUrn?.toString() ?: ""),
+                "state" to task.state.name,
+                "question" to (task.pendingUserQuestion ?: ""),
+                "context" to (task.userQuestionContext ?: ""),
+                "clientId" to task.clientId.toString(),
+            )
+        }
+        return TaskListResponse.newBuilder()
+            .setItemsJson(json.encodeToString(items))
+            .build()
+    }
+
+    override suspend fun getUserTask(request: TaskIdRequest): UserTaskResponse {
+        val taskId = TaskId(ObjectId(request.taskId))
+        val task = userTaskService.getTaskByIdOrNull(taskId)
+            ?: return UserTaskResponse.newBuilder().setOk(false).setError("Task not found").build()
+        return UserTaskResponse.newBuilder()
+            .setOk(true)
+            .setId(task.id.toString())
+            .setTitle(task.sourceUrn?.toString() ?: "")
+            .setState(task.state.name)
+            .setQuestion(task.pendingUserQuestion.orEmpty())
+            .setContext(task.userQuestionContext.orEmpty())
+            .setClientId(task.clientId.toString())
+            .build()
+    }
+
+    override suspend fun respondToUserTask(
+        request: RespondToUserTaskRequest,
+    ): SimpleTaskActionResponse {
+        return try {
+            userTaskRpcImpl.sendToAgent(
+                taskId = request.taskId,
+                routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                additionalInput = request.response,
+            )
+            SimpleTaskActionResponse.newBuilder().setOk(true)
+                .setTaskId(request.taskId).build()
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to respond to user task ${request.taskId}" }
+            SimpleTaskActionResponse.newBuilder().setOk(false)
+                .setTaskId(request.taskId).setError(e.message.orEmpty()).build()
+        }
+    }
+
+    override suspend fun dismissUserTasks(
+        request: DismissUserTasksRequest,
+    ): DismissUserTasksResponse {
+        var dismissed = 0
+        for (taskIdStr in request.taskIdsList) {
+            try {
+                val task = taskRepository.getById(TaskId(ObjectId(taskIdStr)))
+                if (task != null && task.state == TaskStateEnum.USER_TASK) {
+                    taskService.updateState(task, TaskStateEnum.DONE)
+                    dismissed++
+                }
+            } catch (e: Exception) {
+                logger.warn { "Failed to dismiss task $taskIdStr: ${e.message}" }
+            }
+        }
+        return DismissUserTasksResponse.newBuilder()
+            .setOk(true)
+            .setDismissed(dismissed)
+            .build()
+    }
+
+    private fun encodeAnyListToJson(items: List<Map<String, Any?>>): String {
+        val arr = kotlinx.serialization.json.buildJsonArray {
+            items.forEach { m ->
+                add(
+                    kotlinx.serialization.json.buildJsonObject {
+                        m.forEach { (k, v) -> put(k, anyToJson(v)) }
+                    },
+                )
+            }
+        }
+        return arr.toString()
+    }
+
+    private fun anyToJson(value: Any?): kotlinx.serialization.json.JsonElement = when (value) {
+        null -> kotlinx.serialization.json.JsonNull
+        is String -> kotlinx.serialization.json.JsonPrimitive(value)
+        is Number -> kotlinx.serialization.json.JsonPrimitive(value)
+        is Boolean -> kotlinx.serialization.json.JsonPrimitive(value)
+        else -> kotlinx.serialization.json.JsonPrimitive(value.toString())
     }
 
     companion object {

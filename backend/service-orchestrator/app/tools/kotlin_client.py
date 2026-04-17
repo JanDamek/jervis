@@ -243,16 +243,24 @@ class KotlinServerClient:
         Sets task state to CODING with agentJobName, workspace path, and agent type.
         """
         try:
-            client = await self._get_client()
-            resp = await client.post(
-                f"/internal/tasks/{task_id}/agent-dispatched",
-                json={
-                    "jobName": job_name,
-                    "workspacePath": workspace_path,
-                    "agentType": agent_type,
-                },
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().AgentDispatched(
+                task_api_pb2.AgentDispatchedRequest(
+                    ctx=ctx,
+                    task_id=task_id,
+                    job_name=job_name,
+                    workspace_path=workspace_path or "",
+                    agent_type=agent_type or "",
+                ),
+                timeout=10.0,
             )
-            return resp.status_code == 200
+            return resp.ok
         except Exception as e:
             logger.warning("Failed to notify agent dispatched for task %s: %s", task_id, e)
             return False
@@ -443,20 +451,27 @@ class KotlinServerClient:
         project_id: str | None = None,
         priority: str = "medium",
     ) -> str:
-        """Create a background task via Kotlin internal API."""
+        """Create a background task via gRPC."""
         try:
-            client = await self._get_client()
-            resp = await client.post(
-                "/internal/create-background-task",
-                json={
-                    "title": title,
-                    "description": description,
-                    "clientId": client_id,
-                    "projectId": project_id,
-                    "priority": priority,
-                },
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().CreateBackgroundTask(
+                task_api_pb2.CreateBackgroundTaskRequest(
+                    ctx=ctx,
+                    title=title,
+                    description=description,
+                    client_id=client_id,
+                    project_id=project_id or "",
+                    priority=priority,
+                ),
+                timeout=30.0,
             )
-            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+            return json.dumps({"taskId": resp.task_id, "title": resp.title})
         except Exception as e:
             logger.warning("Failed to create background task: %s", e)
             return f"Error: {e}"
@@ -550,20 +565,26 @@ class KotlinServerClient:
                 workspace_instructions += "\n\n## Review Checklist\n"
                 workspace_instructions += "\n".join(f"- [ ] {item}" for item in review_checklist)
 
-            payload = {
-                "taskDescription": workspace_instructions,
-                "clientId": client_id,
-                "projectId": project_id,
-            }
-            if agent_preference and agent_preference != "auto":
-                payload["agentPreference"] = agent_preference
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
 
-            client = await self._get_client()
-            resp = await client.post(
-                "/internal/dispatch-coding-agent",
-                json=payload,
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().DispatchCodingAgent(
+                task_api_pb2.DispatchCodingAgentRequest(
+                    ctx=ctx,
+                    task_description=workspace_instructions,
+                    client_id=client_id,
+                    project_id=project_id,
+                    agent_preference=agent_preference or "auto",
+                ),
+                timeout=30.0,
             )
-            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+            if not resp.dispatched:
+                return f"Error: {resp.error or 'dispatch failed'}"
+            return json.dumps({"taskId": resp.task_id, "dispatched": True})
         except Exception as e:
             logger.warning("Failed to dispatch coding agent: %s", e)
             return f"Error: {e}"
@@ -573,17 +594,24 @@ class KotlinServerClient:
         query: str,
         max_results: int = 5,
     ) -> str:
-        """Search user_tasks via Kotlin internal API."""
+        """Search user_tasks via gRPC."""
         try:
-            client = await self._get_client()
-            resp = await client.get(
-                "/internal/user-tasks",
-                params={"query": query, "maxResults": max_results},
-            )
-            if resp.status_code == 200:
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
 
-                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
-            return f"Error: {resp.status_code}"
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().ListUserTasks(
+                task_api_pb2.ListUserTasksRequest(
+                    ctx=ctx,
+                    query=query,
+                    max_results=max_results,
+                ),
+                timeout=15.0,
+            )
+            return resp.items_json or "[]"
         except Exception as e:
             logger.warning("Failed to search user tasks: %s", e)
             return f"Error: {e}"
@@ -593,17 +621,24 @@ class KotlinServerClient:
         task_id: str,
         response: str,
     ) -> str:
-        """Respond to user_task via Kotlin internal API."""
+        """Respond to user_task via gRPC."""
         try:
-            client = await self._get_client()
-            resp = await client.post(
-                "/internal/respond-to-user-task",
-                json={
-                    "taskId": task_id,
-                    "response": response,
-                },
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().RespondToUserTask(
+                task_api_pb2.RespondToUserTaskRequest(
+                    ctx=ctx,
+                    task_id=task_id,
+                    response=response,
+                ),
+                timeout=10.0,
             )
-            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+            return json.dumps({"ok": resp.ok, "taskId": resp.task_id, "error": resp.error})
         except Exception as e:
             logger.warning("Failed to respond to user task: %s", e)
             return f"Error: {e}"
@@ -680,12 +715,18 @@ class KotlinServerClient:
     async def dismiss_user_tasks(self, task_ids: list[str]) -> str:
         """Dismiss user_tasks — move to DONE without processing."""
         try:
-            client = await self._get_client()
-            resp = await client.post(
-                "/internal/dismiss-user-tasks",
-                json={"taskIds": task_ids},
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().DismissUserTasks(
+                task_api_pb2.DismissUserTasksRequest(ctx=ctx, task_ids=task_ids),
+                timeout=10.0,
             )
-            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+            return json.dumps({"ok": resp.ok, "dismissed": resp.dismissed})
         except Exception as e:
             logger.warning("Failed to dismiss user tasks: %s", e)
             return f"Error: {e}"
@@ -693,11 +734,27 @@ class KotlinServerClient:
     async def get_user_task(self, task_id: str) -> dict | None:
         """Get a user_task by ID for context loading."""
         try:
-            client = await self._get_client()
-            resp = await client.get(f"/internal/user-tasks/{task_id}")
-            if resp.status_code == 200:
-                return resp.json()
-            return None
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().GetUserTask(
+                task_api_pb2.TaskIdRequest(ctx=ctx, task_id=task_id),
+                timeout=10.0,
+            )
+            if not resp.ok:
+                return None
+            return {
+                "id": resp.id,
+                "title": resp.title,
+                "state": resp.state,
+                "question": resp.question,
+                "context": resp.context,
+                "clientId": resp.client_id,
+            }
         except Exception as e:
             logger.warning("Failed to get user task %s: %s", task_id, e)
             return None

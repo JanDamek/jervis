@@ -146,6 +146,61 @@ public final class ServerTaskApiProto extends com.google.protobuf.GeneratedFile 
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_PushBackgroundResultResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_TasksByStateRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_TasksByStateRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_AgentDispatchedRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_AgentDispatchedRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_CreateBackgroundTaskRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_CreateBackgroundTaskRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_CreateBackgroundTaskResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_CreateBackgroundTaskResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_DispatchCodingAgentRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_DispatchCodingAgentRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_DispatchCodingAgentResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_DispatchCodingAgentResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ListUserTasksRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ListUserTasksRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_UserTaskResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_UserTaskResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_RespondToUserTaskRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_RespondToUserTaskRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_DismissUserTasksRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_DismissUserTasksRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_DismissUserTasksResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_DismissUserTasksResponse_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -253,42 +308,106 @@ public final class ServerTaskApiProto extends com.google.protobuf.GeneratedFile 
       "y\022\030\n\007success\030\005 \001(\010R\007success\022\033\n\tclient_id" +
       "\030\006 \001(\tR\010clientId\022\035\n\nproject_id\030\007 \001(\tR\tpr" +
       "ojectId\"D\n\034PushBackgroundResultResponse\022" +
-      "\016\n\002ok\030\001 \001(\010R\002ok\022\024\n\005error\030\002 \001(\tR\005error2\262\n" +
-      "\n\024ServerTaskApiService\022Q\n\nCreateTask\022 .j" +
-      "ervis.server.CreateTaskRequest\032!.jervis." +
-      "server.CreateTaskResponse\022Z\n\rRespondToTa" +
-      "sk\022#.jervis.server.RespondToTaskRequest\032" +
-      "$.jervis.server.RespondToTaskResponse\022G\n" +
-      "\007GetTask\022\034.jervis.server.TaskIdRequest\032\036" +
-      ".jervis.server.GetTaskResponse\022S\n\rGetTas" +
-      "kStatus\022\034.jervis.server.TaskIdRequest\032$." +
-      "jervis.server.GetTaskStatusResponse\022Q\n\013S" +
-      "earchTasks\022!.jervis.server.SearchTasksRe" +
-      "quest\032\037.jervis.server.TaskListResponse\022]" +
-      "\n\016CreateWorkPlan\022$.jervis.server.CreateW" +
-      "orkPlanRequest\032%.jervis.server.CreateWor" +
-      "kPlanResponse\022Q\n\013RecentTasks\022!.jervis.se" +
-      "rver.RecentTasksRequest\032\037.jervis.server." +
-      "TaskListResponse\022K\n\010GetQueue\022\036.jervis.se" +
-      "rver.GetQueueRequest\032\037.jervis.server.Tas" +
-      "kListResponse\022R\n\tRetryTask\022\034.jervis.serv" +
-      "er.TaskIdRequest\032\'.jervis.server.SimpleT" +
-      "askActionResponse\022S\n\nCancelTask\022\034.jervis" +
-      ".server.TaskIdRequest\032\'.jervis.server.Si" +
-      "mpleTaskActionResponse\022S\n\010MarkDone\022\036.jer" +
-      "vis.server.TaskNoteRequest\032\'.jervis.serv" +
-      "er.SimpleTaskActionResponse\022Q\n\006Reopen\022\036." +
-      "jervis.server.TaskNoteRequest\032\'.jervis.s" +
-      "erver.SimpleTaskActionResponse\022T\n\013SetPri" +
-      "ority\022!.jervis.server.SetPriorityRequest" +
-      "\032\".jervis.server.SetPriorityResponse\022c\n\020" +
-      "PushNotification\022&.jervis.server.PushNot" +
-      "ificationRequest\032\'.jervis.server.PushNot" +
-      "ificationResponse\022o\n\024PushBackgroundResul" +
-      "t\022*.jervis.server.PushBackgroundResultRe" +
-      "quest\032+.jervis.server.PushBackgroundResu" +
-      "ltResponseB3\n\033com.jervis.contracts.serve" +
-      "rB\022ServerTaskApiProtoP\001b\006proto3"
+      "\016\n\002ok\030\001 \001(\010R\002ok\022\024\n\005error\030\002 \001(\tR\005error\"\\\n" +
+      "\023TasksByStateRequest\022/\n\003ctx\030\001 \001(\0132\035.jerv" +
+      "is.common.RequestContextR\003ctx\022\024\n\005state\030\002" +
+      " \001(\tR\005state\"\303\001\n\026AgentDispatchedRequest\022/" +
+      "\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestConte" +
+      "xtR\003ctx\022\027\n\007task_id\030\002 \001(\tR\006taskId\022\031\n\010job_" +
+      "name\030\003 \001(\tR\007jobName\022%\n\016workspace_path\030\004 " +
+      "\001(\tR\rworkspacePath\022\035\n\nagent_type\030\005 \001(\tR\t" +
+      "agentType\"\336\001\n\033CreateBackgroundTaskReques" +
+      "t\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCo" +
+      "ntextR\003ctx\022\024\n\005title\030\002 \001(\tR\005title\022 \n\013desc" +
+      "ription\030\003 \001(\tR\013description\022\033\n\tclient_id\030" +
+      "\004 \001(\tR\010clientId\022\035\n\nproject_id\030\005 \001(\tR\tpro" +
+      "jectId\022\032\n\010priority\030\006 \001(\tR\010priority\"M\n\034Cr" +
+      "eateBackgroundTaskResponse\022\027\n\007task_id\030\001 " +
+      "\001(\tR\006taskId\022\024\n\005title\030\002 \001(\tR\005title\"\315\002\n\032Di" +
+      "spatchCodingAgentRequest\022/\n\003ctx\030\001 \001(\0132\035." +
+      "jervis.common.RequestContextR\003ctx\022)\n\020tas" +
+      "k_description\030\002 \001(\tR\017taskDescription\022\033\n\t" +
+      "client_id\030\003 \001(\tR\010clientId\022\035\n\nproject_id\030" +
+      "\004 \001(\tR\tprojectId\022\035\n\nsource_urn\030\005 \001(\tR\tso" +
+      "urceUrn\022!\n\014review_round\030\006 \001(\005R\013reviewRou" +
+      "nd\022*\n\021merge_request_url\030\007 \001(\tR\017mergeRequ" +
+      "estUrl\022)\n\020agent_preference\030\010 \001(\tR\017agentP" +
+      "reference\"l\n\033DispatchCodingAgentResponse" +
+      "\022\027\n\007task_id\030\001 \001(\tR\006taskId\022\036\n\ndispatched\030" +
+      "\002 \001(\010R\ndispatched\022\024\n\005error\030\003 \001(\tR\005error\"" +
+      "~\n\024ListUserTasksRequest\022/\n\003ctx\030\001 \001(\0132\035.j" +
+      "ervis.common.RequestContextR\003ctx\022\024\n\005quer" +
+      "y\030\002 \001(\tR\005query\022\037\n\013max_results\030\003 \001(\005R\nmax" +
+      "Results\"\307\001\n\020UserTaskResponse\022\016\n\002ok\030\001 \001(\010" +
+      "R\002ok\022\024\n\005error\030\002 \001(\tR\005error\022\016\n\002id\030\003 \001(\tR\002" +
+      "id\022\024\n\005title\030\004 \001(\tR\005title\022\024\n\005state\030\005 \001(\tR" +
+      "\005state\022\032\n\010question\030\006 \001(\tR\010question\022\030\n\007co" +
+      "ntext\030\007 \001(\tR\007context\022\033\n\tclient_id\030\010 \001(\tR" +
+      "\010clientId\"\200\001\n\030RespondToUserTaskRequest\022/" +
+      "\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestConte" +
+      "xtR\003ctx\022\027\n\007task_id\030\002 \001(\tR\006taskId\022\032\n\010resp" +
+      "onse\030\003 \001(\tR\010response\"e\n\027DismissUserTasks" +
+      "Request\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Req" +
+      "uestContextR\003ctx\022\031\n\010task_ids\030\002 \003(\tR\007task" +
+      "Ids\"^\n\030DismissUserTasksResponse\022\016\n\002ok\030\001 " +
+      "\001(\010R\002ok\022\034\n\tdismissed\030\002 \001(\005R\tdismissed\022\024\n" +
+      "\005error\030\003 \001(\tR\005error2\223\021\n\024ServerTaskApiSer" +
+      "vice\022Q\n\nCreateTask\022 .jervis.server.Creat" +
+      "eTaskRequest\032!.jervis.server.CreateTaskR" +
+      "esponse\022Z\n\rRespondToTask\022#.jervis.server" +
+      ".RespondToTaskRequest\032$.jervis.server.Re" +
+      "spondToTaskResponse\022G\n\007GetTask\022\034.jervis." +
+      "server.TaskIdRequest\032\036.jervis.server.Get" +
+      "TaskResponse\022S\n\rGetTaskStatus\022\034.jervis.s" +
+      "erver.TaskIdRequest\032$.jervis.server.GetT" +
+      "askStatusResponse\022Q\n\013SearchTasks\022!.jervi" +
+      "s.server.SearchTasksRequest\032\037.jervis.ser" +
+      "ver.TaskListResponse\022]\n\016CreateWorkPlan\022$" +
+      ".jervis.server.CreateWorkPlanRequest\032%.j" +
+      "ervis.server.CreateWorkPlanResponse\022Q\n\013R" +
+      "ecentTasks\022!.jervis.server.RecentTasksRe" +
+      "quest\032\037.jervis.server.TaskListResponse\022K" +
+      "\n\010GetQueue\022\036.jervis.server.GetQueueReque" +
+      "st\032\037.jervis.server.TaskListResponse\022R\n\tR" +
+      "etryTask\022\034.jervis.server.TaskIdRequest\032\'" +
+      ".jervis.server.SimpleTaskActionResponse\022" +
+      "S\n\nCancelTask\022\034.jervis.server.TaskIdRequ" +
+      "est\032\'.jervis.server.SimpleTaskActionResp" +
+      "onse\022S\n\010MarkDone\022\036.jervis.server.TaskNot" +
+      "eRequest\032\'.jervis.server.SimpleTaskActio" +
+      "nResponse\022Q\n\006Reopen\022\036.jervis.server.Task" +
+      "NoteRequest\032\'.jervis.server.SimpleTaskAc" +
+      "tionResponse\022T\n\013SetPriority\022!.jervis.ser" +
+      "ver.SetPriorityRequest\032\".jervis.server.S" +
+      "etPriorityResponse\022c\n\020PushNotification\022&" +
+      ".jervis.server.PushNotificationRequest\032\'" +
+      ".jervis.server.PushNotificationResponse\022" +
+      "o\n\024PushBackgroundResult\022*.jervis.server." +
+      "PushBackgroundResultRequest\032+.jervis.ser" +
+      "ver.PushBackgroundResultResponse\022S\n\014Task" +
+      "sByState\022\".jervis.server.TasksByStateReq" +
+      "uest\032\037.jervis.server.TaskListResponse\022a\n" +
+      "\017AgentDispatched\022%.jervis.server.AgentDi" +
+      "spatchedRequest\032\'.jervis.server.SimpleTa" +
+      "skActionResponse\022W\n\016AgentCompleted\022\034.jer" +
+      "vis.server.TaskIdRequest\032\'.jervis.server" +
+      ".SimpleTaskActionResponse\022o\n\024CreateBackg" +
+      "roundTask\022*.jervis.server.CreateBackgrou" +
+      "ndTaskRequest\032+.jervis.server.CreateBack" +
+      "groundTaskResponse\022l\n\023DispatchCodingAgen" +
+      "t\022).jervis.server.DispatchCodingAgentReq" +
+      "uest\032*.jervis.server.DispatchCodingAgent" +
+      "Response\022U\n\rListUserTasks\022#.jervis.serve" +
+      "r.ListUserTasksRequest\032\037.jervis.server.T" +
+      "askListResponse\022L\n\013GetUserTask\022\034.jervis." +
+      "server.TaskIdRequest\032\037.jervis.server.Use" +
+      "rTaskResponse\022e\n\021RespondToUserTask\022\'.jer" +
+      "vis.server.RespondToUserTaskRequest\032\'.je" +
+      "rvis.server.SimpleTaskActionResponse\022c\n\020" +
+      "DismissUserTasks\022&.jervis.server.Dismiss" +
+      "UserTasksRequest\032\'.jervis.server.Dismiss" +
+      "UserTasksResponseB3\n\033com.jervis.contract" +
+      "s.serverB\022ServerTaskApiProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -439,6 +558,72 @@ public final class ServerTaskApiProto extends com.google.protobuf.GeneratedFile 
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_PushBackgroundResultResponse_descriptor,
         new java.lang.String[] { "Ok", "Error", });
+    internal_static_jervis_server_TasksByStateRequest_descriptor =
+      getDescriptor().getMessageType(23);
+    internal_static_jervis_server_TasksByStateRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_TasksByStateRequest_descriptor,
+        new java.lang.String[] { "Ctx", "State", });
+    internal_static_jervis_server_AgentDispatchedRequest_descriptor =
+      getDescriptor().getMessageType(24);
+    internal_static_jervis_server_AgentDispatchedRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_AgentDispatchedRequest_descriptor,
+        new java.lang.String[] { "Ctx", "TaskId", "JobName", "WorkspacePath", "AgentType", });
+    internal_static_jervis_server_CreateBackgroundTaskRequest_descriptor =
+      getDescriptor().getMessageType(25);
+    internal_static_jervis_server_CreateBackgroundTaskRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_CreateBackgroundTaskRequest_descriptor,
+        new java.lang.String[] { "Ctx", "Title", "Description", "ClientId", "ProjectId", "Priority", });
+    internal_static_jervis_server_CreateBackgroundTaskResponse_descriptor =
+      getDescriptor().getMessageType(26);
+    internal_static_jervis_server_CreateBackgroundTaskResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_CreateBackgroundTaskResponse_descriptor,
+        new java.lang.String[] { "TaskId", "Title", });
+    internal_static_jervis_server_DispatchCodingAgentRequest_descriptor =
+      getDescriptor().getMessageType(27);
+    internal_static_jervis_server_DispatchCodingAgentRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_DispatchCodingAgentRequest_descriptor,
+        new java.lang.String[] { "Ctx", "TaskDescription", "ClientId", "ProjectId", "SourceUrn", "ReviewRound", "MergeRequestUrl", "AgentPreference", });
+    internal_static_jervis_server_DispatchCodingAgentResponse_descriptor =
+      getDescriptor().getMessageType(28);
+    internal_static_jervis_server_DispatchCodingAgentResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_DispatchCodingAgentResponse_descriptor,
+        new java.lang.String[] { "TaskId", "Dispatched", "Error", });
+    internal_static_jervis_server_ListUserTasksRequest_descriptor =
+      getDescriptor().getMessageType(29);
+    internal_static_jervis_server_ListUserTasksRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ListUserTasksRequest_descriptor,
+        new java.lang.String[] { "Ctx", "Query", "MaxResults", });
+    internal_static_jervis_server_UserTaskResponse_descriptor =
+      getDescriptor().getMessageType(30);
+    internal_static_jervis_server_UserTaskResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_UserTaskResponse_descriptor,
+        new java.lang.String[] { "Ok", "Error", "Id", "Title", "State", "Question", "Context", "ClientId", });
+    internal_static_jervis_server_RespondToUserTaskRequest_descriptor =
+      getDescriptor().getMessageType(31);
+    internal_static_jervis_server_RespondToUserTaskRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_RespondToUserTaskRequest_descriptor,
+        new java.lang.String[] { "Ctx", "TaskId", "Response", });
+    internal_static_jervis_server_DismissUserTasksRequest_descriptor =
+      getDescriptor().getMessageType(32);
+    internal_static_jervis_server_DismissUserTasksRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_DismissUserTasksRequest_descriptor,
+        new java.lang.String[] { "Ctx", "TaskIds", });
+    internal_static_jervis_server_DismissUserTasksResponse_descriptor =
+      getDescriptor().getMessageType(33);
+    internal_static_jervis_server_DismissUserTasksResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_DismissUserTasksResponse_descriptor,
+        new java.lang.String[] { "Ok", "Dismissed", "Error", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

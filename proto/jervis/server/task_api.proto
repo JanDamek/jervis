@@ -8,16 +8,13 @@ option java_package = "com.jervis.contracts.server";
 option java_multiple_files = true;
 option java_outer_classname = "ServerTaskApiProto";
 
-// ServerTaskApiService covers the core task CRUD + queue inspection +
-// chat-agent helpers. The broader task surface (agent-dispatched /
-// agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
-// create-background-task) lives on KtorRpcServer inline and migrates in
-// a follow-up slice.
-//
-// Task list responses use `items_json` because TaskDocument is a deep
-// tree that Python only reads at the surface (id/title/state/clientId).
-// Typed fields live on requests only.
+// ServerTaskApiService covers the full task surface — CRUD, queue,
+// coding-agent dispatch + completion callbacks, user-task helpers,
+// chat-agent plumbing. Task list responses use `items_json` because
+// TaskDocument is a deep tree that Python only reads at the surface
+// (id/title/state/clientId). Typed fields live on requests only.
 service ServerTaskApiService {
+  // Core task CRUD
   rpc CreateTask(CreateTaskRequest) returns (CreateTaskResponse);
   rpc RespondToTask(RespondToTaskRequest) returns (RespondToTaskResponse);
   rpc GetTask(TaskIdRequest) returns (GetTaskResponse);
@@ -33,6 +30,21 @@ service ServerTaskApiService {
   rpc SetPriority(SetPriorityRequest) returns (SetPriorityResponse);
   rpc PushNotification(PushNotificationRequest) returns (PushNotificationResponse);
   rpc PushBackgroundResult(PushBackgroundResultRequest) returns (PushBackgroundResultResponse);
+
+  // AgentTaskWatcher helpers (agent-job lifecycle)
+  rpc TasksByState(TasksByStateRequest) returns (TaskListResponse);
+  rpc AgentDispatched(AgentDispatchedRequest) returns (SimpleTaskActionResponse);
+  rpc AgentCompleted(TaskIdRequest) returns (SimpleTaskActionResponse);
+
+  // Chat-agent helpers
+  rpc CreateBackgroundTask(CreateBackgroundTaskRequest) returns (CreateBackgroundTaskResponse);
+  rpc DispatchCodingAgent(DispatchCodingAgentRequest) returns (DispatchCodingAgentResponse);
+
+  // User-task lookup + response + dismiss
+  rpc ListUserTasks(ListUserTasksRequest) returns (TaskListResponse);
+  rpc GetUserTask(TaskIdRequest) returns (UserTaskResponse);
+  rpc RespondToUserTask(RespondToUserTaskRequest) returns (SimpleTaskActionResponse);
+  rpc DismissUserTasks(DismissUserTasksRequest) returns (DismissUserTasksResponse);
 }
 
 // ── Common ──────────────────────────────────────────────────────────────
@@ -235,4 +247,92 @@ message PushBackgroundResultRequest {
 message PushBackgroundResultResponse {
   bool ok = 1;
   string error = 2;
+}
+
+// ── TasksByState (AgentTaskWatcher) ─────────────────────────────────────
+
+message TasksByStateRequest {
+  jervis.common.RequestContext ctx = 1;
+  string state = 2;              // TaskStateEnum name; empty/invalid → empty list
+}
+
+// ── AgentDispatched / AgentCompleted ────────────────────────────────────
+
+message AgentDispatchedRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string job_name = 3;
+  string workspace_path = 4;
+  string agent_type = 5;
+}
+
+// ── CreateBackgroundTask ────────────────────────────────────────────────
+
+message CreateBackgroundTaskRequest {
+  jervis.common.RequestContext ctx = 1;
+  string title = 2;
+  string description = 3;
+  string client_id = 4;
+  string project_id = 5;
+  string priority = 6;           // "low" / "medium" / "high"; currently informational
+}
+
+message CreateBackgroundTaskResponse {
+  string task_id = 1;
+  string title = 2;
+}
+
+// ── DispatchCodingAgent ─────────────────────────────────────────────────
+
+message DispatchCodingAgentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_description = 2;
+  string client_id = 3;
+  string project_id = 4;
+  string source_urn = 5;
+  int32 review_round = 6;        // 0 = not a review fix
+  string merge_request_url = 7;
+  string agent_preference = 8;   // "auto" (default) / "claude" / "kilo"
+}
+
+message DispatchCodingAgentResponse {
+  string task_id = 1;
+  bool dispatched = 2;
+  string error = 3;
+}
+
+// ── User-task helpers ───────────────────────────────────────────────────
+
+message ListUserTasksRequest {
+  jervis.common.RequestContext ctx = 1;
+  string query = 2;              // blank = no text filter
+  int32 max_results = 3;         // <=0 → 5
+}
+
+message UserTaskResponse {
+  bool ok = 1;
+  string error = 2;
+  string id = 3;
+  string title = 4;
+  string state = 5;
+  string question = 6;
+  string context = 7;
+  string client_id = 8;
+}
+
+message RespondToUserTaskRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string response = 3;
+}
+
+message DismissUserTasksRequest {
+  jervis.common.RequestContext ctx = 1;
+  repeated string task_ids = 2;
+}
+
+message DismissUserTasksResponse {
+  bool ok = 1;
+  int32 dismissed = 2;
+  string error = 3;
 }

@@ -94,6 +94,47 @@ public object ServerTaskApiServiceGrpcKt {
     @JvmStatic
     get() = ServerTaskApiServiceGrpc.getPushBackgroundResultMethod()
 
+  public val tasksByStateMethod: MethodDescriptor<TasksByStateRequest, TaskListResponse>
+    @JvmStatic
+    get() = ServerTaskApiServiceGrpc.getTasksByStateMethod()
+
+  public val agentDispatchedMethod:
+      MethodDescriptor<AgentDispatchedRequest, SimpleTaskActionResponse>
+    @JvmStatic
+    get() = ServerTaskApiServiceGrpc.getAgentDispatchedMethod()
+
+  public val agentCompletedMethod: MethodDescriptor<TaskIdRequest, SimpleTaskActionResponse>
+    @JvmStatic
+    get() = ServerTaskApiServiceGrpc.getAgentCompletedMethod()
+
+  public val createBackgroundTaskMethod:
+      MethodDescriptor<CreateBackgroundTaskRequest, CreateBackgroundTaskResponse>
+    @JvmStatic
+    get() = ServerTaskApiServiceGrpc.getCreateBackgroundTaskMethod()
+
+  public val dispatchCodingAgentMethod:
+      MethodDescriptor<DispatchCodingAgentRequest, DispatchCodingAgentResponse>
+    @JvmStatic
+    get() = ServerTaskApiServiceGrpc.getDispatchCodingAgentMethod()
+
+  public val listUserTasksMethod: MethodDescriptor<ListUserTasksRequest, TaskListResponse>
+    @JvmStatic
+    get() = ServerTaskApiServiceGrpc.getListUserTasksMethod()
+
+  public val getUserTaskMethod: MethodDescriptor<TaskIdRequest, UserTaskResponse>
+    @JvmStatic
+    get() = ServerTaskApiServiceGrpc.getGetUserTaskMethod()
+
+  public val respondToUserTaskMethod:
+      MethodDescriptor<RespondToUserTaskRequest, SimpleTaskActionResponse>
+    @JvmStatic
+    get() = ServerTaskApiServiceGrpc.getRespondToUserTaskMethod()
+
+  public val dismissUserTasksMethod:
+      MethodDescriptor<DismissUserTasksRequest, DismissUserTasksResponse>
+    @JvmStatic
+    get() = ServerTaskApiServiceGrpc.getDismissUserTasksMethod()
+
   /**
    * A stub for issuing RPCs to a(n) jervis.server.ServerTaskApiService service as suspending coroutines.
    */
@@ -403,6 +444,186 @@ public object ServerTaskApiServiceGrpcKt {
       callOptions,
       headers
     )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun tasksByState(request: TasksByStateRequest, headers: Metadata = Metadata()): TaskListResponse = unaryRpc(
+      channel,
+      ServerTaskApiServiceGrpc.getTasksByStateMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun agentDispatched(request: AgentDispatchedRequest, headers: Metadata = Metadata()): SimpleTaskActionResponse = unaryRpc(
+      channel,
+      ServerTaskApiServiceGrpc.getAgentDispatchedMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun agentCompleted(request: TaskIdRequest, headers: Metadata = Metadata()): SimpleTaskActionResponse = unaryRpc(
+      channel,
+      ServerTaskApiServiceGrpc.getAgentCompletedMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun createBackgroundTask(request: CreateBackgroundTaskRequest, headers: Metadata = Metadata()): CreateBackgroundTaskResponse = unaryRpc(
+      channel,
+      ServerTaskApiServiceGrpc.getCreateBackgroundTaskMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun dispatchCodingAgent(request: DispatchCodingAgentRequest, headers: Metadata = Metadata()): DispatchCodingAgentResponse = unaryRpc(
+      channel,
+      ServerTaskApiServiceGrpc.getDispatchCodingAgentMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun listUserTasks(request: ListUserTasksRequest, headers: Metadata = Metadata()): TaskListResponse = unaryRpc(
+      channel,
+      ServerTaskApiServiceGrpc.getListUserTasksMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun getUserTask(request: TaskIdRequest, headers: Metadata = Metadata()): UserTaskResponse = unaryRpc(
+      channel,
+      ServerTaskApiServiceGrpc.getGetUserTaskMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun respondToUserTask(request: RespondToUserTaskRequest, headers: Metadata = Metadata()): SimpleTaskActionResponse = unaryRpc(
+      channel,
+      ServerTaskApiServiceGrpc.getRespondToUserTaskMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun dismissUserTasks(request: DismissUserTasksRequest, headers: Metadata = Metadata()): DismissUserTasksResponse = unaryRpc(
+      channel,
+      ServerTaskApiServiceGrpc.getDismissUserTasksMethod(),
+      request,
+      callOptions,
+      headers
+    )
   }
 
   /**
@@ -591,6 +812,114 @@ public object ServerTaskApiServiceGrpcKt {
      */
     public open suspend fun pushBackgroundResult(request: PushBackgroundResultRequest): PushBackgroundResultResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.PushBackgroundResult is unimplemented"))
 
+    /**
+     * Returns the response to an RPC for jervis.server.ServerTaskApiService.TasksByState.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun tasksByState(request: TasksByStateRequest): TaskListResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.TasksByState is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.server.ServerTaskApiService.AgentDispatched.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun agentDispatched(request: AgentDispatchedRequest): SimpleTaskActionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.AgentDispatched is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.server.ServerTaskApiService.AgentCompleted.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun agentCompleted(request: TaskIdRequest): SimpleTaskActionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.AgentCompleted is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.server.ServerTaskApiService.CreateBackgroundTask.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun createBackgroundTask(request: CreateBackgroundTaskRequest): CreateBackgroundTaskResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.CreateBackgroundTask is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.server.ServerTaskApiService.DispatchCodingAgent.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun dispatchCodingAgent(request: DispatchCodingAgentRequest): DispatchCodingAgentResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.DispatchCodingAgent is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.server.ServerTaskApiService.ListUserTasks.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun listUserTasks(request: ListUserTasksRequest): TaskListResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.ListUserTasks is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.server.ServerTaskApiService.GetUserTask.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun getUserTask(request: TaskIdRequest): UserTaskResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.GetUserTask is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.server.ServerTaskApiService.RespondToUserTask.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun respondToUserTask(request: RespondToUserTaskRequest): SimpleTaskActionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.RespondToUserTask is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.server.ServerTaskApiService.DismissUserTasks.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun dismissUserTasks(request: DismissUserTasksRequest): DismissUserTasksResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.DismissUserTasks is unimplemented"))
+
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
@@ -666,6 +995,51 @@ public object ServerTaskApiServiceGrpcKt {
       context = this.context,
       descriptor = ServerTaskApiServiceGrpc.getPushBackgroundResultMethod(),
       implementation = ::pushBackgroundResult
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerTaskApiServiceGrpc.getTasksByStateMethod(),
+      implementation = ::tasksByState
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerTaskApiServiceGrpc.getAgentDispatchedMethod(),
+      implementation = ::agentDispatched
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerTaskApiServiceGrpc.getAgentCompletedMethod(),
+      implementation = ::agentCompleted
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerTaskApiServiceGrpc.getCreateBackgroundTaskMethod(),
+      implementation = ::createBackgroundTask
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerTaskApiServiceGrpc.getDispatchCodingAgentMethod(),
+      implementation = ::dispatchCodingAgent
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerTaskApiServiceGrpc.getListUserTasksMethod(),
+      implementation = ::listUserTasks
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerTaskApiServiceGrpc.getGetUserTaskMethod(),
+      implementation = ::getUserTask
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerTaskApiServiceGrpc.getRespondToUserTaskMethod(),
+      implementation = ::respondToUserTask
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerTaskApiServiceGrpc.getDismissUserTasksMethod(),
+      implementation = ::dismissUserTasks
     )).build()
   }
 }
