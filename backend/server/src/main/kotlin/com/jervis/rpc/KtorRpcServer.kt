@@ -19,7 +19,6 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalMeetingVideoApi
-import com.jervis.rpc.internal.installInternalTaskApi
 import com.jervis.agent.AgentOrchestratorRpcImpl
 import com.jervis.agent.AgentQuestionRpcImpl
 import com.jervis.agent.AutoResponseSettingsRpcImpl
@@ -169,7 +168,8 @@ class KtorRpcServer(
 
                             // Internal REST API modules (Python orchestrator → Kotlin)
                             // Chat context migrated to gRPC (jervis.server.ServerChatContextService).
-                            installInternalTaskApi(taskRepository, taskService, userTaskService, preferenceService, pendingTaskService, fcmPushService, apnsPushService, chatRpcImpl)
+                            // Task CRUD + queue + push-notification + background-result migrated
+                            // to gRPC (jervis.server.ServerTaskApiService).
                             // Guidelines + filter-rules + urgency migrated to gRPC
                             // (jervis.server.Server{Guidelines,FilterRules,Urgency}Service).
                             // Environment CRUD + provisioning migrated to gRPC

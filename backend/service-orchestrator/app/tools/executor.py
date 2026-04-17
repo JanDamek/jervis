@@ -1441,52 +1441,42 @@ async def _execute_create_scheduled_task(
                 local_dt = utc_dt.astimezone(zoneinfo.ZoneInfo(user_timezone))
                 scheduled_local_time = local_dt.strftime("%Y-%m-%dT%H:%M:%S")
 
-    # Use Kotlin server's internal task creation endpoint
-    kotlin_url = settings.kotlin_server_url or "http://jervis-server:8080"
-    url = f"{kotlin_url}/internal/tasks/create"
-
     # Prepend urgency marker so qualification agent routes correctly
     task_description = f"{description}\n\nReason: {reason}"
     if urgency == "urgent":
         task_description = f"[URGENT REMINDER] {task_description}\n\nThis task should be treated as URGENT and shown as an alert to the user."
 
-    payload = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "title": title,
-        "description": task_description,
-        "schedule": schedule if not scheduled_at else "custom",
-        "scheduledAt": scheduled_at_iso,
-        "cronTimezone": user_timezone if not is_personal_reminder else None,
-        "followUserTimezone": is_personal_reminder,
-        "scheduledLocalTime": scheduled_local_time,
-        "createdBy": "orchestrator_agent",
-        "metadata": {
-            "reason": reason,
-            "schedule_type": "custom" if scheduled_at else schedule,
-            "urgency": urgency,
-            "created_from": "agent_tool",
-        },
-    }
-
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            task_id = data.get("taskId", "unknown")
-            # Server-side dedup: task already existed
-            if data.get("deduplicated") == "true":
-                return (
-                    f"⚠ Scheduled task already exists (deduplicated).\n"
-                    f"Existing task ID: {task_id} (state: {data.get('state', '?')})\n"
-                    f"Title: {data.get('name', title)}\n"
-                    f"No new task created — avoid duplicate follow-ups."
-                )
-    except httpx.TimeoutException:
-        return f"Error: Task creation timed out after 5s for: {title}"
-    except httpx.HTTPStatusError as e:
-        return f"Error: Task creation returned HTTP {e.response.status_code} for: {title}"
+        from app.grpc_server_client import server_task_api_stub
+        from jervis.common import types_pb2
+        from jervis.server import task_api_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_task_api_stub().CreateTask(
+            task_api_pb2.CreateTaskRequest(
+                ctx=ctx,
+                client_id=client_id,
+                project_id=project_id or "",
+                title=title,
+                description=task_description,
+                scheduled_at=scheduled_at_iso or "",
+                cron_timezone=(user_timezone if not is_personal_reminder else ""),
+                follow_user_timezone=bool(is_personal_reminder),
+                scheduled_local_time=scheduled_local_time or "",
+                created_by="orchestrator_agent",
+            ),
+            timeout=5.0,
+        )
+        task_id = resp.task_id or "unknown"
+        if resp.deduplicated:
+            return (
+                f"⚠ Scheduled task already exists (deduplicated).\n"
+                f"Existing task ID: {task_id} (state: {resp.state})\n"
+                f"Title: {resp.name}\n"
+                f"No new task created — avoid duplicate follow-ups."
+            )
     except Exception as e:
         return f"Error: Task creation failed: {str(e)[:200]}"
 
@@ -3310,18 +3300,25 @@ async def _execute_task_queue_inspect(
     client_id: str | None = None,
     limit: int = 20,
 ) -> str:
-    """Inspect the background task queue via Kotlin internal API."""
-    from app.tools.kotlin_client import kotlin_client
-
+    """Inspect the background task queue via gRPC."""
+    import json as _json
     try:
-        client = await kotlin_client._get_client()
-        params = {"limit": str(limit)}
-        if client_id:
-            params["clientId"] = client_id
-        resp = await client.get("/internal/tasks/queue", params=params)
-        if resp.status_code != 200:
-            return f"Error: HTTP {resp.status_code}"
-        tasks = resp.json()
+        from app.grpc_server_client import server_task_api_stub
+        from jervis.common import types_pb2
+        from jervis.server import task_api_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_task_api_stub().GetQueue(
+            task_api_pb2.GetQueueRequest(
+                ctx=ctx,
+                client_id=client_id or "",
+                limit=limit,
+            ),
+            timeout=15.0,
+        )
+        tasks = _json.loads(resp.items_json)
         if not tasks:
             return "Queue is empty — no background tasks waiting."
         lines = [f"Background task queue ({len(tasks)} tasks):"]
@@ -3340,18 +3337,24 @@ async def _execute_task_queue_set_priority(
     task_id: str,
     priority_score: int,
 ) -> str:
-    """Set priority score for a task via Kotlin internal API."""
-    from app.tools.kotlin_client import kotlin_client
-
+    """Set priority score for a task via gRPC."""
     try:
-        client = await kotlin_client._get_client()
-        resp = await client.post(
-            f"/internal/tasks/{task_id}/priority",
-            json={"priorityScore": priority_score},
+        from app.grpc_server_client import server_task_api_stub
+        from jervis.common import types_pb2
+        from jervis.server import task_api_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_task_api_stub().SetPriority(
+            task_api_pb2.SetPriorityRequest(
+                ctx=ctx, task_id=task_id, priority_score=priority_score,
+            ),
+            timeout=10.0,
         )
-        if resp.status_code != 200:
-            return f"Error: HTTP {resp.status_code} — {resp.text}"
-        return f"Priority set to {priority_score} for task {task_id}."
+        if not resp.ok:
+            return f"Error: {resp.error}"
+        return f"Priority set to {resp.priority_score} for task {task_id}."
     except Exception as e:
         return f"Error setting priority: {str(e)[:300]}"
 

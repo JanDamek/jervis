@@ -21,6 +21,7 @@ from jervis.server import (
     meeting_alone_pb2_grpc,
     meeting_attend_pb2_grpc,
     project_management_pb2_grpc,
+    task_api_pb2_grpc,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ _project_management_stub: Optional[
 ] = None
 _bug_tracker_stub: Optional[bug_tracker_pb2_grpc.ServerBugTrackerServiceStub] = None
 _environment_stub: Optional[environment_pb2_grpc.ServerEnvironmentServiceStub] = None
+_task_api_stub: Optional[task_api_pb2_grpc.ServerTaskApiServiceStub] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -111,3 +113,10 @@ def server_environment_stub() -> environment_pb2_grpc.ServerEnvironmentServiceSt
             _get_channel()
         )
     return _environment_stub
+
+
+def server_task_api_stub() -> task_api_pb2_grpc.ServerTaskApiServiceStub:
+    global _task_api_stub
+    if _task_api_stub is None:
+        _task_api_stub = task_api_pb2_grpc.ServerTaskApiServiceStub(_get_channel())
+    return _task_api_stub

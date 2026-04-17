@@ -1,0 +1,238 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerTaskApiProto";
+
+// ServerTaskApiService covers the core task CRUD + queue inspection +
+// chat-agent helpers. The broader task surface (agent-dispatched /
+// agent-completed callbacks, dispatch-coding-agent, dismiss-user-tasks,
+// create-background-task) lives on KtorRpcServer inline and migrates in
+// a follow-up slice.
+//
+// Task list responses use `items_json` because TaskDocument is a deep
+// tree that Python only reads at the surface (id/title/state/clientId).
+// Typed fields live on requests only.
+service ServerTaskApiService {
+  rpc CreateTask(CreateTaskRequest) returns (CreateTaskResponse);
+  rpc RespondToTask(RespondToTaskRequest) returns (RespondToTaskResponse);
+  rpc GetTask(TaskIdRequest) returns (GetTaskResponse);
+  rpc GetTaskStatus(TaskIdRequest) returns (GetTaskStatusResponse);
+  rpc SearchTasks(SearchTasksRequest) returns (TaskListResponse);
+  rpc CreateWorkPlan(CreateWorkPlanRequest) returns (CreateWorkPlanResponse);
+  rpc RecentTasks(RecentTasksRequest) returns (TaskListResponse);
+  rpc GetQueue(GetQueueRequest) returns (TaskListResponse);
+  rpc RetryTask(TaskIdRequest) returns (SimpleTaskActionResponse);
+  rpc CancelTask(TaskIdRequest) returns (SimpleTaskActionResponse);
+  rpc MarkDone(TaskNoteRequest) returns (SimpleTaskActionResponse);
+  rpc Reopen(TaskNoteRequest) returns (SimpleTaskActionResponse);
+  rpc SetPriority(SetPriorityRequest) returns (SetPriorityResponse);
+  rpc PushNotification(PushNotificationRequest) returns (PushNotificationResponse);
+  rpc PushBackgroundResult(PushBackgroundResultRequest) returns (PushBackgroundResultResponse);
+}
+
+// ── Common ──────────────────────────────────────────────────────────────
+
+message TaskIdRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+}
+
+message TaskListResponse {
+  // Array of task summary JSON objects (id, title, state, content, clientId,
+  // projectId, createdAt, …).
+  string items_json = 1;
+}
+
+message SimpleTaskActionResponse {
+  bool ok = 1;
+  string task_id = 2;
+  string state = 3;     // resulting state on success (may be blank)
+  string error = 4;     // populated on failure
+}
+
+// ── CreateTask ──────────────────────────────────────────────────────────
+
+message CreateTaskRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string title = 4;              // blank → take(100) of content
+  string description = 5;        // preferred over `query`
+  string query = 6;              // legacy alias
+  string scheduled_at = 7;       // RFC3339; blank = INSTANT
+  string cron_timezone = 8;
+  bool follow_user_timezone = 9;
+  string scheduled_local_time = 10;
+  string created_by = 11;
+  int32 priority = 12;           // reserved — not persisted yet
+  bool skip_indexing = 13;
+}
+
+message CreateTaskResponse {
+  string task_id = 1;
+  string state = 2;
+  string name = 3;
+  bool deduplicated = 4;
+  string reason = 5;             // set when deduplicated=true
+}
+
+// ── RespondToTask ───────────────────────────────────────────────────────
+
+message RespondToTaskRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string response = 3;
+}
+
+message RespondToTaskResponse {
+  bool ok = 1;
+  string error = 2;
+}
+
+// ── GetTask (agent-job overlay) ─────────────────────────────────────────
+
+message GetTaskResponse {
+  bool ok = 1;
+  string error = 2;
+  string id = 3;
+  string state = 4;
+  string agent_job_name = 5;
+  string agent_job_state = 6;
+  string agent_job_workspace_path = 7;
+  string agent_job_agent_type = 8;
+  string client_id = 9;
+  string project_id = 10;
+  string source_urn = 11;
+}
+
+// ── GetTaskStatus ───────────────────────────────────────────────────────
+
+message GetTaskStatusResponse {
+  bool ok = 1;
+  string error = 2;
+  string id = 3;
+  string title = 4;
+  string state = 5;
+  string content = 6;
+  string client_id = 7;
+  string project_id = 8;
+  string created_at = 9;        // ISO-8601
+  string processing_mode = 10;
+  string question = 11;         // pendingUserQuestion
+  string error_message = 12;
+}
+
+// ── SearchTasks / Recent / Queue ────────────────────────────────────────
+
+message SearchTasksRequest {
+  jervis.common.RequestContext ctx = 1;
+  string query = 2;
+  string state = 3;             // TaskStateEnum name; empty = no filter
+  int32 limit = 4;              // <=0 → 5
+}
+
+message RecentTasksRequest {
+  jervis.common.RequestContext ctx = 1;
+  int32 limit = 2;              // <=0 → 10
+  string state = 3;             // empty / "all" / TaskStateEnum name
+  string since = 4;             // "today" (default) / "this_week" / "this_month"
+  string client_id = 5;         // empty = all tenants
+}
+
+message GetQueueRequest {
+  jervis.common.RequestContext ctx = 1;
+  string mode = 2;              // reserved; currently ignored (BACKGROUND only)
+  string client_id = 3;         // empty = all tenants
+  int32 limit = 4;              // <=0 → 20
+}
+
+// ── CreateWorkPlan ──────────────────────────────────────────────────────
+
+message CreateWorkPlanRequest {
+  jervis.common.RequestContext ctx = 1;
+  string title = 2;
+  string client_id = 3;
+  string project_id = 4;
+  repeated WorkPlanPhase phases = 5;
+}
+
+message WorkPlanPhase {
+  string name = 1;
+  repeated WorkPlanTask tasks = 2;
+}
+
+message WorkPlanTask {
+  string title = 1;
+  string description = 2;
+  string action_type = 3;
+  repeated string depends_on = 4;
+}
+
+message CreateWorkPlanResponse {
+  string root_task_id = 1;
+  int32 phase_count = 2;
+  int32 child_count = 3;
+  bool ok = 4;
+  string error = 5;
+}
+
+// ── MarkDone / Reopen (share note request) ──────────────────────────────
+
+message TaskNoteRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string note = 3;
+}
+
+// ── SetPriority ─────────────────────────────────────────────────────────
+
+message SetPriorityRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  int32 priority_score = 3;
+}
+
+message SetPriorityResponse {
+  bool ok = 1;
+  string task_id = 2;
+  int32 priority_score = 3;
+  string error = 4;
+}
+
+// ── PushNotification ────────────────────────────────────────────────────
+
+message PushNotificationRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string title = 3;
+  string body = 4;
+  map<string, string> data = 5;
+}
+
+message PushNotificationResponse {
+  bool ok = 1;
+  string fcm = 2;      // "ok" or "fcm_error: …"
+  string apns = 3;     // "ok" or "apns_error: …"
+}
+
+// ── PushBackgroundResult ────────────────────────────────────────────────
+
+message PushBackgroundResultRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string task_title = 3;
+  string summary = 4;
+  bool success = 5;
+  string client_id = 6;
+  string project_id = 7;
+}
+
+message PushBackgroundResultResponse {
+  bool ok = 1;
+  string error = 2;
+}

@@ -1264,24 +1264,30 @@ async def submit_task(
         task_name: Display name for the task (auto-generated if empty)
         processing_mode: FOREGROUND (interactive) or BACKGROUND (autonomous)
     """
-    payload: dict = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "query": query,
-        "createdBy": "mcp-submit",
-        "priority": 1,
-        "skipIndexing": True,
-    }
-    if task_name:
-        payload["title"] = task_name
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/tasks/create",
-            json=payload,
+    from app.grpc_clients import server_task_api_stub
+    from jervis.common import types_pb2
+    from jervis.server import task_api_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_task_api_stub().CreateTask(
+            task_api_pb2.CreateTaskRequest(
+                ctx=ctx,
+                client_id=client_id,
+                project_id=project_id,
+                title=task_name or "",
+                query=query,
+                created_by="mcp-submit",
+                priority=1,
+                skip_indexing=True,
+            ),
+            timeout=30.0,
         )
-        resp.raise_for_status()
-        data = resp.json()
-        return f"Task created: id={data.get('taskId', '?')}, state={data.get('state', '?')}, name={data.get('name', '?')}"
+    except Exception as e:
+        return f"Error creating task: {str(e)[:300]}"
+    return f"Task created: id={resp.task_id}, state={resp.state}, name={resp.name}"
 
 
 # ── Scheduled Task Tools ─────────────────────────────────────────────────
@@ -3613,7 +3619,6 @@ async def report_done(
     # 2. Push completion as BACKGROUND_RESULT into chat (not as pending question).
     # Completion notifications are informational — user sees them in chat/Tasky.
     # Only actual blocking questions (agent needs decision) go to pending_agent_questions.
-    kotlin_url = os.environ.get("KOTLIN_SERVER_URL", "http://jervis-server:8080")
     summary_text = result_summary
     if convention_hint:
         summary_text += f"\n\nKonvence z KB: {convention_hint}"
@@ -3621,18 +3626,25 @@ async def report_done(
         summary_text += f"\n\nAgent navrhuje: {suggested_next_steps}"
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(
-                f"{kotlin_url}/internal/task-status/background-result",
-                json={
-                    "taskId": task_id,
-                    "taskTitle": f"Dokončeno: {result_summary[:80]}",
-                    "summary": summary_text,
-                    "success": True,
-                    "clientId": client_id or None,
-                    "projectId": project_id or None,
-                },
-            )
+        from app.grpc_clients import server_task_api_stub
+        from jervis.common import types_pb2
+        from jervis.server import task_api_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        await server_task_api_stub().PushBackgroundResult(
+            task_api_pb2.PushBackgroundResultRequest(
+                ctx=ctx,
+                task_id=task_id,
+                task_title=f"Dokončeno: {result_summary[:80]}",
+                summary=summary_text,
+                success=True,
+                client_id=client_id or "",
+                project_id=project_id or "",
+            ),
+            timeout=10.0,
+        )
     except Exception as e:
         logger.warning("report_done: Failed to push background result: %s", e)
 

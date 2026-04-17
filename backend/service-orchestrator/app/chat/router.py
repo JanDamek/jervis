@@ -306,28 +306,30 @@ async def stream_job_logs(task_id: str):
     Used by Kotlin server to relay live output to UI.
     """
     from app.agents.job_runner import job_runner
-    from app.config import settings
-    import httpx as _httpx
+    from app.grpc_server_client import server_task_api_stub
+    from jervis.common import types_pb2
+    from jervis.server import task_api_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-    # Fetch task data to get job name
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
     try:
-        async with _httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                f"{settings.kotlin_server_url}/internal/tasks/{task_id}",
+        resp = await server_task_api_stub().GetTask(
+            task_api_pb2.TaskIdRequest(ctx=ctx, task_id=task_id),
+            timeout=10.0,
+        )
+        if not resp.ok:
+            return StreamingResponse(
+                iter(['data: {"type":"error","content":"Task not found"}\n\n']),
+                media_type="text/event-stream",
             )
-            if resp.status_code != 200:
-                return StreamingResponse(
-                    iter(['data: {"type":"error","content":"Task not found"}\n\n']),
-                    media_type="text/event-stream",
-                )
-            task_data = resp.json()
     except Exception as e:
         return StreamingResponse(
             iter([f'data: {{"type":"error","content":"Failed to fetch task: {e}"}}\n\n']),
             media_type="text/event-stream",
         )
 
-    job_name = task_data.get("agentJobName")
+    job_name = resp.agent_job_name or ""
     if not job_name:
         return StreamingResponse(
             iter(['data: {"type":"error","content":"Task has no agentJobName"}\n\n']),

@@ -459,28 +459,46 @@ class KotlinServerClient:
         by WorkPlanExecutor.
         """
         try:
-            client = await self._get_client()
-            resp = await client.post(
-                "/internal/tasks/create-work-plan",
-                json={
-                    "title": title,
-                    "phases": phases,
-                    "clientId": client_id,
-                    "projectId": project_id,
-                },
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            proto_phases = [
+                task_api_pb2.WorkPlanPhase(
+                    name=p.get("name", ""),
+                    tasks=[
+                        task_api_pb2.WorkPlanTask(
+                            title=t.get("title", ""),
+                            description=t.get("description", ""),
+                            action_type=t.get("actionType", "") or "",
+                            depends_on=t.get("dependsOn") or [],
+                        )
+                        for t in (p.get("tasks") or [])
+                    ],
+                )
+                for p in phases
+            ]
+            resp = await server_task_api_stub().CreateWorkPlan(
+                task_api_pb2.CreateWorkPlanRequest(
+                    ctx=ctx,
+                    title=title,
+                    client_id=client_id,
+                    project_id=project_id or "",
+                    phases=proto_phases,
+                ),
+                timeout=60.0,
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                root_id = data.get("rootTaskId", "?")
-                child_count = data.get("childCount", 0)
-                phase_count = data.get("phaseCount", 0)
+            if resp.ok:
                 return (
                     f"Work plan vytvořen: {title}\n"
-                    f"Root task: {root_id}\n"
-                    f"Fáze: {phase_count}, Dílčích úkolů: {child_count}\n"
+                    f"Root task: {resp.root_task_id}\n"
+                    f"Fáze: {resp.phase_count}, Dílčích úkolů: {resp.child_count}\n"
                     f"Úkoly se automaticky zpracují v pořadí dle závislostí."
                 )
-            return f"Error: {resp.status_code} — {resp.text[:200]}"
+            return f"Error: {resp.error}"
         except Exception as e:
             logger.warning("Failed to create work plan: %s", e)
             return f"Error: {e}"
@@ -581,22 +599,26 @@ class KotlinServerClient:
         body: str,
         data: dict | None = None,
     ) -> str:
-        """Send push notification to all registered devices for a client.
-        Uses both FCM (Android) and APNs (iOS). Desktop gets kRPC stream."""
+        """Send push notification to all registered devices for a client."""
         try:
-            client = await self._get_client()
-            payload = {
-                "clientId": client_id,
-                "title": title,
-                "body": body,
-            }
-            if data:
-                payload["data"] = data
-            resp = await client.post(
-                "/internal/push-notification",
-                json=payload,
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().PushNotification(
+                task_api_pb2.PushNotificationRequest(
+                    ctx=ctx,
+                    client_id=client_id,
+                    title=title,
+                    body=body,
+                    data=data or {},
+                ),
+                timeout=10.0,
             )
-            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+            return json.dumps({"ok": resp.ok, "fcm": resp.fcm, "apns": resp.apns})
         except Exception as e:
             logger.warning("Failed to send push notification: %s", e)
             return f"Error: {e}"
@@ -604,15 +626,18 @@ class KotlinServerClient:
     async def mark_task_done(self, task_id: str, note: str | None = None) -> str:
         """Mark a task as DONE. Available to both user UI and JERVIS agent."""
         try:
-            client = await self._get_client()
-            payload = {}
-            if note:
-                payload["note"] = note
-            resp = await client.post(
-                f"/internal/tasks/{task_id}/done",
-                json=payload,
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().MarkDone(
+                task_api_pb2.TaskNoteRequest(ctx=ctx, task_id=task_id, note=note or ""),
+                timeout=10.0,
             )
-            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+            return json.dumps({"ok": resp.ok, "taskId": resp.task_id, "state": resp.state, "error": resp.error})
         except Exception as e:
             logger.warning("Failed to mark task done %s: %s", task_id, e)
             return f"Error: {e}"
@@ -620,15 +645,18 @@ class KotlinServerClient:
     async def reopen_task(self, task_id: str, note: str | None = None) -> str:
         """Reopen a DONE task. Transitions to NEW + needsQualification=true."""
         try:
-            client = await self._get_client()
-            payload = {}
-            if note:
-                payload["note"] = note
-            resp = await client.post(
-                f"/internal/tasks/{task_id}/reopen",
-                json=payload,
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().Reopen(
+                task_api_pb2.TaskNoteRequest(ctx=ctx, task_id=task_id, note=note or ""),
+                timeout=10.0,
             )
-            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+            return json.dumps({"ok": resp.ok, "taskId": resp.task_id, "state": resp.state, "error": resp.error})
         except Exception as e:
             logger.warning("Failed to reopen task %s: %s", task_id, e)
             return f"Error: {e}"
@@ -882,12 +910,35 @@ class KotlinServerClient:
     async def get_task_status(self, task_id: str) -> str:
         """Get task status by ID."""
         try:
-            client = await self._get_client()
-            resp = await client.get(f"/internal/tasks/{task_id}/status")
-            if resp.status_code == 200:
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
 
-                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
-            return f"Task not found: {task_id}"
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().GetTaskStatus(
+                task_api_pb2.TaskIdRequest(ctx=ctx, task_id=task_id),
+                timeout=10.0,
+            )
+            if not resp.ok:
+                return f"Task not found: {task_id}"
+            return json.dumps(
+                {
+                    "id": resp.id,
+                    "title": resp.title,
+                    "state": resp.state,
+                    "content": resp.content,
+                    "clientId": resp.client_id,
+                    "projectId": resp.project_id,
+                    "createdAt": resp.created_at,
+                    "processingMode": resp.processing_mode,
+                    "question": resp.question,
+                    "errorMessage": resp.error_message,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
         except Exception as e:
             logger.warning("Failed to get task status %s: %s", task_id, e)
             return f"Error: {e}"
@@ -900,15 +951,23 @@ class KotlinServerClient:
     ) -> str:
         """Search all tasks (not just user_tasks)."""
         try:
-            client = await self._get_client()
-            params: dict = {"q": query, "limit": max_results}
-            if state and state != "all":
-                params["state"] = state
-            resp = await client.get("/internal/tasks/search", params=params)
-            if resp.status_code == 200:
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
 
-                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
-            return f"Error: {resp.status_code}"
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().SearchTasks(
+                task_api_pb2.SearchTasksRequest(
+                    ctx=ctx,
+                    query=query,
+                    state=(state if state and state != "all" else ""),
+                    limit=max_results,
+                ),
+                timeout=15.0,
+            )
+            return resp.items_json or "[]"
         except Exception as e:
             logger.warning("Failed to search tasks: %s", e)
             return f"Error: {e}"
@@ -922,17 +981,24 @@ class KotlinServerClient:
     ) -> str:
         """List recent tasks with optional filters."""
         try:
-            client = await self._get_client()
-            params: dict = {"limit": limit, "since": since}
-            if state and state != "all":
-                params["state"] = state
-            if client_id:
-                params["clientId"] = client_id
-            resp = await client.get("/internal/tasks/recent", params=params)
-            if resp.status_code == 200:
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
 
-                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
-            return f"Error: {resp.status_code}"
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().RecentTasks(
+                task_api_pb2.RecentTasksRequest(
+                    ctx=ctx,
+                    limit=limit,
+                    state=state or "",
+                    since=since or "today",
+                    client_id=client_id or "",
+                ),
+                timeout=15.0,
+            )
+            return resp.items_json or "[]"
         except Exception as e:
             logger.warning("Failed to list recent tasks: %s", e)
             return f"Error: {e}"
@@ -1304,11 +1370,21 @@ class KotlinServerClient:
     async def retry_failed_task(self, task_id: str) -> str:
         """Retry a failed (ERROR) task — resets state to QUEUED for re-processing."""
         try:
-            client = await self._get_client()
-            resp = await client.post(f"/internal/tasks/{task_id}/retry")
-            if resp.status_code == 200:
-                return json.dumps(resp.json(), ensure_ascii=False)
-            return f"Error: {resp.status_code} — {resp.text[:200]}"
+            from app.grpc_server_client import server_task_api_stub
+            from jervis.common import types_pb2
+            from jervis.server import task_api_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp = await server_task_api_stub().RetryTask(
+                task_api_pb2.TaskIdRequest(ctx=ctx, task_id=task_id),
+                timeout=10.0,
+            )
+            return json.dumps(
+                {"ok": resp.ok, "taskId": resp.task_id, "state": resp.state, "error": resp.error},
+                ensure_ascii=False,
+            )
         except Exception as e:
             logger.warning("Failed to retry task %s: %s", task_id, e)
             return f"Error: {e}"
