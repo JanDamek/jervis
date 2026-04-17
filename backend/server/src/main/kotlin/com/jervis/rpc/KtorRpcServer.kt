@@ -79,8 +79,6 @@ class KtorRpcServer(
     private val environmentRpcImpl: EnvironmentRpcImpl,
     private val environmentResourceRpcImpl: EnvironmentResourceRpcImpl,
     private val gpgCertificateRpcImpl: GpgCertificateRpcImpl,
-    private val orchestratorWorkflowTracker: com.jervis.agent.OrchestratorWorkflowTracker,
-    private val orchestratorStatusHandler: com.jervis.agent.OrchestratorStatusHandler,
     private val oauth2Service: com.jervis.infrastructure.oauth2.OAuth2Service,
     private val taskRepository: com.jervis.task.TaskRepository,
     private val taskService: com.jervis.task.TaskService,
@@ -287,165 +285,10 @@ class KtorRpcServer(
                                 }
                             }
 
-                            // Internal endpoint: orchestrator sends correction progress here
-                            post("/internal/correction-progress") {
-                                try {
-                                    val body = call.receive<CorrectionProgressCallback>()
-                                    launch {
-                                        notificationRpcImpl.emitMeetingCorrectionProgress(
-                                            meetingId = body.meetingId,
-                                            clientId = body.clientId,
-                                            percent = body.percent,
-                                            chunksDone = body.chunksDone,
-                                            totalChunks = body.totalChunks,
-                                            message = body.message,
-                                            tokensGenerated = body.tokensGenerated,
-                                        )
-                                    }
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to process correction progress callback" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            // Internal endpoint: orchestrator sends task progress here
-                            post("/internal/orchestrator-progress") {
-                                try {
-                                    val body = call.receive<OrchestratorProgressCallback>()
-                                    // Track workflow step for final message
-                                    orchestratorWorkflowTracker.addStep(
-                                        taskId = body.taskId,
-                                        node = body.node,
-                                        tools = emptyList(), // Tools extraction not yet implemented
-                                    )
-                                    launch {
-                                        // 1. Persist step to DB for history
-                                        try {
-                                            val taskId = com.jervis.common.types.TaskId(org.bson.types.ObjectId(body.taskId))
-                                            taskService.appendOrchestratorStep(
-                                                taskId,
-                                                com.jervis.task.OrchestratorStepRecord(
-                                                    timestamp = java.time.Instant.now(),
-                                                    node = body.node,
-                                                    message = body.message,
-                                                    goalIndex = body.goalIndex,
-                                                    totalGoals = body.totalGoals,
-                                                    stepIndex = body.stepIndex,
-                                                    totalSteps = body.totalSteps,
-                                                ),
-                                            )
-                                        } catch (e: Exception) {
-                                            logger.debug(e) { "Failed to persist orchestrator step for task ${body.taskId}" }
-                                        }
-                                        // 2. Emit to live event stream for real-time UI
-                                        notificationRpcImpl.emitOrchestratorTaskProgress(
-                                            taskId = body.taskId,
-                                            clientId = body.clientId,
-                                            node = body.node,
-                                            message = body.message,
-                                            percent = body.percent,
-                                            goalIndex = body.goalIndex,
-                                            totalGoals = body.totalGoals,
-                                            stepIndex = body.stepIndex,
-                                            totalSteps = body.totalSteps,
-                                        )
-                                    }
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to process orchestrator progress callback" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            // Internal endpoint: memory graph changed — triggers UI refresh
-                            post("/internal/memory-graph-changed") {
-                                try {
-                                    launch {
-                                        notificationRpcImpl.emitMemoryGraphChanged()
-                                    }
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.debug(e) { "Failed to process memory-graph-changed" }
-                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json)
-                                }
-                            }
-
-                            // Internal endpoint: orchestrator sends status changes here (done/error/interrupted)
-                            // Handles BOTH UI notification (via NotificationRpc) AND task state transition (via StatusHandler)
-                            post("/internal/orchestrator-status") {
-                                try {
-                                    val body = call.receive<OrchestratorStatusCallback>()
-                                    launch {
-                                        // 1. Broadcast to UI
-                                        notificationRpcImpl.emitOrchestratorTaskStatusChange(
-                                            taskId = body.taskId,
-                                            clientId = body.clientId,
-                                            threadId = body.threadId,
-                                            status = body.status,
-                                            summary = body.summary,
-                                            error = body.error,
-                                            interruptAction = body.interruptAction,
-                                            interruptDescription = body.interruptDescription,
-                                            branch = body.branch,
-                                            artifacts = body.artifacts,
-                                        )
-                                        // 2. Handle task state transition (PROCESSING → DONE/ERROR/USER_TASK)
-                                        orchestratorStatusHandler.handleStatusChange(
-                                            taskId = body.taskId,
-                                            status = body.status,
-                                            summary = body.summary,
-                                            error = body.error,
-                                            interruptAction = body.interruptAction,
-                                            interruptDescription = body.interruptDescription,
-                                            branch = body.branch,
-                                            artifacts = body.artifacts,
-                                            keepEnvironmentRunning = body.keepEnvironmentRunning,
-                                        )
-                                    }
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to process orchestrator status callback" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            // Internal endpoint: thinking graph update push from background orchestrator
-                            post("/internal/thinking-graph-update") {
-                                try {
-                                    val body = call.receive<ThinkingGraphUpdateCallback>()
-                                    launch {
-                                        chatRpcImpl.pushThinkingGraphUpdate(
-                                            taskId = body.taskId,
-                                            taskTitle = body.taskTitle,
-                                            graphId = body.graphId,
-                                            status = body.status,
-                                            message = body.message,
-                                            metadata = body.metadata ?: emptyMap(),
-                                        )
-                                    }
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to process thinking graph update callback" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
+                            // Orchestrator push-back callbacks (correction-progress,
+                            // orchestrator-progress, orchestrator-status, memory-graph-changed,
+                            // thinking-graph-update) migrated to gRPC
+                            // (jervis.server.ServerOrchestratorProgressService).
 
                             // Internal endpoint: orchestrator fetches GPG key for agent commit signing
                             get("/internal/gpg-key/{clientId}") {
@@ -764,130 +607,8 @@ class KtorRpcServer(
                                 }
                             }
 
-                            // Internal endpoint: Python qualification agent reports result
-                            post("/internal/qualification-done") {
-                                try {
-                                    val body = call.receive<QualificationDoneCallback>()
-                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} decision=${body.decision} priority=${body.priorityScore}" }
-
-                                    launch {
-                                        try {
-                                            val taskId = com.jervis.common.types.TaskId(ObjectId(body.taskId))
-                                            val task = taskRepository.getById(taskId)
-
-                                            if (task == null) {
-                                                logger.error { "QUALIFICATION_DONE: task not found taskId=${body.taskId}" }
-                                                return@launch
-                                            }
-
-                                            // Save qualification results to task
-                                            taskService.saveQualificationResult(
-                                                taskId = taskId,
-                                                priorityScore = body.priorityScore,
-                                                priorityReason = body.reason,
-                                                actionType = body.actionType,
-                                                estimatedComplexity = body.estimatedComplexity,
-                                                qualifierContext = body.contextSummary + "\n\n" + body.suggestedApproach,
-                                            )
-
-                                            // Save qualifier-generated summary to task.
-                                            // Only use contextSummary (actual task summary) — NEVER use reason
-                                            // as summary. Reason is for errors/decisions ("Qualification error: ...")
-                                            // and should stay in errorMessage/priorityReason, not hijack the summary
-                                            // field which sidebar uses as task display name.
-                                            val qualSummary = body.contextSummary.takeIf { it.isNotBlank() }
-                                            if (qualSummary != null) {
-                                                taskService.saveSummary(taskId, qualSummary)
-                                            }
-
-                                            // Phase 3: clear needsQualification flag — the qualifier
-                                            // has produced its decision and the task is no longer
-                                            // pending re-evaluation by the RequalificationLoop.
-                                            taskService.clearNeedsQualification(taskId)
-
-                                            when (body.decision) {
-                                                "DONE" -> {
-                                                    taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
-                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → DONE (${body.reason})" }
-                                                }
-                                                "ESCALATE" -> {
-                                                    // Phase 3: qualifier wants the user to make a call.
-                                                    // Transition the existing task to USER_TASK with the
-                                                    // qualifier's question/context — never create a wrapper.
-                                                    taskService.transitionToUserTask(
-                                                        task = task,
-                                                        pendingQuestion = body.pendingUserQuestion ?: body.reason,
-                                                        questionContext = body.userQuestionContext ?: body.contextSummary,
-                                                    )
-                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → USER_TASK (ESCALATE: ${body.reason})" }
-                                                }
-                                                "DECOMPOSE" -> {
-                                                    // Phase 3: qualifier broke the work into sub-tasks.
-                                                    // Create child TaskDocuments, set parent → BLOCKED
-                                                    // with blockedByTaskIds = child IDs. When all
-                                                    // children DONE, TaskService.unblockChildrenOfParent
-                                                    // walks up and flags the parent for re-qualification.
-                                                    if (body.subTasks.isEmpty()) {
-                                                        logger.warn { "QUALIFICATION_DONE: DECOMPOSE with empty sub_tasks taskId=${body.taskId}, falling back to QUEUED" }
-                                                        taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
-                                                    } else {
-                                                        taskService.decomposeTask(task, body.subTasks)
-                                                        logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → BLOCKED (DECOMPOSE: ${body.subTasks.size} children)" }
-                                                    }
-                                                }
-                                                "REOPEN" -> {
-                                                    // Qualifier found a related DONE task that should
-                                                    // be reopened because new evidence arrived.
-                                                    val targetId = body.targetTaskId
-                                                    if (targetId.isNullOrBlank()) {
-                                                        logger.warn { "QUALIFICATION_DONE: REOPEN with no target_task_id taskId=${body.taskId}, falling back to QUEUED" }
-                                                        taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
-                                                    } else {
-                                                        pendingTaskService.reopen(targetId, "Reopened by qualifier: ${body.reason}")
-                                                        taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
-                                                        logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → REOPEN target=$targetId (${body.reason})" }
-                                                    }
-                                                }
-                                                "URGENT_ALERT" -> {
-                                                    taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
-                                                    // Push urgent alert
-                                                    if (chatRpcImpl.isUserOnline()) {
-                                                        try {
-                                                            chatRpcImpl.pushUrgentAlert(
-                                                                sourceUrn = task.sourceUrn.value,
-                                                                taskId = task.id.toString(),
-                                                                taskName = task.taskName,
-                                                                summary = body.alertMessage ?: body.reason,
-                                                                suggestedAction = null,
-                                                                taskContent = task.content,
-                                                            )
-                                                        } catch (e: Exception) {
-                                                            logger.warn(e) { "QUALIFICATION_DONE: failed to push urgent alert" }
-                                                        }
-                                                    }
-                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → QUEUED (URGENT)" }
-                                                }
-                                                else -> {
-                                                    // QUEUED (default)
-                                                    taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.QUEUED)
-                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → QUEUED (priority=${body.priorityScore})" }
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            logger.error(e) { "QUALIFICATION_DONE: failed to process taskId=${body.taskId}" }
-                                        }
-                                    }
-
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to process qualification-done callback" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
+                            // Qualification-done migrated to gRPC
+                            // (jervis.server.ServerOrchestratorProgressService.QualificationDone).
 
                             // --- Chat internal endpoints (Python → Kotlin) ---
                             // Foreground GPU reservation (foreground-start/end/chat-on-cloud)
@@ -1011,45 +732,6 @@ class KtorRpcServer(
 }
 
 @kotlinx.serialization.Serializable
-data class CorrectionProgressCallback(
-    val meetingId: String,
-    val clientId: String,
-    val percent: Double,
-    val chunksDone: Int,
-    val totalChunks: Int,
-    val message: String? = null,
-    val tokensGenerated: Int = 0,
-)
-
-@kotlinx.serialization.Serializable
-data class OrchestratorProgressCallback(
-    val taskId: String,
-    val clientId: String,
-    val node: String,
-    val message: String,
-    val percent: Double = 0.0,
-    val goalIndex: Int = 0,
-    val totalGoals: Int = 0,
-    val stepIndex: Int = 0,
-    val totalSteps: Int = 0,
-)
-
-@kotlinx.serialization.Serializable
-data class OrchestratorStatusCallback(
-    val taskId: String,
-    val clientId: String = "",
-    val threadId: String,
-    val status: String,
-    val summary: String? = null,
-    val error: String? = null,
-    val interruptAction: String? = null,
-    val interruptDescription: String? = null,
-    val branch: String? = null,
-    val artifacts: List<String> = emptyList(),
-    val keepEnvironmentRunning: Boolean = false,
-)
-
-@kotlinx.serialization.Serializable
 data class KbProgressCallback(
     val taskId: String,
     val clientId: String,
@@ -1105,35 +787,6 @@ data class KbCompletionResult(
     @kotlinx.serialization.SerialName("related_kb_nodes") val relatedKbNodes: List<String> = emptyList(),
 )
 
-@kotlinx.serialization.Serializable
-data class QualificationDoneCallback(
-    @kotlinx.serialization.SerialName("task_id") val taskId: String,
-    @kotlinx.serialization.SerialName("client_id") val clientId: String,
-    /**
-     * Phase 3 re-entrant qualifier decisions:
-     *   - QUEUED        — ready for orchestrator pickup (default)
-     *   - DONE          — terminal, no action needed
-     *   - URGENT_ALERT  — push alert + QUEUED
-     *   - CONSOLIDATE   — merge with existing topic task, this one becomes DONE
-     *   - ESCALATE      — needs user input → state=USER_TASK with question/context
-     *   - DECOMPOSE     — break into sub-tasks, parent → BLOCKED until children DONE
-     */
-    val decision: String = "QUEUED",
-    @kotlinx.serialization.SerialName("priority_score") val priorityScore: Int = 5,
-    val reason: String = "",
-    @kotlinx.serialization.SerialName("alert_message") val alertMessage: String? = null,
-    @kotlinx.serialization.SerialName("target_task_id") val targetTaskId: String? = null,
-    @kotlinx.serialization.SerialName("context_summary") val contextSummary: String = "",
-    @kotlinx.serialization.SerialName("suggested_approach") val suggestedApproach: String = "",
-    @kotlinx.serialization.SerialName("action_type") val actionType: String = "",
-    @kotlinx.serialization.SerialName("estimated_complexity") val estimatedComplexity: String = "",
-    // ESCALATE — populated when decision == "ESCALATE"
-    @kotlinx.serialization.SerialName("pending_user_question") val pendingUserQuestion: String? = null,
-    @kotlinx.serialization.SerialName("user_question_context") val userQuestionContext: String? = null,
-    // DECOMPOSE — populated when decision == "DECOMPOSE"
-    @kotlinx.serialization.SerialName("sub_tasks") val subTasks: List<SubTaskRequest> = emptyList(),
-)
-
 /**
  * Phase 3: A single sub-task requested by the qualifier when it returns
  * decision=DECOMPOSE. The Kotlin server creates a child TaskDocument for each
@@ -1141,6 +794,10 @@ data class QualificationDoneCallback(
  * `blockedByTaskIds` with the new child IDs. The parent moves to BLOCKED until
  * all children reach DONE, at which point [TaskService.unblockChildrenOfParent]
  * flags it for re-qualification.
+ *
+ * Kept in the `com.jervis.rpc` package because TaskService imports it by
+ * that FQN; the wire-format SerialNames ("task_name", "order_in_phase") are
+ * retained so any persisted Mongo payloads stay readable.
  */
 @kotlinx.serialization.Serializable
 data class SubTaskRequest(
@@ -1148,16 +805,6 @@ data class SubTaskRequest(
     val content: String,
     val phase: String? = null,
     @kotlinx.serialization.SerialName("order_in_phase") val orderInPhase: Int = 0,
-)
-
-@kotlinx.serialization.Serializable
-data class ThinkingGraphUpdateCallback(
-    val taskId: String,
-    val taskTitle: String = "",
-    val graphId: String = "",
-    val status: String,  // "started", "vertex_completed", "completed", "failed"
-    val message: String = "",
-    val metadata: Map<String, String>? = null,
 )
 
 @kotlinx.serialization.Serializable

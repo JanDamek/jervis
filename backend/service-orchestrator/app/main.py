@@ -82,15 +82,29 @@ def _crash_cleanup():
 
     Reports error status for all active orchestration tasks so Kotlin server
     doesn't have to wait for the stuck-task timeout to detect the crash.
-    Uses synchronous httpx (async loop may be dead at this point).
+    Uses a one-shot sync gRPC channel because the asyncio loop is usually
+    dead by the time atexit runs.
     """
     if not _active_tasks:
         return
 
-    import httpx as _httpx
+    if not settings.kotlin_server_url:
+        return
 
-    base_url = settings.kotlin_server_url
-    if not base_url:
+    import grpc
+    from jervis.common import types_pb2
+    from jervis.server import orchestrator_progress_pb2, orchestrator_progress_pb2_grpc
+
+    url = settings.kotlin_server_url.rstrip("/")
+    if "://" in url:
+        url = url.split("://", 1)[1]
+    host = url.split("/")[0].split(":")[0]
+    target = f"{host}:5501"
+
+    try:
+        channel = grpc.insecure_channel(target)
+        stub = orchestrator_progress_pb2_grpc.ServerOrchestratorProgressServiceStub(channel)
+    except Exception:
         return
 
     for thread_id in list(_active_tasks.keys()):
@@ -98,19 +112,24 @@ def _crash_cleanup():
         parts = thread_id.split("-")
         task_id = parts[1] if len(parts) >= 2 else thread_id
         try:
-            _httpx.post(
-                f"{base_url}/internal/orchestrator-status",
-                json={
-                    "taskId": task_id,
-                    "threadId": thread_id,
-                    "status": "error",
-                    "error": "Orchestrátor se neočekávaně ukončil",
-                },
+            stub.OrchestratorStatus(
+                orchestrator_progress_pb2.OrchestratorStatusRequest(
+                    ctx=types_pb2.RequestContext(),
+                    task_id=task_id,
+                    thread_id=thread_id,
+                    status="error",
+                    error="Orchestrátor se neočekávaně ukončil",
+                ),
                 timeout=5.0,
             )
             logger.info("CRASH_CLEANUP: reported error for thread %s", thread_id)
         except Exception:
             pass  # Best-effort — nothing we can do if Kotlin is also down
+
+    try:
+        channel.close()
+    except Exception:
+        pass
 
 
 atexit.register(_crash_cleanup)

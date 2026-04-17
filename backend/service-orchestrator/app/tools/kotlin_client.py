@@ -85,30 +85,28 @@ class KotlinServerClient:
         - thinking_about: What the orchestrator is currently reasoning about
         """
         try:
-            client = await self._get_client()
-            payload = {
-                "taskId": task_id,
-                "clientId": client_id,
-                "node": node,
-                "message": message,
-                "percent": percent,
-                "goalIndex": goal_index,
-                "totalGoals": total_goals,
-                "stepIndex": step_index,
-                "totalSteps": total_steps,
-            }
+            from app.grpc_server_client import server_orchestrator_progress_stub
+            from jervis.common import types_pb2
+            from jervis.server import orchestrator_progress_pb2
+            from jervis_contracts.interceptors import prepare_context
 
-            # Add delegation fields only if set (backward compatible)
-            if delegation_id is not None:
-                payload["delegationId"] = delegation_id
-            if delegation_agent is not None:
-                payload["delegationAgent"] = delegation_agent
-            if delegation_depth is not None:
-                payload["delegationDepth"] = delegation_depth
-            if thinking_about is not None:
-                payload["thinkingAbout"] = thinking_about
-
-            await client.post("/internal/orchestrator-progress", json=payload)
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            await server_orchestrator_progress_stub().OrchestratorProgress(
+                orchestrator_progress_pb2.OrchestratorProgressRequest(
+                    ctx=ctx,
+                    task_id=task_id,
+                    client_id=client_id,
+                    node=node,
+                    message=message,
+                    percent=percent,
+                    goal_index=goal_index,
+                    total_goals=total_goals,
+                    step_index=step_index,
+                    total_steps=total_steps,
+                ),
+                timeout=5.0,
+            )
             return True
         except Exception as e:
             logger.debug("Failed to report progress to Kotlin: %s", e)
@@ -135,21 +133,28 @@ class KotlinServerClient:
         Status values: "done", "error", "interrupted"
         """
         try:
-            client = await self._get_client()
-            await client.post(
-                "/internal/orchestrator-status",
-                json={
-                    "taskId": task_id,
-                    "threadId": thread_id,
-                    "status": status,
-                    "summary": summary,
-                    "error": error,
-                    "interruptAction": interrupt_action,
-                    "interruptDescription": interrupt_description,
-                    "branch": branch,
-                    "artifacts": artifacts or [],
-                    "keepEnvironmentRunning": keep_environment_running,
-                },
+            from app.grpc_server_client import server_orchestrator_progress_stub
+            from jervis.common import types_pb2
+            from jervis.server import orchestrator_progress_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            await server_orchestrator_progress_stub().OrchestratorStatus(
+                orchestrator_progress_pb2.OrchestratorStatusRequest(
+                    ctx=ctx,
+                    task_id=task_id,
+                    thread_id=thread_id,
+                    status=status,
+                    summary=summary or "",
+                    error=error or "",
+                    interrupt_action=interrupt_action or "",
+                    interrupt_description=interrupt_description or "",
+                    branch=branch or "",
+                    artifacts=artifacts or [],
+                    keep_environment_running=keep_environment_running,
+                ),
+                timeout=5.0,
             )
             return True
         except Exception as e:
@@ -183,33 +188,43 @@ class KotlinServerClient:
           - DECOMPOSE (Phase 3) — break into sub_tasks, parent → BLOCKED
         """
         try:
-            client = await self._get_client()
-            payload = {
-                    "task_id": task_id,
-                    "client_id": client_id,
-                    "decision": decision,
-                    "priority_score": priority_score,
-                    "reason": reason,
-                    "context_summary": context_summary,
-                    "suggested_approach": suggested_approach,
-                    "action_type": action_type,
-                    "estimated_complexity": estimated_complexity,
-                }
-            if alert_message:
-                payload["alert_message"] = alert_message
-            if target_task_id:
-                payload["target_task_id"] = target_task_id
-            if pending_user_question:
-                payload["pending_user_question"] = pending_user_question
-            if user_question_context:
-                payload["user_question_context"] = user_question_context
-            if sub_tasks:
-                payload["sub_tasks"] = sub_tasks
-            resp = await client.post(
-                "/internal/qualification-done",
-                json=payload,
+            from app.grpc_server_client import server_orchestrator_progress_stub
+            from jervis.common import types_pb2
+            from jervis.server import orchestrator_progress_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            proto_subs = [
+                orchestrator_progress_pb2.SubTaskSpec(
+                    task_name=st.get("task_name", ""),
+                    content=st.get("content", ""),
+                    phase=st.get("phase") or "",
+                    order_in_phase=int(st.get("order_in_phase") or 0),
+                )
+                for st in (sub_tasks or [])
+            ]
+            resp = await server_orchestrator_progress_stub().QualificationDone(
+                orchestrator_progress_pb2.QualificationDoneRequest(
+                    ctx=ctx,
+                    task_id=task_id,
+                    client_id=client_id,
+                    decision=decision,
+                    priority_score=priority_score,
+                    reason=reason,
+                    alert_message=alert_message or "",
+                    target_task_id=target_task_id or "",
+                    context_summary=context_summary,
+                    suggested_approach=suggested_approach,
+                    action_type=action_type,
+                    estimated_complexity=estimated_complexity,
+                    pending_user_question=pending_user_question or "",
+                    user_question_context=user_question_context or "",
+                    sub_tasks=proto_subs,
+                ),
+                timeout=10.0,
             )
-            return resp.status_code == 200
+            return resp.ok
         except Exception as e:
             logger.warning("Failed to report qualification done for task %s: %s", task_id, e)
             return False
@@ -301,14 +316,19 @@ class KotlinServerClient:
     # ------------------------------------------------------------------
 
     async def notify_memory_graph_changed(self) -> bool:
-        """Notify Kotlin server that the memory graph changed — triggers UI refresh.
-
-        Called after vertex status changes during graph execution.
-        Kotlin broadcasts MemoryGraphChanged event to all connected UI clients.
-        """
+        """Notify Kotlin server that the memory graph changed — triggers UI refresh."""
         try:
-            client = await self._get_client()
-            await client.post("/internal/memory-graph-changed")
+            from app.grpc_server_client import server_orchestrator_progress_stub
+            from jervis.common import types_pb2
+            from jervis.server import orchestrator_progress_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            await server_orchestrator_progress_stub().MemoryGraphChanged(
+                orchestrator_progress_pb2.MemoryGraphChangedRequest(ctx=ctx),
+                timeout=5.0,
+            )
             return True
         except Exception as e:
             logger.debug("Failed to notify memory graph changed: %s", e)
@@ -1481,17 +1501,25 @@ class KotlinServerClient:
         Terminal states (started/completed/failed) are persisted to chat history.
         """
         try:
-            client = await self._get_client()
-            payload: dict = {
-                "taskId": task_id,
-                "taskTitle": task_title,
-                "graphId": graph_id,
-                "status": status,
-                "message": message,
-            }
-            if metadata:
-                payload["metadata"] = metadata
-            await client.post("/internal/thinking-graph-update", json=payload)
+            from app.grpc_server_client import server_orchestrator_progress_stub
+            from jervis.common import types_pb2
+            from jervis.server import orchestrator_progress_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            await server_orchestrator_progress_stub().ThinkingGraphUpdate(
+                orchestrator_progress_pb2.ThinkingGraphUpdateRequest(
+                    ctx=ctx,
+                    task_id=task_id,
+                    task_title=task_title,
+                    graph_id=graph_id or "",
+                    status=status,
+                    message=message,
+                    metadata=metadata or {},
+                ),
+                timeout=5.0,
+            )
             return True
         except Exception as e:
             logger.debug("Failed to push thinking graph update: %s", e)

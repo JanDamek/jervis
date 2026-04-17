@@ -26,6 +26,7 @@ from jervis.server import (
     guidelines_pb2_grpc,
     meetings_pb2_grpc,
     merge_request_pb2_grpc,
+    orchestrator_progress_pb2_grpc,
     proactive_pb2_grpc,
     project_management_pb2_grpc,
     task_api_pb2_grpc,
@@ -54,6 +55,9 @@ _merge_request_stub: Optional[merge_request_pb2_grpc.ServerMergeRequestServiceSt
 _environment_stub: Optional[environment_pb2_grpc.ServerEnvironmentServiceStub] = None
 _task_api_stub: Optional[task_api_pb2_grpc.ServerTaskApiServiceStub] = None
 _foreground_stub: Optional[foreground_pb2_grpc.ServerForegroundServiceStub] = None
+_orchestrator_progress_stub: Optional[
+    orchestrator_progress_pb2_grpc.ServerOrchestratorProgressServiceStub
+] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -199,3 +203,16 @@ def server_foreground_stub() -> foreground_pb2_grpc.ServerForegroundServiceStub:
     if _foreground_stub is None:
         _foreground_stub = foreground_pb2_grpc.ServerForegroundServiceStub(_get_channel())
     return _foreground_stub
+
+
+def server_orchestrator_progress_stub() -> (
+    orchestrator_progress_pb2_grpc.ServerOrchestratorProgressServiceStub
+):
+    global _orchestrator_progress_stub
+    if _orchestrator_progress_stub is None:
+        _orchestrator_progress_stub = (
+            orchestrator_progress_pb2_grpc.ServerOrchestratorProgressServiceStub(
+                _get_channel()
+            )
+        )
+    return _orchestrator_progress_stub

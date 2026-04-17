@@ -580,12 +580,24 @@ class CorrectionAgent:
             "message": message,
             "tokensGenerated": tokens_generated,
         }
+        _ = payload  # kept for log readability — actual RPC uses typed request
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    f"{settings.kotlin_server_url}/internal/correction-progress",
-                    json=payload,
-                )
+            from app.grpc_server_client import build_request_context, server_orchestrator_progress_stub
+            from jervis.server import orchestrator_progress_pb2
+
+            await server_orchestrator_progress_stub().CorrectionProgress(
+                orchestrator_progress_pb2.CorrectionProgressRequest(
+                    ctx=build_request_context(),
+                    meeting_id=meeting_id,
+                    client_id=client_id,
+                    percent=percent,
+                    chunks_done=chunks_done,
+                    total_chunks=total_chunks,
+                    message=message or "",
+                    tokens_generated=tokens_generated,
+                ),
+                timeout=5.0,
+            )
         except Exception as e:
             logger.debug("Failed to emit correction progress: %s", e)
 

@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerOrchestratorProgressProto";
+
+// ServerOrchestratorProgressService is the reverse-callback surface the
+// Python orchestrator (and the correction agent) use to push progress,
+// status and graph updates into the Kotlin server. All calls are
+// fire-and-forget from Python's perspective — the server acks with
+// `ok=true` and dispatches async fan-out to NotificationRpc / chat streams.
+service ServerOrchestratorProgressService {
+  rpc OrchestratorProgress(OrchestratorProgressRequest) returns (AckResponse);
+  rpc OrchestratorStatus(OrchestratorStatusRequest) returns (AckResponse);
+  rpc QualificationDone(QualificationDoneRequest) returns (AckResponse);
+  rpc MemoryGraphChanged(MemoryGraphChangedRequest) returns (AckResponse);
+  rpc ThinkingGraphUpdate(ThinkingGraphUpdateRequest) returns (AckResponse);
+  rpc CorrectionProgress(CorrectionProgressRequest) returns (AckResponse);
+}
+
+message AckResponse {
+  bool ok = 1;
+  string error = 2;
+}
+
+// ── OrchestratorProgress ────────────────────────────────────────────────
+
+message OrchestratorProgressRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string client_id = 3;
+  string node = 4;
+  string message = 5;
+  double percent = 6;
+  int32 goal_index = 7;
+  int32 total_goals = 8;
+  int32 step_index = 9;
+  int32 total_steps = 10;
+}
+
+// ── OrchestratorStatus ──────────────────────────────────────────────────
+
+message OrchestratorStatusRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string client_id = 3;
+  string thread_id = 4;
+  string status = 5;                // "done" / "error" / "interrupted"
+  string summary = 6;
+  string error = 7;
+  string interrupt_action = 8;
+  string interrupt_description = 9;
+  string branch = 10;
+  repeated string artifacts = 11;
+  bool keep_environment_running = 12;
+}
+
+// ── QualificationDone ───────────────────────────────────────────────────
+
+message QualificationDoneRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string client_id = 3;
+  // Decision enum: QUEUED / DONE / URGENT_ALERT / CONSOLIDATE / ESCALATE / DECOMPOSE / REOPEN
+  string decision = 4;
+  int32 priority_score = 5;
+  string reason = 6;
+  string alert_message = 7;
+  string target_task_id = 8;
+  string context_summary = 9;
+  string suggested_approach = 10;
+  string action_type = 11;
+  string estimated_complexity = 12;
+  string pending_user_question = 13;
+  string user_question_context = 14;
+  repeated SubTaskSpec sub_tasks = 15;
+}
+
+message SubTaskSpec {
+  string task_name = 1;
+  string content = 2;
+  string phase = 3;
+  int32 order_in_phase = 4;
+}
+
+// ── MemoryGraphChanged (no payload) ─────────────────────────────────────
+
+message MemoryGraphChangedRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+// ── ThinkingGraphUpdate ─────────────────────────────────────────────────
+
+message ThinkingGraphUpdateRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string task_title = 3;
+  string graph_id = 4;
+  string status = 5;                 // "started" / "vertex_completed" / "completed" / "failed"
+  string message = 6;
+  map<string, string> metadata = 7;
+}
+
+// ── CorrectionProgress ──────────────────────────────────────────────────
+
+message CorrectionProgressRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+  string client_id = 3;
+  double percent = 4;
+  int32 chunks_done = 5;
+  int32 total_chunks = 6;
+  string message = 7;
+  int32 tokens_generated = 8;
+}
