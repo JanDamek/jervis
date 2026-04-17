@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerBugTrackerProto";
+
+// ServerBugTrackerService centralizes issue CRUD across GitHub, GitLab and
+// Jira. The server resolves the project's BUGTRACKER connection (falling
+// back to REPOSITORY) and dispatches to the right vendor client, so Python
+// callers stay provider-agnostic.
+service ServerBugTrackerService {
+  rpc CreateIssue(CreateIssueRequest) returns (IssueResponse);
+  rpc AddIssueComment(AddIssueCommentRequest) returns (CommentResponse);
+  rpc UpdateIssue(UpdateIssueRequest) returns (IssueResponse);
+  rpc ListIssues(ListIssuesRequest) returns (ListIssuesResponse);
+}
+
+// ── Create ──────────────────────────────────────────────────────────────
+
+message CreateIssueRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string title = 4;
+  string description = 5;           // empty = null
+  repeated string labels = 6;
+  string issue_type = 7;            // Jira only; empty → "Task"
+  string priority = 8;              // Jira only
+}
+
+// ── Add comment ─────────────────────────────────────────────────────────
+
+message AddIssueCommentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string issue_key = 4;             // "#123" for github/gitlab, "PROJ-123" for jira
+  string comment = 5;
+}
+
+// ── Update ──────────────────────────────────────────────────────────────
+
+message UpdateIssueRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string issue_key = 4;
+  string title = 5;                 // empty = leave unchanged
+  string description = 6;
+  string state = 7;                 // "open" / "closed" for github/gitlab; Jira not supported
+  // nullable semantics: use `has_labels=false` to leave unchanged; empty
+  // labels with has_labels=true clears labels.
+  repeated string labels = 8;
+  bool has_labels = 9;
+}
+
+// ── List ────────────────────────────────────────────────────────────────
+
+message ListIssuesRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+}
+
+message ListIssuesResponse {
+  bool ok = 1;
+  repeated IssueListItem issues = 2;
+  string error = 3;
+}
+
+message IssueListItem {
+  string key = 1;
+  string title = 2;
+  string state = 3;
+  string url = 4;     // empty for Jira
+  string created = 5; // ISO-8601
+  string updated = 6;
+}
+
+// ── Shared responses ────────────────────────────────────────────────────
+
+message IssueResponse {
+  bool ok = 1;
+  string key = 2;     // "#123" or "PROJ-123"
+  string url = 3;     // empty when the provider doesn't expose a URL
+  string error = 4;
+}
+
+message CommentResponse {
+  bool ok = 1;
+  string url = 2;
+  string error = 3;
+}

@@ -21,7 +21,6 @@ import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalMeetingVideoApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
-import com.jervis.rpc.internal.installInternalBugTrackerApi
 import com.jervis.rpc.internal.installInternalO365CapabilitiesApi
 import com.jervis.rpc.internal.installInternalO365NotifyApi
 import com.jervis.rpc.internal.installInternalO365SessionApi
@@ -118,7 +117,6 @@ class KtorRpcServer(
     private val gitHubClient: com.jervis.git.client.GitHubClient,
     private val gitLabClient: com.jervis.git.client.GitLabClient,
     private val reviewLanguageResolver: com.jervis.infrastructure.llm.ReviewLanguageResolver,
-    private val bugTrackerService: com.jervis.bugtracker.BugTrackerService,
     private val whisperRestClient: com.jervis.meeting.WhisperRestClient,
     private val whisperProperties: com.jervis.infrastructure.config.properties.WhisperProperties,
     private val ttsProperties: com.jervis.infrastructure.config.properties.TtsProperties,
@@ -199,7 +197,8 @@ class KtorRpcServer(
                             // Chat-approval broadcast + resolved migrated to gRPC
                             // (jervis.server.ServerChatApprovalService).
                             // Visual capture bridge migrated to gRPC (jervis.server.ServerVisualCaptureService).
-                            installInternalBugTrackerApi(projectService, connectionService, gitHubClient, gitLabClient, bugTrackerService)
+                            // Bug-tracker issues (GitHub/GitLab/Jira) migrated to gRPC
+                            // (jervis.server.ServerBugTrackerService).
                             installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService, deviceTokenRepository)
                             installInternalO365CapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)
                             installInternalO365NotifyApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService, deviceTokenRepository)

@@ -15,6 +15,7 @@ import grpc.aio
 
 from app.config import settings
 from jervis.server import (
+    bug_tracker_pb2_grpc,
     cache_pb2_grpc,
     chat_approval_pb2_grpc,
     chat_context_pb2_grpc,
@@ -44,6 +45,7 @@ _finance_stub: Optional[finance_pb2_grpc.ServerFinanceServiceStub] = None
 _project_management_stub: Optional[
     project_management_pb2_grpc.ServerProjectManagementServiceStub
 ] = None
+_bug_tracker_stub: Optional[bug_tracker_pb2_grpc.ServerBugTrackerServiceStub] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -146,3 +148,12 @@ def server_project_management_stub() -> (
             )
         )
     return _project_management_stub
+
+
+def server_bug_tracker_stub() -> bug_tracker_pb2_grpc.ServerBugTrackerServiceStub:
+    global _bug_tracker_stub
+    if _bug_tracker_stub is None:
+        _bug_tracker_stub = bug_tracker_pb2_grpc.ServerBugTrackerServiceStub(
+            _get_channel()
+        )
+    return _bug_tracker_stub

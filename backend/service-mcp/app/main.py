@@ -3133,30 +3133,31 @@ async def create_issue(
         description: Issue body/description (markdown supported)
         labels: Comma-separated labels (e.g. "bug,priority:high")
     """
-    body: dict = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "title": title,
-    }
-    if description:
-        body["description"] = description
-    if labels:
-        body["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
+    from app.grpc_clients import server_bug_tracker_stub
+    from jervis.common import types_pb2
+    from jervis.server import bug_tracker_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/issues/create",
-            json=body,
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    label_list = [l.strip() for l in labels.split(",") if l.strip()] if labels else []
+    try:
+        resp = await server_bug_tracker_stub().CreateIssue(
+            bug_tracker_pb2.CreateIssueRequest(
+                ctx=ctx,
+                client_id=client_id,
+                project_id=project_id,
+                title=title,
+                description=description or "",
+                labels=label_list,
+            ),
+            timeout=60.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        if data.get("ok"):
-            return (
-                f"Issue created: {data.get('key', '?')}\n"
-                f"  URL: {data.get('url', '?')}"
-            )
-        return f"Error: {data.get('error', 'unknown')}"
+    except Exception as e:
+        return f"Error creating issue: {str(e)[:300]}"
+    if resp.ok:
+        return f"Issue created: {resp.key or '?'}\n  URL: {resp.url or '?'}"
+    return f"Error: {resp.error or 'unknown'}"
 
 
 @mcp.tool
@@ -3174,27 +3175,31 @@ async def add_issue_comment(
         issue_key: Issue number/key (e.g. "#1", "1", "#42")
         comment: Comment body (markdown supported)
     """
-    # Normalize issue key to include #
-    key = issue_key if issue_key.startswith("#") else f"#{issue_key}"
-    body: dict = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "issueKey": key,
-        "comment": comment,
-    }
+    from app.grpc_clients import server_bug_tracker_stub
+    from jervis.common import types_pb2
+    from jervis.server import bug_tracker_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/issues/comment",
-            json=body,
+    key = issue_key if issue_key.startswith("#") else f"#{issue_key}"
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_bug_tracker_stub().AddIssueComment(
+            bug_tracker_pb2.AddIssueCommentRequest(
+                ctx=ctx,
+                client_id=client_id,
+                project_id=project_id,
+                issue_key=key,
+                comment=comment,
+            ),
+            timeout=60.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        if data.get("ok"):
-            url_info = f"\n  URL: {data['url']}" if data.get("url") else ""
-            return f"Comment added to issue {key}{url_info}"
-        return f"Error: {data.get('error', 'unknown')}"
+    except Exception as e:
+        return f"Error adding comment: {str(e)[:300]}"
+    if resp.ok:
+        url_info = f"\n  URL: {resp.url}" if resp.url else ""
+        return f"Comment added to issue {key}{url_info}"
+    return f"Error: {resp.error or 'unknown'}"
 
 
 @mcp.tool
@@ -3221,33 +3226,39 @@ async def update_issue(
         state: New state - "open" or "closed" (leave empty to keep current)
         labels: Comma-separated labels (e.g. "bug,priority:high,analysis"). Replaces all existing labels.
     """
-    key = issue_key if issue_key.startswith("#") else f"#{issue_key}"
-    body: dict = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "issueKey": key,
-    }
-    if title:
-        body["title"] = title
-    if description:
-        body["description"] = description
-    if state:
-        body["state"] = state
-    if labels:
-        body["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
+    from app.grpc_clients import server_bug_tracker_stub
+    from jervis.common import types_pb2
+    from jervis.server import bug_tracker_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/issues/update",
-            json=body,
+    key = issue_key if issue_key.startswith("#") else f"#{issue_key}"
+    has_labels = bool(labels)
+    label_list = (
+        [l.strip() for l in labels.split(",") if l.strip()] if has_labels else []
+    )
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_bug_tracker_stub().UpdateIssue(
+            bug_tracker_pb2.UpdateIssueRequest(
+                ctx=ctx,
+                client_id=client_id,
+                project_id=project_id,
+                issue_key=key,
+                title=title or "",
+                description=description or "",
+                state=state or "",
+                labels=label_list,
+                has_labels=has_labels,
+            ),
+            timeout=60.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        if data.get("ok"):
-            url_info = f"\n  URL: {data['url']}" if data.get("url") else ""
-            return f"Issue {key} updated successfully{url_info}"
-        return f"Error: {data.get('error', 'unknown')}"
+    except Exception as e:
+        return f"Error updating issue: {str(e)[:300]}"
+    if resp.ok:
+        url_info = f"\n  URL: {resp.url}" if resp.url else ""
+        return f"Issue {key} updated successfully{url_info}"
+    return f"Error: {resp.error or 'unknown'}"
 
 
 @mcp.tool
@@ -3261,28 +3272,36 @@ async def list_issues(
         client_id: Client ID that owns the project
         project_id: Project ID
     """
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.get(
-            f"{settings.kotlin_server_url}/internal/issues/list",
-            params={"clientId": client_id, "projectId": project_id},
+    from app.grpc_clients import server_bug_tracker_stub
+    from jervis.common import types_pb2
+    from jervis.server import bug_tracker_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_bug_tracker_stub().ListIssues(
+            bug_tracker_pb2.ListIssuesRequest(
+                ctx=ctx,
+                client_id=client_id,
+                project_id=project_id,
+            ),
+            timeout=60.0,
         )
-        if resp.status_code != 200:
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        if not data.get("ok"):
-            return f"Error: {data.get('error', 'unknown')}"
+    except Exception as e:
+        return f"Error listing issues: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Error: {resp.error or 'unknown'}"
+    if not resp.issues:
+        return "No issues found."
 
-        issues = data.get("issues", [])
-        if not issues:
-            return "No issues found."
-
-        lines = [f"Found {len(issues)} issue(s):"]
-        for issue in issues:
-            lines.append(
-                f"  {issue['key']} [{issue['state']}] {issue['title']}\n"
-                f"    URL: {issue['url']}"
-            )
-        return "\n".join(lines)
+    lines = [f"Found {len(resp.issues)} issue(s):"]
+    for issue in resp.issues:
+        lines.append(
+            f"  {issue.key} [{issue.state}] {issue.title}\n"
+            f"    URL: {issue.url}"
+        )
+    return "\n".join(lines)
 
 
 # ── Health endpoint (custom route) ───────────────────────────────────────

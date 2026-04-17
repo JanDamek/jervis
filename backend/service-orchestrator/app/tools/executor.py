@@ -4314,27 +4314,39 @@ def _extract_sender(message: dict) -> str:
 # Issue Tracker tool handlers
 # ============================================================
 
+def _bug_tracker_imports():
+    from app.grpc_server_client import server_bug_tracker_stub
+    from jervis.common import types_pb2
+    from jervis.server import bug_tracker_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    return server_bug_tracker_stub, types_pb2, bug_tracker_pb2, prepare_context
+
+
 async def _execute_issue_create(
     client_id: str, project_id: str,
     title: str, description: str = "", labels: str = "",
 ) -> str:
-    body: dict = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "title": title,
-    }
-    if description:
-        body["description"] = description
-    if labels:
-        body["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/issues/create", json=body)
-            data = resp.json()
-            if data.get("ok"):
-                url_info = f"\n  URL: {data.get('url', '')}" if data.get("url") else ""
-                return f"Issue created: {data.get('key', '?')}{url_info}"
-            return f"Error: {data.get('error', resp.text)}"
+        stub_factory, types_pb2, bug_tracker_pb2, prepare_context = _bug_tracker_imports()
+        label_list = [l.strip() for l in labels.split(",") if l.strip()] if labels else []
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await stub_factory().CreateIssue(
+            bug_tracker_pb2.CreateIssueRequest(
+                ctx=ctx,
+                client_id=client_id,
+                project_id=project_id,
+                title=title,
+                description=description or "",
+                labels=label_list,
+            ),
+            timeout=60.0,
+        )
+        if resp.ok:
+            url_info = f"\n  URL: {resp.url}" if resp.url else ""
+            return f"Issue created: {resp.key or '?'}{url_info}"
+        return f"Error: {resp.error}"
     except Exception as e:
         return f"Error creating issue: {e}"
 
@@ -4345,27 +4357,32 @@ async def _execute_issue_update(
     state: str | None = None, labels: str | None = None,
 ) -> str:
     key = issue_key if issue_key.startswith("#") else f"#{issue_key}"
-    body: dict = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "issueKey": key,
-    }
-    if title:
-        body["title"] = title
-    if description:
-        body["description"] = description
-    if state:
-        body["state"] = state
-    if labels is not None and labels != "":
-        body["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/issues/update", json=body)
-            data = resp.json()
-            if data.get("ok"):
-                url_info = f"\n  URL: {data.get('url', '')}" if data.get("url") else ""
-                return f"Issue {key} updated{url_info}"
-            return f"Error: {data.get('error', resp.text)}"
+        stub_factory, types_pb2, bug_tracker_pb2, prepare_context = _bug_tracker_imports()
+        has_labels = labels is not None and labels != ""
+        label_list = (
+            [l.strip() for l in labels.split(",") if l.strip()] if has_labels else []
+        )
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await stub_factory().UpdateIssue(
+            bug_tracker_pb2.UpdateIssueRequest(
+                ctx=ctx,
+                client_id=client_id,
+                project_id=project_id,
+                issue_key=key,
+                title=title or "",
+                description=description or "",
+                state=state or "",
+                labels=label_list,
+                has_labels=has_labels,
+            ),
+            timeout=60.0,
+        )
+        if resp.ok:
+            url_info = f"\n  URL: {resp.url}" if resp.url else ""
+            return f"Issue {key} updated{url_info}"
+        return f"Error: {resp.error}"
     except Exception as e:
         return f"Error updating issue: {e}"
 
@@ -4375,40 +4392,50 @@ async def _execute_issue_comment(
     issue_key: str, comment: str,
 ) -> str:
     key = issue_key if issue_key.startswith("#") else f"#{issue_key}"
-    body: dict = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "issueKey": key,
-        "comment": comment,
-    }
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/issues/comment", json=body)
-            data = resp.json()
-            if data.get("ok"):
-                return f"Comment added to {key}"
-            return f"Error: {data.get('error', resp.text)}"
+        stub_factory, types_pb2, bug_tracker_pb2, prepare_context = _bug_tracker_imports()
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await stub_factory().AddIssueComment(
+            bug_tracker_pb2.AddIssueCommentRequest(
+                ctx=ctx,
+                client_id=client_id,
+                project_id=project_id,
+                issue_key=key,
+                comment=comment,
+            ),
+            timeout=60.0,
+        )
+        if resp.ok:
+            return f"Comment added to {key}"
+        return f"Error: {resp.error}"
     except Exception as e:
         return f"Error adding comment: {e}"
 
 
 async def _execute_issue_list(client_id: str, project_id: str) -> str:
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.get(
-                f"{_KOTLIN_INTERNAL_URL}/internal/issues/list",
-                params={"clientId": client_id, "projectId": project_id},
+        stub_factory, types_pb2, bug_tracker_pb2, prepare_context = _bug_tracker_imports()
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await stub_factory().ListIssues(
+            bug_tracker_pb2.ListIssuesRequest(
+                ctx=ctx,
+                client_id=client_id,
+                project_id=project_id,
+            ),
+            timeout=60.0,
+        )
+        if not resp.ok:
+            return f"Error: {resp.error}"
+        if not resp.issues:
+            return "No issues found."
+        lines = [f"Found {len(resp.issues)} issue(s):"]
+        for issue in resp.issues:
+            lines.append(
+                f"  {issue.key} [{issue.state}] {issue.title}\n    URL: {issue.url}"
             )
-            data = resp.json()
-            if not data.get("ok"):
-                return f"Error: {data.get('error', resp.text)}"
-            issues = data.get("issues", [])
-            if not issues:
-                return "No issues found."
-            lines = [f"Found {len(issues)} issue(s):"]
-            for issue in issues:
-                lines.append(f"  {issue['key']} [{issue['state']}] {issue['title']}\n    URL: {issue.get('url', '')}")
-            return "\n".join(lines)
+        return "\n".join(lines)
     except Exception as e:
         return f"Error listing issues: {e}"
 
