@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerGpuIdleProto";
+
+// ServerGpuIdleService is a reverse callback surface: the ollama-router
+// calls the Kotlin server when the local GPU pool has been idle for
+// longer than `gpu_idle_notify_after_s` (default 2 min). The server
+// triggers BackgroundEngine.onGpuIdle() so analytical / proactive tasks
+// run immediately instead of waiting for the 30-min idle review loop.
+service ServerGpuIdleService {
+  rpc GpuIdle(GpuIdleRequest) returns (GpuIdleResponse);
+}
+
+message GpuIdleRequest {
+  jervis.common.RequestContext ctx = 1;
+  int64 idle_seconds = 2;   // how long all GPUs have been idle
+}
+
+message GpuIdleResponse {
+  bool ok = 1;
+  string error = 2;
+}

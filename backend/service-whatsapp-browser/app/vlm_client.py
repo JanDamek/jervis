@@ -1,7 +1,9 @@
 """VLM client — calls vision language model via ollama-router.
 
-Uses /router/admin/decide endpoint to let the router choose the model
-based on capability and client/project tier.
+The legacy `/router/admin/decide` HTTP endpoint has been removed; this
+client now defaults to the local Ollama VLM and lets the router's
+`/api/generate` proxy handle any cloud/OpenRouter routing transparently
+based on the request (model name, RequestContext).
 """
 
 from __future__ import annotations
@@ -68,24 +70,7 @@ async def _get_route_decision(
     processing_mode: str,
     max_tier: str,
 ) -> dict:
-    """Ask ollama-router for routing decision."""
-    async with httpx.AsyncClient(timeout=10) as client:
-        try:
-            resp = await client.post(
-                f"{settings.ollama_router_url}/router/admin/decide",
-                json={
-                    "capability": capability,
-                    "estimated_tokens": estimated_tokens,
-                    "processing_mode": processing_mode,
-                    "max_tier": max_tier,
-                },
-            )
-            if resp.status_code == 200:
-                return resp.json()
-        except Exception as e:
-            logger.warning("Route decision failed: %s", e)
-
-    # Fallback: let router pick via /api/generate (model in request is just a hint)
+    """Return the local-ollama route (decide endpoint removed)."""
     return {
         "target": "local",
         "api_base": settings.ollama_router_url,

@@ -15,7 +15,7 @@ import grpc.aio
 
 from app.config import settings as app_settings
 from jervis.common import types_pb2
-from jervis.server import openrouter_settings_pb2_grpc
+from jervis.server import gpu_idle_pb2_grpc, openrouter_settings_pb2_grpc
 
 logger = logging.getLogger("ollama-router.grpc_client")
 
@@ -23,6 +23,7 @@ _channel: Optional[grpc.aio.Channel] = None
 _openrouter_stub: Optional[
     openrouter_settings_pb2_grpc.ServerOpenRouterSettingsServiceStub
 ] = None
+_gpu_idle_stub: Optional[gpu_idle_pb2_grpc.ServerGpuIdleServiceStub] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -54,6 +55,13 @@ def server_openrouter_stub() -> (
             )
         )
     return _openrouter_stub
+
+
+def server_gpu_idle_stub() -> gpu_idle_pb2_grpc.ServerGpuIdleServiceStub:
+    global _gpu_idle_stub
+    if _gpu_idle_stub is None:
+        _gpu_idle_stub = gpu_idle_pb2_grpc.ServerGpuIdleServiceStub(_get_channel())
+    return _gpu_idle_stub
 
 
 def build_request_context() -> types_pb2.RequestContext:

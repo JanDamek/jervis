@@ -486,23 +486,8 @@ class KtorRpcServer(
                                 }
                             }
 
-                            // --- Internal endpoint: GPU idle notification from Ollama Router ---
-                            post("/internal/gpu-idle") {
-                                try {
-                                    backgroundEngine.onGpuIdle()
-                                    call.respondText(
-                                        "{\"ok\":true}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                    )
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to handle GPU idle notification" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
+                            // GPU idle notification from Ollama Router migrated to gRPC
+                            // (jervis.server.ServerGpuIdleService).
 
                             // --- Internal endpoints: environment resource inspection (MCP server calls these) ---
 

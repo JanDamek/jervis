@@ -879,15 +879,20 @@ class OllamaRouter:
                 self._idle_notified = True
                 logger.info("GPU_IDLE: no requests for %ds (limit=%ds), notifying Kotlin server", int(idle_s), idle_limit)
                 try:
-                    async with httpx.AsyncClient(timeout=10) as http:
-                        resp = await http.post(
-                            f"{settings.kotlin_server_url}/internal/gpu-idle",
-                            json={"idle_seconds": int(idle_s)},
-                        )
-                        if resp.status_code == 200:
-                            logger.info("GPU_IDLE: Kotlin server notified successfully")
-                        else:
-                            logger.warning("GPU_IDLE: Kotlin server returned %d", resp.status_code)
+                    from app.grpc_server_client import build_request_context, server_gpu_idle_stub
+                    from jervis.server import gpu_idle_pb2
+
+                    resp = await server_gpu_idle_stub().GpuIdle(
+                        gpu_idle_pb2.GpuIdleRequest(
+                            ctx=build_request_context(),
+                            idle_seconds=int(idle_s),
+                        ),
+                        timeout=10.0,
+                    )
+                    if resp.ok:
+                        logger.info("GPU_IDLE: Kotlin server notified successfully")
+                    else:
+                        logger.warning("GPU_IDLE: Kotlin server returned error: %s", resp.error)
                 except Exception as e:
                     logger.warning("GPU_IDLE: Failed to notify Kotlin server: %s", e)
 

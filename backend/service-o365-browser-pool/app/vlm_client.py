@@ -61,31 +61,13 @@ async def _get_route_decision(
     processing_mode: str,
     max_tier: str,
 ) -> dict:
-    """Ask ollama-router for routing decision."""
-    # Send client_id — router resolves tier from DB. No hardcoded tier.
-    client_id = getattr(settings, "connection_id", None)
+    """Return the local-ollama route.
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        try:
-            body = {
-                "capability": capability,
-                "estimated_tokens": estimated_tokens,
-                "processing_mode": processing_mode,
-            }
-            if client_id:
-                body["client_id"] = client_id
-            else:
-                body["max_tier"] = max_tier
-            resp = await client.post(
-                f"{settings.ollama_router_url}/router/admin/decide",
-                json=body,
-            )
-            if resp.status_code == 200:
-                return resp.json()
-        except Exception as e:
-            logger.warning("Route decision failed: %s", e)
-
-    # Fallback: local ollama
+    The legacy `/router/admin/decide` HTTP endpoint was removed from the
+    ollama-router. Pods now default to the local VLM; any cloud/OpenRouter
+    routing happens transparently via the router's `/api/generate` proxy
+    based on the model name and RequestContext (capability, max_tier).
+    """
     return {
         "target": "local",
         "model": "qwen3-vl-tool:latest",
