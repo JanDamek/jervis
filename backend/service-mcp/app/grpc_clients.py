@@ -18,6 +18,7 @@ from jervis.server import (
     git_pb2_grpc,
     meeting_alone_pb2_grpc,
     meeting_attend_pb2_grpc,
+    project_management_pb2_grpc,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,9 @@ _connection_stub: Optional[connection_pb2_grpc.ServerConnectionServiceStub] = No
 _git_stub: Optional[git_pb2_grpc.ServerGitServiceStub] = None
 _meeting_alone_stub: Optional[meeting_alone_pb2_grpc.ServerMeetingAloneServiceStub] = None
 _meeting_attend_stub: Optional[meeting_attend_pb2_grpc.ServerMeetingAttendServiceStub] = None
+_project_management_stub: Optional[
+    project_management_pb2_grpc.ServerProjectManagementServiceStub
+] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -72,3 +76,16 @@ def server_meeting_attend_stub() -> meeting_attend_pb2_grpc.ServerMeetingAttendS
     if _meeting_attend_stub is None:
         _meeting_attend_stub = meeting_attend_pb2_grpc.ServerMeetingAttendServiceStub(_get_channel())
     return _meeting_attend_stub
+
+
+def server_project_management_stub() -> (
+    project_management_pb2_grpc.ServerProjectManagementServiceStub
+):
+    global _project_management_stub
+    if _project_management_stub is None:
+        _project_management_stub = (
+            project_management_pb2_grpc.ServerProjectManagementServiceStub(
+                _get_channel()
+            )
+        )
+    return _project_management_stub

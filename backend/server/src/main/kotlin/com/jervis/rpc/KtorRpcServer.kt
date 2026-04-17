@@ -19,7 +19,6 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalEnvironmentApi
-import com.jervis.rpc.internal.installInternalProjectManagementApi
 import com.jervis.rpc.internal.installInternalMeetingVideoApi
 import com.jervis.rpc.internal.installInternalMergeRequestApi
 import com.jervis.rpc.internal.installInternalBugTrackerApi
@@ -112,11 +111,9 @@ class KtorRpcServer(
     private val chatService: com.jervis.chat.ChatService,
     private val chatMessageService: com.jervis.chat.ChatMessageService,
     // Dependencies for internal routing modules (injected, used by install*Api extensions)
-    private val clientService: com.jervis.client.ClientService,
     private val projectService: com.jervis.project.ProjectService,
     private val connectionService: com.jervis.connection.ConnectionService,
     private val gitRepoCreationService: com.jervis.git.GitRepositoryCreationService,
-    private val projectTemplateService: com.jervis.project.ProjectTemplateService,
     private val applicationEventPublisher: org.springframework.context.ApplicationEventPublisher,
     private val gitHubClient: com.jervis.git.client.GitHubClient,
     private val gitLabClient: com.jervis.git.client.GitLabClient,
@@ -188,7 +185,8 @@ class KtorRpcServer(
                             installInternalEnvironmentApi(environmentService, environmentK8sService)
                             // OpenRouter settings + model-stats persistence migrated to gRPC
                             // (jervis.server.ServerOpenRouterSettingsService).
-                            installInternalProjectManagementApi(clientService, projectService, connectionService, projectTemplateService)
+                            // Clients/projects/connections + project-advisor recommendations
+                            // migrated to gRPC (jervis.server.ServerProjectManagementService).
                             // Git repo + workspace ops migrated to gRPC (jervis.server.ServerGitService).
                             installInternalMergeRequestApi(taskRepository, projectService, connectionService, gitHubClient, gitLabClient, reviewLanguageResolver)
                             // Cache invalidation migrated to gRPC (jervis.server.ServerCacheService).

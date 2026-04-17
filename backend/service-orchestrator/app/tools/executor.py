@@ -1301,52 +1301,62 @@ async def _execute_store_knowledge(
     cross_project_note = ""
     if target_project_name:
         try:
-            # Look up target project by name
-            async with httpx.AsyncClient(timeout=10.0) as client2:
-                resp2 = await client2.get(
-                    f"{_KOTLIN_INTERNAL_URL}/internal/projects",
-                    params={"clientId": client_id},
-                )
-                if resp2.status_code == 200:
-                    projects = resp2.json()
-                    target_proj = next(
-                        (p for p in projects if target_project_name.lower() in p.get("name", "").lower()),
-                        None,
+            import json as _json
+
+            from app.grpc_server_client import server_project_management_stub
+            from jervis.common import types_pb2
+            from jervis.server import project_management_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            ctx = types_pb2.RequestContext()
+            prepare_context(ctx)
+            resp2 = await server_project_management_stub().ListProjects(
+                project_management_pb2.ListProjectsRequest(
+                    ctx=ctx,
+                    client_id=client_id or "",
+                ),
+                timeout=10.0,
+            )
+            projects = _json.loads(resp2.items_json)
+            target_proj = next(
+                (p for p in projects if target_project_name.lower() in p.get("name", "").lower()),
+                None,
+            )
+            if target_proj:
+                target_pid = target_proj.get("id", "")
+                cross_payload = {
+                    "clientId": client_id,
+                    "projectId": target_pid,
+                    "sourceUrn": f"cross-ref:{category}:{subject}:{timestamp}",
+                    "kind": f"user_knowledge_{category}",
+                    "content": f"# {subject} (cross-reference from other context)\n\n{content}",
+                    "metadata": {
+                        "subject": subject,
+                        "category": category,
+                        "stored_at": timestamp,
+                        "source": "cross_project_reference",
+                        "source_project_id": project_id or "",
+                    },
+                }
+                async with httpx.AsyncClient(timeout=10.0) as client2:
+                    resp3 = await client2.post(
+                        f"{kb_write_url}/api/v1/ingest",
+                        json=cross_payload,
+                        headers=headers,
                     )
-                    if target_proj:
-                        target_pid = target_proj.get("id", "")
-                        cross_payload = {
-                            "clientId": client_id,
-                            "projectId": target_pid,
-                            "sourceUrn": f"cross-ref:{category}:{subject}:{timestamp}",
-                            "kind": f"user_knowledge_{category}",
-                            "content": f"# {subject} (cross-reference from other context)\n\n{content}",
-                            "metadata": {
-                                "subject": subject,
-                                "category": category,
-                                "stored_at": timestamp,
-                                "source": "cross_project_reference",
-                                "source_project_id": project_id or "",
-                            },
-                        }
-                        resp3 = await client2.post(
-                            f"{kb_write_url}/api/v1/ingest",
-                            json=cross_payload,
-                            headers=headers,
-                        )
-                        if resp3.status_code in (200, 201, 202):
-                            cross_project_note = (
-                                f"\n✓ Also stored for project '{target_project_name}' (cross-reference)."
-                            )
-                        else:
-                            cross_project_note = (
-                                f"\n⚠ Cross-project store for '{target_project_name}' failed: {resp3.status_code}"
-                            )
-                    else:
-                        cross_project_note = (
-                            f"\n⚠ Project '{target_project_name}' not found — "
-                            "cross-reference not stored. Knowledge is still saved in current project."
-                        )
+                if resp3.status_code in (200, 201, 202):
+                    cross_project_note = (
+                        f"\n✓ Also stored for project '{target_project_name}' (cross-reference)."
+                    )
+                else:
+                    cross_project_note = (
+                        f"\n⚠ Cross-project store for '{target_project_name}' failed: {resp3.status_code}"
+                    )
+            else:
+                cross_project_note = (
+                    f"\n⚠ Project '{target_project_name}' not found — "
+                    "cross-reference not stored. Knowledge is still saved in current project."
+                )
         except Exception as e:
             cross_project_note = f"\n⚠ Cross-project store failed: {str(e)[:100]}"
 
@@ -3339,16 +3349,23 @@ async def _execute_create_client(name: str, description: str = "") -> str:
     """Create a client via Kotlin internal API."""
     if not name:
         return "Error: name is required."
-    body: dict = {"name": name}
-    if description:
-        body["description"] = description
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/clients", json=body)
-            if resp.status_code not in (200, 201):
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            data = resp.json()
-            return f"Client created: {data.get('name', name)} (id={data.get('id', '?')})"
+        from app.grpc_server_client import server_project_management_stub
+        from jervis.common import types_pb2
+        from jervis.server import project_management_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_project_management_stub().CreateClient(
+            project_management_pb2.CreateClientRequest(
+                ctx=ctx,
+                name=name,
+                description=description or "",
+            ),
+            timeout=30.0,
+        )
+        return f"Client created: {resp.name} (id={resp.id})"
     except Exception as e:
         return f"Error creating client: {str(e)[:300]}"
 
@@ -3357,19 +3374,27 @@ async def _execute_create_project(client_id: str, name: str, description: str = 
     """Create a project via Kotlin internal API."""
     if not client_id or not name:
         return "Error: client_id and name are required."
-    body: dict = {"clientId": client_id, "name": name}
-    if description:
-        body["description"] = description
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/projects", json=body)
-            if resp.status_code not in (200, 201):
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            data = resp.json()
-            return (
-                f"Project created: {data.get('name', name)} "
-                f"(id={data.get('id', '?')}, clientId={client_id})"
-            )
+        from app.grpc_server_client import server_project_management_stub
+        from jervis.common import types_pb2
+        from jervis.server import project_management_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_project_management_stub().CreateProject(
+            project_management_pb2.CreateProjectRequest(
+                ctx=ctx,
+                client_id=client_id,
+                name=name,
+                description=description or "",
+            ),
+            timeout=30.0,
+        )
+        return (
+            f"Project created: {resp.name} "
+            f"(id={resp.id}, clientId={resp.client_id})"
+        )
     except Exception as e:
         return f"Error creating project: {str(e)[:300]}"
 
@@ -3382,29 +3407,32 @@ async def _execute_create_connection(
     """Create a connection via Kotlin internal API, optionally linking to a client."""
     if not name or not provider:
         return "Error: name and provider are required."
-    body: dict = {
-        "name": name,
-        "provider": provider,
-        "protocol": "HTTP",
-        "authType": auth_type,
-        "isCloud": is_cloud,
-    }
-    if base_url:
-        body["baseUrl"] = base_url
-    if bearer_token:
-        body["bearerToken"] = bearer_token
-    if client_id:
-        body["clientId"] = client_id
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/connections", json=body)
-            if resp.status_code not in (200, 201):
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            data = resp.json()
-            return (
-                f"Connection created: {data.get('name', name)} "
-                f"(id={data.get('id', '?')}, provider={data.get('provider', provider)})"
-            )
+        from app.grpc_server_client import server_project_management_stub
+        from jervis.common import types_pb2
+        from jervis.server import project_management_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_project_management_stub().CreateConnection(
+            project_management_pb2.CreateConnectionRequest(
+                ctx=ctx,
+                name=name,
+                provider=provider,
+                protocol="HTTP",
+                auth_type=auth_type,
+                base_url=base_url or "",
+                is_cloud=is_cloud,
+                bearer_token=bearer_token or "",
+                client_id=client_id or "",
+            ),
+            timeout=30.0,
+        )
+        return (
+            f"Connection created: {resp.name} "
+            f"(id={resp.id}, provider={resp.provider})"
+        )
     except Exception as e:
         return f"Error creating connection: {str(e)[:300]}"
 
@@ -3443,19 +3471,25 @@ async def _execute_update_project(
     """Update a project via Kotlin internal API."""
     if not project_id:
         return "Error: project_id is required."
-    body: dict = {"projectId": project_id}
-    if description:
-        body["description"] = description
-    if git_remote_url:
-        body["gitRemoteUrl"] = git_remote_url
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.put(
-                f"{_KOTLIN_INTERNAL_URL}/internal/projects/{project_id}", json=body,
-            )
-            if resp.status_code not in (200, 201):
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            return f"Project {project_id} updated."
+        from app.grpc_server_client import server_project_management_stub
+        from jervis.common import types_pb2
+        from jervis.server import project_management_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        await server_project_management_stub().UpdateProject(
+            project_management_pb2.UpdateProjectRequest(
+                ctx=ctx,
+                project_id=project_id,
+                description=description or "",
+                git_remote_url=git_remote_url or "",
+                connection_id="",
+            ),
+            timeout=30.0,
+        )
+        return f"Project {project_id} updated."
     except Exception as e:
         return f"Error updating project: {str(e)[:300]}"
 
@@ -3485,67 +3519,76 @@ async def _execute_get_stack_recommendations(requirements: str) -> str:
     if not requirements:
         return "Error: requirements parameter is required. Pass the full project requirements."
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                f"{_KOTLIN_INTERNAL_URL}/internal/project-advisor/recommendations",
-                json={"requirements": requirements},
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            data = resp.json()
+        import json as _json
 
-            # Format recommendations for the LLM
-            parts = []
+        from app.grpc_server_client import server_project_management_stub
+        from jervis.common import types_pb2
+        from jervis.server import project_management_pb2
+        from jervis_contracts.interceptors import prepare_context
 
-            # Archetype
-            arch = data.get("archetype", {})
-            parts.append(f"## Recommended Architecture: {arch.get('name', 'unknown')}")
-            parts.append(f"Type: {arch.get('type', '')}")
-            parts.append(f"Description: {arch.get('description', '')}")
-            if arch.get("pros"):
-                parts.append(f"Pros: {', '.join(arch['pros'])}")
-            if arch.get("cons"):
-                parts.append(f"Cons: {', '.join(arch['cons'])}")
-            parts.append(f"Best for: {arch.get('bestFor', '')}")
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_project_management_stub().GetStackRecommendations(
+            project_management_pb2.GetStackRecommendationsRequest(
+                ctx=ctx,
+                requirements=requirements,
+            ),
+            timeout=15.0,
+        )
+        data = _json.loads(resp.body_json)
 
-            # Platforms
-            platforms = data.get("platforms", [])
-            if platforms:
-                parts.append("\n## Platform Recommendations")
-                for p in platforms:
-                    rec = "RECOMMENDED" if p.get("recommended") else "optional"
-                    parts.append(f"- {p['platform']} [{rec}]: {p.get('rationale', '')}")
-                    for alt in p.get("alternatives", []):
-                        parts.append(f"    Alternative: {alt['name']} — {alt['description']}")
+        # Format recommendations for the LLM
+        parts = []
 
-            # Storage
-            storage = data.get("storage", [])
-            if storage:
-                parts.append("\n## Storage Recommendations")
-                for s in storage:
-                    rec = "RECOMMENDED" if s.get("recommended") else "optional"
-                    parts.append(f"- {s['technology']} [{rec}]: {s.get('useCase', '')}")
-                    parts.append(f"    Spring dependency: {s.get('springDependency', '')}")
-                    if s.get("pros"):
-                        parts.append(f"    Pros: {', '.join(s['pros'])}")
-                    if s.get("cons"):
-                        parts.append(f"    Cons: {', '.join(s['cons'])}")
+        # Archetype
+        arch = data.get("archetype", {})
+        parts.append(f"## Recommended Architecture: {arch.get('name', 'unknown')}")
+        parts.append(f"Type: {arch.get('type', '')}")
+        parts.append(f"Description: {arch.get('description', '')}")
+        if arch.get("pros"):
+            parts.append(f"Pros: {', '.join(arch['pros'])}")
+        if arch.get("cons"):
+            parts.append(f"Cons: {', '.join(arch['cons'])}")
+        parts.append(f"Best for: {arch.get('bestFor', '')}")
 
-            # Features
-            features = data.get("features", [])
-            if features:
-                parts.append("\n## Feature Recommendations")
-                for f in features:
-                    parts.append(f"- {f['feature']}:")
-                    for opt in f.get("options", []):
-                        parts.append(f"    Option: {opt['name']} — {opt['description']}")
+        # Platforms
+        platforms = data.get("platforms", [])
+        if platforms:
+            parts.append("\n## Platform Recommendations")
+            for p in platforms:
+                rec = "RECOMMENDED" if p.get("recommended") else "optional"
+                parts.append(f"- {p['platform']} [{rec}]: {p.get('rationale', '')}")
+                for alt in p.get("alternatives", []):
+                    parts.append(f"    Alternative: {alt['name']} — {alt['description']}")
 
-            # Scaffolding instructions (for coding agent dispatch later)
-            instructions = data.get("scaffoldingInstructions", "")
-            if instructions:
-                parts.append(f"\n## Scaffolding Instructions (for coding agent)\n{instructions}")
+        # Storage
+        storage = data.get("storage", [])
+        if storage:
+            parts.append("\n## Storage Recommendations")
+            for s in storage:
+                rec = "RECOMMENDED" if s.get("recommended") else "optional"
+                parts.append(f"- {s['technology']} [{rec}]: {s.get('useCase', '')}")
+                parts.append(f"    Spring dependency: {s.get('springDependency', '')}")
+                if s.get("pros"):
+                    parts.append(f"    Pros: {', '.join(s['pros'])}")
+                if s.get("cons"):
+                    parts.append(f"    Cons: {', '.join(s['cons'])}")
 
-            return "\n".join(parts)
+        # Features
+        features = data.get("features", [])
+        if features:
+            parts.append("\n## Feature Recommendations")
+            for f in features:
+                parts.append(f"- {f['feature']}:")
+                for opt in f.get("options", []):
+                    parts.append(f"    Option: {opt['name']} — {opt['description']}")
+
+        # Scaffolding instructions (for coding agent dispatch later)
+        instructions = data.get("scaffoldingInstructions", "")
+        if instructions:
+            parts.append(f"\n## Scaffolding Instructions (for coding agent)\n{instructions}")
+
+        return "\n".join(parts)
     except Exception as e:
         return f"Error getting stack recommendations: {str(e)[:300]}"
 

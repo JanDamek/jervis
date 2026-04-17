@@ -2284,19 +2284,25 @@ async def create_client(name: str, description: str = "") -> str:
         name: Client name (must be unique)
         description: Optional description
     """
-    body = {"name": name}
-    if description:
-        body["description"] = description
+    from app.grpc_clients import server_project_management_stub
+    from jervis.common import types_pb2
+    from jervis.server import project_management_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/clients",
-            json=body,
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_project_management_stub().CreateClient(
+            project_management_pb2.CreateClientRequest(
+                ctx=ctx,
+                name=name,
+                description=description or "",
+            ),
+            timeout=30.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        return f"Client created: {data.get('name', name)} (id={data.get('id', '?')})"
+    except Exception as e:
+        return f"Error creating client: {str(e)[:300]}"
+    return f"Client created: {resp.name} (id={resp.id})"
 
 
 @mcp.tool
@@ -2316,22 +2322,29 @@ async def create_project(
         name: Project name
         description: Optional project description
     """
-    body = {"clientId": client_id, "name": name}
-    if description:
-        body["description"] = description
+    from app.grpc_clients import server_project_management_stub
+    from jervis.common import types_pb2
+    from jervis.server import project_management_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/projects",
-            json=body,
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_project_management_stub().CreateProject(
+            project_management_pb2.CreateProjectRequest(
+                ctx=ctx,
+                client_id=client_id,
+                name=name,
+                description=description or "",
+            ),
+            timeout=30.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        return (
-            f"Project created: {data.get('name', name)} "
-            f"(id={data.get('id', '?')}, clientId={client_id})"
-        )
+    except Exception as e:
+        return f"Error creating project: {str(e)[:300]}"
+    return (
+        f"Project created: {resp.name} "
+        f"(id={resp.id}, clientId={resp.client_id})"
+    )
 
 
 @mcp.tool
@@ -2353,30 +2366,33 @@ async def create_connection(
         bearer_token: Bearer/personal access token (for BEARER auth)
         is_cloud: Whether to use provider's default cloud URL
     """
-    body: dict = {
-        "name": name,
-        "provider": provider,
-        "protocol": "HTTP",
-        "authType": auth_type,
-        "isCloud": is_cloud,
-    }
-    if base_url:
-        body["baseUrl"] = base_url
-    if bearer_token:
-        body["bearerToken"] = bearer_token
+    from app.grpc_clients import server_project_management_stub
+    from jervis.common import types_pb2
+    from jervis.server import project_management_pb2
+    from jervis_contracts.interceptors import prepare_context
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{settings.kotlin_server_url}/internal/connections",
-            json=body,
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_project_management_stub().CreateConnection(
+            project_management_pb2.CreateConnectionRequest(
+                ctx=ctx,
+                name=name,
+                provider=provider,
+                protocol="HTTP",
+                auth_type=auth_type,
+                base_url=base_url or "",
+                is_cloud=is_cloud,
+                bearer_token=bearer_token or "",
+            ),
+            timeout=30.0,
         )
-        if resp.status_code not in (200, 201):
-            return f"Error ({resp.status_code}): {resp.text}"
-        data = resp.json()
-        return (
-            f"Connection created: {data.get('name', name)} "
-            f"(id={data.get('id', '?')}, provider={data.get('provider', provider)})"
-        )
+    except Exception as e:
+        return f"Error creating connection: {str(e)[:300]}"
+    return (
+        f"Connection created: {resp.name} "
+        f"(id={resp.id}, provider={resp.provider})"
+    )
 
 
 @mcp.tool

@@ -800,47 +800,54 @@ async def _fetch_resource_context(client_id: str, project_id: str | None) -> str
     Returns a formatted string describing available resources so the decomposer
     can make informed decisions about what already exists vs. what needs creation.
     """
-    import httpx
-    from app.config import settings
+    import json as _json
+
+    from app.grpc_server_client import server_project_management_stub
+    from jervis.common import types_pb2
+    from jervis.server import project_management_pb2
+    from jervis_contracts.interceptors import prepare_context
 
     parts: list[str] = []
-    base = settings.kotlin_server_url
-    if not base:
-        return ""
 
     try:
-        async with httpx.AsyncClient(timeout=10) as http:
-            # Fetch clients — filter by clientId (tenant isolation)
-            params = {"clientId": client_id} if client_id else {}
-            resp = await http.get(f"{base}/internal/clients", params=params)
-            if resp.status_code == 200:
-                clients = resp.json()
-                if clients:
-                    parts.append(f"Existing clients ({len(clients)}):")
-                    for c in clients[:10]:
-                        parts.append(f"  - {c.get('name', '?')} (id={c.get('id', '?')})")
+        stub = server_project_management_stub()
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        cid = client_id or ""
 
-            # Fetch projects for this client
-            resp = await http.get(f"{base}/internal/projects", params=params)
-            if resp.status_code == 200:
-                projects = resp.json()
-                if projects:
-                    parts.append(f"Existing projects ({len(projects)}):")
-                    for p in projects[:10]:
-                        parts.append(f"  - {p.get('name', '?')} (id={p.get('id', '?')})")
+        clients_resp = await stub.ListClients(
+            project_management_pb2.ListClientsRequest(ctx=ctx, client_id=cid),
+            timeout=10.0,
+        )
+        clients = _json.loads(clients_resp.items_json)
+        if clients:
+            parts.append(f"Existing clients ({len(clients)}):")
+            for c in clients[:10]:
+                parts.append(f"  - {c.get('name', '?')} (id={c.get('id', '?')})")
 
-            # Fetch connections — filter by clientId (tenant isolation)
-            resp = await http.get(f"{base}/internal/connections", params=params)
-            if resp.status_code == 200:
-                conns = resp.json()
-                if conns:
-                    parts.append(f"Available connections ({len(conns)}):")
-                    for c in conns[:10]:
-                        caps = c.get("capabilities", [])
-                        parts.append(
-                            f"  - {c.get('name', '?')} ({c.get('provider', '?')}) "
-                            f"caps={caps}"
-                        )
+        projects_resp = await stub.ListProjects(
+            project_management_pb2.ListProjectsRequest(ctx=ctx, client_id=cid),
+            timeout=10.0,
+        )
+        projects = _json.loads(projects_resp.items_json)
+        if projects:
+            parts.append(f"Existing projects ({len(projects)}):")
+            for p in projects[:10]:
+                parts.append(f"  - {p.get('name', '?')} (id={p.get('id', '?')})")
+
+        conns_resp = await stub.ListConnections(
+            project_management_pb2.ListConnectionsRequest(ctx=ctx, client_id=cid),
+            timeout=10.0,
+        )
+        conns = _json.loads(conns_resp.items_json)
+        if conns:
+            parts.append(f"Available connections ({len(conns)}):")
+            for c in conns[:10]:
+                caps = c.get("capabilities", [])
+                parts.append(
+                    f"  - {c.get('name', '?')} ({c.get('provider', '?')}) "
+                    f"caps={caps}"
+                )
     except Exception as e:
         logger.debug("Failed to fetch resource context: %s", e)
 

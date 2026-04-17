@@ -23,6 +23,7 @@ from jervis.server import (
     guidelines_pb2_grpc,
     meetings_pb2_grpc,
     proactive_pb2_grpc,
+    project_management_pb2_grpc,
     time_tracking_pb2_grpc,
     urgency_pb2_grpc,
 )
@@ -40,6 +41,9 @@ _proactive_stub: Optional[proactive_pb2_grpc.ServerProactiveServiceStub] = None
 _time_tracking_stub: Optional[time_tracking_pb2_grpc.ServerTimeTrackingServiceStub] = None
 _urgency_stub: Optional[urgency_pb2_grpc.ServerUrgencyServiceStub] = None
 _finance_stub: Optional[finance_pb2_grpc.ServerFinanceServiceStub] = None
+_project_management_stub: Optional[
+    project_management_pb2_grpc.ServerProjectManagementServiceStub
+] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -129,3 +133,16 @@ def server_finance_stub() -> finance_pb2_grpc.ServerFinanceServiceStub:
     if _finance_stub is None:
         _finance_stub = finance_pb2_grpc.ServerFinanceServiceStub(_get_channel())
     return _finance_stub
+
+
+def server_project_management_stub() -> (
+    project_management_pb2_grpc.ServerProjectManagementServiceStub
+):
+    global _project_management_stub
+    if _project_management_stub is None:
+        _project_management_stub = (
+            project_management_pb2_grpc.ServerProjectManagementServiceStub(
+                _get_channel()
+            )
+        )
+    return _project_management_stub

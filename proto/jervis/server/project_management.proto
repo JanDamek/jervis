@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerProjectManagementProto";
+
+// ServerProjectManagementService is the pod-to-pod surface for creating
+// and listing clients, projects and connections. List responses carry the
+// full DTO tree as JSON (`items_json`) because Python callers only read
+// a handful of surface fields (id, name, provider, capabilities). Create
+// responses stay typed — Python confirms id/name/provider only.
+//
+// The `project-advisor/archetypes` endpoint had no Python consumer and is
+// dropped; recommendations remain available as typed JSON (the orchestrator
+// formats deeply-nested fields for the LLM prompt).
+service ServerProjectManagementService {
+  rpc ListClients(ListClientsRequest) returns (ListClientsResponse);
+  rpc CreateClient(CreateClientRequest) returns (CreateClientResponse);
+
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
+
+  rpc ListConnections(ListConnectionsRequest) returns (ListConnectionsResponse);
+  rpc CreateConnection(CreateConnectionRequest) returns (CreateConnectionResponse);
+
+  rpc GetStackRecommendations(GetStackRecommendationsRequest)
+      returns (GetStackRecommendationsResponse);
+}
+
+// ── Clients ──────────────────────────────────────────────────────────────
+
+message ListClientsRequest {
+  jervis.common.RequestContext ctx = 1;
+  // Optional tenant filter. Orchestrator passes its current client_id; MCP
+  // passes empty for the unfiltered list.
+  string client_id = 2;
+}
+
+message ListClientsResponse {
+  // Array of ClientDto JSON objects; full shape in shared/common-dto.
+  string items_json = 1;
+}
+
+message CreateClientRequest {
+  jervis.common.RequestContext ctx = 1;
+  string name = 2;
+  string description = 3;  // empty = null
+}
+
+message CreateClientResponse {
+  string id = 1;
+  string name = 2;
+}
+
+// ── Projects ─────────────────────────────────────────────────────────────
+
+message ListProjectsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;   // empty = all projects across tenants
+}
+
+message ListProjectsResponse {
+  // Array of ProjectDto JSON objects.
+  string items_json = 1;
+}
+
+message CreateProjectRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string name = 3;
+  string description = 4;
+}
+
+message CreateProjectResponse {
+  string id = 1;
+  string name = 2;
+  string client_id = 3;
+}
+
+message UpdateProjectRequest {
+  jervis.common.RequestContext ctx = 1;
+  string project_id = 2;
+  string description = 3;       // empty = leave unchanged
+  string git_remote_url = 4;    // empty = leave unchanged
+  string connection_id = 5;     // empty = auto-detect
+}
+
+message UpdateProjectResponse {
+  string id = 1;
+  string name = 2;
+  // Full ProjectDto after update (same shape as list items).
+  string body_json = 3;
+}
+
+// ── Connections ──────────────────────────────────────────────────────────
+
+message ListConnectionsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;   // empty = unfiltered
+}
+
+message ListConnectionsResponse {
+  // Array of {id, name, provider, state, baseUrl, capabilities[]} JSON.
+  string items_json = 1;
+}
+
+message CreateConnectionRequest {
+  jervis.common.RequestContext ctx = 1;
+  string name = 2;
+  string provider = 3;       // ProviderEnum name
+  string protocol = 4;       // ProtocolEnum name, default HTTP
+  string auth_type = 5;      // AuthTypeEnum name, default BEARER
+  string base_url = 6;
+  bool is_cloud = 7;
+  string bearer_token = 8;
+  string username = 9;
+  string password = 10;
+  // If present, links the new connection to the given client after save.
+  string client_id = 11;
+}
+
+message CreateConnectionResponse {
+  string id = 1;
+  string name = 2;
+  string provider = 3;
+  string state = 4;
+}
+
+// ── Project advisor ──────────────────────────────────────────────────────
+
+message GetStackRecommendationsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string requirements = 2;
+}
+
+message GetStackRecommendationsResponse {
+  // Full ProjectRecommendations JSON (archetype + platforms + storage +
+  // features + scaffoldingInstructions). Orchestrator iterates it to
+  // render an LLM prompt, so keeping it as JSON avoids mirroring a deep,
+  // frequently-evolving DTO tree into proto.
+  string body_json = 1;
+}
