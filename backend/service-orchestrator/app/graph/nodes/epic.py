@@ -25,7 +25,7 @@ async def plan_epic(state: dict) -> dict:
     """Fetch epic + children from tracker, create waves, check readiness.
 
     Steps:
-    1. GET /internal/tracker/list-issues (epic children)
+    1. ServerBugTrackerService.ListIssues (epic children)
     2. Sort by dependencies
     3. Split into waves (1-3 items per wave)
     4. interrupt() for approval of wave structure
@@ -33,22 +33,33 @@ async def plan_epic(state: dict) -> dict:
     task = CodingTask(**state["task"])
     evidence = state.get("evidence_pack", {})
 
-    # Fetch tracker issues for this epic
-    import httpx
-    from app.config import settings
-
-    tracker_items = []
+    tracker_items: list = []
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{settings.kotlin_server_url}/internal/tracker/list-issues",
-                params={
-                    "clientId": task.client_id,
-                    "projectId": task.project_id or "",
-                },
-            )
-            if resp.status_code == 200:
-                tracker_items = resp.json() if isinstance(resp.json(), list) else []
+        from app.grpc_server_client import server_bug_tracker_stub
+        from jervis.common import types_pb2
+        from jervis.server import bug_tracker_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_bug_tracker_stub().ListIssues(
+            bug_tracker_pb2.ListIssuesRequest(
+                ctx=ctx,
+                client_id=task.client_id,
+                project_id=task.project_id or "",
+            ),
+            timeout=30.0,
+        )
+        if resp.ok:
+            tracker_items = [
+                {
+                    "key": i.key,
+                    "title": i.title,
+                    "state": i.state,
+                    "url": i.url,
+                }
+                for i in resp.issues
+            ]
     except Exception as e:
         logger.warning("Failed to fetch tracker issues for epic: %s", e)
 
@@ -58,7 +69,7 @@ async def plan_epic(state: dict) -> dict:
             Goal(
                 id=f"g{i}",
                 title=item.get("title", f"Task {i+1}"),
-                description=item.get("description", ""),
+                description=item.get("title", ""),  # ListIssues doesn't return body; title is best available
                 complexity=Complexity.MEDIUM,
             )
             for i, item in enumerate(tracker_items)

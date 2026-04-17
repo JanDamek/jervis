@@ -267,55 +267,95 @@ async def _execute_tracker_step(
     import httpx
     from app.config import settings as app_settings
 
-    kotlin_url = app_settings.kotlin_server_url
+    from app.grpc_server_client import server_bug_tracker_stub
+    from jervis.common import types_pb2
+    from jervis.server import bug_tracker_pb2
+    from jervis_contracts.interceptors import prepare_context
+
     operations = step.tracker_operations
     results_summary: list[str] = []
+
+    def _new_ctx() -> types_pb2.RequestContext:
+        c = types_pb2.RequestContext()
+        prepare_context(c)
+        return c
+
+    stub = server_bug_tracker_stub()
 
     for op in operations:
         action = op.get("action", "create")
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                if action == "create":
-                    resp = await client.post(
-                        f"{kotlin_url}/internal/tracker/create-issue",
-                        json={
-                            "clientId": task.client_id,
-                            "projectId": task.project_id,
-                            "title": op.get("title", ""),
-                            "description": op.get("description", ""),
-                            "type": op.get("type", "task"),
-                            "parentKey": op.get("parent_key"),
-                        },
-                    )
-                    resp.raise_for_status()
-                    results_summary.append(f"Created: {op.get('title', '?')}")
+            if action == "create":
+                resp = await stub.CreateIssue(
+                    bug_tracker_pb2.CreateIssueRequest(
+                        ctx=_new_ctx(),
+                        client_id=task.client_id,
+                        project_id=task.project_id or "",
+                        title=op.get("title", ""),
+                        description=op.get("description", ""),
+                        issue_type=op.get("type", "task"),
+                    ),
+                    timeout=30.0,
+                )
+                if resp.ok:
+                    results_summary.append(f"Created: {resp.key or op.get('title', '?')}")
+                else:
+                    results_summary.append(f"Failed create: {resp.error}")
 
-                elif action == "update":
-                    resp = await client.post(
-                        f"{kotlin_url}/internal/tracker/update-issue",
-                        json={
-                            "clientId": task.client_id,
-                            "projectId": task.project_id,
-                            "issueKey": op.get("issue_key", ""),
-                            "status": op.get("status"),
-                            "comment": op.get("comment"),
-                        },
+            elif action == "update":
+                issue_key = op.get("issue_key", "")
+                new_state = op.get("status") or ""
+                # Map arbitrary provider status → "open"/"closed" only
+                state_canonical = {"closed": "closed", "done": "closed", "open": "open"}.get(
+                    new_state.lower(), ""
+                )
+                resp = await stub.UpdateIssue(
+                    bug_tracker_pb2.UpdateIssueRequest(
+                        ctx=_new_ctx(),
+                        client_id=task.client_id,
+                        project_id=task.project_id or "",
+                        issue_key=issue_key,
+                        state=state_canonical,
+                    ),
+                    timeout=30.0,
+                )
+                if resp.ok:
+                    results_summary.append(f"Updated: {issue_key}")
+                else:
+                    results_summary.append(f"Failed update: {resp.error}")
+                # Append comment separately if present
+                comment = op.get("comment")
+                if comment:
+                    cresp = await stub.AddIssueComment(
+                        bug_tracker_pb2.AddIssueCommentRequest(
+                            ctx=_new_ctx(),
+                            client_id=task.client_id,
+                            project_id=task.project_id or "",
+                            issue_key=issue_key,
+                            comment=comment,
+                        ),
+                        timeout=30.0,
                     )
-                    resp.raise_for_status()
-                    results_summary.append(f"Updated: {op.get('issue_key', '?')}")
+                    if not cresp.ok:
+                        results_summary.append(f"Comment failed: {cresp.error}")
 
-                elif action == "comment":
-                    resp = await client.post(
-                        f"{kotlin_url}/internal/tracker/update-issue",
-                        json={
-                            "clientId": task.client_id,
-                            "projectId": task.project_id,
-                            "issueKey": op.get("issue_key", ""),
-                            "comment": op.get("comment", step.instructions),
-                        },
-                    )
-                    resp.raise_for_status()
-                    results_summary.append(f"Commented: {op.get('issue_key', '?')}")
+            elif action == "comment":
+                issue_key = op.get("issue_key", "")
+                comment = op.get("comment", step.instructions)
+                cresp = await stub.AddIssueComment(
+                    bug_tracker_pb2.AddIssueCommentRequest(
+                        ctx=_new_ctx(),
+                        client_id=task.client_id,
+                        project_id=task.project_id or "",
+                        issue_key=issue_key,
+                        comment=comment,
+                    ),
+                    timeout=30.0,
+                )
+                if cresp.ok:
+                    results_summary.append(f"Commented: {issue_key}")
+                else:
+                    results_summary.append(f"Failed comment: {cresp.error}")
 
         except Exception as e:
             logger.warning("Tracker operation failed: %s: %s", action, e)
