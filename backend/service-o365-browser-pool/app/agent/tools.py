@@ -631,25 +631,31 @@ async def notify_user(
         return {"ok": False, "error": "already notified in this context"}
     ctx.notified_contexts.add(dedup_key)
 
-    payload = {
-        "connectionId": ctx.connection_id,
-        "kind": kind,
-        "message": message,
-        "mfaCode": mfa_code or None,
-        "chatId": chat_id or None,
-        "chatName": chat_name or None,
-        "sender": sender or None,
-        "preview": preview or None,
-        "meetingId": meeting_id or None,
-        "screenshot": screenshot or None,
-    }
-    url = f"{settings.kotlin_server_url}/internal/o365/notify"
+    from app.grpc_clients import server_o365_session_stub
+    from jervis.common import types_pb2
+    from jervis.server import o365_session_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    grpc_ctx = types_pb2.RequestContext()
+    prepare_context(grpc_ctx)
+    request = o365_session_pb2.NotifyRequest(
+        ctx=grpc_ctx,
+        connection_id=ctx.connection_id,
+        kind=kind,
+        message=message,
+        chat_id=chat_id or "",
+        chat_name=chat_name or "",
+        sender=sender or "",
+        preview=preview or "",
+        screenshot=screenshot or "",
+        mfa_code=mfa_code or "",
+        meeting_id=meeting_id or "",
+    )
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(url, json=payload)
+        resp = await server_o365_session_stub().Notify(request, timeout=10.0)
         if kind == "urgent_message" and chat_id:
             await ctx.storage.ledger_mark_urgent_sent(ctx.connection_id, chat_id)
-        return {"ok": resp.status_code < 300, "status": resp.status_code}
+        return {"ok": True, "status": resp.status, "priority": resp.priority}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

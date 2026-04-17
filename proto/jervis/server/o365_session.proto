@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerO365SessionProto";
+
+// ServerO365SessionService consolidates the three pod-to-server callbacks
+// emitted by `service-o365-browser-pool`:
+//   - SessionEvent — AWAITING_MFA / EXPIRED transitions (creates a USER_TASK
+//     when MFA is needed; EXPIRED is now log-only because the pod self-heals).
+//   - CapabilitiesDiscovered — after tab probing, the pod reports which
+//     services (chat/email/calendar) actually exist; server flips the
+//     connection to VALID and pushes a UI snackbar + FCM/APNs notice.
+//   - Notify — kind-aware browser event (urgent_message, meeting_invite,
+//     mfa, auth_request, meeting_alone_check, error, …). Dedup is applied
+//     server-side for urgent_message; meeting_alone_check is suppressed
+//     when the user already answered "Zůstat".
+service ServerO365SessionService {
+  rpc SessionEvent(SessionEventRequest) returns (SessionEventResponse);
+  rpc CapabilitiesDiscovered(CapabilitiesDiscoveredRequest)
+      returns (CapabilitiesDiscoveredResponse);
+  rpc Notify(NotifyRequest) returns (NotifyResponse);
+}
+
+// ── SessionEvent ────────────────────────────────────────────────────────
+
+message SessionEventRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;        // optional (server derives from device tokens)
+  string connection_id = 3;
+  string state = 4;            // "AWAITING_MFA" / "EXPIRED" / other
+  string mfa_type = 5;         // "authenticator_number" / "authenticator_code" /
+                               // "sms_code" / "phone_call"
+  string mfa_message = 6;
+  string mfa_number = 7;
+  string vnc_url = 8;
+}
+
+message SessionEventResponse {
+  string status = 1;           // "ok" / "deduped" / "suppressed"
+}
+
+// ── CapabilitiesDiscovered ──────────────────────────────────────────────
+
+message CapabilitiesDiscoveredRequest {
+  jervis.common.RequestContext ctx = 1;
+  string connection_id = 2;
+  repeated string available_capabilities = 3;
+}
+
+message CapabilitiesDiscoveredResponse {
+  bool ok = 1;
+  int32 capabilities = 2;
+  string error = 3;
+}
+
+// ── Notify ──────────────────────────────────────────────────────────────
+
+message NotifyRequest {
+  jervis.common.RequestContext ctx = 1;
+  string connection_id = 2;
+  string kind = 3;            // urgent_message / meeting_invite / mfa /
+                              // auth_request / meeting_alone_check / error / …
+  string message = 4;
+  string chat_id = 5;         // for dedup window on urgent_message
+  string chat_name = 6;
+  string sender = 7;
+  string preview = 8;
+  string screenshot = 9;      // URL; empty = omitted
+  string mfa_code = 10;
+  string meeting_id = 11;     // for alone-check suppression
+}
+
+message NotifyResponse {
+  string status = 1;          // "ok" / "deduped" / "suppressed"
+  string kind = 2;
+  int32 priority = 3;
+}

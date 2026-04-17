@@ -1,28 +1,27 @@
 """Callback module for notifying Kotlin server about session state changes.
 
 When the browser session needs user attention (MFA required, session expired),
-this module POSTs to the Kotlin server's internal API. The server then creates
-a USER_TASK notification visible in the chat UI with VNC link and MFA details.
+this module calls the Kotlin server over gRPC. The server then creates a
+USER_TASK notification visible in the chat UI with VNC link and MFA details.
 """
 
 from __future__ import annotations
 
 import logging
 
-import httpx
-
 from app.config import settings
+from app.grpc_clients import server_o365_session_stub
+from jervis.common import types_pb2
+from jervis.server import o365_session_pb2
+from jervis_contracts.interceptors import prepare_context
 
 logger = logging.getLogger("o365-browser-pool.callback")
 
-_client: httpx.AsyncClient | None = None
 
-
-async def _get_client() -> httpx.AsyncClient:
-    global _client
-    if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(timeout=10.0)
-    return _client
+def _build_context() -> types_pb2.RequestContext:
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    return ctx
 
 
 async def notify_session_state(
@@ -35,34 +34,26 @@ async def notify_session_state(
     mfa_number: str | None = None,
     vnc_url: str | None = None,
 ) -> None:
-    """POST session state change to Kotlin server. Fire-and-forget."""
+    """Fire-and-forget session state change RPC."""
     if not settings.kotlin_server_url:
         return
 
-    url = f"{settings.kotlin_server_url}/internal/o365/session-event"
-    payload = {
-        "clientId": client_id,
-        "connectionId": connection_id,
-        "state": state,
-        "mfaType": mfa_type,
-        "mfaMessage": mfa_message,
-        "mfaNumber": mfa_number,
-        "vncUrl": vnc_url or f"{settings.novnc_external_url}/vnc-login",
-    }
-
+    request = o365_session_pb2.SessionEventRequest(
+        ctx=_build_context(),
+        client_id=client_id,
+        connection_id=connection_id,
+        state=state,
+        mfa_type=mfa_type or "",
+        mfa_message=mfa_message or "",
+        mfa_number=mfa_number or "",
+        vnc_url=vnc_url or f"{settings.novnc_external_url}/vnc-login",
+    )
     try:
-        client = await _get_client()
-        resp = await client.post(url, json=payload)
-        if resp.status_code < 300:
-            logger.info(
-                "Notified Kotlin server: %s for %s (state=%s)",
-                url, client_id, state,
-            )
-        else:
-            logger.warning(
-                "Kotlin callback returned %d for %s: %s",
-                resp.status_code, client_id, resp.text[:200],
-            )
+        resp = await server_o365_session_stub().SessionEvent(request, timeout=10.0)
+        logger.info(
+            "Notified Kotlin server: %s for %s (state=%s, status=%s)",
+            "SessionEvent", client_id, state, resp.status,
+        )
     except Exception as e:
         logger.warning(
             "Failed to notify Kotlin server for %s: %s",
@@ -75,32 +66,26 @@ async def notify_capabilities_discovered(
     connection_id: str,
     available_capabilities: list[str],
 ) -> None:
-    """Push discovered capabilities to Kotlin server after tab setup.
-
-    The server updates connection.availableCapabilities and transitions
-    state from DISCOVERING to VALID.
-    """
+    """Push discovered capabilities to Kotlin server after tab setup."""
     if not settings.kotlin_server_url:
         return
 
-    url = f"{settings.kotlin_server_url}/internal/o365/capabilities-discovered"
-    payload = {
-        "connectionId": connection_id,
-        "availableCapabilities": available_capabilities,
-    }
-
+    request = o365_session_pb2.CapabilitiesDiscoveredRequest(
+        ctx=_build_context(),
+        connection_id=connection_id,
+        available_capabilities=available_capabilities,
+    )
     try:
-        client = await _get_client()
-        resp = await client.post(url, json=payload)
-        if resp.status_code < 300:
+        resp = await server_o365_session_stub().CapabilitiesDiscovered(request, timeout=10.0)
+        if resp.ok:
             logger.info(
                 "Capabilities discovered for %s: %s",
                 client_id, available_capabilities,
             )
         else:
             logger.warning(
-                "Capabilities callback returned %d for %s: %s",
-                resp.status_code, client_id, resp.text[:200],
+                "Capabilities callback returned error for %s: %s",
+                client_id, resp.error,
             )
     except Exception as e:
         logger.warning(
@@ -110,8 +95,6 @@ async def notify_capabilities_discovered(
 
 
 async def shutdown() -> None:
-    """Close the HTTP client on service shutdown."""
-    global _client
-    if _client and not _client.is_closed:
-        await _client.aclose()
-        _client = None
+    """Placeholder kept for import-compatibility (the gRPC channel closes
+    automatically when the event loop winds down)."""
+    return None

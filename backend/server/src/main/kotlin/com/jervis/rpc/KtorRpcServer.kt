@@ -20,9 +20,6 @@ import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalMeetingVideoApi
-import com.jervis.rpc.internal.installInternalO365CapabilitiesApi
-import com.jervis.rpc.internal.installInternalO365NotifyApi
-import com.jervis.rpc.internal.installInternalO365SessionApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import com.jervis.agent.AgentOrchestratorRpcImpl
 import com.jervis.agent.AgentQuestionRpcImpl
@@ -198,9 +195,8 @@ class KtorRpcServer(
                             // Visual capture bridge migrated to gRPC (jervis.server.ServerVisualCaptureService).
                             // Bug-tracker issues (GitHub/GitLab/Jira) migrated to gRPC
                             // (jervis.server.ServerBugTrackerService).
-                            installInternalO365SessionApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService, deviceTokenRepository)
-                            installInternalO365CapabilitiesApi(connectionRepository, notificationRpcImpl, fcmPushService, apnsPushService)
-                            installInternalO365NotifyApi(connectionRepository, taskRepository, notificationRpcImpl, fcmPushService, apnsPushService, deviceTokenRepository)
+                            // O365 session-event / capabilities-discovered / notify callbacks
+                            // migrated to gRPC (jervis.server.ServerO365SessionService).
                             // O365 discovered resources + user-activity migrated to gRPC
                             // (jervis.server.Server{O365DiscoveredResources,UserActivity}Service).
                             // WhatsApp session events + capabilities migrated to gRPC
