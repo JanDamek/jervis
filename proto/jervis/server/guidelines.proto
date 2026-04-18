@@ -8,27 +8,18 @@ option java_package = "com.jervis.contracts.server";
 option java_multiple_files = true;
 option java_outer_classname = "ServerGuidelinesProto";
 
-// ServerGuidelinesService is the gRPC surface for operational-
-// guidelines CRUD: coding/git/review/communication/approval/general
-// rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
-// context. The rule tree itself is large and all consumers (orchestrator,
-// correction, LLM router prompt-builder) treat it as opaque JSON —
-// serialization stays kotlinx.serialization against `shared/common-dto`
-// types. Proto-typing the full tree would duplicate the schema in two
-// places; instead we carry the serialized document body as a field and
-// let consumers parse it with their native JSON library.
+// ServerGuidelinesService is the gRPC surface for operational-guidelines
+// CRUD — coding / git / review / communication / approval / general rules
+// at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's context.
+// Messages mirror com.jervis.dto.guidelines.GuidelinesDocumentDto /
+// MergedGuidelinesDto / GuidelinesUpdateRequest 1:1.
 service ServerGuidelinesService {
-  // Merged result for a client+project context (GLOBAL → CLIENT → PROJECT
-  // deep-merge). Body is `MergedGuidelinesDto` encoded as JSON.
-  rpc GetMerged(GetMergedRequest) returns (GuidelinesPayload);
-
-  // Raw (unmerged) document for one explicit scope. Body is
-  // `GuidelinesDocumentDto` encoded as JSON.
-  rpc Get(GetRequest) returns (GuidelinesPayload);
-
-  // Partial update of a scope — `update_json` is `GuidelinesUpdateRequest`
-  // encoded as JSON. Response carries the updated `GuidelinesDocumentDto`.
-  rpc Set(SetRequest) returns (GuidelinesPayload);
+  // Merged GLOBAL → CLIENT → PROJECT deep-merge result for one context.
+  rpc GetMerged(GetMergedRequest) returns (MergedGuidelines);
+  // Raw (unmerged) document for one explicit scope.
+  rpc Get(GetRequest) returns (GuidelinesDocument);
+  // Partial update of a scope — only set fields are applied.
+  rpc Set(SetRequest) returns (GuidelinesDocument);
 }
 
 enum GuidelinesScope {
@@ -53,9 +44,132 @@ message GetRequest {
 
 message SetRequest {
   jervis.common.RequestContext ctx = 1;
-  string update_json = 2;   // `GuidelinesUpdateRequest` kotlinx-serialized
+  GuidelinesUpdateRequest update = 2;
 }
 
-message GuidelinesPayload {
-  string body_json = 1;     // `GuidelinesDocumentDto` or `MergedGuidelinesDto`
+// ── Category DTOs ───────────────────────────────────────────────────────
+
+message PatternRule {
+  string pattern = 1;
+  string description = 2;
+  string severity = 3;                       // PatternSeverity: INFO | WARNING | BLOCKER
+  string file_glob = 4;                      // empty = any file
+}
+
+message LanguageRules {
+  string naming_convention = 1;
+  repeated string forbidden_imports = 2;
+  repeated string required_imports = 3;
+  optional int32 max_file_lines = 4;
+}
+
+message CodingGuidelines {
+  repeated PatternRule forbidden_patterns = 1;
+  repeated PatternRule required_patterns = 2;
+  optional int32 max_file_lines = 3;
+  optional int32 max_function_lines = 4;
+  map<string, string> naming_conventions = 5;
+  map<string, LanguageRules> language_specific = 6;
+  repeated string principles = 7;
+}
+
+message GitGuidelines {
+  string commit_message_template = 1;        // empty = unset
+  repeated string commit_message_validators = 2;
+  string branch_name_template = 3;           // empty = unset
+  bool require_jira_reference = 4;
+  bool squash_on_merge = 5;
+  repeated string protected_branches = 6;
+}
+
+message ReviewChecklistItem {
+  string id = 1;
+  string label = 2;
+  string severity = 3;                       // PatternSeverity name
+  bool enabled = 4;                          // default true
+}
+
+message ReviewGuidelines {
+  bool must_have_tests = 1;
+  bool must_pass_lint = 2;
+  optional int32 max_changed_files = 3;
+  optional int32 max_changed_lines = 4;
+  repeated string forbidden_file_changes = 5;
+  repeated string focus_areas = 6;
+  repeated ReviewChecklistItem checklist_items = 7;
+  map<string, LanguageReviewRules> language_review_rules = 8;
+}
+
+message LanguageReviewRules {
+  repeated string rules = 1;
+}
+
+message CommunicationGuidelines {
+  string email_response_language = 1;
+  string email_signature = 2;
+  string comment_style = 3;
+  string jira_comment_language = 4;
+  string formality_level = 5;
+  repeated string custom_rules = 6;
+}
+
+message ApprovalRule {
+  bool enabled = 1;
+  string when_risk_level_below = 2;          // empty = no constraint
+  optional double when_confidence_above = 3;
+}
+
+message ApprovalGuidelines {
+  ApprovalRule auto_approve_commit = 1;
+  ApprovalRule auto_approve_push = 2;
+  ApprovalRule auto_approve_email = 3;
+  ApprovalRule auto_approve_pr_comment = 4;
+  ApprovalRule auto_approve_chat_reply = 5;
+  ApprovalRule auto_approve_coding_dispatch = 6;
+}
+
+message GeneralGuidelines {
+  repeated string custom_rules = 1;
+  string notes = 2;
+}
+
+// ── Document & merged & update ─────────────────────────────────────────
+
+message GuidelinesDocument {
+  string id = 1;
+  string scope = 2;                          // GuidelinesScope enum name
+  string client_id = 3;
+  string project_id = 4;
+  CodingGuidelines coding = 5;
+  GitGuidelines git = 6;
+  ReviewGuidelines review = 7;
+  CommunicationGuidelines communication = 8;
+  ApprovalGuidelines approval = 9;
+  GeneralGuidelines general = 10;
+}
+
+message MergedGuidelines {
+  CodingGuidelines coding = 1;
+  GitGuidelines git = 2;
+  ReviewGuidelines review = 3;
+  CommunicationGuidelines communication = 4;
+  ApprovalGuidelines approval = 5;
+  GeneralGuidelines general = 6;
+  // Effective-scope lookup: category name ("coding", "git", …) →
+  // GuidelinesScope name of the scope that supplied that category's value.
+  map<string, string> effective_scopes = 7;
+}
+
+// GuidelinesUpdateRequest — partial update. Use `optional` on each
+// category so unset fields distinguish from "explicitly zero-cleared".
+message GuidelinesUpdateRequest {
+  string scope = 1;                          // GuidelinesScope name
+  string client_id = 2;
+  string project_id = 3;
+  optional CodingGuidelines coding = 4;
+  optional GitGuidelines git = 5;
+  optional ReviewGuidelines review = 6;
+  optional CommunicationGuidelines communication = 7;
+  optional ApprovalGuidelines approval = 8;
+  optional GeneralGuidelines general = 9;
 }

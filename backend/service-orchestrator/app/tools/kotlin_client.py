@@ -1172,6 +1172,8 @@ class KotlinServerClient:
     ) -> dict:
         """Get merged guidelines for a client+project context (GLOBAL → CLIENT → PROJECT)."""
         try:
+            from google.protobuf.json_format import MessageToDict
+
             from app.grpc_server_client import server_guidelines_stub
             from jervis.server import guidelines_pb2
             from jervis.common import types_pb2
@@ -1187,7 +1189,7 @@ class KotlinServerClient:
                 ),
                 timeout=5.0,
             )
-            return json.loads(resp.body_json) if resp.body_json else {}
+            return MessageToDict(resp, preserving_proto_field_name=False)
         except Exception as e:
             logger.warning("Failed to get merged guidelines: %s", e)
             return {}
@@ -1200,6 +1202,8 @@ class KotlinServerClient:
     ) -> str:
         """Get guidelines for a specific scope (raw, unmerged)."""
         try:
+            from google.protobuf.json_format import MessageToDict
+
             from app.grpc_server_client import server_guidelines_stub
             from jervis.server import guidelines_pb2
             from jervis.common import types_pb2
@@ -1221,9 +1225,7 @@ class KotlinServerClient:
                 ),
                 timeout=5.0,
             )
-            if not resp.body_json:
-                return "{}"
-            doc = json.loads(resp.body_json)
+            doc = MessageToDict(resp, preserving_proto_field_name=False)
             return json.dumps(doc, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.warning("Failed to get guidelines: %s", e)
@@ -1239,26 +1241,37 @@ class KotlinServerClient:
     ) -> str:
         """Update a single category of guidelines for a given scope."""
         try:
+            from google.protobuf.json_format import MessageToDict, ParseDict
+
             from app.grpc_server_client import server_guidelines_stub
             from jervis.server import guidelines_pb2
             from jervis.common import types_pb2
             from jervis_contracts.interceptors import prepare_context
 
-            payload = {
-                "scope": scope,
-                "clientId": client_id,
-                "projectId": project_id,
-                category: rules,
-            }
+            update_dict: dict = {"scope": scope}
+            if client_id:
+                update_dict["clientId"] = client_id
+            if project_id:
+                update_dict["projectId"] = project_id
+            if category and rules:
+                update_dict[category] = rules
+            update_proto = ParseDict(
+                update_dict,
+                guidelines_pb2.GuidelinesUpdateRequest(),
+                ignore_unknown_fields=True,
+            )
+
             ctx = types_pb2.RequestContext()
             prepare_context(ctx)
             resp = await server_guidelines_stub().Set(
-                guidelines_pb2.SetRequest(ctx=ctx, update_json=json.dumps(payload)),
+                guidelines_pb2.SetRequest(ctx=ctx, update=update_proto),
                 timeout=10.0,
             )
-            if resp.body_json:
-                return json.dumps(json.loads(resp.body_json), ensure_ascii=False, indent=2)
-            return ""
+            return json.dumps(
+                MessageToDict(resp, preserving_proto_field_name=False),
+                ensure_ascii=False,
+                indent=2,
+            )
         except Exception as e:
             logger.warning("Failed to update guideline: %s", e)
             return f"Error: {e}"

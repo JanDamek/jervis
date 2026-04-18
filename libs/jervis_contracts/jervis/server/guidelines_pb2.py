@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1ejervis/server/guidelines.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"e\n\x10GetMergedRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x12\n\nproject_id\x18\x03 \x01(\t\"\x8e\x01\n\nGetRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12-\n\x05scope\x18\x02 \x01(\x0e\x32\x1e.jervis.server.GuidelinesScope\x12\x11\n\tclient_id\x18\x03 \x01(\t\x12\x12\n\nproject_id\x18\x04 \x01(\t\"M\n\nSetRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x13\n\x0bupdate_json\x18\x02 \x01(\t\"&\n\x11GuidelinesPayload\x12\x11\n\tbody_json\x18\x01 \x01(\t*\x8b\x01\n\x0fGuidelinesScope\x12 \n\x1cGUIDELINES_SCOPE_UNSPECIFIED\x10\x00\x12\x1b\n\x17GUIDELINES_SCOPE_GLOBAL\x10\x01\x12\x1b\n\x17GUIDELINES_SCOPE_CLIENT\x10\x02\x12\x1c\n\x18GUIDELINES_SCOPE_PROJECT\x10\x03\x32\xf1\x01\n\x17ServerGuidelinesService\x12N\n\tGetMerged\x12\x1f.jervis.server.GetMergedRequest\x1a .jervis.server.GuidelinesPayload\x12\x42\n\x03Get\x12\x19.jervis.server.GetRequest\x1a .jervis.server.GuidelinesPayload\x12\x42\n\x03Set\x12\x19.jervis.server.SetRequest\x1a .jervis.server.GuidelinesPayloadB6\n\x1b\x63om.jervis.contracts.serverB\x15ServerGuidelinesProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1ejervis/server/guidelines.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"e\n\x10GetMergedRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x12\n\nproject_id\x18\x03 \x01(\t\"\x8e\x01\n\nGetRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12-\n\x05scope\x18\x02 \x01(\x0e\x32\x1e.jervis.server.GuidelinesScope\x12\x11\n\tclient_id\x18\x03 \x01(\t\x12\x12\n\nproject_id\x18\x04 \x01(\t\"p\n\nSetRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x36\n\x06update\x18\x02 \x01(\x0b\x32&.jervis.server.GuidelinesUpdateRequest\"X\n\x0bPatternRule\x12\x0f\n\x07pattern\x18\x01 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x02 \x01(\t\x12\x10\n\x08severity\x18\x03 \x01(\t\x12\x11\n\tfile_glob\x18\x04 \x01(\t\"\x8f\x01\n\rLanguageRules\x12\x19\n\x11naming_convention\x18\x01 \x01(\t\x12\x19\n\x11\x66orbidden_imports\x18\x02 \x03(\t\x12\x18\n\x10required_imports\x18\x03 \x03(\t\x12\x1b\n\x0emax_file_lines\x18\x04 \x01(\x05H\x00\x88\x01\x01\x42\x11\n\x0f_max_file_lines\"\xb4\x04\n\x10\x43odingGuidelines\x12\x36\n\x12\x66orbidden_patterns\x18\x01 \x03(\x0b\x32\x1a.jervis.server.PatternRule\x12\x35\n\x11required_patterns\x18\x02 \x03(\x0b\x32\x1a.jervis.server.PatternRule\x12\x1b\n\x0emax_file_lines\x18\x03 \x01(\x05H\x00\x88\x01\x01\x12\x1f\n\x12max_function_lines\x18\x04 \x01(\x05H\x01\x88\x01\x01\x12R\n\x12naming_conventions\x18\x05 \x03(\x0b\x32\x36.jervis.server.CodingGuidelines.NamingConventionsEntry\x12P\n\x11language_specific\x18\x06 \x03(\x0b\x32\x35.jervis.server.CodingGuidelines.LanguageSpecificEntry\x12\x12\n\nprinciples\x18\x07 \x03(\t\x1a\x38\n\x16NamingConventionsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1aU\n\x15LanguageSpecificEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12+\n\x05value\x18\x02 \x01(\x0b\x32\x1c.jervis.server.LanguageRules:\x02\x38\x01\x42\x11\n\x0f_max_file_linesB\x15\n\x13_max_function_lines\"\xc6\x01\n\rGitGuidelines\x12\x1f\n\x17\x63ommit_message_template\x18\x01 \x01(\t\x12!\n\x19\x63ommit_message_validators\x18\x02 \x03(\t\x12\x1c\n\x14\x62ranch_name_template\x18\x03 \x01(\t\x12\x1e\n\x16require_jira_reference\x18\x04 \x01(\x08\x12\x17\n\x0fsquash_on_merge\x18\x05 \x01(\x08\x12\x1a\n\x12protected_branches\x18\x06 \x03(\t\"S\n\x13ReviewChecklistItem\x12\n\n\x02id\x18\x01 \x01(\t\x12\r\n\x05label\x18\x02 \x01(\t\x12\x10\n\x08severity\x18\x03 \x01(\t\x12\x0f\n\x07\x65nabled\x18\x04 \x01(\x08\"\xda\x03\n\x10ReviewGuidelines\x12\x17\n\x0fmust_have_tests\x18\x01 \x01(\x08\x12\x16\n\x0emust_pass_lint\x18\x02 \x01(\x08\x12\x1e\n\x11max_changed_files\x18\x03 \x01(\x05H\x00\x88\x01\x01\x12\x1e\n\x11max_changed_lines\x18\x04 \x01(\x05H\x01\x88\x01\x01\x12\x1e\n\x16\x66orbidden_file_changes\x18\x05 \x03(\t\x12\x13\n\x0b\x66ocus_areas\x18\x06 \x03(\t\x12;\n\x0f\x63hecklist_items\x18\x07 \x03(\x0b\x32\".jervis.server.ReviewChecklistItem\x12W\n\x15language_review_rules\x18\x08 \x03(\x0b\x32\x38.jervis.server.ReviewGuidelines.LanguageReviewRulesEntry\x1a^\n\x18LanguageReviewRulesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x31\n\x05value\x18\x02 \x01(\x0b\x32\".jervis.server.LanguageReviewRules:\x02\x38\x01\x42\x14\n\x12_max_changed_filesB\x14\n\x12_max_changed_lines\"$\n\x13LanguageReviewRules\x12\r\n\x05rules\x18\x01 \x03(\t\"\xb8\x01\n\x17\x43ommunicationGuidelines\x12\x1f\n\x17\x65mail_response_language\x18\x01 \x01(\t\x12\x17\n\x0f\x65mail_signature\x18\x02 \x01(\t\x12\x15\n\rcomment_style\x18\x03 \x01(\t\x12\x1d\n\x15jira_comment_language\x18\x04 \x01(\t\x12\x17\n\x0f\x66ormality_level\x18\x05 \x01(\t\x12\x14\n\x0c\x63ustom_rules\x18\x06 \x03(\t\"|\n\x0c\x41pprovalRule\x12\x0f\n\x07\x65nabled\x18\x01 \x01(\x08\x12\x1d\n\x15when_risk_level_below\x18\x02 \x01(\t\x12\"\n\x15when_confidence_above\x18\x03 \x01(\x01H\x00\x88\x01\x01\x42\x18\n\x16_when_confidence_above\"\xfe\x02\n\x12\x41pprovalGuidelines\x12\x38\n\x13\x61uto_approve_commit\x18\x01 \x01(\x0b\x32\x1b.jervis.server.ApprovalRule\x12\x36\n\x11\x61uto_approve_push\x18\x02 \x01(\x0b\x32\x1b.jervis.server.ApprovalRule\x12\x37\n\x12\x61uto_approve_email\x18\x03 \x01(\x0b\x32\x1b.jervis.server.ApprovalRule\x12<\n\x17\x61uto_approve_pr_comment\x18\x04 \x01(\x0b\x32\x1b.jervis.server.ApprovalRule\x12<\n\x17\x61uto_approve_chat_reply\x18\x05 \x01(\x0b\x32\x1b.jervis.server.ApprovalRule\x12\x41\n\x1c\x61uto_approve_coding_dispatch\x18\x06 \x01(\x0b\x32\x1b.jervis.server.ApprovalRule\"8\n\x11GeneralGuidelines\x12\x14\n\x0c\x63ustom_rules\x18\x01 \x03(\t\x12\r\n\x05notes\x18\x02 \x01(\t\"\x8a\x03\n\x12GuidelinesDocument\x12\n\n\x02id\x18\x01 \x01(\t\x12\r\n\x05scope\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\x12\x12\n\nproject_id\x18\x04 \x01(\t\x12/\n\x06\x63oding\x18\x05 \x01(\x0b\x32\x1f.jervis.server.CodingGuidelines\x12)\n\x03git\x18\x06 \x01(\x0b\x32\x1c.jervis.server.GitGuidelines\x12/\n\x06review\x18\x07 \x01(\x0b\x32\x1f.jervis.server.ReviewGuidelines\x12=\n\rcommunication\x18\x08 \x01(\x0b\x32&.jervis.server.CommunicationGuidelines\x12\x33\n\x08\x61pproval\x18\t \x01(\x0b\x32!.jervis.server.ApprovalGuidelines\x12\x31\n\x07general\x18\n \x01(\x0b\x32 .jervis.server.GeneralGuidelines\"\xce\x03\n\x10MergedGuidelines\x12/\n\x06\x63oding\x18\x01 \x01(\x0b\x32\x1f.jervis.server.CodingGuidelines\x12)\n\x03git\x18\x02 \x01(\x0b\x32\x1c.jervis.server.GitGuidelines\x12/\n\x06review\x18\x03 \x01(\x0b\x32\x1f.jervis.server.ReviewGuidelines\x12=\n\rcommunication\x18\x04 \x01(\x0b\x32&.jervis.server.CommunicationGuidelines\x12\x33\n\x08\x61pproval\x18\x05 \x01(\x0b\x32!.jervis.server.ApprovalGuidelines\x12\x31\n\x07general\x18\x06 \x01(\x0b\x32 .jervis.server.GeneralGuidelines\x12N\n\x10\x65\x66\x66\x65\x63tive_scopes\x18\x07 \x03(\x0b\x32\x34.jervis.server.MergedGuidelines.EffectiveScopesEntry\x1a\x36\n\x14\x45\x66\x66\x65\x63tiveScopesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xea\x03\n\x17GuidelinesUpdateRequest\x12\r\n\x05scope\x18\x01 \x01(\t\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x12\n\nproject_id\x18\x03 \x01(\t\x12\x34\n\x06\x63oding\x18\x04 \x01(\x0b\x32\x1f.jervis.server.CodingGuidelinesH\x00\x88\x01\x01\x12.\n\x03git\x18\x05 \x01(\x0b\x32\x1c.jervis.server.GitGuidelinesH\x01\x88\x01\x01\x12\x34\n\x06review\x18\x06 \x01(\x0b\x32\x1f.jervis.server.ReviewGuidelinesH\x02\x88\x01\x01\x12\x42\n\rcommunication\x18\x07 \x01(\x0b\x32&.jervis.server.CommunicationGuidelinesH\x03\x88\x01\x01\x12\x38\n\x08\x61pproval\x18\x08 \x01(\x0b\x32!.jervis.server.ApprovalGuidelinesH\x04\x88\x01\x01\x12\x36\n\x07general\x18\t \x01(\x0b\x32 .jervis.server.GeneralGuidelinesH\x05\x88\x01\x01\x42\t\n\x07_codingB\x06\n\x04_gitB\t\n\x07_reviewB\x10\n\x0e_communicationB\x0b\n\t_approvalB\n\n\x08_general*\x8b\x01\n\x0fGuidelinesScope\x12 \n\x1cGUIDELINES_SCOPE_UNSPECIFIED\x10\x00\x12\x1b\n\x17GUIDELINES_SCOPE_GLOBAL\x10\x01\x12\x1b\n\x17GUIDELINES_SCOPE_CLIENT\x10\x02\x12\x1c\n\x18GUIDELINES_SCOPE_PROJECT\x10\x03\x32\xf2\x01\n\x17ServerGuidelinesService\x12M\n\tGetMerged\x12\x1f.jervis.server.GetMergedRequest\x1a\x1f.jervis.server.MergedGuidelines\x12\x43\n\x03Get\x12\x19.jervis.server.GetRequest\x1a!.jervis.server.GuidelinesDocument\x12\x43\n\x03Set\x12\x19.jervis.server.SetRequest\x1a!.jervis.server.GuidelinesDocumentB6\n\x1b\x63om.jervis.contracts.serverB\x15ServerGuidelinesProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,16 +33,58 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'jervis.server.guidelines_pb
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n\033com.jervis.contracts.serverB\025ServerGuidelinesProtoP\001'
-  _globals['_GUIDELINESSCOPE']._serialized_start=444
-  _globals['_GUIDELINESSCOPE']._serialized_end=583
+  _globals['_CODINGGUIDELINES_NAMINGCONVENTIONSENTRY']._loaded_options = None
+  _globals['_CODINGGUIDELINES_NAMINGCONVENTIONSENTRY']._serialized_options = b'8\001'
+  _globals['_CODINGGUIDELINES_LANGUAGESPECIFICENTRY']._loaded_options = None
+  _globals['_CODINGGUIDELINES_LANGUAGESPECIFICENTRY']._serialized_options = b'8\001'
+  _globals['_REVIEWGUIDELINES_LANGUAGEREVIEWRULESENTRY']._loaded_options = None
+  _globals['_REVIEWGUIDELINES_LANGUAGEREVIEWRULESENTRY']._serialized_options = b'8\001'
+  _globals['_MERGEDGUIDELINES_EFFECTIVESCOPESENTRY']._loaded_options = None
+  _globals['_MERGEDGUIDELINES_EFFECTIVESCOPESENTRY']._serialized_options = b'8\001'
+  _globals['_GUIDELINESSCOPE']._serialized_start=4154
+  _globals['_GUIDELINESSCOPE']._serialized_end=4293
   _globals['_GETMERGEDREQUEST']._serialized_start=76
   _globals['_GETMERGEDREQUEST']._serialized_end=177
   _globals['_GETREQUEST']._serialized_start=180
   _globals['_GETREQUEST']._serialized_end=322
   _globals['_SETREQUEST']._serialized_start=324
-  _globals['_SETREQUEST']._serialized_end=401
-  _globals['_GUIDELINESPAYLOAD']._serialized_start=403
-  _globals['_GUIDELINESPAYLOAD']._serialized_end=441
-  _globals['_SERVERGUIDELINESSERVICE']._serialized_start=586
-  _globals['_SERVERGUIDELINESSERVICE']._serialized_end=827
+  _globals['_SETREQUEST']._serialized_end=436
+  _globals['_PATTERNRULE']._serialized_start=438
+  _globals['_PATTERNRULE']._serialized_end=526
+  _globals['_LANGUAGERULES']._serialized_start=529
+  _globals['_LANGUAGERULES']._serialized_end=672
+  _globals['_CODINGGUIDELINES']._serialized_start=675
+  _globals['_CODINGGUIDELINES']._serialized_end=1239
+  _globals['_CODINGGUIDELINES_NAMINGCONVENTIONSENTRY']._serialized_start=1054
+  _globals['_CODINGGUIDELINES_NAMINGCONVENTIONSENTRY']._serialized_end=1110
+  _globals['_CODINGGUIDELINES_LANGUAGESPECIFICENTRY']._serialized_start=1112
+  _globals['_CODINGGUIDELINES_LANGUAGESPECIFICENTRY']._serialized_end=1197
+  _globals['_GITGUIDELINES']._serialized_start=1242
+  _globals['_GITGUIDELINES']._serialized_end=1440
+  _globals['_REVIEWCHECKLISTITEM']._serialized_start=1442
+  _globals['_REVIEWCHECKLISTITEM']._serialized_end=1525
+  _globals['_REVIEWGUIDELINES']._serialized_start=1528
+  _globals['_REVIEWGUIDELINES']._serialized_end=2002
+  _globals['_REVIEWGUIDELINES_LANGUAGEREVIEWRULESENTRY']._serialized_start=1864
+  _globals['_REVIEWGUIDELINES_LANGUAGEREVIEWRULESENTRY']._serialized_end=1958
+  _globals['_LANGUAGEREVIEWRULES']._serialized_start=2004
+  _globals['_LANGUAGEREVIEWRULES']._serialized_end=2040
+  _globals['_COMMUNICATIONGUIDELINES']._serialized_start=2043
+  _globals['_COMMUNICATIONGUIDELINES']._serialized_end=2227
+  _globals['_APPROVALRULE']._serialized_start=2229
+  _globals['_APPROVALRULE']._serialized_end=2353
+  _globals['_APPROVALGUIDELINES']._serialized_start=2356
+  _globals['_APPROVALGUIDELINES']._serialized_end=2738
+  _globals['_GENERALGUIDELINES']._serialized_start=2740
+  _globals['_GENERALGUIDELINES']._serialized_end=2796
+  _globals['_GUIDELINESDOCUMENT']._serialized_start=2799
+  _globals['_GUIDELINESDOCUMENT']._serialized_end=3193
+  _globals['_MERGEDGUIDELINES']._serialized_start=3196
+  _globals['_MERGEDGUIDELINES']._serialized_end=3658
+  _globals['_MERGEDGUIDELINES_EFFECTIVESCOPESENTRY']._serialized_start=3604
+  _globals['_MERGEDGUIDELINES_EFFECTIVESCOPESENTRY']._serialized_end=3658
+  _globals['_GUIDELINESUPDATEREQUEST']._serialized_start=3661
+  _globals['_GUIDELINESUPDATEREQUEST']._serialized_end=4151
+  _globals['_SERVERGUIDELINESSERVICE']._serialized_start=4296
+  _globals['_SERVERGUIDELINESSERVICE']._serialized_end=4538
 # @@protoc_insertion_point(module_scope)

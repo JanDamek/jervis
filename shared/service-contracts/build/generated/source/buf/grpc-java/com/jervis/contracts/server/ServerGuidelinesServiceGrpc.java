@@ -4,15 +4,11 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 
 /**
  * <pre>
- * ServerGuidelinesService is the gRPC surface for operational-
- * guidelines CRUD: coding/git/review/communication/approval/general
- * rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
- * context. The rule tree itself is large and all consumers (orchestrator,
- * correction, LLM router prompt-builder) treat it as opaque JSON —
- * serialization stays kotlinx.serialization against `shared/common-dto`
- * types. Proto-typing the full tree would duplicate the schema in two
- * places; instead we carry the serialized document body as a field and
- * let consumers parse it with their native JSON library.
+ * ServerGuidelinesService is the gRPC surface for operational-guidelines
+ * CRUD — coding / git / review / communication / approval / general rules
+ * at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's context.
+ * Messages mirror com.jervis.dto.guidelines.GuidelinesDocumentDto /
+ * MergedGuidelinesDto / GuidelinesUpdateRequest 1:1.
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -24,28 +20,28 @@ public final class ServerGuidelinesServiceGrpc {
 
   // Static method descriptors that strictly reflect the proto.
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.GetMergedRequest,
-      com.jervis.contracts.server.GuidelinesPayload> getGetMergedMethod;
+      com.jervis.contracts.server.MergedGuidelines> getGetMergedMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "GetMerged",
       requestType = com.jervis.contracts.server.GetMergedRequest.class,
-      responseType = com.jervis.contracts.server.GuidelinesPayload.class,
+      responseType = com.jervis.contracts.server.MergedGuidelines.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.GetMergedRequest,
-      com.jervis.contracts.server.GuidelinesPayload> getGetMergedMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetMergedRequest, com.jervis.contracts.server.GuidelinesPayload> getGetMergedMethod;
+      com.jervis.contracts.server.MergedGuidelines> getGetMergedMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetMergedRequest, com.jervis.contracts.server.MergedGuidelines> getGetMergedMethod;
     if ((getGetMergedMethod = ServerGuidelinesServiceGrpc.getGetMergedMethod) == null) {
       synchronized (ServerGuidelinesServiceGrpc.class) {
         if ((getGetMergedMethod = ServerGuidelinesServiceGrpc.getGetMergedMethod) == null) {
           ServerGuidelinesServiceGrpc.getGetMergedMethod = getGetMergedMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetMergedRequest, com.jervis.contracts.server.GuidelinesPayload>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetMergedRequest, com.jervis.contracts.server.MergedGuidelines>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetMerged"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.GetMergedRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.GuidelinesPayload.getDefaultInstance()))
+                  com.jervis.contracts.server.MergedGuidelines.getDefaultInstance()))
               .setSchemaDescriptor(new ServerGuidelinesServiceMethodDescriptorSupplier("GetMerged"))
               .build();
         }
@@ -55,28 +51,28 @@ public final class ServerGuidelinesServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.GetRequest,
-      com.jervis.contracts.server.GuidelinesPayload> getGetMethod;
+      com.jervis.contracts.server.GuidelinesDocument> getGetMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "Get",
       requestType = com.jervis.contracts.server.GetRequest.class,
-      responseType = com.jervis.contracts.server.GuidelinesPayload.class,
+      responseType = com.jervis.contracts.server.GuidelinesDocument.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.GetRequest,
-      com.jervis.contracts.server.GuidelinesPayload> getGetMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetRequest, com.jervis.contracts.server.GuidelinesPayload> getGetMethod;
+      com.jervis.contracts.server.GuidelinesDocument> getGetMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetRequest, com.jervis.contracts.server.GuidelinesDocument> getGetMethod;
     if ((getGetMethod = ServerGuidelinesServiceGrpc.getGetMethod) == null) {
       synchronized (ServerGuidelinesServiceGrpc.class) {
         if ((getGetMethod = ServerGuidelinesServiceGrpc.getGetMethod) == null) {
           ServerGuidelinesServiceGrpc.getGetMethod = getGetMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetRequest, com.jervis.contracts.server.GuidelinesPayload>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetRequest, com.jervis.contracts.server.GuidelinesDocument>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "Get"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.GetRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.GuidelinesPayload.getDefaultInstance()))
+                  com.jervis.contracts.server.GuidelinesDocument.getDefaultInstance()))
               .setSchemaDescriptor(new ServerGuidelinesServiceMethodDescriptorSupplier("Get"))
               .build();
         }
@@ -86,28 +82,28 @@ public final class ServerGuidelinesServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.SetRequest,
-      com.jervis.contracts.server.GuidelinesPayload> getSetMethod;
+      com.jervis.contracts.server.GuidelinesDocument> getSetMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "Set",
       requestType = com.jervis.contracts.server.SetRequest.class,
-      responseType = com.jervis.contracts.server.GuidelinesPayload.class,
+      responseType = com.jervis.contracts.server.GuidelinesDocument.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.SetRequest,
-      com.jervis.contracts.server.GuidelinesPayload> getSetMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.SetRequest, com.jervis.contracts.server.GuidelinesPayload> getSetMethod;
+      com.jervis.contracts.server.GuidelinesDocument> getSetMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.SetRequest, com.jervis.contracts.server.GuidelinesDocument> getSetMethod;
     if ((getSetMethod = ServerGuidelinesServiceGrpc.getSetMethod) == null) {
       synchronized (ServerGuidelinesServiceGrpc.class) {
         if ((getSetMethod = ServerGuidelinesServiceGrpc.getSetMethod) == null) {
           ServerGuidelinesServiceGrpc.getSetMethod = getSetMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.SetRequest, com.jervis.contracts.server.GuidelinesPayload>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.SetRequest, com.jervis.contracts.server.GuidelinesDocument>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "Set"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.SetRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.GuidelinesPayload.getDefaultInstance()))
+                  com.jervis.contracts.server.GuidelinesDocument.getDefaultInstance()))
               .setSchemaDescriptor(new ServerGuidelinesServiceMethodDescriptorSupplier("Set"))
               .build();
         }
@@ -177,49 +173,42 @@ public final class ServerGuidelinesServiceGrpc {
 
   /**
    * <pre>
-   * ServerGuidelinesService is the gRPC surface for operational-
-   * guidelines CRUD: coding/git/review/communication/approval/general
-   * rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
-   * context. The rule tree itself is large and all consumers (orchestrator,
-   * correction, LLM router prompt-builder) treat it as opaque JSON —
-   * serialization stays kotlinx.serialization against `shared/common-dto`
-   * types. Proto-typing the full tree would duplicate the schema in two
-   * places; instead we carry the serialized document body as a field and
-   * let consumers parse it with their native JSON library.
+   * ServerGuidelinesService is the gRPC surface for operational-guidelines
+   * CRUD — coding / git / review / communication / approval / general rules
+   * at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's context.
+   * Messages mirror com.jervis.dto.guidelines.GuidelinesDocumentDto /
+   * MergedGuidelinesDto / GuidelinesUpdateRequest 1:1.
    * </pre>
    */
   public interface AsyncService {
 
     /**
      * <pre>
-     * Merged result for a client+project context (GLOBAL → CLIENT → PROJECT
-     * deep-merge). Body is `MergedGuidelinesDto` encoded as JSON.
+     * Merged GLOBAL → CLIENT → PROJECT deep-merge result for one context.
      * </pre>
      */
     default void getMerged(com.jervis.contracts.server.GetMergedRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.MergedGuidelines> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetMergedMethod(), responseObserver);
     }
 
     /**
      * <pre>
-     * Raw (unmerged) document for one explicit scope. Body is
-     * `GuidelinesDocumentDto` encoded as JSON.
+     * Raw (unmerged) document for one explicit scope.
      * </pre>
      */
     default void get(com.jervis.contracts.server.GetRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesDocument> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetMethod(), responseObserver);
     }
 
     /**
      * <pre>
-     * Partial update of a scope — `update_json` is `GuidelinesUpdateRequest`
-     * encoded as JSON. Response carries the updated `GuidelinesDocumentDto`.
+     * Partial update of a scope — only set fields are applied.
      * </pre>
      */
     default void set(com.jervis.contracts.server.SetRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesDocument> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSetMethod(), responseObserver);
     }
   }
@@ -227,15 +216,11 @@ public final class ServerGuidelinesServiceGrpc {
   /**
    * Base class for the server implementation of the service ServerGuidelinesService.
    * <pre>
-   * ServerGuidelinesService is the gRPC surface for operational-
-   * guidelines CRUD: coding/git/review/communication/approval/general
-   * rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
-   * context. The rule tree itself is large and all consumers (orchestrator,
-   * correction, LLM router prompt-builder) treat it as opaque JSON —
-   * serialization stays kotlinx.serialization against `shared/common-dto`
-   * types. Proto-typing the full tree would duplicate the schema in two
-   * places; instead we carry the serialized document body as a field and
-   * let consumers parse it with their native JSON library.
+   * ServerGuidelinesService is the gRPC surface for operational-guidelines
+   * CRUD — coding / git / review / communication / approval / general rules
+   * at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's context.
+   * Messages mirror com.jervis.dto.guidelines.GuidelinesDocumentDto /
+   * MergedGuidelinesDto / GuidelinesUpdateRequest 1:1.
    * </pre>
    */
   public static abstract class ServerGuidelinesServiceImplBase
@@ -249,15 +234,11 @@ public final class ServerGuidelinesServiceGrpc {
   /**
    * A stub to allow clients to do asynchronous rpc calls to service ServerGuidelinesService.
    * <pre>
-   * ServerGuidelinesService is the gRPC surface for operational-
-   * guidelines CRUD: coding/git/review/communication/approval/general
-   * rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
-   * context. The rule tree itself is large and all consumers (orchestrator,
-   * correction, LLM router prompt-builder) treat it as opaque JSON —
-   * serialization stays kotlinx.serialization against `shared/common-dto`
-   * types. Proto-typing the full tree would duplicate the schema in two
-   * places; instead we carry the serialized document body as a field and
-   * let consumers parse it with their native JSON library.
+   * ServerGuidelinesService is the gRPC surface for operational-guidelines
+   * CRUD — coding / git / review / communication / approval / general rules
+   * at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's context.
+   * Messages mirror com.jervis.dto.guidelines.GuidelinesDocumentDto /
+   * MergedGuidelinesDto / GuidelinesUpdateRequest 1:1.
    * </pre>
    */
   public static final class ServerGuidelinesServiceStub
@@ -275,36 +256,33 @@ public final class ServerGuidelinesServiceGrpc {
 
     /**
      * <pre>
-     * Merged result for a client+project context (GLOBAL → CLIENT → PROJECT
-     * deep-merge). Body is `MergedGuidelinesDto` encoded as JSON.
+     * Merged GLOBAL → CLIENT → PROJECT deep-merge result for one context.
      * </pre>
      */
     public void getMerged(com.jervis.contracts.server.GetMergedRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.MergedGuidelines> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetMergedMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      * <pre>
-     * Raw (unmerged) document for one explicit scope. Body is
-     * `GuidelinesDocumentDto` encoded as JSON.
+     * Raw (unmerged) document for one explicit scope.
      * </pre>
      */
     public void get(com.jervis.contracts.server.GetRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesDocument> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      * <pre>
-     * Partial update of a scope — `update_json` is `GuidelinesUpdateRequest`
-     * encoded as JSON. Response carries the updated `GuidelinesDocumentDto`.
+     * Partial update of a scope — only set fields are applied.
      * </pre>
      */
     public void set(com.jervis.contracts.server.SetRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesDocument> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getSetMethod(), getCallOptions()), request, responseObserver);
     }
@@ -313,15 +291,11 @@ public final class ServerGuidelinesServiceGrpc {
   /**
    * A stub to allow clients to do synchronous rpc calls to service ServerGuidelinesService.
    * <pre>
-   * ServerGuidelinesService is the gRPC surface for operational-
-   * guidelines CRUD: coding/git/review/communication/approval/general
-   * rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
-   * context. The rule tree itself is large and all consumers (orchestrator,
-   * correction, LLM router prompt-builder) treat it as opaque JSON —
-   * serialization stays kotlinx.serialization against `shared/common-dto`
-   * types. Proto-typing the full tree would duplicate the schema in two
-   * places; instead we carry the serialized document body as a field and
-   * let consumers parse it with their native JSON library.
+   * ServerGuidelinesService is the gRPC surface for operational-guidelines
+   * CRUD — coding / git / review / communication / approval / general rules
+   * at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's context.
+   * Messages mirror com.jervis.dto.guidelines.GuidelinesDocumentDto /
+   * MergedGuidelinesDto / GuidelinesUpdateRequest 1:1.
    * </pre>
    */
   public static final class ServerGuidelinesServiceBlockingV2Stub
@@ -339,33 +313,30 @@ public final class ServerGuidelinesServiceGrpc {
 
     /**
      * <pre>
-     * Merged result for a client+project context (GLOBAL → CLIENT → PROJECT
-     * deep-merge). Body is `MergedGuidelinesDto` encoded as JSON.
+     * Merged GLOBAL → CLIENT → PROJECT deep-merge result for one context.
      * </pre>
      */
-    public com.jervis.contracts.server.GuidelinesPayload getMerged(com.jervis.contracts.server.GetMergedRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.MergedGuidelines getMerged(com.jervis.contracts.server.GetMergedRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getGetMergedMethod(), getCallOptions(), request);
     }
 
     /**
      * <pre>
-     * Raw (unmerged) document for one explicit scope. Body is
-     * `GuidelinesDocumentDto` encoded as JSON.
+     * Raw (unmerged) document for one explicit scope.
      * </pre>
      */
-    public com.jervis.contracts.server.GuidelinesPayload get(com.jervis.contracts.server.GetRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.GuidelinesDocument get(com.jervis.contracts.server.GetRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getGetMethod(), getCallOptions(), request);
     }
 
     /**
      * <pre>
-     * Partial update of a scope — `update_json` is `GuidelinesUpdateRequest`
-     * encoded as JSON. Response carries the updated `GuidelinesDocumentDto`.
+     * Partial update of a scope — only set fields are applied.
      * </pre>
      */
-    public com.jervis.contracts.server.GuidelinesPayload set(com.jervis.contracts.server.SetRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.GuidelinesDocument set(com.jervis.contracts.server.SetRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getSetMethod(), getCallOptions(), request);
     }
@@ -374,15 +345,11 @@ public final class ServerGuidelinesServiceGrpc {
   /**
    * A stub to allow clients to do limited synchronous rpc calls to service ServerGuidelinesService.
    * <pre>
-   * ServerGuidelinesService is the gRPC surface for operational-
-   * guidelines CRUD: coding/git/review/communication/approval/general
-   * rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
-   * context. The rule tree itself is large and all consumers (orchestrator,
-   * correction, LLM router prompt-builder) treat it as opaque JSON —
-   * serialization stays kotlinx.serialization against `shared/common-dto`
-   * types. Proto-typing the full tree would duplicate the schema in two
-   * places; instead we carry the serialized document body as a field and
-   * let consumers parse it with their native JSON library.
+   * ServerGuidelinesService is the gRPC surface for operational-guidelines
+   * CRUD — coding / git / review / communication / approval / general rules
+   * at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's context.
+   * Messages mirror com.jervis.dto.guidelines.GuidelinesDocumentDto /
+   * MergedGuidelinesDto / GuidelinesUpdateRequest 1:1.
    * </pre>
    */
   public static final class ServerGuidelinesServiceBlockingStub
@@ -400,33 +367,30 @@ public final class ServerGuidelinesServiceGrpc {
 
     /**
      * <pre>
-     * Merged result for a client+project context (GLOBAL → CLIENT → PROJECT
-     * deep-merge). Body is `MergedGuidelinesDto` encoded as JSON.
+     * Merged GLOBAL → CLIENT → PROJECT deep-merge result for one context.
      * </pre>
      */
-    public com.jervis.contracts.server.GuidelinesPayload getMerged(com.jervis.contracts.server.GetMergedRequest request) {
+    public com.jervis.contracts.server.MergedGuidelines getMerged(com.jervis.contracts.server.GetMergedRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetMergedMethod(), getCallOptions(), request);
     }
 
     /**
      * <pre>
-     * Raw (unmerged) document for one explicit scope. Body is
-     * `GuidelinesDocumentDto` encoded as JSON.
+     * Raw (unmerged) document for one explicit scope.
      * </pre>
      */
-    public com.jervis.contracts.server.GuidelinesPayload get(com.jervis.contracts.server.GetRequest request) {
+    public com.jervis.contracts.server.GuidelinesDocument get(com.jervis.contracts.server.GetRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetMethod(), getCallOptions(), request);
     }
 
     /**
      * <pre>
-     * Partial update of a scope — `update_json` is `GuidelinesUpdateRequest`
-     * encoded as JSON. Response carries the updated `GuidelinesDocumentDto`.
+     * Partial update of a scope — only set fields are applied.
      * </pre>
      */
-    public com.jervis.contracts.server.GuidelinesPayload set(com.jervis.contracts.server.SetRequest request) {
+    public com.jervis.contracts.server.GuidelinesDocument set(com.jervis.contracts.server.SetRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getSetMethod(), getCallOptions(), request);
     }
@@ -435,15 +399,11 @@ public final class ServerGuidelinesServiceGrpc {
   /**
    * A stub to allow clients to do ListenableFuture-style rpc calls to service ServerGuidelinesService.
    * <pre>
-   * ServerGuidelinesService is the gRPC surface for operational-
-   * guidelines CRUD: coding/git/review/communication/approval/general
-   * rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
-   * context. The rule tree itself is large and all consumers (orchestrator,
-   * correction, LLM router prompt-builder) treat it as opaque JSON —
-   * serialization stays kotlinx.serialization against `shared/common-dto`
-   * types. Proto-typing the full tree would duplicate the schema in two
-   * places; instead we carry the serialized document body as a field and
-   * let consumers parse it with their native JSON library.
+   * ServerGuidelinesService is the gRPC surface for operational-guidelines
+   * CRUD — coding / git / review / communication / approval / general rules
+   * at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's context.
+   * Messages mirror com.jervis.dto.guidelines.GuidelinesDocumentDto /
+   * MergedGuidelinesDto / GuidelinesUpdateRequest 1:1.
    * </pre>
    */
   public static final class ServerGuidelinesServiceFutureStub
@@ -461,11 +421,10 @@ public final class ServerGuidelinesServiceGrpc {
 
     /**
      * <pre>
-     * Merged result for a client+project context (GLOBAL → CLIENT → PROJECT
-     * deep-merge). Body is `MergedGuidelinesDto` encoded as JSON.
+     * Merged GLOBAL → CLIENT → PROJECT deep-merge result for one context.
      * </pre>
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.GuidelinesPayload> getMerged(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.MergedGuidelines> getMerged(
         com.jervis.contracts.server.GetMergedRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetMergedMethod(), getCallOptions()), request);
@@ -473,11 +432,10 @@ public final class ServerGuidelinesServiceGrpc {
 
     /**
      * <pre>
-     * Raw (unmerged) document for one explicit scope. Body is
-     * `GuidelinesDocumentDto` encoded as JSON.
+     * Raw (unmerged) document for one explicit scope.
      * </pre>
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.GuidelinesPayload> get(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.GuidelinesDocument> get(
         com.jervis.contracts.server.GetRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetMethod(), getCallOptions()), request);
@@ -485,11 +443,10 @@ public final class ServerGuidelinesServiceGrpc {
 
     /**
      * <pre>
-     * Partial update of a scope — `update_json` is `GuidelinesUpdateRequest`
-     * encoded as JSON. Response carries the updated `GuidelinesDocumentDto`.
+     * Partial update of a scope — only set fields are applied.
      * </pre>
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.GuidelinesPayload> set(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.GuidelinesDocument> set(
         com.jervis.contracts.server.SetRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getSetMethod(), getCallOptions()), request);
@@ -519,15 +476,15 @@ public final class ServerGuidelinesServiceGrpc {
       switch (methodId) {
         case METHODID_GET_MERGED:
           serviceImpl.getMerged((com.jervis.contracts.server.GetMergedRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesPayload>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.MergedGuidelines>) responseObserver);
           break;
         case METHODID_GET:
           serviceImpl.get((com.jervis.contracts.server.GetRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesPayload>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesDocument>) responseObserver);
           break;
         case METHODID_SET:
           serviceImpl.set((com.jervis.contracts.server.SetRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesPayload>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.GuidelinesDocument>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -552,21 +509,21 @@ public final class ServerGuidelinesServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.GetMergedRequest,
-              com.jervis.contracts.server.GuidelinesPayload>(
+              com.jervis.contracts.server.MergedGuidelines>(
                 service, METHODID_GET_MERGED)))
         .addMethod(
           getGetMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.GetRequest,
-              com.jervis.contracts.server.GuidelinesPayload>(
+              com.jervis.contracts.server.GuidelinesDocument>(
                 service, METHODID_GET)))
         .addMethod(
           getSetMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.SetRequest,
-              com.jervis.contracts.server.GuidelinesPayload>(
+              com.jervis.contracts.server.GuidelinesDocument>(
                 service, METHODID_SET)))
         .build();
   }

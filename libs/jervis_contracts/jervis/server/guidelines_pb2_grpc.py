@@ -26,15 +26,11 @@ if _version_not_supported:
 
 
 class ServerGuidelinesServiceStub(object):
-    """ServerGuidelinesService is the gRPC surface for operational-
-    guidelines CRUD: coding/git/review/communication/approval/general
-    rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
-    context. The rule tree itself is large and all consumers (orchestrator,
-    correction, LLM router prompt-builder) treat it as opaque JSON —
-    serialization stays kotlinx.serialization against `shared/common-dto`
-    types. Proto-typing the full tree would duplicate the schema in two
-    places; instead we carry the serialized document body as a field and
-    let consumers parse it with their native JSON library.
+    """ServerGuidelinesService is the gRPC surface for operational-guidelines
+    CRUD — coding / git / review / communication / approval / general rules
+    at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's context.
+    Messages mirror com.jervis.dto.guidelines.GuidelinesDocumentDto /
+    MergedGuidelinesDto / GuidelinesUpdateRequest 1:1.
     """
 
     def __init__(self, channel):
@@ -46,51 +42,44 @@ class ServerGuidelinesServiceStub(object):
         self.GetMerged = channel.unary_unary(
                 '/jervis.server.ServerGuidelinesService/GetMerged',
                 request_serializer=jervis_dot_server_dot_guidelines__pb2.GetMergedRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_guidelines__pb2.GuidelinesPayload.FromString,
+                response_deserializer=jervis_dot_server_dot_guidelines__pb2.MergedGuidelines.FromString,
                 _registered_method=True)
         self.Get = channel.unary_unary(
                 '/jervis.server.ServerGuidelinesService/Get',
                 request_serializer=jervis_dot_server_dot_guidelines__pb2.GetRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_guidelines__pb2.GuidelinesPayload.FromString,
+                response_deserializer=jervis_dot_server_dot_guidelines__pb2.GuidelinesDocument.FromString,
                 _registered_method=True)
         self.Set = channel.unary_unary(
                 '/jervis.server.ServerGuidelinesService/Set',
                 request_serializer=jervis_dot_server_dot_guidelines__pb2.SetRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_guidelines__pb2.GuidelinesPayload.FromString,
+                response_deserializer=jervis_dot_server_dot_guidelines__pb2.GuidelinesDocument.FromString,
                 _registered_method=True)
 
 
 class ServerGuidelinesServiceServicer(object):
-    """ServerGuidelinesService is the gRPC surface for operational-
-    guidelines CRUD: coding/git/review/communication/approval/general
-    rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
-    context. The rule tree itself is large and all consumers (orchestrator,
-    correction, LLM router prompt-builder) treat it as opaque JSON —
-    serialization stays kotlinx.serialization against `shared/common-dto`
-    types. Proto-typing the full tree would duplicate the schema in two
-    places; instead we carry the serialized document body as a field and
-    let consumers parse it with their native JSON library.
+    """ServerGuidelinesService is the gRPC surface for operational-guidelines
+    CRUD — coding / git / review / communication / approval / general rules
+    at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's context.
+    Messages mirror com.jervis.dto.guidelines.GuidelinesDocumentDto /
+    MergedGuidelinesDto / GuidelinesUpdateRequest 1:1.
     """
 
     def GetMerged(self, request, context):
-        """Merged result for a client+project context (GLOBAL → CLIENT → PROJECT
-        deep-merge). Body is `MergedGuidelinesDto` encoded as JSON.
+        """Merged GLOBAL → CLIENT → PROJECT deep-merge result for one context.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def Get(self, request, context):
-        """Raw (unmerged) document for one explicit scope. Body is
-        `GuidelinesDocumentDto` encoded as JSON.
+        """Raw (unmerged) document for one explicit scope.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def Set(self, request, context):
-        """Partial update of a scope — `update_json` is `GuidelinesUpdateRequest`
-        encoded as JSON. Response carries the updated `GuidelinesDocumentDto`.
+        """Partial update of a scope — only set fields are applied.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -102,17 +91,17 @@ def add_ServerGuidelinesServiceServicer_to_server(servicer, server):
             'GetMerged': grpc.unary_unary_rpc_method_handler(
                     servicer.GetMerged,
                     request_deserializer=jervis_dot_server_dot_guidelines__pb2.GetMergedRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_guidelines__pb2.GuidelinesPayload.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_guidelines__pb2.MergedGuidelines.SerializeToString,
             ),
             'Get': grpc.unary_unary_rpc_method_handler(
                     servicer.Get,
                     request_deserializer=jervis_dot_server_dot_guidelines__pb2.GetRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_guidelines__pb2.GuidelinesPayload.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_guidelines__pb2.GuidelinesDocument.SerializeToString,
             ),
             'Set': grpc.unary_unary_rpc_method_handler(
                     servicer.Set,
                     request_deserializer=jervis_dot_server_dot_guidelines__pb2.SetRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_guidelines__pb2.GuidelinesPayload.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_guidelines__pb2.GuidelinesDocument.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -123,15 +112,11 @@ def add_ServerGuidelinesServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class ServerGuidelinesService(object):
-    """ServerGuidelinesService is the gRPC surface for operational-
-    guidelines CRUD: coding/git/review/communication/approval/general
-    rules at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's
-    context. The rule tree itself is large and all consumers (orchestrator,
-    correction, LLM router prompt-builder) treat it as opaque JSON —
-    serialization stays kotlinx.serialization against `shared/common-dto`
-    types. Proto-typing the full tree would duplicate the schema in two
-    places; instead we carry the serialized document body as a field and
-    let consumers parse it with their native JSON library.
+    """ServerGuidelinesService is the gRPC surface for operational-guidelines
+    CRUD — coding / git / review / communication / approval / general rules
+    at GLOBAL / CLIENT / PROJECT scopes, merged for a caller's context.
+    Messages mirror com.jervis.dto.guidelines.GuidelinesDocumentDto /
+    MergedGuidelinesDto / GuidelinesUpdateRequest 1:1.
     """
 
     @staticmethod
@@ -150,7 +135,7 @@ class ServerGuidelinesService(object):
             target,
             '/jervis.server.ServerGuidelinesService/GetMerged',
             jervis_dot_server_dot_guidelines__pb2.GetMergedRequest.SerializeToString,
-            jervis_dot_server_dot_guidelines__pb2.GuidelinesPayload.FromString,
+            jervis_dot_server_dot_guidelines__pb2.MergedGuidelines.FromString,
             options,
             channel_credentials,
             insecure,
@@ -177,7 +162,7 @@ class ServerGuidelinesService(object):
             target,
             '/jervis.server.ServerGuidelinesService/Get',
             jervis_dot_server_dot_guidelines__pb2.GetRequest.SerializeToString,
-            jervis_dot_server_dot_guidelines__pb2.GuidelinesPayload.FromString,
+            jervis_dot_server_dot_guidelines__pb2.GuidelinesDocument.FromString,
             options,
             channel_credentials,
             insecure,
@@ -204,7 +189,7 @@ class ServerGuidelinesService(object):
             target,
             '/jervis.server.ServerGuidelinesService/Set',
             jervis_dot_server_dot_guidelines__pb2.SetRequest.SerializeToString,
-            jervis_dot_server_dot_guidelines__pb2.GuidelinesPayload.FromString,
+            jervis_dot_server_dot_guidelines__pb2.GuidelinesDocument.FromString,
             options,
             channel_credentials,
             insecure,

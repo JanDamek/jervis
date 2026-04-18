@@ -23,7 +23,8 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for jervis.server.ServerGuidelinesService.
+ * Holder for Kotlin coroutine-based client and server APIs for
+ * jervis.server.ServerGuidelinesService.
  */
 public object ServerGuidelinesServiceGrpcKt {
   public const val SERVICE_NAME: String = ServerGuidelinesServiceGrpc.SERVICE_NAME
@@ -32,31 +33,35 @@ public object ServerGuidelinesServiceGrpcKt {
   public val serviceDescriptor: ServiceDescriptor
     get() = getServiceDescriptor()
 
-  public val getMergedMethod: MethodDescriptor<GetMergedRequest, GuidelinesPayload>
+  public val getMergedMethod: MethodDescriptor<GetMergedRequest, MergedGuidelines>
     @JvmStatic
     get() = ServerGuidelinesServiceGrpc.getGetMergedMethod()
 
-  public val getMethod: MethodDescriptor<GetRequest, GuidelinesPayload>
+  public val getMethod: MethodDescriptor<GetRequest, GuidelinesDocument>
     @JvmStatic
     get() = ServerGuidelinesServiceGrpc.getGetMethod()
 
-  public val setMethod: MethodDescriptor<SetRequest, GuidelinesPayload>
+  public val setMethod: MethodDescriptor<SetRequest, GuidelinesDocument>
     @JvmStatic
     get() = ServerGuidelinesServiceGrpc.getSetMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.server.ServerGuidelinesService service as suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.server.ServerGuidelinesService service as suspending
+   * coroutines.
    */
   @StubFor(ServerGuidelinesServiceGrpc::class)
   public class ServerGuidelinesServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<ServerGuidelinesServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions): ServerGuidelinesServiceCoroutineStub = ServerGuidelinesServiceCoroutineStub(channel, callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions):
+        ServerGuidelinesServiceCoroutineStub = ServerGuidelinesServiceCoroutineStub(channel,
+        callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -66,7 +71,8 @@ public object ServerGuidelinesServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getMerged(request: GetMergedRequest, headers: Metadata = Metadata()): GuidelinesPayload = unaryRpc(
+    public suspend fun getMerged(request: GetMergedRequest, headers: Metadata = Metadata()):
+        MergedGuidelines = unaryRpc(
       channel,
       ServerGuidelinesServiceGrpc.getGetMergedMethod(),
       request,
@@ -76,7 +82,8 @@ public object ServerGuidelinesServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -86,7 +93,8 @@ public object ServerGuidelinesServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun `get`(request: GetRequest, headers: Metadata = Metadata()): GuidelinesPayload = unaryRpc(
+    public suspend fun `get`(request: GetRequest, headers: Metadata = Metadata()):
+        GuidelinesDocument = unaryRpc(
       channel,
       ServerGuidelinesServiceGrpc.getGetMethod(),
       request,
@@ -96,7 +104,8 @@ public object ServerGuidelinesServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -106,7 +115,8 @@ public object ServerGuidelinesServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun `set`(request: SetRequest, headers: Metadata = Metadata()): GuidelinesPayload = unaryRpc(
+    public suspend fun `set`(request: SetRequest, headers: Metadata = Metadata()):
+        GuidelinesDocument = unaryRpc(
       channel,
       ServerGuidelinesServiceGrpc.getSetMethod(),
       request,
@@ -116,7 +126,8 @@ public object ServerGuidelinesServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.server.ServerGuidelinesService service based on Kotlin coroutines.
+   * Skeletal implementation of the jervis.server.ServerGuidelinesService service based on Kotlin
+   * coroutines.
    */
   public abstract class ServerGuidelinesServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -125,37 +136,43 @@ public object ServerGuidelinesServiceGrpcKt {
      * Returns the response to an RPC for jervis.server.ServerGuidelinesService.GetMerged.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getMerged(request: GetMergedRequest): GuidelinesPayload = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGuidelinesService.GetMerged is unimplemented"))
+    public open suspend fun getMerged(request: GetMergedRequest): MergedGuidelines = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGuidelinesService.GetMerged is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerGuidelinesService.Get.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun `get`(request: GetRequest): GuidelinesPayload = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGuidelinesService.Get is unimplemented"))
+    public open suspend fun `get`(request: GetRequest): GuidelinesDocument = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGuidelinesService.Get is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerGuidelinesService.Set.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun `set`(request: SetRequest): GuidelinesPayload = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGuidelinesService.Set is unimplemented"))
+    public open suspend fun `set`(request: SetRequest): GuidelinesDocument = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGuidelinesService.Set is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
