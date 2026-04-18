@@ -43,8 +43,13 @@ class GrpcChannels(
 
     @Bean(name = [KNOWLEDGEBASE_CHANNEL])
     fun knowledgebaseChannel(): ManagedChannel {
+        // 64 MiB inbound + outbound message size covers email + meeting
+        // attachments. Larger payloads should go via the blob side channel
+        // (see docs/inter-service-contracts-bigbang.md §2.3).
+        val maxMsgBytes = 64 * 1024 * 1024
         val channel = NettyChannelBuilder.forAddress(kbHost, kbPort)
             .usePlaintext()
+            .maxInboundMessageSize(maxMsgBytes)
             .keepAliveTime(30, TimeUnit.SECONDS)
             .keepAliveTimeout(5, TimeUnit.SECONDS)
             .keepAliveWithoutCalls(true)

@@ -163,84 +163,56 @@ class KnowledgeServiceRestClient(
 
     override suspend fun ingestFull(request: FullIngestRequest): FullIngestResult {
         logger.debug { "Calling knowledgebase ingestFull: sourceUrn=${request.sourceUrn}, attachments=${request.attachments.size}" }
-
-        // Retry on transient failures (SocketTimeout, ClosedByteChannel).
-        // KB embedding can take long when GPU is busy with chat requests.
         var lastException: Exception? = null
         for (attempt in 0..MAX_RETRIES) {
             if (attempt > 0) {
-                val delayMs = RETRY_BASE_DELAY_MS * (1L shl (attempt - 1)) // exponential: 5s, 10s
+                val delayMs = RETRY_BASE_DELAY_MS * (1L shl (attempt - 1))
                 logger.info { "KB ingestFull retry $attempt/$MAX_RETRIES after ${delayMs}ms (sourceUrn=${request.sourceUrn})" }
                 delay(delayMs)
             }
-
             try {
-                val httpResponse = client.submitFormWithBinaryData(
-                    url = "$apiBaseUrl/ingest/full",
-                    formData = formData {
-                        append("clientId", request.clientId.toString())
-                        append("sourceUrn", request.sourceUrn)
-                        append("sourceType", request.sourceType)
-                        request.subject?.let { append("subject", it) }
-                        append("content", request.content)
-                        request.projectId?.let { append("projectId", it.toString()) }
-                        request.groupId?.let { append("groupId", it) }
-                        append("metadata", Json.encodeToString(request.metadata))
-
-                        // Add attachments
-                        request.attachments.forEach { attachment ->
-                            append(
-                                "attachments",
-                                attachment.data,
-                                Headers.build {
-                                    append(HttpHeaders.ContentDisposition, "filename=\"${attachment.filename}\"")
-                                    attachment.contentType?.let {
-                                        append(HttpHeaders.ContentType, it)
-                                    }
-                                },
-                            )
-                        }
-                    },
-                )
-
-                if (!httpResponse.status.isSuccess()) {
-                    val errorBody = httpResponse.bodyAsText()
-                    throw RuntimeException("KB ingest/full returned ${httpResponse.status}: $errorBody")
-                }
-
-                val response: PythonFullIngestResult = httpResponse.body()
-
+                val proto = ingestGrpc().ingestFull(request)
                 if (attempt > 0) {
                     logger.info { "KB ingestFull succeeded on retry $attempt (sourceUrn=${request.sourceUrn})" }
                 }
-
                 return FullIngestResult(
-                    success = response.status == "success",
-                    chunksCount = response.chunksCount,
-                    nodesCreated = response.nodesCreated,
-                    edgesCreated = response.edgesCreated,
-                    attachmentsProcessed = response.attachmentsProcessed,
-                    attachmentsFailed = response.attachmentsFailed,
-                    summary = response.summary,
-                    entities = response.entities,
-                    hasActionableContent = response.hasActionableContent,
-                    suggestedActions = response.suggestedActions,
-                    hasFutureDeadline = response.hasFutureDeadline,
-                    suggestedDeadline = response.suggestedDeadline,
-                    isAssignedToMe = response.isAssignedToMe,
-                    urgency = response.urgency,
+                    success = proto.status == "success",
+                    chunksCount = proto.chunksCount,
+                    nodesCreated = proto.nodesCreated,
+                    edgesCreated = proto.edgesCreated,
+                    attachmentsProcessed = proto.attachmentsProcessed,
+                    attachmentsFailed = proto.attachmentsFailed,
+                    summary = proto.summary,
+                    entities = proto.entitiesList,
+                    hasActionableContent = proto.hasActionableContent,
+                    suggestedActions = proto.suggestedActionsList,
+                    hasFutureDeadline = proto.hasFutureDeadline,
+                    suggestedDeadline = proto.suggestedDeadline.takeIf { it.isNotEmpty() },
+                    isAssignedToMe = proto.isAssignedToMe,
+                    urgency = proto.urgency,
                 )
-            } catch (e: java.net.SocketTimeoutException) {
-                logger.warn { "KB ingestFull socket timeout (attempt $attempt): ${e.message}" }
-                lastException = e
-            } catch (e: io.ktor.utils.io.ClosedByteChannelException) {
-                logger.warn { "KB ingestFull channel closed (attempt $attempt): ${e.message}" }
-                lastException = e
-            } catch (e: java.io.IOException) {
-                logger.warn { "KB ingestFull I/O error (attempt $attempt): ${e.message}" }
-                lastException = e
+            } catch (e: io.grpc.StatusException) {
+                val retryable = e.status.code in setOf(
+                    io.grpc.Status.Code.UNAVAILABLE,
+                    io.grpc.Status.Code.DEADLINE_EXCEEDED,
+                )
+                if (retryable) {
+                    logger.warn { "KB ingestFull transient error (attempt $attempt, status=${e.status.code}): ${e.message}" }
+                    lastException = e
+                } else {
+                    logger.error(e) { "Failed to ingestFull to knowledgebase (non-retryable): ${e.message}" }
+                    return FullIngestResult(
+                        success = false,
+                        chunksCount = 0,
+                        nodesCreated = 0,
+                        edgesCreated = 0,
+                        attachmentsProcessed = 0,
+                        attachmentsFailed = 0,
+                        summary = "Ingestion failed",
+                        error = e.message,
+                    )
+                }
             } catch (e: Exception) {
-                // Non-retryable errors (HTTP 4xx, parse errors, etc.)
                 logger.error(e) { "Failed to ingestFull to knowledgebase (non-retryable): ${e.message}" }
                 return FullIngestResult(
                     success = false,
@@ -254,8 +226,6 @@ class KnowledgeServiceRestClient(
                 )
             }
         }
-
-        // All retries exhausted
         logger.error(lastException) { "Failed to ingestFull after $MAX_RETRIES retries: ${lastException?.message}" }
         return FullIngestResult(
             success = false,
@@ -272,9 +242,9 @@ class KnowledgeServiceRestClient(
     /**
      * Submit full ingest request to KB asynchronously (fire-and-forget).
      *
-     * KB processes in background and calls back to /internal/kb-done when done.
-     * Progress events are pushed to /internal/kb-progress along the way.
-     * Returns true if KB accepted the request (HTTP 202).
+     * KB processes in background and dials ServerKbCallbacksService.KbDone
+     * when processing finishes; KbProgress events stream along the way.
+     * Returns true if KB accepted the request.
      */
     suspend fun submitFullIngestAsync(
         request: FullIngestRequest,
@@ -283,53 +253,25 @@ class KnowledgeServiceRestClient(
         priority: Int? = null,
         maxTier: String = "NONE",
     ): Boolean {
-        val callbackUrl = if (callbackBaseUrl.isNotBlank()) {
-            "${callbackBaseUrl.trimEnd('/')}/internal/kb-done"
-        } else {
-            throw RuntimeException("callbackBaseUrl not configured — cannot use async KB flow")
-        }
-
         logger.info { "KB_ASYNC_SUBMIT: taskId=$taskId sourceUrn=${request.sourceUrn}" }
-
-        val httpResponse = client.submitFormWithBinaryData(
-            url = "$apiBaseUrl/ingest/full/async",
-            formData = formData {
-                append("clientId", request.clientId.toString())
-                append("sourceUrn", request.sourceUrn)
-                append("sourceType", request.sourceType)
-                request.subject?.let { append("subject", it) }
-                append("content", request.content)
-                request.projectId?.let { append("projectId", it.toString()) }
-                request.groupId?.let { append("groupId", it) }
-                append("metadata", Json.encodeToString(request.metadata))
-                append("callbackUrl", callbackUrl)
-                append("taskId", taskId)
-                priority?.let { append("priority", it.toString()) }
-                append("maxTier", maxTier)
-
-                request.attachments.forEach { attachment ->
-                    append(
-                        "attachments",
-                        attachment.data,
-                        Headers.build {
-                            append(HttpHeaders.ContentDisposition, "filename=\"${attachment.filename}\"")
-                            attachment.contentType?.let {
-                                append(HttpHeaders.ContentType, it)
-                            }
-                        },
-                    )
-                }
-            },
-        )
-
-        if (!httpResponse.status.isSuccess()) {
-            val errorBody = httpResponse.bodyAsText()
-            logger.error { "KB_ASYNC_SUBMIT: failed taskId=$taskId status=${httpResponse.status} body=$errorBody" }
-            return false
+        return try {
+            val ack = ingestGrpc().ingestFullAsync(
+                request = request,
+                taskId = taskId,
+                clientId = clientId,
+                priority = priority,
+                maxTier = maxTier,
+            )
+            if (ack.accepted) {
+                logger.info { "KB_ASYNC_SUBMIT: accepted taskId=$taskId detail=${ack.detail}" }
+            } else {
+                logger.error { "KB_ASYNC_SUBMIT: rejected taskId=$taskId detail=${ack.detail}" }
+            }
+            ack.accepted
+        } catch (e: Exception) {
+            logger.error(e) { "KB_ASYNC_SUBMIT: failed taskId=$taskId: ${e.message}" }
+            false
         }
-
-        logger.info { "KB_ASYNC_SUBMIT: accepted taskId=$taskId" }
-        return true
     }
 
     override suspend fun retrieve(request: RetrievalRequest): EvidencePack {
@@ -806,31 +748,7 @@ data class TextExtractionResult(
 // Traversal + graph DTOs moved to gRPC (KbGraphGrpcClient).
 // Purge DTOs moved to gRPC (KbIngestGrpcClient.purge).
 
-@Serializable
-private data class PythonFullIngestResult(
-    val status: String,
-    @SerialName("chunks_count")
-    val chunksCount: Int,
-    @SerialName("nodes_created")
-    val nodesCreated: Int,
-    @SerialName("edges_created")
-    val edgesCreated: Int,
-    @SerialName("attachments_processed")
-    val attachmentsProcessed: Int,
-    @SerialName("attachments_failed")
-    val attachmentsFailed: Int,
-    val summary: String,
-    val entities: List<String> = emptyList(),
-    val hasActionableContent: Boolean = false,
-    val suggestedActions: List<String> = emptyList(),
-    // Scheduling hints (three-way routing)
-    val hasFutureDeadline: Boolean = false,
-    val suggestedDeadline: String? = null,
-    val isAssignedToMe: Boolean = false,
-    val urgency: String = "normal",
-)
-
-// Git / CPG ingest DTOs moved to gRPC (see KbIngestGrpcClient).
+// Full-ingest + git / CPG ingest DTOs moved to gRPC (KbIngestGrpcClient).
 
 // KB document DTOs (internal REST models)
 

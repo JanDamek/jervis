@@ -621,6 +621,123 @@ class IngestServicer(ingest_pb2_grpc.KnowledgeIngestServiceServicer):
             await context.abort(grpc.StatusCode.INTERNAL, str(e))
         return ingest_pb2.IngestQueueAck(ok=True, queue_id=request.source_urn or "")
 
+    def _build_full_ingest_pydantic(self, proto_req: ingest_pb2.FullIngestRequest):
+        from app.api.models import FullIngestRequest as FReq, SourceType
+
+        source_type_enum = None
+        if proto_req.source_type:
+            try:
+                source_type_enum = SourceType(proto_req.source_type)
+            except ValueError:
+                source_type_enum = None
+        return FReq(
+            clientId=proto_req.client_id,
+            projectId=proto_req.project_id or None,
+            groupId=proto_req.group_id or None,
+            sourceUrn=proto_req.source_urn,
+            sourceType=source_type_enum,
+            subject=proto_req.subject or None,
+            content=proto_req.content,
+            metadata=dict(proto_req.metadata),
+            maxTier=proto_req.max_tier or "NONE",
+        )
+
+    def _full_ingest_result_to_proto(self, result) -> ingest_pb2.FullIngestResult:
+        return ingest_pb2.FullIngestResult(
+            status=str(getattr(result, "status", "success") or "success"),
+            chunks_count=int(getattr(result, "chunks_count", getattr(result, "chunksCount", 0)) or 0),
+            nodes_created=int(getattr(result, "nodes_created", getattr(result, "nodesCreated", 0)) or 0),
+            edges_created=int(getattr(result, "edges_created", getattr(result, "edgesCreated", 0)) or 0),
+            attachments_processed=int(getattr(result, "attachments_processed", getattr(result, "attachmentsProcessed", 0)) or 0),
+            attachments_failed=int(getattr(result, "attachments_failed", getattr(result, "attachmentsFailed", 0)) or 0),
+            summary=str(getattr(result, "summary", "") or ""),
+            entities=list(getattr(result, "entities", None) or []),
+            has_actionable_content=bool(getattr(result, "has_actionable_content", getattr(result, "hasActionableContent", False))),
+            suggested_actions=list(getattr(result, "suggested_actions", None) or getattr(result, "suggestedActions", None) or []),
+            has_future_deadline=bool(getattr(result, "has_future_deadline", getattr(result, "hasFutureDeadline", False))),
+            suggested_deadline=str(getattr(result, "suggested_deadline", None) or getattr(result, "suggestedDeadline", None) or ""),
+            is_assigned_to_me=bool(getattr(result, "is_assigned_to_me", getattr(result, "isAssignedToMe", False))),
+            urgency=str(getattr(result, "urgency", "") or ""),
+        )
+
+    async def IngestFull(
+        self,
+        request: ingest_pb2.FullIngestRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> ingest_pb2.FullIngestResult:
+        req = self._build_full_ingest_pydantic(request)
+        attachments = [
+            (bytes(a.data), a.filename)
+            for a in request.attachments
+            if a.data  # skip blob_ref-only attachments for now; Phase 2 ingest stays inline
+        ]
+        try:
+            result = await self._service().ingest_full(req, attachments)
+        except Exception as e:
+            logger.warning("INGEST_FULL_ERROR source=%s error=%s", request.source_urn, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return self._full_ingest_result_to_proto(result)
+
+    async def IngestFullAsync(
+        self,
+        request: ingest_pb2.AsyncFullIngestRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> ingest_pb2.AsyncIngestAck:
+        import asyncio
+
+        proto_req = request.request
+        if not request.task_id:
+            return ingest_pb2.AsyncIngestAck(accepted=False, detail="task_id required")
+        req = self._build_full_ingest_pydantic(proto_req)
+        if request.max_tier:
+            req.maxTier = request.max_tier  # override from async envelope
+        attachments = [
+            (bytes(a.data), a.filename)
+            for a in proto_req.attachments
+            if a.data
+        ]
+        priority = request.priority if request.priority > 0 else None
+
+        try:
+            asyncio.create_task(
+                self._service().process_full_async(
+                    req,
+                    attachments,
+                    callback_url="",  # KB resolves from config and dials ServerKbCallbacksService.KbDone
+                    task_id=request.task_id,
+                    client_id=request.client_id or req.clientId,
+                    embedding_priority=priority,
+                ),
+            )
+        except Exception as e:
+            logger.warning("INGEST_FULL_ASYNC_ERROR task=%s error=%s", request.task_id, e)
+            return ingest_pb2.AsyncIngestAck(accepted=False, detail=str(e))
+        return ingest_pb2.AsyncIngestAck(accepted=True, detail=request.task_id)
+
+    async def IngestFile(
+        self,
+        request: ingest_pb2.IngestFileRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> ingest_pb2.IngestResult:
+        from app.api.models import IngestRequest as IReq
+        import json as _json
+
+        req = IReq(
+            clientId=request.client_id,
+            projectId=request.project_id or None,
+            groupId=request.group_id or None,
+            sourceUrn=request.source_urn or request.filename,
+            kind="file",
+            content="",  # Tika fills it
+            metadata=dict(request.metadata),
+        )
+        try:
+            result = await self._service().ingest_file(bytes(request.data), request.filename, req)
+        except Exception as e:
+            logger.warning("INGEST_FILE_ERROR filename=%s error=%s", request.filename, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return self._ingest_result_to_proto(result)
+
     async def Crawl(
         self,
         request: ingest_pb2.CrawlRequest,
@@ -1291,7 +1408,16 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     adds one more servicer. FastAPI keeps serving routes that have not yet
     moved; the gRPC port is additive until the last slice lands.
     """
-    server = grpc.aio.server(interceptors=[ServerContextInterceptor()])
+    # 64 MiB cap — fits typical email/meeting attachment sizes. Larger payloads
+    # should move to the blob side channel (§2.3 in inter-service-contracts-bigbang.md).
+    max_msg_bytes = 64 * 1024 * 1024
+    server = grpc.aio.server(
+        interceptors=[ServerContextInterceptor()],
+        options=[
+            ("grpc.max_receive_message_length", max_msg_bytes),
+            ("grpc.max_send_message_length", max_msg_bytes),
+        ],
+    )
     maintenance_pb2_grpc.add_KnowledgeMaintenanceServiceServicer_to_server(
         MaintenanceServicer(), server
     )

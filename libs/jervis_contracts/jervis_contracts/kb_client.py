@@ -70,7 +70,17 @@ def get_channel() -> grpc.aio.Channel:
     global _channel
     if _channel is None:
         target = _target()
-        _channel = grpc.aio.insecure_channel(target)
+        # 64 MiB cap matches the server-side limit — enough for typical
+        # email + meeting attachment payloads; larger payloads should go
+        # via the blob side channel (see inter-service-contracts-bigbang.md §2.3).
+        max_msg_bytes = 64 * 1024 * 1024
+        _channel = grpc.aio.insecure_channel(
+            target,
+            options=[
+                ("grpc.max_receive_message_length", max_msg_bytes),
+                ("grpc.max_send_message_length", max_msg_bytes),
+            ],
+        )
         logger.debug("kb gRPC channel opened → %s", target)
     return _channel
 

@@ -13,12 +13,20 @@ import com.jervis.contracts.knowledgebase.GitFileContent
 import com.jervis.contracts.knowledgebase.GitFileInfo
 import com.jervis.contracts.knowledgebase.GitStructureIngestRequest as ProtoGitStructureIngestRequest
 import com.jervis.contracts.knowledgebase.GitStructureIngestResult
+import com.google.protobuf.ByteString
+import com.jervis.contracts.knowledgebase.AsyncFullIngestRequest as ProtoAsyncFullIngestRequest
+import com.jervis.contracts.knowledgebase.AsyncIngestAck
+import com.jervis.contracts.knowledgebase.FullIngestAttachment
+import com.jervis.contracts.knowledgebase.FullIngestRequest as ProtoFullIngestRequest
+import com.jervis.contracts.knowledgebase.FullIngestResult
+import com.jervis.contracts.knowledgebase.IngestFileRequest
 import com.jervis.contracts.knowledgebase.IngestRequest as ProtoIngestRequest
 import com.jervis.contracts.knowledgebase.IngestResult
 import com.jervis.contracts.knowledgebase.KnowledgeIngestServiceGrpcKt
 import com.jervis.contracts.knowledgebase.PurgeRequest as ProtoPurgeRequest
 import com.jervis.contracts.knowledgebase.PurgeResult
 import com.jervis.knowledgebase.model.CpgIngestRequest
+import com.jervis.knowledgebase.model.FullIngestRequest
 import com.jervis.knowledgebase.model.IngestRequest
 import com.jervis.knowledgebase.model.GitCommitIngestRequest
 import com.jervis.knowledgebase.model.GitStructureIngestRequest
@@ -150,6 +158,74 @@ class KbIngestGrpcClient(
             )
         request.metadata.forEach { (k, v) -> builder.putMetadata(k, v.toString()) }
         return builder
+    }
+
+    private fun _protoFullIngest(request: FullIngestRequest): ProtoFullIngestRequest.Builder {
+        val builder = ProtoFullIngestRequest.newBuilder()
+            .setCtx(ctx(request.clientId.toString()))
+            .setClientId(request.clientId.toString())
+            .setProjectId(request.projectId?.toString() ?: "")
+            .setGroupId(request.groupId ?: "")
+            .setSourceUrn(request.sourceUrn)
+            .setSourceType(request.sourceType ?: "")
+            .setSubject(request.subject ?: "")
+            .setContent(request.content)
+            .setMaxTier(request.maxTier ?: "NONE")
+        request.metadata.forEach { (k, v) -> builder.putMetadata(k, v.toString()) }
+        request.attachments.forEach { attachment ->
+            builder.addAttachments(
+                FullIngestAttachment.newBuilder()
+                    .setFilename(attachment.filename)
+                    .setContentType(attachment.contentType ?: "application/octet-stream")
+                    .setData(ByteString.copyFrom(attachment.data))
+                    .build(),
+            )
+        }
+        return builder
+    }
+
+    suspend fun ingestFull(request: FullIngestRequest): FullIngestResult =
+        stub.ingestFull(_protoFullIngest(request).build())
+
+    suspend fun ingestFullAsync(
+        request: FullIngestRequest,
+        taskId: String,
+        clientId: String,
+        priority: Int? = null,
+        maxTier: String = "NONE",
+    ): AsyncIngestAck =
+        stub.ingestFullAsync(
+            ProtoAsyncFullIngestRequest.newBuilder()
+                .setCtx(ctx(clientId))
+                .setRequest(_protoFullIngest(request).setMaxTier(maxTier).build())
+                .setTaskId(taskId)
+                .setClientId(clientId)
+                .setPriority(priority ?: 0)
+                .setMaxTier(maxTier)
+                .build(),
+        )
+
+    suspend fun ingestFile(
+        clientId: String,
+        projectId: String?,
+        groupId: String?,
+        sourceUrn: String,
+        filename: String,
+        contentType: String,
+        data: ByteArray,
+        metadata: Map<String, String> = emptyMap(),
+    ): IngestResult {
+        val builder = IngestFileRequest.newBuilder()
+            .setCtx(ctx(clientId))
+            .setClientId(clientId)
+            .setProjectId(projectId ?: "")
+            .setGroupId(groupId ?: "")
+            .setSourceUrn(sourceUrn)
+            .setFilename(filename)
+            .setContentType(contentType)
+            .setData(ByteString.copyFrom(data))
+        metadata.forEach { (k, v) -> builder.putMetadata(k, v) }
+        return stub.ingestFile(builder.build())
     }
 
     suspend fun purge(sourceUrn: String, clientId: String = ""): PurgeResult =
