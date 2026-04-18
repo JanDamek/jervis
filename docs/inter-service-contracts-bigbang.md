@@ -314,36 +314,36 @@ Per user directive: **router a server jsou základ, vše ostatní na tom staví.
 
 | # | Merge | Surface migrated | Consumer scope |
 |---|-------|------------------|----------------|
-| 1 | `f418e78` | `KnowledgeMaintenanceService.RunBatch + RetagProject + RetagGroup` (maintenance/batch + retag-project + retag-group) | Kotlin only (BackgroundEngine, ProjectService) |
-| 2 | `542c279` | `KnowledgeQueueService.ListQueue` (/queue) | Kotlin only (IndexingQueueRpcImpl) |
-| 3 | `4da4923` | `KnowledgeIngestService.IngestCpg + IngestGitStructure + IngestGitCommits` (ingest/cpg + ingest/git-structure + ingest/git-commits) | Kotlin only (GitContinuousIndexer) |
+| 1 | `f418e78` | `KnowledgeMaintenanceService.RunBatch + RetagProject + RetagGroup` | Kotlin only |
+| 2 | `542c279` | `KnowledgeQueueService.ListQueue` (/queue) | Kotlin only |
+| 3 | `4da4923` | `KnowledgeIngestService.IngestCpg + IngestGitStructure + IngestGitCommits` | Kotlin only (GitContinuousIndexer) |
+| 4 | `0478c2f` | `KnowledgeIngestService.Purge` (/purge) | Kotlin + correction + orchestrator + MCP |
+| 5 | `def9061` | `KnowledgeGraphService` alias registry (Resolve/List/Stats/Register/Merge) | MCP kb_resolve_alias |
+| 6 | `dbcf74a` | `KnowledgeRetrieveService.Retrieve + RetrieveSimple` (/retrieve, /retrieve/simple) | 19 orchestrator call sites (memory, voice, guard, chat, kb/prefetch, tools) + correction + MCP |
+| 7 | `e6a0705` | `KnowledgeGraphService` Traverse + GetNode + SearchNodes + GetNodeEvidence (/traverse, /graph/node, /graph/search, /graph/node/*/evidence) | Kotlin traverse + 20+ orchestrator executor/prefetch/evidence sites + MCP kb_traverse/graph_search/get_evidence |
+| 8 | `199bdca` | `KnowledgeGraphService` thought map (Traverse + Reinforce + Create + Bootstrap + Maintain + Stats) + /thoughts/* | orchestrator thought_prefetch + thought_update + executor |
+| 9 | `18c90e3` | `KnowledgeIngestService.Ingest + IngestImmediate + IngestQueue` (/ingest, /ingest-queue, /ingest-immediate) | Kotlin + orchestrator memory/tools/main/persistence/chat + MCP + correction |
+| 10 | `edf39ab` | `KnowledgeRetrieveService.ListChunksByKind + AnalyzeCode + JoernScan` + `KnowledgeGraphService.ListQueryEntities` + `KnowledgeIngestService.Crawl` (/analyze/code, /query/entities, /chunks/by-kind, /joern/scan, /crawl) | orchestrator prefetch/executor + correction |
+| 11 | `7433c78` | `KnowledgeDocumentService` Register + List + Get + Update + Delete + Reindex (/documents/register, /documents, /documents/{id} x3, /documents/{id}/reindex) | Kotlin + MCP + orchestrator qualifier |
 
-**Still on FastAPI** (all slices below must rewrite Python consumers
-in the same commit that removes the REST route):
+**Cumulative**: 11 slices, ~35 RPCs, ~30 FastAPI routes removed.
 
-- `/retrieve`, `/retrieve/simple`, `/retrieve/hybrid` — 4+ orchestrator
-  call sites (`app/kb/prefetch.py`, `app/memory/{affairs,agent,action_log}.py`,
-  `app/tools/executor.py`).
-- `/traverse`, `/graph/node`, `/graph/search`, `/graph/node/*/evidence`,
-  `/query/entities`, `/chunks/by-kind` — 10+ orchestrator call sites,
-  heavy graph walks.
-- `/alias/*` (resolve / list / stats / register / merge) — MCP consumer
-  (`service-mcp/app/main.py`).
-- `/ingest`, `/ingest-immediate`, `/ingest-queue`, `/ingest/file`,
-  `/ingest/full`, `/ingest/full/async` — orchestrator + MCP + correction
-  consumers + multipart upload path (see blob side channel in §2.3).
-- `/purge` — Kotlin + correction + orchestrator + MCP consumers.
-- `/documents/upload`, `/documents/register`, `/documents/extract-text`,
-  `/documents`, `/documents/{id}`, `/documents/{id}/delete`,
-  `/documents/{id}/reindex` — Kotlin + MCP + orchestrator consumers
-  (the binary upload path needs the blob side channel from §2.3).
-- `/crawl`, `/joern/scan`, `/analyze/code` — mostly unused externally
-  but listed for completeness.
-- `/thoughts/*` — orchestrator consumers.
+**Still on FastAPI** (multipart binary paths — need the blob side
+channel from §2.3 to land cleanly):
+
+- `/ingest/full`, `/ingest/full/async`, `/ingest/file` — consumed by
+  Kotlin AttachmentKbIndexingService (full-ingest with attachments)
+  and UI direct upload. Async variant pushes progress via the existing
+  KbProgress callback (already gRPC from Phase 1).
+- `/documents/upload` — consumed by MCP kb_document_upload (file bytes
+  from user, no shared-FS storage yet).
+- `/documents/extract-text` — consumed by Kotlin AttachmentExtractionService
+  for qualifier relevance assessment. Pure text extraction; no KB write.
 
 - **Exit criteria** (when the full Phase 2 lands): every KB
   retrieve/ingest/traverse in prod goes via gRPC. No Pydantic KB DTOs
-  remain in non-KB services.
+  remain in non-KB services. Only multipart blob-bearing routes may
+  stay on FastAPI until the blob side channel lands.
 
 **Phase 3 — orchestrator surface**
 
