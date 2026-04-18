@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#jervis/server/environment_k8s.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"l\n\x1dListNamespaceResourcesRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\"N\n\x1eListNamespaceResourcesResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12\x11\n\tdata_json\x18\x03 \x01(\t\"x\n\x11GetPodLogsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\x12\x10\n\x08pod_name\x18\x03 \x01(\t\x12\x12\n\ntail_lines\x18\x04 \x01(\x05\"=\n\x12GetPodLogsResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12\x0c\n\x04logs\x18\x03 \x01(\t\"t\n\x1aGetDeploymentStatusRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\x12\x17\n\x0f\x64\x65ployment_name\x18\x03 \x01(\t\"K\n\x1bGetDeploymentStatusResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12\x11\n\tdata_json\x18\x03 \x01(\t\"\x82\x01\n\x16ScaleDeploymentRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\x12\x17\n\x0f\x64\x65ployment_name\x18\x03 \x01(\t\x12\x10\n\x08replicas\x18\x04 \x01(\x05\"E\n\x17ScaleDeploymentResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\"r\n\x18RestartDeploymentRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\x12\x17\n\x0f\x64\x65ployment_name\x18\x03 \x01(\t\"G\n\x19RestartDeploymentResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\"Z\n\x19GetNamespaceStatusRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\"J\n\x1aGetNamespaceStatusResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12\x11\n\tdata_json\x18\x03 \x01(\t2\x8a\x05\n\x1bServerEnvironmentK8sService\x12u\n\x16ListNamespaceResources\x12,.jervis.server.ListNamespaceResourcesRequest\x1a-.jervis.server.ListNamespaceResourcesResponse\x12Q\n\nGetPodLogs\x12 .jervis.server.GetPodLogsRequest\x1a!.jervis.server.GetPodLogsResponse\x12l\n\x13GetDeploymentStatus\x12).jervis.server.GetDeploymentStatusRequest\x1a*.jervis.server.GetDeploymentStatusResponse\x12`\n\x0fScaleDeployment\x12%.jervis.server.ScaleDeploymentRequest\x1a&.jervis.server.ScaleDeploymentResponse\x12\x66\n\x11RestartDeployment\x12\'.jervis.server.RestartDeploymentRequest\x1a(.jervis.server.RestartDeploymentResponse\x12i\n\x12GetNamespaceStatus\x12(.jervis.server.GetNamespaceStatusRequest\x1a).jervis.server.GetNamespaceStatusResponseB:\n\x1b\x63om.jervis.contracts.serverB\x19ServerEnvironmentK8sProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#jervis/server/environment_k8s.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"l\n\x1dListNamespaceResourcesRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\"i\n\x1eListNamespaceResourcesResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12,\n\x04\x64\x61ta\x18\x03 \x01(\x0b\x32\x1e.jervis.server.K8sResourceList\"\x96\x01\n\x0fK8sResourceList\x12#\n\x04pods\x18\x01 \x03(\x0b\x32\x15.jervis.server.K8sPod\x12\x31\n\x0b\x64\x65ployments\x18\x02 \x03(\x0b\x32\x1c.jervis.server.K8sDeployment\x12+\n\x08services\x18\x03 \x03(\x0b\x32\x19.jervis.server.K8sService\"_\n\x06K8sPod\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\r\n\x05phase\x18\x02 \x01(\t\x12\r\n\x05ready\x18\x03 \x01(\x08\x12\x15\n\rrestart_count\x18\x04 \x01(\x05\x12\x12\n\ncreated_at\x18\x05 \x01(\t\"}\n\rK8sDeployment\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x10\n\x08replicas\x18\x02 \x01(\x05\x12\x1a\n\x12\x61vailable_replicas\x18\x03 \x01(\x05\x12\r\n\x05ready\x18\x04 \x01(\x08\x12\r\n\x05image\x18\x05 \x01(\t\x12\x12\n\ncreated_at\x18\x06 \x01(\t\"_\n\nK8sService\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x12\n\ncluster_ip\x18\x03 \x01(\t\x12\r\n\x05ports\x18\x04 \x03(\t\x12\x12\n\ncreated_at\x18\x05 \x01(\t\"x\n\x11GetPodLogsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\x12\x10\n\x08pod_name\x18\x03 \x01(\t\x12\x12\n\ntail_lines\x18\x04 \x01(\x05\"=\n\x12GetPodLogsResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12\x0c\n\x04logs\x18\x03 \x01(\t\"t\n\x1aGetDeploymentStatusRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\x12\x17\n\x0f\x64\x65ployment_name\x18\x03 \x01(\t\"j\n\x1bGetDeploymentStatusResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12\x30\n\x04\x64\x61ta\x18\x03 \x01(\x0b\x32\".jervis.server.K8sDeploymentDetail\"\xf0\x01\n\x13K8sDeploymentDetail\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x11\n\tnamespace\x18\x02 \x01(\t\x12\x10\n\x08replicas\x18\x03 \x01(\x05\x12\x1a\n\x12\x61vailable_replicas\x18\x04 \x01(\x05\x12\r\n\x05ready\x18\x05 \x01(\x08\x12\r\n\x05image\x18\x06 \x01(\t\x12\x12\n\ncreated_at\x18\x07 \x01(\t\x12/\n\nconditions\x18\x08 \x03(\x0b\x32\x1b.jervis.server.K8sCondition\x12\'\n\x06\x65vents\x18\t \x03(\x0b\x32\x17.jervis.server.K8sEvent\"k\n\x0cK8sCondition\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x0e\n\x06reason\x18\x03 \x01(\t\x12\x0f\n\x07message\x18\x04 \x01(\t\x12\x1c\n\x14last_transition_time\x18\x05 \x01(\t\"G\n\x08K8sEvent\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\x0e\n\x06reason\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\x12\x0c\n\x04time\x18\x04 \x01(\t\"\x82\x01\n\x16ScaleDeploymentRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\x12\x17\n\x0f\x64\x65ployment_name\x18\x03 \x01(\t\x12\x10\n\x08replicas\x18\x04 \x01(\x05\"E\n\x17ScaleDeploymentResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\"r\n\x18RestartDeploymentRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\x12\x17\n\x0f\x64\x65ployment_name\x18\x03 \x01(\t\"G\n\x19RestartDeploymentResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\"Z\n\x19GetNamespaceStatusRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tnamespace\x18\x02 \x01(\t\"h\n\x1aGetNamespaceStatusResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\x12/\n\x04\x64\x61ta\x18\x03 \x01(\x0b\x32!.jervis.server.K8sNamespaceStatus\"\xc7\x01\n\x12K8sNamespaceStatus\x12\x11\n\tnamespace\x18\x01 \x01(\t\x12\x0f\n\x07healthy\x18\x02 \x01(\x08\x12\x12\n\ntotal_pods\x18\x03 \x01(\x05\x12\x14\n\x0crunning_pods\x18\x04 \x01(\x05\x12\x15\n\rcrashing_pods\x18\x05 \x03(\t\x12\x19\n\x11total_deployments\x18\x06 \x01(\x05\x12\x19\n\x11ready_deployments\x18\x07 \x01(\x05\x12\x16\n\x0etotal_services\x18\x08 \x01(\x05\x32\x8a\x05\n\x1bServerEnvironmentK8sService\x12u\n\x16ListNamespaceResources\x12,.jervis.server.ListNamespaceResourcesRequest\x1a-.jervis.server.ListNamespaceResourcesResponse\x12Q\n\nGetPodLogs\x12 .jervis.server.GetPodLogsRequest\x1a!.jervis.server.GetPodLogsResponse\x12l\n\x13GetDeploymentStatus\x12).jervis.server.GetDeploymentStatusRequest\x1a*.jervis.server.GetDeploymentStatusResponse\x12`\n\x0fScaleDeployment\x12%.jervis.server.ScaleDeploymentRequest\x1a&.jervis.server.ScaleDeploymentResponse\x12\x66\n\x11RestartDeployment\x12\'.jervis.server.RestartDeploymentRequest\x1a(.jervis.server.RestartDeploymentResponse\x12i\n\x12GetNamespaceStatus\x12(.jervis.server.GetNamespaceStatusRequest\x1a).jervis.server.GetNamespaceStatusResponseB:\n\x1b\x63om.jervis.contracts.serverB\x19ServerEnvironmentK8sProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,27 +36,43 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_LISTNAMESPACERESOURCESREQUEST']._serialized_start=81
   _globals['_LISTNAMESPACERESOURCESREQUEST']._serialized_end=189
   _globals['_LISTNAMESPACERESOURCESRESPONSE']._serialized_start=191
-  _globals['_LISTNAMESPACERESOURCESRESPONSE']._serialized_end=269
-  _globals['_GETPODLOGSREQUEST']._serialized_start=271
-  _globals['_GETPODLOGSREQUEST']._serialized_end=391
-  _globals['_GETPODLOGSRESPONSE']._serialized_start=393
-  _globals['_GETPODLOGSRESPONSE']._serialized_end=454
-  _globals['_GETDEPLOYMENTSTATUSREQUEST']._serialized_start=456
-  _globals['_GETDEPLOYMENTSTATUSREQUEST']._serialized_end=572
-  _globals['_GETDEPLOYMENTSTATUSRESPONSE']._serialized_start=574
-  _globals['_GETDEPLOYMENTSTATUSRESPONSE']._serialized_end=649
-  _globals['_SCALEDEPLOYMENTREQUEST']._serialized_start=652
-  _globals['_SCALEDEPLOYMENTREQUEST']._serialized_end=782
-  _globals['_SCALEDEPLOYMENTRESPONSE']._serialized_start=784
-  _globals['_SCALEDEPLOYMENTRESPONSE']._serialized_end=853
-  _globals['_RESTARTDEPLOYMENTREQUEST']._serialized_start=855
-  _globals['_RESTARTDEPLOYMENTREQUEST']._serialized_end=969
-  _globals['_RESTARTDEPLOYMENTRESPONSE']._serialized_start=971
-  _globals['_RESTARTDEPLOYMENTRESPONSE']._serialized_end=1042
-  _globals['_GETNAMESPACESTATUSREQUEST']._serialized_start=1044
-  _globals['_GETNAMESPACESTATUSREQUEST']._serialized_end=1134
-  _globals['_GETNAMESPACESTATUSRESPONSE']._serialized_start=1136
-  _globals['_GETNAMESPACESTATUSRESPONSE']._serialized_end=1210
-  _globals['_SERVERENVIRONMENTK8SSERVICE']._serialized_start=1213
-  _globals['_SERVERENVIRONMENTK8SSERVICE']._serialized_end=1863
+  _globals['_LISTNAMESPACERESOURCESRESPONSE']._serialized_end=296
+  _globals['_K8SRESOURCELIST']._serialized_start=299
+  _globals['_K8SRESOURCELIST']._serialized_end=449
+  _globals['_K8SPOD']._serialized_start=451
+  _globals['_K8SPOD']._serialized_end=546
+  _globals['_K8SDEPLOYMENT']._serialized_start=548
+  _globals['_K8SDEPLOYMENT']._serialized_end=673
+  _globals['_K8SSERVICE']._serialized_start=675
+  _globals['_K8SSERVICE']._serialized_end=770
+  _globals['_GETPODLOGSREQUEST']._serialized_start=772
+  _globals['_GETPODLOGSREQUEST']._serialized_end=892
+  _globals['_GETPODLOGSRESPONSE']._serialized_start=894
+  _globals['_GETPODLOGSRESPONSE']._serialized_end=955
+  _globals['_GETDEPLOYMENTSTATUSREQUEST']._serialized_start=957
+  _globals['_GETDEPLOYMENTSTATUSREQUEST']._serialized_end=1073
+  _globals['_GETDEPLOYMENTSTATUSRESPONSE']._serialized_start=1075
+  _globals['_GETDEPLOYMENTSTATUSRESPONSE']._serialized_end=1181
+  _globals['_K8SDEPLOYMENTDETAIL']._serialized_start=1184
+  _globals['_K8SDEPLOYMENTDETAIL']._serialized_end=1424
+  _globals['_K8SCONDITION']._serialized_start=1426
+  _globals['_K8SCONDITION']._serialized_end=1533
+  _globals['_K8SEVENT']._serialized_start=1535
+  _globals['_K8SEVENT']._serialized_end=1606
+  _globals['_SCALEDEPLOYMENTREQUEST']._serialized_start=1609
+  _globals['_SCALEDEPLOYMENTREQUEST']._serialized_end=1739
+  _globals['_SCALEDEPLOYMENTRESPONSE']._serialized_start=1741
+  _globals['_SCALEDEPLOYMENTRESPONSE']._serialized_end=1810
+  _globals['_RESTARTDEPLOYMENTREQUEST']._serialized_start=1812
+  _globals['_RESTARTDEPLOYMENTREQUEST']._serialized_end=1926
+  _globals['_RESTARTDEPLOYMENTRESPONSE']._serialized_start=1928
+  _globals['_RESTARTDEPLOYMENTRESPONSE']._serialized_end=1999
+  _globals['_GETNAMESPACESTATUSREQUEST']._serialized_start=2001
+  _globals['_GETNAMESPACESTATUSREQUEST']._serialized_end=2091
+  _globals['_GETNAMESPACESTATUSRESPONSE']._serialized_start=2093
+  _globals['_GETNAMESPACESTATUSRESPONSE']._serialized_end=2197
+  _globals['_K8SNAMESPACESTATUS']._serialized_start=2200
+  _globals['_K8SNAMESPACESTATUS']._serialized_end=2399
+  _globals['_SERVERENVIRONMENTK8SSERVICE']._serialized_start=2402
+  _globals['_SERVERENVIRONMENTK8SSERVICE']._serialized_end=3052
 # @@protoc_insertion_point(module_scope)

@@ -6,6 +6,14 @@ import com.jervis.contracts.server.GetNamespaceStatusRequest
 import com.jervis.contracts.server.GetNamespaceStatusResponse
 import com.jervis.contracts.server.GetPodLogsRequest
 import com.jervis.contracts.server.GetPodLogsResponse
+import com.jervis.contracts.server.K8sCondition
+import com.jervis.contracts.server.K8sDeployment
+import com.jervis.contracts.server.K8sDeploymentDetail
+import com.jervis.contracts.server.K8sEvent
+import com.jervis.contracts.server.K8sNamespaceStatus
+import com.jervis.contracts.server.K8sPod
+import com.jervis.contracts.server.K8sResourceList
+import com.jervis.contracts.server.K8sService
 import com.jervis.contracts.server.ListNamespaceResourcesRequest
 import com.jervis.contracts.server.ListNamespaceResourcesResponse
 import com.jervis.contracts.server.RestartDeploymentRequest
@@ -14,11 +22,6 @@ import com.jervis.contracts.server.ScaleDeploymentRequest
 import com.jervis.contracts.server.ScaleDeploymentResponse
 import com.jervis.contracts.server.ServerEnvironmentK8sServiceGrpcKt
 import com.jervis.environment.EnvironmentResourceService
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
@@ -36,7 +39,7 @@ class ServerEnvironmentK8sGrpcImpl(
             val resources = environmentResourceService.listResources(request.namespace, type)
             ListNamespaceResourcesResponse.newBuilder()
                 .setOk(true)
-                .setDataJson(anyToJson(resources).toString())
+                .setData(resources.toResourceListProto())
                 .build()
         } catch (e: IllegalStateException) {
             ListNamespaceResourcesResponse.newBuilder().setOk(false)
@@ -71,7 +74,7 @@ class ServerEnvironmentK8sGrpcImpl(
         )
         GetDeploymentStatusResponse.newBuilder()
             .setOk(true)
-            .setDataJson(anyToJson(details).toString())
+            .setData(details.toDeploymentDetailProto())
             .build()
     } catch (e: Exception) {
         logger.warn(e) { "Failed to get deployment ${request.deploymentName} in ${request.namespace}" }
@@ -115,7 +118,7 @@ class ServerEnvironmentK8sGrpcImpl(
         val status = environmentResourceService.getNamespaceStatus(request.namespace)
         GetNamespaceStatusResponse.newBuilder()
             .setOk(true)
-            .setDataJson(anyToJson(status).toString())
+            .setData(status.toNamespaceStatusProto())
             .build()
     } catch (e: IllegalStateException) {
         GetNamespaceStatusResponse.newBuilder().setOk(false)
@@ -125,16 +128,120 @@ class ServerEnvironmentK8sGrpcImpl(
         GetNamespaceStatusResponse.newBuilder().setOk(false)
             .setError(e.message.orEmpty()).build()
     }
-
-    private fun anyToJson(value: Any?): JsonElement = when (value) {
-        null -> JsonNull
-        is String -> JsonPrimitive(value)
-        is Number -> JsonPrimitive(value)
-        is Boolean -> JsonPrimitive(value)
-        is Map<*, *> -> buildJsonObject {
-            value.forEach { (k, v) -> put(k.toString(), anyToJson(v)) }
-        }
-        is List<*> -> buildJsonArray { value.forEach { add(anyToJson(it)) } }
-        else -> JsonPrimitive(value.toString())
-    }
 }
+
+// ── Map → proto converters ─────────────────────────────────────────────
+
+private fun Map<String, List<Map<String, Any?>>>.toResourceListProto(): K8sResourceList {
+    val builder = K8sResourceList.newBuilder()
+    this["pods"]?.forEach { builder.addPods(it.toPodProto()) }
+    this["deployments"]?.forEach { builder.addDeployments(it.toDeploymentProto()) }
+    this["services"]?.forEach { builder.addServices(it.toServiceProto()) }
+    return builder.build()
+}
+
+private fun Map<String, Any?>.toPodProto(): K8sPod =
+    K8sPod.newBuilder()
+        .setName(str("name"))
+        .setPhase(str("phase"))
+        .setReady(bool("ready"))
+        .setRestartCount(int("restartCount"))
+        .setCreatedAt(str("createdAt"))
+        .build()
+
+private fun Map<String, Any?>.toDeploymentProto(): K8sDeployment =
+    K8sDeployment.newBuilder()
+        .setName(str("name"))
+        .setReplicas(int("replicas"))
+        .setAvailableReplicas(int("availableReplicas"))
+        .setReady(bool("ready"))
+        .setImage(str("image"))
+        .setCreatedAt(str("createdAt"))
+        .build()
+
+private fun Map<String, Any?>.toServiceProto(): K8sService =
+    K8sService.newBuilder()
+        .setName(str("name"))
+        .setType(str("type"))
+        .setClusterIp(str("clusterIP"))
+        .addAllPorts(strList("ports"))
+        .setCreatedAt(str("createdAt"))
+        .build()
+
+private fun Map<String, Any?>.toDeploymentDetailProto(): K8sDeploymentDetail {
+    val builder = K8sDeploymentDetail.newBuilder()
+        .setName(str("name"))
+        .setNamespace(str("namespace"))
+        .setReplicas(int("replicas"))
+        .setAvailableReplicas(int("availableReplicas"))
+        .setReady(bool("ready"))
+        .setImage(str("image"))
+        .setCreatedAt(str("createdAt"))
+    @Suppress("UNCHECKED_CAST")
+    (this["conditions"] as? List<Map<String, Any?>>)?.forEach {
+        builder.addConditions(
+            K8sCondition.newBuilder()
+                .setType(it.str("type"))
+                .setStatus(it.str("status"))
+                .setReason(it.str("reason"))
+                .setMessage(it.str("message"))
+                .setLastTransitionTime(it.str("lastTransitionTime"))
+                .build(),
+        )
+    }
+    @Suppress("UNCHECKED_CAST")
+    (this["events"] as? List<Map<String, Any?>>)?.forEach {
+        builder.addEvents(
+            K8sEvent.newBuilder()
+                .setType(it.str("type"))
+                .setReason(it.str("reason"))
+                .setMessage(it.str("message"))
+                .setTime(it.str("time"))
+                .build(),
+        )
+    }
+    return builder.build()
+}
+
+private fun Map<String, Any?>.toNamespaceStatusProto(): K8sNamespaceStatus {
+    @Suppress("UNCHECKED_CAST")
+    val pods = this["pods"] as? Map<String, Any?> ?: emptyMap()
+    @Suppress("UNCHECKED_CAST")
+    val deployments = this["deployments"] as? Map<String, Any?> ?: emptyMap()
+    @Suppress("UNCHECKED_CAST")
+    val services = this["services"] as? Map<String, Any?> ?: emptyMap()
+    return K8sNamespaceStatus.newBuilder()
+        .setNamespace(str("namespace"))
+        .setHealthy(bool("healthy"))
+        .setTotalPods(pods.int("total"))
+        .setRunningPods(pods.int("running"))
+        .addAllCrashingPods(pods.strList("crashing"))
+        .setTotalDeployments(deployments.int("total"))
+        .setReadyDeployments(deployments.int("ready"))
+        .setTotalServices(services.int("total"))
+        .build()
+}
+
+private fun Map<String, Any?>.str(key: String): String = when (val v = this[key]) {
+    null -> ""
+    is String -> v
+    else -> v.toString()
+}
+
+private fun Map<String, Any?>.int(key: String): Int = when (val v = this[key]) {
+    null -> 0
+    is Number -> v.toInt()
+    is String -> v.toIntOrNull() ?: 0
+    else -> 0
+}
+
+private fun Map<String, Any?>.bool(key: String): Boolean = when (val v = this[key]) {
+    null -> false
+    is Boolean -> v
+    is String -> v.equals("true", ignoreCase = true)
+    else -> false
+}
+
+@Suppress("UNCHECKED_CAST")
+private fun Map<String, Any?>.strList(key: String): List<String> =
+    (this[key] as? List<*>)?.map { it?.toString() ?: "" } ?: emptyList()

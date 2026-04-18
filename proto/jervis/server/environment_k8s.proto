@@ -33,8 +33,38 @@ message ListNamespaceResourcesRequest {
 message ListNamespaceResourcesResponse {
   bool ok = 1;
   string error = 2;                // populated on 403/500
-  // K8sResourceListDto JSON (resources grouped by type).
-  string data_json = 3;
+  K8sResourceList data = 3;        // resources grouped by type
+}
+
+message K8sResourceList {
+  repeated K8sPod pods = 1;
+  repeated K8sDeployment deployments = 2;
+  repeated K8sService services = 3;
+}
+
+message K8sPod {
+  string name = 1;
+  string phase = 2;                // empty = unset
+  bool ready = 3;
+  int32 restart_count = 4;
+  string created_at = 5;
+}
+
+message K8sDeployment {
+  string name = 1;
+  int32 replicas = 2;
+  int32 available_replicas = 3;
+  bool ready = 4;
+  string image = 5;
+  string created_at = 6;
+}
+
+message K8sService {
+  string name = 1;
+  string type = 2;
+  string cluster_ip = 3;
+  repeated string ports = 4;
+  string created_at = 5;
 }
 
 // ── GetPodLogs ──────────────────────────────────────────────────────────
@@ -63,7 +93,34 @@ message GetDeploymentStatusRequest {
 message GetDeploymentStatusResponse {
   bool ok = 1;
   string error = 2;
-  string data_json = 3;            // K8sDeploymentDetailDto JSON
+  K8sDeploymentDetail data = 3;
+}
+
+message K8sDeploymentDetail {
+  string name = 1;
+  string namespace = 2;
+  int32 replicas = 3;
+  int32 available_replicas = 4;
+  bool ready = 5;
+  string image = 6;
+  string created_at = 7;
+  repeated K8sCondition conditions = 8;
+  repeated K8sEvent events = 9;
+}
+
+message K8sCondition {
+  string type = 1;
+  string status = 2;
+  string reason = 3;
+  string message = 4;
+  string last_transition_time = 5;
+}
+
+message K8sEvent {
+  string type = 1;
+  string reason = 2;
+  string message = 3;
+  string time = 4;
 }
 
 // ── ScaleDeployment ─────────────────────────────────────────────────────
@@ -105,5 +162,16 @@ message GetNamespaceStatusRequest {
 message GetNamespaceStatusResponse {
   bool ok = 1;
   string error = 2;
-  string data_json = 3;            // K8sNamespaceStatusDto JSON
+  K8sNamespaceStatus data = 3;
+}
+
+message K8sNamespaceStatus {
+  string namespace = 1;
+  bool healthy = 2;
+  int32 total_pods = 3;
+  int32 running_pods = 4;
+  repeated string crashing_pods = 5;
+  int32 total_deployments = 6;
+  int32 ready_deployments = 7;
+  int32 total_services = 8;
 }

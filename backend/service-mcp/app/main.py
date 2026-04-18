@@ -2259,31 +2259,24 @@ async def list_namespace_resources(namespace: str, resource_type: str = "all") -
         return f"Error: {str(e)[:300]}"
     if not resp.ok:
         return f"Error: {resp.error or 'unknown'}"
-    resources = json.loads(resp.data_json) if resp.data_json else {}
+    data = resp.data
     lines = [f"Namespace: {namespace}", ""]
-    for rtype, items in resources.items():
-        lines.append(f"## {rtype.title()} ({len(items)})")
-        for item in items:
-            name = item.get("name", "?")
-            if rtype == "pods":
-                phase = item.get("phase", "?")
-                ready = "READY" if item.get("ready") else "NOT READY"
-                restarts = item.get("restartCount", 0)
-                lines.append(f"  - {name}: {phase} ({ready}, restarts={restarts})")
-            elif rtype == "deployments":
-                avail = item.get("availableReplicas", 0)
-                total = item.get("replicas", 0)
-                image = item.get("image", "?")
-                lines.append(f"  - {name}: {avail}/{total} ready ({image})")
-            elif rtype == "services":
-                svc_type = item.get("type", "?")
-                ports = item.get("ports", [])
-                lines.append(f"  - {name}: {svc_type} ({', '.join(ports) if ports else 'no ports'})")
-            elif rtype == "secrets":
-                keys = item.get("keys", [])
-                lines.append(f"  - {name}: keys={keys}")
-            else:
-                lines.append(f"  - {name}")
+    if data.pods:
+        lines.append(f"## Pods ({len(data.pods)})")
+        for p in data.pods:
+            ready = "READY" if p.ready else "NOT READY"
+            lines.append(f"  - {p.name}: {p.phase or '?'} ({ready}, restarts={p.restart_count})")
+        lines.append("")
+    if data.deployments:
+        lines.append(f"## Deployments ({len(data.deployments)})")
+        for d in data.deployments:
+            lines.append(f"  - {d.name}: {d.available_replicas}/{d.replicas} ready ({d.image or '?'})")
+        lines.append("")
+    if data.services:
+        lines.append(f"## Services ({len(data.services)})")
+        for s in data.services:
+            ports_str = ", ".join(s.ports) if s.ports else "no ports"
+            lines.append(f"  - {s.name}: {s.type or '?'} ({ports_str})")
         lines.append("")
     return "\n".join(lines)
 
@@ -2345,28 +2338,26 @@ async def get_deployment_status(namespace: str, name: str) -> str:
         return f"Error: {str(e)[:300]}"
     if not resp.ok:
         return f"Error: {resp.error or 'unknown'}"
-    d = json.loads(resp.data_json) if resp.data_json else {}
+    d = resp.data
     lines = [
-        f"Deployment: {d.get('name', '?')}",
-        f"Namespace: {d.get('namespace', '?')}",
-        f"Image: {d.get('image', '?')}",
-        f"Replicas: {d.get('availableReplicas', 0)}/{d.get('replicas', 0)} ready",
-        f"Status: {'HEALTHY' if d.get('ready') else 'UNHEALTHY'}",
+        f"Deployment: {d.name or '?'}",
+        f"Namespace: {d.namespace or '?'}",
+        f"Image: {d.image or '?'}",
+        f"Replicas: {d.available_replicas}/{d.replicas} ready",
+        f"Status: {'HEALTHY' if d.ready else 'UNHEALTHY'}",
         "",
     ]
-    conditions = d.get("conditions", [])
-    if conditions:
+    if d.conditions:
         lines.append("Conditions:")
-        for c in conditions:
-            lines.append(f"  - {c.get('type')}: {c.get('status')} ({c.get('reason', '')})")
-            if c.get("message"):
-                lines.append(f"    {c['message']}")
+        for c in d.conditions:
+            lines.append(f"  - {c.type}: {c.status} ({c.reason})")
+            if c.message:
+                lines.append(f"    {c.message}")
         lines.append("")
-    events = d.get("events", [])
-    if events:
+    if d.events:
         lines.append("Recent Events:")
-        for ev in events:
-            lines.append(f"  [{ev.get('type', '?')}] {ev.get('reason', '?')}: {ev.get('message', '')}")
+        for ev in d.events:
+            lines.append(f"  [{ev.type or '?'}] {ev.reason or '?'}: {ev.message or ''}")
     return "\n".join(lines)
 
 
@@ -2456,23 +2447,18 @@ async def get_namespace_status(namespace: str) -> str:
         return f"Error: {str(e)[:300]}"
     if not resp.ok:
         return f"Error: {resp.error or 'unknown'}"
-    s = json.loads(resp.data_json) if resp.data_json else {}
-    healthy = s.get("healthy", False)
-    pods = s.get("pods", {})
-    deps = s.get("deployments", {})
-    svcs = s.get("services", {})
+    s = resp.data
     lines = [
-        f"Namespace: {s.get('namespace', '?')}",
-        f"Overall: {'HEALTHY' if healthy else 'UNHEALTHY'}",
+        f"Namespace: {s.namespace or '?'}",
+        f"Overall: {'HEALTHY' if s.healthy else 'UNHEALTHY'}",
         "",
-        f"Pods: {pods.get('running', 0)}/{pods.get('total', 0)} running",
-        f"Deployments: {deps.get('ready', 0)}/{deps.get('total', 0)} ready",
-        f"Services: {svcs.get('total', 0)}",
+        f"Pods: {s.running_pods}/{s.total_pods} running",
+        f"Deployments: {s.ready_deployments}/{s.total_deployments} ready",
+        f"Services: {s.total_services}",
     ]
-    crashing = pods.get("crashing", [])
-    if crashing:
+    if s.crashing_pods:
         lines.extend(["", "CRASHING PODS:"])
-        for pod in crashing:
+        for pod in s.crashing_pods:
             lines.append(f"  - {pod}")
         lines.append("")
         lines.append("Use get_pod_logs(namespace, pod_name) to inspect logs from crashing pods.")

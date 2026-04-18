@@ -6,13 +6,13 @@
 package com.jervis.contracts.server;
 
 /**
- * Protobuf type {@code jervis.server.RestartDeploymentResponse}
+ * Protobuf type {@code jervis.server.K8sEvent}
  */
 @com.google.protobuf.Generated
-public final class RestartDeploymentResponse extends
+public final class K8sEvent extends
     com.google.protobuf.GeneratedMessage implements
-    // @@protoc_insertion_point(message_implements:jervis.server.RestartDeploymentResponse)
-    RestartDeploymentResponseOrBuilder {
+    // @@protoc_insertion_point(message_implements:jervis.server.K8sEvent)
+    K8sEventOrBuilder {
 private static final long serialVersionUID = 0L;
   static {
     com.google.protobuf.RuntimeVersion.validateProtobufGencodeVersion(
@@ -21,74 +21,104 @@ private static final long serialVersionUID = 0L;
       /* minor= */ 32,
       /* patch= */ 1,
       /* suffix= */ "",
-      RestartDeploymentResponse.class.getName());
+      K8sEvent.class.getName());
   }
-  // Use RestartDeploymentResponse.newBuilder() to construct.
-  private RestartDeploymentResponse(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+  // Use K8sEvent.newBuilder() to construct.
+  private K8sEvent(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
     super(builder);
   }
-  private RestartDeploymentResponse() {
-    error_ = "";
+  private K8sEvent() {
+    type_ = "";
+    reason_ = "";
     message_ = "";
+    time_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
       getDescriptor() {
-    return com.jervis.contracts.server.ServerEnvironmentK8sProto.internal_static_jervis_server_RestartDeploymentResponse_descriptor;
+    return com.jervis.contracts.server.ServerEnvironmentK8sProto.internal_static_jervis_server_K8sEvent_descriptor;
   }
 
   @java.lang.Override
   protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internalGetFieldAccessorTable() {
-    return com.jervis.contracts.server.ServerEnvironmentK8sProto.internal_static_jervis_server_RestartDeploymentResponse_fieldAccessorTable
+    return com.jervis.contracts.server.ServerEnvironmentK8sProto.internal_static_jervis_server_K8sEvent_fieldAccessorTable
         .ensureFieldAccessorsInitialized(
-            com.jervis.contracts.server.RestartDeploymentResponse.class, com.jervis.contracts.server.RestartDeploymentResponse.Builder.class);
+            com.jervis.contracts.server.K8sEvent.class, com.jervis.contracts.server.K8sEvent.Builder.class);
   }
 
-  public static final int OK_FIELD_NUMBER = 1;
-  private boolean ok_ = false;
-  /**
-   * <code>bool ok = 1;</code>
-   * @return The ok.
-   */
-  @java.lang.Override
-  public boolean getOk() {
-    return ok_;
-  }
-
-  public static final int ERROR_FIELD_NUMBER = 2;
+  public static final int TYPE_FIELD_NUMBER = 1;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object error_ = "";
+  private volatile java.lang.Object type_ = "";
   /**
-   * <code>string error = 2;</code>
-   * @return The error.
+   * <code>string type = 1;</code>
+   * @return The type.
    */
   @java.lang.Override
-  public java.lang.String getError() {
-    java.lang.Object ref = error_;
+  public java.lang.String getType() {
+    java.lang.Object ref = type_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      error_ = s;
+      type_ = s;
       return s;
     }
   }
   /**
-   * <code>string error = 2;</code>
-   * @return The bytes for error.
+   * <code>string type = 1;</code>
+   * @return The bytes for type.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getErrorBytes() {
-    java.lang.Object ref = error_;
+      getTypeBytes() {
+    java.lang.Object ref = type_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      error_ = b;
+      type_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int REASON_FIELD_NUMBER = 2;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object reason_ = "";
+  /**
+   * <code>string reason = 2;</code>
+   * @return The reason.
+   */
+  @java.lang.Override
+  public java.lang.String getReason() {
+    java.lang.Object ref = reason_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      reason_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string reason = 2;</code>
+   * @return The bytes for reason.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getReasonBytes() {
+    java.lang.Object ref = reason_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      reason_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
@@ -134,6 +164,45 @@ private static final long serialVersionUID = 0L;
     }
   }
 
+  public static final int TIME_FIELD_NUMBER = 4;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object time_ = "";
+  /**
+   * <code>string time = 4;</code>
+   * @return The time.
+   */
+  @java.lang.Override
+  public java.lang.String getTime() {
+    java.lang.Object ref = time_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      time_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string time = 4;</code>
+   * @return The bytes for time.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getTimeBytes() {
+    java.lang.Object ref = time_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      time_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
   private byte memoizedIsInitialized = -1;
   @java.lang.Override
   public final boolean isInitialized() {
@@ -148,14 +217,17 @@ private static final long serialVersionUID = 0L;
   @java.lang.Override
   public void writeTo(com.google.protobuf.CodedOutputStream output)
                       throws java.io.IOException {
-    if (ok_ != false) {
-      output.writeBool(1, ok_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(type_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 1, type_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(error_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 2, error_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(reason_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 2, reason_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(message_)) {
       com.google.protobuf.GeneratedMessage.writeString(output, 3, message_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(time_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 4, time_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -166,15 +238,17 @@ private static final long serialVersionUID = 0L;
     if (size != -1) return size;
 
     size = 0;
-    if (ok_ != false) {
-      size += com.google.protobuf.CodedOutputStream
-        .computeBoolSize(1, ok_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(type_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(1, type_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(error_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, error_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(reason_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, reason_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(message_)) {
       size += com.google.protobuf.GeneratedMessage.computeStringSize(3, message_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(time_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(4, time_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -186,17 +260,19 @@ private static final long serialVersionUID = 0L;
     if (obj == this) {
      return true;
     }
-    if (!(obj instanceof com.jervis.contracts.server.RestartDeploymentResponse)) {
+    if (!(obj instanceof com.jervis.contracts.server.K8sEvent)) {
       return super.equals(obj);
     }
-    com.jervis.contracts.server.RestartDeploymentResponse other = (com.jervis.contracts.server.RestartDeploymentResponse) obj;
+    com.jervis.contracts.server.K8sEvent other = (com.jervis.contracts.server.K8sEvent) obj;
 
-    if (getOk()
-        != other.getOk()) return false;
-    if (!getError()
-        .equals(other.getError())) return false;
+    if (!getType()
+        .equals(other.getType())) return false;
+    if (!getReason()
+        .equals(other.getReason())) return false;
     if (!getMessage()
         .equals(other.getMessage())) return false;
+    if (!getTime()
+        .equals(other.getTime())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -208,56 +284,57 @@ private static final long serialVersionUID = 0L;
     }
     int hash = 41;
     hash = (19 * hash) + getDescriptor().hashCode();
-    hash = (37 * hash) + OK_FIELD_NUMBER;
-    hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
-        getOk());
-    hash = (37 * hash) + ERROR_FIELD_NUMBER;
-    hash = (53 * hash) + getError().hashCode();
+    hash = (37 * hash) + TYPE_FIELD_NUMBER;
+    hash = (53 * hash) + getType().hashCode();
+    hash = (37 * hash) + REASON_FIELD_NUMBER;
+    hash = (53 * hash) + getReason().hashCode();
     hash = (37 * hash) + MESSAGE_FIELD_NUMBER;
     hash = (53 * hash) + getMessage().hashCode();
+    hash = (37 * hash) + TIME_FIELD_NUMBER;
+    hash = (53 * hash) + getTime().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
   }
 
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseFrom(
+  public static com.jervis.contracts.server.K8sEvent parseFrom(
       java.nio.ByteBuffer data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseFrom(
+  public static com.jervis.contracts.server.K8sEvent parseFrom(
       java.nio.ByteBuffer data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseFrom(
+  public static com.jervis.contracts.server.K8sEvent parseFrom(
       com.google.protobuf.ByteString data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseFrom(
+  public static com.jervis.contracts.server.K8sEvent parseFrom(
       com.google.protobuf.ByteString data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseFrom(byte[] data)
+  public static com.jervis.contracts.server.K8sEvent parseFrom(byte[] data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseFrom(
+  public static com.jervis.contracts.server.K8sEvent parseFrom(
       byte[] data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseFrom(java.io.InputStream input)
+  public static com.jervis.contracts.server.K8sEvent parseFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseFrom(
+  public static com.jervis.contracts.server.K8sEvent parseFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -265,26 +342,26 @@ private static final long serialVersionUID = 0L;
         .parseWithIOException(PARSER, input, extensionRegistry);
   }
 
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseDelimitedFrom(java.io.InputStream input)
+  public static com.jervis.contracts.server.K8sEvent parseDelimitedFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input);
   }
 
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseDelimitedFrom(
+  public static com.jervis.contracts.server.K8sEvent parseDelimitedFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
   }
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseFrom(
+  public static com.jervis.contracts.server.K8sEvent parseFrom(
       com.google.protobuf.CodedInputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.server.RestartDeploymentResponse parseFrom(
+  public static com.jervis.contracts.server.K8sEvent parseFrom(
       com.google.protobuf.CodedInputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -297,7 +374,7 @@ private static final long serialVersionUID = 0L;
   public static Builder newBuilder() {
     return DEFAULT_INSTANCE.toBuilder();
   }
-  public static Builder newBuilder(com.jervis.contracts.server.RestartDeploymentResponse prototype) {
+  public static Builder newBuilder(com.jervis.contracts.server.K8sEvent prototype) {
     return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
   }
   @java.lang.Override
@@ -313,26 +390,26 @@ private static final long serialVersionUID = 0L;
     return builder;
   }
   /**
-   * Protobuf type {@code jervis.server.RestartDeploymentResponse}
+   * Protobuf type {@code jervis.server.K8sEvent}
    */
   public static final class Builder extends
       com.google.protobuf.GeneratedMessage.Builder<Builder> implements
-      // @@protoc_insertion_point(builder_implements:jervis.server.RestartDeploymentResponse)
-      com.jervis.contracts.server.RestartDeploymentResponseOrBuilder {
+      // @@protoc_insertion_point(builder_implements:jervis.server.K8sEvent)
+      com.jervis.contracts.server.K8sEventOrBuilder {
     public static final com.google.protobuf.Descriptors.Descriptor
         getDescriptor() {
-      return com.jervis.contracts.server.ServerEnvironmentK8sProto.internal_static_jervis_server_RestartDeploymentResponse_descriptor;
+      return com.jervis.contracts.server.ServerEnvironmentK8sProto.internal_static_jervis_server_K8sEvent_descriptor;
     }
 
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
         internalGetFieldAccessorTable() {
-      return com.jervis.contracts.server.ServerEnvironmentK8sProto.internal_static_jervis_server_RestartDeploymentResponse_fieldAccessorTable
+      return com.jervis.contracts.server.ServerEnvironmentK8sProto.internal_static_jervis_server_K8sEvent_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
-              com.jervis.contracts.server.RestartDeploymentResponse.class, com.jervis.contracts.server.RestartDeploymentResponse.Builder.class);
+              com.jervis.contracts.server.K8sEvent.class, com.jervis.contracts.server.K8sEvent.Builder.class);
     }
 
-    // Construct using com.jervis.contracts.server.RestartDeploymentResponse.newBuilder()
+    // Construct using com.jervis.contracts.server.K8sEvent.newBuilder()
     private Builder() {
 
     }
@@ -346,26 +423,27 @@ private static final long serialVersionUID = 0L;
     public Builder clear() {
       super.clear();
       bitField0_ = 0;
-      ok_ = false;
-      error_ = "";
+      type_ = "";
+      reason_ = "";
       message_ = "";
+      time_ = "";
       return this;
     }
 
     @java.lang.Override
     public com.google.protobuf.Descriptors.Descriptor
         getDescriptorForType() {
-      return com.jervis.contracts.server.ServerEnvironmentK8sProto.internal_static_jervis_server_RestartDeploymentResponse_descriptor;
+      return com.jervis.contracts.server.ServerEnvironmentK8sProto.internal_static_jervis_server_K8sEvent_descriptor;
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.RestartDeploymentResponse getDefaultInstanceForType() {
-      return com.jervis.contracts.server.RestartDeploymentResponse.getDefaultInstance();
+    public com.jervis.contracts.server.K8sEvent getDefaultInstanceForType() {
+      return com.jervis.contracts.server.K8sEvent.getDefaultInstance();
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.RestartDeploymentResponse build() {
-      com.jervis.contracts.server.RestartDeploymentResponse result = buildPartial();
+    public com.jervis.contracts.server.K8sEvent build() {
+      com.jervis.contracts.server.K8sEvent result = buildPartial();
       if (!result.isInitialized()) {
         throw newUninitializedMessageException(result);
       }
@@ -373,49 +451,59 @@ private static final long serialVersionUID = 0L;
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.RestartDeploymentResponse buildPartial() {
-      com.jervis.contracts.server.RestartDeploymentResponse result = new com.jervis.contracts.server.RestartDeploymentResponse(this);
+    public com.jervis.contracts.server.K8sEvent buildPartial() {
+      com.jervis.contracts.server.K8sEvent result = new com.jervis.contracts.server.K8sEvent(this);
       if (bitField0_ != 0) { buildPartial0(result); }
       onBuilt();
       return result;
     }
 
-    private void buildPartial0(com.jervis.contracts.server.RestartDeploymentResponse result) {
+    private void buildPartial0(com.jervis.contracts.server.K8sEvent result) {
       int from_bitField0_ = bitField0_;
       if (((from_bitField0_ & 0x00000001) != 0)) {
-        result.ok_ = ok_;
+        result.type_ = type_;
       }
       if (((from_bitField0_ & 0x00000002) != 0)) {
-        result.error_ = error_;
+        result.reason_ = reason_;
       }
       if (((from_bitField0_ & 0x00000004) != 0)) {
         result.message_ = message_;
+      }
+      if (((from_bitField0_ & 0x00000008) != 0)) {
+        result.time_ = time_;
       }
     }
 
     @java.lang.Override
     public Builder mergeFrom(com.google.protobuf.Message other) {
-      if (other instanceof com.jervis.contracts.server.RestartDeploymentResponse) {
-        return mergeFrom((com.jervis.contracts.server.RestartDeploymentResponse)other);
+      if (other instanceof com.jervis.contracts.server.K8sEvent) {
+        return mergeFrom((com.jervis.contracts.server.K8sEvent)other);
       } else {
         super.mergeFrom(other);
         return this;
       }
     }
 
-    public Builder mergeFrom(com.jervis.contracts.server.RestartDeploymentResponse other) {
-      if (other == com.jervis.contracts.server.RestartDeploymentResponse.getDefaultInstance()) return this;
-      if (other.getOk() != false) {
-        setOk(other.getOk());
+    public Builder mergeFrom(com.jervis.contracts.server.K8sEvent other) {
+      if (other == com.jervis.contracts.server.K8sEvent.getDefaultInstance()) return this;
+      if (!other.getType().isEmpty()) {
+        type_ = other.type_;
+        bitField0_ |= 0x00000001;
+        onChanged();
       }
-      if (!other.getError().isEmpty()) {
-        error_ = other.error_;
+      if (!other.getReason().isEmpty()) {
+        reason_ = other.reason_;
         bitField0_ |= 0x00000002;
         onChanged();
       }
       if (!other.getMessage().isEmpty()) {
         message_ = other.message_;
         bitField0_ |= 0x00000004;
+        onChanged();
+      }
+      if (!other.getTime().isEmpty()) {
+        time_ = other.time_;
+        bitField0_ |= 0x00000008;
         onChanged();
       }
       this.mergeUnknownFields(other.getUnknownFields());
@@ -444,13 +532,13 @@ private static final long serialVersionUID = 0L;
             case 0:
               done = true;
               break;
-            case 8: {
-              ok_ = input.readBool();
+            case 10: {
+              type_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000001;
               break;
-            } // case 8
+            } // case 10
             case 18: {
-              error_ = input.readStringRequireUtf8();
+              reason_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000002;
               break;
             } // case 18
@@ -459,6 +547,11 @@ private static final long serialVersionUID = 0L;
               bitField0_ |= 0x00000004;
               break;
             } // case 26
+            case 34: {
+              time_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000008;
+              break;
+            } // case 34
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -476,105 +569,145 @@ private static final long serialVersionUID = 0L;
     }
     private int bitField0_;
 
-    private boolean ok_ ;
+    private java.lang.Object type_ = "";
     /**
-     * <code>bool ok = 1;</code>
-     * @return The ok.
+     * <code>string type = 1;</code>
+     * @return The type.
      */
-    @java.lang.Override
-    public boolean getOk() {
-      return ok_;
-    }
-    /**
-     * <code>bool ok = 1;</code>
-     * @param value The ok to set.
-     * @return This builder for chaining.
-     */
-    public Builder setOk(boolean value) {
-
-      ok_ = value;
-      bitField0_ |= 0x00000001;
-      onChanged();
-      return this;
-    }
-    /**
-     * <code>bool ok = 1;</code>
-     * @return This builder for chaining.
-     */
-    public Builder clearOk() {
-      bitField0_ = (bitField0_ & ~0x00000001);
-      ok_ = false;
-      onChanged();
-      return this;
-    }
-
-    private java.lang.Object error_ = "";
-    /**
-     * <code>string error = 2;</code>
-     * @return The error.
-     */
-    public java.lang.String getError() {
-      java.lang.Object ref = error_;
+    public java.lang.String getType() {
+      java.lang.Object ref = type_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        error_ = s;
+        type_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
       }
     }
     /**
-     * <code>string error = 2;</code>
-     * @return The bytes for error.
+     * <code>string type = 1;</code>
+     * @return The bytes for type.
      */
     public com.google.protobuf.ByteString
-        getErrorBytes() {
-      java.lang.Object ref = error_;
+        getTypeBytes() {
+      java.lang.Object ref = type_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        error_ = b;
+        type_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
       }
     }
     /**
-     * <code>string error = 2;</code>
-     * @param value The error to set.
+     * <code>string type = 1;</code>
+     * @param value The type to set.
      * @return This builder for chaining.
      */
-    public Builder setError(
+    public Builder setType(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      error_ = value;
+      type_ = value;
+      bitField0_ |= 0x00000001;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string type = 1;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearType() {
+      type_ = getDefaultInstance().getType();
+      bitField0_ = (bitField0_ & ~0x00000001);
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string type = 1;</code>
+     * @param value The bytes for type to set.
+     * @return This builder for chaining.
+     */
+    public Builder setTypeBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      type_ = value;
+      bitField0_ |= 0x00000001;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object reason_ = "";
+    /**
+     * <code>string reason = 2;</code>
+     * @return The reason.
+     */
+    public java.lang.String getReason() {
+      java.lang.Object ref = reason_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        reason_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>string reason = 2;</code>
+     * @return The bytes for reason.
+     */
+    public com.google.protobuf.ByteString
+        getReasonBytes() {
+      java.lang.Object ref = reason_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        reason_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>string reason = 2;</code>
+     * @param value The reason to set.
+     * @return This builder for chaining.
+     */
+    public Builder setReason(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      reason_ = value;
       bitField0_ |= 0x00000002;
       onChanged();
       return this;
     }
     /**
-     * <code>string error = 2;</code>
+     * <code>string reason = 2;</code>
      * @return This builder for chaining.
      */
-    public Builder clearError() {
-      error_ = getDefaultInstance().getError();
+    public Builder clearReason() {
+      reason_ = getDefaultInstance().getReason();
       bitField0_ = (bitField0_ & ~0x00000002);
       onChanged();
       return this;
     }
     /**
-     * <code>string error = 2;</code>
-     * @param value The bytes for error to set.
+     * <code>string reason = 2;</code>
+     * @param value The bytes for reason to set.
      * @return This builder for chaining.
      */
-    public Builder setErrorBytes(
+    public Builder setReasonBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      error_ = value;
+      reason_ = value;
       bitField0_ |= 0x00000002;
       onChanged();
       return this;
@@ -652,23 +785,95 @@ private static final long serialVersionUID = 0L;
       return this;
     }
 
-    // @@protoc_insertion_point(builder_scope:jervis.server.RestartDeploymentResponse)
+    private java.lang.Object time_ = "";
+    /**
+     * <code>string time = 4;</code>
+     * @return The time.
+     */
+    public java.lang.String getTime() {
+      java.lang.Object ref = time_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        time_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>string time = 4;</code>
+     * @return The bytes for time.
+     */
+    public com.google.protobuf.ByteString
+        getTimeBytes() {
+      java.lang.Object ref = time_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        time_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>string time = 4;</code>
+     * @param value The time to set.
+     * @return This builder for chaining.
+     */
+    public Builder setTime(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      time_ = value;
+      bitField0_ |= 0x00000008;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string time = 4;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearTime() {
+      time_ = getDefaultInstance().getTime();
+      bitField0_ = (bitField0_ & ~0x00000008);
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string time = 4;</code>
+     * @param value The bytes for time to set.
+     * @return This builder for chaining.
+     */
+    public Builder setTimeBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      time_ = value;
+      bitField0_ |= 0x00000008;
+      onChanged();
+      return this;
+    }
+
+    // @@protoc_insertion_point(builder_scope:jervis.server.K8sEvent)
   }
 
-  // @@protoc_insertion_point(class_scope:jervis.server.RestartDeploymentResponse)
-  private static final com.jervis.contracts.server.RestartDeploymentResponse DEFAULT_INSTANCE;
+  // @@protoc_insertion_point(class_scope:jervis.server.K8sEvent)
+  private static final com.jervis.contracts.server.K8sEvent DEFAULT_INSTANCE;
   static {
-    DEFAULT_INSTANCE = new com.jervis.contracts.server.RestartDeploymentResponse();
+    DEFAULT_INSTANCE = new com.jervis.contracts.server.K8sEvent();
   }
 
-  public static com.jervis.contracts.server.RestartDeploymentResponse getDefaultInstance() {
+  public static com.jervis.contracts.server.K8sEvent getDefaultInstance() {
     return DEFAULT_INSTANCE;
   }
 
-  private static final com.google.protobuf.Parser<RestartDeploymentResponse>
-      PARSER = new com.google.protobuf.AbstractParser<RestartDeploymentResponse>() {
+  private static final com.google.protobuf.Parser<K8sEvent>
+      PARSER = new com.google.protobuf.AbstractParser<K8sEvent>() {
     @java.lang.Override
-    public RestartDeploymentResponse parsePartialFrom(
+    public K8sEvent parsePartialFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
@@ -687,17 +892,17 @@ private static final long serialVersionUID = 0L;
     }
   };
 
-  public static com.google.protobuf.Parser<RestartDeploymentResponse> parser() {
+  public static com.google.protobuf.Parser<K8sEvent> parser() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.google.protobuf.Parser<RestartDeploymentResponse> getParserForType() {
+  public com.google.protobuf.Parser<K8sEvent> getParserForType() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.jervis.contracts.server.RestartDeploymentResponse getDefaultInstanceForType() {
+  public com.jervis.contracts.server.K8sEvent getDefaultInstanceForType() {
     return DEFAULT_INSTANCE;
   }
 
