@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package jervis.orchestrator;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.orchestrator";
+option java_multiple_files = true;
+option java_outer_classname = "OrchestratorGraphProto";
+
+// OrchestratorGraphService — AgentGraph lookup + idle maintenance
+// trigger. Administrative vertex CRUD (delete/update/create/cleanup/
+// purge-stale) stays on FastAPI until a cross-service consumer dials
+// it (UI path goes through Kotlin kRPC, not this servicer).
+service OrchestratorGraphService {
+  rpc GetTaskGraph(GetTaskGraphRequest) returns (TaskGraphResponse);
+  rpc RunMaintenance(MaintenanceRunRequest) returns (MaintenanceRunResult);
+}
+
+message GetTaskGraphRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;            // "master" for the memory graph
+  string client_id = 3;          // only used when task_id="master"
+}
+
+message TaskGraphResponse {
+  // AgentGraph payload is rich + schema-heavy on the Python side
+  // (Pydantic model with nested vertices / edges maps). Instead of
+  // flattening every field into the proto, the entire AgentGraph
+  // arrives as JSON — the caller already deserializes the whole
+  // graph at the domain layer via @SerialName mappings.
+  string graph_json = 1;
+  bool found = 2;
+}
+
+message MaintenanceRunRequest {
+  jervis.common.RequestContext ctx = 1;
+  int32 phase = 2;               // 1 = CPU-only, 2 = GPU-light
+  string client_id = 3;
+}
+
+message MaintenanceRunResult {
+  int32 phase = 1;
+  int32 mem_removed = 2;
+  int32 thinking_evicted = 3;
+  int32 lqm_drained = 4;
+  int32 affairs_archived = 5;
+  string next_client_for_phase2 = 6;
+  string client_id = 7;
+  repeated string findings = 8;
+}

@@ -442,49 +442,10 @@ async def _fallback_health():
 # gRPC (OrchestratorControlService.{Approve,Interrupt,Cancel} on :5501).
 
 
-@app.get("/graph/{task_id}")
-async def get_task_graph(task_id: str, client_id: str | None = None):
-    """Return the full AgentGraph for a given task_id.
-
-    Called by Kotlin to serve graph data to the UI.
-    For master graph, returns the live RAM version (always fresh).
-    When client_id is provided for master graph, returns client-filtered copy.
-    """
-    from app.agent.persistence import agent_store
-
-    if task_id == "master":
-        # Return live RAM version — always up-to-date
-        graph = agent_store.get_memory_graph_cached()
-        if not graph:
-            graph = await agent_store.get_or_create_memory_graph()
-        if not graph:
-            raise HTTPException(status_code=404, detail="Memory graph not found")
-        # Client isolation: filter to show only this client's vertices
-        if client_id:
-            return _filter_graph_for_client(graph, client_id)
-        return graph.model_dump()
-    else:
-        # Try RAM cache first (active sub-graphs), then DB
-        graph = agent_store.get_cached_subgraph(task_id)
-        if not graph:
-            graph = await agent_store.load(task_id)
-        if not graph:
-            # Fallback: localContext stores graph.id ("tg-..."), but load() queries by task_id.
-            # Try searching by the graph's own id field.
-            graph = await agent_store.load_by_graph_id(task_id)
-
-    if not graph:
-        raise HTTPException(status_code=404, detail=f"No graph for task {task_id}")
-
-    result = graph.model_dump()
-    # Add hidden flag for completed thinking graphs older than 10min (debug visibility)
-    if graph.graph_type == GraphType.THINKING_GRAPH:
-        from app.agent.persistence import _THINKING_GRAPH_HIDE_S
-        if graph.status in (GraphStatus.COMPLETED, GraphStatus.FAILED) and graph.completed_at:
-            hide_cutoff = (datetime.now(timezone.utc) - timedelta(seconds=_THINKING_GRAPH_HIDE_S)).isoformat()
-            if graph.completed_at < hide_cutoff:
-                result["hidden"] = True
-    return result
+# /graph/{task_id} migrated to gRPC
+# (OrchestratorGraphService.GetTaskGraph on :5501). The servicer
+# delegates to _filter_graph_for_client below for the master-graph
+# client-filter branch.
 
 
 def _filter_graph_for_client(graph: "AgentGraph", client_id: str) -> dict:
@@ -729,26 +690,9 @@ async def search_memory(query: str, client_id: str):
 # ---------------------------------------------------------------------------
 
 
-@app.post("/maintenance/run")
-async def run_maintenance(phase: int = 1, client_id: str | None = None):
-    """3-phase idle GPU maintenance pipeline.
-
-    Phase 1 (CPU-only, <5s): memory graph cleanup, thinking graph eviction,
-    LQM drain, affair archival. Returns next client for Phase 2.
-
-    Phase 2 (GPU-light, 30s-2min): KB dedup for ONE client.
-    Uses NORMAL priority LLM calls → auto-preempted by CRITICAL.
-    """
-    from app.agent.persistence import agent_store
-
-    if phase == 1:
-        return await _maintenance_phase1(agent_store)
-    elif phase == 2:
-        if not client_id:
-            raise HTTPException(status_code=400, detail="client_id required for phase 2")
-        return await _maintenance_phase2(agent_store, client_id)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unknown phase: {phase}")
+# /maintenance/run migrated to gRPC
+# (OrchestratorGraphService.RunMaintenance on :5501). The servicer
+# delegates to the existing _maintenance_phase{1,2} helpers below.
 
 
 async def _maintenance_phase1(agent_store) -> dict:

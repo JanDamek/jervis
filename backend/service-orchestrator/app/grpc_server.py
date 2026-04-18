@@ -19,6 +19,7 @@ import grpc
 from grpc_reflection.v1alpha import reflection
 
 from jervis.orchestrator import control_pb2, control_pb2_grpc
+from jervis.orchestrator import graph_pb2, graph_pb2_grpc
 from jervis_contracts.interceptors import ServerContextInterceptor
 
 if TYPE_CHECKING:
@@ -258,6 +259,104 @@ class OrchestratorControlServicer(control_pb2_grpc.OrchestratorControlServiceSer
             return control_pb2.InterruptAck(interrupted=False, detail=str(e))
 
 
+class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer):
+    """OrchestratorGraphService — AgentGraph lookup + maintenance trigger.
+
+    GetTaskGraph mirrors the FastAPI /graph/{task_id} handler byte-for-byte,
+    including the master-graph live-RAM path + client filter.
+    RunMaintenance dispatches to the existing _maintenance_phase{1,2}
+    helpers kept in main.py.
+    """
+
+    async def GetTaskGraph(
+        self,
+        request: graph_pb2.GetTaskGraphRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.TaskGraphResponse:
+        from datetime import datetime, timedelta, timezone
+
+        from app.agent.persistence import agent_store
+        from app.agent.models import GraphStatus, GraphType
+        from app import main as orch_main
+
+        task_id = request.task_id
+        client_id = request.client_id or None
+
+        if task_id == "master":
+            graph = agent_store.get_memory_graph_cached()
+            if not graph:
+                graph = await agent_store.get_or_create_memory_graph()
+            if not graph:
+                return graph_pb2.TaskGraphResponse(graph_json="", found=False)
+            if client_id:
+                payload = orch_main._filter_graph_for_client(graph, client_id)
+            else:
+                payload = graph.model_dump()
+        else:
+            graph = agent_store.get_cached_subgraph(task_id)
+            if not graph:
+                graph = await agent_store.load(task_id)
+            if not graph:
+                graph = await agent_store.load_by_graph_id(task_id)
+            if not graph:
+                return graph_pb2.TaskGraphResponse(graph_json="", found=False)
+            payload = graph.model_dump()
+            if graph.graph_type == GraphType.THINKING_GRAPH:
+                from app.agent.persistence import _THINKING_GRAPH_HIDE_S
+
+                if graph.status in (GraphStatus.COMPLETED, GraphStatus.FAILED) and graph.completed_at:
+                    hide_cutoff = (
+                        datetime.now(timezone.utc) - timedelta(seconds=_THINKING_GRAPH_HIDE_S)
+                    ).isoformat()
+                    if graph.completed_at < hide_cutoff:
+                        payload["hidden"] = True
+
+        return graph_pb2.TaskGraphResponse(
+            graph_json=json.dumps(payload, default=str, ensure_ascii=False),
+            found=True,
+        )
+
+    async def RunMaintenance(
+        self,
+        request: graph_pb2.MaintenanceRunRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.MaintenanceRunResult:
+        from app.agent.persistence import agent_store
+        from app import main as orch_main
+
+        phase = request.phase or 1
+        client_id = request.client_id or None
+
+        try:
+            if phase == 1:
+                result = await orch_main._maintenance_phase1(agent_store)
+            elif phase == 2:
+                if not client_id:
+                    await context.abort(grpc.StatusCode.INVALID_ARGUMENT,
+                                        "client_id required for phase 2")
+                result = await orch_main._maintenance_phase2(agent_store, client_id)
+            else:
+                await context.abort(grpc.StatusCode.INVALID_ARGUMENT,
+                                    f"Unknown phase: {phase}")
+        except Exception as e:
+            logger.exception("RUN_MAINTENANCE_ERROR phase=%s client=%s: %s", phase, client_id, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+
+        if not isinstance(result, dict):
+            result = {}
+
+        return graph_pb2.MaintenanceRunResult(
+            phase=int(result.get("phase", phase) or phase),
+            mem_removed=int(result.get("mem_removed", 0) or 0),
+            thinking_evicted=int(result.get("thinking_evicted", 0) or 0),
+            lqm_drained=int(result.get("lqm_drained", 0) or 0),
+            affairs_archived=int(result.get("affairs_archived", 0) or 0),
+            next_client_for_phase2=str(result.get("next_client_for_phase2") or ""),
+            client_id=str(result.get("client_id") or client_id or ""),
+            findings=[str(f) for f in (result.get("findings") or [])],
+        )
+
+
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for cleanup."""
     max_msg_bytes = 64 * 1024 * 1024
@@ -271,14 +370,21 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     control_pb2_grpc.add_OrchestratorControlServiceServicer_to_server(
         OrchestratorControlServicer(), server,
     )
+    graph_pb2_grpc.add_OrchestratorGraphServiceServicer_to_server(
+        OrchestratorGraphServicer(), server,
+    )
 
     service_names = (
         control_pb2.DESCRIPTOR.services_by_name["OrchestratorControlService"].full_name,
+        graph_pb2.DESCRIPTOR.services_by_name["OrchestratorGraphService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
 
     server.add_insecure_port(f"[::]:{port}")
     await server.start()
-    logger.info("gRPC orchestrator services listening on :%d (OrchestratorControlService)", port)
+    logger.info(
+        "gRPC orchestrator services listening on :%d (Control + Graph)",
+        port,
+    )
     return server

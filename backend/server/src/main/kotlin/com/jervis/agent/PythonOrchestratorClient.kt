@@ -95,6 +95,7 @@ class CircuitBreaker(
 class PythonOrchestratorClient(
     baseUrl: String,
     private val controlGrpc: com.jervis.infrastructure.grpc.OrchestratorControlGrpcClient? = null,
+    private val graphGrpc: com.jervis.infrastructure.grpc.OrchestratorGraphGrpcClient? = null,
 ) {
 
     private val apiBaseUrl = baseUrl.trimEnd('/')
@@ -102,6 +103,9 @@ class PythonOrchestratorClient(
 
     private fun controlGrpcOrThrow(): com.jervis.infrastructure.grpc.OrchestratorControlGrpcClient =
         controlGrpc ?: error("OrchestratorControlGrpcClient not wired — see RpcClientsConfig")
+
+    private fun graphGrpcOrThrow(): com.jervis.infrastructure.grpc.OrchestratorGraphGrpcClient =
+        graphGrpc ?: error("OrchestratorGraphGrpcClient not wired — see RpcClientsConfig")
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -187,24 +191,14 @@ class PythonOrchestratorClient(
      *
      * For master graph (taskId="master"), pass clientId to get client-filtered view.
      */
-    suspend fun getTaskGraph(taskId: String, clientId: String? = null): String? {
-        return try {
-            val url = if (clientId != null && taskId == "master") {
-                "$apiBaseUrl/graph/$taskId?client_id=$clientId"
-            } else {
-                "$apiBaseUrl/graph/$taskId"
-            }
-            val response = client.get(url)
-            if (response.status.value == 200) {
-                response.bodyAsText()
-            } else {
-                null
-            }
+    suspend fun getTaskGraph(taskId: String, clientId: String? = null): String? =
+        try {
+            val resp = graphGrpcOrThrow().getTaskGraph(taskId, clientId)
+            if (resp.found) resp.graphJson else null
         } catch (e: Exception) {
             logger.warn { "PYTHON_ORCHESTRATOR_GRAPH_FAIL: taskId=$taskId ${e.message}" }
             null
         }
-    }
 
     /**
      * Run idle maintenance on Python orchestrator.
@@ -212,24 +206,23 @@ class PythonOrchestratorClient(
      * Phase 1 (CPU-only): memory graph cleanup, thinking graph eviction, LQM drain, affair archival.
      * Phase 2 (GPU-light): KB dedup for one client (NORMAL priority, auto-preempted by CRITICAL).
      */
-    suspend fun runMaintenance(phase: Int = 1, clientId: String? = null): com.jervis.dto.maintenance.MaintenanceResultDto? {
-        val params = buildString {
-            append("phase=$phase")
-            if (clientId != null) append("&client_id=$clientId")
-        }
-        return try {
-            val response = client.post("$apiBaseUrl/maintenance/run?$params")
-            if (response.status.value == 200) {
-                response.body()
-            } else {
-                logger.debug { "MAINTENANCE: phase=$phase returned ${response.status}" }
-                null
-            }
+    suspend fun runMaintenance(phase: Int = 1, clientId: String? = null): com.jervis.dto.maintenance.MaintenanceResultDto? =
+        try {
+            val proto = graphGrpcOrThrow().runMaintenance(phase, clientId)
+            com.jervis.dto.maintenance.MaintenanceResultDto(
+                phase = proto.phase,
+                memRemoved = proto.memRemoved,
+                thinkingEvicted = proto.thinkingEvicted,
+                lqmDrained = proto.lqmDrained,
+                affairsArchived = proto.affairsArchived,
+                nextClientForPhase2 = proto.nextClientForPhase2.takeIf { it.isNotEmpty() },
+                clientId = proto.clientId.takeIf { it.isNotEmpty() },
+                findings = proto.findingsList,
+            )
         } catch (e: Exception) {
             logger.warn { "MAINTENANCE_FAIL: phase=$phase ${e.message}" }
             null
         }
-    }
 
     /**
      * Interrupt a running orchestration to allow higher-priority task to run.
