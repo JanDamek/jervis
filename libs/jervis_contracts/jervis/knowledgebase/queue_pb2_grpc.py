@@ -26,8 +26,8 @@ if _version_not_supported:
 
 
 class KnowledgeQueueServiceStub(object):
-    """KnowledgeQueueService — visibility into the asynchronous extraction /
-    ingest queue. Read-only for external consumers; items are added via
+    """KnowledgeQueueService — visibility into the asynchronous LLM extraction
+    queue. Read-only for external consumers; items are added via
     KnowledgeIngestService.IngestQueue.
     """
 
@@ -45,8 +45,8 @@ class KnowledgeQueueServiceStub(object):
 
 
 class KnowledgeQueueServiceServicer(object):
-    """KnowledgeQueueService — visibility into the asynchronous extraction /
-    ingest queue. Read-only for external consumers; items are added via
+    """KnowledgeQueueService — visibility into the asynchronous LLM extraction
+    queue. Read-only for external consumers; items are added via
     KnowledgeIngestService.IngestQueue.
     """
 
@@ -73,8 +73,8 @@ def add_KnowledgeQueueServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class KnowledgeQueueService(object):
-    """KnowledgeQueueService — visibility into the asynchronous extraction /
-    ingest queue. Read-only for external consumers; items are added via
+    """KnowledgeQueueService — visibility into the asynchronous LLM extraction
+    queue. Read-only for external consumers; items are added via
     KnowledgeIngestService.IngestQueue.
     """
 

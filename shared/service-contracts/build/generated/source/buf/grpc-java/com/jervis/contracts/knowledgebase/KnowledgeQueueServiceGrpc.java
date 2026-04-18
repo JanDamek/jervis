@@ -4,8 +4,8 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 
 /**
  * <pre>
- * KnowledgeQueueService — visibility into the asynchronous extraction /
- * ingest queue. Read-only for external consumers; items are added via
+ * KnowledgeQueueService — visibility into the asynchronous LLM extraction
+ * queue. Read-only for external consumers; items are added via
  * KnowledgeIngestService.IngestQueue.
  * </pre>
  */
@@ -109,8 +109,8 @@ public final class KnowledgeQueueServiceGrpc {
 
   /**
    * <pre>
-   * KnowledgeQueueService — visibility into the asynchronous extraction /
-   * ingest queue. Read-only for external consumers; items are added via
+   * KnowledgeQueueService — visibility into the asynchronous LLM extraction
+   * queue. Read-only for external consumers; items are added via
    * KnowledgeIngestService.IngestQueue.
    * </pre>
    */
@@ -127,8 +127,8 @@ public final class KnowledgeQueueServiceGrpc {
   /**
    * Base class for the server implementation of the service KnowledgeQueueService.
    * <pre>
-   * KnowledgeQueueService — visibility into the asynchronous extraction /
-   * ingest queue. Read-only for external consumers; items are added via
+   * KnowledgeQueueService — visibility into the asynchronous LLM extraction
+   * queue. Read-only for external consumers; items are added via
    * KnowledgeIngestService.IngestQueue.
    * </pre>
    */
@@ -143,8 +143,8 @@ public final class KnowledgeQueueServiceGrpc {
   /**
    * A stub to allow clients to do asynchronous rpc calls to service KnowledgeQueueService.
    * <pre>
-   * KnowledgeQueueService — visibility into the asynchronous extraction /
-   * ingest queue. Read-only for external consumers; items are added via
+   * KnowledgeQueueService — visibility into the asynchronous LLM extraction
+   * queue. Read-only for external consumers; items are added via
    * KnowledgeIngestService.IngestQueue.
    * </pre>
    */
@@ -173,8 +173,8 @@ public final class KnowledgeQueueServiceGrpc {
   /**
    * A stub to allow clients to do synchronous rpc calls to service KnowledgeQueueService.
    * <pre>
-   * KnowledgeQueueService — visibility into the asynchronous extraction /
-   * ingest queue. Read-only for external consumers; items are added via
+   * KnowledgeQueueService — visibility into the asynchronous LLM extraction
+   * queue. Read-only for external consumers; items are added via
    * KnowledgeIngestService.IngestQueue.
    * </pre>
    */
@@ -202,8 +202,8 @@ public final class KnowledgeQueueServiceGrpc {
   /**
    * A stub to allow clients to do limited synchronous rpc calls to service KnowledgeQueueService.
    * <pre>
-   * KnowledgeQueueService — visibility into the asynchronous extraction /
-   * ingest queue. Read-only for external consumers; items are added via
+   * KnowledgeQueueService — visibility into the asynchronous LLM extraction
+   * queue. Read-only for external consumers; items are added via
    * KnowledgeIngestService.IngestQueue.
    * </pre>
    */
@@ -231,8 +231,8 @@ public final class KnowledgeQueueServiceGrpc {
   /**
    * A stub to allow clients to do ListenableFuture-style rpc calls to service KnowledgeQueueService.
    * <pre>
-   * KnowledgeQueueService — visibility into the asynchronous extraction /
-   * ingest queue. Read-only for external consumers; items are added via
+   * KnowledgeQueueService — visibility into the asynchronous LLM extraction
+   * queue. Read-only for external consumers; items are added via
    * KnowledgeIngestService.IngestQueue.
    * </pre>
    */

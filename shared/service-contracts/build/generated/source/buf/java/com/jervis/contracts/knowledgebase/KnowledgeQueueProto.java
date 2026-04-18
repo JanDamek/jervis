@@ -41,6 +41,11 @@ public final class KnowledgeQueueProto extends com.google.protobuf.GeneratedFile
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_knowledgebase_QueueItem_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_knowledgebase_QueueStats_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_knowledgebase_QueueStats_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -54,18 +59,23 @@ public final class KnowledgeQueueProto extends com.google.protobuf.GeneratedFile
       "is.knowledgebase\032\031jervis/common/types.pr" +
       "oto\"M\n\020QueueListRequest\022*\n\003ctx\030\001 \001(\0132\035.j" +
       "ervis.common.RequestContext\022\r\n\005limit\030\002 \001" +
-      "(\005\"J\n\tQueueList\022.\n\005items\030\001 \003(\0132\037.jervis." +
-      "knowledgebase.QueueItem\022\r\n\005total\030\002 \001(\005\"\320" +
-      "\001\n\tQueueItem\022\n\n\002id\030\001 \001(\t\022\022\n\nsource_urn\030\002" +
-      " \001(\t\022\021\n\tclient_id\030\003 \001(\t\022\022\n\nproject_id\030\004 " +
-      "\001(\t\022\r\n\005state\030\005 \001(\t\022\023\n\013retry_count\030\006 \001(\005\022" +
-      "\030\n\020submitted_at_iso\030\007 \001(\t\022\026\n\016started_at_" +
-      "iso\030\010 \001(\t\022\027\n\017finished_at_iso\030\t \001(\t\022\r\n\005er" +
-      "ror\030\n \001(\t2m\n\025KnowledgeQueueService\022T\n\tLi" +
-      "stQueue\022&.jervis.knowledgebase.QueueList" +
-      "Request\032\037.jervis.knowledgebase.QueueList" +
-      "B;\n\"com.jervis.contracts.knowledgebaseB\023" +
-      "KnowledgeQueueProtoP\001b\006proto3"
+      "(\005\"l\n\tQueueList\022.\n\005items\030\001 \003(\0132\037.jervis." +
+      "knowledgebase.QueueItem\022/\n\005stats\030\002 \001(\0132 " +
+      ".jervis.knowledgebase.QueueStats\"\232\002\n\tQue" +
+      "ueItem\022\017\n\007task_id\030\001 \001(\t\022\022\n\nsource_urn\030\002 " +
+      "\001(\t\022\021\n\tclient_id\030\003 \001(\t\022\022\n\nproject_id\030\004 \001" +
+      "(\t\022\014\n\004kind\030\005 \001(\t\022\022\n\ncreated_at\030\006 \001(\t\022\016\n\006" +
+      "status\030\007 \001(\t\022\020\n\010attempts\030\010 \001(\005\022\020\n\010priori" +
+      "ty\030\t \001(\005\022\r\n\005error\030\n \001(\t\022\027\n\017last_attempt_" +
+      "at\030\013 \001(\t\022\021\n\tworker_id\030\014 \001(\t\022\030\n\020progress_" +
+      "current\030\r \001(\005\022\026\n\016progress_total\030\016 \001(\005\"Q\n" +
+      "\nQueueStats\022\r\n\005total\030\001 \001(\005\022\017\n\007pending\030\002 " +
+      "\001(\005\022\023\n\013in_progress\030\003 \001(\005\022\016\n\006failed\030\004 \001(\005" +
+      "2m\n\025KnowledgeQueueService\022T\n\tListQueue\022&" +
+      ".jervis.knowledgebase.QueueListRequest\032\037" +
+      ".jervis.knowledgebase.QueueListB;\n\"com.j" +
+      "ervis.contracts.knowledgebaseB\023Knowledge" +
+      "QueueProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -83,13 +93,19 @@ public final class KnowledgeQueueProto extends com.google.protobuf.GeneratedFile
     internal_static_jervis_knowledgebase_QueueList_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_knowledgebase_QueueList_descriptor,
-        new java.lang.String[] { "Items", "Total", });
+        new java.lang.String[] { "Items", "Stats", });
     internal_static_jervis_knowledgebase_QueueItem_descriptor =
       getDescriptor().getMessageTypes().get(2);
     internal_static_jervis_knowledgebase_QueueItem_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_knowledgebase_QueueItem_descriptor,
-        new java.lang.String[] { "Id", "SourceUrn", "ClientId", "ProjectId", "State", "RetryCount", "SubmittedAtIso", "StartedAtIso", "FinishedAtIso", "Error", });
+        new java.lang.String[] { "TaskId", "SourceUrn", "ClientId", "ProjectId", "Kind", "CreatedAt", "Status", "Attempts", "Priority", "Error", "LastAttemptAt", "WorkerId", "ProgressCurrent", "ProgressTotal", });
+    internal_static_jervis_knowledgebase_QueueStats_descriptor =
+      getDescriptor().getMessageTypes().get(3);
+    internal_static_jervis_knowledgebase_QueueStats_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_knowledgebase_QueueStats_descriptor,
+        new java.lang.String[] { "Total", "Pending", "InProgress", "Failed", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

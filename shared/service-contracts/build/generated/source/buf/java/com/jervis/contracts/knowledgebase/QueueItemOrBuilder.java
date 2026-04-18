@@ -11,16 +11,16 @@ public interface QueueItemOrBuilder extends
     com.google.protobuf.MessageOrBuilder {
 
   /**
-   * <code>string id = 1;</code>
-   * @return The id.
+   * <code>string task_id = 1;</code>
+   * @return The taskId.
    */
-  java.lang.String getId();
+  java.lang.String getTaskId();
   /**
-   * <code>string id = 1;</code>
-   * @return The bytes for id.
+   * <code>string task_id = 1;</code>
+   * @return The bytes for taskId.
    */
   com.google.protobuf.ByteString
-      getIdBytes();
+      getTaskIdBytes();
 
   /**
    * <code>string source_urn = 2;</code>
@@ -47,11 +47,19 @@ public interface QueueItemOrBuilder extends
       getClientIdBytes();
 
   /**
+   * <pre>
+   * empty when not scoped
+   * </pre>
+   *
    * <code>string project_id = 4;</code>
    * @return The projectId.
    */
   java.lang.String getProjectId();
   /**
+   * <pre>
+   * empty when not scoped
+   * </pre>
+   *
    * <code>string project_id = 4;</code>
    * @return The bytes for projectId.
    */
@@ -59,66 +67,68 @@ public interface QueueItemOrBuilder extends
       getProjectIdBytes();
 
   /**
+   * <code>string kind = 5;</code>
+   * @return The kind.
+   */
+  java.lang.String getKind();
+  /**
+   * <code>string kind = 5;</code>
+   * @return The bytes for kind.
+   */
+  com.google.protobuf.ByteString
+      getKindBytes();
+
+  /**
    * <pre>
-   * queued | running | done | failed
+   * ISO-8601
    * </pre>
    *
-   * <code>string state = 5;</code>
-   * @return The state.
+   * <code>string created_at = 6;</code>
+   * @return The createdAt.
    */
-  java.lang.String getState();
+  java.lang.String getCreatedAt();
   /**
    * <pre>
-   * queued | running | done | failed
+   * ISO-8601
    * </pre>
    *
-   * <code>string state = 5;</code>
-   * @return The bytes for state.
+   * <code>string created_at = 6;</code>
+   * @return The bytes for createdAt.
    */
   com.google.protobuf.ByteString
-      getStateBytes();
+      getCreatedAtBytes();
 
   /**
-   * <code>int32 retry_count = 6;</code>
-   * @return The retryCount.
+   * <pre>
+   * pending | in_progress | failed | done
+   * </pre>
+   *
+   * <code>string status = 7;</code>
+   * @return The status.
    */
-  int getRetryCount();
-
+  java.lang.String getStatus();
   /**
-   * <code>string submitted_at_iso = 7;</code>
-   * @return The submittedAtIso.
-   */
-  java.lang.String getSubmittedAtIso();
-  /**
-   * <code>string submitted_at_iso = 7;</code>
-   * @return The bytes for submittedAtIso.
+   * <pre>
+   * pending | in_progress | failed | done
+   * </pre>
+   *
+   * <code>string status = 7;</code>
+   * @return The bytes for status.
    */
   com.google.protobuf.ByteString
-      getSubmittedAtIsoBytes();
+      getStatusBytes();
 
   /**
-   * <code>string started_at_iso = 8;</code>
-   * @return The startedAtIso.
+   * <code>int32 attempts = 8;</code>
+   * @return The attempts.
    */
-  java.lang.String getStartedAtIso();
-  /**
-   * <code>string started_at_iso = 8;</code>
-   * @return The bytes for startedAtIso.
-   */
-  com.google.protobuf.ByteString
-      getStartedAtIsoBytes();
+  int getAttempts();
 
   /**
-   * <code>string finished_at_iso = 9;</code>
-   * @return The finishedAtIso.
+   * <code>int32 priority = 9;</code>
+   * @return The priority.
    */
-  java.lang.String getFinishedAtIso();
-  /**
-   * <code>string finished_at_iso = 9;</code>
-   * @return The bytes for finishedAtIso.
-   */
-  com.google.protobuf.ByteString
-      getFinishedAtIsoBytes();
+  int getPriority();
 
   /**
    * <code>string error = 10;</code>
@@ -131,4 +141,48 @@ public interface QueueItemOrBuilder extends
    */
   com.google.protobuf.ByteString
       getErrorBytes();
+
+  /**
+   * <pre>
+   * ISO-8601, empty when never attempted
+   * </pre>
+   *
+   * <code>string last_attempt_at = 11;</code>
+   * @return The lastAttemptAt.
+   */
+  java.lang.String getLastAttemptAt();
+  /**
+   * <pre>
+   * ISO-8601, empty when never attempted
+   * </pre>
+   *
+   * <code>string last_attempt_at = 11;</code>
+   * @return The bytes for lastAttemptAt.
+   */
+  com.google.protobuf.ByteString
+      getLastAttemptAtBytes();
+
+  /**
+   * <code>string worker_id = 12;</code>
+   * @return The workerId.
+   */
+  java.lang.String getWorkerId();
+  /**
+   * <code>string worker_id = 12;</code>
+   * @return The bytes for workerId.
+   */
+  com.google.protobuf.ByteString
+      getWorkerIdBytes();
+
+  /**
+   * <code>int32 progress_current = 13;</code>
+   * @return The progressCurrent.
+   */
+  int getProgressCurrent();
+
+  /**
+   * <code>int32 progress_total = 14;</code>
+   * @return The progressTotal.
+   */
+  int getProgressTotal();
 }

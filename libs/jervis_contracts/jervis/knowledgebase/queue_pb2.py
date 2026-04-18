@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n jervis/knowledgebase/queue.proto\x12\x14jervis.knowledgebase\x1a\x19jervis/common/types.proto\"M\n\x10QueueListRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\r\n\x05limit\x18\x02 \x01(\x05\"J\n\tQueueList\x12.\n\x05items\x18\x01 \x03(\x0b\x32\x1f.jervis.knowledgebase.QueueItem\x12\r\n\x05total\x18\x02 \x01(\x05\"\xd0\x01\n\tQueueItem\x12\n\n\x02id\x18\x01 \x01(\t\x12\x12\n\nsource_urn\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\x12\x12\n\nproject_id\x18\x04 \x01(\t\x12\r\n\x05state\x18\x05 \x01(\t\x12\x13\n\x0bretry_count\x18\x06 \x01(\x05\x12\x18\n\x10submitted_at_iso\x18\x07 \x01(\t\x12\x16\n\x0estarted_at_iso\x18\x08 \x01(\t\x12\x17\n\x0f\x66inished_at_iso\x18\t \x01(\t\x12\r\n\x05\x65rror\x18\n \x01(\t2m\n\x15KnowledgeQueueService\x12T\n\tListQueue\x12&.jervis.knowledgebase.QueueListRequest\x1a\x1f.jervis.knowledgebase.QueueListB;\n\"com.jervis.contracts.knowledgebaseB\x13KnowledgeQueueProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n jervis/knowledgebase/queue.proto\x12\x14jervis.knowledgebase\x1a\x19jervis/common/types.proto\"M\n\x10QueueListRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\r\n\x05limit\x18\x02 \x01(\x05\"l\n\tQueueList\x12.\n\x05items\x18\x01 \x03(\x0b\x32\x1f.jervis.knowledgebase.QueueItem\x12/\n\x05stats\x18\x02 \x01(\x0b\x32 .jervis.knowledgebase.QueueStats\"\x9a\x02\n\tQueueItem\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12\x12\n\nsource_urn\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\x12\x12\n\nproject_id\x18\x04 \x01(\t\x12\x0c\n\x04kind\x18\x05 \x01(\t\x12\x12\n\ncreated_at\x18\x06 \x01(\t\x12\x0e\n\x06status\x18\x07 \x01(\t\x12\x10\n\x08\x61ttempts\x18\x08 \x01(\x05\x12\x10\n\x08priority\x18\t \x01(\x05\x12\r\n\x05\x65rror\x18\n \x01(\t\x12\x17\n\x0flast_attempt_at\x18\x0b \x01(\t\x12\x11\n\tworker_id\x18\x0c \x01(\t\x12\x18\n\x10progress_current\x18\r \x01(\x05\x12\x16\n\x0eprogress_total\x18\x0e \x01(\x05\"Q\n\nQueueStats\x12\r\n\x05total\x18\x01 \x01(\x05\x12\x0f\n\x07pending\x18\x02 \x01(\x05\x12\x13\n\x0bin_progress\x18\x03 \x01(\x05\x12\x0e\n\x06\x66\x61iled\x18\x04 \x01(\x05\x32m\n\x15KnowledgeQueueService\x12T\n\tListQueue\x12&.jervis.knowledgebase.QueueListRequest\x1a\x1f.jervis.knowledgebase.QueueListB;\n\"com.jervis.contracts.knowledgebaseB\x13KnowledgeQueueProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,9 +36,11 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_QUEUELISTREQUEST']._serialized_start=85
   _globals['_QUEUELISTREQUEST']._serialized_end=162
   _globals['_QUEUELIST']._serialized_start=164
-  _globals['_QUEUELIST']._serialized_end=238
-  _globals['_QUEUEITEM']._serialized_start=241
-  _globals['_QUEUEITEM']._serialized_end=449
-  _globals['_KNOWLEDGEQUEUESERVICE']._serialized_start=451
-  _globals['_KNOWLEDGEQUEUESERVICE']._serialized_end=560
+  _globals['_QUEUELIST']._serialized_end=272
+  _globals['_QUEUEITEM']._serialized_start=275
+  _globals['_QUEUEITEM']._serialized_end=557
+  _globals['_QUEUESTATS']._serialized_start=559
+  _globals['_QUEUESTATS']._serialized_end=640
+  _globals['_KNOWLEDGEQUEUESERVICE']._serialized_start=642
+  _globals['_KNOWLEDGEQUEUESERVICE']._serialized_end=751
 # @@protoc_insertion_point(module_scope)

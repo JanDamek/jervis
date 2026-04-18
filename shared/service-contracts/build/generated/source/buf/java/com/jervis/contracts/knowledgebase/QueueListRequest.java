@@ -73,6 +73,10 @@ private static final long serialVersionUID = 0L;
   public static final int LIMIT_FIELD_NUMBER = 2;
   private int limit_ = 0;
   /**
+   * <pre>
+   * default 200 when 0
+   * </pre>
+   *
    * <code>int32 limit = 2;</code>
    * @return The limit.
    */
@@ -542,6 +546,10 @@ private static final long serialVersionUID = 0L;
 
     private int limit_ ;
     /**
+     * <pre>
+     * default 200 when 0
+     * </pre>
+     *
      * <code>int32 limit = 2;</code>
      * @return The limit.
      */
@@ -550,6 +558,10 @@ private static final long serialVersionUID = 0L;
       return limit_;
     }
     /**
+     * <pre>
+     * default 200 when 0
+     * </pre>
+     *
      * <code>int32 limit = 2;</code>
      * @param value The limit to set.
      * @return This builder for chaining.
@@ -562,6 +574,10 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
+     * <pre>
+     * default 200 when 0
+     * </pre>
+     *
      * <code>int32 limit = 2;</code>
      * @return This builder for chaining.
      */

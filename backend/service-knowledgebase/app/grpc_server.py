@@ -18,6 +18,7 @@ import grpc
 from grpc_reflection.v1alpha import reflection
 
 from jervis.knowledgebase import maintenance_pb2, maintenance_pb2_grpc
+from jervis.knowledgebase import queue_pb2, queue_pb2_grpc
 from jervis_contracts.interceptors import ServerContextInterceptor
 
 logger = logging.getLogger("kb.grpc")
@@ -142,6 +143,60 @@ class MaintenanceServicer(maintenance_pb2_grpc.KnowledgeMaintenanceServiceServic
         )
 
 
+class QueueServicer(queue_pb2_grpc.KnowledgeQueueServiceServicer):
+    """KnowledgeQueueService implementation — LLM extraction queue listing.
+
+    The queue is only present on write-mode pods (read-mode pods skip the
+    SQLite-backed LLMExtractionQueue). For read-mode requests we return an
+    empty list + zeroed stats so UI polling does not fail cross-mode.
+    """
+
+    async def ListQueue(
+        self,
+        request: queue_pb2.QueueListRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> queue_pb2.QueueList:
+        from app.api import routes as api_routes
+
+        if api_routes.service is None:
+            return queue_pb2.QueueList(items=[], stats=queue_pb2.QueueStats())
+
+        queue = api_routes.service.extraction_queue
+        if queue is None:
+            return queue_pb2.QueueList(items=[], stats=queue_pb2.QueueStats())
+
+        limit = request.limit or 200
+        raw_items = await queue.list_queue(limit=limit)
+        raw_stats = await queue.stats()
+
+        items = [
+            queue_pb2.QueueItem(
+                task_id=str(it.get("task_id", "")),
+                source_urn=str(it.get("source_urn", "")),
+                client_id=str(it.get("client_id", "")),
+                project_id=str(it.get("project_id") or ""),
+                kind=str(it.get("kind") or ""),
+                created_at=str(it.get("created_at") or ""),
+                status=str(it.get("status") or ""),
+                attempts=int(it.get("attempts", 0)),
+                priority=int(it.get("priority", 4)),
+                error=str(it.get("error") or ""),
+                last_attempt_at=str(it.get("last_attempt_at") or ""),
+                worker_id=str(it.get("worker_id") or ""),
+                progress_current=int(it.get("progress_current", 0)),
+                progress_total=int(it.get("progress_total", 0)),
+            )
+            for it in (raw_items or [])
+        ]
+        stats = queue_pb2.QueueStats(
+            total=int(raw_stats.get("total", 0)),
+            pending=int(raw_stats.get("pending", 0)),
+            in_progress=int(raw_stats.get("in_progress", 0)),
+            failed=int(raw_stats.get("failed", 0)),
+        )
+        return queue_pb2.QueueList(items=items, stats=stats)
+
+
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for later cleanup.
 
@@ -153,14 +208,22 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     maintenance_pb2_grpc.add_KnowledgeMaintenanceServiceServicer_to_server(
         MaintenanceServicer(), server
     )
+    queue_pb2_grpc.add_KnowledgeQueueServiceServicer_to_server(
+        QueueServicer(), server
+    )
 
     service_names = (
         maintenance_pb2.DESCRIPTOR.services_by_name["KnowledgeMaintenanceService"].full_name,
+        queue_pb2.DESCRIPTOR.services_by_name["KnowledgeQueueService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
 
     server.add_insecure_port(f"[::]:{port}")
     await server.start()
-    logger.info("gRPC KB services listening on :%d (KnowledgeMaintenanceService)", port)
+    logger.info(
+        "gRPC KB services listening on :%d "
+        "(KnowledgeMaintenanceService + KnowledgeQueueService)",
+        port,
+    )
     return server

@@ -1,6 +1,7 @@
 package com.jervis.infrastructure.llm
 
 import com.jervis.infrastructure.grpc.KbMaintenanceGrpcClient
+import com.jervis.infrastructure.grpc.KbQueueGrpcClient
 import com.jervis.infrastructure.llm.KnowledgeServiceRestClient
 import com.jervis.common.types.ClientId
 import com.jervis.knowledgebase.KnowledgeService
@@ -59,6 +60,7 @@ class KnowledgeServiceRestClient(
     private val baseUrl: String,
     private val callbackBaseUrl: String = "",
     private val kbMaintenanceGrpc: KbMaintenanceGrpcClient? = null,
+    private val kbQueueGrpc: KbQueueGrpcClient? = null,
 ) : KnowledgeService {
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -535,8 +537,38 @@ class KnowledgeServiceRestClient(
     }
 
     suspend fun getExtractionQueue(limit: Int = 200): KbExtractionQueueResponse {
+        val grpc = kbQueueGrpc ?: run {
+            logger.warn { "KB queue gRPC client not wired" }
+            return KbExtractionQueueResponse(items = emptyList(), stats = KbQueueStats())
+        }
         return try {
-            client.get("$apiBaseUrl/queue?limit=$limit").body()
+            val proto = grpc.listQueue(limit)
+            KbExtractionQueueResponse(
+                items = proto.itemsList.map {
+                    KbQueueItem(
+                        taskId = it.taskId,
+                        sourceUrn = it.sourceUrn,
+                        clientId = it.clientId,
+                        projectId = it.projectId.takeIf { s -> s.isNotEmpty() },
+                        kind = it.kind.takeIf { s -> s.isNotEmpty() },
+                        createdAt = it.createdAt,
+                        status = it.status,
+                        attempts = it.attempts,
+                        priority = it.priority,
+                        error = it.error.takeIf { s -> s.isNotEmpty() },
+                        lastAttemptAt = it.lastAttemptAt.takeIf { s -> s.isNotEmpty() },
+                        workerId = it.workerId.takeIf { s -> s.isNotEmpty() },
+                        progressCurrent = it.progressCurrent,
+                        progressTotal = it.progressTotal,
+                    )
+                },
+                stats = KbQueueStats(
+                    total = proto.stats.total,
+                    pending = proto.stats.pending,
+                    inProgress = proto.stats.inProgress,
+                    failed = proto.stats.failed,
+                ),
+            )
         } catch (e: Exception) {
             logger.warn(e) { "Failed to fetch KB extraction queue: ${e.message}" }
             KbExtractionQueueResponse(items = emptyList(), stats = KbQueueStats())

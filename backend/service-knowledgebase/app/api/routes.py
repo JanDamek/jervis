@@ -286,16 +286,8 @@ async def joern_scan(request: JoernScanRequest):
 write_router = APIRouter()
 
 
-@write_router.get("/queue")
-async def get_extraction_queue(limit: int = 100):
-    """Return extraction queue contents for UI display."""
-    queue = service.extraction_queue
-    if queue is None:
-        return {"items": [], "stats": {"total": 0, "pending": 0, "in_progress": 0, "failed": 0}}
-
-    items = await queue.list_queue(limit=limit)
-    stats = await queue.stats()
-    return {"items": items, "stats": stats}
+# /queue migrated to gRPC (KnowledgeQueueService.ListQueue on :5501 —
+# see app/grpc_server.py).
 
 
 @write_router.post("/ingest", response_model=IngestResult)

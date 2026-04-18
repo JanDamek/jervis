@@ -35,8 +35,17 @@ public interface QueueListOrBuilder extends
       int index);
 
   /**
-   * <code>int32 total = 2;</code>
-   * @return The total.
+   * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+   * @return Whether the stats field is set.
    */
-  int getTotal();
+  boolean hasStats();
+  /**
+   * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+   * @return The stats.
+   */
+  com.jervis.contracts.knowledgebase.QueueStats getStats();
+  /**
+   * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+   */
+  com.jervis.contracts.knowledgebase.QueueStatsOrBuilder getStatsOrBuilder();
 }

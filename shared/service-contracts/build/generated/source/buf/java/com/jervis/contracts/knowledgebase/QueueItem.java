@@ -6,6 +6,10 @@
 package com.jervis.contracts.knowledgebase;
 
 /**
+ * <pre>
+ * QueueItem mirrors LLMExtractionQueue item shape on the Python side.
+ * </pre>
+ *
  * Protobuf type {@code jervis.knowledgebase.QueueItem}
  */
 @com.google.protobuf.Generated
@@ -28,15 +32,16 @@ private static final long serialVersionUID = 0L;
     super(builder);
   }
   private QueueItem() {
-    id_ = "";
+    taskId_ = "";
     sourceUrn_ = "";
     clientId_ = "";
     projectId_ = "";
-    state_ = "";
-    submittedAtIso_ = "";
-    startedAtIso_ = "";
-    finishedAtIso_ = "";
+    kind_ = "";
+    createdAt_ = "";
+    status_ = "";
     error_ = "";
+    lastAttemptAt_ = "";
+    workerId_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -52,39 +57,39 @@ private static final long serialVersionUID = 0L;
             com.jervis.contracts.knowledgebase.QueueItem.class, com.jervis.contracts.knowledgebase.QueueItem.Builder.class);
   }
 
-  public static final int ID_FIELD_NUMBER = 1;
+  public static final int TASK_ID_FIELD_NUMBER = 1;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object id_ = "";
+  private volatile java.lang.Object taskId_ = "";
   /**
-   * <code>string id = 1;</code>
-   * @return The id.
+   * <code>string task_id = 1;</code>
+   * @return The taskId.
    */
   @java.lang.Override
-  public java.lang.String getId() {
-    java.lang.Object ref = id_;
+  public java.lang.String getTaskId() {
+    java.lang.Object ref = taskId_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      id_ = s;
+      taskId_ = s;
       return s;
     }
   }
   /**
-   * <code>string id = 1;</code>
-   * @return The bytes for id.
+   * <code>string task_id = 1;</code>
+   * @return The bytes for taskId.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getIdBytes() {
-    java.lang.Object ref = id_;
+      getTaskIdBytes() {
+    java.lang.Object ref = taskId_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      id_ = b;
+      taskId_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
@@ -173,6 +178,10 @@ private static final long serialVersionUID = 0L;
   @SuppressWarnings("serial")
   private volatile java.lang.Object projectId_ = "";
   /**
+   * <pre>
+   * empty when not scoped
+   * </pre>
+   *
    * <code>string project_id = 4;</code>
    * @return The projectId.
    */
@@ -190,6 +199,10 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
+   * <pre>
+   * empty when not scoped
+   * </pre>
+   *
    * <code>string project_id = 4;</code>
    * @return The bytes for projectId.
    */
@@ -208,179 +221,159 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int STATE_FIELD_NUMBER = 5;
+  public static final int KIND_FIELD_NUMBER = 5;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object state_ = "";
+  private volatile java.lang.Object kind_ = "";
+  /**
+   * <code>string kind = 5;</code>
+   * @return The kind.
+   */
+  @java.lang.Override
+  public java.lang.String getKind() {
+    java.lang.Object ref = kind_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      kind_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string kind = 5;</code>
+   * @return The bytes for kind.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getKindBytes() {
+    java.lang.Object ref = kind_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      kind_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int CREATED_AT_FIELD_NUMBER = 6;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object createdAt_ = "";
   /**
    * <pre>
-   * queued | running | done | failed
+   * ISO-8601
    * </pre>
    *
-   * <code>string state = 5;</code>
-   * @return The state.
+   * <code>string created_at = 6;</code>
+   * @return The createdAt.
    */
   @java.lang.Override
-  public java.lang.String getState() {
-    java.lang.Object ref = state_;
+  public java.lang.String getCreatedAt() {
+    java.lang.Object ref = createdAt_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      state_ = s;
+      createdAt_ = s;
       return s;
     }
   }
   /**
    * <pre>
-   * queued | running | done | failed
+   * ISO-8601
    * </pre>
    *
-   * <code>string state = 5;</code>
-   * @return The bytes for state.
+   * <code>string created_at = 6;</code>
+   * @return The bytes for createdAt.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getStateBytes() {
-    java.lang.Object ref = state_;
+      getCreatedAtBytes() {
+    java.lang.Object ref = createdAt_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      state_ = b;
+      createdAt_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
     }
   }
 
-  public static final int RETRY_COUNT_FIELD_NUMBER = 6;
-  private int retryCount_ = 0;
-  /**
-   * <code>int32 retry_count = 6;</code>
-   * @return The retryCount.
-   */
-  @java.lang.Override
-  public int getRetryCount() {
-    return retryCount_;
-  }
-
-  public static final int SUBMITTED_AT_ISO_FIELD_NUMBER = 7;
+  public static final int STATUS_FIELD_NUMBER = 7;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object submittedAtIso_ = "";
+  private volatile java.lang.Object status_ = "";
   /**
-   * <code>string submitted_at_iso = 7;</code>
-   * @return The submittedAtIso.
+   * <pre>
+   * pending | in_progress | failed | done
+   * </pre>
+   *
+   * <code>string status = 7;</code>
+   * @return The status.
    */
   @java.lang.Override
-  public java.lang.String getSubmittedAtIso() {
-    java.lang.Object ref = submittedAtIso_;
+  public java.lang.String getStatus() {
+    java.lang.Object ref = status_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      submittedAtIso_ = s;
+      status_ = s;
       return s;
     }
   }
   /**
-   * <code>string submitted_at_iso = 7;</code>
-   * @return The bytes for submittedAtIso.
+   * <pre>
+   * pending | in_progress | failed | done
+   * </pre>
+   *
+   * <code>string status = 7;</code>
+   * @return The bytes for status.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getSubmittedAtIsoBytes() {
-    java.lang.Object ref = submittedAtIso_;
+      getStatusBytes() {
+    java.lang.Object ref = status_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      submittedAtIso_ = b;
+      status_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
     }
   }
 
-  public static final int STARTED_AT_ISO_FIELD_NUMBER = 8;
-  @SuppressWarnings("serial")
-  private volatile java.lang.Object startedAtIso_ = "";
+  public static final int ATTEMPTS_FIELD_NUMBER = 8;
+  private int attempts_ = 0;
   /**
-   * <code>string started_at_iso = 8;</code>
-   * @return The startedAtIso.
+   * <code>int32 attempts = 8;</code>
+   * @return The attempts.
    */
   @java.lang.Override
-  public java.lang.String getStartedAtIso() {
-    java.lang.Object ref = startedAtIso_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
-    } else {
-      com.google.protobuf.ByteString bs = 
-          (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
-      startedAtIso_ = s;
-      return s;
-    }
-  }
-  /**
-   * <code>string started_at_iso = 8;</code>
-   * @return The bytes for startedAtIso.
-   */
-  @java.lang.Override
-  public com.google.protobuf.ByteString
-      getStartedAtIsoBytes() {
-    java.lang.Object ref = startedAtIso_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
-          com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
-      startedAtIso_ = b;
-      return b;
-    } else {
-      return (com.google.protobuf.ByteString) ref;
-    }
+  public int getAttempts() {
+    return attempts_;
   }
 
-  public static final int FINISHED_AT_ISO_FIELD_NUMBER = 9;
-  @SuppressWarnings("serial")
-  private volatile java.lang.Object finishedAtIso_ = "";
+  public static final int PRIORITY_FIELD_NUMBER = 9;
+  private int priority_ = 0;
   /**
-   * <code>string finished_at_iso = 9;</code>
-   * @return The finishedAtIso.
+   * <code>int32 priority = 9;</code>
+   * @return The priority.
    */
   @java.lang.Override
-  public java.lang.String getFinishedAtIso() {
-    java.lang.Object ref = finishedAtIso_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
-    } else {
-      com.google.protobuf.ByteString bs = 
-          (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
-      finishedAtIso_ = s;
-      return s;
-    }
-  }
-  /**
-   * <code>string finished_at_iso = 9;</code>
-   * @return The bytes for finishedAtIso.
-   */
-  @java.lang.Override
-  public com.google.protobuf.ByteString
-      getFinishedAtIsoBytes() {
-    java.lang.Object ref = finishedAtIso_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
-          com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
-      finishedAtIso_ = b;
-      return b;
-    } else {
-      return (com.google.protobuf.ByteString) ref;
-    }
+  public int getPriority() {
+    return priority_;
   }
 
   public static final int ERROR_FIELD_NUMBER = 10;
@@ -422,6 +415,114 @@ private static final long serialVersionUID = 0L;
     }
   }
 
+  public static final int LAST_ATTEMPT_AT_FIELD_NUMBER = 11;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object lastAttemptAt_ = "";
+  /**
+   * <pre>
+   * ISO-8601, empty when never attempted
+   * </pre>
+   *
+   * <code>string last_attempt_at = 11;</code>
+   * @return The lastAttemptAt.
+   */
+  @java.lang.Override
+  public java.lang.String getLastAttemptAt() {
+    java.lang.Object ref = lastAttemptAt_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      lastAttemptAt_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * ISO-8601, empty when never attempted
+   * </pre>
+   *
+   * <code>string last_attempt_at = 11;</code>
+   * @return The bytes for lastAttemptAt.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getLastAttemptAtBytes() {
+    java.lang.Object ref = lastAttemptAt_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      lastAttemptAt_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int WORKER_ID_FIELD_NUMBER = 12;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object workerId_ = "";
+  /**
+   * <code>string worker_id = 12;</code>
+   * @return The workerId.
+   */
+  @java.lang.Override
+  public java.lang.String getWorkerId() {
+    java.lang.Object ref = workerId_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      workerId_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string worker_id = 12;</code>
+   * @return The bytes for workerId.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getWorkerIdBytes() {
+    java.lang.Object ref = workerId_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      workerId_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int PROGRESS_CURRENT_FIELD_NUMBER = 13;
+  private int progressCurrent_ = 0;
+  /**
+   * <code>int32 progress_current = 13;</code>
+   * @return The progressCurrent.
+   */
+  @java.lang.Override
+  public int getProgressCurrent() {
+    return progressCurrent_;
+  }
+
+  public static final int PROGRESS_TOTAL_FIELD_NUMBER = 14;
+  private int progressTotal_ = 0;
+  /**
+   * <code>int32 progress_total = 14;</code>
+   * @return The progressTotal.
+   */
+  @java.lang.Override
+  public int getProgressTotal() {
+    return progressTotal_;
+  }
+
   private byte memoizedIsInitialized = -1;
   @java.lang.Override
   public final boolean isInitialized() {
@@ -436,8 +537,8 @@ private static final long serialVersionUID = 0L;
   @java.lang.Override
   public void writeTo(com.google.protobuf.CodedOutputStream output)
                       throws java.io.IOException {
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(id_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 1, id_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(taskId_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 1, taskId_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(sourceUrn_)) {
       com.google.protobuf.GeneratedMessage.writeString(output, 2, sourceUrn_);
@@ -448,23 +549,35 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(projectId_)) {
       com.google.protobuf.GeneratedMessage.writeString(output, 4, projectId_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(state_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 5, state_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(kind_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 5, kind_);
     }
-    if (retryCount_ != 0) {
-      output.writeInt32(6, retryCount_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(createdAt_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 6, createdAt_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(submittedAtIso_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 7, submittedAtIso_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(status_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 7, status_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(startedAtIso_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 8, startedAtIso_);
+    if (attempts_ != 0) {
+      output.writeInt32(8, attempts_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(finishedAtIso_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 9, finishedAtIso_);
+    if (priority_ != 0) {
+      output.writeInt32(9, priority_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(error_)) {
       com.google.protobuf.GeneratedMessage.writeString(output, 10, error_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(lastAttemptAt_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 11, lastAttemptAt_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(workerId_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 12, workerId_);
+    }
+    if (progressCurrent_ != 0) {
+      output.writeInt32(13, progressCurrent_);
+    }
+    if (progressTotal_ != 0) {
+      output.writeInt32(14, progressTotal_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -475,8 +588,8 @@ private static final long serialVersionUID = 0L;
     if (size != -1) return size;
 
     size = 0;
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(id_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(1, id_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(taskId_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(1, taskId_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(sourceUrn_)) {
       size += com.google.protobuf.GeneratedMessage.computeStringSize(2, sourceUrn_);
@@ -487,24 +600,39 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(projectId_)) {
       size += com.google.protobuf.GeneratedMessage.computeStringSize(4, projectId_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(state_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(5, state_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(kind_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(5, kind_);
     }
-    if (retryCount_ != 0) {
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(createdAt_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(6, createdAt_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(status_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(7, status_);
+    }
+    if (attempts_ != 0) {
       size += com.google.protobuf.CodedOutputStream
-        .computeInt32Size(6, retryCount_);
+        .computeInt32Size(8, attempts_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(submittedAtIso_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(7, submittedAtIso_);
-    }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(startedAtIso_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(8, startedAtIso_);
-    }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(finishedAtIso_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(9, finishedAtIso_);
+    if (priority_ != 0) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeInt32Size(9, priority_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(error_)) {
       size += com.google.protobuf.GeneratedMessage.computeStringSize(10, error_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(lastAttemptAt_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(11, lastAttemptAt_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(workerId_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(12, workerId_);
+    }
+    if (progressCurrent_ != 0) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeInt32Size(13, progressCurrent_);
+    }
+    if (progressTotal_ != 0) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeInt32Size(14, progressTotal_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -521,26 +649,34 @@ private static final long serialVersionUID = 0L;
     }
     com.jervis.contracts.knowledgebase.QueueItem other = (com.jervis.contracts.knowledgebase.QueueItem) obj;
 
-    if (!getId()
-        .equals(other.getId())) return false;
+    if (!getTaskId()
+        .equals(other.getTaskId())) return false;
     if (!getSourceUrn()
         .equals(other.getSourceUrn())) return false;
     if (!getClientId()
         .equals(other.getClientId())) return false;
     if (!getProjectId()
         .equals(other.getProjectId())) return false;
-    if (!getState()
-        .equals(other.getState())) return false;
-    if (getRetryCount()
-        != other.getRetryCount()) return false;
-    if (!getSubmittedAtIso()
-        .equals(other.getSubmittedAtIso())) return false;
-    if (!getStartedAtIso()
-        .equals(other.getStartedAtIso())) return false;
-    if (!getFinishedAtIso()
-        .equals(other.getFinishedAtIso())) return false;
+    if (!getKind()
+        .equals(other.getKind())) return false;
+    if (!getCreatedAt()
+        .equals(other.getCreatedAt())) return false;
+    if (!getStatus()
+        .equals(other.getStatus())) return false;
+    if (getAttempts()
+        != other.getAttempts()) return false;
+    if (getPriority()
+        != other.getPriority()) return false;
     if (!getError()
         .equals(other.getError())) return false;
+    if (!getLastAttemptAt()
+        .equals(other.getLastAttemptAt())) return false;
+    if (!getWorkerId()
+        .equals(other.getWorkerId())) return false;
+    if (getProgressCurrent()
+        != other.getProgressCurrent()) return false;
+    if (getProgressTotal()
+        != other.getProgressTotal()) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -552,26 +688,34 @@ private static final long serialVersionUID = 0L;
     }
     int hash = 41;
     hash = (19 * hash) + getDescriptor().hashCode();
-    hash = (37 * hash) + ID_FIELD_NUMBER;
-    hash = (53 * hash) + getId().hashCode();
+    hash = (37 * hash) + TASK_ID_FIELD_NUMBER;
+    hash = (53 * hash) + getTaskId().hashCode();
     hash = (37 * hash) + SOURCE_URN_FIELD_NUMBER;
     hash = (53 * hash) + getSourceUrn().hashCode();
     hash = (37 * hash) + CLIENT_ID_FIELD_NUMBER;
     hash = (53 * hash) + getClientId().hashCode();
     hash = (37 * hash) + PROJECT_ID_FIELD_NUMBER;
     hash = (53 * hash) + getProjectId().hashCode();
-    hash = (37 * hash) + STATE_FIELD_NUMBER;
-    hash = (53 * hash) + getState().hashCode();
-    hash = (37 * hash) + RETRY_COUNT_FIELD_NUMBER;
-    hash = (53 * hash) + getRetryCount();
-    hash = (37 * hash) + SUBMITTED_AT_ISO_FIELD_NUMBER;
-    hash = (53 * hash) + getSubmittedAtIso().hashCode();
-    hash = (37 * hash) + STARTED_AT_ISO_FIELD_NUMBER;
-    hash = (53 * hash) + getStartedAtIso().hashCode();
-    hash = (37 * hash) + FINISHED_AT_ISO_FIELD_NUMBER;
-    hash = (53 * hash) + getFinishedAtIso().hashCode();
+    hash = (37 * hash) + KIND_FIELD_NUMBER;
+    hash = (53 * hash) + getKind().hashCode();
+    hash = (37 * hash) + CREATED_AT_FIELD_NUMBER;
+    hash = (53 * hash) + getCreatedAt().hashCode();
+    hash = (37 * hash) + STATUS_FIELD_NUMBER;
+    hash = (53 * hash) + getStatus().hashCode();
+    hash = (37 * hash) + ATTEMPTS_FIELD_NUMBER;
+    hash = (53 * hash) + getAttempts();
+    hash = (37 * hash) + PRIORITY_FIELD_NUMBER;
+    hash = (53 * hash) + getPriority();
     hash = (37 * hash) + ERROR_FIELD_NUMBER;
     hash = (53 * hash) + getError().hashCode();
+    hash = (37 * hash) + LAST_ATTEMPT_AT_FIELD_NUMBER;
+    hash = (53 * hash) + getLastAttemptAt().hashCode();
+    hash = (37 * hash) + WORKER_ID_FIELD_NUMBER;
+    hash = (53 * hash) + getWorkerId().hashCode();
+    hash = (37 * hash) + PROGRESS_CURRENT_FIELD_NUMBER;
+    hash = (53 * hash) + getProgressCurrent();
+    hash = (37 * hash) + PROGRESS_TOTAL_FIELD_NUMBER;
+    hash = (53 * hash) + getProgressTotal();
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -670,6 +814,10 @@ private static final long serialVersionUID = 0L;
     return builder;
   }
   /**
+   * <pre>
+   * QueueItem mirrors LLMExtractionQueue item shape on the Python side.
+   * </pre>
+   *
    * Protobuf type {@code jervis.knowledgebase.QueueItem}
    */
   public static final class Builder extends
@@ -703,16 +851,20 @@ private static final long serialVersionUID = 0L;
     public Builder clear() {
       super.clear();
       bitField0_ = 0;
-      id_ = "";
+      taskId_ = "";
       sourceUrn_ = "";
       clientId_ = "";
       projectId_ = "";
-      state_ = "";
-      retryCount_ = 0;
-      submittedAtIso_ = "";
-      startedAtIso_ = "";
-      finishedAtIso_ = "";
+      kind_ = "";
+      createdAt_ = "";
+      status_ = "";
+      attempts_ = 0;
+      priority_ = 0;
       error_ = "";
+      lastAttemptAt_ = "";
+      workerId_ = "";
+      progressCurrent_ = 0;
+      progressTotal_ = 0;
       return this;
     }
 
@@ -747,7 +899,7 @@ private static final long serialVersionUID = 0L;
     private void buildPartial0(com.jervis.contracts.knowledgebase.QueueItem result) {
       int from_bitField0_ = bitField0_;
       if (((from_bitField0_ & 0x00000001) != 0)) {
-        result.id_ = id_;
+        result.taskId_ = taskId_;
       }
       if (((from_bitField0_ & 0x00000002) != 0)) {
         result.sourceUrn_ = sourceUrn_;
@@ -759,22 +911,34 @@ private static final long serialVersionUID = 0L;
         result.projectId_ = projectId_;
       }
       if (((from_bitField0_ & 0x00000010) != 0)) {
-        result.state_ = state_;
+        result.kind_ = kind_;
       }
       if (((from_bitField0_ & 0x00000020) != 0)) {
-        result.retryCount_ = retryCount_;
+        result.createdAt_ = createdAt_;
       }
       if (((from_bitField0_ & 0x00000040) != 0)) {
-        result.submittedAtIso_ = submittedAtIso_;
+        result.status_ = status_;
       }
       if (((from_bitField0_ & 0x00000080) != 0)) {
-        result.startedAtIso_ = startedAtIso_;
+        result.attempts_ = attempts_;
       }
       if (((from_bitField0_ & 0x00000100) != 0)) {
-        result.finishedAtIso_ = finishedAtIso_;
+        result.priority_ = priority_;
       }
       if (((from_bitField0_ & 0x00000200) != 0)) {
         result.error_ = error_;
+      }
+      if (((from_bitField0_ & 0x00000400) != 0)) {
+        result.lastAttemptAt_ = lastAttemptAt_;
+      }
+      if (((from_bitField0_ & 0x00000800) != 0)) {
+        result.workerId_ = workerId_;
+      }
+      if (((from_bitField0_ & 0x00001000) != 0)) {
+        result.progressCurrent_ = progressCurrent_;
+      }
+      if (((from_bitField0_ & 0x00002000) != 0)) {
+        result.progressTotal_ = progressTotal_;
       }
     }
 
@@ -790,8 +954,8 @@ private static final long serialVersionUID = 0L;
 
     public Builder mergeFrom(com.jervis.contracts.knowledgebase.QueueItem other) {
       if (other == com.jervis.contracts.knowledgebase.QueueItem.getDefaultInstance()) return this;
-      if (!other.getId().isEmpty()) {
-        id_ = other.id_;
+      if (!other.getTaskId().isEmpty()) {
+        taskId_ = other.taskId_;
         bitField0_ |= 0x00000001;
         onChanged();
       }
@@ -810,33 +974,47 @@ private static final long serialVersionUID = 0L;
         bitField0_ |= 0x00000008;
         onChanged();
       }
-      if (!other.getState().isEmpty()) {
-        state_ = other.state_;
+      if (!other.getKind().isEmpty()) {
+        kind_ = other.kind_;
         bitField0_ |= 0x00000010;
         onChanged();
       }
-      if (other.getRetryCount() != 0) {
-        setRetryCount(other.getRetryCount());
+      if (!other.getCreatedAt().isEmpty()) {
+        createdAt_ = other.createdAt_;
+        bitField0_ |= 0x00000020;
+        onChanged();
       }
-      if (!other.getSubmittedAtIso().isEmpty()) {
-        submittedAtIso_ = other.submittedAtIso_;
+      if (!other.getStatus().isEmpty()) {
+        status_ = other.status_;
         bitField0_ |= 0x00000040;
         onChanged();
       }
-      if (!other.getStartedAtIso().isEmpty()) {
-        startedAtIso_ = other.startedAtIso_;
-        bitField0_ |= 0x00000080;
-        onChanged();
+      if (other.getAttempts() != 0) {
+        setAttempts(other.getAttempts());
       }
-      if (!other.getFinishedAtIso().isEmpty()) {
-        finishedAtIso_ = other.finishedAtIso_;
-        bitField0_ |= 0x00000100;
-        onChanged();
+      if (other.getPriority() != 0) {
+        setPriority(other.getPriority());
       }
       if (!other.getError().isEmpty()) {
         error_ = other.error_;
         bitField0_ |= 0x00000200;
         onChanged();
+      }
+      if (!other.getLastAttemptAt().isEmpty()) {
+        lastAttemptAt_ = other.lastAttemptAt_;
+        bitField0_ |= 0x00000400;
+        onChanged();
+      }
+      if (!other.getWorkerId().isEmpty()) {
+        workerId_ = other.workerId_;
+        bitField0_ |= 0x00000800;
+        onChanged();
+      }
+      if (other.getProgressCurrent() != 0) {
+        setProgressCurrent(other.getProgressCurrent());
+      }
+      if (other.getProgressTotal() != 0) {
+        setProgressTotal(other.getProgressTotal());
       }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
@@ -865,7 +1043,7 @@ private static final long serialVersionUID = 0L;
               done = true;
               break;
             case 10: {
-              id_ = input.readStringRequireUtf8();
+              taskId_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000001;
               break;
             } // case 10
@@ -885,35 +1063,55 @@ private static final long serialVersionUID = 0L;
               break;
             } // case 34
             case 42: {
-              state_ = input.readStringRequireUtf8();
+              kind_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000010;
               break;
             } // case 42
-            case 48: {
-              retryCount_ = input.readInt32();
+            case 50: {
+              createdAt_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000020;
               break;
-            } // case 48
+            } // case 50
             case 58: {
-              submittedAtIso_ = input.readStringRequireUtf8();
+              status_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000040;
               break;
             } // case 58
-            case 66: {
-              startedAtIso_ = input.readStringRequireUtf8();
+            case 64: {
+              attempts_ = input.readInt32();
               bitField0_ |= 0x00000080;
               break;
-            } // case 66
-            case 74: {
-              finishedAtIso_ = input.readStringRequireUtf8();
+            } // case 64
+            case 72: {
+              priority_ = input.readInt32();
               bitField0_ |= 0x00000100;
               break;
-            } // case 74
+            } // case 72
             case 82: {
               error_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000200;
               break;
             } // case 82
+            case 90: {
+              lastAttemptAt_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000400;
+              break;
+            } // case 90
+            case 98: {
+              workerId_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000800;
+              break;
+            } // case 98
+            case 104: {
+              progressCurrent_ = input.readInt32();
+              bitField0_ |= 0x00001000;
+              break;
+            } // case 104
+            case 112: {
+              progressTotal_ = input.readInt32();
+              bitField0_ |= 0x00002000;
+              break;
+            } // case 112
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -931,73 +1129,73 @@ private static final long serialVersionUID = 0L;
     }
     private int bitField0_;
 
-    private java.lang.Object id_ = "";
+    private java.lang.Object taskId_ = "";
     /**
-     * <code>string id = 1;</code>
-     * @return The id.
+     * <code>string task_id = 1;</code>
+     * @return The taskId.
      */
-    public java.lang.String getId() {
-      java.lang.Object ref = id_;
+    public java.lang.String getTaskId() {
+      java.lang.Object ref = taskId_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        id_ = s;
+        taskId_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
       }
     }
     /**
-     * <code>string id = 1;</code>
-     * @return The bytes for id.
+     * <code>string task_id = 1;</code>
+     * @return The bytes for taskId.
      */
     public com.google.protobuf.ByteString
-        getIdBytes() {
-      java.lang.Object ref = id_;
+        getTaskIdBytes() {
+      java.lang.Object ref = taskId_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        id_ = b;
+        taskId_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
       }
     }
     /**
-     * <code>string id = 1;</code>
-     * @param value The id to set.
+     * <code>string task_id = 1;</code>
+     * @param value The taskId to set.
      * @return This builder for chaining.
      */
-    public Builder setId(
+    public Builder setTaskId(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      id_ = value;
+      taskId_ = value;
       bitField0_ |= 0x00000001;
       onChanged();
       return this;
     }
     /**
-     * <code>string id = 1;</code>
+     * <code>string task_id = 1;</code>
      * @return This builder for chaining.
      */
-    public Builder clearId() {
-      id_ = getDefaultInstance().getId();
+    public Builder clearTaskId() {
+      taskId_ = getDefaultInstance().getTaskId();
       bitField0_ = (bitField0_ & ~0x00000001);
       onChanged();
       return this;
     }
     /**
-     * <code>string id = 1;</code>
-     * @param value The bytes for id to set.
+     * <code>string task_id = 1;</code>
+     * @param value The bytes for taskId to set.
      * @return This builder for chaining.
      */
-    public Builder setIdBytes(
+    public Builder setTaskIdBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      id_ = value;
+      taskId_ = value;
       bitField0_ |= 0x00000001;
       onChanged();
       return this;
@@ -1149,6 +1347,10 @@ private static final long serialVersionUID = 0L;
 
     private java.lang.Object projectId_ = "";
     /**
+     * <pre>
+     * empty when not scoped
+     * </pre>
+     *
      * <code>string project_id = 4;</code>
      * @return The projectId.
      */
@@ -1165,6 +1367,10 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
+     * <pre>
+     * empty when not scoped
+     * </pre>
+     *
      * <code>string project_id = 4;</code>
      * @return The bytes for projectId.
      */
@@ -1182,6 +1388,10 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
+     * <pre>
+     * empty when not scoped
+     * </pre>
+     *
      * <code>string project_id = 4;</code>
      * @param value The projectId to set.
      * @return This builder for chaining.
@@ -1195,6 +1405,10 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
+     * <pre>
+     * empty when not scoped
+     * </pre>
+     *
      * <code>string project_id = 4;</code>
      * @return This builder for chaining.
      */
@@ -1205,6 +1419,10 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
+     * <pre>
+     * empty when not scoped
+     * </pre>
+     *
      * <code>string project_id = 4;</code>
      * @param value The bytes for projectId to set.
      * @return This builder for chaining.
@@ -1219,342 +1437,322 @@ private static final long serialVersionUID = 0L;
       return this;
     }
 
-    private java.lang.Object state_ = "";
+    private java.lang.Object kind_ = "";
     /**
-     * <pre>
-     * queued | running | done | failed
-     * </pre>
-     *
-     * <code>string state = 5;</code>
-     * @return The state.
+     * <code>string kind = 5;</code>
+     * @return The kind.
      */
-    public java.lang.String getState() {
-      java.lang.Object ref = state_;
+    public java.lang.String getKind() {
+      java.lang.Object ref = kind_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        state_ = s;
+        kind_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
       }
     }
     /**
-     * <pre>
-     * queued | running | done | failed
-     * </pre>
-     *
-     * <code>string state = 5;</code>
-     * @return The bytes for state.
+     * <code>string kind = 5;</code>
+     * @return The bytes for kind.
      */
     public com.google.protobuf.ByteString
-        getStateBytes() {
-      java.lang.Object ref = state_;
+        getKindBytes() {
+      java.lang.Object ref = kind_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        state_ = b;
+        kind_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
       }
     }
     /**
-     * <pre>
-     * queued | running | done | failed
-     * </pre>
-     *
-     * <code>string state = 5;</code>
-     * @param value The state to set.
+     * <code>string kind = 5;</code>
+     * @param value The kind to set.
      * @return This builder for chaining.
      */
-    public Builder setState(
+    public Builder setKind(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      state_ = value;
+      kind_ = value;
       bitField0_ |= 0x00000010;
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * queued | running | done | failed
-     * </pre>
-     *
-     * <code>string state = 5;</code>
+     * <code>string kind = 5;</code>
      * @return This builder for chaining.
      */
-    public Builder clearState() {
-      state_ = getDefaultInstance().getState();
+    public Builder clearKind() {
+      kind_ = getDefaultInstance().getKind();
       bitField0_ = (bitField0_ & ~0x00000010);
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * queued | running | done | failed
-     * </pre>
-     *
-     * <code>string state = 5;</code>
-     * @param value The bytes for state to set.
+     * <code>string kind = 5;</code>
+     * @param value The bytes for kind to set.
      * @return This builder for chaining.
      */
-    public Builder setStateBytes(
+    public Builder setKindBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      state_ = value;
+      kind_ = value;
       bitField0_ |= 0x00000010;
       onChanged();
       return this;
     }
 
-    private int retryCount_ ;
+    private java.lang.Object createdAt_ = "";
     /**
-     * <code>int32 retry_count = 6;</code>
-     * @return The retryCount.
+     * <pre>
+     * ISO-8601
+     * </pre>
+     *
+     * <code>string created_at = 6;</code>
+     * @return The createdAt.
      */
-    @java.lang.Override
-    public int getRetryCount() {
-      return retryCount_;
+    public java.lang.String getCreatedAt() {
+      java.lang.Object ref = createdAt_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        createdAt_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
     }
     /**
-     * <code>int32 retry_count = 6;</code>
-     * @param value The retryCount to set.
+     * <pre>
+     * ISO-8601
+     * </pre>
+     *
+     * <code>string created_at = 6;</code>
+     * @return The bytes for createdAt.
+     */
+    public com.google.protobuf.ByteString
+        getCreatedAtBytes() {
+      java.lang.Object ref = createdAt_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        createdAt_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * ISO-8601
+     * </pre>
+     *
+     * <code>string created_at = 6;</code>
+     * @param value The createdAt to set.
      * @return This builder for chaining.
      */
-    public Builder setRetryCount(int value) {
-
-      retryCount_ = value;
+    public Builder setCreatedAt(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      createdAt_ = value;
       bitField0_ |= 0x00000020;
       onChanged();
       return this;
     }
     /**
-     * <code>int32 retry_count = 6;</code>
+     * <pre>
+     * ISO-8601
+     * </pre>
+     *
+     * <code>string created_at = 6;</code>
      * @return This builder for chaining.
      */
-    public Builder clearRetryCount() {
+    public Builder clearCreatedAt() {
+      createdAt_ = getDefaultInstance().getCreatedAt();
       bitField0_ = (bitField0_ & ~0x00000020);
-      retryCount_ = 0;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * ISO-8601
+     * </pre>
+     *
+     * <code>string created_at = 6;</code>
+     * @param value The bytes for createdAt to set.
+     * @return This builder for chaining.
+     */
+    public Builder setCreatedAtBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      createdAt_ = value;
+      bitField0_ |= 0x00000020;
       onChanged();
       return this;
     }
 
-    private java.lang.Object submittedAtIso_ = "";
+    private java.lang.Object status_ = "";
     /**
-     * <code>string submitted_at_iso = 7;</code>
-     * @return The submittedAtIso.
+     * <pre>
+     * pending | in_progress | failed | done
+     * </pre>
+     *
+     * <code>string status = 7;</code>
+     * @return The status.
      */
-    public java.lang.String getSubmittedAtIso() {
-      java.lang.Object ref = submittedAtIso_;
+    public java.lang.String getStatus() {
+      java.lang.Object ref = status_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        submittedAtIso_ = s;
+        status_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
       }
     }
     /**
-     * <code>string submitted_at_iso = 7;</code>
-     * @return The bytes for submittedAtIso.
+     * <pre>
+     * pending | in_progress | failed | done
+     * </pre>
+     *
+     * <code>string status = 7;</code>
+     * @return The bytes for status.
      */
     public com.google.protobuf.ByteString
-        getSubmittedAtIsoBytes() {
-      java.lang.Object ref = submittedAtIso_;
+        getStatusBytes() {
+      java.lang.Object ref = status_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        submittedAtIso_ = b;
+        status_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
       }
     }
     /**
-     * <code>string submitted_at_iso = 7;</code>
-     * @param value The submittedAtIso to set.
+     * <pre>
+     * pending | in_progress | failed | done
+     * </pre>
+     *
+     * <code>string status = 7;</code>
+     * @param value The status to set.
      * @return This builder for chaining.
      */
-    public Builder setSubmittedAtIso(
+    public Builder setStatus(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      submittedAtIso_ = value;
+      status_ = value;
       bitField0_ |= 0x00000040;
       onChanged();
       return this;
     }
     /**
-     * <code>string submitted_at_iso = 7;</code>
+     * <pre>
+     * pending | in_progress | failed | done
+     * </pre>
+     *
+     * <code>string status = 7;</code>
      * @return This builder for chaining.
      */
-    public Builder clearSubmittedAtIso() {
-      submittedAtIso_ = getDefaultInstance().getSubmittedAtIso();
+    public Builder clearStatus() {
+      status_ = getDefaultInstance().getStatus();
       bitField0_ = (bitField0_ & ~0x00000040);
       onChanged();
       return this;
     }
     /**
-     * <code>string submitted_at_iso = 7;</code>
-     * @param value The bytes for submittedAtIso to set.
+     * <pre>
+     * pending | in_progress | failed | done
+     * </pre>
+     *
+     * <code>string status = 7;</code>
+     * @param value The bytes for status to set.
      * @return This builder for chaining.
      */
-    public Builder setSubmittedAtIsoBytes(
+    public Builder setStatusBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      submittedAtIso_ = value;
+      status_ = value;
       bitField0_ |= 0x00000040;
       onChanged();
       return this;
     }
 
-    private java.lang.Object startedAtIso_ = "";
+    private int attempts_ ;
     /**
-     * <code>string started_at_iso = 8;</code>
-     * @return The startedAtIso.
+     * <code>int32 attempts = 8;</code>
+     * @return The attempts.
      */
-    public java.lang.String getStartedAtIso() {
-      java.lang.Object ref = startedAtIso_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        startedAtIso_ = s;
-        return s;
-      } else {
-        return (java.lang.String) ref;
-      }
+    @java.lang.Override
+    public int getAttempts() {
+      return attempts_;
     }
     /**
-     * <code>string started_at_iso = 8;</code>
-     * @return The bytes for startedAtIso.
-     */
-    public com.google.protobuf.ByteString
-        getStartedAtIsoBytes() {
-      java.lang.Object ref = startedAtIso_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        startedAtIso_ = b;
-        return b;
-      } else {
-        return (com.google.protobuf.ByteString) ref;
-      }
-    }
-    /**
-     * <code>string started_at_iso = 8;</code>
-     * @param value The startedAtIso to set.
+     * <code>int32 attempts = 8;</code>
+     * @param value The attempts to set.
      * @return This builder for chaining.
      */
-    public Builder setStartedAtIso(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      startedAtIso_ = value;
+    public Builder setAttempts(int value) {
+
+      attempts_ = value;
       bitField0_ |= 0x00000080;
       onChanged();
       return this;
     }
     /**
-     * <code>string started_at_iso = 8;</code>
+     * <code>int32 attempts = 8;</code>
      * @return This builder for chaining.
      */
-    public Builder clearStartedAtIso() {
-      startedAtIso_ = getDefaultInstance().getStartedAtIso();
+    public Builder clearAttempts() {
       bitField0_ = (bitField0_ & ~0x00000080);
-      onChanged();
-      return this;
-    }
-    /**
-     * <code>string started_at_iso = 8;</code>
-     * @param value The bytes for startedAtIso to set.
-     * @return This builder for chaining.
-     */
-    public Builder setStartedAtIsoBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      startedAtIso_ = value;
-      bitField0_ |= 0x00000080;
+      attempts_ = 0;
       onChanged();
       return this;
     }
 
-    private java.lang.Object finishedAtIso_ = "";
+    private int priority_ ;
     /**
-     * <code>string finished_at_iso = 9;</code>
-     * @return The finishedAtIso.
+     * <code>int32 priority = 9;</code>
+     * @return The priority.
      */
-    public java.lang.String getFinishedAtIso() {
-      java.lang.Object ref = finishedAtIso_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        finishedAtIso_ = s;
-        return s;
-      } else {
-        return (java.lang.String) ref;
-      }
+    @java.lang.Override
+    public int getPriority() {
+      return priority_;
     }
     /**
-     * <code>string finished_at_iso = 9;</code>
-     * @return The bytes for finishedAtIso.
-     */
-    public com.google.protobuf.ByteString
-        getFinishedAtIsoBytes() {
-      java.lang.Object ref = finishedAtIso_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        finishedAtIso_ = b;
-        return b;
-      } else {
-        return (com.google.protobuf.ByteString) ref;
-      }
-    }
-    /**
-     * <code>string finished_at_iso = 9;</code>
-     * @param value The finishedAtIso to set.
+     * <code>int32 priority = 9;</code>
+     * @param value The priority to set.
      * @return This builder for chaining.
      */
-    public Builder setFinishedAtIso(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      finishedAtIso_ = value;
+    public Builder setPriority(int value) {
+
+      priority_ = value;
       bitField0_ |= 0x00000100;
       onChanged();
       return this;
     }
     /**
-     * <code>string finished_at_iso = 9;</code>
+     * <code>int32 priority = 9;</code>
      * @return This builder for chaining.
      */
-    public Builder clearFinishedAtIso() {
-      finishedAtIso_ = getDefaultInstance().getFinishedAtIso();
+    public Builder clearPriority() {
       bitField0_ = (bitField0_ & ~0x00000100);
-      onChanged();
-      return this;
-    }
-    /**
-     * <code>string finished_at_iso = 9;</code>
-     * @param value The bytes for finishedAtIso to set.
-     * @return This builder for chaining.
-     */
-    public Builder setFinishedAtIsoBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      finishedAtIso_ = value;
-      bitField0_ |= 0x00000100;
+      priority_ = 0;
       onChanged();
       return this;
     }
@@ -1627,6 +1825,234 @@ private static final long serialVersionUID = 0L;
       checkByteStringIsUtf8(value);
       error_ = value;
       bitField0_ |= 0x00000200;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object lastAttemptAt_ = "";
+    /**
+     * <pre>
+     * ISO-8601, empty when never attempted
+     * </pre>
+     *
+     * <code>string last_attempt_at = 11;</code>
+     * @return The lastAttemptAt.
+     */
+    public java.lang.String getLastAttemptAt() {
+      java.lang.Object ref = lastAttemptAt_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        lastAttemptAt_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * ISO-8601, empty when never attempted
+     * </pre>
+     *
+     * <code>string last_attempt_at = 11;</code>
+     * @return The bytes for lastAttemptAt.
+     */
+    public com.google.protobuf.ByteString
+        getLastAttemptAtBytes() {
+      java.lang.Object ref = lastAttemptAt_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        lastAttemptAt_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * ISO-8601, empty when never attempted
+     * </pre>
+     *
+     * <code>string last_attempt_at = 11;</code>
+     * @param value The lastAttemptAt to set.
+     * @return This builder for chaining.
+     */
+    public Builder setLastAttemptAt(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      lastAttemptAt_ = value;
+      bitField0_ |= 0x00000400;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * ISO-8601, empty when never attempted
+     * </pre>
+     *
+     * <code>string last_attempt_at = 11;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearLastAttemptAt() {
+      lastAttemptAt_ = getDefaultInstance().getLastAttemptAt();
+      bitField0_ = (bitField0_ & ~0x00000400);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * ISO-8601, empty when never attempted
+     * </pre>
+     *
+     * <code>string last_attempt_at = 11;</code>
+     * @param value The bytes for lastAttemptAt to set.
+     * @return This builder for chaining.
+     */
+    public Builder setLastAttemptAtBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      lastAttemptAt_ = value;
+      bitField0_ |= 0x00000400;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object workerId_ = "";
+    /**
+     * <code>string worker_id = 12;</code>
+     * @return The workerId.
+     */
+    public java.lang.String getWorkerId() {
+      java.lang.Object ref = workerId_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        workerId_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>string worker_id = 12;</code>
+     * @return The bytes for workerId.
+     */
+    public com.google.protobuf.ByteString
+        getWorkerIdBytes() {
+      java.lang.Object ref = workerId_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        workerId_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>string worker_id = 12;</code>
+     * @param value The workerId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setWorkerId(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      workerId_ = value;
+      bitField0_ |= 0x00000800;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string worker_id = 12;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearWorkerId() {
+      workerId_ = getDefaultInstance().getWorkerId();
+      bitField0_ = (bitField0_ & ~0x00000800);
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string worker_id = 12;</code>
+     * @param value The bytes for workerId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setWorkerIdBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      workerId_ = value;
+      bitField0_ |= 0x00000800;
+      onChanged();
+      return this;
+    }
+
+    private int progressCurrent_ ;
+    /**
+     * <code>int32 progress_current = 13;</code>
+     * @return The progressCurrent.
+     */
+    @java.lang.Override
+    public int getProgressCurrent() {
+      return progressCurrent_;
+    }
+    /**
+     * <code>int32 progress_current = 13;</code>
+     * @param value The progressCurrent to set.
+     * @return This builder for chaining.
+     */
+    public Builder setProgressCurrent(int value) {
+
+      progressCurrent_ = value;
+      bitField0_ |= 0x00001000;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>int32 progress_current = 13;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearProgressCurrent() {
+      bitField0_ = (bitField0_ & ~0x00001000);
+      progressCurrent_ = 0;
+      onChanged();
+      return this;
+    }
+
+    private int progressTotal_ ;
+    /**
+     * <code>int32 progress_total = 14;</code>
+     * @return The progressTotal.
+     */
+    @java.lang.Override
+    public int getProgressTotal() {
+      return progressTotal_;
+    }
+    /**
+     * <code>int32 progress_total = 14;</code>
+     * @param value The progressTotal to set.
+     * @return This builder for chaining.
+     */
+    public Builder setProgressTotal(int value) {
+
+      progressTotal_ = value;
+      bitField0_ |= 0x00002000;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>int32 progress_total = 14;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearProgressTotal() {
+      bitField0_ = (bitField0_ & ~0x00002000);
+      progressTotal_ = 0;
       onChanged();
       return this;
     }

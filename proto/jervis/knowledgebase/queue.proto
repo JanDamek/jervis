@@ -8,8 +8,8 @@ option java_package = "com.jervis.contracts.knowledgebase";
 option java_multiple_files = true;
 option java_outer_classname = "KnowledgeQueueProto";
 
-// KnowledgeQueueService — visibility into the asynchronous extraction /
-// ingest queue. Read-only for external consumers; items are added via
+// KnowledgeQueueService — visibility into the asynchronous LLM extraction
+// queue. Read-only for external consumers; items are added via
 // KnowledgeIngestService.IngestQueue.
 service KnowledgeQueueService {
   rpc ListQueue(QueueListRequest) returns (QueueList);
@@ -17,23 +17,35 @@ service KnowledgeQueueService {
 
 message QueueListRequest {
   jervis.common.RequestContext ctx = 1;
-  int32 limit = 2;
+  int32 limit = 2;               // default 200 when 0
 }
 
 message QueueList {
   repeated QueueItem items = 1;
-  int32 total = 2;
+  QueueStats stats = 2;
 }
 
+// QueueItem mirrors LLMExtractionQueue item shape on the Python side.
 message QueueItem {
-  string id = 1;
+  string task_id = 1;
   string source_urn = 2;
   string client_id = 3;
-  string project_id = 4;
-  string state = 5;           // queued | running | done | failed
-  int32 retry_count = 6;
-  string submitted_at_iso = 7;
-  string started_at_iso = 8;
-  string finished_at_iso = 9;
+  string project_id = 4;        // empty when not scoped
+  string kind = 5;
+  string created_at = 6;        // ISO-8601
+  string status = 7;            // pending | in_progress | failed | done
+  int32 attempts = 8;
+  int32 priority = 9;
   string error = 10;
+  string last_attempt_at = 11;  // ISO-8601, empty when never attempted
+  string worker_id = 12;
+  int32 progress_current = 13;
+  int32 progress_total = 14;
+}
+
+message QueueStats {
+  int32 total = 1;
+  int32 pending = 2;
+  int32 in_progress = 3;
+  int32 failed = 4;
 }

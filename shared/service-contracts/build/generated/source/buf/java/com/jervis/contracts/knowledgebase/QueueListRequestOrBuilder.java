@@ -26,6 +26,10 @@ public interface QueueListRequestOrBuilder extends
   com.jervis.contracts.common.RequestContextOrBuilder getCtxOrBuilder();
 
   /**
+   * <pre>
+   * default 200 when 0
+   * </pre>
+   *
    * <code>int32 limit = 2;</code>
    * @return The limit.
    */

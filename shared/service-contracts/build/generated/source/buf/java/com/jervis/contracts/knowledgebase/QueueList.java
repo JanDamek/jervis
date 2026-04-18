@@ -44,6 +44,7 @@ private static final long serialVersionUID = 0L;
             com.jervis.contracts.knowledgebase.QueueList.class, com.jervis.contracts.knowledgebase.QueueList.Builder.class);
   }
 
+  private int bitField0_;
   public static final int ITEMS_FIELD_NUMBER = 1;
   @SuppressWarnings("serial")
   private java.util.List<com.jervis.contracts.knowledgebase.QueueItem> items_;
@@ -85,15 +86,30 @@ private static final long serialVersionUID = 0L;
     return items_.get(index);
   }
 
-  public static final int TOTAL_FIELD_NUMBER = 2;
-  private int total_ = 0;
+  public static final int STATS_FIELD_NUMBER = 2;
+  private com.jervis.contracts.knowledgebase.QueueStats stats_;
   /**
-   * <code>int32 total = 2;</code>
-   * @return The total.
+   * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+   * @return Whether the stats field is set.
    */
   @java.lang.Override
-  public int getTotal() {
-    return total_;
+  public boolean hasStats() {
+    return ((bitField0_ & 0x00000001) != 0);
+  }
+  /**
+   * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+   * @return The stats.
+   */
+  @java.lang.Override
+  public com.jervis.contracts.knowledgebase.QueueStats getStats() {
+    return stats_ == null ? com.jervis.contracts.knowledgebase.QueueStats.getDefaultInstance() : stats_;
+  }
+  /**
+   * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.knowledgebase.QueueStatsOrBuilder getStatsOrBuilder() {
+    return stats_ == null ? com.jervis.contracts.knowledgebase.QueueStats.getDefaultInstance() : stats_;
   }
 
   private byte memoizedIsInitialized = -1;
@@ -113,8 +129,8 @@ private static final long serialVersionUID = 0L;
     for (int i = 0; i < items_.size(); i++) {
       output.writeMessage(1, items_.get(i));
     }
-    if (total_ != 0) {
-      output.writeInt32(2, total_);
+    if (((bitField0_ & 0x00000001) != 0)) {
+      output.writeMessage(2, getStats());
     }
     getUnknownFields().writeTo(output);
   }
@@ -129,9 +145,9 @@ private static final long serialVersionUID = 0L;
       size += com.google.protobuf.CodedOutputStream
         .computeMessageSize(1, items_.get(i));
     }
-    if (total_ != 0) {
+    if (((bitField0_ & 0x00000001) != 0)) {
       size += com.google.protobuf.CodedOutputStream
-        .computeInt32Size(2, total_);
+        .computeMessageSize(2, getStats());
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -150,8 +166,11 @@ private static final long serialVersionUID = 0L;
 
     if (!getItemsList()
         .equals(other.getItemsList())) return false;
-    if (getTotal()
-        != other.getTotal()) return false;
+    if (hasStats() != other.hasStats()) return false;
+    if (hasStats()) {
+      if (!getStats()
+          .equals(other.getStats())) return false;
+    }
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -167,8 +186,10 @@ private static final long serialVersionUID = 0L;
       hash = (37 * hash) + ITEMS_FIELD_NUMBER;
       hash = (53 * hash) + getItemsList().hashCode();
     }
-    hash = (37 * hash) + TOTAL_FIELD_NUMBER;
-    hash = (53 * hash) + getTotal();
+    if (hasStats()) {
+      hash = (37 * hash) + STATS_FIELD_NUMBER;
+      hash = (53 * hash) + getStats().hashCode();
+    }
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -288,13 +309,20 @@ private static final long serialVersionUID = 0L;
 
     // Construct using com.jervis.contracts.knowledgebase.QueueList.newBuilder()
     private Builder() {
-
+      maybeForceBuilderInitialization();
     }
 
     private Builder(
         com.google.protobuf.GeneratedMessage.BuilderParent parent) {
       super(parent);
-
+      maybeForceBuilderInitialization();
+    }
+    private void maybeForceBuilderInitialization() {
+      if (com.google.protobuf.GeneratedMessage
+              .alwaysUseFieldBuilders) {
+        internalGetItemsFieldBuilder();
+        internalGetStatsFieldBuilder();
+      }
     }
     @java.lang.Override
     public Builder clear() {
@@ -307,7 +335,11 @@ private static final long serialVersionUID = 0L;
         itemsBuilder_.clear();
       }
       bitField0_ = (bitField0_ & ~0x00000001);
-      total_ = 0;
+      stats_ = null;
+      if (statsBuilder_ != null) {
+        statsBuilder_.dispose();
+        statsBuilder_ = null;
+      }
       return this;
     }
 
@@ -354,9 +386,14 @@ private static final long serialVersionUID = 0L;
 
     private void buildPartial0(com.jervis.contracts.knowledgebase.QueueList result) {
       int from_bitField0_ = bitField0_;
+      int to_bitField0_ = 0;
       if (((from_bitField0_ & 0x00000002) != 0)) {
-        result.total_ = total_;
+        result.stats_ = statsBuilder_ == null
+            ? stats_
+            : statsBuilder_.build();
+        to_bitField0_ |= 0x00000001;
       }
+      result.bitField0_ |= to_bitField0_;
     }
 
     @java.lang.Override
@@ -397,8 +434,8 @@ private static final long serialVersionUID = 0L;
           }
         }
       }
-      if (other.getTotal() != 0) {
-        setTotal(other.getTotal());
+      if (other.hasStats()) {
+        mergeStats(other.getStats());
       }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
@@ -439,11 +476,13 @@ private static final long serialVersionUID = 0L;
               }
               break;
             } // case 10
-            case 16: {
-              total_ = input.readInt32();
+            case 18: {
+              input.readMessage(
+                  internalGetStatsFieldBuilder().getBuilder(),
+                  extensionRegistry);
               bitField0_ |= 0x00000002;
               break;
-            } // case 16
+            } // case 18
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -701,36 +740,125 @@ private static final long serialVersionUID = 0L;
       return itemsBuilder_;
     }
 
-    private int total_ ;
+    private com.jervis.contracts.knowledgebase.QueueStats stats_;
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.knowledgebase.QueueStats, com.jervis.contracts.knowledgebase.QueueStats.Builder, com.jervis.contracts.knowledgebase.QueueStatsOrBuilder> statsBuilder_;
     /**
-     * <code>int32 total = 2;</code>
-     * @return The total.
+     * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+     * @return Whether the stats field is set.
      */
-    @java.lang.Override
-    public int getTotal() {
-      return total_;
+    public boolean hasStats() {
+      return ((bitField0_ & 0x00000002) != 0);
     }
     /**
-     * <code>int32 total = 2;</code>
-     * @param value The total to set.
-     * @return This builder for chaining.
+     * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+     * @return The stats.
      */
-    public Builder setTotal(int value) {
-
-      total_ = value;
+    public com.jervis.contracts.knowledgebase.QueueStats getStats() {
+      if (statsBuilder_ == null) {
+        return stats_ == null ? com.jervis.contracts.knowledgebase.QueueStats.getDefaultInstance() : stats_;
+      } else {
+        return statsBuilder_.getMessage();
+      }
+    }
+    /**
+     * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+     */
+    public Builder setStats(com.jervis.contracts.knowledgebase.QueueStats value) {
+      if (statsBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        stats_ = value;
+      } else {
+        statsBuilder_.setMessage(value);
+      }
       bitField0_ |= 0x00000002;
       onChanged();
       return this;
     }
     /**
-     * <code>int32 total = 2;</code>
-     * @return This builder for chaining.
+     * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
      */
-    public Builder clearTotal() {
-      bitField0_ = (bitField0_ & ~0x00000002);
-      total_ = 0;
+    public Builder setStats(
+        com.jervis.contracts.knowledgebase.QueueStats.Builder builderForValue) {
+      if (statsBuilder_ == null) {
+        stats_ = builderForValue.build();
+      } else {
+        statsBuilder_.setMessage(builderForValue.build());
+      }
+      bitField0_ |= 0x00000002;
       onChanged();
       return this;
+    }
+    /**
+     * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+     */
+    public Builder mergeStats(com.jervis.contracts.knowledgebase.QueueStats value) {
+      if (statsBuilder_ == null) {
+        if (((bitField0_ & 0x00000002) != 0) &&
+          stats_ != null &&
+          stats_ != com.jervis.contracts.knowledgebase.QueueStats.getDefaultInstance()) {
+          getStatsBuilder().mergeFrom(value);
+        } else {
+          stats_ = value;
+        }
+      } else {
+        statsBuilder_.mergeFrom(value);
+      }
+      if (stats_ != null) {
+        bitField0_ |= 0x00000002;
+        onChanged();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+     */
+    public Builder clearStats() {
+      bitField0_ = (bitField0_ & ~0x00000002);
+      stats_ = null;
+      if (statsBuilder_ != null) {
+        statsBuilder_.dispose();
+        statsBuilder_ = null;
+      }
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+     */
+    public com.jervis.contracts.knowledgebase.QueueStats.Builder getStatsBuilder() {
+      bitField0_ |= 0x00000002;
+      onChanged();
+      return internalGetStatsFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+     */
+    public com.jervis.contracts.knowledgebase.QueueStatsOrBuilder getStatsOrBuilder() {
+      if (statsBuilder_ != null) {
+        return statsBuilder_.getMessageOrBuilder();
+      } else {
+        return stats_ == null ?
+            com.jervis.contracts.knowledgebase.QueueStats.getDefaultInstance() : stats_;
+      }
+    }
+    /**
+     * <code>.jervis.knowledgebase.QueueStats stats = 2;</code>
+     */
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.knowledgebase.QueueStats, com.jervis.contracts.knowledgebase.QueueStats.Builder, com.jervis.contracts.knowledgebase.QueueStatsOrBuilder> 
+        internalGetStatsFieldBuilder() {
+      if (statsBuilder_ == null) {
+        statsBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.knowledgebase.QueueStats, com.jervis.contracts.knowledgebase.QueueStats.Builder, com.jervis.contracts.knowledgebase.QueueStatsOrBuilder>(
+                getStats(),
+                getParentForChildren(),
+                isClean());
+        stats_ = null;
+      }
+      return statsBuilder_;
     }
 
     // @@protoc_insertion_point(builder_scope:jervis.knowledgebase.QueueList)
