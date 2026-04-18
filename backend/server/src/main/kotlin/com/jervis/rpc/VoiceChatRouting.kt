@@ -674,11 +674,6 @@ internal data class VoiceSseEvent(val name: String, val dataJson: String)
 internal fun com.jervis.contracts.orchestrator.VoiceStreamEvent.toSseEvent(): VoiceSseEvent? {
     fun escape(s: String): String = s.escapeJson()
     return when (payloadCase) {
-        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.PRELIMINARY_ANSWER ->
-            VoiceSseEvent(
-                "preliminary_answer",
-                """{"text":"${escape(preliminaryAnswer.text)}","confidence":${preliminaryAnswer.confidence}}""",
-            )
         com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.RESPONDING ->
             VoiceSseEvent("responding", "{}")
         com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.TOKEN ->

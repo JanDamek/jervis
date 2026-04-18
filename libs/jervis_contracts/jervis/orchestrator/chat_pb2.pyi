@@ -59,18 +59,6 @@ class Attachment(_message.Message):
     content_base64: str
     def __init__(self, filename: _Optional[str] = ..., mime_type: _Optional[str] = ..., size_bytes: _Optional[int] = ..., content_base64: _Optional[str] = ...) -> None: ...
 
-class ChatMessage(_message.Message):
-    __slots__ = ("role", "content", "timestamp", "tool_call_id")
-    ROLE_FIELD_NUMBER: _ClassVar[int]
-    CONTENT_FIELD_NUMBER: _ClassVar[int]
-    TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
-    TOOL_CALL_ID_FIELD_NUMBER: _ClassVar[int]
-    role: str
-    content: str
-    timestamp: str
-    tool_call_id: str
-    def __init__(self, role: _Optional[str] = ..., content: _Optional[str] = ..., timestamp: _Optional[str] = ..., tool_call_id: _Optional[str] = ...) -> None: ...
-
 class ChatEvent(_message.Message):
     __slots__ = ("type", "content", "metadata")
     class MetadataEntry(_message.Message):

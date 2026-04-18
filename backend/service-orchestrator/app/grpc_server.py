@@ -1080,13 +1080,6 @@ def _voice_event_to_proto(event) -> voice_pb2.VoiceStreamEvent:
     variant so the stream never emits an untagged event."""
     data = event.data or {}
     kind = event.event
-    if kind == "preliminary_answer":
-        return voice_pb2.VoiceStreamEvent(
-            preliminary_answer=voice_pb2.PreliminaryAnswer(
-                text=str(data.get("text") or ""),
-                confidence=float(data.get("confidence") or 0.0),
-            ),
-        )
     if kind == "responding":
         return voice_pb2.VoiceStreamEvent(responding=voice_pb2.Responding())
     if kind == "token":

@@ -11,6 +11,10 @@ package com.jervis.contracts.orchestrator;
  * payload shapes mirror what app/voice/stream_handler.py +
  * app/voice/quick_responder.py yield — each variant holds only the
  * fields actually produced on that branch.
+ *
+ * Field 1 was `PreliminaryAnswer` — retired with slice V3i-cleanup; no
+ * UI client ever matched on it. Leaving the number reserved keeps the
+ * wire stable if something legitimate needs that slot later.
  * </pre>
  *
  * Protobuf type {@code jervis.orchestrator.VoiceStreamEvent}
@@ -56,7 +60,6 @@ private static final long serialVersionUID = 0L;
   public enum PayloadCase
       implements com.google.protobuf.Internal.EnumLite,
           com.google.protobuf.AbstractMessage.InternalOneOfEnum {
-    PRELIMINARY_ANSWER(1),
     RESPONDING(2),
     TOKEN(3),
     RESPONSE(4),
@@ -80,7 +83,6 @@ private static final long serialVersionUID = 0L;
 
     public static PayloadCase forNumber(int value) {
       switch (value) {
-        case 1: return PRELIMINARY_ANSWER;
         case 2: return RESPONDING;
         case 3: return TOKEN;
         case 4: return RESPONSE;
@@ -100,37 +102,6 @@ private static final long serialVersionUID = 0L;
   getPayloadCase() {
     return PayloadCase.forNumber(
         payloadCase_);
-  }
-
-  public static final int PRELIMINARY_ANSWER_FIELD_NUMBER = 1;
-  /**
-   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-   * @return Whether the preliminaryAnswer field is set.
-   */
-  @java.lang.Override
-  public boolean hasPreliminaryAnswer() {
-    return payloadCase_ == 1;
-  }
-  /**
-   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-   * @return The preliminaryAnswer.
-   */
-  @java.lang.Override
-  public com.jervis.contracts.orchestrator.PreliminaryAnswer getPreliminaryAnswer() {
-    if (payloadCase_ == 1) {
-       return (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_;
-    }
-    return com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
-  }
-  /**
-   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-   */
-  @java.lang.Override
-  public com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder getPreliminaryAnswerOrBuilder() {
-    if (payloadCase_ == 1) {
-       return (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_;
-    }
-    return com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
   }
 
   public static final int RESPONDING_FIELD_NUMBER = 2;
@@ -333,9 +304,6 @@ private static final long serialVersionUID = 0L;
   @java.lang.Override
   public void writeTo(com.google.protobuf.CodedOutputStream output)
                       throws java.io.IOException {
-    if (payloadCase_ == 1) {
-      output.writeMessage(1, (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_);
-    }
     if (payloadCase_ == 2) {
       output.writeMessage(2, (com.jervis.contracts.orchestrator.Responding) payload_);
     }
@@ -363,10 +331,6 @@ private static final long serialVersionUID = 0L;
     if (size != -1) return size;
 
     size = 0;
-    if (payloadCase_ == 1) {
-      size += com.google.protobuf.CodedOutputStream
-        .computeMessageSize(1, (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_);
-    }
     if (payloadCase_ == 2) {
       size += com.google.protobuf.CodedOutputStream
         .computeMessageSize(2, (com.jervis.contracts.orchestrator.Responding) payload_);
@@ -408,10 +372,6 @@ private static final long serialVersionUID = 0L;
 
     if (!getPayloadCase().equals(other.getPayloadCase())) return false;
     switch (payloadCase_) {
-      case 1:
-        if (!getPreliminaryAnswer()
-            .equals(other.getPreliminaryAnswer())) return false;
-        break;
       case 2:
         if (!getResponding()
             .equals(other.getResponding())) return false;
@@ -451,10 +411,6 @@ private static final long serialVersionUID = 0L;
     int hash = 41;
     hash = (19 * hash) + getDescriptor().hashCode();
     switch (payloadCase_) {
-      case 1:
-        hash = (37 * hash) + PRELIMINARY_ANSWER_FIELD_NUMBER;
-        hash = (53 * hash) + getPreliminaryAnswer().hashCode();
-        break;
       case 2:
         hash = (37 * hash) + RESPONDING_FIELD_NUMBER;
         hash = (53 * hash) + getResponding().hashCode();
@@ -585,6 +541,10 @@ private static final long serialVersionUID = 0L;
    * payload shapes mirror what app/voice/stream_handler.py +
    * app/voice/quick_responder.py yield — each variant holds only the
    * fields actually produced on that branch.
+   *
+   * Field 1 was `PreliminaryAnswer` — retired with slice V3i-cleanup; no
+   * UI client ever matched on it. Leaving the number reserved keeps the
+   * wire stable if something legitimate needs that slot later.
    * </pre>
    *
    * Protobuf type {@code jervis.orchestrator.VoiceStreamEvent}
@@ -620,9 +580,6 @@ private static final long serialVersionUID = 0L;
     public Builder clear() {
       super.clear();
       bitField0_ = 0;
-      if (preliminaryAnswerBuilder_ != null) {
-        preliminaryAnswerBuilder_.clear();
-      }
       if (respondingBuilder_ != null) {
         respondingBuilder_.clear();
       }
@@ -682,10 +639,6 @@ private static final long serialVersionUID = 0L;
     private void buildPartialOneofs(com.jervis.contracts.orchestrator.VoiceStreamEvent result) {
       result.payloadCase_ = payloadCase_;
       result.payload_ = this.payload_;
-      if (payloadCase_ == 1 &&
-          preliminaryAnswerBuilder_ != null) {
-        result.payload_ = preliminaryAnswerBuilder_.build();
-      }
       if (payloadCase_ == 2 &&
           respondingBuilder_ != null) {
         result.payload_ = respondingBuilder_.build();
@@ -725,10 +678,6 @@ private static final long serialVersionUID = 0L;
     public Builder mergeFrom(com.jervis.contracts.orchestrator.VoiceStreamEvent other) {
       if (other == com.jervis.contracts.orchestrator.VoiceStreamEvent.getDefaultInstance()) return this;
       switch (other.getPayloadCase()) {
-        case PRELIMINARY_ANSWER: {
-          mergePreliminaryAnswer(other.getPreliminaryAnswer());
-          break;
-        }
         case RESPONDING: {
           mergeResponding(other.getResponding());
           break;
@@ -783,13 +732,6 @@ private static final long serialVersionUID = 0L;
             case 0:
               done = true;
               break;
-            case 10: {
-              input.readMessage(
-                  internalGetPreliminaryAnswerFieldBuilder().getBuilder(),
-                  extensionRegistry);
-              payloadCase_ = 1;
-              break;
-            } // case 10
             case 18: {
               input.readMessage(
                   internalGetRespondingFieldBuilder().getBuilder(),
@@ -863,148 +805,6 @@ private static final long serialVersionUID = 0L;
     }
 
     private int bitField0_;
-
-    private com.google.protobuf.SingleFieldBuilder<
-        com.jervis.contracts.orchestrator.PreliminaryAnswer, com.jervis.contracts.orchestrator.PreliminaryAnswer.Builder, com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder> preliminaryAnswerBuilder_;
-    /**
-     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-     * @return Whether the preliminaryAnswer field is set.
-     */
-    @java.lang.Override
-    public boolean hasPreliminaryAnswer() {
-      return payloadCase_ == 1;
-    }
-    /**
-     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-     * @return The preliminaryAnswer.
-     */
-    @java.lang.Override
-    public com.jervis.contracts.orchestrator.PreliminaryAnswer getPreliminaryAnswer() {
-      if (preliminaryAnswerBuilder_ == null) {
-        if (payloadCase_ == 1) {
-          return (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_;
-        }
-        return com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
-      } else {
-        if (payloadCase_ == 1) {
-          return preliminaryAnswerBuilder_.getMessage();
-        }
-        return com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
-      }
-    }
-    /**
-     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-     */
-    public Builder setPreliminaryAnswer(com.jervis.contracts.orchestrator.PreliminaryAnswer value) {
-      if (preliminaryAnswerBuilder_ == null) {
-        if (value == null) {
-          throw new NullPointerException();
-        }
-        payload_ = value;
-        onChanged();
-      } else {
-        preliminaryAnswerBuilder_.setMessage(value);
-      }
-      payloadCase_ = 1;
-      return this;
-    }
-    /**
-     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-     */
-    public Builder setPreliminaryAnswer(
-        com.jervis.contracts.orchestrator.PreliminaryAnswer.Builder builderForValue) {
-      if (preliminaryAnswerBuilder_ == null) {
-        payload_ = builderForValue.build();
-        onChanged();
-      } else {
-        preliminaryAnswerBuilder_.setMessage(builderForValue.build());
-      }
-      payloadCase_ = 1;
-      return this;
-    }
-    /**
-     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-     */
-    public Builder mergePreliminaryAnswer(com.jervis.contracts.orchestrator.PreliminaryAnswer value) {
-      if (preliminaryAnswerBuilder_ == null) {
-        if (payloadCase_ == 1 &&
-            payload_ != com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance()) {
-          payload_ = com.jervis.contracts.orchestrator.PreliminaryAnswer.newBuilder((com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_)
-              .mergeFrom(value).buildPartial();
-        } else {
-          payload_ = value;
-        }
-        onChanged();
-      } else {
-        if (payloadCase_ == 1) {
-          preliminaryAnswerBuilder_.mergeFrom(value);
-        } else {
-          preliminaryAnswerBuilder_.setMessage(value);
-        }
-      }
-      payloadCase_ = 1;
-      return this;
-    }
-    /**
-     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-     */
-    public Builder clearPreliminaryAnswer() {
-      if (preliminaryAnswerBuilder_ == null) {
-        if (payloadCase_ == 1) {
-          payloadCase_ = 0;
-          payload_ = null;
-          onChanged();
-        }
-      } else {
-        if (payloadCase_ == 1) {
-          payloadCase_ = 0;
-          payload_ = null;
-        }
-        preliminaryAnswerBuilder_.clear();
-      }
-      return this;
-    }
-    /**
-     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-     */
-    public com.jervis.contracts.orchestrator.PreliminaryAnswer.Builder getPreliminaryAnswerBuilder() {
-      return internalGetPreliminaryAnswerFieldBuilder().getBuilder();
-    }
-    /**
-     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-     */
-    @java.lang.Override
-    public com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder getPreliminaryAnswerOrBuilder() {
-      if ((payloadCase_ == 1) && (preliminaryAnswerBuilder_ != null)) {
-        return preliminaryAnswerBuilder_.getMessageOrBuilder();
-      } else {
-        if (payloadCase_ == 1) {
-          return (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_;
-        }
-        return com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
-      }
-    }
-    /**
-     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-     */
-    private com.google.protobuf.SingleFieldBuilder<
-        com.jervis.contracts.orchestrator.PreliminaryAnswer, com.jervis.contracts.orchestrator.PreliminaryAnswer.Builder, com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder> 
-        internalGetPreliminaryAnswerFieldBuilder() {
-      if (preliminaryAnswerBuilder_ == null) {
-        if (!(payloadCase_ == 1)) {
-          payload_ = com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
-        }
-        preliminaryAnswerBuilder_ = new com.google.protobuf.SingleFieldBuilder<
-            com.jervis.contracts.orchestrator.PreliminaryAnswer, com.jervis.contracts.orchestrator.PreliminaryAnswer.Builder, com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder>(
-                (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_,
-                getParentForChildren(),
-                isClean());
-        payload_ = null;
-      }
-      payloadCase_ = 1;
-      onChanged();
-      return preliminaryAnswerBuilder_;
-    }
 
     private com.google.protobuf.SingleFieldBuilder<
         com.jervis.contracts.orchestrator.Responding, com.jervis.contracts.orchestrator.Responding.Builder, com.jervis.contracts.orchestrator.RespondingOrBuilder> respondingBuilder_;

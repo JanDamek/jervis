@@ -34,9 +34,14 @@ message VoiceProcessRequest {
 // payload shapes mirror what app/voice/stream_handler.py +
 // app/voice/quick_responder.py yield — each variant holds only the
 // fields actually produced on that branch.
+//
+// Field 1 was `PreliminaryAnswer` — retired with slice V3i-cleanup; no
+// UI client ever matched on it. Leaving the number reserved keeps the
+// wire stable if something legitimate needs that slot later.
 message VoiceStreamEvent {
+  reserved 1;
+  reserved "preliminary_answer";
   oneof payload {
-    PreliminaryAnswer preliminary_answer = 1;
     Responding responding = 2;
     Token token = 3;
     Response response = 4;
@@ -44,11 +49,6 @@ message VoiceStreamEvent {
     Done done = 6;
     ErrorPayload error = 7;
   }
-}
-
-message PreliminaryAnswer {
-  string text = 1;
-  double confidence = 2;              // 0.0–1.0 (quick_responder KB match)
 }
 
 message Responding {}

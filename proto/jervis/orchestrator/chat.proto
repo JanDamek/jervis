@@ -60,16 +60,6 @@ message Attachment {
   string content_base64 = 4;           // empty = reference-only (future)
 }
 
-// ChatMessage — one entry in a persisted chat transcript. Reused from
-// control.proto (Approve carries a ChatMessage list instead of a JSON
-// blob) so the orchestrator sees a single typed message shape.
-message ChatMessage {
-  string role = 1;                     // "user" | "assistant" | "system" | "tool"
-  string content = 2;
-  string timestamp = 3;                // RFC3339 UTC; empty allowed
-  string tool_call_id = 4;             // for role=tool; empty otherwise
-}
-
 // ChatEvent mirrors the SSE shape {type, content, metadata}. Extra
 // side-channel fields (meeting hints, approval payload) ride in metadata
 // — keys stay string-string for stability.

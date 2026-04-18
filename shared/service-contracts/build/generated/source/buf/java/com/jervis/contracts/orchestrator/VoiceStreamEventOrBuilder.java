@@ -11,21 +11,6 @@ public interface VoiceStreamEventOrBuilder extends
     com.google.protobuf.MessageOrBuilder {
 
   /**
-   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-   * @return Whether the preliminaryAnswer field is set.
-   */
-  boolean hasPreliminaryAnswer();
-  /**
-   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-   * @return The preliminaryAnswer.
-   */
-  com.jervis.contracts.orchestrator.PreliminaryAnswer getPreliminaryAnswer();
-  /**
-   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
-   */
-  com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder getPreliminaryAnswerOrBuilder();
-
-  /**
    * <code>.jervis.orchestrator.Responding responding = 2;</code>
    * @return Whether the responding field is set.
    */

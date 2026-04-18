@@ -71,26 +71,14 @@ async def quick_respond(
 ) -> AsyncIterator[VoiceStreamEvent]:
     """Generate a quick response using KB + FREE LLM.
 
-    Yields SSE events: preliminary_answer, token, response, done.
-    Target: <3s total latency.
+    Yields events: responding, token, response, done. Target: <3s total
+    latency.
     """
-
-    # Step 1: KB search
-    yield VoiceStreamEvent(event="preliminary_answer", data={"text": "Hledám v KB...", "confidence": 0.3})
 
     context = await kb_search(query, client_id, project_id, group_id)
 
-    if "(no relevant results found)" not in context:
-        # Show preliminary answer from first KB result
-        first_result = context.split("\n---\n")[0] if context else ""
-        if first_result:
-            yield VoiceStreamEvent(event="preliminary_answer", data={
-                "text": first_result[:200],
-                "confidence": 0.6,
-            })
-
-    # Step 2: Stream response via router /api/chat — capability + client
-    # is the whole routing signal; router resolves tier and picks a model.
+    # Stream response via router /api/chat — capability + client is the
+    # whole routing signal; router resolves tier and picks a model.
     yield VoiceStreamEvent(event="responding", data={})
 
     body = {
