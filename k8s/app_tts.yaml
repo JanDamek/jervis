@@ -45,14 +45,16 @@ spec:
               memory: "1Gi"
               cpu: "2000m"
           livenessProbe:
-            tcpSocket:
-              port: 5501
+            httpGet:
+              path: /health
+              port: 8787
             initialDelaySeconds: 15
             periodSeconds: 30
             timeoutSeconds: 10
           readinessProbe:
-            tcpSocket:
-              port: 5501
+            httpGet:
+              path: /health
+              port: 8787
             initialDelaySeconds: 10
             periodSeconds: 15
             timeoutSeconds: 10

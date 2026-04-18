@@ -312,10 +312,14 @@ _active_chat_stops: dict[str, asyncio.Event] = {}
 # servicer verbatim.
 
 
-# /health + /status/{thread_id} migrated to gRPC
-# (OrchestratorControlService.{Health,GetStatus} on :5501).
-# K8s probe switched to tcpSocket on the gRPC port — see
-# k8s/app_orchestrator.yaml.
+# /status/{thread_id} migrated to gRPC (OrchestratorControlService.GetStatus).
+# /health kept only for K8s probes — actual health monitoring goes through
+# OrchestratorControlService.Health on :5501.
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "orchestrator", "active_tasks": len(_active_tasks)}
 
 
 # /approve/{thread_id}, /interrupt/{thread_id}, /cancel/{thread_id} migrated to

@@ -42,19 +42,22 @@ spec:
               memory: "1Gi"
               cpu: "1000m"
           startupProbe:
-            tcpSocket:
-              port: 5501
+            httpGet:
+              path: /health
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 20
           readinessProbe:
-            tcpSocket:
-              port: 5501
+            httpGet:
+              path: /health
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            tcpSocket:
-              port: 5501
+            httpGet:
+              path: /health
+              port: 8080
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 6

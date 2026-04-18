@@ -391,10 +391,15 @@ app = FastAPI(
 )
 
 
-# /health + /transcribe + /gpu/release migrated to gRPC
-# (WhisperService.{Health,Transcribe,GpuRelease} on :5501).
-# /diagnostic stays as FastAPI — it's an operator-facing debug endpoint
-# not consumed by any service.
+# /transcribe + /gpu/release migrated to gRPC
+# (WhisperService.{Transcribe,GpuRelease} on :5501).
+# /health stays for K8s probes; /diagnostic stays for operator debug.
+
+
+@app.get("/health")
+async def health():
+    """K8s probe endpoint. Actual traffic runs on gRPC :5501."""
+    return {"status": "ok", "service": "whisper"}
 
 
 @app.get("/diagnostic")

@@ -48,3 +48,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Document Extraction Service", lifespan=lifespan)
+
+
+@app.get("/health")
+async def health() -> dict:
+    """K8s probe endpoint. Actual traffic runs on gRPC :5501."""
+    return {"status": "ok", "service": "document-extraction"}

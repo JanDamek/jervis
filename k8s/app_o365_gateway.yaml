@@ -48,15 +48,17 @@ spec:
               memory: "768Mi"
               cpu: "500m"
           livenessProbe:
-            tcpSocket:
-              port: 5501
+            httpGet:
+              path: /health
+              port: 8080
             initialDelaySeconds: 15
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 6
           readinessProbe:
-            tcpSocket:
-              port: 5501
+            httpGet:
+              path: /health
+              port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
