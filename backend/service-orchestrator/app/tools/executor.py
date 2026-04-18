@@ -3251,15 +3251,16 @@ async def _execute_task_queue_inspect(
             ),
             timeout=15.0,
         )
-        tasks = _json.loads(resp.items_json)
+        tasks = list(resp.items)
         if not tasks:
             return "Queue is empty — no background tasks waiting."
         lines = [f"Background task queue ({len(tasks)} tasks):"]
         for t in tasks:
+            priority = t.priority_score if t.priority_score else 50
             lines.append(
-                f"  [{t['state']}] {t['title']} "
-                f"(id={t['id']}, priority={t.get('priorityScore', '50')}, "
-                f"client={t['clientId'][:8]}…)"
+                f"  [{t.state}] {t.title} "
+                f"(id={t.id}, priority={priority}, "
+                f"client={t.client_id[:8]}…)"
             )
         return "\n".join(lines)
     except Exception as e:

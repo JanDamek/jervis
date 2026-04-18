@@ -41,6 +41,33 @@ async def get_mongo_db():
     return _motor_client.get_default_database()
 
 
+def _task_summary_to_dict(t) -> dict:
+    """Convert a task_api_pb2.TaskSummary into the dict shape the LLM tool
+    response expects (camelCase keys matching the legacy JSON)."""
+    out: dict[str, str | int] = {
+        "id": t.id,
+        "title": t.title,
+        "state": t.state,
+        "content": t.content,
+        "clientId": t.client_id,
+    }
+    if t.project_id:
+        out["projectId"] = t.project_id
+    if t.created_at:
+        out["createdAt"] = t.created_at
+    if t.processing_mode:
+        out["processingMode"] = t.processing_mode
+    if t.priority_score:
+        out["priorityScore"] = t.priority_score
+    if t.parent_task_id:
+        out["parentTaskId"] = t.parent_task_id
+    if t.phase:
+        out["phase"] = t.phase
+    if t.estimated_complexity:
+        out["estimatedComplexity"] = t.estimated_complexity
+    return out
+
+
 class KotlinServerClient:
     """HTTP client for Kotlin server — push-based communication."""
 
@@ -631,7 +658,18 @@ class KotlinServerClient:
                 ),
                 timeout=15.0,
             )
-            return resp.items_json or "[]"
+            items = [
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "state": t.state,
+                    "question": t.question,
+                    "context": t.question_context,
+                    "clientId": t.client_id,
+                }
+                for t in resp.items
+            ]
+            return json.dumps(items) if items else "[]"
         except Exception as e:
             logger.warning("Failed to search user tasks: %s", e)
             return f"Error: {e}"
@@ -1067,7 +1105,8 @@ class KotlinServerClient:
                 ),
                 timeout=15.0,
             )
-            return resp.items_json or "[]"
+            items = [_task_summary_to_dict(t) for t in resp.items]
+            return json.dumps(items) if items else "[]"
         except Exception as e:
             logger.warning("Failed to search tasks: %s", e)
             return f"Error: {e}"
@@ -1098,7 +1137,8 @@ class KotlinServerClient:
                 ),
                 timeout=15.0,
             )
-            return resp.items_json or "[]"
+            items = [_task_summary_to_dict(t) for t in resp.items]
+            return json.dumps(items) if items else "[]"
         except Exception as e:
             logger.warning("Failed to list recent tasks: %s", e)
             return f"Error: {e}"

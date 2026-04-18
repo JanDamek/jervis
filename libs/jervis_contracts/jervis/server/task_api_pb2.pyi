@@ -16,10 +16,56 @@ class TaskIdRequest(_message.Message):
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., task_id: _Optional[str] = ...) -> None: ...
 
 class TaskListResponse(_message.Message):
-    __slots__ = ("items_json",)
-    ITEMS_JSON_FIELD_NUMBER: _ClassVar[int]
-    items_json: str
-    def __init__(self, items_json: _Optional[str] = ...) -> None: ...
+    __slots__ = ("items",)
+    ITEMS_FIELD_NUMBER: _ClassVar[int]
+    items: _containers.RepeatedCompositeFieldContainer[TaskSummary]
+    def __init__(self, items: _Optional[_Iterable[_Union[TaskSummary, _Mapping]]] = ...) -> None: ...
+
+class TaskSummary(_message.Message):
+    __slots__ = ("id", "title", "state", "content", "client_id", "project_id", "created_at", "processing_mode", "priority_score", "parent_task_id", "phase", "estimated_complexity", "agent_job_name", "orchestrator_thread_id", "agent_job_started_at", "source_urn", "agent_job_workspace_path", "agent_job_agent_type", "merge_request_url", "question", "question_context")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    CREATED_AT_FIELD_NUMBER: _ClassVar[int]
+    PROCESSING_MODE_FIELD_NUMBER: _ClassVar[int]
+    PRIORITY_SCORE_FIELD_NUMBER: _ClassVar[int]
+    PARENT_TASK_ID_FIELD_NUMBER: _ClassVar[int]
+    PHASE_FIELD_NUMBER: _ClassVar[int]
+    ESTIMATED_COMPLEXITY_FIELD_NUMBER: _ClassVar[int]
+    AGENT_JOB_NAME_FIELD_NUMBER: _ClassVar[int]
+    ORCHESTRATOR_THREAD_ID_FIELD_NUMBER: _ClassVar[int]
+    AGENT_JOB_STARTED_AT_FIELD_NUMBER: _ClassVar[int]
+    SOURCE_URN_FIELD_NUMBER: _ClassVar[int]
+    AGENT_JOB_WORKSPACE_PATH_FIELD_NUMBER: _ClassVar[int]
+    AGENT_JOB_AGENT_TYPE_FIELD_NUMBER: _ClassVar[int]
+    MERGE_REQUEST_URL_FIELD_NUMBER: _ClassVar[int]
+    QUESTION_FIELD_NUMBER: _ClassVar[int]
+    QUESTION_CONTEXT_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    title: str
+    state: str
+    content: str
+    client_id: str
+    project_id: str
+    created_at: str
+    processing_mode: str
+    priority_score: int
+    parent_task_id: str
+    phase: str
+    estimated_complexity: str
+    agent_job_name: str
+    orchestrator_thread_id: str
+    agent_job_started_at: str
+    source_urn: str
+    agent_job_workspace_path: str
+    agent_job_agent_type: str
+    merge_request_url: str
+    question: str
+    question_context: str
+    def __init__(self, id: _Optional[str] = ..., title: _Optional[str] = ..., state: _Optional[str] = ..., content: _Optional[str] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ..., created_at: _Optional[str] = ..., processing_mode: _Optional[str] = ..., priority_score: _Optional[int] = ..., parent_task_id: _Optional[str] = ..., phase: _Optional[str] = ..., estimated_complexity: _Optional[str] = ..., agent_job_name: _Optional[str] = ..., orchestrator_thread_id: _Optional[str] = ..., agent_job_started_at: _Optional[str] = ..., source_urn: _Optional[str] = ..., agent_job_workspace_path: _Optional[str] = ..., agent_job_agent_type: _Optional[str] = ..., merge_request_url: _Optional[str] = ..., question: _Optional[str] = ..., question_context: _Optional[str] = ...) -> None: ...
 
 class SimpleTaskActionResponse(_message.Message):
     __slots__ = ("ok", "task_id", "state", "error")

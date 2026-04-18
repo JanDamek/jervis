@@ -36,6 +36,7 @@ import com.jervis.contracts.server.SimpleTaskActionResponse
 import com.jervis.contracts.server.TaskIdRequest
 import com.jervis.contracts.server.TaskListResponse
 import com.jervis.contracts.server.TaskNoteRequest
+import com.jervis.contracts.server.TaskSummary
 import com.jervis.contracts.server.TasksByStateRequest
 import com.jervis.contracts.server.UserTaskResponse
 import com.jervis.dto.user.TaskRoutingMode
@@ -52,8 +53,6 @@ import com.jervis.task.TaskService
 import com.jervis.task.UserTaskRpcImpl
 import com.jervis.task.UserTaskService
 import kotlinx.coroutines.flow.toList
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
@@ -201,10 +200,8 @@ class ServerTaskApiGrpcImpl(
             limit = limit,
             stateFilter = stateFilter,
         )
-        val items = result.items.map { task -> task.toSummaryMap() }
-        return TaskListResponse.newBuilder()
-            .setItemsJson(json.encodeToString(items))
-            .build()
+        val items = result.items.map { it.toSummaryProto() }
+        return TaskListResponse.newBuilder().addAllItems(items).build()
     }
 
     override suspend fun createWorkPlan(request: CreateWorkPlanRequest): CreateWorkPlanResponse {
@@ -311,11 +308,11 @@ class ServerTaskApiGrpcImpl(
             }
             else -> taskRepository.findByCreatedAtGreaterThanEqualOrderByCreatedAtDesc(sinceInstant)
         }
-        val items = mutableListOf<Map<String, String>>()
+        val items = mutableListOf<TaskSummary>()
         flow.collect { task ->
-            if (items.size < limit) items.add(task.toSummaryMap(includeProcessingMode = true))
+            if (items.size < limit) items.add(task.toSummaryProto(includeProcessingMode = true))
         }
-        return TaskListResponse.newBuilder().setItemsJson(json.encodeToString(items)).build()
+        return TaskListResponse.newBuilder().addAllItems(items).build()
     }
 
     override suspend fun getQueue(request: GetQueueRequest): TaskListResponse {
@@ -339,20 +336,21 @@ class ServerTaskApiGrpcImpl(
                 allowedStates,
             )
         }
-        val items = mutableListOf<Map<String, String>>()
+        val items = mutableListOf<TaskSummary>()
         flow.collect { task ->
             if (items.size < limit) {
                 items.add(
-                    task.toSummaryMap(includeProcessingMode = true) + mapOf(
-                        "priorityScore" to (task.priorityScore?.toString() ?: "50"),
-                        "parentTaskId" to (task.parentTaskId?.toString() ?: ""),
-                        "phase" to (task.phase ?: ""),
-                        "estimatedComplexity" to (task.estimatedComplexity ?: ""),
-                    ),
+                    task.toSummaryProto(includeProcessingMode = true)
+                        .toBuilder()
+                        .setPriorityScore(task.priorityScore ?: 50)
+                        .setParentTaskId(task.parentTaskId?.toString() ?: "")
+                        .setPhase(task.phase ?: "")
+                        .setEstimatedComplexity(task.estimatedComplexity ?: "")
+                        .build(),
                 )
             }
         }
-        return TaskListResponse.newBuilder().setItemsJson(json.encodeToString(items)).build()
+        return TaskListResponse.newBuilder().addAllItems(items).build()
     }
 
     override suspend fun retryTask(request: TaskIdRequest): SimpleTaskActionResponse {
@@ -487,17 +485,19 @@ class ServerTaskApiGrpcImpl(
 
     // ── Helpers ──
 
-    private fun TaskDocument.toSummaryMap(includeProcessingMode: Boolean = false): Map<String, String> {
-        val base = mapOf(
-            "id" to id.toString(),
-            "title" to taskName,
-            "state" to state.name,
-            "content" to content,
-            "clientId" to clientId.toString(),
-            "projectId" to (projectId?.toString() ?: ""),
-            "createdAt" to createdAt.toString(),
-        )
-        return if (includeProcessingMode) base + ("processingMode" to processingMode.name) else base
+    private fun TaskDocument.toSummaryProto(includeProcessingMode: Boolean = false): TaskSummary {
+        val builder = TaskSummary.newBuilder()
+            .setId(id.toString())
+            .setTitle(taskName)
+            .setState(state.name)
+            .setContent(content)
+            .setClientId(clientId.toString())
+            .setProjectId(projectId?.toString() ?: "")
+            .setCreatedAt(createdAt.toString())
+        if (includeProcessingMode) {
+            builder.setProcessingMode(processingMode.name)
+        }
+        return builder.build()
     }
 
     private fun parseSince(since: String, userZone: ZoneId): Instant = when (since) {
@@ -513,30 +513,29 @@ class ServerTaskApiGrpcImpl(
         val state = try {
             TaskStateEnum.valueOf(request.state)
         } catch (_: Exception) {
-            return TaskListResponse.newBuilder().setItemsJson("[]").build()
+            return TaskListResponse.newBuilder().build()
         }
-        val items = mutableListOf<Map<String, Any?>>()
+        val items = mutableListOf<TaskSummary>()
         taskRepository.findByStateOrderByCreatedAtAsc(state).collect { task ->
             items.add(
-                mapOf(
-                    "id" to task.id.toString(),
-                    "agentJobName" to task.agentJobName,
-                    "orchestratorThreadId" to task.orchestratorThreadId,
-                    "agentJobStartedAt" to task.agentJobStartedAt?.toString(),
-                    "sourceUrn" to task.sourceUrn?.value,
-                    "agentJobWorkspacePath" to task.agentJobWorkspacePath,
-                    "agentJobAgentType" to task.agentJobAgentType,
-                    "taskName" to task.taskName,
-                    "content" to task.content,
-                    "clientId" to task.clientId.toString(),
-                    "projectId" to task.projectId?.toString(),
-                    "mergeRequestUrl" to task.mergeRequestUrl,
-                ),
+                TaskSummary.newBuilder()
+                    .setId(task.id.toString())
+                    .setTitle(task.taskName)
+                    .setContent(task.content)
+                    .setState(task.state.name)
+                    .setClientId(task.clientId.toString())
+                    .setProjectId(task.projectId?.toString() ?: "")
+                    .setAgentJobName(task.agentJobName ?: "")
+                    .setOrchestratorThreadId(task.orchestratorThreadId ?: "")
+                    .setAgentJobStartedAt(task.agentJobStartedAt?.toString() ?: "")
+                    .setSourceUrn(task.sourceUrn?.value ?: "")
+                    .setAgentJobWorkspacePath(task.agentJobWorkspacePath ?: "")
+                    .setAgentJobAgentType(task.agentJobAgentType ?: "")
+                    .setMergeRequestUrl(task.mergeRequestUrl ?: "")
+                    .build(),
             )
         }
-        return TaskListResponse.newBuilder()
-            .setItemsJson(encodeAnyListToJson(items))
-            .build()
+        return TaskListResponse.newBuilder().addAllItems(items).build()
     }
 
     override suspend fun agentDispatched(request: AgentDispatchedRequest): SimpleTaskActionResponse {
@@ -640,18 +639,16 @@ class ServerTaskApiGrpcImpl(
             limit = limit,
         )
         val items = result.items.map { task ->
-            mapOf(
-                "id" to task.id.toString(),
-                "title" to (task.sourceUrn?.toString() ?: ""),
-                "state" to task.state.name,
-                "question" to (task.pendingUserQuestion ?: ""),
-                "context" to (task.userQuestionContext ?: ""),
-                "clientId" to task.clientId.toString(),
-            )
+            TaskSummary.newBuilder()
+                .setId(task.id.toString())
+                .setTitle(task.sourceUrn?.toString() ?: "")
+                .setState(task.state.name)
+                .setQuestion(task.pendingUserQuestion ?: "")
+                .setQuestionContext(task.userQuestionContext ?: "")
+                .setClientId(task.clientId.toString())
+                .build()
         }
-        return TaskListResponse.newBuilder()
-            .setItemsJson(json.encodeToString(items))
-            .build()
+        return TaskListResponse.newBuilder().addAllItems(items).build()
     }
 
     override suspend fun getUserTask(request: TaskIdRequest): UserTaskResponse {
@@ -708,28 +705,4 @@ class ServerTaskApiGrpcImpl(
             .build()
     }
 
-    private fun encodeAnyListToJson(items: List<Map<String, Any?>>): String {
-        val arr = kotlinx.serialization.json.buildJsonArray {
-            items.forEach { m ->
-                add(
-                    kotlinx.serialization.json.buildJsonObject {
-                        m.forEach { (k, v) -> put(k, anyToJson(v)) }
-                    },
-                )
-            }
-        }
-        return arr.toString()
-    }
-
-    private fun anyToJson(value: Any?): kotlinx.serialization.json.JsonElement = when (value) {
-        null -> kotlinx.serialization.json.JsonNull
-        is String -> kotlinx.serialization.json.JsonPrimitive(value)
-        is Number -> kotlinx.serialization.json.JsonPrimitive(value)
-        is Boolean -> kotlinx.serialization.json.JsonPrimitive(value)
-        else -> kotlinx.serialization.json.JsonPrimitive(value.toString())
-    }
-
-    companion object {
-        private val json = Json { encodeDefaults = true; ignoreUnknownKeys = true }
-    }
 }

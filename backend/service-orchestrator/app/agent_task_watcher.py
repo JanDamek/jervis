@@ -84,7 +84,7 @@ class AgentTaskWatcher:
                 task_api_pb2.TasksByStateRequest(ctx=ctx, state="CODING"),
                 timeout=15.0,
             )
-            tasks = _json.loads(resp.items_json)
+            tasks = list(resp.items)
         except Exception as e:
             logger.debug("Failed to fetch CODING tasks: %s", e)
             return
@@ -94,17 +94,17 @@ class AgentTaskWatcher:
 
         logger.debug("Checking %d CODING tasks", len(tasks))
 
-        for task_data in tasks:
-            task_id = task_data.get("id", "")
-            job_name = task_data.get("agentJobName")
-            thread_id = task_data.get("orchestratorThreadId")
+        for task in tasks:
+            task_id = task.id
+            job_name = task.agent_job_name or None
+            thread_id = task.orchestrator_thread_id or None
 
             if not job_name:
                 logger.warning("Task %s in CODING but missing job_name", task_id)
                 continue
 
             # thread_id is required for graph-based tasks but optional for direct coding
-            source_urn = task_data.get("sourceUrn", "")
+            source_urn = task.source_urn
             if not thread_id and source_urn != "chat:coding-agent":
                 logger.warning("Task %s in CODING but missing thread_id (non-direct)", task_id)
                 continue
@@ -122,8 +122,8 @@ class AgentTaskWatcher:
                 continue
 
             # Job completed (succeeded or failed) — collect result and resume
-            workspace_path = task_data.get("agentJobWorkspacePath", "")
-            agent_type = task_data.get("agentJobAgentType", "unknown")
+            workspace_path = task.agent_job_workspace_path
+            agent_type = task.agent_job_agent_type or "unknown"
 
             # Always try to collect result.json first — entrypoint writes detailed errors
             result = job_runner.collect_result(
@@ -158,14 +158,13 @@ class AgentTaskWatcher:
             self._processed_jobs.add(job_name)
 
             # Check if this is a direct coding task (no graph to resume)
-            source_urn = task_data.get("sourceUrn", "")
             is_direct_coding = source_urn == "chat:coding-agent"
             is_review_task = source_urn.startswith("code-review:")
             is_fix_task = source_urn.startswith("code-review-fix:")
 
             if is_review_task:
                 # Review agent completed — parse verdict, post MR comment, create fix task
-                await self._handle_review_completed(task_id, task_data, result, job_name, job_status, source_urn)
+                await self._handle_review_completed(task_id, task, result, job_name, job_status, source_urn)
             elif is_direct_coding or is_fix_task:
                 # Direct coding task — three-step: CODING→PROCESSING→(MR)→DONE
                 # Step 1: agent-completed moves CODING→PROCESSING
@@ -184,8 +183,8 @@ class AgentTaskWatcher:
                 if result.get("success") and result.get("branch"):
                     branch = result["branch"]
                     task_title = (
-                        task_data.get("taskName")
-                        or (task_data.get("content", "") or "")[:80]
+                        task.title
+                        or task.content[:80]
                         or f"Coding: {task_id[:12]}"
                     )
 
@@ -193,9 +192,9 @@ class AgentTaskWatcher:
                     if source_urn.startswith("code-review-fix:"):
                         # Fix task — don't create new MR, branch + MR already exist
                         import re as _re
-                        round_match = _re.search(r"Code Review Fix \(Round (\d+)\)", task_data.get("content", ""))
+                        round_match = _re.search(r"Code Review Fix \(Round (\d+)\)", task.content)
                         review_round = int(round_match.group(1)) if round_match else 2
-                        mr_url = task_data.get("mergeRequestUrl") or ""
+                        mr_url = task.merge_request_url
                     else:
                         # New coding task — create MR
                         try:
@@ -239,8 +238,8 @@ class AgentTaskWatcher:
                     from app.agent.persistence import agent_store
                     job_success = result.get("success", False)
                     task_title = (
-                        task_data.get("taskName")
-                        or (task_data.get("content", "") or "")[:80]
+                        task.title
+                        or task.content[:80]
                         or f"Coding: {task_id[:12]}"
                     )
                     await agent_store.link_thinking_graph(
@@ -250,8 +249,8 @@ class AgentTaskWatcher:
                         completed=job_success,
                         failed=not job_success,
                         result_summary=result.get("summary", ""),
-                        client_id=str(task_data.get("clientId", "")),
-                        project_id=str(task_data.get("projectId", "")) if task_data.get("projectId") else None,
+                        client_id=task.client_id,
+                        project_id=task.project_id or None,
                     )
                 except Exception:
                     pass  # Non-fatal
@@ -288,13 +287,16 @@ class AgentTaskWatcher:
     async def _handle_review_completed(
         self,
         task_id: str,
-        task_data: dict,
+        task,
         result: dict,
         job_name: str,
         job_status: str,
         source_urn: str,
     ):
-        """Handle completed code review agent job — parse verdict, post MR comment, fix task."""
+        """Handle completed code review agent job — parse verdict, post MR comment, fix task.
+
+        `task` is a task_api_pb2.TaskSummary from TasksByState.
+        """
         import httpx
         import json
         import re as _re
@@ -331,7 +333,7 @@ class AgentTaskWatcher:
         if not review_data:
             logger.warning("Could not parse review JSON from task %s summary", task_id)
             # Post raw summary as MR comment (best effort)
-            mr_url = task_data.get("mergeRequestUrl", "")
+            mr_url = task.merge_request_url
             if mr_url and summary:
                 try:
                     original_task_id = source_urn.replace("code-review:", "")
@@ -353,7 +355,7 @@ class AgentTaskWatcher:
 
         # Determine review round from task content
         review_round = 1
-        round_match = _re.search(r"Round (\d+)/", task_data.get("content", ""))
+        round_match = _re.search(r"Round (\d+)/", task.content)
         if round_match:
             review_round = int(round_match.group(1))
 
@@ -412,7 +414,7 @@ class AgentTaskWatcher:
 
         # Post inline comments + summary on MR
         original_task_id = source_urn.replace("code-review:", "")
-        mr_url = task_data.get("mergeRequestUrl", "")
+        mr_url = task.merge_request_url
         posted = False
         if mr_url:
             try:
@@ -439,11 +441,11 @@ class AgentTaskWatcher:
             try:
                 await self._create_review_fix_task(
                     original_task_id=original_task_id,
-                    task_content=task_data.get("content", ""),
+                    task_content=task.content,
                     blocker_issues=blocker_issues,
                     mr_url=mr_url,
-                    client_id=str(task_data.get("clientId", "")),
-                    project_id=str(task_data.get("projectId", "")) if task_data.get("projectId") else None,
+                    client_id=task.client_id,
+                    project_id=task.project_id or None,
                     review_round=review_round,
                 )
             except Exception as e:
@@ -467,11 +469,11 @@ class AgentTaskWatcher:
         if review_summary:
             try:
                 from app.tools.executor import execute_tool
-                client_id = str(task_data.get("clientId", ""))
-                project_id = str(task_data.get("projectId", "")) if task_data.get("projectId") else None
+                client_id = task.client_id
+                project_id = task.project_id or None
                 kb_content = (
                     f"Code review ({verdict}, score {score}/100): {review_summary}\n"
-                    f"Task: {task_data.get('content', '')[:200]}\n"
+                    f"Task: {task.content[:200]}\n"
                     f"MR: {mr_url}"
                 )
                 await execute_tool(
@@ -498,8 +500,8 @@ class AgentTaskWatcher:
                 completed=(verdict == "APPROVE"),
                 failed=(verdict in ("REJECT",)),
                 result_summary=f"{review_summary}\nMR: {mr_url}",
-                client_id=str(task_data.get("clientId", "")),
-                project_id=str(task_data.get("projectId", "")) if task_data.get("projectId") else None,
+                client_id=task.client_id,
+                project_id=task.project_id or None,
             )
         except Exception:
             pass  # Non-fatal

@@ -55,9 +55,41 @@ message TaskIdRequest {
 }
 
 message TaskListResponse {
-  // Array of task summary JSON objects (id, title, state, content, clientId,
-  // projectId, createdAt, …).
-  string items_json = 1;
+  repeated TaskSummary items = 1;
+}
+
+// TaskSummary covers the union of fields the five list RPCs surface
+// (SearchTasks, RecentTasks, GetQueue, TasksByState, ListUserTasks).
+// Each RPC fills the subset relevant to its call — consumers should
+// treat empty strings / zeros as "not populated" for this variant.
+message TaskSummary {
+  string id = 1;
+  string title = 2;                          // TaskDocument.taskName
+  string state = 3;
+  string content = 4;
+  string client_id = 5;
+  string project_id = 6;
+  string created_at = 7;
+  string processing_mode = 8;
+
+  // GetQueue extras
+  int32 priority_score = 9;
+  string parent_task_id = 10;
+  string phase = 11;
+  string estimated_complexity = 12;
+
+  // TasksByState extras (agent-job watcher loop)
+  string agent_job_name = 13;
+  string orchestrator_thread_id = 14;
+  string agent_job_started_at = 15;
+  string source_urn = 16;
+  string agent_job_workspace_path = 17;
+  string agent_job_agent_type = 18;
+  string merge_request_url = 19;
+
+  // ListUserTasks extras — the user-facing pending-question surface.
+  string question = 20;                      // pendingUserQuestion
+  string question_context = 21;              // userQuestionContext
 }
 
 message SimpleTaskActionResponse {
