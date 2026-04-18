@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package jervis.meeting_attender;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.meeting_attender";
+option java_multiple_files = true;
+option java_outer_classname = "MeetingAttenderProto";
+
+// MeetingAttenderService — dispatch + lifecycle for the K8s
+// `jervis-meeting-attender` pod. Replaces the POST /attend + POST /stop
+// REST surface; the Kotlin MeetingRecordingDispatcher dials Attend for
+// approved calendar-driven meetings and Stop when the user cancels.
+service MeetingAttenderService {
+  rpc Attend(AttendRequest) returns (AttendResponse);
+  rpc Stop(StopRequest) returns (StopResponse);
+}
+
+message AttendRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string client_id = 3;
+  string project_id = 4;
+  string title = 5;
+  string join_url = 6;
+  string end_time_iso = 7;
+  string provider = 8;
+}
+
+message AttendResponse {
+  bool ok = 1;
+  string task_id = 2;
+  string state = 3;
+  string error = 4;
+}
+
+message StopRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string reason = 3;
+}
+
+message StopResponse {
+  bool ok = 1;
+  string error = 2;
+}

@@ -33,6 +33,6 @@ RUN mkdir -p /var/lib/jervis/recordings && \
 
 USER 1000
 
-EXPOSE 8095 6080
+EXPOSE 8095 5501 6080
 
 CMD ["/entrypoint.sh"]

@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package jervis.whatsapp_browser;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.whatsapp_browser";
+option java_multiple_files = true;
+option java_outer_classname = "WhatsAppBrowserProto";
+
+// WhatsAppBrowserService — gRPC wrapper on top of the `jervis-whatsapp-browser`
+// pod. Kotlin server's ConnectionRpcImpl + WhatsAppPollingHandler dial
+// these RPCs instead of the former REST surface
+// (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
+// /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
+// (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+service WhatsAppBrowserService {
+  rpc SessionStatus(WhatsAppRequest) returns (RawResponse);
+  rpc SessionInit(WhatsAppRequest) returns (RawResponse);
+  rpc ScrapeTrigger(WhatsAppRequest) returns (RawResponse);
+  rpc ScrapeLatest(WhatsAppRequest) returns (RawResponse);
+  rpc VncToken(WhatsAppRequest) returns (RawResponse);
+}
+
+message WhatsAppRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string body_json = 3;
+}
+
+message RawResponse {
+  int32 status = 1;
+  string body_json = 2;
+}

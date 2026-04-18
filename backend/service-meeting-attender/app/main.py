@@ -375,23 +375,31 @@ manager = AttenderManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+    import os
+
+    from app.grpc_server import start_grpc_server
+
     await manager.startup()
-    yield
-    await manager.shutdown()
+
+    grpc_port = int(os.getenv("MEETING_ATTENDER_GRPC_PORT", "5501"))
+    grpc_server = await start_grpc_server(manager, port=grpc_port)
+    app.state.grpc_server = grpc_server
+    try:
+        yield
+    finally:
+        try:
+            await asyncio.wait_for(grpc_server.stop(grace=5.0), timeout=10.0)
+        except Exception as e:
+            logger.warning("gRPC shutdown failed: %s", e)
+        await manager.shutdown()
 
 
 app = FastAPI(title="Jervis Meeting Attender", lifespan=lifespan)
 
 
-@app.post("/attend", response_model=SessionInfo)
-async def attend(req: AttendRequest) -> SessionInfo:
-    return await manager.attend(req)
-
-
-@app.post("/stop")
-async def stop(req: StopRequest) -> dict:
-    await manager.stop(req.task_id, reason=req.reason)
-    return {"ok": True}
+# /attend + /stop migrated to gRPC MeetingAttenderService (:5501).
+# /sessions kept as an operator debug route; /health + /ready stay for probes.
 
 
 @app.get("/sessions", response_model=list[SessionInfo])
