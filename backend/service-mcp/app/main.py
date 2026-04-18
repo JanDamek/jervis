@@ -2627,8 +2627,6 @@ async def create_git_repository(
         is_private: Whether the repository should be private (default: true)
     """
     try:
-        import json as _json
-
         from app.grpc_clients import server_git_stub
         from jervis.server import git_pb2
         from jervis.common import types_pb2
@@ -2647,12 +2645,11 @@ async def create_git_repository(
             ),
             timeout=60.0,
         )
-        data = _json.loads(resp.body_json) if resp.body_json else {}
         return (
-            f"Repository created: {data.get('fullName', name)}\n"
-            f"  Clone URL: {data.get('cloneUrl', '?')}\n"
-            f"  Web URL: {data.get('htmlUrl', '?')}\n"
-            f"  Provider: {data.get('provider', '?')}"
+            f"Repository created: {resp.full_name or name}\n"
+            f"  Clone URL: {resp.clone_url or '?'}\n"
+            f"  Web URL: {resp.html_url or '?'}\n"
+            f"  Provider: {resp.provider or '?'}"
         )
     except Exception as e:
         return f"Error: {e}"

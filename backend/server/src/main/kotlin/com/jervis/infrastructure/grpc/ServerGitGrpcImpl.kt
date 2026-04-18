@@ -13,7 +13,6 @@ import com.jervis.contracts.server.WorkspaceStatusRequest
 import com.jervis.contracts.server.WorkspaceStatusResponse
 import com.jervis.git.rpc.GpgCertificateRpcImpl
 import com.jervis.dto.connection.ConnectionCapability
-import com.jervis.git.GitRepoCreationResult
 import com.jervis.git.GitRepositoryCreationService
 import com.jervis.git.service.GitRepositoryService
 import com.jervis.project.ProjectService
@@ -21,8 +20,6 @@ import com.jervis.project.WorkspaceStatus
 import com.jervis.task.BackgroundEngine
 import io.grpc.Status
 import io.grpc.StatusException
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
@@ -36,7 +33,6 @@ class ServerGitGrpcImpl(
     private val gpgCertificateRpcImpl: GpgCertificateRpcImpl,
 ) : ServerGitServiceGrpcKt.ServerGitServiceCoroutineImplBase() {
     private val logger = KotlinLogging.logger {}
-    private val json = Json { encodeDefaults = true; ignoreUnknownKeys = true }
 
     override suspend fun createRepository(request: CreateRepositoryRequest): CreateRepositoryResponse {
         val result = try {
@@ -51,7 +47,11 @@ class ServerGitGrpcImpl(
             throw StatusException(Status.INVALID_ARGUMENT.withDescription(e.message))
         }
         return CreateRepositoryResponse.newBuilder()
-            .setBodyJson(json.encodeToString(GitRepoCreationResult.serializer(), result))
+            .setCloneUrl(result.cloneUrl)
+            .setHtmlUrl(result.htmlUrl)
+            .setName(result.name)
+            .setFullName(result.fullName)
+            .setProvider(result.provider)
             .build()
     }
 

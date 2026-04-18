@@ -23,10 +23,18 @@ class CreateRepositoryRequest(_message.Message):
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., connection_id: _Optional[str] = ..., name: _Optional[str] = ..., description: _Optional[str] = ..., is_private: bool = ...) -> None: ...
 
 class CreateRepositoryResponse(_message.Message):
-    __slots__ = ("body_json",)
-    BODY_JSON_FIELD_NUMBER: _ClassVar[int]
-    body_json: str
-    def __init__(self, body_json: _Optional[str] = ...) -> None: ...
+    __slots__ = ("clone_url", "html_url", "name", "full_name", "provider")
+    CLONE_URL_FIELD_NUMBER: _ClassVar[int]
+    HTML_URL_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    FULL_NAME_FIELD_NUMBER: _ClassVar[int]
+    PROVIDER_FIELD_NUMBER: _ClassVar[int]
+    clone_url: str
+    html_url: str
+    name: str
+    full_name: str
+    provider: str
+    def __init__(self, clone_url: _Optional[str] = ..., html_url: _Optional[str] = ..., name: _Optional[str] = ..., full_name: _Optional[str] = ..., provider: _Optional[str] = ...) -> None: ...
 
 class InitWorkspaceRequest(_message.Message):
     __slots__ = ("ctx", "project_id")

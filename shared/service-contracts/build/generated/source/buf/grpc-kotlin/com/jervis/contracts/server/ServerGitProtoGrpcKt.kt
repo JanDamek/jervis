@@ -51,18 +51,21 @@ public object ServerGitServiceGrpcKt {
     get() = ServerGitServiceGrpc.getGetGpgKeyMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.server.ServerGitService service as suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.server.ServerGitService service as suspending
+   * coroutines.
    */
   @StubFor(ServerGitServiceGrpc::class)
   public class ServerGitServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<ServerGitServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions): ServerGitServiceCoroutineStub = ServerGitServiceCoroutineStub(channel, callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): ServerGitServiceCoroutineStub =
+        ServerGitServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -72,7 +75,8 @@ public object ServerGitServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun createRepository(request: CreateRepositoryRequest, headers: Metadata = Metadata()): CreateRepositoryResponse = unaryRpc(
+    public suspend fun createRepository(request: CreateRepositoryRequest, headers: Metadata =
+        Metadata()): CreateRepositoryResponse = unaryRpc(
       channel,
       ServerGitServiceGrpc.getCreateRepositoryMethod(),
       request,
@@ -82,7 +86,8 @@ public object ServerGitServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -92,7 +97,8 @@ public object ServerGitServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun initWorkspace(request: InitWorkspaceRequest, headers: Metadata = Metadata()): InitWorkspaceResponse = unaryRpc(
+    public suspend fun initWorkspace(request: InitWorkspaceRequest, headers: Metadata = Metadata()):
+        InitWorkspaceResponse = unaryRpc(
       channel,
       ServerGitServiceGrpc.getInitWorkspaceMethod(),
       request,
@@ -102,7 +108,8 @@ public object ServerGitServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -112,7 +119,8 @@ public object ServerGitServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getWorkspaceStatus(request: WorkspaceStatusRequest, headers: Metadata = Metadata()): WorkspaceStatusResponse = unaryRpc(
+    public suspend fun getWorkspaceStatus(request: WorkspaceStatusRequest, headers: Metadata =
+        Metadata()): WorkspaceStatusResponse = unaryRpc(
       channel,
       ServerGitServiceGrpc.getGetWorkspaceStatusMethod(),
       request,
@@ -122,7 +130,8 @@ public object ServerGitServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -132,7 +141,8 @@ public object ServerGitServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getGpgKey(request: GetGpgKeyRequest, headers: Metadata = Metadata()): GetGpgKeyResponse = unaryRpc(
+    public suspend fun getGpgKey(request: GetGpgKeyRequest, headers: Metadata = Metadata()):
+        GetGpgKeyResponse = unaryRpc(
       channel,
       ServerGitServiceGrpc.getGetGpgKeyMethod(),
       request,
@@ -142,7 +152,8 @@ public object ServerGitServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.server.ServerGitService service based on Kotlin coroutines.
+   * Skeletal implementation of the jervis.server.ServerGitService service based on Kotlin
+   * coroutines.
    */
   public abstract class ServerGitServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -151,49 +162,60 @@ public object ServerGitServiceGrpcKt {
      * Returns the response to an RPC for jervis.server.ServerGitService.CreateRepository.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun createRepository(request: CreateRepositoryRequest): CreateRepositoryResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGitService.CreateRepository is unimplemented"))
+    public open suspend fun createRepository(request: CreateRepositoryRequest):
+        CreateRepositoryResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGitService.CreateRepository is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerGitService.InitWorkspace.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun initWorkspace(request: InitWorkspaceRequest): InitWorkspaceResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGitService.InitWorkspace is unimplemented"))
+    public open suspend fun initWorkspace(request: InitWorkspaceRequest): InitWorkspaceResponse =
+        throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGitService.InitWorkspace is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerGitService.GetWorkspaceStatus.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getWorkspaceStatus(request: WorkspaceStatusRequest): WorkspaceStatusResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGitService.GetWorkspaceStatus is unimplemented"))
+    public open suspend fun getWorkspaceStatus(request: WorkspaceStatusRequest):
+        WorkspaceStatusResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGitService.GetWorkspaceStatus is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerGitService.GetGpgKey.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getGpgKey(request: GetGpgKeyRequest): GetGpgKeyResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGitService.GetGpgKey is unimplemented"))
+    public open suspend fun getGpgKey(request: GetGpgKeyRequest): GetGpgKeyResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerGitService.GetGpgKey is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

@@ -27,11 +27,14 @@ message CreateRepositoryRequest {
   bool is_private = 6;
 }
 
+// CreateRepositoryResponse mirrors com.jervis.git.GitRepoCreationResult —
+// the five fields the MCP tool actually formats into its reply.
 message CreateRepositoryResponse {
-  // Mirror of com.jervis.git.GitRepoCreationResult — body carried as JSON
-  // so the MCP tool can forward the full provider response without
-  // double-typing every field here.
-  string body_json = 1;
+  string clone_url = 1;
+  string html_url = 2;
+  string name = 3;
+  string full_name = 4;
+  string provider = 5;              // "github" | "gitlab"
 }
 
 message InitWorkspaceRequest {
