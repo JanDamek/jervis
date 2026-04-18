@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 import grpc
 from grpc_reflection.v1alpha import reflection
 
+from jervis.orchestrator import chat_pb2, chat_pb2_grpc
 from jervis.orchestrator import companion_pb2, companion_pb2_grpc
 from jervis.orchestrator import control_pb2, control_pb2_grpc
 from jervis.orchestrator import dispatch_pb2, dispatch_pb2_grpc
@@ -702,6 +703,106 @@ class OrchestratorCompanionServicer(companion_pb2_grpc.OrchestratorCompanionServ
             raise
 
 
+class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
+    """OrchestratorChatService — foreground agentic chat stream.
+
+    Chat bridges handle_chat_sse() into gRPC server-streaming. ApproveAction
+    and Stop reuse the exact handlers that the REST /chat/approve and
+    /chat/stop routes used so the foreground chat session lifecycle stays
+    identical.
+    """
+
+    async def Chat(
+        self,
+        request: chat_pb2.ChatRequest,
+        context: grpc.aio.ServicerContext,
+    ):
+        from app import main as orch_main
+        from app.agent.sse_handler import handle_chat_sse as handle_chat
+        from app.chat.models import ChatRequest
+
+        try:
+            payload = json.loads(request.payload_json) if request.payload_json else {}
+            chat_request = ChatRequest(**payload)
+        except Exception as e:
+            logger.error("CHAT_VALIDATION_FAILED: %s", e)
+            yield chat_pb2.ChatEvent(type="error", content=f"Invalid chat request: {e}")
+            return
+
+        session_id = request.session_id or chat_request.session_id
+        logger.info("CHAT_REQUEST | session=%s | message=%s", session_id, chat_request.message[:100])
+
+        existing_event = orch_main._active_chat_stops.get(session_id)
+        if existing_event and not existing_event.is_set():
+            logger.warning("CHAT_DEDUP | session=%s | stopping previous active stream", session_id)
+            existing_event.set()
+
+        disconnect_event = asyncio.Event()
+        orch_main._active_chat_stops[session_id] = disconnect_event
+
+        try:
+            async for event in handle_chat(chat_request, disconnect_event):
+                if context.cancelled() or await context.done():
+                    logger.info("CHAT_DISCONNECT | session=%s | grpc context cancelled", session_id)
+                    disconnect_event.set()
+                    break
+                meta = {}
+                for k, v in (getattr(event, "metadata", None) or {}).items():
+                    if v is None:
+                        meta[str(k)] = ""
+                    elif isinstance(v, (dict, list)):
+                        meta[str(k)] = json.dumps(v, ensure_ascii=False)
+                    else:
+                        meta[str(k)] = str(v)
+                yield chat_pb2.ChatEvent(
+                    type=event.type,
+                    content=getattr(event, "content", "") or "",
+                    metadata=meta,
+                )
+        except Exception as e:
+            logger.exception("Chat handler failed for session %s", session_id)
+            yield chat_pb2.ChatEvent(type="error", content=str(e))
+        finally:
+            orch_main._active_chat_stops.pop(session_id, None)
+
+    async def ApproveAction(
+        self,
+        request: chat_pb2.ApproveActionRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> chat_pb2.ApproveActionAck:
+        from app.chat.handler_agentic import resolve_pending_approval
+
+        logger.info(
+            "CHAT_APPROVE | session=%s | approved=%s | always=%s | action=%s",
+            request.session_id, request.approved, request.always, request.action,
+        )
+        try:
+            resolve_pending_approval(
+                session_id=request.session_id,
+                approved=bool(request.approved),
+                always=bool(request.always),
+                action=request.action or None,
+            )
+        except Exception as e:
+            logger.warning("CHAT_APPROVE_ERROR session=%s: %s", request.session_id, e)
+            return chat_pb2.ApproveActionAck(ok=False, error=str(e))
+        return chat_pb2.ApproveActionAck(ok=True, error="")
+
+    async def Stop(
+        self,
+        request: chat_pb2.StopChatRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> chat_pb2.StopChatAck:
+        from app import main as orch_main
+
+        event = orch_main._active_chat_stops.get(request.session_id)
+        if event:
+            event.set()
+            logger.info("CHAT_STOP | session=%s", request.session_id)
+            return chat_pb2.StopChatAck(ok=True, error="")
+        return chat_pb2.StopChatAck(ok=False, error="no-active-chat")
+
+
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for cleanup."""
     max_msg_bytes = 64 * 1024 * 1024
@@ -724,12 +825,16 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     companion_pb2_grpc.add_OrchestratorCompanionServiceServicer_to_server(
         OrchestratorCompanionServicer(), server,
     )
+    chat_pb2_grpc.add_OrchestratorChatServiceServicer_to_server(
+        OrchestratorChatServicer(), server,
+    )
 
     service_names = (
         control_pb2.DESCRIPTOR.services_by_name["OrchestratorControlService"].full_name,
         graph_pb2.DESCRIPTOR.services_by_name["OrchestratorGraphService"].full_name,
         dispatch_pb2.DESCRIPTOR.services_by_name["OrchestratorDispatchService"].full_name,
         companion_pb2.DESCRIPTOR.services_by_name["OrchestratorCompanionService"].full_name,
+        chat_pb2.DESCRIPTOR.services_by_name["OrchestratorChatService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
@@ -737,7 +842,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     server.add_insecure_port(f"[::]:{port}")
     await server.start()
     logger.info(
-        "gRPC orchestrator services listening on :%d (Control + Graph + Dispatch + Companion)",
+        "gRPC orchestrator services listening on :%d (Control + Graph + Dispatch + Companion + Chat)",
         port,
     )
     return server

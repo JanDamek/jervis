@@ -1,76 +1,55 @@
 package com.jervis.chat
 
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.preparePost
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.serialization.kotlinx.json.json
-import io.ktor.utils.io.readUTF8Line
+import com.jervis.contracts.common.RequestContext
+import com.jervis.contracts.common.Scope
+import com.jervis.contracts.orchestrator.ApproveActionRequest
+import com.jervis.contracts.orchestrator.ChatRequest as ProtoChatRequest
+import com.jervis.contracts.orchestrator.OrchestratorChatServiceGrpcKt
+import com.jervis.contracts.orchestrator.StopChatRequest
+import com.jervis.infrastructure.grpc.GrpcChannels
+import io.grpc.ManagedChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Value
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
+import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
 
 private val jsonParser = Json {
     ignoreUnknownKeys = true
     isLenient = true
+    encodeDefaults = true
 }
 
 /**
- * HTTP SSE client for Python /chat endpoint.
+ * gRPC client for the Python foreground chat pipeline.
  *
- * Sends a ChatRequest to Python, reads SSE event stream,
- * and yields ChatStreamEvent objects for Kotlin to forward to UI.
- *
- * SSE format from Python (sse-starlette):
- * ```
- * event: token
- * data: {"type":"token","content":"Hello","metadata":{}}
- *
- * event: done
- * data: {"type":"done","content":"","metadata":{...}}
- * ```
+ * Wraps OrchestratorChatService.Chat (server-streaming agentic loop) +
+ * ApproveAction + Stop. The request body still serialises through the
+ * legacy `PythonChatRequest` DTO to stay source-compatible with the
+ * Kotlin call sites; internally it rides across the proto's
+ * `payload_json` field.
  */
 @Component
 class PythonChatClient(
-    @Value("\${endpoints.orchestrator.baseUrl:http://localhost:8090}") private val orchestratorBaseUrl: String,
+    @Qualifier(GrpcChannels.ORCHESTRATOR_CHANNEL) channel: ManagedChannel,
 ) {
-    private val client = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(
-                Json {
-                    ignoreUnknownKeys = true
-                    isLenient = true
-                    encodeDefaults = true
-                },
-            )
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = Long.MAX_VALUE      // No timeout — agentic loop can be slow
-            connectTimeoutMillis = 30_000
-            socketTimeoutMillis = Long.MAX_VALUE        // SSE stream can be long-lived
-        }
-    }
+    private val stub = OrchestratorChatServiceGrpcKt.OrchestratorChatServiceCoroutineStub(channel)
+
+    private fun ctx(clientId: String = ""): RequestContext =
+        RequestContext.newBuilder()
+            .setScope(Scope.newBuilder().setClientId(clientId).build())
+            .setRequestId(UUID.randomUUID().toString())
+            .setIssuedAtUnixMs(System.currentTimeMillis())
+            .build()
 
     /**
-     * Send a chat message to Python /chat and stream SSE events back.
+     * Send a chat message and stream events back.
      *
      * @return Flow of ChatStreamEvent (token, tool_call, tool_result, done, error)
      */
@@ -90,7 +69,6 @@ class PythonChatClient(
         attachments: List<com.jervis.dto.chat.AttachmentDto> = emptyList(),
         clientTimezone: String? = null,
     ): Flow<ChatStreamEvent> = flow {
-        val apiUrl = "${orchestratorBaseUrl.trimEnd('/')}/chat"
         val request = PythonChatRequest(
             sessionId = sessionId,
             message = message,
@@ -107,58 +85,31 @@ class PythonChatClient(
             attachments = attachments.map { PythonAttachment(filename = it.filename, mimeType = it.mimeType, sizeBytes = it.sizeBytes, contentBase64 = it.contentBase64) },
             clientTimezone = clientTimezone,
         )
+        val payloadJson = jsonParser.encodeToString(PythonChatRequest.serializer(), request)
+        val protoReq = ProtoChatRequest.newBuilder()
+            .setCtx(ctx(activeClientId ?: ""))
+            .setSessionId(sessionId)
+            .setPayloadJson(payloadJson)
+            .build()
 
         logger.info { "PYTHON_CHAT_START | session=$sessionId | message=${message.take(80)}" }
 
         try {
-            client.preparePost(apiUrl) {
-                contentType(ContentType.Application.Json)
-                setBody(request)
-            }.execute { response ->
-                val channel = response.bodyAsChannel()
-
-                var currentEventType = ""
-                var currentData = StringBuilder()
-
-                while (!channel.isClosedForRead) {
-                    val line = channel.readUTF8Line() ?: break
-
-                    when {
-                        line.startsWith("event:") -> {
-                            currentEventType = line.removePrefix("event:").trim()
-                        }
-                        line.startsWith("data:") -> {
-                            currentData.append(line.removePrefix("data:").trim())
-                        }
-                        line.isBlank() -> {
-                            // Empty line = end of SSE event
-                            if (currentData.isNotEmpty()) {
-                                val event = parseSSEData(currentEventType, currentData.toString())
-                                if (event != null) {
-                                    if (event.type == "approval_request") {
-                                        logger.info { "PYTHON_CHAT_APPROVAL_EVENT | session=$sessionId | action=${event.metadata["action"]}" }
-                                    }
-                                    emit(event)
-
-                                    // Stop on terminal events
-                                    if (event.type == "done" || event.type == "error") {
-                                        logger.info { "PYTHON_CHAT_END | session=$sessionId | type=${event.type}" }
-                                        return@execute
-                                    }
-                                }
-                                currentData = StringBuilder()
-                                currentEventType = ""
-                            }
-                        }
+            stub.chat(protoReq).collect { proto ->
+                if (proto.type == "approval_request") {
+                    logger.info {
+                        "PYTHON_CHAT_APPROVAL_EVENT | session=$sessionId | action=${proto.metadataMap["action"]}"
                     }
                 }
-
-                // Handle remaining data if stream closed without trailing empty line
-                if (currentData.isNotEmpty()) {
-                    val event = parseSSEData(currentEventType, currentData.toString())
-                    if (event != null) {
-                        emit(event)
-                    }
+                emit(
+                    ChatStreamEvent(
+                        type = proto.type,
+                        content = proto.content,
+                        metadata = proto.metadataMap.toMap(),
+                    ),
+                )
+                if (proto.type == "done" || proto.type == "error") {
+                    logger.info { "PYTHON_CHAT_END | session=$sessionId | type=${proto.type}" }
                 }
             }
         } catch (e: Exception) {
@@ -167,41 +118,23 @@ class PythonChatClient(
         }
     }
 
-    private fun parseSSEData(eventType: String, data: String): ChatStreamEvent? {
-        return try {
-            val json = jsonParser.parseToJsonElement(data).jsonObject
-            val type = eventType.ifBlank {
-                json["type"]?.jsonPrimitive?.contentOrNull ?: "unknown"
-            }
-            val content = json["content"]?.jsonPrimitive?.contentOrNull ?: ""
-            val metadata = json["metadata"]?.jsonObject?.toMap() ?: emptyMap()
-
-            ChatStreamEvent(type = type, content = content, metadata = metadata)
-        } catch (e: Exception) {
-            logger.warn { "Failed to parse SSE data: ${data.take(200)} | error=${e.message}" }
-            null
-        }
-    }
-
     /**
      * Approve or deny a pending chat tool action.
      * Called when user clicks Approve/Deny in the approval dialog.
      */
     suspend fun approveAction(sessionId: String, approved: Boolean, always: Boolean = false, action: String? = null) {
-        val apiUrl = "${orchestratorBaseUrl.trimEnd('/')}/chat/approve"
         try {
-            client.preparePost(apiUrl) {
-                contentType(ContentType.Application.Json)
-                setBody(
-                    ChatApproveRequest(
-                        sessionId = sessionId,
-                        approved = approved,
-                        always = always,
-                        action = action,
-                    ),
-                )
-            }.execute { response ->
-                logger.info { "PYTHON_CHAT_APPROVE | session=$sessionId | approved=$approved | always=$always | status=${response.status}" }
+            val ack = stub.approveAction(
+                ApproveActionRequest.newBuilder()
+                    .setCtx(ctx())
+                    .setSessionId(sessionId)
+                    .setApproved(approved)
+                    .setAlways(always)
+                    .setAction(action ?: "")
+                    .build(),
+            )
+            logger.info {
+                "PYTHON_CHAT_APPROVE | session=$sessionId | approved=$approved | always=$always | ok=${ack.ok}"
             }
         } catch (e: Exception) {
             logger.warn(e) { "PYTHON_CHAT_APPROVE_ERROR | session=$sessionId | error=${e.message}" }
@@ -212,43 +145,22 @@ class PythonChatClient(
      * Stop an active chat session. Called when user presses Stop button.
      */
     suspend fun stopChat(sessionId: String) {
-        val apiUrl = "${orchestratorBaseUrl.trimEnd('/')}/chat/stop"
         try {
-            client.preparePost(apiUrl) {
-                contentType(ContentType.Application.Json)
-                setBody(mapOf("session_id" to sessionId))
-            }.execute { response ->
-                logger.info { "PYTHON_CHAT_STOP | session=$sessionId | status=${response.status}" }
-            }
+            val ack = stub.stop(
+                StopChatRequest.newBuilder()
+                    .setCtx(ctx())
+                    .setSessionId(sessionId)
+                    .build(),
+            )
+            logger.info { "PYTHON_CHAT_STOP | session=$sessionId | ok=${ack.ok}" }
         } catch (e: Exception) {
             logger.warn(e) { "PYTHON_CHAT_STOP_ERROR | session=$sessionId | error=${e.message}" }
-        }
-    }
-
-    private fun JsonObject.toMap(): Map<String, Any?> {
-        return entries.associate { (key, value) ->
-            key to when (value) {
-                is JsonPrimitive -> value.contentOrNull
-                is JsonObject -> value.toMap()
-                else -> value.toString()
-            }
         }
     }
 }
 
 /**
- * Request body for Python /chat/approve endpoint.
- */
-@Serializable
-private data class ChatApproveRequest(
-    @SerialName("session_id") val sessionId: String,
-    val approved: Boolean,
-    val always: Boolean = false,
-    val action: String? = null,
-)
-
-/**
- * Attachment in Python /chat request (base64-encoded content).
+ * Attachment in chat request (base64-encoded content).
  */
 @Serializable
 private data class PythonAttachment(
@@ -259,7 +171,9 @@ private data class PythonAttachment(
 )
 
 /**
- * Request body for Python /chat endpoint.
+ * Wire-serialised chat request. Kept as a Serializable class so the
+ * field-naming rules land exactly where the Python Pydantic model
+ * expects them (SerialName → snake_case).
  */
 @Serializable
 private data class PythonChatRequest(

@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package jervis.orchestrator;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.orchestrator";
+option java_multiple_files = true;
+option java_outer_classname = "OrchestratorChatProto";
+
+// OrchestratorChatService — foreground chat pipeline. Chat is a
+// server-streaming RPC that yields agentic-loop events (token, tool_call,
+// tool_result, approval_request, done, error). Approve + Stop are unary
+// control RPCs over the same session.
+service OrchestratorChatService {
+  rpc Chat(ChatRequest) returns (stream ChatEvent);
+  rpc ApproveAction(ApproveActionRequest) returns (ApproveActionAck);
+  rpc Stop(StopChatRequest) returns (StopChatAck);
+}
+
+// ChatRequest carries the legacy PythonChatRequest fields inline via
+// JSON. The Python side decodes with `pydantic.BaseModel(**payload)` the
+// same way the FastAPI handler used `request.json()`. Keeps the proto
+// tight while leaving the Kotlin DTO shape frozen at the source boundary.
+message ChatRequest {
+  jervis.common.RequestContext ctx = 1;
+  string session_id = 2;
+  string payload_json = 3;         // PythonChatRequest (message, scope, attachments, ...)
+}
+
+// ChatEvent mirrors the SSE shape {type, content, metadata}. Extra
+// side-channel fields (meeting hints, approval payload) ride in metadata
+// — keys stay string-string for stability.
+message ChatEvent {
+  string type = 1;              // token | tool_call | tool_result | approval_request | done | error
+  string content = 2;
+  map<string, string> metadata = 3;
+}
+
+message ApproveActionRequest {
+  jervis.common.RequestContext ctx = 1;
+  string session_id = 2;
+  bool approved = 3;
+  bool always = 4;
+  string action = 5;            // empty when not applicable
+}
+
+message ApproveActionAck {
+  bool ok = 1;
+  string error = 2;
+}
+
+message StopChatRequest {
+  jervis.common.RequestContext ctx = 1;
+  string session_id = 2;
+}
+
+message StopChatAck {
+  bool ok = 1;
+  string error = 2;
+}

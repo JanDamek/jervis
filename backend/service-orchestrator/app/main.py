@@ -352,73 +352,11 @@ async def voice_hint(request_body: dict):
 _active_chat_stops: dict[str, asyncio.Event] = {}
 
 
-@app.post("/chat")
-async def chat_endpoint(request_body: dict, request: Request):
-    """Foreground chat — streaming SSE response.
-
-    Receives a message from Kotlin, processes it through Jervis agentic loop
-    (LLM + tools), and streams events back as SSE.
-
-    Events: token, thinking, tool_call, tool_result, done, error
-
-    Stop mechanisms:
-    - SSE client disconnect → detected via request.is_disconnected()
-    - Explicit POST /chat/stop → sets asyncio.Event for session
-    """
-    from app.chat.models import ChatRequest
-    from app.agent.sse_handler import handle_chat_sse as handle_chat
-
-    chat_request = ChatRequest(**request_body)
-    logger.info("CHAT_REQUEST | session=%s | message=%s", chat_request.session_id, chat_request.message[:100])
-
-    # Dedup: if an SSE stream is already running for this session, stop it first.
-    # Prevents duplicate concurrent requests (e.g., kRPC retry, double-click).
-    existing_event = _active_chat_stops.get(chat_request.session_id)
-    if existing_event and not existing_event.is_set():
-        logger.warning("CHAT_DEDUP | session=%s | stopping previous active stream", chat_request.session_id)
-        existing_event.set()
-
-    # Create stop event for this session
-    disconnect_event = asyncio.Event()
-    _active_chat_stops[chat_request.session_id] = disconnect_event
-
-    async def event_generator():
-        try:
-            async for event in handle_chat(chat_request, disconnect_event):
-                # Check if client disconnected
-                if await request.is_disconnected():
-                    logger.info("CHAT_DISCONNECT | session=%s", chat_request.session_id)
-                    disconnect_event.set()
-                    break
-
-                yield {
-                    "event": event.type,
-                    "data": json.dumps({
-                        "type": event.type,
-                        "content": event.content,
-                        "metadata": event.metadata,
-                    }, ensure_ascii=False),
-                }
-        finally:
-            _active_chat_stops.pop(chat_request.session_id, None)
-
-    return EventSourceResponse(event_generator())
-
-
-@app.post("/chat/stop")
-async def chat_stop(request_body: dict):
-    """Explicit stop for a running chat session.
-
-    Called by Kotlin when user presses the Stop button.
-    Sets the disconnect event so handler saves partial results and stops.
-    """
-    session_id = request_body.get("session_id", "")
-    event = _active_chat_stops.get(session_id)
-    if event:
-        event.set()
-        logger.info("CHAT_STOP | session=%s", session_id)
-        return {"stopped": True}
-    return {"stopped": False, "reason": "No active chat for session"}
+# /chat (streaming SSE) + /chat/stop migrated to gRPC
+# (OrchestratorChatService.{Chat,Stop} on :5501 — see app/grpc_server.py).
+# `_active_chat_stops` stays on main.py because the chat servicer and
+# the stop RPC both mutate it; ChatRequest dedup logic moved into the
+# servicer verbatim.
 
 
 # /health + /status/{thread_id} migrated to gRPC

@@ -27,69 +27,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ---------------------------------------------------------------------------
-# Foreground Chat endpoint
-# ---------------------------------------------------------------------------
-
-@router.post("/chat")
-async def chat(request: ChatRequest):
-    """Handle foreground chat message — dedicated agentic loop.
-
-    This is the primary foreground chat path (v6 architecture).
-    Replaces the LangGraph respond node for interactive chat.
-
-    Flow: User message → agentic loop → streamed SSE events → Kotlin → UI.
-    handle_chat is an async generator yielding ChatStreamEvent objects.
-    """
-    from app.agent.sse_handler import handle_chat_sse
-
-    async def sse_stream():
-        try:
-            async for event in handle_chat_sse(request):
-                data = event.model_dump_json()
-                if event.type == "approval_request":
-                    logger.info("SSE: emitting approval_request event to HTTP stream")
-                yield f"event: {event.type}\ndata: {data}\n\n"
-        except Exception as e:
-            logger.exception("Chat handler failed for session %s", request.session_id)
-            error_event = json.dumps({"type": "error", "content": str(e), "metadata": {}})
-            yield f"event: error\ndata: {error_event}\n\n"
-
-    return StreamingResponse(sse_stream(), media_type="text/event-stream")
-
-
-# ---------------------------------------------------------------------------
-# Chat approval endpoint
-# ---------------------------------------------------------------------------
-
-
-class ChatApproveRequest(BaseModel):
-    session_id: str
-    approved: bool = False
-    always: bool = False
-    action: str | None = None
-
-
-@router.post("/chat/approve")
-async def approve_chat_action(request: ChatApproveRequest):
-    """Approve or deny a pending chat tool action.
-
-    Called by Kotlin when user clicks Approve/Deny in the approval dialog.
-    Resolves the asyncio.Future in the agentic loop, unblocking tool execution.
-    """
-    from app.chat.handler_agentic import resolve_pending_approval
-
-    logger.info(
-        "CHAT_APPROVE | session=%s | approved=%s | always=%s | action=%s",
-        request.session_id, request.approved, request.always, request.action,
-    )
-    resolve_pending_approval(
-        session_id=request.session_id,
-        approved=request.approved,
-        always=request.always,
-        action=request.action,
-    )
-    return {"status": "ok"}
+# /chat (streaming) + /chat/approve migrated to gRPC
+# (OrchestratorChatService.{Chat,ApproveAction} on :5501 —
+# see app/grpc_server.py).
 
 
 # /orchestrate + /qualify migrated to gRPC
