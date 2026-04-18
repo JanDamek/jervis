@@ -62,8 +62,6 @@ message ApproveRequest {
   bool approved = 3;
   string reason = 4;
   string modification = 5;
-  // chat_history serialised as JSON (orchestrator-specific shape).
-  string chat_history_json = 6;
 }
 
 message ApproveAck {

@@ -50,7 +50,6 @@ class OrchestratorControlGrpcClient(
         approved: Boolean,
         reason: String? = null,
         modification: String? = null,
-        chatHistoryJson: String = "",
     ): ApproveAck =
         stub.approve(
             ApproveRequest.newBuilder()
@@ -59,7 +58,6 @@ class OrchestratorControlGrpcClient(
                 .setApproved(approved)
                 .setReason(reason ?: "")
                 .setModification(modification ?: "")
-                .setChatHistoryJson(chatHistoryJson)
                 .build(),
         )
 

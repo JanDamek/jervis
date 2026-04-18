@@ -92,29 +92,28 @@ public final class OrchestratorControlProto extends com.google.protobuf.Generate
       "rupt_action\030\003 \001(\t\022\035\n\025interrupt_descripti" +
       "on\030\004 \001(\t\022\r\n\005error\030\005 \001(\t\022\017\n\007summary\030\006 \001(\t" +
       "\022\016\n\006branch\030\007 \001(\t\022\021\n\tartifacts\030\010 \003(\t\022 \n\030k" +
-      "eep_environment_running\030\t \001(\010\"\242\001\n\016Approv" +
+      "eep_environment_running\030\t \001(\010\"\207\001\n\016Approv" +
       "eRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Re" +
       "questContext\022\021\n\tthread_id\030\002 \001(\t\022\020\n\010appro" +
       "ved\030\003 \001(\010\022\016\n\006reason\030\004 \001(\t\022\024\n\014modificatio" +
-      "n\030\005 \001(\t\022\031\n\021chat_history_json\030\006 \001(\t\"\034\n\nAp" +
-      "proveAck\022\016\n\006status\030\001 \001(\t\"N\n\rThreadReques" +
-      "t\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCo" +
-      "ntext\022\021\n\tthread_id\030\002 \001(\t\"\036\n\tCancelAck\022\021\n" +
-      "\tcancelled\030\001 \001(\010\"3\n\014InterruptAck\022\023\n\013inte" +
-      "rrupted\030\001 \001(\010\022\016\n\006detail\030\002 \001(\t2\270\003\n\032Orches" +
-      "tratorControlService\022Q\n\006Health\022\".jervis." +
-      "orchestrator.HealthRequest\032#.jervis.orch" +
-      "estrator.HealthResponse\022T\n\tGetStatus\022\".j" +
-      "ervis.orchestrator.StatusRequest\032#.jervi" +
-      "s.orchestrator.StatusResponse\022O\n\007Approve" +
-      "\022#.jervis.orchestrator.ApproveRequest\032\037." +
-      "jervis.orchestrator.ApproveAck\022L\n\006Cancel" +
-      "\022\".jervis.orchestrator.ThreadRequest\032\036.j" +
-      "ervis.orchestrator.CancelAck\022R\n\tInterrup" +
-      "t\022\".jervis.orchestrator.ThreadRequest\032!." +
-      "jervis.orchestrator.InterruptAckB?\n!com." +
-      "jervis.contracts.orchestratorB\030Orchestra" +
-      "torControlProtoP\001b\006proto3"
+      "n\030\005 \001(\t\"\034\n\nApproveAck\022\016\n\006status\030\001 \001(\t\"N\n" +
+      "\rThreadRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.com" +
+      "mon.RequestContext\022\021\n\tthread_id\030\002 \001(\t\"\036\n" +
+      "\tCancelAck\022\021\n\tcancelled\030\001 \001(\010\"3\n\014Interru" +
+      "ptAck\022\023\n\013interrupted\030\001 \001(\010\022\016\n\006detail\030\002 \001" +
+      "(\t2\270\003\n\032OrchestratorControlService\022Q\n\006Hea" +
+      "lth\022\".jervis.orchestrator.HealthRequest\032" +
+      "#.jervis.orchestrator.HealthResponse\022T\n\t" +
+      "GetStatus\022\".jervis.orchestrator.StatusRe" +
+      "quest\032#.jervis.orchestrator.StatusRespon" +
+      "se\022O\n\007Approve\022#.jervis.orchestrator.Appr" +
+      "oveRequest\032\037.jervis.orchestrator.Approve" +
+      "Ack\022L\n\006Cancel\022\".jervis.orchestrator.Thre" +
+      "adRequest\032\036.jervis.orchestrator.CancelAc" +
+      "k\022R\n\tInterrupt\022\".jervis.orchestrator.Thr" +
+      "eadRequest\032!.jervis.orchestrator.Interru" +
+      "ptAckB?\n!com.jervis.contracts.orchestrat" +
+      "orB\030OrchestratorControlProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -150,7 +149,7 @@ public final class OrchestratorControlProto extends com.google.protobuf.Generate
     internal_static_jervis_orchestrator_ApproveRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_ApproveRequest_descriptor,
-        new java.lang.String[] { "Ctx", "ThreadId", "Approved", "Reason", "Modification", "ChatHistoryJson", });
+        new java.lang.String[] { "Ctx", "ThreadId", "Approved", "Reason", "Modification", });
     internal_static_jervis_orchestrator_ApproveAck_descriptor =
       getDescriptor().getMessageTypes().get(5);
     internal_static_jervis_orchestrator_ApproveAck_fieldAccessorTable = new

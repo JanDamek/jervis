@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!jervis/orchestrator/control.proto\x12\x13jervis.orchestrator\x1a\x19jervis/common/types.proto\";\n\rHealthRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"G\n\x0eHealthResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0f\n\x07service\x18\x02 \x01(\t\x12\x14\n\x0c\x61\x63tive_tasks\x18\x03 \x01(\x05\"N\n\rStatusRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tthread_id\x18\x02 \x01(\t\"\xd1\x01\n\x0eStatusResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x11\n\tthread_id\x18\x02 \x01(\t\x12\x18\n\x10interrupt_action\x18\x03 \x01(\t\x12\x1d\n\x15interrupt_description\x18\x04 \x01(\t\x12\r\n\x05\x65rror\x18\x05 \x01(\t\x12\x0f\n\x07summary\x18\x06 \x01(\t\x12\x0e\n\x06\x62ranch\x18\x07 \x01(\t\x12\x11\n\tartifacts\x18\x08 \x03(\t\x12 \n\x18keep_environment_running\x18\t \x01(\x08\"\xa2\x01\n\x0e\x41pproveRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tthread_id\x18\x02 \x01(\t\x12\x10\n\x08\x61pproved\x18\x03 \x01(\x08\x12\x0e\n\x06reason\x18\x04 \x01(\t\x12\x14\n\x0cmodification\x18\x05 \x01(\t\x12\x19\n\x11\x63hat_history_json\x18\x06 \x01(\t\"\x1c\n\nApproveAck\x12\x0e\n\x06status\x18\x01 \x01(\t\"N\n\rThreadRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tthread_id\x18\x02 \x01(\t\"\x1e\n\tCancelAck\x12\x11\n\tcancelled\x18\x01 \x01(\x08\"3\n\x0cInterruptAck\x12\x13\n\x0binterrupted\x18\x01 \x01(\x08\x12\x0e\n\x06\x64\x65tail\x18\x02 \x01(\t2\xb8\x03\n\x1aOrchestratorControlService\x12Q\n\x06Health\x12\".jervis.orchestrator.HealthRequest\x1a#.jervis.orchestrator.HealthResponse\x12T\n\tGetStatus\x12\".jervis.orchestrator.StatusRequest\x1a#.jervis.orchestrator.StatusResponse\x12O\n\x07\x41pprove\x12#.jervis.orchestrator.ApproveRequest\x1a\x1f.jervis.orchestrator.ApproveAck\x12L\n\x06\x43\x61ncel\x12\".jervis.orchestrator.ThreadRequest\x1a\x1e.jervis.orchestrator.CancelAck\x12R\n\tInterrupt\x12\".jervis.orchestrator.ThreadRequest\x1a!.jervis.orchestrator.InterruptAckB?\n!com.jervis.contracts.orchestratorB\x18OrchestratorControlProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!jervis/orchestrator/control.proto\x12\x13jervis.orchestrator\x1a\x19jervis/common/types.proto\";\n\rHealthRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"G\n\x0eHealthResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0f\n\x07service\x18\x02 \x01(\t\x12\x14\n\x0c\x61\x63tive_tasks\x18\x03 \x01(\x05\"N\n\rStatusRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tthread_id\x18\x02 \x01(\t\"\xd1\x01\n\x0eStatusResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x11\n\tthread_id\x18\x02 \x01(\t\x12\x18\n\x10interrupt_action\x18\x03 \x01(\t\x12\x1d\n\x15interrupt_description\x18\x04 \x01(\t\x12\r\n\x05\x65rror\x18\x05 \x01(\t\x12\x0f\n\x07summary\x18\x06 \x01(\t\x12\x0e\n\x06\x62ranch\x18\x07 \x01(\t\x12\x11\n\tartifacts\x18\x08 \x03(\t\x12 \n\x18keep_environment_running\x18\t \x01(\x08\"\x87\x01\n\x0e\x41pproveRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tthread_id\x18\x02 \x01(\t\x12\x10\n\x08\x61pproved\x18\x03 \x01(\x08\x12\x0e\n\x06reason\x18\x04 \x01(\t\x12\x14\n\x0cmodification\x18\x05 \x01(\t\"\x1c\n\nApproveAck\x12\x0e\n\x06status\x18\x01 \x01(\t\"N\n\rThreadRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tthread_id\x18\x02 \x01(\t\"\x1e\n\tCancelAck\x12\x11\n\tcancelled\x18\x01 \x01(\x08\"3\n\x0cInterruptAck\x12\x13\n\x0binterrupted\x18\x01 \x01(\x08\x12\x0e\n\x06\x64\x65tail\x18\x02 \x01(\t2\xb8\x03\n\x1aOrchestratorControlService\x12Q\n\x06Health\x12\".jervis.orchestrator.HealthRequest\x1a#.jervis.orchestrator.HealthResponse\x12T\n\tGetStatus\x12\".jervis.orchestrator.StatusRequest\x1a#.jervis.orchestrator.StatusResponse\x12O\n\x07\x41pprove\x12#.jervis.orchestrator.ApproveRequest\x1a\x1f.jervis.orchestrator.ApproveAck\x12L\n\x06\x43\x61ncel\x12\".jervis.orchestrator.ThreadRequest\x1a\x1e.jervis.orchestrator.CancelAck\x12R\n\tInterrupt\x12\".jervis.orchestrator.ThreadRequest\x1a!.jervis.orchestrator.InterruptAckB?\n!com.jervis.contracts.orchestratorB\x18OrchestratorControlProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -42,15 +42,15 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_STATUSRESPONSE']._serialized_start=300
   _globals['_STATUSRESPONSE']._serialized_end=509
   _globals['_APPROVEREQUEST']._serialized_start=512
-  _globals['_APPROVEREQUEST']._serialized_end=674
-  _globals['_APPROVEACK']._serialized_start=676
-  _globals['_APPROVEACK']._serialized_end=704
-  _globals['_THREADREQUEST']._serialized_start=706
-  _globals['_THREADREQUEST']._serialized_end=784
-  _globals['_CANCELACK']._serialized_start=786
-  _globals['_CANCELACK']._serialized_end=816
-  _globals['_INTERRUPTACK']._serialized_start=818
-  _globals['_INTERRUPTACK']._serialized_end=869
-  _globals['_ORCHESTRATORCONTROLSERVICE']._serialized_start=872
-  _globals['_ORCHESTRATORCONTROLSERVICE']._serialized_end=1312
+  _globals['_APPROVEREQUEST']._serialized_end=647
+  _globals['_APPROVEACK']._serialized_start=649
+  _globals['_APPROVEACK']._serialized_end=677
+  _globals['_THREADREQUEST']._serialized_start=679
+  _globals['_THREADREQUEST']._serialized_end=757
+  _globals['_CANCELACK']._serialized_start=759
+  _globals['_CANCELACK']._serialized_end=789
+  _globals['_INTERRUPTACK']._serialized_start=791
+  _globals['_INTERRUPTACK']._serialized_end=842
+  _globals['_ORCHESTRATORCONTROLSERVICE']._serialized_start=845
+  _globals['_ORCHESTRATORCONTROLSERVICE']._serialized_end=1285
 # @@protoc_insertion_point(module_scope)

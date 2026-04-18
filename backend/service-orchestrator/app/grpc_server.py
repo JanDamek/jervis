@@ -134,12 +134,6 @@ class OrchestratorControlServicer(control_pb2_grpc.OrchestratorControlServiceSer
         approved = bool(request.approved)
         reason = request.reason or ""
         modification = request.modification or None
-        chat_history = None
-        if request.chat_history_json:
-            try:
-                chat_history = json.loads(request.chat_history_json)
-            except Exception as e:
-                logger.warning("APPROVE_BAD_CHAT_HISTORY_JSON thread_id=%s: %s", thread_id, e)
 
         logger.info(
             "APPROVE_START | thread_id=%s | approved=%s | reason=%s",
@@ -159,9 +153,6 @@ class OrchestratorControlServicer(control_pb2_grpc.OrchestratorControlServiceSer
                         f"No valid checkpoint for thread {thread_id} — "
                         f"thread may be stale",
                     )
-
-                if chat_history:
-                    await compiled.aupdate_state(config, {"chat_history": chat_history})
 
                 final_state = await compiled.ainvoke(
                     Command(resume=resume_value), config=config,

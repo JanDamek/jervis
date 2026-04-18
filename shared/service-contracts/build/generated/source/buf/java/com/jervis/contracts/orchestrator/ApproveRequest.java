@@ -37,7 +37,6 @@ private static final long serialVersionUID = 0L;
     threadId_ = "";
     reason_ = "";
     modification_ = "";
-    chatHistoryJson_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -208,53 +207,6 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int CHAT_HISTORY_JSON_FIELD_NUMBER = 6;
-  @SuppressWarnings("serial")
-  private volatile java.lang.Object chatHistoryJson_ = "";
-  /**
-   * <pre>
-   * chat_history serialised as JSON (orchestrator-specific shape).
-   * </pre>
-   *
-   * <code>string chat_history_json = 6;</code>
-   * @return The chatHistoryJson.
-   */
-  @java.lang.Override
-  public java.lang.String getChatHistoryJson() {
-    java.lang.Object ref = chatHistoryJson_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
-    } else {
-      com.google.protobuf.ByteString bs = 
-          (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
-      chatHistoryJson_ = s;
-      return s;
-    }
-  }
-  /**
-   * <pre>
-   * chat_history serialised as JSON (orchestrator-specific shape).
-   * </pre>
-   *
-   * <code>string chat_history_json = 6;</code>
-   * @return The bytes for chatHistoryJson.
-   */
-  @java.lang.Override
-  public com.google.protobuf.ByteString
-      getChatHistoryJsonBytes() {
-    java.lang.Object ref = chatHistoryJson_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
-          com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
-      chatHistoryJson_ = b;
-      return b;
-    } else {
-      return (com.google.protobuf.ByteString) ref;
-    }
-  }
-
   private byte memoizedIsInitialized = -1;
   @java.lang.Override
   public final boolean isInitialized() {
@@ -284,9 +236,6 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(modification_)) {
       com.google.protobuf.GeneratedMessage.writeString(output, 5, modification_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(chatHistoryJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 6, chatHistoryJson_);
-    }
     getUnknownFields().writeTo(output);
   }
 
@@ -312,9 +261,6 @@ private static final long serialVersionUID = 0L;
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(modification_)) {
       size += com.google.protobuf.GeneratedMessage.computeStringSize(5, modification_);
-    }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(chatHistoryJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(6, chatHistoryJson_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -344,8 +290,6 @@ private static final long serialVersionUID = 0L;
         .equals(other.getReason())) return false;
     if (!getModification()
         .equals(other.getModification())) return false;
-    if (!getChatHistoryJson()
-        .equals(other.getChatHistoryJson())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -370,8 +314,6 @@ private static final long serialVersionUID = 0L;
     hash = (53 * hash) + getReason().hashCode();
     hash = (37 * hash) + MODIFICATION_FIELD_NUMBER;
     hash = (53 * hash) + getModification().hashCode();
-    hash = (37 * hash) + CHAT_HISTORY_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getChatHistoryJson().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -524,7 +466,6 @@ private static final long serialVersionUID = 0L;
       approved_ = false;
       reason_ = "";
       modification_ = "";
-      chatHistoryJson_ = "";
       return this;
     }
 
@@ -577,9 +518,6 @@ private static final long serialVersionUID = 0L;
       if (((from_bitField0_ & 0x00000010) != 0)) {
         result.modification_ = modification_;
       }
-      if (((from_bitField0_ & 0x00000020) != 0)) {
-        result.chatHistoryJson_ = chatHistoryJson_;
-      }
       result.bitField0_ |= to_bitField0_;
     }
 
@@ -614,11 +552,6 @@ private static final long serialVersionUID = 0L;
       if (!other.getModification().isEmpty()) {
         modification_ = other.modification_;
         bitField0_ |= 0x00000010;
-        onChanged();
-      }
-      if (!other.getChatHistoryJson().isEmpty()) {
-        chatHistoryJson_ = other.chatHistoryJson_;
-        bitField0_ |= 0x00000020;
         onChanged();
       }
       this.mergeUnknownFields(other.getUnknownFields());
@@ -674,11 +607,6 @@ private static final long serialVersionUID = 0L;
               bitField0_ |= 0x00000010;
               break;
             } // case 42
-            case 50: {
-              chatHistoryJson_ = input.readStringRequireUtf8();
-              bitField0_ |= 0x00000020;
-              break;
-            } // case 50
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -1061,98 +989,6 @@ private static final long serialVersionUID = 0L;
       checkByteStringIsUtf8(value);
       modification_ = value;
       bitField0_ |= 0x00000010;
-      onChanged();
-      return this;
-    }
-
-    private java.lang.Object chatHistoryJson_ = "";
-    /**
-     * <pre>
-     * chat_history serialised as JSON (orchestrator-specific shape).
-     * </pre>
-     *
-     * <code>string chat_history_json = 6;</code>
-     * @return The chatHistoryJson.
-     */
-    public java.lang.String getChatHistoryJson() {
-      java.lang.Object ref = chatHistoryJson_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        chatHistoryJson_ = s;
-        return s;
-      } else {
-        return (java.lang.String) ref;
-      }
-    }
-    /**
-     * <pre>
-     * chat_history serialised as JSON (orchestrator-specific shape).
-     * </pre>
-     *
-     * <code>string chat_history_json = 6;</code>
-     * @return The bytes for chatHistoryJson.
-     */
-    public com.google.protobuf.ByteString
-        getChatHistoryJsonBytes() {
-      java.lang.Object ref = chatHistoryJson_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        chatHistoryJson_ = b;
-        return b;
-      } else {
-        return (com.google.protobuf.ByteString) ref;
-      }
-    }
-    /**
-     * <pre>
-     * chat_history serialised as JSON (orchestrator-specific shape).
-     * </pre>
-     *
-     * <code>string chat_history_json = 6;</code>
-     * @param value The chatHistoryJson to set.
-     * @return This builder for chaining.
-     */
-    public Builder setChatHistoryJson(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      chatHistoryJson_ = value;
-      bitField0_ |= 0x00000020;
-      onChanged();
-      return this;
-    }
-    /**
-     * <pre>
-     * chat_history serialised as JSON (orchestrator-specific shape).
-     * </pre>
-     *
-     * <code>string chat_history_json = 6;</code>
-     * @return This builder for chaining.
-     */
-    public Builder clearChatHistoryJson() {
-      chatHistoryJson_ = getDefaultInstance().getChatHistoryJson();
-      bitField0_ = (bitField0_ & ~0x00000020);
-      onChanged();
-      return this;
-    }
-    /**
-     * <pre>
-     * chat_history serialised as JSON (orchestrator-specific shape).
-     * </pre>
-     *
-     * <code>string chat_history_json = 6;</code>
-     * @param value The bytes for chatHistoryJson to set.
-     * @return This builder for chaining.
-     */
-    public Builder setChatHistoryJsonBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      chatHistoryJson_ = value;
-      bitField0_ |= 0x00000020;
       onChanged();
       return this;
     }

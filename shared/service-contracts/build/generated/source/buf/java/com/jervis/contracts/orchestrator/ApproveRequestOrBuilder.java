@@ -66,24 +66,4 @@ public interface ApproveRequestOrBuilder extends
    */
   com.google.protobuf.ByteString
       getModificationBytes();
-
-  /**
-   * <pre>
-   * chat_history serialised as JSON (orchestrator-specific shape).
-   * </pre>
-   *
-   * <code>string chat_history_json = 6;</code>
-   * @return The chatHistoryJson.
-   */
-  java.lang.String getChatHistoryJson();
-  /**
-   * <pre>
-   * chat_history serialised as JSON (orchestrator-specific shape).
-   * </pre>
-   *
-   * <code>string chat_history_json = 6;</code>
-   * @return The bytes for chatHistoryJson.
-   */
-  com.google.protobuf.ByteString
-      getChatHistoryJsonBytes();
 }

@@ -54,20 +54,18 @@ class StatusResponse(_message.Message):
     def __init__(self, status: _Optional[str] = ..., thread_id: _Optional[str] = ..., interrupt_action: _Optional[str] = ..., interrupt_description: _Optional[str] = ..., error: _Optional[str] = ..., summary: _Optional[str] = ..., branch: _Optional[str] = ..., artifacts: _Optional[_Iterable[str]] = ..., keep_environment_running: bool = ...) -> None: ...
 
 class ApproveRequest(_message.Message):
-    __slots__ = ("ctx", "thread_id", "approved", "reason", "modification", "chat_history_json")
+    __slots__ = ("ctx", "thread_id", "approved", "reason", "modification")
     CTX_FIELD_NUMBER: _ClassVar[int]
     THREAD_ID_FIELD_NUMBER: _ClassVar[int]
     APPROVED_FIELD_NUMBER: _ClassVar[int]
     REASON_FIELD_NUMBER: _ClassVar[int]
     MODIFICATION_FIELD_NUMBER: _ClassVar[int]
-    CHAT_HISTORY_JSON_FIELD_NUMBER: _ClassVar[int]
     ctx: _types_pb2.RequestContext
     thread_id: str
     approved: bool
     reason: str
     modification: str
-    chat_history_json: str
-    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., thread_id: _Optional[str] = ..., approved: bool = ..., reason: _Optional[str] = ..., modification: _Optional[str] = ..., chat_history_json: _Optional[str] = ...) -> None: ...
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., thread_id: _Optional[str] = ..., approved: bool = ..., reason: _Optional[str] = ..., modification: _Optional[str] = ...) -> None: ...
 
 class ApproveAck(_message.Message):
     __slots__ = ("status",)
