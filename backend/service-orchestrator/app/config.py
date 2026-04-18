@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # Service
     host: str = os.getenv("ORCHESTRATOR_HOST", "0.0.0.0")
     port: int = int(os.getenv("ORCHESTRATOR_PORT", "8090"))
+    grpc_port: int = int(os.getenv("ORCHESTRATOR_GRPC_PORT", "5501"))
 
     # MongoDB (persistent checkpointer – same instance as Kotlin server)
     mongodb_url: str = os.getenv("MONGODB_URL", "")

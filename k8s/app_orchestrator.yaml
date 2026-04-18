@@ -25,6 +25,9 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8090
+              name: http
+            - containerPort: 5501
+              name: grpc
           envFrom:
             - configMapRef:
                 name: jervis-config
@@ -103,3 +106,6 @@ spec:
     - name: http
       port: 8090
       targetPort: 8090
+    - name: grpc
+      port: 5501
+      targetPort: 5501

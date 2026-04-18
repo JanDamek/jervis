@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package jervis.orchestrator;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.orchestrator";
+option java_multiple_files = true;
+option java_outer_classname = "OrchestratorControlProto";
+
+// OrchestratorControlService — thread-level control RPCs over the
+// LangGraph-backed orchestrator. Long-running orchestration events flow
+// over the KbProgress / OrchestratorProgress callbacks already migrated
+// in Phase 1; this service covers the short-payload control surface.
+service OrchestratorControlService {
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+  rpc Approve(ApproveRequest) returns (ApproveAck);
+  rpc Cancel(ThreadRequest) returns (CancelAck);
+  rpc Interrupt(ThreadRequest) returns (InterruptAck);
+  // Resume helper left out of the initial surface — no Kotlin consumer
+  // dials it today (Approve already handles the resume-after-interrupt
+  // flow). Add back if a new caller needs a dedicated resume RPC.
+}
+
+// Health — presence + liveness probe. active_tasks mirrors the
+// len(_active_tasks) counter on the orchestrator side.
+message HealthRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message HealthResponse {
+  string status = 1;            // "ok" when healthy
+  string service = 2;           // "orchestrator"
+  int32 active_tasks = 3;
+}
+
+// Status — polled by Kotlin BackgroundEngine.runOrchestratorResultLoop().
+message StatusRequest {
+  jervis.common.RequestContext ctx = 1;
+  string thread_id = 2;
+}
+
+message StatusResponse {
+  string status = 1;            // running | interrupted | done | error | unknown
+  string thread_id = 2;
+  string interrupt_action = 3;  // populated when status=interrupted
+  string interrupt_description = 4;
+  string error = 5;             // populated when status=error
+  string summary = 6;            // populated when status=done
+  string branch = 7;
+  repeated string artifacts = 8;
+  bool keep_environment_running = 9;
+}
+
+// Approve — resumes an interrupted graph. Fire-and-forget: graph runs
+// in the background, result polled via GetStatus / pushed via
+// OrchestratorProgress callback.
+message ApproveRequest {
+  jervis.common.RequestContext ctx = 1;
+  string thread_id = 2;
+  bool approved = 3;
+  string reason = 4;
+  string modification = 5;
+  // chat_history serialised as JSON (orchestrator-specific shape).
+  string chat_history_json = 6;
+}
+
+message ApproveAck {
+  string status = 1;    // "resuming" on accept, "not-found" on stale thread
+}
+
+message ThreadRequest {
+  jervis.common.RequestContext ctx = 1;
+  string thread_id = 2;
+}
+
+message CancelAck {
+  bool cancelled = 1;
+}
+
+message InterruptAck {
+  bool interrupted = 1;
+  string detail = 2;
+}

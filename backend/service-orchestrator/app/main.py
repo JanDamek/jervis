@@ -232,7 +232,19 @@ async def lifespan(app: FastAPI):
     from app.proactive import scheduler as proactive_scheduler
     await proactive_scheduler.start()
 
+    # Start pod-to-pod gRPC surface (:5501). Runs alongside FastAPI (:8090)
+    # for the duration of Phase 3 — each slice moves more traffic off REST.
+    from app.grpc_server import start_grpc_server
+
+    grpc_port = int(getattr(settings, "grpc_port", 5501))
+    grpc_server = await start_grpc_server(port=grpc_port)
+    app.state.grpc_server = grpc_server
+
     yield
+
+    # Drain gRPC first so in-flight RPCs finish, then stop the rest.
+    await grpc_server.stop(grace=5.0)
+    logger.info("gRPC server stopped")
 
     # Stop proactive scheduler
     await proactive_scheduler.stop()
@@ -409,9 +421,16 @@ async def chat_stop(request_body: dict):
     return {"stopped": False, "reason": "No active chat for session"}
 
 
+# /health + /status/{thread_id} migrated to gRPC
+# (OrchestratorControlService.{Health,GetStatus} on :5501 —
+# see app/grpc_server.py). The K8s liveness probe still dials
+# the FastAPI /health — see _fallback_health below for the stub.
+
+
 @app.get("/health")
-async def health():
-    """Health check endpoint."""
+async def _fallback_health():
+    """Stub for the K8s liveness probe only. Real health telemetry flows
+    through the gRPC OrchestratorControlService.Health RPC."""
     return {
         "status": "ok",
         "service": "orchestrator",
@@ -419,236 +438,8 @@ async def health():
     }
 
 
-@app.get("/status/{thread_id}")
-async def status(thread_id: str):
-    """Get the current status of an orchestration thread.
-
-    Polled by Kotlin server's BackgroundEngine.runOrchestratorResultLoop()
-    to check on dispatched tasks.
-
-    Returns:
-        status: "running" | "interrupted" | "done" | "error" | "unknown"
-        Plus additional fields depending on status.
-    """
-    from app.agent.langgraph_runner import _get_compiled_graph
-    compiled = _get_compiled_graph()
-    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
-    graph_state = await compiled.aget_state(config)
-
-    if graph_state is None:
-        return {"status": "unknown", "thread_id": thread_id}
-
-    # Check if graph has pending next nodes (still running or interrupted)
-    if graph_state.next:
-        # Graph is paused – check if it's an interrupt
-        interrupt_data = None
-        if graph_state.tasks:
-            for task in graph_state.tasks:
-                if hasattr(task, "interrupts") and task.interrupts:
-                    interrupt_data = task.interrupts[0].value
-                    break
-
-        if interrupt_data:
-            return {
-                "status": "interrupted",
-                "thread_id": thread_id,
-                "interrupt_action": interrupt_data.get("action", "unknown"),
-                "interrupt_description": interrupt_data.get("description", ""),
-            }
-
-        # Check if thread has an active asyncio task — if not, it's stale
-        # (checkpoint says "running" but no actual task after pod restart)
-        if thread_id not in _active_tasks:
-            logger.warning(
-                "Stale thread detected: %s has pending nodes but no active task (pod restarted?)",
-                thread_id,
-            )
-            return {
-                "status": "error",
-                "thread_id": thread_id,
-                "error": "Orchestrace přerušena restartem — úloha bude automaticky obnovena",
-            }
-
-        return {"status": "running", "thread_id": thread_id}
-
-    # Graph has no next nodes – check if completed or errored
-    values = graph_state.values or {}
-    error = values.get("error")
-    if error:
-        return {"status": "error", "thread_id": thread_id, "error": error}
-
-    final_result = values.get("final_result")
-    if final_result:
-        return {
-            "status": "done",
-            "thread_id": thread_id,
-            "summary": final_result,
-            "branch": values.get("branch"),
-            "artifacts": values.get("artifacts", []),
-            "keep_environment_running": values.get("keep_environment_running", False),
-        }
-
-    return {"status": "unknown", "thread_id": thread_id}
-
-
-@app.post("/approve/{thread_id}")
-async def approve(thread_id: str, request: Request):
-    """Resume an interrupted orchestration with user's approval/clarification response.
-
-    Called by Kotlin PythonOrchestratorClient.approve() after user responds
-    to an ask_user interrupt. Fire-and-forget: resumes the graph in background,
-    result pushed via status callback.
-
-    Request body: {approved: bool, reason: str?, modification: str?, chat_history: dict?}
-    """
-    body = await request.json()
-    approved = body.get("approved", False)
-    reason = body.get("reason")
-    modification = body.get("modification")
-    chat_history = body.get("chat_history")
-
-    logger.info(
-        "APPROVE_START | thread_id=%s | approved=%s | reason=%s",
-        thread_id, approved, reason,
-    )
-
-    # Build resume value that the interrupt() call will receive
-    resume_value = {
-        "approved": approved,
-        "reason": reason or "",
-        "modification": modification,
-    }
-
-    async def _run_resume():
-        try:
-            from app.agent.langgraph_runner import _get_compiled_graph
-            from langgraph.types import Command
-            compiled = _get_compiled_graph()
-            config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
-
-            # Verify checkpoint exists — stale threads have no checkpoint
-            existing = await compiled.aget_state(config)
-            if not existing or not existing.values or "task" not in existing.values:
-                raise ValueError(
-                    f"No valid checkpoint for thread {thread_id} — "
-                    f"thread may be stale"
-                )
-
-            # Update chat_history if provided
-            if chat_history:
-                await compiled.aupdate_state(config, {"chat_history": chat_history})
-
-            final_state = await compiled.ainvoke(
-                Command(resume=resume_value), config=config,
-            )
-
-            # Report completion
-            # Extract task_id from thread_id format: "graph-{task_id}-{uuid}"
-            parts = thread_id.split("-")
-            task_id = parts[1] if len(parts) >= 2 else thread_id
-            await kotlin_client.report_status_change(
-                task_id=task_id,
-                thread_id=thread_id,
-                status="done",
-                summary=final_state.get("final_result", ""),
-                branch=final_state.get("branch"),
-                artifacts=final_state.get("artifacts", []),
-                keep_environment_running=final_state.get("keep_environment_running", False),
-            )
-        except asyncio.CancelledError:
-            logger.info("APPROVE_INTERRUPTED | thread_id=%s — preempted", thread_id)
-        except Exception as e:
-            logger.exception("APPROVE_FAILED | thread_id=%s: %s", thread_id, e)
-            parts = thread_id.split("-")
-            task_id = parts[1] if len(parts) >= 2 else thread_id
-            await kotlin_client.report_status_change(
-                task_id=task_id,
-                thread_id=thread_id,
-                status="error",
-                error=str(e),
-            )
-        finally:
-            _active_tasks.pop(thread_id, None)
-
-    task = asyncio.create_task(_run_resume())
-    _active_tasks[thread_id] = task
-    return {"status": "resuming", "thread_id": thread_id}
-
-
-@app.post("/interrupt/{thread_id}")
-async def interrupt(thread_id: str):
-    """Interrupt a running orchestration to allow higher-priority task to run.
-
-    Gracefully cancels the current execution. LangGraph automatically saves
-    the checkpoint to MongoDB, allowing the task to be resumed later from
-    the same point.
-
-    This is different from /cancel which marks the task as errored.
-    Interrupt allows the task to be resumed later when queue space is available.
-    """
-    task = _active_tasks.get(thread_id)
-    if not task:
-        logger.warning("INTERRUPT_NOT_FOUND: No active task for thread_id=%s", thread_id)
-        return {"success": False, "error": "No active task found"}
-
-    try:
-        # Cancel the asyncio task - LangGraph will save checkpoint automatically
-        task.cancel()
-        logger.info("INTERRUPT_SUCCESS: Gracefully interrupted thread_id=%s, checkpoint saved to MongoDB", thread_id)
-
-        # Remove from active tasks
-        _active_tasks.pop(thread_id, None)
-
-        return {"success": True}
-    except Exception as e:
-        logger.error("INTERRUPT_ERROR: Failed to interrupt thread_id=%s: %s", thread_id, e)
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/cancel/{thread_id}")
-async def cancel(thread_id: str):
-    """Cancel a running orchestration.
-
-    Reports 'cancelled' status to Kotlin so the task doesn't stay stuck in
-    PROCESSING.  Then cancels the asyncio task (CancelledError).
-    """
-    task = _active_tasks.get(thread_id)
-    if not task:
-        raise HTTPException(status_code=404, detail=f"No active task for {thread_id}")
-
-    # Extract task_id from thread_id format: "graph-{task_id}-{uuid}"
-    parts = thread_id.split("-")
-    cancel_task_id = parts[1] if len(parts) >= 2 else thread_id
-
-    # Mark graph as CANCELLED in persistence so agentic loop stops gracefully
-    try:
-        from app.agent.persistence import agent_store
-        from app.agent.models import GraphStatus
-        graph = await agent_store.load(cancel_task_id)
-        if graph and graph.status not in (GraphStatus.COMPLETED, GraphStatus.FAILED):
-            graph.status = GraphStatus.CANCELLED
-            await agent_store.save(graph)
-            logger.info("Marked graph %s as CANCELLED", graph.id)
-    except Exception as e:
-        logger.warning("Failed to mark graph as cancelled: %s", e)
-
-    # Report cancelled status to Kotlin so UI updates immediately
-    try:
-        from app.tools.kotlin_client import kotlin_client
-        await kotlin_client.report_status_change(
-            task_id=cancel_task_id,
-            thread_id=thread_id,
-            status="cancelled",
-            summary="Úkol zrušen uživatelem.",
-        )
-    except Exception as e:
-        logger.warning("Failed to report cancel to Kotlin: %s", e)
-
-    # Cancel the asyncio task — CancelledError will fire in _run_background
-    task.cancel()
-    _active_tasks.pop(thread_id, None)
-    logger.info("Cancelled orchestration: thread=%s task=%s", thread_id, cancel_task_id)
-    return {"status": "cancelled", "thread_id": thread_id}
+# /approve/{thread_id}, /interrupt/{thread_id}, /cancel/{thread_id} migrated to
+# gRPC (OrchestratorControlService.{Approve,Interrupt,Cancel} on :5501).
 
 
 @app.get("/graph/{task_id}")

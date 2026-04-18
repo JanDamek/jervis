@@ -7,6 +7,7 @@ import com.jervis.infrastructure.grpc.KbIngestGrpcClient
 import com.jervis.infrastructure.grpc.KbMaintenanceGrpcClient
 import com.jervis.infrastructure.grpc.KbQueueGrpcClient
 import com.jervis.infrastructure.grpc.KbRetrieveGrpcClient
+import com.jervis.infrastructure.grpc.OrchestratorControlGrpcClient
 import com.jervis.infrastructure.llm.CorrectionClient
 import com.jervis.infrastructure.llm.DocumentExtractionClient
 import com.jervis.infrastructure.llm.KnowledgeServiceRestClient
@@ -59,6 +60,7 @@ class RpcClientsConfig(
     private val kbRetrieveGrpc: KbRetrieveGrpcClient,
     private val kbGraphGrpc: KbGraphGrpcClient,
     private val kbDocumentGrpc: KbDocumentGrpcClient,
+    private val orchestratorControlGrpc: OrchestratorControlGrpcClient,
 ) {
     @org.springframework.beans.factory.annotation.Value("\${jervis.kb-callback-base-url:}")
     private var kbCallbackBaseUrl: String = ""
@@ -79,7 +81,10 @@ class RpcClientsConfig(
     @Bean
     fun pythonOrchestratorClient(): PythonOrchestratorClient =
         _pythonOrchestratorClient
-            ?: PythonOrchestratorClient(endpoints.orchestrator.baseUrl).also { _pythonOrchestratorClient = it }
+            ?: PythonOrchestratorClient(
+                endpoints.orchestrator.baseUrl,
+                controlGrpc = orchestratorControlGrpc,
+            ).also { _pythonOrchestratorClient = it }
 
     @Bean
     fun correctionClient(): CorrectionClient =

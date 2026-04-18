@@ -92,10 +92,16 @@ class CircuitBreaker(
  * This client is used by AgentOrchestratorService to delegate complex
  * coding workflows to the Python service.
  */
-class PythonOrchestratorClient(baseUrl: String) {
+class PythonOrchestratorClient(
+    baseUrl: String,
+    private val controlGrpc: com.jervis.infrastructure.grpc.OrchestratorControlGrpcClient? = null,
+) {
 
     private val apiBaseUrl = baseUrl.trimEnd('/')
     val circuitBreaker = CircuitBreaker()
+
+    private fun controlGrpcOrThrow(): com.jervis.infrastructure.grpc.OrchestratorControlGrpcClient =
+        controlGrpc ?: error("OrchestratorControlGrpcClient not wired — see RpcClientsConfig")
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -126,11 +132,8 @@ class PythonOrchestratorClient(baseUrl: String) {
         reason: String? = null,
     ) {
         logger.info { "PYTHON_ORCHESTRATOR_APPROVE: threadId=$threadId approved=$approved" }
-        val response = client.post("$apiBaseUrl/approve/$threadId") {
-            contentType(ContentType.Application.Json)
-            setBody(ApprovalResponseDto(approved = approved, reason = reason))
-        }
-        logger.info { "PYTHON_ORCHESTRATOR_APPROVE_SENT: threadId=$threadId status=${response.status}" }
+        val ack = controlGrpcOrThrow().approve(threadId, approved, reason)
+        logger.info { "PYTHON_ORCHESTRATOR_APPROVE_SENT: threadId=$threadId status=${ack.status}" }
     }
 
     /**
@@ -138,30 +141,38 @@ class PythonOrchestratorClient(baseUrl: String) {
      */
     suspend fun cancelOrchestration(threadId: String) {
         logger.info { "PYTHON_ORCHESTRATOR_CANCEL: threadId=$threadId" }
-        client.post("$apiBaseUrl/cancel/$threadId") {
-            contentType(ContentType.Application.Json)
+        try {
+            controlGrpcOrThrow().cancel(threadId)
+        } catch (e: io.grpc.StatusException) {
+            // NOT_FOUND is benign — task may have already completed.
+            if (e.status.code != io.grpc.Status.Code.NOT_FOUND) {
+                logger.warn(e) { "PYTHON_ORCHESTRATOR_CANCEL_FAIL: threadId=$threadId: ${e.message}" }
+            }
         }
-    }
-
-    /**
-     * Resume a paused orchestration from checkpoint.
-     */
-    suspend fun resume(threadId: String): OrchestrateResponseDto {
-        logger.info { "PYTHON_ORCHESTRATOR_RESUME: threadId=$threadId" }
-        return client.post("$apiBaseUrl/resume/$threadId") {
-            contentType(ContentType.Application.Json)
-        }.body()
     }
 
     /**
      * Get the status of an orchestration thread.
      * Polled by BackgroundEngine.runOrchestratorResultLoop().
      *
-     * Returns a map with "status" key: running, interrupted, done, error, unknown.
+     * Returns a map with "status" key: running, interrupted, done, error, unknown,
+     * plus additional fields (summary, branch, artifacts, interrupt_action, …).
      */
     suspend fun getStatus(threadId: String): Map<String, String> {
         return try {
-            client.get("$apiBaseUrl/status/$threadId").body()
+            val resp = controlGrpcOrThrow().getStatus(threadId)
+            val out = mutableMapOf<String, String>(
+                "status" to resp.status,
+                "thread_id" to resp.threadId,
+            )
+            if (resp.interruptAction.isNotEmpty()) out["interrupt_action"] = resp.interruptAction
+            if (resp.interruptDescription.isNotEmpty()) out["interrupt_description"] = resp.interruptDescription
+            if (resp.error.isNotEmpty()) out["error"] = resp.error
+            if (resp.summary.isNotEmpty()) out["summary"] = resp.summary
+            if (resp.branch.isNotEmpty()) out["branch"] = resp.branch
+            if (resp.artifactsCount > 0) out["artifacts"] = resp.artifactsList.joinToString(",")
+            if (resp.keepEnvironmentRunning) out["keep_environment_running"] = "true"
+            out
         } catch (e: Exception) {
             logger.warn { "PYTHON_ORCHESTRATOR_STATUS_FAIL: threadId=$threadId ${e.message}" }
             throw e
@@ -229,40 +240,32 @@ class PythonOrchestratorClient(baseUrl: String) {
      * @param threadId The LangGraph thread ID to interrupt
      * @return true if interrupt was successful, false otherwise
      */
-    suspend fun interrupt(threadId: String): Boolean {
-        return try {
+    suspend fun interrupt(threadId: String): Boolean =
+        try {
             logger.info { "PYTHON_ORCHESTRATOR_INTERRUPT: threadId=$threadId" }
-            val response: JsonObject = client.post("$apiBaseUrl/interrupt/$threadId") {
-                contentType(ContentType.Application.Json)
-            }.body()
-
-            val success = response["success"]?.toString()?.trim('"')?.toBoolean() ?: false
-
-            if (success) {
+            val ack = controlGrpcOrThrow().interrupt(threadId)
+            if (ack.interrupted) {
                 logger.info { "PYTHON_ORCHESTRATOR_INTERRUPT_SUCCESS: threadId=$threadId" }
             } else {
-                val error = response["error"]?.toString()?.trim('"') ?: "unknown"
-                logger.warn { "PYTHON_ORCHESTRATOR_INTERRUPT_FAILED: threadId=$threadId error=$error" }
+                logger.warn { "PYTHON_ORCHESTRATOR_INTERRUPT_FAILED: threadId=$threadId detail=${ack.detail}" }
             }
-
-            success
+            ack.interrupted
         } catch (e: Exception) {
             logger.error(e) { "PYTHON_ORCHESTRATOR_INTERRUPT_ERROR: threadId=$threadId ${e.message}" }
             false
         }
-    }
 
     /**
      * Health check.
      */
     suspend fun isHealthy(): Boolean {
         if (!circuitBreaker.allowRequest()) {
-            logger.debug { "PYTHON_ORCHESTRATOR_HEALTH_CIRCUIT_OPEN: fast-fail, no HTTP call" }
+            logger.debug { "PYTHON_ORCHESTRATOR_HEALTH_CIRCUIT_OPEN: fast-fail, no gRPC call" }
             return false
         }
         return try {
-            val response: JsonObject = client.get("$apiBaseUrl/health").body()
-            val healthy = response["status"]?.toString()?.trim('"') == "ok"
+            val resp = controlGrpcOrThrow().health()
+            val healthy = resp.status == "ok"
             if (healthy) circuitBreaker.recordSuccess() else circuitBreaker.recordFailure()
             healthy
         } catch (e: Exception) {

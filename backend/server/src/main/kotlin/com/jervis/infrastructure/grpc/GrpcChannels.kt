@@ -24,6 +24,10 @@ class GrpcChannels(
     private val kbHost: String,
     @Value("\${grpc.knowledgebase.port:5501}")
     private val kbPort: Int,
+    @Value("\${grpc.orchestrator.host:jervis-orchestrator}")
+    private val orchestratorHost: String,
+    @Value("\${grpc.orchestrator.port:5501}")
+    private val orchestratorPort: Int,
 ) {
     private val logger = KotlinLogging.logger {}
     private val channels = mutableListOf<ManagedChannel>()
@@ -66,8 +70,24 @@ class GrpcChannels(
         }
     }
 
+    @Bean(name = [ORCHESTRATOR_CHANNEL])
+    fun orchestratorChannel(): ManagedChannel {
+        val maxMsgBytes = 64 * 1024 * 1024
+        val channel = NettyChannelBuilder.forAddress(orchestratorHost, orchestratorPort)
+            .usePlaintext()
+            .maxInboundMessageSize(maxMsgBytes)
+            .keepAliveTime(30, TimeUnit.SECONDS)
+            .keepAliveTimeout(5, TimeUnit.SECONDS)
+            .keepAliveWithoutCalls(true)
+            .build()
+        channels += channel
+        logger.info { "gRPC channel → $orchestratorHost:$orchestratorPort (orchestrator)" }
+        return channel
+    }
+
     companion object {
         const val ROUTER_ADMIN_CHANNEL = "routerAdminChannel"
         const val KNOWLEDGEBASE_CHANNEL = "knowledgebaseChannel"
+        const val ORCHESTRATOR_CHANNEL = "orchestratorChannel"
     }
 }
