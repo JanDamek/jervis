@@ -33,6 +33,7 @@ private static final long serialVersionUID = 0L;
     projectId_ = "";
     groupId_ = "";
     nodeType_ = "";
+    branchName_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -289,6 +290,53 @@ private static final long serialVersionUID = 0L;
     }
   }
 
+  public static final int BRANCH_NAME_FIELD_NUMBER = 8;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object branchName_ = "";
+  /**
+   * <pre>
+   * optional branch filter (file/class nodes)
+   * </pre>
+   *
+   * <code>string branch_name = 8;</code>
+   * @return The branchName.
+   */
+  @java.lang.Override
+  public java.lang.String getBranchName() {
+    java.lang.Object ref = branchName_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      branchName_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * optional branch filter (file/class nodes)
+   * </pre>
+   *
+   * <code>string branch_name = 8;</code>
+   * @return The bytes for branchName.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getBranchNameBytes() {
+    java.lang.Object ref = branchName_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      branchName_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
   private byte memoizedIsInitialized = -1;
   @java.lang.Override
   public final boolean isInitialized() {
@@ -324,6 +372,9 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(nodeType_)) {
       com.google.protobuf.GeneratedMessage.writeString(output, 7, nodeType_);
     }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(branchName_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 8, branchName_);
+    }
     getUnknownFields().writeTo(output);
   }
 
@@ -355,6 +406,9 @@ private static final long serialVersionUID = 0L;
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(nodeType_)) {
       size += com.google.protobuf.GeneratedMessage.computeStringSize(7, nodeType_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(branchName_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(8, branchName_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -388,6 +442,8 @@ private static final long serialVersionUID = 0L;
         != other.getMaxResults()) return false;
     if (!getNodeType()
         .equals(other.getNodeType())) return false;
+    if (!getBranchName()
+        .equals(other.getBranchName())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -415,6 +471,8 @@ private static final long serialVersionUID = 0L;
     hash = (53 * hash) + getMaxResults();
     hash = (37 * hash) + NODE_TYPE_FIELD_NUMBER;
     hash = (53 * hash) + getNodeType().hashCode();
+    hash = (37 * hash) + BRANCH_NAME_FIELD_NUMBER;
+    hash = (53 * hash) + getBranchName().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -563,6 +621,7 @@ private static final long serialVersionUID = 0L;
       groupId_ = "";
       maxResults_ = 0;
       nodeType_ = "";
+      branchName_ = "";
       return this;
     }
 
@@ -621,6 +680,9 @@ private static final long serialVersionUID = 0L;
       if (((from_bitField0_ & 0x00000040) != 0)) {
         result.nodeType_ = nodeType_;
       }
+      if (((from_bitField0_ & 0x00000080) != 0)) {
+        result.branchName_ = branchName_;
+      }
       result.bitField0_ |= to_bitField0_;
     }
 
@@ -665,6 +727,11 @@ private static final long serialVersionUID = 0L;
       if (!other.getNodeType().isEmpty()) {
         nodeType_ = other.nodeType_;
         bitField0_ |= 0x00000040;
+        onChanged();
+      }
+      if (!other.getBranchName().isEmpty()) {
+        branchName_ = other.branchName_;
+        bitField0_ |= 0x00000080;
         onChanged();
       }
       this.mergeUnknownFields(other.getUnknownFields());
@@ -730,6 +797,11 @@ private static final long serialVersionUID = 0L;
               bitField0_ |= 0x00000040;
               break;
             } // case 58
+            case 66: {
+              branchName_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000080;
+              break;
+            } // case 66
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -1276,6 +1348,98 @@ private static final long serialVersionUID = 0L;
       checkByteStringIsUtf8(value);
       nodeType_ = value;
       bitField0_ |= 0x00000040;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object branchName_ = "";
+    /**
+     * <pre>
+     * optional branch filter (file/class nodes)
+     * </pre>
+     *
+     * <code>string branch_name = 8;</code>
+     * @return The branchName.
+     */
+    public java.lang.String getBranchName() {
+      java.lang.Object ref = branchName_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        branchName_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * optional branch filter (file/class nodes)
+     * </pre>
+     *
+     * <code>string branch_name = 8;</code>
+     * @return The bytes for branchName.
+     */
+    public com.google.protobuf.ByteString
+        getBranchNameBytes() {
+      java.lang.Object ref = branchName_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        branchName_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * optional branch filter (file/class nodes)
+     * </pre>
+     *
+     * <code>string branch_name = 8;</code>
+     * @param value The branchName to set.
+     * @return This builder for chaining.
+     */
+    public Builder setBranchName(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      branchName_ = value;
+      bitField0_ |= 0x00000080;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * optional branch filter (file/class nodes)
+     * </pre>
+     *
+     * <code>string branch_name = 8;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearBranchName() {
+      branchName_ = getDefaultInstance().getBranchName();
+      bitField0_ = (bitField0_ & ~0x00000080);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * optional branch filter (file/class nodes)
+     * </pre>
+     *
+     * <code>string branch_name = 8;</code>
+     * @param value The bytes for branchName to set.
+     * @return This builder for chaining.
+     */
+    public Builder setBranchNameBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      branchName_ = value;
+      bitField0_ |= 0x00000080;
       onChanged();
       return this;
     }

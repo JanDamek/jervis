@@ -22,21 +22,19 @@ async def _fetch_branch_names(client_id: str, project_id: str | None) -> list[st
 
     Returns list of branch labels, or empty list if KB unavailable.
     """
-    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
-    params = {
-        "query": "",
-        "nodeType": "branch",
-        "clientId": client_id,
-        "limit": 100,
-    }
-    if project_id:
-        params["projectId"] = project_id
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return [b.get("label", "") for b in resp.json() if b.get("label")]
+        branches = await kb_client.graph_search(
+            caller="orchestrator.graph.evidence",
+            query="",
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type="branch",
+            max_results=100,
+            timeout=10.0,
+        )
+        return [b.get("label", "") for b in branches if b.get("label")]
     except Exception as e:
         logger.debug("Branch list fetch failed (KB may not have data): %s", e)
         return []

@@ -451,10 +451,9 @@ class RetrieveServicer(retrieve_pb2_grpc.KnowledgeRetrieveServiceServicer):
 
 
 class GraphServicer(graph_pb2_grpc.KnowledgeGraphServiceServicer):
-    """KnowledgeGraphService — alias registry RPCs land first.
+    """KnowledgeGraphService — graph traversal, node lookup, alias registry.
 
-    Graph traversal + thought map RPCs still live on FastAPI until their
-    corresponding slices migrate.
+    Thought Map RPCs still live on FastAPI until their slice migrates.
     """
 
     def _service(self):
@@ -463,6 +462,126 @@ class GraphServicer(graph_pb2_grpc.KnowledgeGraphServiceServicer):
         if api_routes.service is None:
             raise RuntimeError("KnowledgeService not initialized")
         return api_routes.service
+
+    def _node_to_proto(self, node) -> graph_pb2.GraphNode:
+        """Project a Pydantic/dict GraphNode to proto. Properties are stringified
+        to fit map<string,string> — matches the legacy REST JSON shape which
+        kotlinx-serialization already forced to strings on read."""
+        key = getattr(node, "key", None) or (node.get("key") if isinstance(node, dict) else "") or ""
+        label = getattr(node, "label", None) or (node.get("label") if isinstance(node, dict) else "") or ""
+        node_id = getattr(node, "id", None) or (node.get("id") if isinstance(node, dict) else "") or key
+        raw_props = getattr(node, "properties", None)
+        if raw_props is None and isinstance(node, dict):
+            raw_props = node.get("properties") or {}
+        props: dict[str, str] = {}
+        for k, v in (raw_props or {}).items():
+            if v is None:
+                props[str(k)] = ""
+            elif isinstance(v, (dict, list)):
+                import json as _json
+                props[str(k)] = _json.dumps(v, ensure_ascii=False)
+            else:
+                props[str(k)] = str(v)
+        return graph_pb2.GraphNode(id=str(node_id), key=str(key), label=str(label), properties=props)
+
+    async def Traverse(
+        self,
+        request: graph_pb2.TraversalRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.GraphNodeList:
+        from app.api.models import TraversalRequest as TReq, TraversalSpec as TSpec
+
+        spec_msg = request.spec
+        spec = TSpec(
+            direction=spec_msg.direction or "OUTBOUND",
+            minDepth=spec_msg.min_depth or 1,
+            maxDepth=spec_msg.max_depth or 1,
+            edgeCollection=spec_msg.edge_collection or None,
+        )
+        req = TReq(
+            clientId=request.client_id or "",
+            startKey=request.start_key,
+            spec=spec,
+        )
+        try:
+            nodes = await self._service().traverse(req)
+        except Exception as e:
+            logger.warning("TRAVERSE_ERROR start=%s error=%s", request.start_key, e)
+            return graph_pb2.GraphNodeList(nodes=[])
+        return graph_pb2.GraphNodeList(nodes=[self._node_to_proto(n) for n in (nodes or [])])
+
+    async def GetNode(
+        self,
+        request: graph_pb2.GetNodeRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.GraphNode:
+        graph_service = self._service().graph_service
+        try:
+            node = await graph_service.get_node(
+                request.node_key,
+                request.client_id or "",
+                request.project_id or None,
+                request.group_id or None,
+            )
+        except Exception as e:
+            logger.warning("GET_NODE_ERROR key=%s error=%s", request.node_key, e)
+            return graph_pb2.GraphNode()
+        if node is None:
+            return graph_pb2.GraphNode()
+        return self._node_to_proto(node)
+
+    async def SearchNodes(
+        self,
+        request: graph_pb2.SearchNodesRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.GraphNodeList:
+        graph_service = self._service().graph_service
+        try:
+            nodes = await graph_service.search_nodes(
+                query=request.query or "",
+                client_id=request.client_id or "",
+                project_id=request.project_id or None,
+                group_id=request.group_id or None,
+                node_type=request.node_type or None,
+                branch_name=request.branch_name or None,
+                limit=request.max_results or 20,
+            )
+        except Exception as e:
+            logger.warning("SEARCH_NODES_ERROR query=%r error=%s", (request.query or "")[:120], e)
+            return graph_pb2.GraphNodeList(nodes=[])
+        return graph_pb2.GraphNodeList(nodes=[self._node_to_proto(n) for n in (nodes or [])])
+
+    async def GetNodeEvidence(
+        self,
+        request: graph_pb2.GetNodeRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> retrieve_pb2.EvidencePack:
+        graph_service = self._service().graph_service
+        try:
+            chunk_ids = await graph_service.get_node_chunks(request.node_key, request.client_id or "")
+            if not chunk_ids:
+                return retrieve_pb2.EvidencePack(items=[])
+            chunks = await self._service().rag_service.get_chunks_by_ids(chunk_ids)
+        except Exception as e:
+            logger.warning("GET_NODE_EVIDENCE_ERROR key=%s error=%s", request.node_key, e)
+            return retrieve_pb2.EvidencePack(items=[])
+
+        items: list[retrieve_pb2.EvidenceItem] = []
+        for c in (chunks or []):
+            meta: dict[str, str] = {}
+            for k, v in ((c.get("metadata") if isinstance(c, dict) else None) or {}).items():
+                meta[str(k)] = "" if v is None else str(v)
+            items.append(
+                retrieve_pb2.EvidenceItem(
+                    content=str((c.get("content") if isinstance(c, dict) else "") or ""),
+                    score=float((c.get("score") if isinstance(c, dict) else 0.0) or 0.0),
+                    source_urn=str((c.get("sourceUrn") or c.get("source_urn") if isinstance(c, dict) else "") or ""),
+                    credibility="",
+                    branch_scope="",
+                    metadata=meta,
+                )
+            )
+        return retrieve_pb2.EvidencePack(items=items)
 
     async def ResolveAlias(
         self,

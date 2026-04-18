@@ -59,6 +59,7 @@ message SearchNodesRequest {
   string group_id = 5;
   int32 max_results = 6;
   string node_type = 7;           // optional filter
+  string branch_name = 8;         // optional branch filter (file/class nodes)
 }
 
 message ListQueryEntitiesRequest {

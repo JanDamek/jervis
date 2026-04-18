@@ -1553,27 +1553,23 @@ async def _execute_get_kb_stats(
     project_id: str | None = None,
 ) -> str:
     """Get KB statistics via graph search for various node types."""
-    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
+    from jervis_contracts import kb_client
 
     stats = {}
     node_types = ["repository", "branch", "file", "class", "function", "commit"]
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            for node_type in node_types:
-                params = {
-                    "query": "",
-                    "nodeType": node_type,
-                    "clientId": client_id,
-                    "limit": 100,
-                }
-                if project_id:
-                    params["projectId"] = project_id
-
-                resp = await client.get(url, params=params)
-                resp.raise_for_status()
-                nodes = resp.json()
-                stats[node_type] = len(nodes)
+        for node_type in node_types:
+            nodes = await kb_client.graph_search(
+                caller="orchestrator.tools.kb_stats",
+                query="",
+                client_id=client_id,
+                project_id=project_id or "",
+                node_type=node_type,
+                max_results=100,
+                timeout=15.0,
+            )
+            stats[node_type] = len(nodes)
     except Exception as e:
         return f"Error fetching KB stats: {str(e)[:200]}"
 
@@ -1596,23 +1592,19 @@ async def _execute_list_project_files(
     project_id: str | None = None,
 ) -> str:
     """List files from KB graph."""
-    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
-    params = {
-        "query": file_pattern or "",
-        "nodeType": "file",
-        "clientId": client_id,
-        "limit": limit,
-    }
-    if project_id:
-        params["projectId"] = project_id
-    if branch:
-        params["branchName"] = branch
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            files = resp.json()
+        files = await kb_client.graph_search(
+            caller="orchestrator.tools.list_project_files",
+            query=file_pattern or "",
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type="file",
+            branch_name=branch or "",
+            max_results=limit,
+            timeout=10.0,
+        )
     except Exception as e:
         return f"Error listing files: {str(e)[:200]}"
 
@@ -1640,30 +1632,27 @@ async def _execute_get_repository_info(
     project_id: str | None = None,
 ) -> str:
     """Get repository overview from KB graph."""
-    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
-
-    # Get repositories
-    params = {
-        "query": "",
-        "nodeType": "repository",
-        "clientId": client_id,
-        "limit": 10,
-    }
-    if project_id:
-        params["projectId"] = project_id
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            repos = resp.json()
-
-            # Get branches
-            params["nodeType"] = "branch"
-            params["limit"] = 20
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            branches = resp.json()
+        repos = await kb_client.graph_search(
+            caller="orchestrator.tools.repo_info",
+            query="",
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type="repository",
+            max_results=10,
+            timeout=10.0,
+        )
+        branches = await kb_client.graph_search(
+            caller="orchestrator.tools.repo_info",
+            query="",
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type="branch",
+            max_results=20,
+            timeout=10.0,
+        )
     except Exception as e:
         return f"Error fetching repository info: {str(e)[:200]}"
 
@@ -1706,20 +1695,18 @@ async def _execute_joern_quick_scan(
         return "Error: project_id required for Joern scan (no project selected)."
 
     # Get workspace path from KB graph (repository node has workspacePath property)
-    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
-    params = {
-        "query": "",
-        "nodeType": "repository",
-        "clientId": client_id,
-        "projectId": project_id,
-        "limit": 1,
-    }
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            repos = resp.json()
+        repos = await kb_client.graph_search(
+            caller="orchestrator.tools.joern_scan",
+            query="",
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type="repository",
+            max_results=1,
+            timeout=10.0,
+        )
 
         if not repos:
             return "Error: No repository found in Knowledge Base for this project."
@@ -1772,21 +1759,18 @@ async def _execute_git_branch_list(
     project_id: str | None = None,
 ) -> str:
     """List all git branches from KB graph."""
-    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
-    params = {
-        "query": "",
-        "nodeType": "branch",
-        "clientId": client_id,
-        "limit": 100,
-    }
-    if project_id:
-        params["projectId"] = project_id
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            branches = resp.json()
+        branches = await kb_client.graph_search(
+            caller="orchestrator.tools.branch_list",
+            query="",
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type="branch",
+            max_results=100,
+            timeout=10.0,
+        )
     except Exception as e:
         return f"Error fetching branches: {str(e)[:200]}"
 
@@ -1812,23 +1796,19 @@ async def _execute_get_recent_commits(
     project_id: str | None = None,
 ) -> str:
     """Get recent commits from KB graph."""
-    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
-    params = {
-        "query": "",
-        "nodeType": "commit",
-        "clientId": client_id,
-        "limit": limit,
-    }
-    if project_id:
-        params["projectId"] = project_id
-    if branch:
-        params["branchName"] = branch
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            commits = resp.json()
+        commits = await kb_client.graph_search(
+            caller="orchestrator.tools.recent_commits",
+            query="",
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type="commit",
+            branch_name=branch or "",
+            max_results=limit,
+            timeout=10.0,
+        )
     except Exception as e:
         return f"Error fetching commits: {str(e)[:200]}"
 
@@ -1854,21 +1834,18 @@ async def _execute_get_technology_stack(
     project_id: str | None = None,
 ) -> str:
     """Get technology stack from repository metadata."""
-    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
-    params = {
-        "query": "",
-        "nodeType": "repository",
-        "clientId": client_id,
-        "limit": 10,
-    }
-    if project_id:
-        params["projectId"] = project_id
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            repos = resp.json()
+        repos = await kb_client.graph_search(
+            caller="orchestrator.tools.tech_stack",
+            query="",
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type="repository",
+            max_results=10,
+            timeout=10.0,
+        )
     except Exception as e:
         return f"Error fetching technology stack: {str(e)[:200]}"
 
@@ -1888,14 +1865,16 @@ async def _execute_get_technology_stack(
         lines.append("")
 
     # Also get language breakdown from file nodes
-    params["nodeType"] = "file"
-    params["limit"] = 1000
-
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            files = resp.json()
+        files = await kb_client.graph_search(
+            caller="orchestrator.tools.tech_stack",
+            query="",
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type="file",
+            max_results=1000,
+            timeout=10.0,
+        )
 
         if files:
             languages = {}
@@ -1918,21 +1897,18 @@ async def _execute_get_repository_structure(
     project_id: str | None = None,
 ) -> str:
     """Get repository directory structure from KB."""
-    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
-    params = {
-        "query": "",
-        "nodeType": "file",
-        "clientId": client_id,
-        "limit": 1000,
-    }
-    if project_id:
-        params["projectId"] = project_id
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            files = resp.json()
+        files = await kb_client.graph_search(
+            caller="orchestrator.tools.repo_structure",
+            query="",
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type="file",
+            max_results=1000,
+            timeout=15.0,
+        )
     except Exception as e:
         return f"Error fetching repository structure: {str(e)[:200]}"
 
@@ -2243,27 +2219,25 @@ async def _get_workspace_path(
         return None
 
     # 1. Try KB graph first (fast path, no clone needed if repo already indexed)
-    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
-    params = {
-        "query": "",
-        "nodeType": "repository",
-        "clientId": client_id,
-        "projectId": project_id,
-        "limit": 1,
-    }
-
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            repos = resp.json()
-            if repos:
-                workspace_path = repos[0].get("properties", {}).get("workspacePath")
-                if workspace_path:
-                    # Verify the directory actually exists on disk
-                    from pathlib import Path as _P
-                    if _P(workspace_path).exists():
-                        return workspace_path
+        from jervis_contracts import kb_client
+
+        repos = await kb_client.graph_search(
+            caller="orchestrator.tools.workspace_lookup",
+            query="",
+            client_id=client_id,
+            project_id=project_id,
+            node_type="repository",
+            max_results=1,
+            timeout=10.0,
+        )
+        if repos:
+            workspace_path = repos[0].get("properties", {}).get("workspacePath")
+            if workspace_path:
+                # Verify the directory actually exists on disk
+                from pathlib import Path as _P
+                if _P(workspace_path).exists():
+                    return workspace_path
     except Exception as e:
         logger.warning("KB graph lookup for workspace failed: %s", e)
 

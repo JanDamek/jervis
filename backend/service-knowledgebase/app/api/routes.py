@@ -88,12 +88,7 @@ async def retrieve_hybrid(request: HybridRetrievalRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@read_router.post("/traverse", response_model=List[GraphNode])
-async def traverse(request: TraversalRequest):
-    try:
-        return await service.traverse(request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /traverse migrated to gRPC (KnowledgeGraphService.Traverse on :5501).
 
 
 @read_router.post("/analyze/code", response_model=JoernResultDto)
@@ -104,60 +99,10 @@ async def analyze_code(query: str, workspacePath: str = ""):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@read_router.get("/graph/node/{node_key}", response_model=Optional[GraphNode])
-async def get_graph_node(
-    node_key: str,
-    clientId: str = "",
-    projectId: str = None,
-    groupId: str = None
-):
-    """Get a single graph node by key with multi-tenant filtering."""
-    try:
-        return await service.graph_service.get_node(node_key, clientId, projectId, groupId)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@read_router.get("/graph/search", response_model=List[GraphNode])
-async def search_graph_nodes(
-    query: str,
-    clientId: str = "",
-    projectId: str = None,
-    groupId: str = None,
-    nodeType: str = None,
-    branchName: str = None,
-    limit: int = 20
-):
-    """Search graph nodes by label with multi-tenant filtering.
-
-    Optional branchName filter scopes results to a specific branch
-    (applies to file, class, and other branch-scoped node types).
-    """
-    try:
-        return await service.graph_service.search_nodes(
-            query=query,
-            client_id=clientId,
-            project_id=projectId,
-            group_id=groupId,
-            node_type=nodeType,
-            branch_name=branchName,
-            limit=limit
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@read_router.get("/graph/node/{node_key}/evidence")
-async def get_node_evidence(node_key: str, clientId: str = ""):
-    """Get RAG chunks that support a graph node."""
-    try:
-        chunk_ids = await service.graph_service.get_node_chunks(node_key, clientId)
-        if not chunk_ids:
-            return {"chunks": []}
-        chunks = await service.rag_service.get_chunks_by_ids(chunk_ids)
-        return {"chunks": chunks}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /graph/node/{key}, /graph/search, /graph/node/{key}/evidence migrated
+# to gRPC (KnowledgeGraphService.{GetNode,SearchNodes,GetNodeEvidence}).
+# branch_name filter on SearchNodes is preserved — prefetch.py uses it
+# in _graph_search_branch_aware to scope file/class nodes to a branch.
 
 
 @read_router.get("/query/entities")

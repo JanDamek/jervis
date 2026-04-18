@@ -377,7 +377,7 @@ async def fetch_project_context(
 
 
 async def _graph_search(
-    http: httpx.AsyncClient,
+    http: httpx.AsyncClient | None,
     kb_url: str,
     query: str,
     node_type: str,
@@ -385,27 +385,27 @@ async def _graph_search(
     project_id: str | None,
     limit: int = 20,
 ) -> list[dict]:
-    """Search KB graph nodes by type. Returns list of node dicts or empty list."""
-    params: dict = {
-        "query": query,
-        "nodeType": node_type,
-        "clientId": client_id,
-        "limit": limit,
-    }
-    if project_id:
-        params["projectId"] = project_id
+    """Search KB graph nodes by type (gRPC). http + kb_url kept for signature
+    compatibility with callers that pre-built the httpx client; unused."""
+    from jervis_contracts import kb_client
 
     try:
-        resp = await http.get(f"{kb_url}/graph/search", params=params)
-        resp.raise_for_status()
-        return resp.json()
+        return await kb_client.graph_search(
+            caller="orchestrator.kb.prefetch",
+            query=query,
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type=node_type,
+            max_results=limit,
+            timeout=30.0,
+        )
     except Exception as e:
         logger.debug("Graph search failed (type=%s): %s", node_type, e)
         return []
 
 
 async def _graph_search_branch_aware(
-    http: httpx.AsyncClient,
+    http: httpx.AsyncClient | None,
     kb_url: str,
     query: str,
     node_type: str,
@@ -414,26 +414,20 @@ async def _graph_search_branch_aware(
     branch_name: str | None = None,
     limit: int = 20,
 ) -> list[dict]:
-    """Search KB graph nodes with optional branch filter.
-
-    When branch_name is specified, only returns nodes scoped to that branch.
-    This uses the branchName query parameter added to GET /graph/search.
-    """
-    params: dict = {
-        "query": query,
-        "nodeType": node_type,
-        "clientId": client_id,
-        "limit": limit,
-    }
-    if project_id:
-        params["projectId"] = project_id
-    if branch_name:
-        params["branchName"] = branch_name
+    """Branch-scoped variant of _graph_search (gRPC)."""
+    from jervis_contracts import kb_client
 
     try:
-        resp = await http.get(f"{kb_url}/graph/search", params=params)
-        resp.raise_for_status()
-        return resp.json()
+        return await kb_client.graph_search(
+            caller="orchestrator.kb.prefetch",
+            query=query,
+            client_id=client_id,
+            project_id=project_id or "",
+            node_type=node_type,
+            branch_name=branch_name or "",
+            max_results=limit,
+            timeout=30.0,
+        )
     except Exception as e:
         logger.debug(
             "Branch-aware graph search failed (type=%s, branch=%s): %s",

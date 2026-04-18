@@ -98,4 +98,24 @@ public interface SearchNodesRequestOrBuilder extends
    */
   com.google.protobuf.ByteString
       getNodeTypeBytes();
+
+  /**
+   * <pre>
+   * optional branch filter (file/class nodes)
+   * </pre>
+   *
+   * <code>string branch_name = 8;</code>
+   * @return The branchName.
+   */
+  java.lang.String getBranchName();
+  /**
+   * <pre>
+   * optional branch filter (file/class nodes)
+   * </pre>
+   *
+   * <code>string branch_name = 8;</code>
+   * @return The bytes for branchName.
+   */
+  com.google.protobuf.ByteString
+      getBranchNameBytes();
 }

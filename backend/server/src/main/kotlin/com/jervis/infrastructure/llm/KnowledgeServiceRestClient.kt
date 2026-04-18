@@ -1,5 +1,6 @@
 package com.jervis.infrastructure.llm
 
+import com.jervis.infrastructure.grpc.KbGraphGrpcClient
 import com.jervis.infrastructure.grpc.KbIngestGrpcClient
 import com.jervis.infrastructure.grpc.KbMaintenanceGrpcClient
 import com.jervis.infrastructure.grpc.KbQueueGrpcClient
@@ -65,6 +66,7 @@ class KnowledgeServiceRestClient(
     private val kbQueueGrpc: KbQueueGrpcClient? = null,
     private val kbIngestGrpc: KbIngestGrpcClient? = null,
     private val kbRetrieveGrpc: KbRetrieveGrpcClient? = null,
+    private val kbGraphGrpc: KbGraphGrpcClient? = null,
 ) : KnowledgeService {
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -338,30 +340,25 @@ class KnowledgeServiceRestClient(
         spec: TraversalSpec,
     ): List<GraphNode> {
         logger.debug { "Calling knowledgebase traverse: startKey=$startKey" }
-
-        val pythonRequest = PythonTraversalRequest(
-            clientId = clientId.toString(),
-            startKey = startKey,
-            spec = PythonTraversalSpec(
+        val grpc = kbGraphGrpc ?: run {
+            logger.warn { "KB graph gRPC client not wired" }
+            return emptyList()
+        }
+        return try {
+            val resp = grpc.traverse(
+                clientId = clientId.toString(),
+                startKey = startKey,
                 direction = spec.direction.name,
                 minDepth = 1,
                 maxDepth = spec.maxDepth,
-                edgeCollection = spec.edgeTypes?.firstOrNull(),
-            ),
-        )
-
-        return try {
-            val response: List<PythonGraphNode> = client.post("$apiBaseUrl/traverse") {
-                contentType(ContentType.Application.Json)
-                setBody(pythonRequest)
-            }.body()
-
-            response.map { node ->
+                edgeCollection = spec.edgeTypes?.firstOrNull() ?: "",
+            )
+            resp.nodesList.map { node ->
                 GraphNode(
                     key = node.key,
                     entityType = node.label,
                     ragChunks = emptyList(),
-                    properties = node.properties.mapValues { it.value as Any },
+                    properties = node.propertiesMap.mapValues { it.value as Any },
                 )
             }
         } catch (e: Exception) {
@@ -835,30 +832,7 @@ private data class PythonIngestResult(
 
 // Retrieval DTOs moved to gRPC (KbRetrieveGrpcClient).
 
-@Serializable
-private data class PythonTraversalRequest(
-    val clientId: String,
-    val projectId: String? = null,
-    val startKey: String,
-    val spec: PythonTraversalSpec,
-)
-
-@Serializable
-private data class PythonTraversalSpec(
-    val direction: String = "OUTBOUND",
-    val minDepth: Int = 1,
-    val maxDepth: Int = 1,
-    val edgeCollection: String? = null,
-)
-
-@Serializable
-private data class PythonGraphNode(
-    val id: String,
-    val key: String,
-    val label: String,
-    val properties: Map<String, String>,
-)
-
+// Traversal + graph DTOs moved to gRPC (KbGraphGrpcClient).
 // Purge DTOs moved to gRPC (KbIngestGrpcClient.purge).
 
 @Serializable

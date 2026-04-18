@@ -48,7 +48,7 @@ class GetNodeRequest(_message.Message):
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., node_key: _Optional[str] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ..., group_id: _Optional[str] = ...) -> None: ...
 
 class SearchNodesRequest(_message.Message):
-    __slots__ = ("ctx", "query", "client_id", "project_id", "group_id", "max_results", "node_type")
+    __slots__ = ("ctx", "query", "client_id", "project_id", "group_id", "max_results", "node_type", "branch_name")
     CTX_FIELD_NUMBER: _ClassVar[int]
     QUERY_FIELD_NUMBER: _ClassVar[int]
     CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
@@ -56,6 +56,7 @@ class SearchNodesRequest(_message.Message):
     GROUP_ID_FIELD_NUMBER: _ClassVar[int]
     MAX_RESULTS_FIELD_NUMBER: _ClassVar[int]
     NODE_TYPE_FIELD_NUMBER: _ClassVar[int]
+    BRANCH_NAME_FIELD_NUMBER: _ClassVar[int]
     ctx: _types_pb2.RequestContext
     query: str
     client_id: str
@@ -63,7 +64,8 @@ class SearchNodesRequest(_message.Message):
     group_id: str
     max_results: int
     node_type: str
-    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., query: _Optional[str] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ..., group_id: _Optional[str] = ..., max_results: _Optional[int] = ..., node_type: _Optional[str] = ...) -> None: ...
+    branch_name: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., query: _Optional[str] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ..., group_id: _Optional[str] = ..., max_results: _Optional[int] = ..., node_type: _Optional[str] = ..., branch_name: _Optional[str] = ...) -> None: ...
 
 class ListQueryEntitiesRequest(_message.Message):
     __slots__ = ("ctx", "query", "client_id", "project_id", "group_id")

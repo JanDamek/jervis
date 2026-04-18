@@ -209,35 +209,38 @@ async def kb_traverse(
         direction: "outbound", "inbound", or "any"
         max_hops: Maximum traversal depth (1-3 recommended)
     """
+    from jervis.knowledgebase import graph_pb2
+    from jervis_contracts import kb_client
+    import grpc
+
     cid = client_id or settings.default_client_id
-    headers = {"X-Ollama-Priority": "0"}
-    payload = {
-        "startNodeKey": start_node,
-        "direction": direction,
-        "maxDepth": max_hops,
-        "clientId": cid,
-    }
-    if group_id:
-        payload["groupId"] = group_id
-    async with httpx.AsyncClient(timeout=120, headers=headers) as client:
-        resp = await client.post(
-            f"{settings.knowledgebase_url}/api/v1/traverse",
-            json=payload,
+    try:
+        resp = await kb_client.graph_stub().Traverse(
+            graph_pb2.TraversalRequest(
+                ctx=kb_client.build_request_context(caller="service-mcp.kb_traverse", client_id=cid),
+                client_id=cid,
+                group_id=group_id or "",
+                start_key=start_node,
+                spec=graph_pb2.TraversalSpec(
+                    direction=direction.upper(),
+                    min_depth=1,
+                    max_depth=max_hops,
+                ),
+            ),
+            timeout=120.0,
         )
-        resp.raise_for_status()
-        nodes = resp.json()
-        if not nodes:
-            return f"No graph nodes found for '{start_node}'."
-        lines = []
-        for node in nodes:
-            node_type = node.get("type", "?")
-            label = node.get("label", "?")
-            key = node.get("key", "?")
-            lines.append(f"[{node_type}] {label} (key={key})")
-            if node.get("properties"):
-                for k, v in node["properties"].items():
-                    lines.append(f"  {k}: {v}")
-        return "\n".join(lines)
+    except grpc.aio.AioRpcError as e:
+        return f"Error traversing graph ({e.code().name}): {e.details() or ''}"
+
+    nodes = list(resp.nodes)
+    if not nodes:
+        return f"No graph nodes found for '{start_node}'."
+    lines = []
+    for node in nodes:
+        lines.append(f"[{node.label or '?'}] key={node.key or '?'}")
+        for k, v in dict(node.properties).items():
+            lines.append(f"  {k}: {v}")
+    return "\n".join(lines)
 
 
 @mcp.tool
@@ -257,23 +260,27 @@ async def kb_graph_search(
         node_type: Filter by node type (e.g., "jira_issue", "file", "class", "method", "commit")
         limit: Maximum number of results
     """
+    from jervis_contracts import kb_client
+
     cid = client_id or settings.default_client_id
-    params: dict = {"query": query, "clientId": cid, "limit": limit}
-    if node_type:
-        params["nodeType"] = node_type
-    if group_id:
-        params["groupId"] = group_id
-    headers = {"X-Ollama-Priority": "0"}
-    async with httpx.AsyncClient(timeout=120, headers=headers) as client:
-        resp = await client.get(f"{settings.knowledgebase_url}/api/v1/graph/search", params=params)
-        resp.raise_for_status()
-        nodes = resp.json()
-        if not nodes:
-            return f"No graph nodes matching '{query}'."
-        return "\n".join(
-            f"[{n.get('type', '?')}] {n.get('label', '?')} (key={n.get('key', '?')})"
-            for n in nodes
+    try:
+        nodes = await kb_client.graph_search(
+            caller="service-mcp.kb_graph_search",
+            query=query,
+            client_id=cid,
+            group_id=group_id or "",
+            node_type=node_type or "",
+            max_results=limit,
+            timeout=120.0,
         )
+    except Exception as e:
+        return f"Error searching graph: {str(e)[:200]}"
+    if not nodes:
+        return f"No graph nodes matching '{query}'."
+    return "\n".join(
+        f"{n.get('label', '?')} (key={n.get('key', '?')})"
+        for n in nodes
+    )
 
 
 @mcp.tool
@@ -284,21 +291,24 @@ async def kb_get_evidence(node_key: str, client_id: str = "") -> str:
         node_key: The key of the graph node to get evidence for
         client_id: Client ID (leave empty for default)
     """
+    from jervis_contracts import kb_client
+
     cid = client_id or settings.default_client_id
-    async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.get(
-            f"{settings.knowledgebase_url}/api/v1/graph/node/{node_key}/evidence",
-            params={"clientId": cid},
+    try:
+        chunks = await kb_client.get_node_evidence(
+            caller="service-mcp.kb_get_evidence",
+            node_key=node_key,
+            client_id=cid,
+            timeout=120.0,
         )
-        resp.raise_for_status()
-        data = resp.json()
-        chunks = data.get("chunks", [])
-        if not chunks:
-            return f"No evidence found for node '{node_key}'."
-        return "\n---\n".join(
-            f"{c.get('sourceUrn', '?')}: {c.get('content', '')[:500]}"
-            for c in chunks
-        )
+    except Exception as e:
+        return f"Error fetching evidence: {str(e)[:200]}"
+    if not chunks:
+        return f"No evidence found for node '{node_key}'."
+    return "\n---\n".join(
+        f"{c.get('sourceUrn', '?')}: {(c.get('content', '') or '')[:500]}"
+        for c in chunks
+    )
 
 
 @mcp.tool

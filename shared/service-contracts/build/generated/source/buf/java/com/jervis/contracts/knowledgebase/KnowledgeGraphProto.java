@@ -192,118 +192,119 @@ public final class KnowledgeGraphProto extends com.google.protobuf.GeneratedFile
       "\207\001\n\016GetNodeRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis" +
       ".common.RequestContext\022\020\n\010node_key\030\002 \001(\t" +
       "\022\021\n\tclient_id\030\003 \001(\t\022\022\n\nproject_id\030\004 \001(\t\022" +
-      "\020\n\010group_id\030\005 \001(\t\"\260\001\n\022SearchNodesRequest" +
+      "\020\n\010group_id\030\005 \001(\t\"\305\001\n\022SearchNodesRequest" +
       "\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCon" +
       "text\022\r\n\005query\030\002 \001(\t\022\021\n\tclient_id\030\003 \001(\t\022\022" +
       "\n\nproject_id\030\004 \001(\t\022\020\n\010group_id\030\005 \001(\t\022\023\n\013" +
-      "max_results\030\006 \001(\005\022\021\n\tnode_type\030\007 \001(\t\"\216\001\n" +
-      "\030ListQueryEntitiesRequest\022*\n\003ctx\030\001 \001(\0132\035" +
-      ".jervis.common.RequestContext\022\r\n\005query\030\002" +
-      " \001(\t\022\021\n\tclient_id\030\003 \001(\t\022\022\n\nproject_id\030\004 " +
-      "\001(\t\022\020\n\010group_id\030\005 \001(\t\"\036\n\nEntityList\022\020\n\010e" +
-      "ntities\030\001 \003(\t\"w\n\023ResolveAliasRequest\022*\n\003" +
-      "ctx\030\001 \001(\0132\035.jervis.common.RequestContext" +
-      "\022\r\n\005alias\030\002 \001(\t\022\021\n\tclient_id\030\003 \001(\t\022\022\n\npr" +
-      "oject_id\030\004 \001(\t\"S\n\022AliasResolveResult\022\r\n\005" +
-      "found\030\001 \001(\010\022\025\n\rcanonical_key\030\002 \001(\t\022\027\n\017ca" +
-      "nonical_label\030\003 \001(\t\"W\n\022ListAliasesReques" +
-      "t\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCo" +
-      "ntext\022\025\n\rcanonical_key\030\002 \001(\t\"\034\n\tAliasLis" +
-      "t\022\017\n\007aliases\030\001 \003(\t\"f\n\021AliasStatsRequest\022" +
-      "*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCont" +
-      "ext\022\021\n\tclient_id\030\002 \001(\t\022\022\n\nproject_id\030\003 \001" +
-      "(\t\"w\n\nAliasStats\022\025\n\rtotal_aliases\030\001 \001(\005\022" +
-      "\031\n\021unique_canonicals\030\002 \001(\005\0227\n\013top_aliase" +
-      "s\030\003 \003(\0132\".jervis.knowledgebase.AliasTopI" +
-      "tem\"?\n\014AliasTopItem\022\r\n\005alias\030\001 \001(\t\022\021\n\tca" +
-      "nonical\030\002 \001(\t\022\r\n\005count\030\003 \001(\005\"\217\001\n\024Registe" +
-      "rAliasRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.comm" +
-      "on.RequestContext\022\r\n\005alias\030\002 \001(\t\022\025\n\rcano" +
-      "nical_key\030\003 \001(\t\022\021\n\tclient_id\030\004 \001(\t\022\022\n\npr" +
-      "oject_id\030\005 \001(\t\"\212\001\n\021MergeAliasRequest\022*\n\003" +
-      "ctx\030\001 \001(\0132\035.jervis.common.RequestContext" +
-      "\022\020\n\010from_key\030\002 \001(\t\022\020\n\010into_key\030\003 \001(\t\022\021\n\t" +
-      "client_id\030\004 \001(\t\022\022\n\nproject_id\030\005 \001(\t\"%\n\010A" +
-      "liasAck\022\n\n\002ok\030\001 \001(\010\022\r\n\005error\030\002 \001(\t\"\331\001\n\027T" +
-      "houghtTraversalRequest\022*\n\003ctx\030\001 \001(\0132\035.je" +
-      "rvis.common.RequestContext\022\r\n\005query\030\002 \001(" +
-      "\t\022\021\n\tclient_id\030\003 \001(\t\022\022\n\nproject_id\030\004 \001(\t" +
-      "\022\020\n\010group_id\030\005 \001(\t\022\023\n\013max_results\030\006 \001(\005\022" +
-      "\r\n\005floor\030\007 \001(\001\022\021\n\tmax_depth\030\010 \001(\005\022\023\n\013ent" +
-      "ry_top_k\030\t \001(\005\"\300\001\n\026ThoughtTraversalResul" +
-      "t\0224\n\010thoughts\030\001 \003(\0132\".jervis.knowledgeba" +
-      "se.ThoughtEntry\0225\n\tknowledge\030\002 \003(\0132\".jer" +
-      "vis.knowledgebase.ThoughtEntry\022\035\n\025activa" +
-      "ted_thought_ids\030\003 \003(\t\022\032\n\022activated_edge_" +
-      "ids\030\004 \003(\t\"\326\001\n\014ThoughtEntry\022\n\n\002id\030\001 \001(\t\022\r" +
-      "\n\005label\030\002 \001(\t\022\017\n\007summary\030\003 \001(\t\022\021\n\tnode_t" +
-      "ype\030\004 \001(\t\022\022\n\nactivation\030\005 \001(\001\022B\n\010metadat" +
-      "a\030\006 \003(\01320.jervis.knowledgebase.ThoughtEn" +
-      "try.MetadataEntry\032/\n\rMetadataEntry\022\013\n\003ke" +
-      "y\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\"n\n\027ThoughtRei" +
-      "nforceRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.comm" +
-      "on.RequestContext\022\024\n\014thought_keys\030\002 \003(\t\022" +
-      "\021\n\tedge_keys\030\003 \003(\t\"\260\001\n\024ThoughtCreateRequ" +
+      "max_results\030\006 \001(\005\022\021\n\tnode_type\030\007 \001(\t\022\023\n\013" +
+      "branch_name\030\010 \001(\t\"\216\001\n\030ListQueryEntitiesR" +
+      "equest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Requ" +
+      "estContext\022\r\n\005query\030\002 \001(\t\022\021\n\tclient_id\030\003" +
+      " \001(\t\022\022\n\nproject_id\030\004 \001(\t\022\020\n\010group_id\030\005 \001" +
+      "(\t\"\036\n\nEntityList\022\020\n\010entities\030\001 \003(\t\"w\n\023Re" +
+      "solveAliasRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis." +
+      "common.RequestContext\022\r\n\005alias\030\002 \001(\t\022\021\n\t" +
+      "client_id\030\003 \001(\t\022\022\n\nproject_id\030\004 \001(\t\"S\n\022A" +
+      "liasResolveResult\022\r\n\005found\030\001 \001(\010\022\025\n\rcano" +
+      "nical_key\030\002 \001(\t\022\027\n\017canonical_label\030\003 \001(\t" +
+      "\"W\n\022ListAliasesRequest\022*\n\003ctx\030\001 \001(\0132\035.je" +
+      "rvis.common.RequestContext\022\025\n\rcanonical_" +
+      "key\030\002 \001(\t\"\034\n\tAliasList\022\017\n\007aliases\030\001 \003(\t\"" +
+      "f\n\021AliasStatsRequest\022*\n\003ctx\030\001 \001(\0132\035.jerv" +
+      "is.common.RequestContext\022\021\n\tclient_id\030\002 " +
+      "\001(\t\022\022\n\nproject_id\030\003 \001(\t\"w\n\nAliasStats\022\025\n" +
+      "\rtotal_aliases\030\001 \001(\005\022\031\n\021unique_canonical" +
+      "s\030\002 \001(\005\0227\n\013top_aliases\030\003 \003(\0132\".jervis.kn" +
+      "owledgebase.AliasTopItem\"?\n\014AliasTopItem" +
+      "\022\r\n\005alias\030\001 \001(\t\022\021\n\tcanonical\030\002 \001(\t\022\r\n\005co" +
+      "unt\030\003 \001(\005\"\217\001\n\024RegisterAliasRequest\022*\n\003ct" +
+      "x\030\001 \001(\0132\035.jervis.common.RequestContext\022\r" +
+      "\n\005alias\030\002 \001(\t\022\025\n\rcanonical_key\030\003 \001(\t\022\021\n\t" +
+      "client_id\030\004 \001(\t\022\022\n\nproject_id\030\005 \001(\t\"\212\001\n\021" +
+      "MergeAliasRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis." +
+      "common.RequestContext\022\020\n\010from_key\030\002 \001(\t\022" +
+      "\020\n\010into_key\030\003 \001(\t\022\021\n\tclient_id\030\004 \001(\t\022\022\n\n" +
+      "project_id\030\005 \001(\t\"%\n\010AliasAck\022\n\n\002ok\030\001 \001(\010" +
+      "\022\r\n\005error\030\002 \001(\t\"\331\001\n\027ThoughtTraversalRequ" +
       "est\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Request" +
-      "Context\022\021\n\tclient_id\030\002 \001(\t\022\022\n\nproject_id" +
-      "\030\003 \001(\t\022\020\n\010group_id\030\004 \001(\t\0223\n\010thoughts\030\005 \003" +
-      "(\0132!.jervis.knowledgebase.ThoughtSeed\"]\n" +
-      "\013ThoughtSeed\022\r\n\005label\030\001 \001(\t\022\017\n\007summary\030\002" +
-      " \001(\t\022\024\n\014thought_type\030\003 \001(\t\022\030\n\020related_en" +
-      "tities\030\004 \003(\t\"~\n\027ThoughtBootstrapRequest\022" +
-      "*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCont" +
-      "ext\022\021\n\tclient_id\030\002 \001(\t\022\022\n\nproject_id\030\003 \001" +
-      "(\t\022\020\n\010group_id\030\004 \001(\t\"h\n\031ThoughtMaintenan" +
-      "ceRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.R" +
-      "equestContext\022\021\n\tclient_id\030\002 \001(\t\022\014\n\004mode" +
-      "\030\003 \001(\t\"(\n\nThoughtAck\022\n\n\002ok\030\001 \001(\010\022\016\n\006deta" +
-      "il\030\002 \001(\t\"h\n\023ThoughtStatsRequest\022*\n\003ctx\030\001" +
-      " \001(\0132\035.jervis.common.RequestContext\022\021\n\tc" +
-      "lient_id\030\002 \001(\t\022\022\n\nproject_id\030\003 \001(\t\"r\n\022Th" +
-      "oughtStatsResult\022\026\n\016total_thoughts\030\001 \001(\005" +
-      "\022\027\n\017active_thoughts\030\002 \001(\005\022\023\n\013total_edges" +
-      "\030\003 \001(\005\022\026\n\016avg_activation\030\004 \001(\0012\227\014\n\025Knowl" +
-      "edgeGraphService\022W\n\010Traverse\022&.jervis.kn" +
-      "owledgebase.TraversalRequest\032#.jervis.kn" +
-      "owledgebase.GraphNodeList\022P\n\007GetNode\022$.j" +
-      "ervis.knowledgebase.GetNodeRequest\032\037.jer" +
-      "vis.knowledgebase.GraphNode\022\\\n\013SearchNod" +
-      "es\022(.jervis.knowledgebase.SearchNodesReq" +
-      "uest\032#.jervis.knowledgebase.GraphNodeLis" +
-      "t\022[\n\017GetNodeEvidence\022$.jervis.knowledgeb" +
-      "ase.GetNodeRequest\032\".jervis.knowledgebas" +
-      "e.EvidencePack\022e\n\021ListQueryEntities\022..je" +
-      "rvis.knowledgebase.ListQueryEntitiesRequ" +
-      "est\032 .jervis.knowledgebase.EntityList\022c\n" +
-      "\014ResolveAlias\022).jervis.knowledgebase.Res" +
-      "olveAliasRequest\032(.jervis.knowledgebase." +
-      "AliasResolveResult\022X\n\013ListAliases\022(.jerv" +
-      "is.knowledgebase.ListAliasesRequest\032\037.je" +
-      "rvis.knowledgebase.AliasList\022Z\n\rGetAlias" +
-      "Stats\022\'.jervis.knowledgebase.AliasStatsR" +
-      "equest\032 .jervis.knowledgebase.AliasStats" +
-      "\022[\n\rRegisterAlias\022*.jervis.knowledgebase" +
-      ".RegisterAliasRequest\032\036.jervis.knowledge" +
-      "base.AliasAck\022U\n\nMergeAlias\022\'.jervis.kno" +
-      "wledgebase.MergeAliasRequest\032\036.jervis.kn" +
-      "owledgebase.AliasAck\022n\n\017ThoughtTraverse\022" +
-      "-.jervis.knowledgebase.ThoughtTraversalR" +
-      "equest\032,.jervis.knowledgebase.ThoughtTra" +
-      "versalResult\022c\n\020ThoughtReinforce\022-.jervi" +
-      "s.knowledgebase.ThoughtReinforceRequest\032" +
-      " .jervis.knowledgebase.ThoughtAck\022]\n\rTho" +
-      "ughtCreate\022*.jervis.knowledgebase.Though" +
-      "tCreateRequest\032 .jervis.knowledgebase.Th" +
-      "oughtAck\022c\n\020ThoughtBootstrap\022-.jervis.kn" +
-      "owledgebase.ThoughtBootstrapRequest\032 .je" +
-      "rvis.knowledgebase.ThoughtAck\022d\n\017Thought" +
-      "Maintain\022/.jervis.knowledgebase.ThoughtM" +
-      "aintenanceRequest\032 .jervis.knowledgebase" +
-      ".ThoughtAck\022c\n\014ThoughtStats\022).jervis.kno" +
-      "wledgebase.ThoughtStatsRequest\032(.jervis." +
-      "knowledgebase.ThoughtStatsResultB;\n\"com." +
-      "jervis.contracts.knowledgebaseB\023Knowledg" +
-      "eGraphProtoP\001b\006proto3"
+      "Context\022\r\n\005query\030\002 \001(\t\022\021\n\tclient_id\030\003 \001(" +
+      "\t\022\022\n\nproject_id\030\004 \001(\t\022\020\n\010group_id\030\005 \001(\t\022" +
+      "\023\n\013max_results\030\006 \001(\005\022\r\n\005floor\030\007 \001(\001\022\021\n\tm" +
+      "ax_depth\030\010 \001(\005\022\023\n\013entry_top_k\030\t \001(\005\"\300\001\n\026" +
+      "ThoughtTraversalResult\0224\n\010thoughts\030\001 \003(\013" +
+      "2\".jervis.knowledgebase.ThoughtEntry\0225\n\t" +
+      "knowledge\030\002 \003(\0132\".jervis.knowledgebase.T" +
+      "houghtEntry\022\035\n\025activated_thought_ids\030\003 \003" +
+      "(\t\022\032\n\022activated_edge_ids\030\004 \003(\t\"\326\001\n\014Thoug" +
+      "htEntry\022\n\n\002id\030\001 \001(\t\022\r\n\005label\030\002 \001(\t\022\017\n\007su" +
+      "mmary\030\003 \001(\t\022\021\n\tnode_type\030\004 \001(\t\022\022\n\nactiva" +
+      "tion\030\005 \001(\001\022B\n\010metadata\030\006 \003(\01320.jervis.kn" +
+      "owledgebase.ThoughtEntry.MetadataEntry\032/" +
+      "\n\rMetadataEntry\022\013\n\003key\030\001 \001(\t\022\r\n\005value\030\002 " +
+      "\001(\t:\0028\001\"n\n\027ThoughtReinforceRequest\022*\n\003ct" +
+      "x\030\001 \001(\0132\035.jervis.common.RequestContext\022\024" +
+      "\n\014thought_keys\030\002 \003(\t\022\021\n\tedge_keys\030\003 \003(\t\"" +
+      "\260\001\n\024ThoughtCreateRequest\022*\n\003ctx\030\001 \001(\0132\035." +
+      "jervis.common.RequestContext\022\021\n\tclient_i" +
+      "d\030\002 \001(\t\022\022\n\nproject_id\030\003 \001(\t\022\020\n\010group_id\030" +
+      "\004 \001(\t\0223\n\010thoughts\030\005 \003(\0132!.jervis.knowled" +
+      "gebase.ThoughtSeed\"]\n\013ThoughtSeed\022\r\n\005lab" +
+      "el\030\001 \001(\t\022\017\n\007summary\030\002 \001(\t\022\024\n\014thought_typ" +
+      "e\030\003 \001(\t\022\030\n\020related_entities\030\004 \003(\t\"~\n\027Tho" +
+      "ughtBootstrapRequest\022*\n\003ctx\030\001 \001(\0132\035.jerv" +
+      "is.common.RequestContext\022\021\n\tclient_id\030\002 " +
+      "\001(\t\022\022\n\nproject_id\030\003 \001(\t\022\020\n\010group_id\030\004 \001(" +
+      "\t\"h\n\031ThoughtMaintenanceRequest\022*\n\003ctx\030\001 " +
+      "\001(\0132\035.jervis.common.RequestContext\022\021\n\tcl" +
+      "ient_id\030\002 \001(\t\022\014\n\004mode\030\003 \001(\t\"(\n\nThoughtAc" +
+      "k\022\n\n\002ok\030\001 \001(\010\022\016\n\006detail\030\002 \001(\t\"h\n\023Thought" +
+      "StatsRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.commo" +
+      "n.RequestContext\022\021\n\tclient_id\030\002 \001(\t\022\022\n\np" +
+      "roject_id\030\003 \001(\t\"r\n\022ThoughtStatsResult\022\026\n" +
+      "\016total_thoughts\030\001 \001(\005\022\027\n\017active_thoughts" +
+      "\030\002 \001(\005\022\023\n\013total_edges\030\003 \001(\005\022\026\n\016avg_activ" +
+      "ation\030\004 \001(\0012\227\014\n\025KnowledgeGraphService\022W\n" +
+      "\010Traverse\022&.jervis.knowledgebase.Travers" +
+      "alRequest\032#.jervis.knowledgebase.GraphNo" +
+      "deList\022P\n\007GetNode\022$.jervis.knowledgebase" +
+      ".GetNodeRequest\032\037.jervis.knowledgebase.G" +
+      "raphNode\022\\\n\013SearchNodes\022(.jervis.knowled" +
+      "gebase.SearchNodesRequest\032#.jervis.knowl" +
+      "edgebase.GraphNodeList\022[\n\017GetNodeEvidenc" +
+      "e\022$.jervis.knowledgebase.GetNodeRequest\032" +
+      "\".jervis.knowledgebase.EvidencePack\022e\n\021L" +
+      "istQueryEntities\022..jervis.knowledgebase." +
+      "ListQueryEntitiesRequest\032 .jervis.knowle" +
+      "dgebase.EntityList\022c\n\014ResolveAlias\022).jer" +
+      "vis.knowledgebase.ResolveAliasRequest\032(." +
+      "jervis.knowledgebase.AliasResolveResult\022" +
+      "X\n\013ListAliases\022(.jervis.knowledgebase.Li" +
+      "stAliasesRequest\032\037.jervis.knowledgebase." +
+      "AliasList\022Z\n\rGetAliasStats\022\'.jervis.know" +
+      "ledgebase.AliasStatsRequest\032 .jervis.kno" +
+      "wledgebase.AliasStats\022[\n\rRegisterAlias\022*" +
+      ".jervis.knowledgebase.RegisterAliasReque" +
+      "st\032\036.jervis.knowledgebase.AliasAck\022U\n\nMe" +
+      "rgeAlias\022\'.jervis.knowledgebase.MergeAli" +
+      "asRequest\032\036.jervis.knowledgebase.AliasAc" +
+      "k\022n\n\017ThoughtTraverse\022-.jervis.knowledgeb" +
+      "ase.ThoughtTraversalRequest\032,.jervis.kno" +
+      "wledgebase.ThoughtTraversalResult\022c\n\020Tho" +
+      "ughtReinforce\022-.jervis.knowledgebase.Tho" +
+      "ughtReinforceRequest\032 .jervis.knowledgeb" +
+      "ase.ThoughtAck\022]\n\rThoughtCreate\022*.jervis" +
+      ".knowledgebase.ThoughtCreateRequest\032 .je" +
+      "rvis.knowledgebase.ThoughtAck\022c\n\020Thought" +
+      "Bootstrap\022-.jervis.knowledgebase.Thought" +
+      "BootstrapRequest\032 .jervis.knowledgebase." +
+      "ThoughtAck\022d\n\017ThoughtMaintain\022/.jervis.k" +
+      "nowledgebase.ThoughtMaintenanceRequest\032 " +
+      ".jervis.knowledgebase.ThoughtAck\022c\n\014Thou" +
+      "ghtStats\022).jervis.knowledgebase.ThoughtS" +
+      "tatsRequest\032(.jervis.knowledgebase.Thoug" +
+      "htStatsResultB;\n\"com.jervis.contracts.kn" +
+      "owledgebaseB\023KnowledgeGraphProtoP\001b\006prot" +
+      "o3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -340,7 +341,7 @@ public final class KnowledgeGraphProto extends com.google.protobuf.GeneratedFile
     internal_static_jervis_knowledgebase_SearchNodesRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_knowledgebase_SearchNodesRequest_descriptor,
-        new java.lang.String[] { "Ctx", "Query", "ClientId", "ProjectId", "GroupId", "MaxResults", "NodeType", });
+        new java.lang.String[] { "Ctx", "Query", "ClientId", "ProjectId", "GroupId", "MaxResults", "NodeType", "BranchName", });
     internal_static_jervis_knowledgebase_ListQueryEntitiesRequest_descriptor =
       getDescriptor().getMessageTypes().get(4);
     internal_static_jervis_knowledgebase_ListQueryEntitiesRequest_fieldAccessorTable = new

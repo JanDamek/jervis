@@ -174,6 +174,114 @@ async def retrieve(
     ]
 
 
+async def graph_search(
+    *,
+    caller: str,
+    query: str = "",
+    client_id: str = "",
+    project_id: str = "",
+    group_id: str = "",
+    node_type: str = "",
+    branch_name: str = "",
+    max_results: int = 20,
+    timeout: float = 15.0,
+) -> list[dict]:
+    """Dial KnowledgeGraphService.SearchNodes and return nodes as dicts
+    mirroring the legacy REST GraphNode shape (id / key / label / properties).
+    properties values arrive as strings — callers reparse JSON when needed.
+    """
+    from jervis.knowledgebase import graph_pb2
+
+    stub = graph_stub()
+    resp = await stub.SearchNodes(
+        graph_pb2.SearchNodesRequest(
+            ctx=build_request_context(caller=caller, client_id=client_id),
+            query=query,
+            client_id=client_id,
+            project_id=project_id,
+            group_id=group_id,
+            max_results=max_results,
+            node_type=node_type,
+            branch_name=branch_name,
+        ),
+        timeout=timeout,
+    )
+    return [
+        {
+            "id": n.id,
+            "key": n.key,
+            "label": n.label,
+            "properties": dict(n.properties),
+        }
+        for n in resp.nodes
+    ]
+
+
+async def get_graph_node(
+    *,
+    caller: str,
+    node_key: str,
+    client_id: str = "",
+    project_id: str = "",
+    group_id: str = "",
+    timeout: float = 10.0,
+) -> Optional[dict]:
+    """Dial KnowledgeGraphService.GetNode. Returns None when not found
+    (the proto reply is an empty GraphNode — we distinguish by empty `key`)."""
+    from jervis.knowledgebase import graph_pb2
+
+    stub = graph_stub()
+    resp = await stub.GetNode(
+        graph_pb2.GetNodeRequest(
+            ctx=build_request_context(caller=caller, client_id=client_id),
+            node_key=node_key,
+            client_id=client_id,
+            project_id=project_id,
+            group_id=group_id,
+        ),
+        timeout=timeout,
+    )
+    if not resp.key:
+        return None
+    return {
+        "id": resp.id,
+        "key": resp.key,
+        "label": resp.label,
+        "properties": dict(resp.properties),
+    }
+
+
+async def get_node_evidence(
+    *,
+    caller: str,
+    node_key: str,
+    client_id: str = "",
+    timeout: float = 15.0,
+) -> list[dict]:
+    """Dial KnowledgeGraphService.GetNodeEvidence — returns RAG chunks
+    behind a graph node as dicts matching the retrieve() return shape."""
+    from jervis.knowledgebase import graph_pb2
+
+    stub = graph_stub()
+    resp = await stub.GetNodeEvidence(
+        graph_pb2.GetNodeRequest(
+            ctx=build_request_context(caller=caller, client_id=client_id),
+            node_key=node_key,
+            client_id=client_id,
+        ),
+        timeout=timeout,
+    )
+    return [
+        {
+            "content": it.content,
+            "score": it.score,
+            "sourceUrn": it.source_urn,
+            "metadata": dict(it.metadata),
+        }
+        for it in resp.items
+    ]
+
+
 async def close() -> None:
     """Shut down the cached channel. Safe to call multiple times."""
     global _channel, _ingest_stub, _maintenance_stub, _queue_stub, _graph_stub, _retrieve_stub
