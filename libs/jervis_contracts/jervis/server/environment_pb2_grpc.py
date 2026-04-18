@@ -27,13 +27,9 @@ if _version_not_supported:
 
 class ServerEnvironmentServiceStub(object):
     """ServerEnvironmentService covers the full `environments` CRUD +
-    provisioning surface used by MCP and orchestrator tools.
-
-    EnvironmentDto is a deep tree with components / port mappings / property
-    mappings / status subtrees. Instead of mirroring it into proto we keep
-    `body_json` opaque — all Python callers either pretty-print the body
-    or read a handful of fields (`id`, `name`, `state`, `components[].name`).
-    Typed fields live on *requests* so CI catches missing params.
+    provisioning surface used by MCP and orchestrator tools. Responses
+    mirror com.jervis.dto.environment.EnvironmentDto / EnvironmentStatusDto /
+    ComponentTemplateDto 1:1 — no JSON passthrough on the wire.
     """
 
     def __init__(self, channel):
@@ -45,17 +41,17 @@ class ServerEnvironmentServiceStub(object):
         self.ListEnvironments = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/ListEnvironments',
                 request_serializer=jervis_dot_server_dot_environment__pb2.ListEnvironmentsRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentListResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentList.FromString,
                 _registered_method=True)
         self.GetEnvironment = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/GetEnvironment',
                 request_serializer=jervis_dot_server_dot_environment__pb2.GetEnvironmentRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.CreateEnvironment = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/CreateEnvironment',
                 request_serializer=jervis_dot_server_dot_environment__pb2.CreateEnvironmentRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.DeleteEnvironment = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/DeleteEnvironment',
@@ -65,42 +61,42 @@ class ServerEnvironmentServiceStub(object):
         self.AddComponent = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/AddComponent',
                 request_serializer=jervis_dot_server_dot_environment__pb2.AddComponentRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.ConfigureComponent = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/ConfigureComponent',
                 request_serializer=jervis_dot_server_dot_environment__pb2.ConfigureComponentRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.DeployEnvironment = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/DeployEnvironment',
                 request_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.StopEnvironment = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/StopEnvironment',
                 request_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.SyncEnvironment = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/SyncEnvironment',
                 request_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.GetEnvironmentStatus = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/GetEnvironmentStatus',
                 request_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentStatusResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentStatus.FromString,
                 _registered_method=True)
         self.CloneEnvironment = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/CloneEnvironment',
                 request_serializer=jervis_dot_server_dot_environment__pb2.CloneEnvironmentRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.AddPropertyMapping = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/AddPropertyMapping',
                 request_serializer=jervis_dot_server_dot_environment__pb2.AddPropertyMappingRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.AutoSuggestPropertyMappings = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/AutoSuggestPropertyMappings',
@@ -110,34 +106,30 @@ class ServerEnvironmentServiceStub(object):
         self.DiscoverNamespace = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/DiscoverNamespace',
                 request_serializer=jervis_dot_server_dot_environment__pb2.DiscoverNamespaceRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.ReplicateEnvironment = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/ReplicateEnvironment',
                 request_serializer=jervis_dot_server_dot_environment__pb2.ReplicateEnvironmentRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.SyncFromK8s = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/SyncFromK8s',
                 request_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.Environment.FromString,
                 _registered_method=True)
         self.ListComponentTemplates = channel.unary_unary(
                 '/jervis.server.ServerEnvironmentService/ListComponentTemplates',
                 request_serializer=jervis_dot_server_dot_environment__pb2.ListComponentTemplatesRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_environment__pb2.ListComponentTemplatesResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_environment__pb2.ComponentTemplateList.FromString,
                 _registered_method=True)
 
 
 class ServerEnvironmentServiceServicer(object):
     """ServerEnvironmentService covers the full `environments` CRUD +
-    provisioning surface used by MCP and orchestrator tools.
-
-    EnvironmentDto is a deep tree with components / port mappings / property
-    mappings / status subtrees. Instead of mirroring it into proto we keep
-    `body_json` opaque — all Python callers either pretty-print the body
-    or read a handful of fields (`id`, `name`, `state`, `components[].name`).
-    Typed fields live on *requests* so CI catches missing params.
+    provisioning surface used by MCP and orchestrator tools. Responses
+    mirror com.jervis.dto.environment.EnvironmentDto / EnvironmentStatusDto /
+    ComponentTemplateDto 1:1 — no JSON passthrough on the wire.
     """
 
     def ListEnvironments(self, request, context):
@@ -248,17 +240,17 @@ def add_ServerEnvironmentServiceServicer_to_server(servicer, server):
             'ListEnvironments': grpc.unary_unary_rpc_method_handler(
                     servicer.ListEnvironments,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.ListEnvironmentsRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentListResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentList.SerializeToString,
             ),
             'GetEnvironment': grpc.unary_unary_rpc_method_handler(
                     servicer.GetEnvironment,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.GetEnvironmentRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'CreateEnvironment': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateEnvironment,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.CreateEnvironmentRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'DeleteEnvironment': grpc.unary_unary_rpc_method_handler(
                     servicer.DeleteEnvironment,
@@ -268,42 +260,42 @@ def add_ServerEnvironmentServiceServicer_to_server(servicer, server):
             'AddComponent': grpc.unary_unary_rpc_method_handler(
                     servicer.AddComponent,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.AddComponentRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'ConfigureComponent': grpc.unary_unary_rpc_method_handler(
                     servicer.ConfigureComponent,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.ConfigureComponentRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'DeployEnvironment': grpc.unary_unary_rpc_method_handler(
                     servicer.DeployEnvironment,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'StopEnvironment': grpc.unary_unary_rpc_method_handler(
                     servicer.StopEnvironment,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'SyncEnvironment': grpc.unary_unary_rpc_method_handler(
                     servicer.SyncEnvironment,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'GetEnvironmentStatus': grpc.unary_unary_rpc_method_handler(
                     servicer.GetEnvironmentStatus,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentStatusResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentStatus.SerializeToString,
             ),
             'CloneEnvironment': grpc.unary_unary_rpc_method_handler(
                     servicer.CloneEnvironment,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.CloneEnvironmentRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'AddPropertyMapping': grpc.unary_unary_rpc_method_handler(
                     servicer.AddPropertyMapping,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.AddPropertyMappingRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'AutoSuggestPropertyMappings': grpc.unary_unary_rpc_method_handler(
                     servicer.AutoSuggestPropertyMappings,
@@ -313,22 +305,22 @@ def add_ServerEnvironmentServiceServicer_to_server(servicer, server):
             'DiscoverNamespace': grpc.unary_unary_rpc_method_handler(
                     servicer.DiscoverNamespace,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.DiscoverNamespaceRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'ReplicateEnvironment': grpc.unary_unary_rpc_method_handler(
                     servicer.ReplicateEnvironment,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.ReplicateEnvironmentRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'SyncFromK8s': grpc.unary_unary_rpc_method_handler(
                     servicer.SyncFromK8s,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.EnvironmentResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.Environment.SerializeToString,
             ),
             'ListComponentTemplates': grpc.unary_unary_rpc_method_handler(
                     servicer.ListComponentTemplates,
                     request_deserializer=jervis_dot_server_dot_environment__pb2.ListComponentTemplatesRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_environment__pb2.ListComponentTemplatesResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_environment__pb2.ComponentTemplateList.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -340,13 +332,9 @@ def add_ServerEnvironmentServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class ServerEnvironmentService(object):
     """ServerEnvironmentService covers the full `environments` CRUD +
-    provisioning surface used by MCP and orchestrator tools.
-
-    EnvironmentDto is a deep tree with components / port mappings / property
-    mappings / status subtrees. Instead of mirroring it into proto we keep
-    `body_json` opaque — all Python callers either pretty-print the body
-    or read a handful of fields (`id`, `name`, `state`, `components[].name`).
-    Typed fields live on *requests* so CI catches missing params.
+    provisioning surface used by MCP and orchestrator tools. Responses
+    mirror com.jervis.dto.environment.EnvironmentDto / EnvironmentStatusDto /
+    ComponentTemplateDto 1:1 — no JSON passthrough on the wire.
     """
 
     @staticmethod
@@ -365,7 +353,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/ListEnvironments',
             jervis_dot_server_dot_environment__pb2.ListEnvironmentsRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentListResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.EnvironmentList.FromString,
             options,
             channel_credentials,
             insecure,
@@ -392,7 +380,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/GetEnvironment',
             jervis_dot_server_dot_environment__pb2.GetEnvironmentRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -419,7 +407,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/CreateEnvironment',
             jervis_dot_server_dot_environment__pb2.CreateEnvironmentRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -473,7 +461,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/AddComponent',
             jervis_dot_server_dot_environment__pb2.AddComponentRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -500,7 +488,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/ConfigureComponent',
             jervis_dot_server_dot_environment__pb2.ConfigureComponentRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -527,7 +515,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/DeployEnvironment',
             jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -554,7 +542,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/StopEnvironment',
             jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -581,7 +569,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/SyncEnvironment',
             jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -608,7 +596,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/GetEnvironmentStatus',
             jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentStatusResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.EnvironmentStatus.FromString,
             options,
             channel_credentials,
             insecure,
@@ -635,7 +623,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/CloneEnvironment',
             jervis_dot_server_dot_environment__pb2.CloneEnvironmentRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -662,7 +650,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/AddPropertyMapping',
             jervis_dot_server_dot_environment__pb2.AddPropertyMappingRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -716,7 +704,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/DiscoverNamespace',
             jervis_dot_server_dot_environment__pb2.DiscoverNamespaceRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -743,7 +731,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/ReplicateEnvironment',
             jervis_dot_server_dot_environment__pb2.ReplicateEnvironmentRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -770,7 +758,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/SyncFromK8s',
             jervis_dot_server_dot_environment__pb2.EnvironmentIdRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.EnvironmentResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.Environment.FromString,
             options,
             channel_credentials,
             insecure,
@@ -797,7 +785,7 @@ class ServerEnvironmentService(object):
             target,
             '/jervis.server.ServerEnvironmentService/ListComponentTemplates',
             jervis_dot_server_dot_environment__pb2.ListComponentTemplatesRequest.SerializeToString,
-            jervis_dot_server_dot_environment__pb2.ListComponentTemplatesResponse.FromString,
+            jervis_dot_server_dot_environment__pb2.ComponentTemplateList.FromString,
             options,
             channel_credentials,
             insecure,

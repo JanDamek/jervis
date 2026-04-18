@@ -5,12 +5,9 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 /**
  * <pre>
  * ServerEnvironmentService covers the full `environments` CRUD +
- * provisioning surface used by MCP and orchestrator tools.
- * EnvironmentDto is a deep tree with components / port mappings / property
- * mappings / status subtrees. Instead of mirroring it into proto we keep
- * `body_json` opaque — all Python callers either pretty-print the body
- * or read a handful of fields (`id`, `name`, `state`, `components[].name`).
- * Typed fields live on *requests* so CI catches missing params.
+ * provisioning surface used by MCP and orchestrator tools. Responses
+ * mirror com.jervis.dto.environment.EnvironmentDto / EnvironmentStatusDto /
+ * ComponentTemplateDto 1:1 — no JSON passthrough on the wire.
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -22,28 +19,28 @@ public final class ServerEnvironmentServiceGrpc {
 
   // Static method descriptors that strictly reflect the proto.
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ListEnvironmentsRequest,
-      com.jervis.contracts.server.EnvironmentListResponse> getListEnvironmentsMethod;
+      com.jervis.contracts.server.EnvironmentList> getListEnvironmentsMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "ListEnvironments",
       requestType = com.jervis.contracts.server.ListEnvironmentsRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentListResponse.class,
+      responseType = com.jervis.contracts.server.EnvironmentList.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ListEnvironmentsRequest,
-      com.jervis.contracts.server.EnvironmentListResponse> getListEnvironmentsMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListEnvironmentsRequest, com.jervis.contracts.server.EnvironmentListResponse> getListEnvironmentsMethod;
+      com.jervis.contracts.server.EnvironmentList> getListEnvironmentsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListEnvironmentsRequest, com.jervis.contracts.server.EnvironmentList> getListEnvironmentsMethod;
     if ((getListEnvironmentsMethod = ServerEnvironmentServiceGrpc.getListEnvironmentsMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getListEnvironmentsMethod = ServerEnvironmentServiceGrpc.getListEnvironmentsMethod) == null) {
           ServerEnvironmentServiceGrpc.getListEnvironmentsMethod = getListEnvironmentsMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListEnvironmentsRequest, com.jervis.contracts.server.EnvironmentListResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListEnvironmentsRequest, com.jervis.contracts.server.EnvironmentList>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListEnvironments"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.ListEnvironmentsRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentListResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.EnvironmentList.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("ListEnvironments"))
               .build();
         }
@@ -53,28 +50,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.GetEnvironmentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getGetEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getGetEnvironmentMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "GetEnvironment",
       requestType = com.jervis.contracts.server.GetEnvironmentRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.GetEnvironmentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getGetEnvironmentMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetEnvironmentRequest, com.jervis.contracts.server.EnvironmentResponse> getGetEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getGetEnvironmentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetEnvironmentRequest, com.jervis.contracts.server.Environment> getGetEnvironmentMethod;
     if ((getGetEnvironmentMethod = ServerEnvironmentServiceGrpc.getGetEnvironmentMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getGetEnvironmentMethod = ServerEnvironmentServiceGrpc.getGetEnvironmentMethod) == null) {
           ServerEnvironmentServiceGrpc.getGetEnvironmentMethod = getGetEnvironmentMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetEnvironmentRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetEnvironmentRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetEnvironment"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.GetEnvironmentRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("GetEnvironment"))
               .build();
         }
@@ -84,28 +81,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.CreateEnvironmentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getCreateEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getCreateEnvironmentMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "CreateEnvironment",
       requestType = com.jervis.contracts.server.CreateEnvironmentRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.CreateEnvironmentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getCreateEnvironmentMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.CreateEnvironmentRequest, com.jervis.contracts.server.EnvironmentResponse> getCreateEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getCreateEnvironmentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.CreateEnvironmentRequest, com.jervis.contracts.server.Environment> getCreateEnvironmentMethod;
     if ((getCreateEnvironmentMethod = ServerEnvironmentServiceGrpc.getCreateEnvironmentMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getCreateEnvironmentMethod = ServerEnvironmentServiceGrpc.getCreateEnvironmentMethod) == null) {
           ServerEnvironmentServiceGrpc.getCreateEnvironmentMethod = getCreateEnvironmentMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.CreateEnvironmentRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.CreateEnvironmentRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "CreateEnvironment"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.CreateEnvironmentRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("CreateEnvironment"))
               .build();
         }
@@ -146,28 +143,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.AddComponentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getAddComponentMethod;
+      com.jervis.contracts.server.Environment> getAddComponentMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "AddComponent",
       requestType = com.jervis.contracts.server.AddComponentRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.AddComponentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getAddComponentMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.AddComponentRequest, com.jervis.contracts.server.EnvironmentResponse> getAddComponentMethod;
+      com.jervis.contracts.server.Environment> getAddComponentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.AddComponentRequest, com.jervis.contracts.server.Environment> getAddComponentMethod;
     if ((getAddComponentMethod = ServerEnvironmentServiceGrpc.getAddComponentMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getAddComponentMethod = ServerEnvironmentServiceGrpc.getAddComponentMethod) == null) {
           ServerEnvironmentServiceGrpc.getAddComponentMethod = getAddComponentMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.AddComponentRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.AddComponentRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "AddComponent"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.AddComponentRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("AddComponent"))
               .build();
         }
@@ -177,28 +174,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ConfigureComponentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getConfigureComponentMethod;
+      com.jervis.contracts.server.Environment> getConfigureComponentMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "ConfigureComponent",
       requestType = com.jervis.contracts.server.ConfigureComponentRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ConfigureComponentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getConfigureComponentMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.ConfigureComponentRequest, com.jervis.contracts.server.EnvironmentResponse> getConfigureComponentMethod;
+      com.jervis.contracts.server.Environment> getConfigureComponentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ConfigureComponentRequest, com.jervis.contracts.server.Environment> getConfigureComponentMethod;
     if ((getConfigureComponentMethod = ServerEnvironmentServiceGrpc.getConfigureComponentMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getConfigureComponentMethod = ServerEnvironmentServiceGrpc.getConfigureComponentMethod) == null) {
           ServerEnvironmentServiceGrpc.getConfigureComponentMethod = getConfigureComponentMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ConfigureComponentRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ConfigureComponentRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ConfigureComponent"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.ConfigureComponentRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("ConfigureComponent"))
               .build();
         }
@@ -208,28 +205,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getDeployEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getDeployEnvironmentMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "DeployEnvironment",
       requestType = com.jervis.contracts.server.EnvironmentIdRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getDeployEnvironmentMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentResponse> getDeployEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getDeployEnvironmentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.Environment> getDeployEnvironmentMethod;
     if ((getDeployEnvironmentMethod = ServerEnvironmentServiceGrpc.getDeployEnvironmentMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getDeployEnvironmentMethod = ServerEnvironmentServiceGrpc.getDeployEnvironmentMethod) == null) {
           ServerEnvironmentServiceGrpc.getDeployEnvironmentMethod = getDeployEnvironmentMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "DeployEnvironment"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.EnvironmentIdRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("DeployEnvironment"))
               .build();
         }
@@ -239,28 +236,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getStopEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getStopEnvironmentMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "StopEnvironment",
       requestType = com.jervis.contracts.server.EnvironmentIdRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getStopEnvironmentMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentResponse> getStopEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getStopEnvironmentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.Environment> getStopEnvironmentMethod;
     if ((getStopEnvironmentMethod = ServerEnvironmentServiceGrpc.getStopEnvironmentMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getStopEnvironmentMethod = ServerEnvironmentServiceGrpc.getStopEnvironmentMethod) == null) {
           ServerEnvironmentServiceGrpc.getStopEnvironmentMethod = getStopEnvironmentMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "StopEnvironment"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.EnvironmentIdRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("StopEnvironment"))
               .build();
         }
@@ -270,28 +267,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getSyncEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getSyncEnvironmentMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "SyncEnvironment",
       requestType = com.jervis.contracts.server.EnvironmentIdRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getSyncEnvironmentMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentResponse> getSyncEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getSyncEnvironmentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.Environment> getSyncEnvironmentMethod;
     if ((getSyncEnvironmentMethod = ServerEnvironmentServiceGrpc.getSyncEnvironmentMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getSyncEnvironmentMethod = ServerEnvironmentServiceGrpc.getSyncEnvironmentMethod) == null) {
           ServerEnvironmentServiceGrpc.getSyncEnvironmentMethod = getSyncEnvironmentMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SyncEnvironment"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.EnvironmentIdRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("SyncEnvironment"))
               .build();
         }
@@ -301,28 +298,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest,
-      com.jervis.contracts.server.EnvironmentStatusResponse> getGetEnvironmentStatusMethod;
+      com.jervis.contracts.server.EnvironmentStatus> getGetEnvironmentStatusMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "GetEnvironmentStatus",
       requestType = com.jervis.contracts.server.EnvironmentIdRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentStatusResponse.class,
+      responseType = com.jervis.contracts.server.EnvironmentStatus.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest,
-      com.jervis.contracts.server.EnvironmentStatusResponse> getGetEnvironmentStatusMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentStatusResponse> getGetEnvironmentStatusMethod;
+      com.jervis.contracts.server.EnvironmentStatus> getGetEnvironmentStatusMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentStatus> getGetEnvironmentStatusMethod;
     if ((getGetEnvironmentStatusMethod = ServerEnvironmentServiceGrpc.getGetEnvironmentStatusMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getGetEnvironmentStatusMethod = ServerEnvironmentServiceGrpc.getGetEnvironmentStatusMethod) == null) {
           ServerEnvironmentServiceGrpc.getGetEnvironmentStatusMethod = getGetEnvironmentStatusMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentStatusResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentStatus>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetEnvironmentStatus"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.EnvironmentIdRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentStatusResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.EnvironmentStatus.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("GetEnvironmentStatus"))
               .build();
         }
@@ -332,28 +329,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.CloneEnvironmentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getCloneEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getCloneEnvironmentMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "CloneEnvironment",
       requestType = com.jervis.contracts.server.CloneEnvironmentRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.CloneEnvironmentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getCloneEnvironmentMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.CloneEnvironmentRequest, com.jervis.contracts.server.EnvironmentResponse> getCloneEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getCloneEnvironmentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.CloneEnvironmentRequest, com.jervis.contracts.server.Environment> getCloneEnvironmentMethod;
     if ((getCloneEnvironmentMethod = ServerEnvironmentServiceGrpc.getCloneEnvironmentMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getCloneEnvironmentMethod = ServerEnvironmentServiceGrpc.getCloneEnvironmentMethod) == null) {
           ServerEnvironmentServiceGrpc.getCloneEnvironmentMethod = getCloneEnvironmentMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.CloneEnvironmentRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.CloneEnvironmentRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "CloneEnvironment"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.CloneEnvironmentRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("CloneEnvironment"))
               .build();
         }
@@ -363,28 +360,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.AddPropertyMappingRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getAddPropertyMappingMethod;
+      com.jervis.contracts.server.Environment> getAddPropertyMappingMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "AddPropertyMapping",
       requestType = com.jervis.contracts.server.AddPropertyMappingRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.AddPropertyMappingRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getAddPropertyMappingMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.AddPropertyMappingRequest, com.jervis.contracts.server.EnvironmentResponse> getAddPropertyMappingMethod;
+      com.jervis.contracts.server.Environment> getAddPropertyMappingMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.AddPropertyMappingRequest, com.jervis.contracts.server.Environment> getAddPropertyMappingMethod;
     if ((getAddPropertyMappingMethod = ServerEnvironmentServiceGrpc.getAddPropertyMappingMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getAddPropertyMappingMethod = ServerEnvironmentServiceGrpc.getAddPropertyMappingMethod) == null) {
           ServerEnvironmentServiceGrpc.getAddPropertyMappingMethod = getAddPropertyMappingMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.AddPropertyMappingRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.AddPropertyMappingRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "AddPropertyMapping"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.AddPropertyMappingRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("AddPropertyMapping"))
               .build();
         }
@@ -425,28 +422,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.DiscoverNamespaceRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getDiscoverNamespaceMethod;
+      com.jervis.contracts.server.Environment> getDiscoverNamespaceMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "DiscoverNamespace",
       requestType = com.jervis.contracts.server.DiscoverNamespaceRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.DiscoverNamespaceRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getDiscoverNamespaceMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.DiscoverNamespaceRequest, com.jervis.contracts.server.EnvironmentResponse> getDiscoverNamespaceMethod;
+      com.jervis.contracts.server.Environment> getDiscoverNamespaceMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.DiscoverNamespaceRequest, com.jervis.contracts.server.Environment> getDiscoverNamespaceMethod;
     if ((getDiscoverNamespaceMethod = ServerEnvironmentServiceGrpc.getDiscoverNamespaceMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getDiscoverNamespaceMethod = ServerEnvironmentServiceGrpc.getDiscoverNamespaceMethod) == null) {
           ServerEnvironmentServiceGrpc.getDiscoverNamespaceMethod = getDiscoverNamespaceMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.DiscoverNamespaceRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.DiscoverNamespaceRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "DiscoverNamespace"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.DiscoverNamespaceRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("DiscoverNamespace"))
               .build();
         }
@@ -456,28 +453,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ReplicateEnvironmentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getReplicateEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getReplicateEnvironmentMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "ReplicateEnvironment",
       requestType = com.jervis.contracts.server.ReplicateEnvironmentRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ReplicateEnvironmentRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getReplicateEnvironmentMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.ReplicateEnvironmentRequest, com.jervis.contracts.server.EnvironmentResponse> getReplicateEnvironmentMethod;
+      com.jervis.contracts.server.Environment> getReplicateEnvironmentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ReplicateEnvironmentRequest, com.jervis.contracts.server.Environment> getReplicateEnvironmentMethod;
     if ((getReplicateEnvironmentMethod = ServerEnvironmentServiceGrpc.getReplicateEnvironmentMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getReplicateEnvironmentMethod = ServerEnvironmentServiceGrpc.getReplicateEnvironmentMethod) == null) {
           ServerEnvironmentServiceGrpc.getReplicateEnvironmentMethod = getReplicateEnvironmentMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ReplicateEnvironmentRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ReplicateEnvironmentRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ReplicateEnvironment"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.ReplicateEnvironmentRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("ReplicateEnvironment"))
               .build();
         }
@@ -487,28 +484,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getSyncFromK8sMethod;
+      com.jervis.contracts.server.Environment> getSyncFromK8sMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "SyncFromK8s",
       requestType = com.jervis.contracts.server.EnvironmentIdRequest.class,
-      responseType = com.jervis.contracts.server.EnvironmentResponse.class,
+      responseType = com.jervis.contracts.server.Environment.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest,
-      com.jervis.contracts.server.EnvironmentResponse> getSyncFromK8sMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentResponse> getSyncFromK8sMethod;
+      com.jervis.contracts.server.Environment> getSyncFromK8sMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.Environment> getSyncFromK8sMethod;
     if ((getSyncFromK8sMethod = ServerEnvironmentServiceGrpc.getSyncFromK8sMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getSyncFromK8sMethod = ServerEnvironmentServiceGrpc.getSyncFromK8sMethod) == null) {
           ServerEnvironmentServiceGrpc.getSyncFromK8sMethod = getSyncFromK8sMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.EnvironmentResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.EnvironmentIdRequest, com.jervis.contracts.server.Environment>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SyncFromK8s"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.EnvironmentIdRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.EnvironmentResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Environment.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("SyncFromK8s"))
               .build();
         }
@@ -518,28 +515,28 @@ public final class ServerEnvironmentServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ListComponentTemplatesRequest,
-      com.jervis.contracts.server.ListComponentTemplatesResponse> getListComponentTemplatesMethod;
+      com.jervis.contracts.server.ComponentTemplateList> getListComponentTemplatesMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "ListComponentTemplates",
       requestType = com.jervis.contracts.server.ListComponentTemplatesRequest.class,
-      responseType = com.jervis.contracts.server.ListComponentTemplatesResponse.class,
+      responseType = com.jervis.contracts.server.ComponentTemplateList.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ListComponentTemplatesRequest,
-      com.jervis.contracts.server.ListComponentTemplatesResponse> getListComponentTemplatesMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListComponentTemplatesRequest, com.jervis.contracts.server.ListComponentTemplatesResponse> getListComponentTemplatesMethod;
+      com.jervis.contracts.server.ComponentTemplateList> getListComponentTemplatesMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListComponentTemplatesRequest, com.jervis.contracts.server.ComponentTemplateList> getListComponentTemplatesMethod;
     if ((getListComponentTemplatesMethod = ServerEnvironmentServiceGrpc.getListComponentTemplatesMethod) == null) {
       synchronized (ServerEnvironmentServiceGrpc.class) {
         if ((getListComponentTemplatesMethod = ServerEnvironmentServiceGrpc.getListComponentTemplatesMethod) == null) {
           ServerEnvironmentServiceGrpc.getListComponentTemplatesMethod = getListComponentTemplatesMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListComponentTemplatesRequest, com.jervis.contracts.server.ListComponentTemplatesResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListComponentTemplatesRequest, com.jervis.contracts.server.ComponentTemplateList>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListComponentTemplates"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.ListComponentTemplatesRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.ListComponentTemplatesResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.ComponentTemplateList.getDefaultInstance()))
               .setSchemaDescriptor(new ServerEnvironmentServiceMethodDescriptorSupplier("ListComponentTemplates"))
               .build();
         }
@@ -610,12 +607,9 @@ public final class ServerEnvironmentServiceGrpc {
   /**
    * <pre>
    * ServerEnvironmentService covers the full `environments` CRUD +
-   * provisioning surface used by MCP and orchestrator tools.
-   * EnvironmentDto is a deep tree with components / port mappings / property
-   * mappings / status subtrees. Instead of mirroring it into proto we keep
-   * `body_json` opaque — all Python callers either pretty-print the body
-   * or read a handful of fields (`id`, `name`, `state`, `components[].name`).
-   * Typed fields live on *requests* so CI catches missing params.
+   * provisioning surface used by MCP and orchestrator tools. Responses
+   * mirror com.jervis.dto.environment.EnvironmentDto / EnvironmentStatusDto /
+   * ComponentTemplateDto 1:1 — no JSON passthrough on the wire.
    * </pre>
    */
   public interface AsyncService {
@@ -623,21 +617,21 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     default void listEnvironments(com.jervis.contracts.server.ListEnvironmentsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentListResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentList> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListEnvironmentsMethod(), responseObserver);
     }
 
     /**
      */
     default void getEnvironment(com.jervis.contracts.server.GetEnvironmentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetEnvironmentMethod(), responseObserver);
     }
 
     /**
      */
     default void createEnvironment(com.jervis.contracts.server.CreateEnvironmentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCreateEnvironmentMethod(), responseObserver);
     }
 
@@ -651,56 +645,56 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     default void addComponent(com.jervis.contracts.server.AddComponentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getAddComponentMethod(), responseObserver);
     }
 
     /**
      */
     default void configureComponent(com.jervis.contracts.server.ConfigureComponentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getConfigureComponentMethod(), responseObserver);
     }
 
     /**
      */
     default void deployEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getDeployEnvironmentMethod(), responseObserver);
     }
 
     /**
      */
     default void stopEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getStopEnvironmentMethod(), responseObserver);
     }
 
     /**
      */
     default void syncEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSyncEnvironmentMethod(), responseObserver);
     }
 
     /**
      */
     default void getEnvironmentStatus(com.jervis.contracts.server.EnvironmentIdRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentStatusResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentStatus> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetEnvironmentStatusMethod(), responseObserver);
     }
 
     /**
      */
     default void cloneEnvironment(com.jervis.contracts.server.CloneEnvironmentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCloneEnvironmentMethod(), responseObserver);
     }
 
     /**
      */
     default void addPropertyMapping(com.jervis.contracts.server.AddPropertyMappingRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getAddPropertyMappingMethod(), responseObserver);
     }
 
@@ -714,28 +708,28 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     default void discoverNamespace(com.jervis.contracts.server.DiscoverNamespaceRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getDiscoverNamespaceMethod(), responseObserver);
     }
 
     /**
      */
     default void replicateEnvironment(com.jervis.contracts.server.ReplicateEnvironmentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getReplicateEnvironmentMethod(), responseObserver);
     }
 
     /**
      */
     default void syncFromK8s(com.jervis.contracts.server.EnvironmentIdRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSyncFromK8sMethod(), responseObserver);
     }
 
     /**
      */
     default void listComponentTemplates(com.jervis.contracts.server.ListComponentTemplatesRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListComponentTemplatesResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ComponentTemplateList> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListComponentTemplatesMethod(), responseObserver);
     }
   }
@@ -744,12 +738,9 @@ public final class ServerEnvironmentServiceGrpc {
    * Base class for the server implementation of the service ServerEnvironmentService.
    * <pre>
    * ServerEnvironmentService covers the full `environments` CRUD +
-   * provisioning surface used by MCP and orchestrator tools.
-   * EnvironmentDto is a deep tree with components / port mappings / property
-   * mappings / status subtrees. Instead of mirroring it into proto we keep
-   * `body_json` opaque — all Python callers either pretty-print the body
-   * or read a handful of fields (`id`, `name`, `state`, `components[].name`).
-   * Typed fields live on *requests* so CI catches missing params.
+   * provisioning surface used by MCP and orchestrator tools. Responses
+   * mirror com.jervis.dto.environment.EnvironmentDto / EnvironmentStatusDto /
+   * ComponentTemplateDto 1:1 — no JSON passthrough on the wire.
    * </pre>
    */
   public static abstract class ServerEnvironmentServiceImplBase
@@ -764,12 +755,9 @@ public final class ServerEnvironmentServiceGrpc {
    * A stub to allow clients to do asynchronous rpc calls to service ServerEnvironmentService.
    * <pre>
    * ServerEnvironmentService covers the full `environments` CRUD +
-   * provisioning surface used by MCP and orchestrator tools.
-   * EnvironmentDto is a deep tree with components / port mappings / property
-   * mappings / status subtrees. Instead of mirroring it into proto we keep
-   * `body_json` opaque — all Python callers either pretty-print the body
-   * or read a handful of fields (`id`, `name`, `state`, `components[].name`).
-   * Typed fields live on *requests* so CI catches missing params.
+   * provisioning surface used by MCP and orchestrator tools. Responses
+   * mirror com.jervis.dto.environment.EnvironmentDto / EnvironmentStatusDto /
+   * ComponentTemplateDto 1:1 — no JSON passthrough on the wire.
    * </pre>
    */
   public static final class ServerEnvironmentServiceStub
@@ -788,7 +776,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void listEnvironments(com.jervis.contracts.server.ListEnvironmentsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentListResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentList> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getListEnvironmentsMethod(), getCallOptions()), request, responseObserver);
     }
@@ -796,7 +784,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void getEnvironment(com.jervis.contracts.server.GetEnvironmentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetEnvironmentMethod(), getCallOptions()), request, responseObserver);
     }
@@ -804,7 +792,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void createEnvironment(com.jervis.contracts.server.CreateEnvironmentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getCreateEnvironmentMethod(), getCallOptions()), request, responseObserver);
     }
@@ -820,7 +808,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void addComponent(com.jervis.contracts.server.AddComponentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getAddComponentMethod(), getCallOptions()), request, responseObserver);
     }
@@ -828,7 +816,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void configureComponent(com.jervis.contracts.server.ConfigureComponentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getConfigureComponentMethod(), getCallOptions()), request, responseObserver);
     }
@@ -836,7 +824,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void deployEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getDeployEnvironmentMethod(), getCallOptions()), request, responseObserver);
     }
@@ -844,7 +832,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void stopEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getStopEnvironmentMethod(), getCallOptions()), request, responseObserver);
     }
@@ -852,7 +840,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void syncEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getSyncEnvironmentMethod(), getCallOptions()), request, responseObserver);
     }
@@ -860,7 +848,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void getEnvironmentStatus(com.jervis.contracts.server.EnvironmentIdRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentStatusResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentStatus> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetEnvironmentStatusMethod(), getCallOptions()), request, responseObserver);
     }
@@ -868,7 +856,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void cloneEnvironment(com.jervis.contracts.server.CloneEnvironmentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getCloneEnvironmentMethod(), getCallOptions()), request, responseObserver);
     }
@@ -876,7 +864,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void addPropertyMapping(com.jervis.contracts.server.AddPropertyMappingRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getAddPropertyMappingMethod(), getCallOptions()), request, responseObserver);
     }
@@ -892,7 +880,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void discoverNamespace(com.jervis.contracts.server.DiscoverNamespaceRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getDiscoverNamespaceMethod(), getCallOptions()), request, responseObserver);
     }
@@ -900,7 +888,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void replicateEnvironment(com.jervis.contracts.server.ReplicateEnvironmentRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getReplicateEnvironmentMethod(), getCallOptions()), request, responseObserver);
     }
@@ -908,7 +896,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void syncFromK8s(com.jervis.contracts.server.EnvironmentIdRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getSyncFromK8sMethod(), getCallOptions()), request, responseObserver);
     }
@@ -916,7 +904,7 @@ public final class ServerEnvironmentServiceGrpc {
     /**
      */
     public void listComponentTemplates(com.jervis.contracts.server.ListComponentTemplatesRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListComponentTemplatesResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ComponentTemplateList> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getListComponentTemplatesMethod(), getCallOptions()), request, responseObserver);
     }
@@ -926,12 +914,9 @@ public final class ServerEnvironmentServiceGrpc {
    * A stub to allow clients to do synchronous rpc calls to service ServerEnvironmentService.
    * <pre>
    * ServerEnvironmentService covers the full `environments` CRUD +
-   * provisioning surface used by MCP and orchestrator tools.
-   * EnvironmentDto is a deep tree with components / port mappings / property
-   * mappings / status subtrees. Instead of mirroring it into proto we keep
-   * `body_json` opaque — all Python callers either pretty-print the body
-   * or read a handful of fields (`id`, `name`, `state`, `components[].name`).
-   * Typed fields live on *requests* so CI catches missing params.
+   * provisioning surface used by MCP and orchestrator tools. Responses
+   * mirror com.jervis.dto.environment.EnvironmentDto / EnvironmentStatusDto /
+   * ComponentTemplateDto 1:1 — no JSON passthrough on the wire.
    * </pre>
    */
   public static final class ServerEnvironmentServiceBlockingV2Stub
@@ -949,21 +934,21 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentListResponse listEnvironments(com.jervis.contracts.server.ListEnvironmentsRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.EnvironmentList listEnvironments(com.jervis.contracts.server.ListEnvironmentsRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getListEnvironmentsMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse getEnvironment(com.jervis.contracts.server.GetEnvironmentRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment getEnvironment(com.jervis.contracts.server.GetEnvironmentRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getGetEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse createEnvironment(com.jervis.contracts.server.CreateEnvironmentRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment createEnvironment(com.jervis.contracts.server.CreateEnvironmentRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getCreateEnvironmentMethod(), getCallOptions(), request);
     }
@@ -977,56 +962,56 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse addComponent(com.jervis.contracts.server.AddComponentRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment addComponent(com.jervis.contracts.server.AddComponentRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getAddComponentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse configureComponent(com.jervis.contracts.server.ConfigureComponentRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment configureComponent(com.jervis.contracts.server.ConfigureComponentRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getConfigureComponentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse deployEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment deployEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getDeployEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse stopEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment stopEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getStopEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse syncEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment syncEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getSyncEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentStatusResponse getEnvironmentStatus(com.jervis.contracts.server.EnvironmentIdRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.EnvironmentStatus getEnvironmentStatus(com.jervis.contracts.server.EnvironmentIdRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getGetEnvironmentStatusMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse cloneEnvironment(com.jervis.contracts.server.CloneEnvironmentRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment cloneEnvironment(com.jervis.contracts.server.CloneEnvironmentRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getCloneEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse addPropertyMapping(com.jervis.contracts.server.AddPropertyMappingRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment addPropertyMapping(com.jervis.contracts.server.AddPropertyMappingRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getAddPropertyMappingMethod(), getCallOptions(), request);
     }
@@ -1040,28 +1025,28 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse discoverNamespace(com.jervis.contracts.server.DiscoverNamespaceRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment discoverNamespace(com.jervis.contracts.server.DiscoverNamespaceRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getDiscoverNamespaceMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse replicateEnvironment(com.jervis.contracts.server.ReplicateEnvironmentRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment replicateEnvironment(com.jervis.contracts.server.ReplicateEnvironmentRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getReplicateEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse syncFromK8s(com.jervis.contracts.server.EnvironmentIdRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Environment syncFromK8s(com.jervis.contracts.server.EnvironmentIdRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getSyncFromK8sMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.ListComponentTemplatesResponse listComponentTemplates(com.jervis.contracts.server.ListComponentTemplatesRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.ComponentTemplateList listComponentTemplates(com.jervis.contracts.server.ListComponentTemplatesRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getListComponentTemplatesMethod(), getCallOptions(), request);
     }
@@ -1071,12 +1056,9 @@ public final class ServerEnvironmentServiceGrpc {
    * A stub to allow clients to do limited synchronous rpc calls to service ServerEnvironmentService.
    * <pre>
    * ServerEnvironmentService covers the full `environments` CRUD +
-   * provisioning surface used by MCP and orchestrator tools.
-   * EnvironmentDto is a deep tree with components / port mappings / property
-   * mappings / status subtrees. Instead of mirroring it into proto we keep
-   * `body_json` opaque — all Python callers either pretty-print the body
-   * or read a handful of fields (`id`, `name`, `state`, `components[].name`).
-   * Typed fields live on *requests* so CI catches missing params.
+   * provisioning surface used by MCP and orchestrator tools. Responses
+   * mirror com.jervis.dto.environment.EnvironmentDto / EnvironmentStatusDto /
+   * ComponentTemplateDto 1:1 — no JSON passthrough on the wire.
    * </pre>
    */
   public static final class ServerEnvironmentServiceBlockingStub
@@ -1094,21 +1076,21 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentListResponse listEnvironments(com.jervis.contracts.server.ListEnvironmentsRequest request) {
+    public com.jervis.contracts.server.EnvironmentList listEnvironments(com.jervis.contracts.server.ListEnvironmentsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getListEnvironmentsMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse getEnvironment(com.jervis.contracts.server.GetEnvironmentRequest request) {
+    public com.jervis.contracts.server.Environment getEnvironment(com.jervis.contracts.server.GetEnvironmentRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse createEnvironment(com.jervis.contracts.server.CreateEnvironmentRequest request) {
+    public com.jervis.contracts.server.Environment createEnvironment(com.jervis.contracts.server.CreateEnvironmentRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getCreateEnvironmentMethod(), getCallOptions(), request);
     }
@@ -1122,56 +1104,56 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse addComponent(com.jervis.contracts.server.AddComponentRequest request) {
+    public com.jervis.contracts.server.Environment addComponent(com.jervis.contracts.server.AddComponentRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getAddComponentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse configureComponent(com.jervis.contracts.server.ConfigureComponentRequest request) {
+    public com.jervis.contracts.server.Environment configureComponent(com.jervis.contracts.server.ConfigureComponentRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getConfigureComponentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse deployEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) {
+    public com.jervis.contracts.server.Environment deployEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getDeployEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse stopEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) {
+    public com.jervis.contracts.server.Environment stopEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getStopEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse syncEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) {
+    public com.jervis.contracts.server.Environment syncEnvironment(com.jervis.contracts.server.EnvironmentIdRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getSyncEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentStatusResponse getEnvironmentStatus(com.jervis.contracts.server.EnvironmentIdRequest request) {
+    public com.jervis.contracts.server.EnvironmentStatus getEnvironmentStatus(com.jervis.contracts.server.EnvironmentIdRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetEnvironmentStatusMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse cloneEnvironment(com.jervis.contracts.server.CloneEnvironmentRequest request) {
+    public com.jervis.contracts.server.Environment cloneEnvironment(com.jervis.contracts.server.CloneEnvironmentRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getCloneEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse addPropertyMapping(com.jervis.contracts.server.AddPropertyMappingRequest request) {
+    public com.jervis.contracts.server.Environment addPropertyMapping(com.jervis.contracts.server.AddPropertyMappingRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getAddPropertyMappingMethod(), getCallOptions(), request);
     }
@@ -1185,28 +1167,28 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse discoverNamespace(com.jervis.contracts.server.DiscoverNamespaceRequest request) {
+    public com.jervis.contracts.server.Environment discoverNamespace(com.jervis.contracts.server.DiscoverNamespaceRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getDiscoverNamespaceMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse replicateEnvironment(com.jervis.contracts.server.ReplicateEnvironmentRequest request) {
+    public com.jervis.contracts.server.Environment replicateEnvironment(com.jervis.contracts.server.ReplicateEnvironmentRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getReplicateEnvironmentMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.EnvironmentResponse syncFromK8s(com.jervis.contracts.server.EnvironmentIdRequest request) {
+    public com.jervis.contracts.server.Environment syncFromK8s(com.jervis.contracts.server.EnvironmentIdRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getSyncFromK8sMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.ListComponentTemplatesResponse listComponentTemplates(com.jervis.contracts.server.ListComponentTemplatesRequest request) {
+    public com.jervis.contracts.server.ComponentTemplateList listComponentTemplates(com.jervis.contracts.server.ListComponentTemplatesRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getListComponentTemplatesMethod(), getCallOptions(), request);
     }
@@ -1216,12 +1198,9 @@ public final class ServerEnvironmentServiceGrpc {
    * A stub to allow clients to do ListenableFuture-style rpc calls to service ServerEnvironmentService.
    * <pre>
    * ServerEnvironmentService covers the full `environments` CRUD +
-   * provisioning surface used by MCP and orchestrator tools.
-   * EnvironmentDto is a deep tree with components / port mappings / property
-   * mappings / status subtrees. Instead of mirroring it into proto we keep
-   * `body_json` opaque — all Python callers either pretty-print the body
-   * or read a handful of fields (`id`, `name`, `state`, `components[].name`).
-   * Typed fields live on *requests* so CI catches missing params.
+   * provisioning surface used by MCP and orchestrator tools. Responses
+   * mirror com.jervis.dto.environment.EnvironmentDto / EnvironmentStatusDto /
+   * ComponentTemplateDto 1:1 — no JSON passthrough on the wire.
    * </pre>
    */
   public static final class ServerEnvironmentServiceFutureStub
@@ -1239,7 +1218,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentListResponse> listEnvironments(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentList> listEnvironments(
         com.jervis.contracts.server.ListEnvironmentsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getListEnvironmentsMethod(), getCallOptions()), request);
@@ -1247,7 +1226,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> getEnvironment(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> getEnvironment(
         com.jervis.contracts.server.GetEnvironmentRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetEnvironmentMethod(), getCallOptions()), request);
@@ -1255,7 +1234,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> createEnvironment(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> createEnvironment(
         com.jervis.contracts.server.CreateEnvironmentRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getCreateEnvironmentMethod(), getCallOptions()), request);
@@ -1271,7 +1250,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> addComponent(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> addComponent(
         com.jervis.contracts.server.AddComponentRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getAddComponentMethod(), getCallOptions()), request);
@@ -1279,7 +1258,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> configureComponent(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> configureComponent(
         com.jervis.contracts.server.ConfigureComponentRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getConfigureComponentMethod(), getCallOptions()), request);
@@ -1287,7 +1266,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> deployEnvironment(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> deployEnvironment(
         com.jervis.contracts.server.EnvironmentIdRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getDeployEnvironmentMethod(), getCallOptions()), request);
@@ -1295,7 +1274,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> stopEnvironment(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> stopEnvironment(
         com.jervis.contracts.server.EnvironmentIdRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getStopEnvironmentMethod(), getCallOptions()), request);
@@ -1303,7 +1282,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> syncEnvironment(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> syncEnvironment(
         com.jervis.contracts.server.EnvironmentIdRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getSyncEnvironmentMethod(), getCallOptions()), request);
@@ -1311,7 +1290,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentStatusResponse> getEnvironmentStatus(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentStatus> getEnvironmentStatus(
         com.jervis.contracts.server.EnvironmentIdRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetEnvironmentStatusMethod(), getCallOptions()), request);
@@ -1319,7 +1298,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> cloneEnvironment(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> cloneEnvironment(
         com.jervis.contracts.server.CloneEnvironmentRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getCloneEnvironmentMethod(), getCallOptions()), request);
@@ -1327,7 +1306,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> addPropertyMapping(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> addPropertyMapping(
         com.jervis.contracts.server.AddPropertyMappingRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getAddPropertyMappingMethod(), getCallOptions()), request);
@@ -1343,7 +1322,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> discoverNamespace(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> discoverNamespace(
         com.jervis.contracts.server.DiscoverNamespaceRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getDiscoverNamespaceMethod(), getCallOptions()), request);
@@ -1351,7 +1330,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> replicateEnvironment(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> replicateEnvironment(
         com.jervis.contracts.server.ReplicateEnvironmentRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getReplicateEnvironmentMethod(), getCallOptions()), request);
@@ -1359,7 +1338,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.EnvironmentResponse> syncFromK8s(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Environment> syncFromK8s(
         com.jervis.contracts.server.EnvironmentIdRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getSyncFromK8sMethod(), getCallOptions()), request);
@@ -1367,7 +1346,7 @@ public final class ServerEnvironmentServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ListComponentTemplatesResponse> listComponentTemplates(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ComponentTemplateList> listComponentTemplates(
         com.jervis.contracts.server.ListComponentTemplatesRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getListComponentTemplatesMethod(), getCallOptions()), request);
@@ -1411,15 +1390,15 @@ public final class ServerEnvironmentServiceGrpc {
       switch (methodId) {
         case METHODID_LIST_ENVIRONMENTS:
           serviceImpl.listEnvironments((com.jervis.contracts.server.ListEnvironmentsRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentListResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentList>) responseObserver);
           break;
         case METHODID_GET_ENVIRONMENT:
           serviceImpl.getEnvironment((com.jervis.contracts.server.GetEnvironmentRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_CREATE_ENVIRONMENT:
           serviceImpl.createEnvironment((com.jervis.contracts.server.CreateEnvironmentRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_DELETE_ENVIRONMENT:
           serviceImpl.deleteEnvironment((com.jervis.contracts.server.DeleteEnvironmentRequest) request,
@@ -1427,35 +1406,35 @@ public final class ServerEnvironmentServiceGrpc {
           break;
         case METHODID_ADD_COMPONENT:
           serviceImpl.addComponent((com.jervis.contracts.server.AddComponentRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_CONFIGURE_COMPONENT:
           serviceImpl.configureComponent((com.jervis.contracts.server.ConfigureComponentRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_DEPLOY_ENVIRONMENT:
           serviceImpl.deployEnvironment((com.jervis.contracts.server.EnvironmentIdRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_STOP_ENVIRONMENT:
           serviceImpl.stopEnvironment((com.jervis.contracts.server.EnvironmentIdRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_SYNC_ENVIRONMENT:
           serviceImpl.syncEnvironment((com.jervis.contracts.server.EnvironmentIdRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_GET_ENVIRONMENT_STATUS:
           serviceImpl.getEnvironmentStatus((com.jervis.contracts.server.EnvironmentIdRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentStatusResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentStatus>) responseObserver);
           break;
         case METHODID_CLONE_ENVIRONMENT:
           serviceImpl.cloneEnvironment((com.jervis.contracts.server.CloneEnvironmentRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_ADD_PROPERTY_MAPPING:
           serviceImpl.addPropertyMapping((com.jervis.contracts.server.AddPropertyMappingRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_AUTO_SUGGEST_PROPERTY_MAPPINGS:
           serviceImpl.autoSuggestPropertyMappings((com.jervis.contracts.server.EnvironmentIdRequest) request,
@@ -1463,19 +1442,19 @@ public final class ServerEnvironmentServiceGrpc {
           break;
         case METHODID_DISCOVER_NAMESPACE:
           serviceImpl.discoverNamespace((com.jervis.contracts.server.DiscoverNamespaceRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_REPLICATE_ENVIRONMENT:
           serviceImpl.replicateEnvironment((com.jervis.contracts.server.ReplicateEnvironmentRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_SYNC_FROM_K8S:
           serviceImpl.syncFromK8s((com.jervis.contracts.server.EnvironmentIdRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.EnvironmentResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Environment>) responseObserver);
           break;
         case METHODID_LIST_COMPONENT_TEMPLATES:
           serviceImpl.listComponentTemplates((com.jervis.contracts.server.ListComponentTemplatesRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListComponentTemplatesResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ComponentTemplateList>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -1500,21 +1479,21 @@ public final class ServerEnvironmentServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.ListEnvironmentsRequest,
-              com.jervis.contracts.server.EnvironmentListResponse>(
+              com.jervis.contracts.server.EnvironmentList>(
                 service, METHODID_LIST_ENVIRONMENTS)))
         .addMethod(
           getGetEnvironmentMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.GetEnvironmentRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_GET_ENVIRONMENT)))
         .addMethod(
           getCreateEnvironmentMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.CreateEnvironmentRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_CREATE_ENVIRONMENT)))
         .addMethod(
           getDeleteEnvironmentMethod(),
@@ -1528,56 +1507,56 @@ public final class ServerEnvironmentServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.AddComponentRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_ADD_COMPONENT)))
         .addMethod(
           getConfigureComponentMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.ConfigureComponentRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_CONFIGURE_COMPONENT)))
         .addMethod(
           getDeployEnvironmentMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.EnvironmentIdRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_DEPLOY_ENVIRONMENT)))
         .addMethod(
           getStopEnvironmentMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.EnvironmentIdRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_STOP_ENVIRONMENT)))
         .addMethod(
           getSyncEnvironmentMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.EnvironmentIdRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_SYNC_ENVIRONMENT)))
         .addMethod(
           getGetEnvironmentStatusMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.EnvironmentIdRequest,
-              com.jervis.contracts.server.EnvironmentStatusResponse>(
+              com.jervis.contracts.server.EnvironmentStatus>(
                 service, METHODID_GET_ENVIRONMENT_STATUS)))
         .addMethod(
           getCloneEnvironmentMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.CloneEnvironmentRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_CLONE_ENVIRONMENT)))
         .addMethod(
           getAddPropertyMappingMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.AddPropertyMappingRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_ADD_PROPERTY_MAPPING)))
         .addMethod(
           getAutoSuggestPropertyMappingsMethod(),
@@ -1591,28 +1570,28 @@ public final class ServerEnvironmentServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.DiscoverNamespaceRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_DISCOVER_NAMESPACE)))
         .addMethod(
           getReplicateEnvironmentMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.ReplicateEnvironmentRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_REPLICATE_ENVIRONMENT)))
         .addMethod(
           getSyncFromK8sMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.EnvironmentIdRequest,
-              com.jervis.contracts.server.EnvironmentResponse>(
+              com.jervis.contracts.server.Environment>(
                 service, METHODID_SYNC_FROM_K8S)))
         .addMethod(
           getListComponentTemplatesMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.ListComponentTemplatesRequest,
-              com.jervis.contracts.server.ListComponentTemplatesResponse>(
+              com.jervis.contracts.server.ComponentTemplateList>(
                 service, METHODID_LIST_COMPONENT_TEMPLATES)))
         .build();
   }

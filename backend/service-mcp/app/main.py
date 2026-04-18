@@ -97,6 +97,7 @@ mcp = FastMCP(
 
 import httpx
 import json
+from google.protobuf.json_format import MessageToDict
 
 
 @mcp.tool
@@ -1516,7 +1517,7 @@ async def environment_list(client_id: str = "") -> str:
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    envs = json.loads(resp.items_json)
+    envs = [MessageToDict(e, preserving_proto_field_name=False) for e in resp.items]
     if not envs:
         return "No environments found."
     lines = []
@@ -1557,7 +1558,7 @@ async def environment_get(environment_id: str) -> str:
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp, preserving_proto_field_name=False)
     lines = [
         f"Environment: {env['name']}",
         f"ID: {env['id']}",
@@ -1648,7 +1649,7 @@ async def environment_create(
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp, preserving_proto_field_name=False)
     return (
         f"Environment created: {env['name']} (id={env['id']})\n"
         f"Namespace: {env['namespace']}\n"
@@ -1747,7 +1748,7 @@ async def environment_add_component(
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp, preserving_proto_field_name=False)
     comp = next((c for c in env.get("components", []) if c["name"] == name), None)
     if comp:
         return (
@@ -1847,7 +1848,7 @@ async def environment_deploy(environment_id: str) -> str:
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp, preserving_proto_field_name=False)
     return (
         f"Environment deployed: {env['name']}\n"
         f"Namespace: {env['namespace']}\n"
@@ -1880,7 +1881,7 @@ async def environment_stop(environment_id: str) -> str:
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp, preserving_proto_field_name=False)
     return f"Environment stopped: {env['name']} (state={env['state']})"
 
 
@@ -1907,7 +1908,7 @@ async def environment_status(environment_id: str) -> str:
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    status = json.loads(resp.body_json)
+    status = MessageToDict(resp, preserving_proto_field_name=False)
     lines = [
         f"Environment Status:",
         f"Namespace: {status['namespace']}",
@@ -1947,7 +1948,7 @@ async def environment_sync(environment_id: str) -> str:
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp, preserving_proto_field_name=False)
     return f"Environment synced: {env['name']} (state={env['state']})"
 
 
@@ -1999,7 +2000,7 @@ async def environment_clone(
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp, preserving_proto_field_name=False)
     return (
         f"Environment cloned: {env['name']} (id={env['id']})\n"
         f"Tier: {env.get('tier', 'DEV')}, Namespace: {env['namespace']}\n"
@@ -2054,7 +2055,7 @@ async def environment_add_property_mapping(
         if "already exists" in msg:
             return f"Mapping for '{property_name}' already exists."
         return f"Error: {msg[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp, preserving_proto_field_name=False)
     count = len(env.get("propertyMappings", []))
     return f"Property mapping added: {property_name} → {target_component}. Total mappings: {count}."
 
@@ -2084,7 +2085,7 @@ async def environment_auto_suggest_mappings(environment_id: str) -> str:
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp.environment, preserving_proto_field_name=False)
     total = len(env.get("propertyMappings", []))
     return (
         f"Auto-suggested mappings for '{env['name']}'.\n"
@@ -2131,7 +2132,7 @@ async def environment_discover_namespace(
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp, preserving_proto_field_name=False)
     comp_count = len(env.get("components", []))
     return (
         f"Discovered namespace '{namespace}' → environment '{env['name']}' (id={env['id']}).\n"
@@ -2181,7 +2182,7 @@ async def environment_replicate(
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp, preserving_proto_field_name=False)
     comp_count = len(env.get("components", []))
     return (
         f"Replicated environment → '{env['name']}' (id={env['id']}).\n"
@@ -2215,7 +2216,7 @@ async def environment_sync_from_k8s(environment_id: str) -> str:
         )
     except Exception as e:
         return f"Error: {str(e)[:300]}"
-    env = json.loads(resp.body_json)
+    env = MessageToDict(resp, preserving_proto_field_name=False)
     comp_count = len(env.get("components", []))
     running = sum(1 for c in env.get("components", []) if c.get("componentState") == "RUNNING")
     return (

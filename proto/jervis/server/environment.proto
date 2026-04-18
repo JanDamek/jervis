@@ -9,65 +9,162 @@ option java_multiple_files = true;
 option java_outer_classname = "ServerEnvironmentProto";
 
 // ServerEnvironmentService covers the full `environments` CRUD +
-// provisioning surface used by MCP and orchestrator tools.
-//
-// EnvironmentDto is a deep tree with components / port mappings / property
-// mappings / status subtrees. Instead of mirroring it into proto we keep
-// `body_json` opaque — all Python callers either pretty-print the body
-// or read a handful of fields (`id`, `name`, `state`, `components[].name`).
-// Typed fields live on *requests* so CI catches missing params.
+// provisioning surface used by MCP and orchestrator tools. Responses
+// mirror com.jervis.dto.environment.EnvironmentDto / EnvironmentStatusDto /
+// ComponentTemplateDto 1:1 — no JSON passthrough on the wire.
 service ServerEnvironmentService {
-  rpc ListEnvironments(ListEnvironmentsRequest) returns (EnvironmentListResponse);
-  rpc GetEnvironment(GetEnvironmentRequest) returns (EnvironmentResponse);
-  rpc CreateEnvironment(CreateEnvironmentRequest) returns (EnvironmentResponse);
+  rpc ListEnvironments(ListEnvironmentsRequest) returns (EnvironmentList);
+  rpc GetEnvironment(GetEnvironmentRequest) returns (Environment);
+  rpc CreateEnvironment(CreateEnvironmentRequest) returns (Environment);
   rpc DeleteEnvironment(DeleteEnvironmentRequest) returns (DeleteEnvironmentResponse);
 
-  rpc AddComponent(AddComponentRequest) returns (EnvironmentResponse);
-  rpc ConfigureComponent(ConfigureComponentRequest) returns (EnvironmentResponse);
+  rpc AddComponent(AddComponentRequest) returns (Environment);
+  rpc ConfigureComponent(ConfigureComponentRequest) returns (Environment);
 
-  rpc DeployEnvironment(EnvironmentIdRequest) returns (EnvironmentResponse);
-  rpc StopEnvironment(EnvironmentIdRequest) returns (EnvironmentResponse);
-  rpc SyncEnvironment(EnvironmentIdRequest) returns (EnvironmentResponse);
-  rpc GetEnvironmentStatus(EnvironmentIdRequest) returns (EnvironmentStatusResponse);
+  rpc DeployEnvironment(EnvironmentIdRequest) returns (Environment);
+  rpc StopEnvironment(EnvironmentIdRequest) returns (Environment);
+  rpc SyncEnvironment(EnvironmentIdRequest) returns (Environment);
+  rpc GetEnvironmentStatus(EnvironmentIdRequest) returns (EnvironmentStatus);
 
-  rpc CloneEnvironment(CloneEnvironmentRequest) returns (EnvironmentResponse);
+  rpc CloneEnvironment(CloneEnvironmentRequest) returns (Environment);
 
-  rpc AddPropertyMapping(AddPropertyMappingRequest) returns (EnvironmentResponse);
+  rpc AddPropertyMapping(AddPropertyMappingRequest) returns (Environment);
   rpc AutoSuggestPropertyMappings(EnvironmentIdRequest) returns (AutoSuggestPropertyMappingsResponse);
 
-  rpc DiscoverNamespace(DiscoverNamespaceRequest) returns (EnvironmentResponse);
-  rpc ReplicateEnvironment(ReplicateEnvironmentRequest) returns (EnvironmentResponse);
-  rpc SyncFromK8s(EnvironmentIdRequest) returns (EnvironmentResponse);
+  rpc DiscoverNamespace(DiscoverNamespaceRequest) returns (Environment);
+  rpc ReplicateEnvironment(ReplicateEnvironmentRequest) returns (Environment);
+  rpc SyncFromK8s(EnvironmentIdRequest) returns (Environment);
 
-  rpc ListComponentTemplates(ListComponentTemplatesRequest) returns (ListComponentTemplatesResponse);
+  rpc ListComponentTemplates(ListComponentTemplatesRequest) returns (ComponentTemplateList);
 }
 
-// ── Common responses ────────────────────────────────────────────────────
+// ── Environment DTO tree ───────────────────────────────────────────────
 
-message EnvironmentResponse {
-  // EnvironmentDto serialized to JSON. Full schema lives in shared/common-dto.
-  string body_json = 1;
+message Environment {
+  string id = 1;
+  string client_id = 2;
+  string group_id = 3;
+  string project_id = 4;
+  string name = 5;
+  string description = 6;
+  string tier = 7;                         // EnvironmentTierEnum name
+  string namespace = 8;
+  repeated EnvironmentComponent components = 9;
+  repeated ComponentLink component_links = 10;
+  repeated PropertyMapping property_mappings = 11;
+  string agent_instructions = 12;
+  string state = 13;                       // EnvironmentStateEnum name
+  int32 storage_size_gi = 14;              // default 5
+  map<string, string> yaml_manifests = 15;
 }
 
-message EnvironmentListResponse {
-  // Array of EnvironmentDto JSON objects.
-  string items_json = 1;
+message EnvironmentComponent {
+  string id = 1;
+  string name = 2;
+  string type = 3;                         // ComponentTypeEnum name
+  string image = 4;
+  string project_id = 5;
+  string cpu_limit = 6;
+  string memory_limit = 7;
+  repeated PortMapping ports = 8;
+  map<string, string> env_vars = 9;
+  bool auto_start = 10;                    // default true
+  int32 start_order = 11;
+  string health_check_path = 12;
+  string volume_mount_path = 13;
+  string source_repo = 14;
+  string source_branch = 15;
+  string dockerfile_path = 16;
+  string deployment_yaml = 17;
+  string service_yaml = 18;
+  map<string, string> config_map_data = 19;
+  string component_state = 20;             // ComponentStateEnum name
 }
 
-message EnvironmentStatusResponse {
-  // EnvironmentStatusDto JSON (namespace health, per-component pod states).
-  string body_json = 1;
+message PortMapping {
+  int32 container_port = 1;
+  int32 service_port = 2;                  // 0 → same as container_port
+  string name = 3;
 }
+
+message ComponentLink {
+  string source_component_id = 1;
+  string target_component_id = 2;
+  string description = 3;
+}
+
+message PropertyMapping {
+  string project_component_id = 1;
+  string property_name = 2;
+  string target_component_id = 3;
+  string value_template = 4;
+  string resolved_value = 5;               // empty = not yet resolved
+}
+
+message EnvironmentList {
+  repeated Environment items = 1;
+}
+
+// ── Status ─────────────────────────────────────────────────────────────
+
+message EnvironmentStatus {
+  string environment_id = 1;
+  string namespace = 2;
+  string state = 3;                        // EnvironmentStateEnum name
+  repeated ComponentStatus component_statuses = 4;
+}
+
+message ComponentStatus {
+  string component_id = 1;
+  string name = 2;
+  bool ready = 3;
+  int32 replicas = 4;
+  int32 available_replicas = 5;
+  string message = 6;
+}
+
+// ── Component templates ────────────────────────────────────────────────
+
+message ComponentTemplate {
+  string type = 1;                         // ComponentTypeEnum name
+  repeated ComponentVersion versions = 2;
+  map<string, string> default_env_vars = 3;
+  repeated PortMapping default_ports = 4;
+  string default_volume_mount_path = 5;
+  repeated PropertyMappingTemplate property_mapping_templates = 6;
+}
+
+message ComponentVersion {
+  string label = 1;
+  string image = 2;
+}
+
+message PropertyMappingTemplate {
+  string env_var_name = 1;
+  string value_template = 2;
+  string description = 3;
+}
+
+message ComponentTemplateList {
+  repeated ComponentTemplate items = 1;
+}
+
+// ── Misc responses ─────────────────────────────────────────────────────
 
 message DeleteEnvironmentResponse {
   bool ok = 1;
 }
 
-// ── List / get ──────────────────────────────────────────────────────────
+message AutoSuggestPropertyMappingsResponse {
+  Environment environment = 1;
+  int32 mappings_added = 2;
+}
+
+// ── Requests ───────────────────────────────────────────────────────────
 
 message ListEnvironmentsRequest {
   jervis.common.RequestContext ctx = 1;
-  string client_id = 2;          // empty = unfiltered (superuser)
+  string client_id = 2;                    // empty = unfiltered
 }
 
 message GetEnvironmentRequest {
@@ -80,17 +177,15 @@ message EnvironmentIdRequest {
   string environment_id = 2;
 }
 
-// ── Create / delete ─────────────────────────────────────────────────────
-
 message CreateEnvironmentRequest {
   jervis.common.RequestContext ctx = 1;
   string client_id = 2;
   string name = 3;
-  string namespace = 4;          // empty → slugified from name
-  string tier = 5;               // EnvironmentTier enum name; blank → DEV
+  string namespace = 4;                    // empty → slugified from name
+  string tier = 5;                         // EnvironmentTierEnum name; blank → DEV
   string description = 6;
   string agent_instructions = 7;
-  int32 storage_size_gi = 8;     // 0 → 5Gi default
+  int32 storage_size_gi = 8;               // 0 → 5Gi default
 }
 
 message DeleteEnvironmentRequest {
@@ -98,31 +193,28 @@ message DeleteEnvironmentRequest {
   string environment_id = 2;
 }
 
-// ── Components ──────────────────────────────────────────────────────────
-
 message AddComponentRequest {
   jervis.common.RequestContext ctx = 1;
   string environment_id = 2;
   string name = 3;
-  string type = 4;               // ComponentType enum name
+  string type = 4;                         // ComponentTypeEnum name
   string image = 5;
   string version = 6;
   map<string, string> env_vars = 7;
   string source_repo = 8;
   string source_branch = 9;
   string dockerfile_path = 10;
-  int32 start_order = 11;        // < 0 = auto (append at end)
-  bool start_order_auto = 12;    // convenience flag; true → ignore start_order
+  int32 start_order = 11;
+  bool start_order_auto = 12;
 }
 
 message ConfigureComponentRequest {
   jervis.common.RequestContext ctx = 1;
   string environment_id = 2;
-  string component_name = 3;     // component id or display name
-  // Each field: blank/empty collection = leave unchanged.
+  string component_name = 3;
   string image = 4;
   map<string, string> env_vars = 5;
-  bool has_env_vars = 6;         // true → merge env_vars even if empty map
+  bool has_env_vars = 6;
   string cpu_limit = 7;
   string memory_limit = 8;
   string source_repo = 9;
@@ -130,13 +222,11 @@ message ConfigureComponentRequest {
   string dockerfile_path = 11;
 }
 
-// ── Clone / replicate / discover ────────────────────────────────────────
-
 message CloneEnvironmentRequest {
   jervis.common.RequestContext ctx = 1;
   string environment_id = 2;
   string new_name = 3;
-  string new_namespace = 4;      // empty = slugify from new_name
+  string new_namespace = 4;
   string new_tier = 5;
   string target_client_id = 6;
   string target_group_id = 7;
@@ -160,8 +250,6 @@ message DiscoverNamespaceRequest {
   string tier = 5;
 }
 
-// ── Property mappings ───────────────────────────────────────────────────
-
 message AddPropertyMappingRequest {
   jervis.common.RequestContext ctx = 1;
   string environment_id = 2;
@@ -171,18 +259,6 @@ message AddPropertyMappingRequest {
   string value_template = 6;
 }
 
-message AutoSuggestPropertyMappingsResponse {
-  string body_json = 1;
-  int32 mappings_added = 2;
-}
-
-// ── Component templates ─────────────────────────────────────────────────
-
 message ListComponentTemplatesRequest {
   jervis.common.RequestContext ctx = 1;
-}
-
-message ListComponentTemplatesResponse {
-  // Array of template JSON objects (type, versions[], defaultPorts[], …).
-  string items_json = 1;
 }

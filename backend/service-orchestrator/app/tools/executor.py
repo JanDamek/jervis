@@ -1282,6 +1282,7 @@ async def _execute_store_knowledge(
     if target_project_name:
         try:
             import json as _json
+            from google.protobuf.json_format import MessageToDict
 
             from app.grpc_server_client import server_project_management_stub
             from jervis.common import types_pb2
@@ -2888,25 +2889,22 @@ def _env_stub_imports():
 
 async def _execute_environment_list(client_id: str) -> str:
     """List environments, optionally filtered by client."""
-    import json as _json
     try:
         stub, environment_pb2, ctx = _env_stub_imports()
         resp = await stub.ListEnvironments(
             environment_pb2.ListEnvironmentsRequest(ctx=ctx, client_id=client_id or ""),
             timeout=30.0,
         )
-        envs = _json.loads(resp.items_json)
-        if not envs:
+        if not resp.items:
             return "No environments found."
         lines = []
-        for env in envs:
-            comps = env.get("components", [])
-            infra = sum(1 for c in comps if c.get("type") != "PROJECT")
-            apps = len(comps) - infra
+        for env in resp.items:
+            infra = sum(1 for c in env.components if c.type != "PROJECT")
+            apps = len(env.components) - infra
             lines.append(
-                f"- {env['name']} (id={env['id']})\n"
-                f"  ns={env['namespace']}, state={env['state']}, "
-                f"components: {len(comps)} ({infra} infra, {apps} app)"
+                f"- {env.name} (id={env.id})\n"
+                f"  ns={env.namespace}, state={env.state}, "
+                f"components: {len(env.components)} ({infra} infra, {apps} app)"
             )
         return "\n".join(lines)
     except Exception as e:
@@ -2924,7 +2922,7 @@ async def _execute_environment_get(environment_id: str) -> str:
             environment_pb2.GetEnvironmentRequest(ctx=ctx, environment_id=environment_id),
             timeout=30.0,
         )
-        env = _json.loads(resp.body_json)
+        env = MessageToDict(resp, preserving_proto_field_name=False)
         lines = [
             f"Environment: {env['name']} (id={env['id']})",
             f"Namespace: {env['namespace']}",
@@ -2965,7 +2963,7 @@ async def _execute_environment_create(
             ),
             timeout=30.0,
         )
-        env = _json.loads(resp.body_json)
+        env = MessageToDict(resp, preserving_proto_field_name=False)
         return (
             f"Created environment: {env['name']} (id={env['id']})\n"
             f"Namespace: {env['namespace']}, State: {env['state']}\n"
@@ -3009,7 +3007,7 @@ async def _execute_environment_add_component(
             ),
             timeout=30.0,
         )
-        env = _json.loads(resp.body_json)
+        env = MessageToDict(resp, preserving_proto_field_name=False)
         return f"Component '{name}' added. Total components: {len(env.get('components', []))}"
     except Exception as e:
         return f"Error adding component: {str(e)[:300]}"
@@ -3069,7 +3067,7 @@ async def _execute_environment_deploy(environment_id: str) -> str:
             environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
             timeout=120.0,
         )
-        env = _json.loads(resp.body_json)
+        env = MessageToDict(resp, preserving_proto_field_name=False)
         return f"Deployed: {env['name']} (ns={env['namespace']}, state={env['state']})"
     except Exception as e:
         return f"Error deploying environment: {str(e)[:300]}"
@@ -3085,7 +3083,7 @@ async def _execute_environment_stop(environment_id: str) -> str:
             environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
             timeout=60.0,
         )
-        env = _json.loads(resp.body_json)
+        env = MessageToDict(resp, preserving_proto_field_name=False)
         return f"Stopped: {env['name']} (state={env['state']})"
     except Exception as e:
         return f"Error stopping environment: {str(e)[:300]}"
@@ -3121,7 +3119,7 @@ async def _execute_environment_sync(environment_id: str) -> str:
             environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
             timeout=60.0,
         )
-        env = _json.loads(resp.body_json)
+        env = MessageToDict(resp, preserving_proto_field_name=False)
         return f"Synced: {env['name']} (state={env['state']})"
     except Exception as e:
         return f"Error syncing environment: {str(e)[:300]}"
@@ -3163,7 +3161,7 @@ async def _execute_environment_clone(
             ),
             timeout=30.0,
         )
-        env = _json.loads(resp.body_json)
+        env = MessageToDict(resp, preserving_proto_field_name=False)
         return (
             f"Cloned: {env['name']} (id={env['id']})\n"
             f"Tier: {env.get('tier', 'DEV')}, Namespace: {env['namespace']}\n"
@@ -3193,7 +3191,7 @@ async def _execute_environment_add_property_mapping(
             ),
             timeout=30.0,
         )
-        env = _json.loads(resp.body_json)
+        env = MessageToDict(resp, preserving_proto_field_name=False)
         count = len(env.get("propertyMappings", []))
         return f"Property mapping added: {property_name} → {target_component}. Total mappings: {count}."
     except Exception as e:
@@ -3213,7 +3211,7 @@ async def _execute_environment_auto_suggest_mappings(environment_id: str) -> str
             environment_pb2.EnvironmentIdRequest(ctx=ctx, environment_id=environment_id),
             timeout=30.0,
         )
-        env = _json.loads(resp.body_json)
+        env = MessageToDict(resp, preserving_proto_field_name=False)
         total = len(env.get("propertyMappings", []))
         return (
             f"Auto-suggested mappings for '{env['name']}'.\n"

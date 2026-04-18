@@ -6,13 +6,13 @@
 package com.jervis.contracts.server;
 
 /**
- * Protobuf type {@code jervis.server.AddPropertyMappingRequest}
+ * Protobuf type {@code jervis.server.PropertyMapping}
  */
 @com.google.protobuf.Generated
-public final class AddPropertyMappingRequest extends
+public final class PropertyMapping extends
     com.google.protobuf.GeneratedMessage implements
-    // @@protoc_insertion_point(message_implements:jervis.server.AddPropertyMappingRequest)
-    AddPropertyMappingRequestOrBuilder {
+    // @@protoc_insertion_point(message_implements:jervis.server.PropertyMapping)
+    PropertyMappingOrBuilder {
 private static final long serialVersionUID = 0L;
   static {
     com.google.protobuf.RuntimeVersion.validateProtobufGencodeVersion(
@@ -21,104 +21,38 @@ private static final long serialVersionUID = 0L;
       /* minor= */ 32,
       /* patch= */ 1,
       /* suffix= */ "",
-      AddPropertyMappingRequest.class.getName());
+      PropertyMapping.class.getName());
   }
-  // Use AddPropertyMappingRequest.newBuilder() to construct.
-  private AddPropertyMappingRequest(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+  // Use PropertyMapping.newBuilder() to construct.
+  private PropertyMapping(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
     super(builder);
   }
-  private AddPropertyMappingRequest() {
-    environmentId_ = "";
+  private PropertyMapping() {
     projectComponentId_ = "";
     propertyName_ = "";
     targetComponentId_ = "";
     valueTemplate_ = "";
+    resolvedValue_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
       getDescriptor() {
-    return com.jervis.contracts.server.ServerEnvironmentProto.internal_static_jervis_server_AddPropertyMappingRequest_descriptor;
+    return com.jervis.contracts.server.ServerEnvironmentProto.internal_static_jervis_server_PropertyMapping_descriptor;
   }
 
   @java.lang.Override
   protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internalGetFieldAccessorTable() {
-    return com.jervis.contracts.server.ServerEnvironmentProto.internal_static_jervis_server_AddPropertyMappingRequest_fieldAccessorTable
+    return com.jervis.contracts.server.ServerEnvironmentProto.internal_static_jervis_server_PropertyMapping_fieldAccessorTable
         .ensureFieldAccessorsInitialized(
-            com.jervis.contracts.server.AddPropertyMappingRequest.class, com.jervis.contracts.server.AddPropertyMappingRequest.Builder.class);
+            com.jervis.contracts.server.PropertyMapping.class, com.jervis.contracts.server.PropertyMapping.Builder.class);
   }
 
-  private int bitField0_;
-  public static final int CTX_FIELD_NUMBER = 1;
-  private com.jervis.contracts.common.RequestContext ctx_;
-  /**
-   * <code>.jervis.common.RequestContext ctx = 1;</code>
-   * @return Whether the ctx field is set.
-   */
-  @java.lang.Override
-  public boolean hasCtx() {
-    return ((bitField0_ & 0x00000001) != 0);
-  }
-  /**
-   * <code>.jervis.common.RequestContext ctx = 1;</code>
-   * @return The ctx.
-   */
-  @java.lang.Override
-  public com.jervis.contracts.common.RequestContext getCtx() {
-    return ctx_ == null ? com.jervis.contracts.common.RequestContext.getDefaultInstance() : ctx_;
-  }
-  /**
-   * <code>.jervis.common.RequestContext ctx = 1;</code>
-   */
-  @java.lang.Override
-  public com.jervis.contracts.common.RequestContextOrBuilder getCtxOrBuilder() {
-    return ctx_ == null ? com.jervis.contracts.common.RequestContext.getDefaultInstance() : ctx_;
-  }
-
-  public static final int ENVIRONMENT_ID_FIELD_NUMBER = 2;
-  @SuppressWarnings("serial")
-  private volatile java.lang.Object environmentId_ = "";
-  /**
-   * <code>string environment_id = 2;</code>
-   * @return The environmentId.
-   */
-  @java.lang.Override
-  public java.lang.String getEnvironmentId() {
-    java.lang.Object ref = environmentId_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
-    } else {
-      com.google.protobuf.ByteString bs = 
-          (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
-      environmentId_ = s;
-      return s;
-    }
-  }
-  /**
-   * <code>string environment_id = 2;</code>
-   * @return The bytes for environmentId.
-   */
-  @java.lang.Override
-  public com.google.protobuf.ByteString
-      getEnvironmentIdBytes() {
-    java.lang.Object ref = environmentId_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
-          com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
-      environmentId_ = b;
-      return b;
-    } else {
-      return (com.google.protobuf.ByteString) ref;
-    }
-  }
-
-  public static final int PROJECT_COMPONENT_ID_FIELD_NUMBER = 3;
+  public static final int PROJECT_COMPONENT_ID_FIELD_NUMBER = 1;
   @SuppressWarnings("serial")
   private volatile java.lang.Object projectComponentId_ = "";
   /**
-   * <code>string project_component_id = 3;</code>
+   * <code>string project_component_id = 1;</code>
    * @return The projectComponentId.
    */
   @java.lang.Override
@@ -135,7 +69,7 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <code>string project_component_id = 3;</code>
+   * <code>string project_component_id = 1;</code>
    * @return The bytes for projectComponentId.
    */
   @java.lang.Override
@@ -153,11 +87,11 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int PROPERTY_NAME_FIELD_NUMBER = 4;
+  public static final int PROPERTY_NAME_FIELD_NUMBER = 2;
   @SuppressWarnings("serial")
   private volatile java.lang.Object propertyName_ = "";
   /**
-   * <code>string property_name = 4;</code>
+   * <code>string property_name = 2;</code>
    * @return The propertyName.
    */
   @java.lang.Override
@@ -174,7 +108,7 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <code>string property_name = 4;</code>
+   * <code>string property_name = 2;</code>
    * @return The bytes for propertyName.
    */
   @java.lang.Override
@@ -192,11 +126,11 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int TARGET_COMPONENT_ID_FIELD_NUMBER = 5;
+  public static final int TARGET_COMPONENT_ID_FIELD_NUMBER = 3;
   @SuppressWarnings("serial")
   private volatile java.lang.Object targetComponentId_ = "";
   /**
-   * <code>string target_component_id = 5;</code>
+   * <code>string target_component_id = 3;</code>
    * @return The targetComponentId.
    */
   @java.lang.Override
@@ -213,7 +147,7 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <code>string target_component_id = 5;</code>
+   * <code>string target_component_id = 3;</code>
    * @return The bytes for targetComponentId.
    */
   @java.lang.Override
@@ -231,11 +165,11 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int VALUE_TEMPLATE_FIELD_NUMBER = 6;
+  public static final int VALUE_TEMPLATE_FIELD_NUMBER = 4;
   @SuppressWarnings("serial")
   private volatile java.lang.Object valueTemplate_ = "";
   /**
-   * <code>string value_template = 6;</code>
+   * <code>string value_template = 4;</code>
    * @return The valueTemplate.
    */
   @java.lang.Override
@@ -252,7 +186,7 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <code>string value_template = 6;</code>
+   * <code>string value_template = 4;</code>
    * @return The bytes for valueTemplate.
    */
   @java.lang.Override
@@ -264,6 +198,53 @@ private static final long serialVersionUID = 0L;
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
       valueTemplate_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int RESOLVED_VALUE_FIELD_NUMBER = 5;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object resolvedValue_ = "";
+  /**
+   * <pre>
+   * empty = not yet resolved
+   * </pre>
+   *
+   * <code>string resolved_value = 5;</code>
+   * @return The resolvedValue.
+   */
+  @java.lang.Override
+  public java.lang.String getResolvedValue() {
+    java.lang.Object ref = resolvedValue_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      resolvedValue_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * empty = not yet resolved
+   * </pre>
+   *
+   * <code>string resolved_value = 5;</code>
+   * @return The bytes for resolvedValue.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getResolvedValueBytes() {
+    java.lang.Object ref = resolvedValue_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      resolvedValue_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
@@ -284,23 +265,20 @@ private static final long serialVersionUID = 0L;
   @java.lang.Override
   public void writeTo(com.google.protobuf.CodedOutputStream output)
                       throws java.io.IOException {
-    if (((bitField0_ & 0x00000001) != 0)) {
-      output.writeMessage(1, getCtx());
-    }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(environmentId_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 2, environmentId_);
-    }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(projectComponentId_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 3, projectComponentId_);
+      com.google.protobuf.GeneratedMessage.writeString(output, 1, projectComponentId_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(propertyName_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 4, propertyName_);
+      com.google.protobuf.GeneratedMessage.writeString(output, 2, propertyName_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(targetComponentId_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 5, targetComponentId_);
+      com.google.protobuf.GeneratedMessage.writeString(output, 3, targetComponentId_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(valueTemplate_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 6, valueTemplate_);
+      com.google.protobuf.GeneratedMessage.writeString(output, 4, valueTemplate_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(resolvedValue_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 5, resolvedValue_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -311,24 +289,20 @@ private static final long serialVersionUID = 0L;
     if (size != -1) return size;
 
     size = 0;
-    if (((bitField0_ & 0x00000001) != 0)) {
-      size += com.google.protobuf.CodedOutputStream
-        .computeMessageSize(1, getCtx());
-    }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(environmentId_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, environmentId_);
-    }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(projectComponentId_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, projectComponentId_);
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(1, projectComponentId_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(propertyName_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(4, propertyName_);
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, propertyName_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(targetComponentId_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(5, targetComponentId_);
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, targetComponentId_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(valueTemplate_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(6, valueTemplate_);
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(4, valueTemplate_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(resolvedValue_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(5, resolvedValue_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -340,18 +314,11 @@ private static final long serialVersionUID = 0L;
     if (obj == this) {
      return true;
     }
-    if (!(obj instanceof com.jervis.contracts.server.AddPropertyMappingRequest)) {
+    if (!(obj instanceof com.jervis.contracts.server.PropertyMapping)) {
       return super.equals(obj);
     }
-    com.jervis.contracts.server.AddPropertyMappingRequest other = (com.jervis.contracts.server.AddPropertyMappingRequest) obj;
+    com.jervis.contracts.server.PropertyMapping other = (com.jervis.contracts.server.PropertyMapping) obj;
 
-    if (hasCtx() != other.hasCtx()) return false;
-    if (hasCtx()) {
-      if (!getCtx()
-          .equals(other.getCtx())) return false;
-    }
-    if (!getEnvironmentId()
-        .equals(other.getEnvironmentId())) return false;
     if (!getProjectComponentId()
         .equals(other.getProjectComponentId())) return false;
     if (!getPropertyName()
@@ -360,6 +327,8 @@ private static final long serialVersionUID = 0L;
         .equals(other.getTargetComponentId())) return false;
     if (!getValueTemplate()
         .equals(other.getValueTemplate())) return false;
+    if (!getResolvedValue()
+        .equals(other.getResolvedValue())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -371,12 +340,6 @@ private static final long serialVersionUID = 0L;
     }
     int hash = 41;
     hash = (19 * hash) + getDescriptor().hashCode();
-    if (hasCtx()) {
-      hash = (37 * hash) + CTX_FIELD_NUMBER;
-      hash = (53 * hash) + getCtx().hashCode();
-    }
-    hash = (37 * hash) + ENVIRONMENT_ID_FIELD_NUMBER;
-    hash = (53 * hash) + getEnvironmentId().hashCode();
     hash = (37 * hash) + PROJECT_COMPONENT_ID_FIELD_NUMBER;
     hash = (53 * hash) + getProjectComponentId().hashCode();
     hash = (37 * hash) + PROPERTY_NAME_FIELD_NUMBER;
@@ -385,49 +348,51 @@ private static final long serialVersionUID = 0L;
     hash = (53 * hash) + getTargetComponentId().hashCode();
     hash = (37 * hash) + VALUE_TEMPLATE_FIELD_NUMBER;
     hash = (53 * hash) + getValueTemplate().hashCode();
+    hash = (37 * hash) + RESOLVED_VALUE_FIELD_NUMBER;
+    hash = (53 * hash) + getResolvedValue().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
   }
 
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseFrom(
+  public static com.jervis.contracts.server.PropertyMapping parseFrom(
       java.nio.ByteBuffer data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseFrom(
+  public static com.jervis.contracts.server.PropertyMapping parseFrom(
       java.nio.ByteBuffer data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseFrom(
+  public static com.jervis.contracts.server.PropertyMapping parseFrom(
       com.google.protobuf.ByteString data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseFrom(
+  public static com.jervis.contracts.server.PropertyMapping parseFrom(
       com.google.protobuf.ByteString data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseFrom(byte[] data)
+  public static com.jervis.contracts.server.PropertyMapping parseFrom(byte[] data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseFrom(
+  public static com.jervis.contracts.server.PropertyMapping parseFrom(
       byte[] data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseFrom(java.io.InputStream input)
+  public static com.jervis.contracts.server.PropertyMapping parseFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseFrom(
+  public static com.jervis.contracts.server.PropertyMapping parseFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -435,26 +400,26 @@ private static final long serialVersionUID = 0L;
         .parseWithIOException(PARSER, input, extensionRegistry);
   }
 
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseDelimitedFrom(java.io.InputStream input)
+  public static com.jervis.contracts.server.PropertyMapping parseDelimitedFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input);
   }
 
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseDelimitedFrom(
+  public static com.jervis.contracts.server.PropertyMapping parseDelimitedFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
   }
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseFrom(
+  public static com.jervis.contracts.server.PropertyMapping parseFrom(
       com.google.protobuf.CodedInputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.server.AddPropertyMappingRequest parseFrom(
+  public static com.jervis.contracts.server.PropertyMapping parseFrom(
       com.google.protobuf.CodedInputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -467,7 +432,7 @@ private static final long serialVersionUID = 0L;
   public static Builder newBuilder() {
     return DEFAULT_INSTANCE.toBuilder();
   }
-  public static Builder newBuilder(com.jervis.contracts.server.AddPropertyMappingRequest prototype) {
+  public static Builder newBuilder(com.jervis.contracts.server.PropertyMapping prototype) {
     return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
   }
   @java.lang.Override
@@ -483,72 +448,61 @@ private static final long serialVersionUID = 0L;
     return builder;
   }
   /**
-   * Protobuf type {@code jervis.server.AddPropertyMappingRequest}
+   * Protobuf type {@code jervis.server.PropertyMapping}
    */
   public static final class Builder extends
       com.google.protobuf.GeneratedMessage.Builder<Builder> implements
-      // @@protoc_insertion_point(builder_implements:jervis.server.AddPropertyMappingRequest)
-      com.jervis.contracts.server.AddPropertyMappingRequestOrBuilder {
+      // @@protoc_insertion_point(builder_implements:jervis.server.PropertyMapping)
+      com.jervis.contracts.server.PropertyMappingOrBuilder {
     public static final com.google.protobuf.Descriptors.Descriptor
         getDescriptor() {
-      return com.jervis.contracts.server.ServerEnvironmentProto.internal_static_jervis_server_AddPropertyMappingRequest_descriptor;
+      return com.jervis.contracts.server.ServerEnvironmentProto.internal_static_jervis_server_PropertyMapping_descriptor;
     }
 
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
         internalGetFieldAccessorTable() {
-      return com.jervis.contracts.server.ServerEnvironmentProto.internal_static_jervis_server_AddPropertyMappingRequest_fieldAccessorTable
+      return com.jervis.contracts.server.ServerEnvironmentProto.internal_static_jervis_server_PropertyMapping_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
-              com.jervis.contracts.server.AddPropertyMappingRequest.class, com.jervis.contracts.server.AddPropertyMappingRequest.Builder.class);
+              com.jervis.contracts.server.PropertyMapping.class, com.jervis.contracts.server.PropertyMapping.Builder.class);
     }
 
-    // Construct using com.jervis.contracts.server.AddPropertyMappingRequest.newBuilder()
+    // Construct using com.jervis.contracts.server.PropertyMapping.newBuilder()
     private Builder() {
-      maybeForceBuilderInitialization();
+
     }
 
     private Builder(
         com.google.protobuf.GeneratedMessage.BuilderParent parent) {
       super(parent);
-      maybeForceBuilderInitialization();
-    }
-    private void maybeForceBuilderInitialization() {
-      if (com.google.protobuf.GeneratedMessage
-              .alwaysUseFieldBuilders) {
-        internalGetCtxFieldBuilder();
-      }
+
     }
     @java.lang.Override
     public Builder clear() {
       super.clear();
       bitField0_ = 0;
-      ctx_ = null;
-      if (ctxBuilder_ != null) {
-        ctxBuilder_.dispose();
-        ctxBuilder_ = null;
-      }
-      environmentId_ = "";
       projectComponentId_ = "";
       propertyName_ = "";
       targetComponentId_ = "";
       valueTemplate_ = "";
+      resolvedValue_ = "";
       return this;
     }
 
     @java.lang.Override
     public com.google.protobuf.Descriptors.Descriptor
         getDescriptorForType() {
-      return com.jervis.contracts.server.ServerEnvironmentProto.internal_static_jervis_server_AddPropertyMappingRequest_descriptor;
+      return com.jervis.contracts.server.ServerEnvironmentProto.internal_static_jervis_server_PropertyMapping_descriptor;
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.AddPropertyMappingRequest getDefaultInstanceForType() {
-      return com.jervis.contracts.server.AddPropertyMappingRequest.getDefaultInstance();
+    public com.jervis.contracts.server.PropertyMapping getDefaultInstanceForType() {
+      return com.jervis.contracts.server.PropertyMapping.getDefaultInstance();
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.AddPropertyMappingRequest build() {
-      com.jervis.contracts.server.AddPropertyMappingRequest result = buildPartial();
+    public com.jervis.contracts.server.PropertyMapping build() {
+      com.jervis.contracts.server.PropertyMapping result = buildPartial();
       if (!result.isInitialized()) {
         throw newUninitializedMessageException(result);
       }
@@ -556,78 +510,67 @@ private static final long serialVersionUID = 0L;
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.AddPropertyMappingRequest buildPartial() {
-      com.jervis.contracts.server.AddPropertyMappingRequest result = new com.jervis.contracts.server.AddPropertyMappingRequest(this);
+    public com.jervis.contracts.server.PropertyMapping buildPartial() {
+      com.jervis.contracts.server.PropertyMapping result = new com.jervis.contracts.server.PropertyMapping(this);
       if (bitField0_ != 0) { buildPartial0(result); }
       onBuilt();
       return result;
     }
 
-    private void buildPartial0(com.jervis.contracts.server.AddPropertyMappingRequest result) {
+    private void buildPartial0(com.jervis.contracts.server.PropertyMapping result) {
       int from_bitField0_ = bitField0_;
-      int to_bitField0_ = 0;
       if (((from_bitField0_ & 0x00000001) != 0)) {
-        result.ctx_ = ctxBuilder_ == null
-            ? ctx_
-            : ctxBuilder_.build();
-        to_bitField0_ |= 0x00000001;
-      }
-      if (((from_bitField0_ & 0x00000002) != 0)) {
-        result.environmentId_ = environmentId_;
-      }
-      if (((from_bitField0_ & 0x00000004) != 0)) {
         result.projectComponentId_ = projectComponentId_;
       }
-      if (((from_bitField0_ & 0x00000008) != 0)) {
+      if (((from_bitField0_ & 0x00000002) != 0)) {
         result.propertyName_ = propertyName_;
       }
-      if (((from_bitField0_ & 0x00000010) != 0)) {
+      if (((from_bitField0_ & 0x00000004) != 0)) {
         result.targetComponentId_ = targetComponentId_;
       }
-      if (((from_bitField0_ & 0x00000020) != 0)) {
+      if (((from_bitField0_ & 0x00000008) != 0)) {
         result.valueTemplate_ = valueTemplate_;
       }
-      result.bitField0_ |= to_bitField0_;
+      if (((from_bitField0_ & 0x00000010) != 0)) {
+        result.resolvedValue_ = resolvedValue_;
+      }
     }
 
     @java.lang.Override
     public Builder mergeFrom(com.google.protobuf.Message other) {
-      if (other instanceof com.jervis.contracts.server.AddPropertyMappingRequest) {
-        return mergeFrom((com.jervis.contracts.server.AddPropertyMappingRequest)other);
+      if (other instanceof com.jervis.contracts.server.PropertyMapping) {
+        return mergeFrom((com.jervis.contracts.server.PropertyMapping)other);
       } else {
         super.mergeFrom(other);
         return this;
       }
     }
 
-    public Builder mergeFrom(com.jervis.contracts.server.AddPropertyMappingRequest other) {
-      if (other == com.jervis.contracts.server.AddPropertyMappingRequest.getDefaultInstance()) return this;
-      if (other.hasCtx()) {
-        mergeCtx(other.getCtx());
-      }
-      if (!other.getEnvironmentId().isEmpty()) {
-        environmentId_ = other.environmentId_;
-        bitField0_ |= 0x00000002;
-        onChanged();
-      }
+    public Builder mergeFrom(com.jervis.contracts.server.PropertyMapping other) {
+      if (other == com.jervis.contracts.server.PropertyMapping.getDefaultInstance()) return this;
       if (!other.getProjectComponentId().isEmpty()) {
         projectComponentId_ = other.projectComponentId_;
-        bitField0_ |= 0x00000004;
+        bitField0_ |= 0x00000001;
         onChanged();
       }
       if (!other.getPropertyName().isEmpty()) {
         propertyName_ = other.propertyName_;
-        bitField0_ |= 0x00000008;
+        bitField0_ |= 0x00000002;
         onChanged();
       }
       if (!other.getTargetComponentId().isEmpty()) {
         targetComponentId_ = other.targetComponentId_;
-        bitField0_ |= 0x00000010;
+        bitField0_ |= 0x00000004;
         onChanged();
       }
       if (!other.getValueTemplate().isEmpty()) {
         valueTemplate_ = other.valueTemplate_;
-        bitField0_ |= 0x00000020;
+        bitField0_ |= 0x00000008;
+        onChanged();
+      }
+      if (!other.getResolvedValue().isEmpty()) {
+        resolvedValue_ = other.resolvedValue_;
+        bitField0_ |= 0x00000010;
         onChanged();
       }
       this.mergeUnknownFields(other.getUnknownFields());
@@ -657,37 +600,30 @@ private static final long serialVersionUID = 0L;
               done = true;
               break;
             case 10: {
-              input.readMessage(
-                  internalGetCtxFieldBuilder().getBuilder(),
-                  extensionRegistry);
+              projectComponentId_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000001;
               break;
             } // case 10
             case 18: {
-              environmentId_ = input.readStringRequireUtf8();
+              propertyName_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000002;
               break;
             } // case 18
             case 26: {
-              projectComponentId_ = input.readStringRequireUtf8();
+              targetComponentId_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000004;
               break;
             } // case 26
             case 34: {
-              propertyName_ = input.readStringRequireUtf8();
+              valueTemplate_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000008;
               break;
             } // case 34
             case 42: {
-              targetComponentId_ = input.readStringRequireUtf8();
+              resolvedValue_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000010;
               break;
             } // case 42
-            case 50: {
-              valueTemplate_ = input.readStringRequireUtf8();
-              bitField0_ |= 0x00000020;
-              break;
-            } // case 50
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -705,202 +641,9 @@ private static final long serialVersionUID = 0L;
     }
     private int bitField0_;
 
-    private com.jervis.contracts.common.RequestContext ctx_;
-    private com.google.protobuf.SingleFieldBuilder<
-        com.jervis.contracts.common.RequestContext, com.jervis.contracts.common.RequestContext.Builder, com.jervis.contracts.common.RequestContextOrBuilder> ctxBuilder_;
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     * @return Whether the ctx field is set.
-     */
-    public boolean hasCtx() {
-      return ((bitField0_ & 0x00000001) != 0);
-    }
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     * @return The ctx.
-     */
-    public com.jervis.contracts.common.RequestContext getCtx() {
-      if (ctxBuilder_ == null) {
-        return ctx_ == null ? com.jervis.contracts.common.RequestContext.getDefaultInstance() : ctx_;
-      } else {
-        return ctxBuilder_.getMessage();
-      }
-    }
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     */
-    public Builder setCtx(com.jervis.contracts.common.RequestContext value) {
-      if (ctxBuilder_ == null) {
-        if (value == null) {
-          throw new NullPointerException();
-        }
-        ctx_ = value;
-      } else {
-        ctxBuilder_.setMessage(value);
-      }
-      bitField0_ |= 0x00000001;
-      onChanged();
-      return this;
-    }
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     */
-    public Builder setCtx(
-        com.jervis.contracts.common.RequestContext.Builder builderForValue) {
-      if (ctxBuilder_ == null) {
-        ctx_ = builderForValue.build();
-      } else {
-        ctxBuilder_.setMessage(builderForValue.build());
-      }
-      bitField0_ |= 0x00000001;
-      onChanged();
-      return this;
-    }
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     */
-    public Builder mergeCtx(com.jervis.contracts.common.RequestContext value) {
-      if (ctxBuilder_ == null) {
-        if (((bitField0_ & 0x00000001) != 0) &&
-          ctx_ != null &&
-          ctx_ != com.jervis.contracts.common.RequestContext.getDefaultInstance()) {
-          getCtxBuilder().mergeFrom(value);
-        } else {
-          ctx_ = value;
-        }
-      } else {
-        ctxBuilder_.mergeFrom(value);
-      }
-      if (ctx_ != null) {
-        bitField0_ |= 0x00000001;
-        onChanged();
-      }
-      return this;
-    }
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     */
-    public Builder clearCtx() {
-      bitField0_ = (bitField0_ & ~0x00000001);
-      ctx_ = null;
-      if (ctxBuilder_ != null) {
-        ctxBuilder_.dispose();
-        ctxBuilder_ = null;
-      }
-      onChanged();
-      return this;
-    }
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     */
-    public com.jervis.contracts.common.RequestContext.Builder getCtxBuilder() {
-      bitField0_ |= 0x00000001;
-      onChanged();
-      return internalGetCtxFieldBuilder().getBuilder();
-    }
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     */
-    public com.jervis.contracts.common.RequestContextOrBuilder getCtxOrBuilder() {
-      if (ctxBuilder_ != null) {
-        return ctxBuilder_.getMessageOrBuilder();
-      } else {
-        return ctx_ == null ?
-            com.jervis.contracts.common.RequestContext.getDefaultInstance() : ctx_;
-      }
-    }
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     */
-    private com.google.protobuf.SingleFieldBuilder<
-        com.jervis.contracts.common.RequestContext, com.jervis.contracts.common.RequestContext.Builder, com.jervis.contracts.common.RequestContextOrBuilder> 
-        internalGetCtxFieldBuilder() {
-      if (ctxBuilder_ == null) {
-        ctxBuilder_ = new com.google.protobuf.SingleFieldBuilder<
-            com.jervis.contracts.common.RequestContext, com.jervis.contracts.common.RequestContext.Builder, com.jervis.contracts.common.RequestContextOrBuilder>(
-                getCtx(),
-                getParentForChildren(),
-                isClean());
-        ctx_ = null;
-      }
-      return ctxBuilder_;
-    }
-
-    private java.lang.Object environmentId_ = "";
-    /**
-     * <code>string environment_id = 2;</code>
-     * @return The environmentId.
-     */
-    public java.lang.String getEnvironmentId() {
-      java.lang.Object ref = environmentId_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        environmentId_ = s;
-        return s;
-      } else {
-        return (java.lang.String) ref;
-      }
-    }
-    /**
-     * <code>string environment_id = 2;</code>
-     * @return The bytes for environmentId.
-     */
-    public com.google.protobuf.ByteString
-        getEnvironmentIdBytes() {
-      java.lang.Object ref = environmentId_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        environmentId_ = b;
-        return b;
-      } else {
-        return (com.google.protobuf.ByteString) ref;
-      }
-    }
-    /**
-     * <code>string environment_id = 2;</code>
-     * @param value The environmentId to set.
-     * @return This builder for chaining.
-     */
-    public Builder setEnvironmentId(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      environmentId_ = value;
-      bitField0_ |= 0x00000002;
-      onChanged();
-      return this;
-    }
-    /**
-     * <code>string environment_id = 2;</code>
-     * @return This builder for chaining.
-     */
-    public Builder clearEnvironmentId() {
-      environmentId_ = getDefaultInstance().getEnvironmentId();
-      bitField0_ = (bitField0_ & ~0x00000002);
-      onChanged();
-      return this;
-    }
-    /**
-     * <code>string environment_id = 2;</code>
-     * @param value The bytes for environmentId to set.
-     * @return This builder for chaining.
-     */
-    public Builder setEnvironmentIdBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      environmentId_ = value;
-      bitField0_ |= 0x00000002;
-      onChanged();
-      return this;
-    }
-
     private java.lang.Object projectComponentId_ = "";
     /**
-     * <code>string project_component_id = 3;</code>
+     * <code>string project_component_id = 1;</code>
      * @return The projectComponentId.
      */
     public java.lang.String getProjectComponentId() {
@@ -916,7 +659,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string project_component_id = 3;</code>
+     * <code>string project_component_id = 1;</code>
      * @return The bytes for projectComponentId.
      */
     public com.google.protobuf.ByteString
@@ -933,7 +676,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string project_component_id = 3;</code>
+     * <code>string project_component_id = 1;</code>
      * @param value The projectComponentId to set.
      * @return This builder for chaining.
      */
@@ -941,22 +684,22 @@ private static final long serialVersionUID = 0L;
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
       projectComponentId_ = value;
-      bitField0_ |= 0x00000004;
+      bitField0_ |= 0x00000001;
       onChanged();
       return this;
     }
     /**
-     * <code>string project_component_id = 3;</code>
+     * <code>string project_component_id = 1;</code>
      * @return This builder for chaining.
      */
     public Builder clearProjectComponentId() {
       projectComponentId_ = getDefaultInstance().getProjectComponentId();
-      bitField0_ = (bitField0_ & ~0x00000004);
+      bitField0_ = (bitField0_ & ~0x00000001);
       onChanged();
       return this;
     }
     /**
-     * <code>string project_component_id = 3;</code>
+     * <code>string project_component_id = 1;</code>
      * @param value The bytes for projectComponentId to set.
      * @return This builder for chaining.
      */
@@ -965,14 +708,14 @@ private static final long serialVersionUID = 0L;
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
       projectComponentId_ = value;
-      bitField0_ |= 0x00000004;
+      bitField0_ |= 0x00000001;
       onChanged();
       return this;
     }
 
     private java.lang.Object propertyName_ = "";
     /**
-     * <code>string property_name = 4;</code>
+     * <code>string property_name = 2;</code>
      * @return The propertyName.
      */
     public java.lang.String getPropertyName() {
@@ -988,7 +731,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string property_name = 4;</code>
+     * <code>string property_name = 2;</code>
      * @return The bytes for propertyName.
      */
     public com.google.protobuf.ByteString
@@ -1005,7 +748,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string property_name = 4;</code>
+     * <code>string property_name = 2;</code>
      * @param value The propertyName to set.
      * @return This builder for chaining.
      */
@@ -1013,22 +756,22 @@ private static final long serialVersionUID = 0L;
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
       propertyName_ = value;
-      bitField0_ |= 0x00000008;
+      bitField0_ |= 0x00000002;
       onChanged();
       return this;
     }
     /**
-     * <code>string property_name = 4;</code>
+     * <code>string property_name = 2;</code>
      * @return This builder for chaining.
      */
     public Builder clearPropertyName() {
       propertyName_ = getDefaultInstance().getPropertyName();
-      bitField0_ = (bitField0_ & ~0x00000008);
+      bitField0_ = (bitField0_ & ~0x00000002);
       onChanged();
       return this;
     }
     /**
-     * <code>string property_name = 4;</code>
+     * <code>string property_name = 2;</code>
      * @param value The bytes for propertyName to set.
      * @return This builder for chaining.
      */
@@ -1037,14 +780,14 @@ private static final long serialVersionUID = 0L;
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
       propertyName_ = value;
-      bitField0_ |= 0x00000008;
+      bitField0_ |= 0x00000002;
       onChanged();
       return this;
     }
 
     private java.lang.Object targetComponentId_ = "";
     /**
-     * <code>string target_component_id = 5;</code>
+     * <code>string target_component_id = 3;</code>
      * @return The targetComponentId.
      */
     public java.lang.String getTargetComponentId() {
@@ -1060,7 +803,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string target_component_id = 5;</code>
+     * <code>string target_component_id = 3;</code>
      * @return The bytes for targetComponentId.
      */
     public com.google.protobuf.ByteString
@@ -1077,7 +820,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string target_component_id = 5;</code>
+     * <code>string target_component_id = 3;</code>
      * @param value The targetComponentId to set.
      * @return This builder for chaining.
      */
@@ -1085,22 +828,22 @@ private static final long serialVersionUID = 0L;
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
       targetComponentId_ = value;
-      bitField0_ |= 0x00000010;
+      bitField0_ |= 0x00000004;
       onChanged();
       return this;
     }
     /**
-     * <code>string target_component_id = 5;</code>
+     * <code>string target_component_id = 3;</code>
      * @return This builder for chaining.
      */
     public Builder clearTargetComponentId() {
       targetComponentId_ = getDefaultInstance().getTargetComponentId();
-      bitField0_ = (bitField0_ & ~0x00000010);
+      bitField0_ = (bitField0_ & ~0x00000004);
       onChanged();
       return this;
     }
     /**
-     * <code>string target_component_id = 5;</code>
+     * <code>string target_component_id = 3;</code>
      * @param value The bytes for targetComponentId to set.
      * @return This builder for chaining.
      */
@@ -1109,14 +852,14 @@ private static final long serialVersionUID = 0L;
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
       targetComponentId_ = value;
-      bitField0_ |= 0x00000010;
+      bitField0_ |= 0x00000004;
       onChanged();
       return this;
     }
 
     private java.lang.Object valueTemplate_ = "";
     /**
-     * <code>string value_template = 6;</code>
+     * <code>string value_template = 4;</code>
      * @return The valueTemplate.
      */
     public java.lang.String getValueTemplate() {
@@ -1132,7 +875,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string value_template = 6;</code>
+     * <code>string value_template = 4;</code>
      * @return The bytes for valueTemplate.
      */
     public com.google.protobuf.ByteString
@@ -1149,7 +892,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string value_template = 6;</code>
+     * <code>string value_template = 4;</code>
      * @param value The valueTemplate to set.
      * @return This builder for chaining.
      */
@@ -1157,22 +900,22 @@ private static final long serialVersionUID = 0L;
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
       valueTemplate_ = value;
-      bitField0_ |= 0x00000020;
+      bitField0_ |= 0x00000008;
       onChanged();
       return this;
     }
     /**
-     * <code>string value_template = 6;</code>
+     * <code>string value_template = 4;</code>
      * @return This builder for chaining.
      */
     public Builder clearValueTemplate() {
       valueTemplate_ = getDefaultInstance().getValueTemplate();
-      bitField0_ = (bitField0_ & ~0x00000020);
+      bitField0_ = (bitField0_ & ~0x00000008);
       onChanged();
       return this;
     }
     /**
-     * <code>string value_template = 6;</code>
+     * <code>string value_template = 4;</code>
      * @param value The bytes for valueTemplate to set.
      * @return This builder for chaining.
      */
@@ -1181,28 +924,120 @@ private static final long serialVersionUID = 0L;
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
       valueTemplate_ = value;
-      bitField0_ |= 0x00000020;
+      bitField0_ |= 0x00000008;
       onChanged();
       return this;
     }
 
-    // @@protoc_insertion_point(builder_scope:jervis.server.AddPropertyMappingRequest)
+    private java.lang.Object resolvedValue_ = "";
+    /**
+     * <pre>
+     * empty = not yet resolved
+     * </pre>
+     *
+     * <code>string resolved_value = 5;</code>
+     * @return The resolvedValue.
+     */
+    public java.lang.String getResolvedValue() {
+      java.lang.Object ref = resolvedValue_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        resolvedValue_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * empty = not yet resolved
+     * </pre>
+     *
+     * <code>string resolved_value = 5;</code>
+     * @return The bytes for resolvedValue.
+     */
+    public com.google.protobuf.ByteString
+        getResolvedValueBytes() {
+      java.lang.Object ref = resolvedValue_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        resolvedValue_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * empty = not yet resolved
+     * </pre>
+     *
+     * <code>string resolved_value = 5;</code>
+     * @param value The resolvedValue to set.
+     * @return This builder for chaining.
+     */
+    public Builder setResolvedValue(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      resolvedValue_ = value;
+      bitField0_ |= 0x00000010;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * empty = not yet resolved
+     * </pre>
+     *
+     * <code>string resolved_value = 5;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearResolvedValue() {
+      resolvedValue_ = getDefaultInstance().getResolvedValue();
+      bitField0_ = (bitField0_ & ~0x00000010);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * empty = not yet resolved
+     * </pre>
+     *
+     * <code>string resolved_value = 5;</code>
+     * @param value The bytes for resolvedValue to set.
+     * @return This builder for chaining.
+     */
+    public Builder setResolvedValueBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      resolvedValue_ = value;
+      bitField0_ |= 0x00000010;
+      onChanged();
+      return this;
+    }
+
+    // @@protoc_insertion_point(builder_scope:jervis.server.PropertyMapping)
   }
 
-  // @@protoc_insertion_point(class_scope:jervis.server.AddPropertyMappingRequest)
-  private static final com.jervis.contracts.server.AddPropertyMappingRequest DEFAULT_INSTANCE;
+  // @@protoc_insertion_point(class_scope:jervis.server.PropertyMapping)
+  private static final com.jervis.contracts.server.PropertyMapping DEFAULT_INSTANCE;
   static {
-    DEFAULT_INSTANCE = new com.jervis.contracts.server.AddPropertyMappingRequest();
+    DEFAULT_INSTANCE = new com.jervis.contracts.server.PropertyMapping();
   }
 
-  public static com.jervis.contracts.server.AddPropertyMappingRequest getDefaultInstance() {
+  public static com.jervis.contracts.server.PropertyMapping getDefaultInstance() {
     return DEFAULT_INSTANCE;
   }
 
-  private static final com.google.protobuf.Parser<AddPropertyMappingRequest>
-      PARSER = new com.google.protobuf.AbstractParser<AddPropertyMappingRequest>() {
+  private static final com.google.protobuf.Parser<PropertyMapping>
+      PARSER = new com.google.protobuf.AbstractParser<PropertyMapping>() {
     @java.lang.Override
-    public AddPropertyMappingRequest parsePartialFrom(
+    public PropertyMapping parsePartialFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
@@ -1221,17 +1056,17 @@ private static final long serialVersionUID = 0L;
     }
   };
 
-  public static com.google.protobuf.Parser<AddPropertyMappingRequest> parser() {
+  public static com.google.protobuf.Parser<PropertyMapping> parser() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.google.protobuf.Parser<AddPropertyMappingRequest> getParserForType() {
+  public com.google.protobuf.Parser<PropertyMapping> getParserForType() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.jervis.contracts.server.AddPropertyMappingRequest getDefaultInstanceForType() {
+  public com.jervis.contracts.server.PropertyMapping getDefaultInstanceForType() {
     return DEFAULT_INSTANCE;
   }
 

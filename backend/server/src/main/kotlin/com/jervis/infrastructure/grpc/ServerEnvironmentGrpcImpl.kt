@@ -8,23 +8,36 @@ import com.jervis.contracts.server.AddComponentRequest
 import com.jervis.contracts.server.AddPropertyMappingRequest
 import com.jervis.contracts.server.AutoSuggestPropertyMappingsResponse
 import com.jervis.contracts.server.CloneEnvironmentRequest
+import com.jervis.contracts.server.ComponentLink as ComponentLinkProto
+import com.jervis.contracts.server.ComponentStatus as ComponentStatusProto
+import com.jervis.contracts.server.ComponentTemplate as ComponentTemplateProto
+import com.jervis.contracts.server.ComponentTemplateList
+import com.jervis.contracts.server.ComponentVersion as ComponentVersionProto
 import com.jervis.contracts.server.ConfigureComponentRequest
 import com.jervis.contracts.server.CreateEnvironmentRequest
 import com.jervis.contracts.server.DeleteEnvironmentRequest
 import com.jervis.contracts.server.DeleteEnvironmentResponse
 import com.jervis.contracts.server.DiscoverNamespaceRequest
+import com.jervis.contracts.server.Environment as EnvironmentProto
+import com.jervis.contracts.server.EnvironmentComponent as EnvironmentComponentProto
 import com.jervis.contracts.server.EnvironmentIdRequest
-import com.jervis.contracts.server.EnvironmentListResponse
-import com.jervis.contracts.server.EnvironmentResponse
-import com.jervis.contracts.server.EnvironmentStatusResponse
+import com.jervis.contracts.server.EnvironmentList
+import com.jervis.contracts.server.EnvironmentStatus as EnvironmentStatusProto
 import com.jervis.contracts.server.GetEnvironmentRequest
 import com.jervis.contracts.server.ListComponentTemplatesRequest
-import com.jervis.contracts.server.ListComponentTemplatesResponse
 import com.jervis.contracts.server.ListEnvironmentsRequest
+import com.jervis.contracts.server.PortMapping as PortMappingProto
+import com.jervis.contracts.server.PropertyMapping as PropertyMappingProto
+import com.jervis.contracts.server.PropertyMappingTemplate as PropertyMappingTemplateProto
 import com.jervis.contracts.server.ReplicateEnvironmentRequest
 import com.jervis.contracts.server.ServerEnvironmentServiceGrpcKt
+import com.jervis.dto.environment.ComponentLinkDto
+import com.jervis.dto.environment.ComponentStatusDto
+import com.jervis.dto.environment.EnvironmentComponentDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStatusDto
+import com.jervis.dto.environment.PortMappingDto
+import com.jervis.dto.environment.PropertyMappingDto
 import com.jervis.environment.COMPONENT_DEFAULTS
 import com.jervis.environment.ComponentType
 import com.jervis.environment.EnvironmentComponent
@@ -36,14 +49,6 @@ import com.jervis.environment.EnvironmentTier
 import com.jervis.environment.PROPERTY_MAPPING_TEMPLATES
 import com.jervis.environment.PropertyMapping
 import com.jervis.environment.toDto
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
@@ -54,30 +59,23 @@ class ServerEnvironmentGrpcImpl(
     private val environmentK8sService: EnvironmentK8sService,
 ) : ServerEnvironmentServiceGrpcKt.ServerEnvironmentServiceCoroutineImplBase() {
     private val logger = KotlinLogging.logger {}
-    private val json = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-        prettyPrint = false
-    }
 
-    override suspend fun listEnvironments(request: ListEnvironmentsRequest): EnvironmentListResponse {
+    override suspend fun listEnvironments(request: ListEnvironmentsRequest): EnvironmentList {
         val envs = if (request.clientId.isNotBlank()) {
             environmentService.listEnvironmentsForClient(ClientId(ObjectId(request.clientId)))
         } else {
             environmentService.getAllEnvironments()
         }
-        val dtos = envs.map { it.toDto() }
-        return EnvironmentListResponse.newBuilder()
-            .setItemsJson(json.encodeToString(ListSerializer(EnvironmentDto.serializer()), dtos))
+        return EnvironmentList.newBuilder()
+            .addAllItems(envs.map { it.toDto().toProto() })
             .build()
     }
 
-    override suspend fun getEnvironment(request: GetEnvironmentRequest): EnvironmentResponse {
-        val env = environmentService.getEnvironmentById(EnvironmentId(ObjectId(request.environmentId)))
-        return env.toEnvironmentResponse()
-    }
+    override suspend fun getEnvironment(request: GetEnvironmentRequest): EnvironmentProto =
+        environmentService.getEnvironmentById(EnvironmentId(ObjectId(request.environmentId)))
+            .toDto().toProto()
 
-    override suspend fun createEnvironment(request: CreateEnvironmentRequest): EnvironmentResponse {
+    override suspend fun createEnvironment(request: CreateEnvironmentRequest): EnvironmentProto {
         val tier = request.tier.takeIf { it.isNotBlank() }
             ?.let { EnvironmentTier.valueOf(it.uppercase()) } ?: EnvironmentTier.DEV
         val env = EnvironmentDocument(
@@ -90,8 +88,7 @@ class ServerEnvironmentGrpcImpl(
             agentInstructions = request.agentInstructions.takeIf { it.isNotBlank() },
             storageSizeGi = request.storageSizeGi.takeIf { it > 0 } ?: 5,
         )
-        val saved = environmentService.saveEnvironment(env)
-        return saved.toEnvironmentResponse()
+        return environmentService.saveEnvironment(env).toDto().toProto()
     }
 
     override suspend fun deleteEnvironment(request: DeleteEnvironmentRequest): DeleteEnvironmentResponse {
@@ -108,7 +105,7 @@ class ServerEnvironmentGrpcImpl(
         return DeleteEnvironmentResponse.newBuilder().setOk(true).build()
     }
 
-    override suspend fun addComponent(request: AddComponentRequest): EnvironmentResponse {
+    override suspend fun addComponent(request: AddComponentRequest): EnvironmentProto {
         val envId = EnvironmentId(ObjectId(request.environmentId))
         val env = environmentService.getEnvironmentById(envId)
         val componentType = ComponentType.valueOf(request.type.uppercase())
@@ -139,11 +136,11 @@ class ServerEnvironmentGrpcImpl(
             dockerfilePath = request.dockerfilePath.takeIf { it.isNotBlank() },
             startOrder = startOrder,
         )
-        val saved = environmentService.saveEnvironment(env.copy(components = env.components + component))
-        return saved.toEnvironmentResponse()
+        return environmentService.saveEnvironment(env.copy(components = env.components + component))
+            .toDto().toProto()
     }
 
-    override suspend fun configureComponent(request: ConfigureComponentRequest): EnvironmentResponse {
+    override suspend fun configureComponent(request: ConfigureComponentRequest): EnvironmentProto {
         val envId = EnvironmentId(ObjectId(request.environmentId))
         val env = environmentService.getEnvironmentById(envId)
         val componentIndex = env.components.indexOfFirst {
@@ -163,38 +160,33 @@ class ServerEnvironmentGrpcImpl(
             dockerfilePath = request.dockerfilePath.takeIf { it.isNotBlank() } ?: existing.dockerfilePath,
         )
         val updatedComponents = env.components.toMutableList().apply { set(componentIndex, updated) }
-        val saved = environmentService.saveEnvironment(env.copy(components = updatedComponents))
-        return saved.toEnvironmentResponse()
+        return environmentService.saveEnvironment(env.copy(components = updatedComponents))
+            .toDto().toProto()
     }
 
-    override suspend fun deployEnvironment(request: EnvironmentIdRequest): EnvironmentResponse {
-        val env = environmentK8sService.provisionEnvironment(EnvironmentId(ObjectId(request.environmentId)))
-        return env.toEnvironmentResponse()
-    }
+    override suspend fun deployEnvironment(request: EnvironmentIdRequest): EnvironmentProto =
+        environmentK8sService.provisionEnvironment(EnvironmentId(ObjectId(request.environmentId)))
+            .toDto().toProto()
 
-    override suspend fun stopEnvironment(request: EnvironmentIdRequest): EnvironmentResponse {
-        val env = environmentK8sService.deprovisionEnvironment(EnvironmentId(ObjectId(request.environmentId)))
-        return env.toEnvironmentResponse()
-    }
+    override suspend fun stopEnvironment(request: EnvironmentIdRequest): EnvironmentProto =
+        environmentK8sService.deprovisionEnvironment(EnvironmentId(ObjectId(request.environmentId)))
+            .toDto().toProto()
 
-    override suspend fun syncEnvironment(request: EnvironmentIdRequest): EnvironmentResponse {
-        val env = environmentK8sService.syncEnvironmentResources(EnvironmentId(ObjectId(request.environmentId)))
-        return env.toEnvironmentResponse()
-    }
+    override suspend fun syncEnvironment(request: EnvironmentIdRequest): EnvironmentProto =
+        environmentK8sService.syncEnvironmentResources(EnvironmentId(ObjectId(request.environmentId)))
+            .toDto().toProto()
 
-    override suspend fun getEnvironmentStatus(request: EnvironmentIdRequest): EnvironmentStatusResponse {
+    override suspend fun getEnvironmentStatus(request: EnvironmentIdRequest): EnvironmentStatusProto {
         val status = environmentK8sService.getEnvironmentStatus(EnvironmentId(ObjectId(request.environmentId)))
-        return EnvironmentStatusResponse.newBuilder()
-            .setBodyJson(json.encodeToString(EnvironmentStatusDto.serializer(), status))
-            .build()
+        return status.toProto()
     }
 
-    override suspend fun cloneEnvironment(request: CloneEnvironmentRequest): EnvironmentResponse {
+    override suspend fun cloneEnvironment(request: CloneEnvironmentRequest): EnvironmentProto {
         val newNamespace = request.newNamespace.takeIf { it.isNotBlank() }
             ?: request.newName.lowercase().replace(Regex("[^a-z0-9-]"), "-")
         val newTier = request.newTier.takeIf { it.isNotBlank() }
             ?.let { EnvironmentTier.valueOf(it.uppercase()) }
-        val cloned = environmentService.cloneEnvironment(
+        return environmentService.cloneEnvironment(
             sourceId = EnvironmentId(ObjectId(request.environmentId)),
             newName = request.newName,
             newNamespace = newNamespace,
@@ -202,11 +194,10 @@ class ServerEnvironmentGrpcImpl(
             targetGroupId = request.targetGroupId.takeIf { it.isNotBlank() }?.let { ProjectGroupId(ObjectId(it)) },
             targetProjectId = request.targetProjectId.takeIf { it.isNotBlank() }?.let { ProjectId(ObjectId(it)) },
             newTier = newTier,
-        )
-        return cloned.toEnvironmentResponse()
+        ).toDto().toProto()
     }
 
-    override suspend fun addPropertyMapping(request: AddPropertyMappingRequest): EnvironmentResponse {
+    override suspend fun addPropertyMapping(request: AddPropertyMappingRequest): EnvironmentProto {
         val envId = EnvironmentId(ObjectId(request.environmentId))
         val env = environmentService.getEnvironmentById(envId)
         val projectComp = env.components.find { it.id == request.projectComponentId }
@@ -225,8 +216,8 @@ class ServerEnvironmentGrpcImpl(
             targetComponentId = request.targetComponentId,
             valueTemplate = request.valueTemplate,
         )
-        val saved = environmentService.saveEnvironment(env.copy(propertyMappings = env.propertyMappings + mapping))
-        return saved.toEnvironmentResponse()
+        return environmentService.saveEnvironment(env.copy(propertyMappings = env.propertyMappings + mapping))
+            .toDto().toProto()
     }
 
     override suspend fun autoSuggestPropertyMappings(
@@ -258,24 +249,23 @@ class ServerEnvironmentGrpcImpl(
         }
         val saved = environmentService.saveEnvironment(env.copy(propertyMappings = newMappings))
         return AutoSuggestPropertyMappingsResponse.newBuilder()
-            .setBodyJson(json.encodeToString(EnvironmentDto.serializer(), saved.toDto()))
+            .setEnvironment(saved.toDto().toProto())
             .setMappingsAdded(addedCount)
             .build()
     }
 
-    override suspend fun discoverNamespace(request: DiscoverNamespaceRequest): EnvironmentResponse {
+    override suspend fun discoverNamespace(request: DiscoverNamespaceRequest): EnvironmentProto {
         val tier = request.tier.takeIf { it.isNotBlank() }
             ?.let { EnvironmentTier.valueOf(it.uppercase()) } ?: EnvironmentTier.DEV
-        val env = environmentK8sService.discoverFromNamespace(
+        return environmentK8sService.discoverFromNamespace(
             namespace = request.namespace,
             clientId = ClientId(ObjectId(request.clientId)),
             name = request.name.takeIf { it.isNotBlank() },
             tier = tier,
-        )
-        return env.toEnvironmentResponse()
+        ).toDto().toProto()
     }
 
-    override suspend fun replicateEnvironment(request: ReplicateEnvironmentRequest): EnvironmentResponse {
+    override suspend fun replicateEnvironment(request: ReplicateEnvironmentRequest): EnvironmentProto {
         val newNamespace = request.newNamespace.takeIf { it.isNotBlank() }
             ?: request.newName.lowercase().replace(Regex("[^a-z0-9-]"), "-")
         val newTier = request.newTier.takeIf { it.isNotBlank() }
@@ -287,61 +277,129 @@ class ServerEnvironmentGrpcImpl(
             targetClientId = request.targetClientId.takeIf { it.isNotBlank() }?.let { ClientId(ObjectId(it)) },
             newTier = newTier,
         )
-        val deployed = environmentK8sService.provisionEnvironment(cloned.id)
-        return deployed.toEnvironmentResponse()
+        return environmentK8sService.provisionEnvironment(cloned.id).toDto().toProto()
     }
 
-    override suspend fun syncFromK8s(request: EnvironmentIdRequest): EnvironmentResponse {
-        val env = environmentK8sService.syncFromK8s(EnvironmentId(ObjectId(request.environmentId)))
-        return env.toEnvironmentResponse()
-    }
+    override suspend fun syncFromK8s(request: EnvironmentIdRequest): EnvironmentProto =
+        environmentK8sService.syncFromK8s(EnvironmentId(ObjectId(request.environmentId)))
+            .toDto().toProto()
 
     override suspend fun listComponentTemplates(
         request: ListComponentTemplatesRequest,
-    ): ListComponentTemplatesResponse {
-        val templates = COMPONENT_DEFAULTS.map { (type, defaults) ->
-            mapOf(
-                "type" to type.name,
-                "versions" to defaults.versions.map { mapOf("label" to it.label, "image" to it.image) },
-                "defaultPorts" to defaults.ports.map {
-                    mapOf(
-                        "containerPort" to it.containerPort,
-                        "servicePort" to it.servicePort,
-                        "name" to it.name,
-                    )
-                },
-                "defaultEnvVars" to defaults.defaultEnvVars,
-                "defaultVolumeMountPath" to defaults.defaultVolumeMountPath,
-            )
-        }
-        val arr = buildJsonArray {
-            templates.forEach { template ->
-                add(buildJsonObject {
-                    template.forEach { (k, v) -> put(k, toJsonElement(v)) }
+    ): ComponentTemplateList {
+        val builder = ComponentTemplateList.newBuilder()
+        COMPONENT_DEFAULTS.forEach { (type, defaults) ->
+            val tmplBuilder = ComponentTemplateProto.newBuilder()
+                .setType(type.name)
+                .addAllVersions(defaults.versions.map {
+                    ComponentVersionProto.newBuilder()
+                        .setLabel(it.label)
+                        .setImage(it.image)
+                        .build()
                 })
+                .addAllDefaultPorts(defaults.ports.map { it.toProto() })
+                .putAllDefaultEnvVars(defaults.defaultEnvVars)
+                .setDefaultVolumeMountPath(defaults.defaultVolumeMountPath ?: "")
+            PROPERTY_MAPPING_TEMPLATES[type]?.forEach {
+                tmplBuilder.addPropertyMappingTemplates(
+                    PropertyMappingTemplateProto.newBuilder()
+                        .setEnvVarName(it.envVarName)
+                        .setValueTemplate(it.valueTemplate)
+                        .setDescription(it.description)
+                        .build(),
+                )
             }
+            builder.addItems(tmplBuilder.build())
         }
-        return ListComponentTemplatesResponse.newBuilder().setItemsJson(arr.toString()).build()
-    }
-
-    // ── Helpers ──
-
-    private fun EnvironmentDocument.toEnvironmentResponse(): EnvironmentResponse =
-        EnvironmentResponse.newBuilder()
-            .setBodyJson(json.encodeToString(EnvironmentDto.serializer(), toDto()))
-            .build()
-
-    private fun toJsonElement(value: Any?): JsonElement = when (value) {
-        null -> JsonNull
-        is String -> JsonPrimitive(value)
-        is Number -> JsonPrimitive(value)
-        is Boolean -> JsonPrimitive(value)
-        is Map<*, *> -> buildJsonObject {
-            value.forEach { (k, v) -> put(k.toString(), toJsonElement(v)) }
-        }
-        is List<*> -> buildJsonArray {
-            value.forEach { add(toJsonElement(it)) }
-        }
-        else -> JsonPrimitive(value.toString())
+        return builder.build()
     }
 }
+
+// ── DTO → proto converters ──────────────────────────────────────────────
+
+private fun EnvironmentDto.toProto(): EnvironmentProto {
+    val builder = EnvironmentProto.newBuilder()
+        .setId(id)
+        .setClientId(clientId)
+        .setGroupId(groupId ?: "")
+        .setProjectId(projectId ?: "")
+        .setName(name)
+        .setDescription(description ?: "")
+        .setTier(tier.name)
+        .setNamespace(namespace)
+        .setAgentInstructions(agentInstructions ?: "")
+        .setState(state.name)
+        .setStorageSizeGi(storageSizeGi)
+    components.forEach { builder.addComponents(it.toProto()) }
+    componentLinks.forEach { builder.addComponentLinks(it.toProto()) }
+    propertyMappings.forEach { builder.addPropertyMappings(it.toProto()) }
+    yamlManifests.forEach { (k, v) -> builder.putYamlManifests(k, v) }
+    return builder.build()
+}
+
+private fun EnvironmentComponentDto.toProto(): EnvironmentComponentProto {
+    val builder = EnvironmentComponentProto.newBuilder()
+        .setId(id)
+        .setName(name)
+        .setType(type.name)
+        .setImage(image ?: "")
+        .setProjectId(projectId ?: "")
+        .setCpuLimit(cpuLimit ?: "")
+        .setMemoryLimit(memoryLimit ?: "")
+        .setAutoStart(autoStart)
+        .setStartOrder(startOrder)
+        .setHealthCheckPath(healthCheckPath ?: "")
+        .setVolumeMountPath(volumeMountPath ?: "")
+        .setSourceRepo(sourceRepo ?: "")
+        .setSourceBranch(sourceBranch ?: "")
+        .setDockerfilePath(dockerfilePath ?: "")
+        .setDeploymentYaml(deploymentYaml ?: "")
+        .setServiceYaml(serviceYaml ?: "")
+        .setComponentState(componentState.name)
+    ports.forEach { builder.addPorts(it.toProto()) }
+    envVars.forEach { (k, v) -> builder.putEnvVars(k, v) }
+    configMapData.forEach { (k, v) -> builder.putConfigMapData(k, v) }
+    return builder.build()
+}
+
+private fun PortMappingDto.toProto(): PortMappingProto =
+    PortMappingProto.newBuilder()
+        .setContainerPort(containerPort)
+        .setServicePort(servicePort ?: 0)
+        .setName(name)
+        .build()
+
+private fun ComponentLinkDto.toProto(): ComponentLinkProto =
+    ComponentLinkProto.newBuilder()
+        .setSourceComponentId(sourceComponentId)
+        .setTargetComponentId(targetComponentId)
+        .setDescription(description)
+        .build()
+
+private fun PropertyMappingDto.toProto(): PropertyMappingProto =
+    PropertyMappingProto.newBuilder()
+        .setProjectComponentId(projectComponentId)
+        .setPropertyName(propertyName)
+        .setTargetComponentId(targetComponentId)
+        .setValueTemplate(valueTemplate)
+        .setResolvedValue(resolvedValue ?: "")
+        .build()
+
+private fun EnvironmentStatusDto.toProto(): EnvironmentStatusProto =
+    EnvironmentStatusProto.newBuilder()
+        .setEnvironmentId(environmentId)
+        .setNamespace(namespace)
+        .setState(state.name)
+        .addAllComponentStatuses(componentStatuses.map { it.toProto() })
+        .build()
+
+private fun ComponentStatusDto.toProto(): ComponentStatusProto =
+    ComponentStatusProto.newBuilder()
+        .setComponentId(componentId)
+        .setName(name)
+        .setReady(ready)
+        .setReplicas(replicas)
+        .setAvailableReplicas(availableReplicas)
+        .setMessage(message ?: "")
+        .build()
+
