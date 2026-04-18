@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package jervis.orchestrator;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.orchestrator";
+option java_multiple_files = true;
+option java_outer_classname = "OrchestratorJobLogsProto";
+
+// OrchestratorJobLogsService — live K8s Job pod log streaming.
+// Replaces the former FastAPI GET /job-logs/{task_id} SSE endpoint.
+// The Kotlin server's kRPC JobLogsRpcImpl dials StreamLogs and
+// forwards the JobLogEvent flow to the UI.
+service OrchestratorJobLogsService {
+  rpc StreamLogs(JobLogsRequest) returns (stream JobLogEvent);
+}
+
+message JobLogsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+}
+
+message JobLogEvent {
+  string type = 1;                     // "text" | "tool" | "error" | "done"
+  string content = 2;
+  string tool = 3;                     // optional tool name for "tool" events
+}

@@ -23,6 +23,7 @@ from jervis.orchestrator import companion_pb2, companion_pb2_grpc
 from jervis.orchestrator import control_pb2, control_pb2_grpc
 from jervis.orchestrator import dispatch_pb2, dispatch_pb2_grpc
 from jervis.orchestrator import graph_pb2, graph_pb2_grpc
+from jervis.orchestrator import job_logs_pb2, job_logs_pb2_grpc
 from jervis.orchestrator import meeting_helper_pb2, meeting_helper_pb2_grpc
 from jervis.orchestrator import voice_pb2, voice_pb2_grpc
 from jervis_contracts.interceptors import ServerContextInterceptor
@@ -1204,6 +1205,71 @@ class OrchestratorMeetingHelperServicer(
         )
 
 
+class OrchestratorJobLogsServicer(
+    job_logs_pb2_grpc.OrchestratorJobLogsServiceServicer,
+):
+    """OrchestratorJobLogsService — server-streaming K8s pod logs for a
+    CODING task. Replaces the legacy /job-logs/{task_id} SSE route.
+    """
+
+    async def StreamLogs(
+        self,
+        request: job_logs_pb2.JobLogsRequest,
+        context: grpc.aio.ServicerContext,
+    ):
+        from app.agents.job_runner import job_runner
+        from app.grpc_server_client import server_task_api_stub
+        from jervis.common import types_pb2 as _types_pb2
+        from jervis.server import task_api_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        task_id = request.task_id or ""
+        if not task_id:
+            yield job_logs_pb2.JobLogEvent(type="error", content="task_id required")
+            return
+
+        ctx = _types_pb2.RequestContext()
+        prepare_context(ctx)
+        try:
+            resp = await server_task_api_stub().GetTask(
+                task_api_pb2.TaskIdRequest(ctx=ctx, task_id=task_id),
+                timeout=10.0,
+            )
+            if not resp.ok:
+                yield job_logs_pb2.JobLogEvent(type="error", content="Task not found")
+                return
+        except Exception as e:
+            yield job_logs_pb2.JobLogEvent(type="error", content=f"Failed to fetch task: {e}")
+            return
+
+        job_name = resp.agent_job_name or ""
+        if not job_name:
+            yield job_logs_pb2.JobLogEvent(type="error", content="Task has no agentJobName")
+            return
+
+        try:
+            async for sse_line in job_runner.stream_job_logs_sse(job_name):
+                # sse_line format: `data: {"type":"text","content":"…"}\n\n`
+                if not sse_line or not sse_line.startswith("data:"):
+                    continue
+                payload = sse_line.removeprefix("data:").strip()
+                if not payload:
+                    continue
+                try:
+                    obj = json.loads(payload)
+                except Exception:
+                    continue
+                yield job_logs_pb2.JobLogEvent(
+                    type=str(obj.get("type") or "text"),
+                    content=str(obj.get("content") or ""),
+                    tool=str(obj.get("tool") or ""),
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            yield job_logs_pb2.JobLogEvent(type="error", content=f"Log stream failed: {e}")
+
+
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for cleanup."""
     max_msg_bytes = 64 * 1024 * 1024
@@ -1235,6 +1301,9 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     meeting_helper_pb2_grpc.add_OrchestratorMeetingHelperServiceServicer_to_server(
         OrchestratorMeetingHelperServicer(), server,
     )
+    job_logs_pb2_grpc.add_OrchestratorJobLogsServiceServicer_to_server(
+        OrchestratorJobLogsServicer(), server,
+    )
 
     service_names = (
         control_pb2.DESCRIPTOR.services_by_name["OrchestratorControlService"].full_name,
@@ -1244,6 +1313,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
         chat_pb2.DESCRIPTOR.services_by_name["OrchestratorChatService"].full_name,
         voice_pb2.DESCRIPTOR.services_by_name["OrchestratorVoiceService"].full_name,
         meeting_helper_pb2.DESCRIPTOR.services_by_name["OrchestratorMeetingHelperService"].full_name,
+        job_logs_pb2.DESCRIPTOR.services_by_name["OrchestratorJobLogsService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
@@ -1252,7 +1322,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     await server.start()
     logger.info(
         "gRPC orchestrator services listening on :%d "
-        "(Control + Graph + Dispatch + Companion + Chat + Voice + MeetingHelper)",
+        "(Control + Graph + Dispatch + Companion + Chat + Voice + MeetingHelper + JobLogs)",
         port,
     )
     return server

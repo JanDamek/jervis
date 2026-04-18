@@ -46,7 +46,8 @@ from app.context.session_memory import session_memory_store
 from app.monitoring.delegation_metrics import metrics_collector
 from app.tools.kotlin_client import kotlin_client
 from app.chat.context import chat_context_assembler
-from app.chat.router import router as chat_router
+# app.chat.router retired — /chat, /orchestrate, /qualify, /job-logs + the
+# two /internal/* chat-context routes are all on gRPC now.
 from app.logging_utils import LocalTimeFormatter
 
 # Configure logging with local timezone
@@ -281,10 +282,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Register chat context router (prepare-chat-context, compress-chat endpoints)
-app.include_router(chat_router)
-
-# Meeting helper migrated to gRPC (OrchestratorMeetingHelperService) — no REST routes.
+# Chat + meeting helper + job logs all on gRPC now — no REST routers registered.
 
 # Register proactive communication router (scheduled triggers)
 from app.proactive.routes import router as proactive_router
