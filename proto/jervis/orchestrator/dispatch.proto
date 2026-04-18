@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package jervis.orchestrator;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.orchestrator";
+option java_multiple_files = true;
+option java_outer_classname = "OrchestratorDispatchProto";
+
+// OrchestratorDispatchService — fire-and-forget entry points for the
+// orchestrator's long-running flows (qualify + orchestrate).
+//
+// Both RPCs accept the full legacy JSON request body inline so the Kotlin
+// QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
+// these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
+// environment JsonObject, and flattening them into a proto message would
+// duplicate every Pydantic model Python side while adding no contract
+// value (consumers already enforce schema at the DTO layer).
+//
+// Response stays typed: thread_id + status. Progress + completion flow
+// back via the Phase-1 ServerOrchestratorCallbackService callbacks.
+service OrchestratorDispatchService {
+  rpc Qualify(DispatchRequest) returns (DispatchAck);
+  rpc Orchestrate(DispatchRequest) returns (DispatchAck);
+}
+
+message DispatchRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  // JSON-encoded QualifyRequestDto / OrchestrateRequestDto — server-side
+  // parses with the existing Pydantic models (Qualify and Orchestrate
+  // FastAPI handlers used to accept the same JSON via `request.json()`).
+  string payload_json = 3;
+}
+
+message DispatchAck {
+  string status = 1;         // "accepted" | "busy" | "error"
+  string thread_id = 2;
+  string detail = 3;         // error details when status=error
+}

@@ -96,6 +96,7 @@ class PythonOrchestratorClient(
     baseUrl: String,
     private val controlGrpc: com.jervis.infrastructure.grpc.OrchestratorControlGrpcClient? = null,
     private val graphGrpc: com.jervis.infrastructure.grpc.OrchestratorGraphGrpcClient? = null,
+    private val dispatchGrpc: com.jervis.infrastructure.grpc.OrchestratorDispatchGrpcClient? = null,
 ) {
 
     private val apiBaseUrl = baseUrl.trimEnd('/')
@@ -106,6 +107,9 @@ class PythonOrchestratorClient(
 
     private fun graphGrpcOrThrow(): com.jervis.infrastructure.grpc.OrchestratorGraphGrpcClient =
         graphGrpc ?: error("OrchestratorGraphGrpcClient not wired — see RpcClientsConfig")
+
+    private fun dispatchGrpcOrThrow(): com.jervis.infrastructure.grpc.OrchestratorDispatchGrpcClient =
+        dispatchGrpc ?: error("OrchestratorDispatchGrpcClient not wired — see RpcClientsConfig")
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -284,16 +288,17 @@ class PythonOrchestratorClient(
     suspend fun qualify(request: QualifyRequestDto): QualifyResponseDto? {
         logger.info { "PYTHON_QUALIFY_START: taskId=${request.taskId}" }
         return try {
-            val response = client.post("$apiBaseUrl/qualify") {
-                contentType(ContentType.Application.Json)
-                setBody(request)
-            }
-            if (response.status.value == 200) {
-                circuitBreaker.recordSuccess()
-                response.body()
-            } else {
-                logger.warn { "PYTHON_QUALIFY_FAIL: status=${response.status}" }
-                null
+            val payloadJson = Json.encodeToString(QualifyRequestDto.serializer(), request)
+            val ack = dispatchGrpcOrThrow().qualify(request.taskId, request.clientId, payloadJson)
+            when (ack.status) {
+                "accepted" -> {
+                    circuitBreaker.recordSuccess()
+                    QualifyResponseDto(threadId = ack.threadId)
+                }
+                else -> {
+                    logger.warn { "PYTHON_QUALIFY_FAIL: status=${ack.status} detail=${ack.detail}" }
+                    null
+                }
             }
         } catch (e: Exception) {
             logger.error(e) { "PYTHON_QUALIFY_ERROR: taskId=${request.taskId}" }
@@ -317,16 +322,24 @@ class PythonOrchestratorClient(
     suspend fun orchestrate(request: OrchestrateRequestDto): StreamStartResponseDto? {
         logger.info { "PYTHON_ORCHESTRATE_START: taskId=${request.taskId}" }
         return try {
-            val response = client.post("$apiBaseUrl/orchestrate") {
-                contentType(ContentType.Application.Json)
-                setBody(request)
+            val payloadJson = Json.encodeToString(OrchestrateRequestDto.serializer(), request)
+            val ack = dispatchGrpcOrThrow().orchestrate(request.taskId, request.clientId, payloadJson)
+            when (ack.status) {
+                "busy" -> {
+                    logger.info { "PYTHON_ORCHESTRATE_BUSY: orchestrator rejected, skipping dispatch" }
+                    null
+                }
+                "accepted" -> {
+                    circuitBreaker.recordSuccess()
+                    StreamStartResponseDto(threadId = ack.threadId)
+                }
+                else -> {
+                    circuitBreaker.recordFailure()
+                    throw RuntimeException("Orchestrate dispatch failed: ${ack.detail}")
+                }
             }
-            if (response.status.value == 429) {
-                logger.info { "PYTHON_ORCHESTRATE_BUSY: orchestrator returned 429, skipping dispatch" }
-                return null
-            }
-            circuitBreaker.recordSuccess()
-            response.body()
+        } catch (e: RuntimeException) {
+            throw e
         } catch (e: Exception) {
             circuitBreaker.recordFailure()
             throw e

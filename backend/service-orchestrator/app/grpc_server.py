@@ -19,6 +19,7 @@ import grpc
 from grpc_reflection.v1alpha import reflection
 
 from jervis.orchestrator import control_pb2, control_pb2_grpc
+from jervis.orchestrator import dispatch_pb2, dispatch_pb2_grpc
 from jervis.orchestrator import graph_pb2, graph_pb2_grpc
 from jervis_contracts.interceptors import ServerContextInterceptor
 
@@ -357,6 +358,196 @@ class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer)
         )
 
 
+class OrchestratorDispatchServicer(dispatch_pb2_grpc.OrchestratorDispatchServiceServicer):
+    """OrchestratorDispatchService — fire-and-forget dispatch RPCs.
+
+    Both handlers reuse the existing chat/router.py background closures
+    (handle_background, handle_qualification) so dispatch semantics stay
+    byte-for-byte identical to the FastAPI routes (thread_id generation,
+    asyncio.create_task + _active_tasks lifecycle, kotlin_client progress
+    callbacks, interrupt detection).
+    """
+
+    async def Qualify(
+        self,
+        request: dispatch_pb2.DispatchRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> dispatch_pb2.DispatchAck:
+        import uuid as _uuid
+
+        from app import main as orch_main
+        from app.tools.kotlin_client import kotlin_client
+        from app.unified.qualification_handler import QualifyRequest, handle_qualification
+
+        try:
+            payload = json.loads(request.payload_json) if request.payload_json else {}
+            qualify_request = QualifyRequest(**payload)
+        except Exception as e:
+            logger.error("QUALIFY_VALIDATION_FAILED: %s | keys=%s", e, list((payload or {}).keys()))
+            return dispatch_pb2.DispatchAck(status="error", thread_id="", detail=f"Invalid qualify request: {e}")
+
+        thread_id = f"qual-{qualify_request.task_id}-{_uuid.uuid4().hex[:8]}"
+        logger.info(
+            "QUALIFY_START | task_id=%s | thread_id=%s",
+            qualify_request.task_id, thread_id,
+        )
+
+        async def _run_qualification():
+            try:
+                result = await handle_qualification(qualify_request)
+                await kotlin_client.report_qualification_done(
+                    task_id=qualify_request.task_id,
+                    client_id=qualify_request.client_id,
+                    decision=result.get("decision", "QUEUED"),
+                    priority_score=result.get("priority_score", 5),
+                    reason=result.get("reason", ""),
+                    alert_message=result.get("alert_message"),
+                    target_task_id=result.get("target_task_id"),
+                    context_summary=result.get("context_summary", ""),
+                    suggested_approach=result.get("suggested_approach", ""),
+                    action_type=result.get("action_type", ""),
+                    estimated_complexity=result.get("estimated_complexity", ""),
+                    pending_user_question=result.get("pending_user_question"),
+                    user_question_context=result.get("user_question_context"),
+                    sub_tasks=result.get("sub_tasks"),
+                )
+            except Exception as e:
+                logger.exception("Qualification failed: %s", e)
+                await kotlin_client.report_qualification_done(
+                    task_id=qualify_request.task_id,
+                    client_id=qualify_request.client_id,
+                    decision="QUEUED",
+                    priority_score=5,
+                    reason=f"Qualification error: {e!s}"[:500],
+                )
+            finally:
+                orch_main._active_tasks.pop(thread_id, None)
+
+        task = asyncio.create_task(_run_qualification())
+        orch_main._active_tasks[thread_id] = task
+        return dispatch_pb2.DispatchAck(status="accepted", thread_id=thread_id)
+
+    async def Orchestrate(
+        self,
+        request: dispatch_pb2.DispatchRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> dispatch_pb2.DispatchAck:
+        import uuid as _uuid
+
+        from app import main as orch_main
+        from app.background.handler import handle_background
+        from app.models import OrchestrateRequest
+        from app.tools.kotlin_client import kotlin_client
+
+        try:
+            payload = json.loads(request.payload_json) if request.payload_json else {}
+            orchestrate_request = OrchestrateRequest(**payload)
+        except Exception as e:
+            return dispatch_pb2.DispatchAck(status="error", thread_id="", detail=f"Invalid orchestrate request: {e}")
+
+        thread_id = f"graph-{orchestrate_request.task_id}-{_uuid.uuid4().hex[:8]}"
+        logger.info(
+            "ORCHESTRATE_START | task_id=%s | thread_id=%s",
+            orchestrate_request.task_id, thread_id,
+        )
+
+        async def _run_background():
+            try:
+                result = await handle_background(orchestrate_request, thread_id=thread_id)
+
+                if result.get("requeue"):
+                    logger.info(
+                        "ORCHESTRATE_REQUEUED | task_id=%s | thread=%s — job limit, will retry later",
+                        orchestrate_request.task_id, thread_id,
+                    )
+                    return
+
+                if result.get("coding_dispatched"):
+                    logger.info(
+                        "CODING_DISPATCHED | task_id=%s | job=%s | thread=%s",
+                        orchestrate_request.task_id, result.get("job_name"), thread_id,
+                    )
+                    return
+
+                if result.get("blocked"):
+                    logger.info(
+                        "ORCHESTRATE_BLOCKED | task_id=%s | thread=%s — graph has BLOCKED vertices",
+                        orchestrate_request.task_id, thread_id,
+                    )
+                    await kotlin_client.report_status_change(
+                        task_id=orchestrate_request.task_id,
+                        thread_id=thread_id,
+                        status="interrupted",
+                        interrupt_action="clarify",
+                        interrupt_description=result.get(
+                            "summary", "Graph paused — vertices waiting for user input",
+                        ),
+                    )
+                    return
+
+                if not result.get("summary") and not result.get("success", True):
+                    try:
+                        from app.agent.langgraph_runner import _get_compiled_graph
+
+                        compiled = _get_compiled_graph()
+                        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
+                        graph_state = await compiled.aget_state(config)
+                        if graph_state and graph_state.next and graph_state.tasks:
+                            for task_item in graph_state.tasks:
+                                if hasattr(task_item, "interrupts") and task_item.interrupts:
+                                    interrupt_data = task_item.interrupts[0].value
+                                    await kotlin_client.report_status_change(
+                                        task_id=orchestrate_request.task_id,
+                                        thread_id=thread_id,
+                                        status="interrupted",
+                                        interrupt_action=interrupt_data.get("action", "clarify"),
+                                        interrupt_description=interrupt_data.get("description", ""),
+                                    )
+                                    logger.info(
+                                        "ORCHESTRATE_ASK_USER | thread_id=%s | action=%s",
+                                        thread_id, interrupt_data.get("action"),
+                                    )
+                                    return
+                    except Exception as e:
+                        logger.debug("Interrupt check failed (non-fatal): %s", e)
+
+                await kotlin_client.report_status_change(
+                    task_id=orchestrate_request.task_id,
+                    thread_id=thread_id,
+                    status="done",
+                    summary=result.get("summary", ""),
+                    branch=result.get("branch"),
+                    artifacts=result.get("artifacts", []),
+                    keep_environment_running=result.get("keep_environment_running", False),
+                )
+
+                try:
+                    from app.chat.thinking_graph import handle_vertex_result
+
+                    await handle_vertex_result(
+                        orchestrate_request.task_id,
+                        result.get("summary", ""),
+                    )
+                except Exception as e:
+                    logger.debug("Thinking map vertex update (non-fatal): %s", e)
+            except asyncio.CancelledError:
+                logger.info("ORCHESTRATE_INTERRUPTED | thread_id=%s — preempted by foreground", thread_id)
+            except Exception as e:
+                logger.exception("Background v2 failed: %s", e)
+                await kotlin_client.report_status_change(
+                    task_id=orchestrate_request.task_id,
+                    thread_id=thread_id,
+                    status="error",
+                    error=str(e),
+                )
+            finally:
+                orch_main._active_tasks.pop(thread_id, None)
+
+        task = asyncio.create_task(_run_background())
+        orch_main._active_tasks[thread_id] = task
+        return dispatch_pb2.DispatchAck(status="accepted", thread_id=thread_id)
+
+
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for cleanup."""
     max_msg_bytes = 64 * 1024 * 1024
@@ -373,10 +564,14 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     graph_pb2_grpc.add_OrchestratorGraphServiceServicer_to_server(
         OrchestratorGraphServicer(), server,
     )
+    dispatch_pb2_grpc.add_OrchestratorDispatchServiceServicer_to_server(
+        OrchestratorDispatchServicer(), server,
+    )
 
     service_names = (
         control_pb2.DESCRIPTOR.services_by_name["OrchestratorControlService"].full_name,
         graph_pb2.DESCRIPTOR.services_by_name["OrchestratorGraphService"].full_name,
+        dispatch_pb2.DESCRIPTOR.services_by_name["OrchestratorDispatchService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
@@ -384,7 +579,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     server.add_insecure_port(f"[::]:{port}")
     await server.start()
     logger.info(
-        "gRPC orchestrator services listening on :%d (Control + Graph)",
+        "gRPC orchestrator services listening on :%d (Control + Graph + Dispatch)",
         port,
     )
     return server
