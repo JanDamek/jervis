@@ -347,13 +347,40 @@ Per user directive: **router a server jsou základ, vše ostatní na tom staví.
   call through `jervis_contracts.kb_client`, which owns a single
   process-wide gRPC channel + lazy stubs.
 
-**Phase 3 — orchestrator surface**
+**Phase 3 — orchestrator surface** — 🔸 *mostly landed (voice cutover pending)*
 
-- `proto/jervis/orchestrator/*.proto`.
-- Kotlin: `PythonOrchestratorClient.kt`, `PythonChatClient.kt`, `OrchestratorCompanionClient.kt` deleted.
-- Python: `service-orchestrator/app/main.py` + `app/chat/router.py` + `app/voice/…` + `app/companion/routes.py` switch to gRPC.
-- Streaming: `OrchestratorService.Orchestrate` replaces the push-back pattern. The `ServerOrchestratorCallbackService` from Phase 1 is kept as a fallback but consumers start preferring the stream.
-- **Exit criteria**: chat UI still streams tokens; orchestrator task flow unchanged; voice still works; companion session streaming still works.
+Six servicers land on the orchestrator's gRPC :5501:
+- `OrchestratorControlService` — Health, GetStatus, Approve, Cancel, Interrupt
+- `OrchestratorGraphService` — GetTaskGraph (JSON), RunMaintenance
+- `OrchestratorDispatchService` — Qualify, Orchestrate (payload_json for the ~30 request fields)
+- `OrchestratorCompanionService` — Adhoc, AdhocStatus, StartSession, SessionEvent, StopSession, StreamSession
+- `OrchestratorChatService` — Chat (server-streaming ChatEvent), ApproveAction, Stop
+- `OrchestratorVoiceService` — Process (server-streaming), Hint
+
+Phase 3 slice ledger:
+
+| # | Merge | Servicer / RPCs | Consumer scope |
+|---|-------|-----------------|----------------|
+| 14 | `151e4fa` | Control (Health/GetStatus/Approve/Cancel/Interrupt) | Kotlin PythonOrchestratorClient |
+| 15 | `f60bfb2` | Graph (GetTaskGraph, RunMaintenance) | Kotlin PythonOrchestratorClient + BackgroundEngine |
+| 16 | `8c50716` | Dispatch (Qualify, Orchestrate) | Kotlin PythonOrchestratorClient |
+| 17 | `08bcb88` | Companion (Adhoc/AdhocStatus/StartSession/SessionEvent/StopSession/StreamSession) | Kotlin OrchestratorCompanionClient |
+| 18 | `7d3d21d` | Chat (Chat stream / ApproveAction / Stop) | Kotlin PythonChatClient |
+| 19 | `9a039bd` | Voice (Process stream / Hint) — *infrastructure only, REST kept live* | OrchestratorVoiceGrpcClient added; rpc/VoiceChatRouting + voice/VoiceWebSocketHandler cutover pending |
+
+FastAPI routes still live (Phase 3 follow-up cutover):
+- `/voice/process`, `/voice/hint` — 6 + 1 inline sites in Kotlin voice handlers
+
+Removed in Phase 3:
+- `/health`, `/status/{thread_id}`, `/approve/{thread_id}`, `/interrupt/{thread_id}`,
+  `/cancel/{thread_id}`, `/graph/{task_id}`, `/maintenance/run`, `/qualify`, `/orchestrate`,
+  `/companion/*` (6 routes), `/chat`, `/chat/stop`, `/chat/approve`.
+
+- **Exit criteria** (when the follow-up voice slice lands): every Kotlin
+  → orchestrator call flows over gRPC; FastAPI keeps only the K8s
+  liveness-probe stub + still-useful internal helpers
+  (`prepare-chat-context`, `compress-chat-async`, `meeting/*`,
+  `proactive/*`) until a dedicated slice moves them.
 
 **Phase 4 — whisper + correction + document-extraction + tts + visual-capture**
 
