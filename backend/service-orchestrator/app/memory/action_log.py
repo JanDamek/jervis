@@ -61,37 +61,33 @@ async def log_action(
     if artifact_ids:
         content += f"**Artifacts:** {', '.join(artifact_ids)}\n"
 
-    kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
-    url = f"{kb_write_url}/api/v1/ingest"
+    from jervis_contracts import kb_client
 
-    payload = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "sourceUrn": source_urn,
-        "kind": "action_log",
-        "content": content,
-        "metadata": {
-            "action": action,
-            "description": description,
-            "result": result,
-            "timestamp": timestamp,
-            "relatedTaskId": related_task_id,
-            "artifactIds": artifact_ids or [],
-            "category": "action_log",
-        },
+    metadata = {
+        "action": action,
+        "description": description,
+        "result": result,
+        "timestamp": timestamp,
+        "relatedTaskId": related_task_id or "",
+        "artifactIds": ",".join(artifact_ids or []),
+        "category": "action_log",
     }
-
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(url, json=payload)
-            if resp.status_code == 200:
-                logger.info(
-                    "ACTION_LOG | action=%s | client=%s | project=%s",
-                    action, client_id, project_id,
-                )
-                return True
-            logger.warning("ACTION_LOG failed: HTTP %s", resp.status_code)
-            return False
+        await kb_client.ingest(
+            caller="orchestrator.memory.action_log",
+            source_urn=source_urn,
+            content=content,
+            client_id=client_id,
+            project_id=project_id or "",
+            kind="action_log",
+            metadata=metadata,
+            timeout=5.0,
+        )
+        logger.info(
+            "ACTION_LOG | action=%s | client=%s | project=%s",
+            action, client_id, project_id,
+        )
+        return True
     except Exception as e:
         logger.debug("ACTION_LOG failed: %s", e)
         return False

@@ -1023,28 +1023,22 @@ async def _drain_global_lqm() -> int:
     if not writes:
         return 0
 
-    kb_url = settings.knowledgebase_write_url or settings.knowledgebase_url
-    if not kb_url:
-        return 0
+    from jervis_contracts import kb_client
 
     count = 0
     for write in writes:
         try:
-            async with httpx.AsyncClient(timeout=10) as http:
-                resp = await http.post(
-                    f"{kb_url}/api/v1/ingest",
-                    json={
-                        "sourceUrn": write.source_urn,
-                        "clientId": write.metadata.get("client_id", ""),
-                        "content": write.content,
-                        "kind": write.kind,
-                        "metadata": write.metadata,
-                    },
-                    headers={"X-Ollama-Priority": "1"},
-                )
-                if resp.status_code in (200, 201, 202):
-                    lqm.mark_synced(write.source_urn)
-                    count += 1
+            await kb_client.ingest(
+                caller="orchestrator.main.flush_write_buffer",
+                source_urn=write.source_urn,
+                content=write.content,
+                client_id=write.metadata.get("client_id", ""),
+                kind=write.kind,
+                metadata={str(k): v for k, v in (write.metadata or {}).items()},
+                timeout=10.0,
+            )
+            lqm.mark_synced(write.source_urn)
+            count += 1
         except Exception:
             pass
     return count

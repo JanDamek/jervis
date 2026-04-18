@@ -124,6 +124,101 @@ def build_request_context(caller: str, client_id: str = "") -> types_pb2.Request
     return ctx
 
 
+def _ingest_request(
+    *,
+    caller: str,
+    client_id: str,
+    project_id: str,
+    group_id: str,
+    source_urn: str,
+    kind: str,
+    content: str,
+    metadata: Optional[dict],
+    observed_at_iso: str,
+    max_tier: str,
+    credibility: str,
+    branch_scope: str,
+    branch_role: str,
+):
+    from jervis.knowledgebase import ingest_pb2
+
+    return ingest_pb2.IngestRequest(
+        ctx=build_request_context(caller=caller, client_id=client_id),
+        client_id=client_id,
+        project_id=project_id,
+        group_id=group_id,
+        source_urn=source_urn,
+        kind=kind,
+        content=content,
+        metadata={str(k): str(v) for k, v in (metadata or {}).items()},
+        observed_at_iso=observed_at_iso,
+        max_tier=max_tier,
+        credibility=credibility,
+        branch_scope=branch_scope,
+        branch_role=branch_role,
+    )
+
+
+def _ingest_result_to_dict(result) -> dict:
+    return {
+        "status": result.status,
+        "chunks_count": result.chunks_count,
+        "nodes_created": result.nodes_created,
+        "edges_created": result.edges_created,
+        "chunk_ids": list(result.chunk_ids),
+        "entity_keys": list(result.entity_keys),
+    }
+
+
+async def ingest(
+    *,
+    caller: str,
+    source_urn: str,
+    content: str,
+    client_id: str = "",
+    project_id: str = "",
+    group_id: str = "",
+    kind: str = "note",
+    metadata: Optional[dict] = None,
+    observed_at_iso: str = "",
+    max_tier: str = "NONE",
+    credibility: str = "",
+    branch_scope: str = "",
+    branch_role: str = "",
+    immediate: bool = False,
+    queue: bool = False,
+    timeout: float = 60.0,
+) -> dict:
+    """Dial KnowledgeIngestService.{Ingest,IngestImmediate,IngestQueue}.
+
+    - queue=True → fire-and-forget; returns {'status': 'accepted', ...}.
+    - immediate=True → synchronous RAG + LLM extraction.
+    - default → async LLM extraction (RAG synchronous, extraction queued).
+    """
+    stub = ingest_stub()
+    req = _ingest_request(
+        caller=caller,
+        client_id=client_id,
+        project_id=project_id,
+        group_id=group_id,
+        source_urn=source_urn,
+        kind=kind,
+        content=content,
+        metadata=metadata,
+        observed_at_iso=observed_at_iso,
+        max_tier=max_tier,
+        credibility=credibility,
+        branch_scope=branch_scope,
+        branch_role=branch_role,
+    )
+    if queue:
+        ack = await stub.IngestQueue(req, timeout=timeout)
+        return {"status": "accepted" if ack.ok else "error", "queue_id": ack.queue_id}
+    if immediate:
+        return _ingest_result_to_dict(await stub.IngestImmediate(req, timeout=timeout))
+    return _ingest_result_to_dict(await stub.Ingest(req, timeout=timeout))
+
+
 async def retrieve(
     *,
     caller: str,

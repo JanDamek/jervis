@@ -96,29 +96,13 @@ class KnowledgeServiceRestClient(
 
     override suspend fun ingest(request: IngestRequest): IngestResult {
         logger.debug { "Calling knowledgebase ingest: sourceUrn=${request.sourceUrn}" }
-
-        val pythonRequest = PythonIngestRequest(
-            clientId = request.clientId.toString(),
-            projectId = request.projectId?.toString(),
-            groupId = request.groupId,
-            sourceUrn = request.sourceUrn.toString(),
-            kind = request.kind,
-            content = request.content,
-            metadata = request.metadata.mapValues { it.value.toString() },
-            observedAt = DateTimeFormatter.ISO_INSTANT.format(request.observedAt),
-        )
-
         return try {
-            val response: PythonIngestResult = client.post("$apiBaseUrl/ingest") {
-                contentType(ContentType.Application.Json)
-                setBody(pythonRequest)
-            }.body()
-
+            val proto = ingestGrpc().ingest(request)
             IngestResult(
-                success = response.status == "success",
-                summary = "Ingested ${response.chunksCount} chunks, created ${response.nodesCreated} nodes and ${response.edgesCreated} edges",
+                success = proto.status == "success",
+                summary = "Ingested ${proto.chunksCount} chunks, created ${proto.nodesCreated} nodes and ${proto.edgesCreated} edges",
                 ingestedNodes = emptyList(),
-                error = if (response.status != "success") response.status else null,
+                error = if (proto.status != "success") proto.status else null,
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to ingest to knowledgebase: ${e.message}" }
@@ -804,32 +788,7 @@ data class TextExtractionResult(
     val error: String? = null,
 )
 
-// Python API DTOs (internal)
-
-@Serializable
-private data class PythonIngestRequest(
-    val clientId: String,
-    val projectId: String? = null,
-    val groupId: String? = null,
-    val sourceUrn: String,
-    val kind: String = "",
-    val content: String,
-    val metadata: Map<String, String> = emptyMap(),
-    val observedAt: String,
-    val maxTier: String = "NONE",
-)
-
-@Serializable
-private data class PythonIngestResult(
-    val status: String,
-    @SerialName("chunks_count")
-    val chunksCount: Int,
-    @SerialName("nodes_created")
-    val nodesCreated: Int,
-    @SerialName("edges_created")
-    val edgesCreated: Int,
-)
-
+// Ingest DTOs moved to gRPC (KbIngestGrpcClient.ingest).
 // Retrieval DTOs moved to gRPC (KbRetrieveGrpcClient).
 
 // Traversal + graph DTOs moved to gRPC (KbGraphGrpcClient).

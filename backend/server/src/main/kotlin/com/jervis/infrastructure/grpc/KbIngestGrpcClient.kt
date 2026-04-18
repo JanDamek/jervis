@@ -13,10 +13,13 @@ import com.jervis.contracts.knowledgebase.GitFileContent
 import com.jervis.contracts.knowledgebase.GitFileInfo
 import com.jervis.contracts.knowledgebase.GitStructureIngestRequest as ProtoGitStructureIngestRequest
 import com.jervis.contracts.knowledgebase.GitStructureIngestResult
+import com.jervis.contracts.knowledgebase.IngestRequest as ProtoIngestRequest
+import com.jervis.contracts.knowledgebase.IngestResult
 import com.jervis.contracts.knowledgebase.KnowledgeIngestServiceGrpcKt
 import com.jervis.contracts.knowledgebase.PurgeRequest as ProtoPurgeRequest
 import com.jervis.contracts.knowledgebase.PurgeResult
 import com.jervis.knowledgebase.model.CpgIngestRequest
+import com.jervis.knowledgebase.model.IngestRequest
 import com.jervis.knowledgebase.model.GitCommitIngestRequest
 import com.jervis.knowledgebase.model.GitStructureIngestRequest
 import io.grpc.ManagedChannel
@@ -129,6 +132,25 @@ class KbIngestGrpcClient(
                 .setWorkspacePath(request.workspacePath)
                 .build(),
         )
+
+    suspend fun ingest(request: IngestRequest): IngestResult =
+        stub.ingest(_protoIngest(request).build())
+
+    private fun _protoIngest(request: IngestRequest): ProtoIngestRequest.Builder {
+        val builder = ProtoIngestRequest.newBuilder()
+            .setCtx(ctx(request.clientId.toString()))
+            .setClientId(request.clientId.toString())
+            .setProjectId(request.projectId?.toString() ?: "")
+            .setGroupId(request.groupId ?: "")
+            .setSourceUrn(request.sourceUrn.toString())
+            .setKind(request.kind)
+            .setContent(request.content)
+            .setObservedAtIso(
+                java.time.format.DateTimeFormatter.ISO_INSTANT.format(request.observedAt),
+            )
+        request.metadata.forEach { (k, v) -> builder.putMetadata(k, v.toString()) }
+        return builder
+    }
 
     suspend fun purge(sourceUrn: String, clientId: String = ""): PurgeResult =
         stub.purge(

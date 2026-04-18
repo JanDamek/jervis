@@ -281,27 +281,28 @@ async def _index_attachment_to_kb(
     session_id: str = None,
 ) -> None:
     """Fire-and-forget: index extracted attachment text into KB for graph/map integration."""
-    import httpx
-    from app.config import settings
     from datetime import datetime, timezone
+    from jervis_contracts import kb_client
 
-    kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
+    now_iso = datetime.now(timezone.utc).isoformat()
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            await client.post(f"{kb_write_url}/api/v1/ingest-queue", json={
-                "clientId": client_id or "",
-                "projectId": project_id or "",
-                "sourceUrn": f"chat-attachment:{filename}:{datetime.now(timezone.utc).isoformat()[:19]}",
-                "kind": "document",
-                "content": f"# Příloha z chatu: {filename}\n\n{text}",
-                "metadata": {
-                    "filename": filename,
-                    "mimeType": mime_type,
-                    "source": "chat_attachment",
-                    "sessionId": session_id or "",
-                    "indexedAt": datetime.now(timezone.utc).isoformat(),
-                },
-            })
+        await kb_client.ingest(
+            caller="orchestrator.chat.attachment_indexer",
+            source_urn=f"chat-attachment:{filename}:{now_iso[:19]}",
+            content=f"# Příloha z chatu: {filename}\n\n{text}",
+            client_id=client_id or "",
+            project_id=project_id or "",
+            kind="document",
+            metadata={
+                "filename": filename,
+                "mimeType": mime_type,
+                "source": "chat_attachment",
+                "sessionId": session_id or "",
+                "indexedAt": now_iso,
+            },
+            queue=True,
+            timeout=30.0,
+        )
         logger.info("Attachment indexed to KB: %s (%d chars, client=%s)", filename, len(text), client_id)
     except Exception as e:
         logger.warning("Attachment KB indexation failed: %s: %s", filename, e)

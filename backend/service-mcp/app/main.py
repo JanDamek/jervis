@@ -390,29 +390,26 @@ async def kb_store(
             "or configure MCP_DEFAULT_CLIENT_ID."
         )
 
-    # Fire-and-forget: KB queues processing (embedding + extraction) in background
-    headers = {"X-Ollama-Priority": "0"}
-    payload = {
-        "clientId": cid,
-        "projectId": pid,
-        "sourceUrn": source_urn,
-        "kind": kind,
-        "content": content,
-        "metadata": json.loads(metadata) if metadata else {},
-    }
-    if group_id:
-        payload["groupId"] = group_id
-    async with httpx.AsyncClient(timeout=30, headers=headers) as client:
-        try:
-            resp = await client.post(
-                f"{settings.knowledgebase_write_url}/api/v1/ingest-queue",
-                json=payload,
-            )
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            detail = e.response.text[:500] if e.response else str(e)
-            return f"Error storing to KB (HTTP {e.response.status_code}): {detail}"
-        return f"Queued for processing (clientId={cid}, projectId={pid or 'none'})."
+    # Fire-and-forget: KB queues processing (embedding + extraction) in background.
+    from jervis_contracts import kb_client
+    import grpc
+
+    try:
+        await kb_client.ingest(
+            caller="service-mcp.kb_store",
+            source_urn=source_urn,
+            content=content,
+            client_id=cid,
+            project_id=pid or "",
+            group_id=group_id or "",
+            kind=kind,
+            metadata=json.loads(metadata) if metadata else {},
+            queue=True,
+            timeout=30.0,
+        )
+    except grpc.aio.AioRpcError as e:
+        return f"Error storing to KB ({e.code().name}): {e.details() or ''}"
+    return f"Queued for processing (clientId={cid}, projectId={pid or 'none'})."
 
 
 # ── KB Document Tools ───────────────────────────────────────────────────

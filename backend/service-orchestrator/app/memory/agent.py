@@ -375,41 +375,28 @@ class MemoryAgent:
     async def _flush_write_buffer(self, kb_write_url: str) -> None:
         """Drain write buffer and POST each entry to KB.
 
-        CRITICAL priority writes use /ingest-immediate (synchronous RAG + LLM).
-        Other writes use /ingest (queued LLM extraction).
+        CRITICAL priority writes use IngestImmediate (synchronous RAG + LLM).
+        Other writes use Ingest (queued LLM extraction).
         """
+        from jervis_contracts import kb_client
+
         writes = await self.lqm.drain_write_buffer()
         if not writes:
             return
 
         for write in writes:
             try:
-                endpoint = (
-                    f"{kb_write_url}/api/v1/ingest-immediate"
-                    if write.priority == WritePriority.CRITICAL
-                    else f"{kb_write_url}/api/v1/ingest"
+                await kb_client.ingest(
+                    caller="orchestrator.memory.agent",
+                    source_urn=write.source_urn,
+                    client_id=write.metadata.get("client_id", self.client_id),
+                    content=write.content,
+                    kind=write.kind,
+                    metadata={str(k): v for k, v in (write.metadata or {}).items()},
+                    immediate=(write.priority == WritePriority.CRITICAL),
+                    timeout=30.0,
                 )
-
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    resp = await client.post(
-                        endpoint,
-                        json={
-                            "sourceUrn": write.source_urn,
-                            "clientId": write.metadata.get("client_id", self.client_id),
-                            "content": write.content,
-                            "kind": write.kind,
-                            "metadata": write.metadata,
-                        },
-                        headers=self._kb_headers,
-                    )
-
-                    if resp.status_code in (200, 201, 202):
-                        self.lqm.mark_synced(write.source_urn)
-                    else:
-                        logger.warning(
-                            "KB write failed for %s: %d %s",
-                            write.source_urn, resp.status_code, trim_for_display(resp.text, 200),
-                        )
+                self.lqm.mark_synced(write.source_urn)
             except Exception as e:
                 logger.warning(
                     "KB write failed for %s (non-blocking): %s",

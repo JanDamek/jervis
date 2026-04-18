@@ -1247,10 +1247,6 @@ async def _execute_store_knowledge(
     except Exception:
         pass  # Fail open — don't block writes on check failure
 
-    # Use KB write endpoint (separate deployment for write operations)
-    kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
-    url = f"{kb_write_url}/api/v1/ingest"
-
     # Generate STABLE sourceUrn — same subject+category+client deduplicates via
     # KB upsert (content-hash check). The old "{timestamp}" suffix made every
     # store unique → 10× duplicates for the same content (e.g., "Řešení
@@ -1258,33 +1254,28 @@ async def _execute_store_knowledge(
     timestamp = datetime.now(timezone.utc).isoformat()
     source_urn = f"user-knowledge:{category}:{subject}"
 
-    payload = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "sourceUrn": source_urn,
-        "kind": f"user_knowledge_{category}",
-        "content": f"# {subject}\n\n{content}",
-        "metadata": {
-            "subject": subject,
-            "category": category,
-            "stored_at": timestamp,
-            "source": "agent_learning",
-        },
-    }
-    if group_id:
-        payload["groupId"] = group_id
-
-    headers = foreground_headers(processing_mode)
+    from jervis_contracts import kb_client
+    import grpc
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.TimeoutException:
-        return f"Error: KB write timed out after 10s for subject: {subject}"
-    except httpx.HTTPStatusError as e:
-        return f"Error: Knowledge Base write returned HTTP {e.response.status_code} for subject: {subject}"
+        data = await kb_client.ingest(
+            caller="orchestrator.tools.store_knowledge",
+            source_urn=source_urn,
+            content=f"# {subject}\n\n{content}",
+            client_id=client_id,
+            project_id=project_id or "",
+            group_id=group_id or "",
+            kind=f"user_knowledge_{category}",
+            metadata={
+                "subject": subject,
+                "category": category,
+                "stored_at": timestamp,
+                "source": "agent_learning",
+            },
+            timeout=10.0,
+        )
+    except grpc.aio.AioRpcError as e:
+        return f"Error: Knowledge Base write returned {e.code().name} for subject: {subject}"
     except Exception as e:
         return f"Error: KB write failed: {str(e)[:200]}"
 
@@ -1315,33 +1306,29 @@ async def _execute_store_knowledge(
             )
             if target_proj:
                 target_pid = target_proj.get("id", "")
-                cross_payload = {
-                    "clientId": client_id,
-                    "projectId": target_pid,
-                    "sourceUrn": f"cross-ref:{category}:{subject}:{timestamp}",
-                    "kind": f"user_knowledge_{category}",
-                    "content": f"# {subject} (cross-reference from other context)\n\n{content}",
-                    "metadata": {
-                        "subject": subject,
-                        "category": category,
-                        "stored_at": timestamp,
-                        "source": "cross_project_reference",
-                        "source_project_id": project_id or "",
-                    },
-                }
-                async with httpx.AsyncClient(timeout=10.0) as client2:
-                    resp3 = await client2.post(
-                        f"{kb_write_url}/api/v1/ingest",
-                        json=cross_payload,
-                        headers=headers,
+                try:
+                    await kb_client.ingest(
+                        caller="orchestrator.tools.store_knowledge.cross_ref",
+                        source_urn=f"cross-ref:{category}:{subject}:{timestamp}",
+                        content=f"# {subject} (cross-reference from other context)\n\n{content}",
+                        client_id=client_id,
+                        project_id=target_pid,
+                        kind=f"user_knowledge_{category}",
+                        metadata={
+                            "subject": subject,
+                            "category": category,
+                            "stored_at": timestamp,
+                            "source": "cross_project_reference",
+                            "source_project_id": project_id or "",
+                        },
+                        timeout=10.0,
                     )
-                if resp3.status_code in (200, 201, 202):
                     cross_project_note = (
                         f"\n✓ Also stored for project '{target_project_name}' (cross-reference)."
                     )
-                else:
+                except Exception as _e:
                     cross_project_note = (
-                        f"\n⚠ Cross-project store for '{target_project_name}' failed: {resp3.status_code}"
+                        f"\n⚠ Cross-project store for '{target_project_name}' failed: {_e}"
                     )
             else:
                 cross_project_note = (

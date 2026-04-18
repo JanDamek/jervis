@@ -174,51 +174,11 @@ write_router = APIRouter()
 # see app/grpc_server.py).
 
 
-@write_router.post("/ingest", response_model=IngestResult)
-async def ingest(request: IngestRequest, http_request: Request):
-    try:
-        # Read priority from header (orchestrator sends 1, background indexing sends 4)
-        priority = http_request.headers.get("X-Ollama-Priority")
-        priority_int = int(priority) if priority and priority.isdigit() else None
-        return await service.ingest(request, embedding_priority=priority_int)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@write_router.post("/ingest-queue")
-async def ingest_queue(request: IngestRequest, http_request: Request):
-    """Fire-and-forget ingest — accepts data, queues processing, returns immediately.
-
-    Used by MCP kb_store — caller doesn't need to wait for embedding/extraction.
-    Processing (RAG embedding + LLM extraction) happens in background.
-    """
-    import asyncio
-
-    priority = http_request.headers.get("X-Ollama-Priority")
-    priority_int = int(priority) if priority and priority.isdigit() else None
-
-    asyncio.create_task(service.ingest(request, embedding_priority=priority_int))
-
-    from starlette.responses import JSONResponse
-    return JSONResponse(status_code=202, content={"accepted": True})
-
-
-@write_router.post("/ingest-immediate", response_model=IngestResult)
-async def ingest_immediate(request: IngestRequest, http_request: Request):
-    """Synchronous ingest — RAG + LLM extraction in one call.
-
-    Unlike /ingest which queues LLM extraction for background processing,
-    this endpoint runs the full pipeline synchronously and returns complete
-    results (nodes, edges, entity keys).
-
-    Use for critical writes where data must be searchable immediately.
-    """
-    try:
-        priority = http_request.headers.get("X-Ollama-Priority")
-        priority_int = int(priority) if priority and priority.isdigit() else None
-        return await service.ingest_immediate(request, embedding_priority=priority_int)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /ingest, /ingest-queue, /ingest-immediate migrated to gRPC
+# (KnowledgeIngestService.{Ingest,IngestQueue,IngestImmediate} on :5501 —
+# see app/grpc_server.py). Priority selection is still the caller's
+# responsibility but now travels as a typed field inside RequestContext
+# rather than an X-Ollama-Priority HTTP header.
 
 
 @write_router.post("/ingest/file", response_model=IngestResult)

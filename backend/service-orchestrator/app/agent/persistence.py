@@ -835,24 +835,22 @@ class AgentStore:
             content = "\n".join(parts)
             project_id = v.get("project_id") or ""
 
-            payload = {
-                "clientId": client_id,
-                "projectId": project_id or None,
-                "sourceUrn": f"agent://memory-graph/{v.get('id')}",
-                "kind": "task_summary",
-                "content": content,
-                "metadata": {
-                    "vertex_type": vtype,
-                    "archived_from": "memory_graph",
-                },
-            }
             try:
-                async with httpx.AsyncClient(timeout=10) as http:
-                    await http.post(
-                        f"{kb_url}/api/v1/ingest",
-                        json=payload,
-                        headers={"X-Ollama-Priority": "0"},
-                    )
+                from jervis_contracts import kb_client
+
+                await kb_client.ingest(
+                    caller="orchestrator.agent.persistence",
+                    source_urn=f"agent://memory-graph/{v.get('id')}",
+                    content=content,
+                    client_id=client_id,
+                    project_id=project_id or "",
+                    kind="task_summary",
+                    metadata={
+                        "vertex_type": vtype,
+                        "archived_from": "memory_graph",
+                    },
+                    timeout=10.0,
+                )
                 persisted += 1
             except Exception as e:
                 logger.debug("KB persist failed for %s: %s", v.get("id"), e)

@@ -84,24 +84,24 @@ class CorrectionAgent:
 
         content = self._build_correction_content(original, corrected, category, context)
 
-        ingest_payload = {
-            "clientId": client_id,
-            "projectId": project_id,
-            "sourceUrn": source_urn,
-            "kind": CORRECTION_KIND,
-            "content": content,
-            "metadata": {
+        from jervis_contracts import kb_client
+
+        await kb_client.ingest(
+            caller="service-correction",
+            source_urn=source_urn,
+            content=content,
+            client_id=client_id,
+            project_id=project_id or "",
+            kind=CORRECTION_KIND,
+            metadata={
                 "original": original,
                 "corrected": corrected,
                 "category": category,
                 "context": context or "",
                 "correctionId": correction_id,
             },
-        }
-
-        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_WRITE) as http:
-            resp = await http.post(f"{self.kb_write_url}/ingest", json=ingest_payload)
-            resp.raise_for_status()
+            timeout=_TIMEOUT_KB_WRITE,
+        )
 
         logger.info(
             "Stored correction: '%s' -> '%s' (category=%s, sourceUrn=%s)",

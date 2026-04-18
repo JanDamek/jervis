@@ -98,36 +98,30 @@ async def ingest_outcome_to_kb(
     outcome: dict,
     task_query: str,
 ) -> bool:
-    """POST outcome to KB — graph extraction pipeline handles the rest."""
-    kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
-    url = f"{kb_write_url}/api/v1/ingest"
+    """Dispatch outcome to KB via gRPC — graph extraction pipeline handles the rest."""
+    from jervis_contracts import kb_client
 
     content = f"# Task Outcome: {task_query[:200]}\n\n{outcome.get('outcome_summary', '')}"
-
-    payload = {
-        "clientId": client_id,
-        "projectId": project_id,
-        "sourceUrn": f"task-outcome:{task_id}",
-        "kind": "task_outcome",
-        "content": content,
-        "metadata": {
-            "task_id": task_id,
-            "task_query": task_query[:500],
-            "ingested_at": datetime.now(timezone.utc).isoformat(),
-            "source": "task_completion",
-        },
+    metadata = {
+        "task_id": task_id,
+        "task_query": task_query[:500],
+        "ingested_at": datetime.now(timezone.utc).isoformat(),
+        "source": "task_completion",
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-
-        chunk_count = data.get("chunk_count", data.get("chunks_count", 0))
-        logger.info("KB_OUTCOME_STORED | task=%s | chunks=%d", task_id, chunk_count)
+        result = await kb_client.ingest(
+            caller="orchestrator.kb.outcome_ingest",
+            source_urn=f"task-outcome:{task_id}",
+            content=content,
+            client_id=client_id,
+            project_id=project_id or "",
+            kind="task_outcome",
+            metadata=metadata,
+            timeout=15.0,
+        )
+        logger.info("KB_OUTCOME_STORED | task=%s | chunks=%d", task_id, result.get("chunks_count", 0))
         return True
-
     except Exception as e:
         logger.warning("KB outcome ingest failed for task %s: %s", task_id, e)
         return False

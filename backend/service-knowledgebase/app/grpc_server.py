@@ -312,6 +312,92 @@ class IngestServicer(ingest_pb2_grpc.KnowledgeIngestServiceServicer):
             methods_indexed=int(getattr(result, "methodsIndexed", getattr(result, "methods_indexed", 0))),
         )
 
+    def _ingest_to_pydantic(self, request: ingest_pb2.IngestRequest):
+        from app.api.models import IngestRequest as IReq, SourceCredibility
+
+        cred = None
+        if request.credibility:
+            try:
+                cred = SourceCredibility(request.credibility)
+            except ValueError:
+                cred = None
+        return IReq(
+            clientId=request.client_id,
+            projectId=request.project_id or None,
+            groupId=request.group_id or None,
+            sourceUrn=request.source_urn,
+            kind=request.kind or "note",
+            content=request.content,
+            metadata=dict(request.metadata),
+            observedAt=request.observed_at_iso or None,
+            maxTier=request.max_tier or "NONE",
+            credibility=cred,
+            branchScope=request.branch_scope or None,
+            branchRole=request.branch_role or None,
+        )
+
+    def _ingest_result_to_proto(self, result) -> ingest_pb2.IngestResult:
+        status = getattr(result, "status", None) or "success"
+        chunks = int(getattr(result, "chunks_count", None) or getattr(result, "chunksCount", 0) or 0)
+        nodes = int(getattr(result, "nodes_created", None) or getattr(result, "nodesCreated", 0) or 0)
+        edges = int(getattr(result, "edges_created", None) or getattr(result, "edgesCreated", 0) or 0)
+        chunk_ids = list(
+            getattr(result, "chunk_ids", None)
+            or getattr(result, "chunkIds", None)
+            or []
+        )
+        entity_keys = list(
+            getattr(result, "entity_keys", None)
+            or getattr(result, "entityKeys", None)
+            or []
+        )
+        return ingest_pb2.IngestResult(
+            status=str(status),
+            chunks_count=chunks,
+            nodes_created=nodes,
+            edges_created=edges,
+            chunk_ids=chunk_ids,
+            entity_keys=entity_keys,
+        )
+
+    async def Ingest(
+        self,
+        request: ingest_pb2.IngestRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> ingest_pb2.IngestResult:
+        try:
+            result = await self._service().ingest(self._ingest_to_pydantic(request))
+        except Exception as e:
+            logger.warning("INGEST_ERROR source=%s error=%s", request.source_urn, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return self._ingest_result_to_proto(result)
+
+    async def IngestImmediate(
+        self,
+        request: ingest_pb2.IngestRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> ingest_pb2.IngestResult:
+        try:
+            result = await self._service().ingest_immediate(self._ingest_to_pydantic(request))
+        except Exception as e:
+            logger.warning("INGEST_IMMEDIATE_ERROR source=%s error=%s", request.source_urn, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return self._ingest_result_to_proto(result)
+
+    async def IngestQueue(
+        self,
+        request: ingest_pb2.IngestRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> ingest_pb2.IngestQueueAck:
+        import asyncio
+
+        try:
+            asyncio.create_task(self._service().ingest(self._ingest_to_pydantic(request)))
+        except Exception as e:
+            logger.warning("INGEST_QUEUE_ERROR source=%s error=%s", request.source_urn, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return ingest_pb2.IngestQueueAck(ok=True, queue_id=request.source_urn or "")
+
     async def Purge(
         self,
         request: ingest_pb2.PurgeRequest,
