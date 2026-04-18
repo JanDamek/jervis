@@ -9,15 +9,6 @@ import com.jervis.task.TaskService
 import com.jervis.chat.ChatService
 import com.jervis.meeting.WhisperRestClient
 import com.jervis.infrastructure.config.properties.WhisperProperties
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.preparePost
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.client.statement.readBytes
-import io.ktor.utils.io.readUTF8Line
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import io.ktor.http.ContentType
@@ -73,13 +64,6 @@ private const val DEFAULT_PROJECT_ID = "68a3318f1b04695a243e5adf"
 private var TTS_GRPC: com.jervis.infrastructure.grpc.TtsGrpcClient? = null
 private var TTS_SPEED: Double = 1.2
 
-private val ttsClient = HttpClient(CIO) {
-    install(HttpTimeout) {
-        requestTimeoutMillis = 60_000  // XTTS v2 first request loads model (~30s cold start)
-        connectTimeoutMillis = 5_000
-    }
-}
-
 /**
  * Public REST endpoints for Siri / Google Assistant / Watch voice queries.
  *
@@ -95,6 +79,7 @@ fun Routing.installVoiceChatApi(
     ttsProperties: com.jervis.infrastructure.config.properties.TtsProperties,
     voiceGrpc: com.jervis.infrastructure.grpc.OrchestratorVoiceGrpcClient,
     ttsGrpc: com.jervis.infrastructure.grpc.TtsGrpcClient,
+    meetingHelperGrpc: com.jervis.infrastructure.grpc.OrchestratorMeetingHelperGrpcClient,
 ) {
     // Wire TTS client + speed from configmap.
     TTS_GRPC = ttsGrpc
@@ -567,19 +552,11 @@ fun Routing.installVoiceChatApi(
                 // Meeting Helper: forward transcript to helper pipeline for translation + suggestions
                 if (session.helperEnabled && !session.meetingId.isNullOrBlank()) {
                     try {
-                        val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
-                        val helperPayload = """{"meetingId":"${session.meetingId}","text":"${chunkText.escapeJson()}","speaker":""}"""
-                        val helperClient = HttpClient(io.ktor.client.engine.cio.CIO) {
-                            install(HttpTimeout) { requestTimeoutMillis = 30_000; connectTimeoutMillis = 3_000 }
-                        }
-                        try {
-                            helperClient.post("$orchestratorUrl/meeting-helper/chunk") {
-                                contentType(ContentType.Application.Json)
-                                setBody(helperPayload)
-                            }
-                        } finally {
-                            helperClient.close()
-                        }
+                        meetingHelperGrpc.chunk(
+                            meetingId = session.meetingId,
+                            text = chunkText,
+                            speaker = "",
+                        )
                     } catch (e: Exception) {
                         logger.warn { "MEETING_HELPER_CHUNK_ERROR: ${e.message}" }
                     }

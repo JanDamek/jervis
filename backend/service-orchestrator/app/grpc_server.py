@@ -23,6 +23,7 @@ from jervis.orchestrator import companion_pb2, companion_pb2_grpc
 from jervis.orchestrator import control_pb2, control_pb2_grpc
 from jervis.orchestrator import dispatch_pb2, dispatch_pb2_grpc
 from jervis.orchestrator import graph_pb2, graph_pb2_grpc
+from jervis.orchestrator import meeting_helper_pb2, meeting_helper_pb2_grpc
 from jervis.orchestrator import voice_pb2, voice_pb2_grpc
 from jervis_contracts.interceptors import ServerContextInterceptor
 
@@ -1058,6 +1059,151 @@ class OrchestratorVoiceServicer(voice_pb2_grpc.OrchestratorVoiceServiceServicer)
         return voice_pb2.VoiceHintResponse(hint=str(hint or ""))
 
 
+class OrchestratorMeetingHelperServicer(
+    meeting_helper_pb2_grpc.OrchestratorMeetingHelperServiceServicer,
+):
+    """OrchestratorMeetingHelperService — live meeting assistance.
+
+    Start/Stop/Chunk/Status take over the legacy `/meeting-helper/*`
+    FastAPI routes byte-for-byte. Chunk runs the helper pipeline inline
+    and pushes messages back to the Kotlin server via
+    ServerMeetingHelperCallbacksService (the gRPC analogue of the old
+    `/internal/meeting-helper/push` route).
+    """
+
+    async def Start(
+        self,
+        request: meeting_helper_pb2.StartHelperRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> meeting_helper_pb2.StartHelperResponse:
+        from app.meeting.live_helper import start_session
+
+        if not request.meeting_id or not request.device_id:
+            return meeting_helper_pb2.StartHelperResponse(
+                status="error",
+                error="meeting_id and device_id required",
+            )
+        session = start_session(
+            request.meeting_id,
+            request.device_id,
+            request.source_lang or "en",
+            request.target_lang or "cs",
+        )
+        logger.info(
+            "MEETING_HELPER_START | meeting=%s device=%s %s→%s",
+            session.meeting_id, session.device_id,
+            session.source_lang, session.target_lang,
+        )
+        return meeting_helper_pb2.StartHelperResponse(
+            status="ok",
+            meeting_id=session.meeting_id,
+            device_id=session.device_id,
+            source_lang=session.source_lang,
+            target_lang=session.target_lang,
+        )
+
+    async def Stop(
+        self,
+        request: meeting_helper_pb2.StopHelperRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> meeting_helper_pb2.StopHelperResponse:
+        from app.meeting.live_helper import stop_session
+
+        if not request.meeting_id:
+            return meeting_helper_pb2.StopHelperResponse(status="error", meeting_id="")
+        stop_session(request.meeting_id)
+        logger.info("MEETING_HELPER_STOP | meeting=%s", request.meeting_id)
+        return meeting_helper_pb2.StopHelperResponse(
+            status="ok", meeting_id=request.meeting_id,
+        )
+
+    async def Chunk(
+        self,
+        request: meeting_helper_pb2.HelperChunkRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> meeting_helper_pb2.HelperChunkResponse:
+        from app.grpc_server_client import (
+            build_request_context,
+            server_meeting_helper_callbacks_stub,
+        )
+        from app.meeting.live_helper import get_session, process_transcript_chunk
+        from jervis.server import meeting_helper_callbacks_pb2
+
+        session = get_session(request.meeting_id)
+        if not session:
+            return meeting_helper_pb2.HelperChunkResponse(
+                status="no_session", messages_pushed=0,
+            )
+
+        try:
+            from app.llm.provider import get_provider
+
+            llm_provider = get_provider()
+        except Exception as e:
+            logger.warning("MEETING_HELPER_LLM_UNAVAILABLE meeting=%s: %s",
+                           request.meeting_id, e)
+            return meeting_helper_pb2.HelperChunkResponse(status="error", error=str(e))
+
+        try:
+            messages = await process_transcript_chunk(
+                meeting_id=request.meeting_id,
+                transcript_text=request.text,
+                speaker=request.speaker or "",
+                llm_provider=llm_provider,
+            )
+        except Exception as e:
+            logger.exception("MEETING_HELPER_PIPELINE_FAIL meeting=%s", request.meeting_id)
+            return meeting_helper_pb2.HelperChunkResponse(status="error", error=str(e))
+
+        stub = server_meeting_helper_callbacks_stub()
+        ctx_pb = build_request_context()
+        pushed = 0
+        for msg in messages:
+            if not getattr(msg, "text", ""):
+                continue
+            try:
+                await stub.PushMessage(
+                    meeting_helper_callbacks_pb2.HelperPushRequest(
+                        ctx=ctx_pb,
+                        meeting_id=request.meeting_id,
+                        type=str(msg.type or ""),
+                        text=str(msg.text or ""),
+                        context=str(getattr(msg, "context", "") or ""),
+                        from_lang=str(getattr(msg, "from_lang", "") or ""),
+                        to_lang=str(getattr(msg, "to_lang", "") or ""),
+                        timestamp=str(getattr(msg, "timestamp", "") or ""),
+                    ),
+                    timeout=10.0,
+                )
+                pushed += 1
+            except Exception as e:
+                logger.warning("MEETING_HELPER_PUSH_FAIL meeting=%s: %s",
+                               request.meeting_id, e)
+
+        return meeting_helper_pb2.HelperChunkResponse(status="ok", messages_pushed=pushed)
+
+    async def Status(
+        self,
+        request: meeting_helper_pb2.HelperStatusRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> meeting_helper_pb2.HelperStatusResponse:
+        from app.meeting.live_helper import get_session
+
+        session = get_session(request.meeting_id)
+        if not session:
+            return meeting_helper_pb2.HelperStatusResponse(
+                active=False, meeting_id=request.meeting_id,
+            )
+        return meeting_helper_pb2.HelperStatusResponse(
+            active=bool(session.active),
+            meeting_id=session.meeting_id,
+            device_id=session.device_id,
+            source_lang=session.source_lang,
+            target_lang=session.target_lang,
+            context_size=len(getattr(session, "context_window", []) or []),
+        )
+
+
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for cleanup."""
     max_msg_bytes = 64 * 1024 * 1024
@@ -1086,6 +1232,9 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     voice_pb2_grpc.add_OrchestratorVoiceServiceServicer_to_server(
         OrchestratorVoiceServicer(), server,
     )
+    meeting_helper_pb2_grpc.add_OrchestratorMeetingHelperServiceServicer_to_server(
+        OrchestratorMeetingHelperServicer(), server,
+    )
 
     service_names = (
         control_pb2.DESCRIPTOR.services_by_name["OrchestratorControlService"].full_name,
@@ -1094,6 +1243,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
         companion_pb2.DESCRIPTOR.services_by_name["OrchestratorCompanionService"].full_name,
         chat_pb2.DESCRIPTOR.services_by_name["OrchestratorChatService"].full_name,
         voice_pb2.DESCRIPTOR.services_by_name["OrchestratorVoiceService"].full_name,
+        meeting_helper_pb2.DESCRIPTOR.services_by_name["OrchestratorMeetingHelperService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
@@ -1102,7 +1252,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     await server.start()
     logger.info(
         "gRPC orchestrator services listening on :%d "
-        "(Control + Graph + Dispatch + Companion + Chat + Voice)",
+        "(Control + Graph + Dispatch + Companion + Chat + Voice + MeetingHelper)",
         port,
     )
     return server

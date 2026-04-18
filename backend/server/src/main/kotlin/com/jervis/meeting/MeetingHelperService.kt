@@ -45,6 +45,7 @@ class MeetingHelperService(
     private val sessionRepository: MeetingHelperSessionRepository,
     private val messageRepository: MeetingHelperMessageRepository,
     private val companionAssistant: org.springframework.beans.factory.ObjectProvider<MeetingCompanionAssistant>,
+    private val orchestratorHelperGrpc: com.jervis.infrastructure.grpc.OrchestratorMeetingHelperGrpcClient,
 ) : IMeetingHelperService {
 
     private val recoveryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -114,6 +115,14 @@ class MeetingHelperService(
             targetLang = request.targetLang,
         )
         sessions[request.meetingId] = info
+        runCatching {
+            orchestratorHelperGrpc.start(
+                meetingId = request.meetingId,
+                deviceId = request.deviceId,
+                sourceLang = request.sourceLang,
+                targetLang = request.targetLang,
+            )
+        }.onFailure { e -> logger.warn(e) { "orchestrator meeting-helper Start failed for ${request.meetingId}" } }
         // Persist so the session survives a server restart — recovery on startup
         // rewires in-memory state + re-attaches to the running K8s companion Job.
         runCatching {
@@ -160,6 +169,8 @@ class MeetingHelperService(
         val session = sessions.remove(meetingId)
         runCatching { sessionRepository.deleteByMeetingId(meetingId) }
             .onFailure { e -> logger.warn(e) { "Failed to delete persisted helper session for $meetingId" } }
+        runCatching { orchestratorHelperGrpc.stop(meetingId) }
+            .onFailure { e -> logger.warn(e) { "orchestrator meeting-helper Stop failed for $meetingId" } }
         if (session != null) {
             session.active = false
             // Notify connected devices

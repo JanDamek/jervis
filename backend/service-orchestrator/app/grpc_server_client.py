@@ -14,6 +14,7 @@ from typing import Optional
 import grpc.aio
 
 from app.config import settings
+from jervis.common import types_pb2
 from jervis.server import (
     bug_tracker_pb2_grpc,
     cache_pb2_grpc,
@@ -25,6 +26,7 @@ from jervis.server import (
     foreground_pb2_grpc,
     git_pb2_grpc,
     guidelines_pb2_grpc,
+    meeting_helper_callbacks_pb2_grpc,
     meetings_pb2_grpc,
     merge_request_pb2_grpc,
     orchestrator_progress_pb2_grpc,
@@ -60,6 +62,9 @@ _orchestrator_progress_stub: Optional[
     orchestrator_progress_pb2_grpc.ServerOrchestratorProgressServiceStub
 ] = None
 _git_stub: Optional[git_pb2_grpc.ServerGitServiceStub] = None
+_meeting_helper_callbacks_stub: Optional[
+    meeting_helper_callbacks_pb2_grpc.ServerMeetingHelperCallbacksServiceStub
+] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -225,3 +230,24 @@ def server_git_stub() -> git_pb2_grpc.ServerGitServiceStub:
     if _git_stub is None:
         _git_stub = git_pb2_grpc.ServerGitServiceStub(_get_channel())
     return _git_stub
+
+
+def server_meeting_helper_callbacks_stub() -> (
+    meeting_helper_callbacks_pb2_grpc.ServerMeetingHelperCallbacksServiceStub
+):
+    global _meeting_helper_callbacks_stub
+    if _meeting_helper_callbacks_stub is None:
+        _meeting_helper_callbacks_stub = (
+            meeting_helper_callbacks_pb2_grpc.ServerMeetingHelperCallbacksServiceStub(
+                _get_channel()
+            )
+        )
+    return _meeting_helper_callbacks_stub
+
+
+def build_request_context() -> types_pb2.RequestContext:
+    """Minimal RequestContext for orchestrator → server callbacks."""
+    return types_pb2.RequestContext(
+        request_id="",
+        trace={"caller": "service-orchestrator"},
+    )

@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package jervis.orchestrator;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.orchestrator";
+option java_multiple_files = true;
+option java_outer_classname = "OrchestratorMeetingHelperProto";
+
+// OrchestratorMeetingHelperService — live meeting assistance pipeline.
+// Kotlin server drives Start/Stop around a meeting recording, forwards
+// transcript chunks via Chunk, and polls Status. The orchestrator pushes
+// helper messages back over ServerMeetingHelperCallbacksService.
+service OrchestratorMeetingHelperService {
+  rpc Start(StartHelperRequest) returns (StartHelperResponse);
+  rpc Stop(StopHelperRequest) returns (StopHelperResponse);
+  rpc Chunk(HelperChunkRequest) returns (HelperChunkResponse);
+  rpc Status(HelperStatusRequest) returns (HelperStatusResponse);
+}
+
+message StartHelperRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+  string device_id = 3;
+  string source_lang = 4;                // default "en"
+  string target_lang = 5;                // default "cs"
+}
+
+message StartHelperResponse {
+  string status = 1;                     // "ok" / "error"
+  string meeting_id = 2;
+  string device_id = 3;
+  string source_lang = 4;
+  string target_lang = 5;
+  string error = 6;
+}
+
+message StopHelperRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+}
+
+message StopHelperResponse {
+  string status = 1;
+  string meeting_id = 2;
+}
+
+message HelperChunkRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+  string text = 3;
+  string speaker = 4;
+}
+
+message HelperChunkResponse {
+  string status = 1;                     // "ok" / "no_session" / "error"
+  int32 messages_pushed = 2;
+  string error = 3;
+}
+
+message HelperStatusRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+}
+
+message HelperStatusResponse {
+  bool active = 1;
+  string meeting_id = 2;
+  string device_id = 3;
+  string source_lang = 4;
+  string target_lang = 5;
+  int32 context_size = 6;
+}

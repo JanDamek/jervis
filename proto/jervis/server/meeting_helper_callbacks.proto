@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerMeetingHelperCallbacksProto";
+
+// ServerMeetingHelperCallbacksService — reverse path the orchestrator's
+// meeting-helper pipeline uses to publish helper messages (translations,
+// suggestions, predicted questions, visual insights) back to the Kotlin
+// server, which fans them out to the meeting's WebSocket/RPC subscribers.
+service ServerMeetingHelperCallbacksService {
+  rpc PushMessage(HelperPushRequest) returns (HelperPushAck);
+}
+
+message HelperPushRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+  string type = 3;                       // translation / suggestion / question_predict / visual_insight / whiteboard_ocr / screen_ocr / status
+  string text = 4;
+  string context = 5;
+  string from_lang = 6;
+  string to_lang = 7;
+  string timestamp = 8;
+}
+
+message HelperPushAck {
+  string status = 1;                     // "ok" / "error"
+  string error = 2;
+}

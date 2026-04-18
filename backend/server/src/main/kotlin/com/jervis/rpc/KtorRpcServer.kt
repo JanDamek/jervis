@@ -128,6 +128,7 @@ class KtorRpcServer(
     private val browserPodMeetingClient: com.jervis.meeting.BrowserPodMeetingClient,
     private val voiceGrpc: com.jervis.infrastructure.grpc.OrchestratorVoiceGrpcClient,
     private val ttsGrpc: com.jervis.infrastructure.grpc.TtsGrpcClient,
+    private val meetingHelperGrpc: com.jervis.infrastructure.grpc.OrchestratorMeetingHelperGrpcClient,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -154,7 +155,7 @@ class KtorRpcServer(
 
                         routing {
                             // Public API (Watch / voice queries + recording)
-                            installVoiceChatApi(taskRepository, taskService, whisperRestClient, whisperProperties, chatService, ttsProperties, voiceGrpc, ttsGrpc)
+                            installVoiceChatApi(taskRepository, taskService, whisperRestClient, whisperProperties, chatService, ttsProperties, voiceGrpc, ttsGrpc, meetingHelperGrpc)
                             installWatchMeetingApi(meetingRpcImpl)
                             installMeetingHelperApi(meetingHelperService)
                             // Finance surface migrated to gRPC (jervis.server.ServerFinanceService).
