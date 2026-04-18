@@ -28,9 +28,9 @@ if _version_not_supported:
 class ServerTaskApiServiceStub(object):
     """ServerTaskApiService covers the full task surface — CRUD, queue,
     coding-agent dispatch + completion callbacks, user-task helpers,
-    chat-agent plumbing. Task list responses use `items_json` because
-    TaskDocument is a deep tree that Python only reads at the surface
-    (id/title/state/clientId). Typed fields live on requests only.
+    chat-agent plumbing. Task list responses return `repeated TaskSummary`
+    — a projection of TaskDocument carrying exactly the fields the
+    orchestrator + MCP consumers read (id/title/state/client_id/...).
     """
 
     def __init__(self, channel):
@@ -164,9 +164,9 @@ class ServerTaskApiServiceStub(object):
 class ServerTaskApiServiceServicer(object):
     """ServerTaskApiService covers the full task surface — CRUD, queue,
     coding-agent dispatch + completion callbacks, user-task helpers,
-    chat-agent plumbing. Task list responses use `items_json` because
-    TaskDocument is a deep tree that Python only reads at the surface
-    (id/title/state/clientId). Typed fields live on requests only.
+    chat-agent plumbing. Task list responses return `repeated TaskSummary`
+    — a projection of TaskDocument carrying exactly the fields the
+    orchestrator + MCP consumers read (id/title/state/client_id/...).
     """
 
     def CreateTask(self, request, context):
@@ -451,9 +451,9 @@ def add_ServerTaskApiServiceServicer_to_server(servicer, server):
 class ServerTaskApiService(object):
     """ServerTaskApiService covers the full task surface — CRUD, queue,
     coding-agent dispatch + completion callbacks, user-task helpers,
-    chat-agent plumbing. Task list responses use `items_json` because
-    TaskDocument is a deep tree that Python only reads at the surface
-    (id/title/state/clientId). Typed fields live on requests only.
+    chat-agent plumbing. Task list responses return `repeated TaskSummary`
+    — a projection of TaskDocument carrying exactly the fields the
+    orchestrator + MCP consumers read (id/title/state/client_id/...).
     """
 
     @staticmethod
