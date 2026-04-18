@@ -366,11 +366,22 @@ async def lifespan(app: FastAPI):
     # deterministically True from start (no silent fallback to no-speakers).
     if HF_TOKEN:
         await asyncio.get_event_loop().run_in_executor(None, _load_diarization_pipeline)
-    yield
-    idle_task.cancel()
-    if _gpu_loaded:
-        _release_gpu()
-    print("Whisper REST server shut down", flush=True)
+
+    # Start pod-to-pod gRPC surface (:5501). FastAPI /transcribe + /health
+    # routes were removed — every consumer dials WhisperService directly.
+    from grpc_server import start_grpc_server
+
+    grpc_port = int(os.getenv("WHISPER_GRPC_PORT", "5501"))
+    grpc_server = await start_grpc_server(port=grpc_port)
+    app.state.grpc_server = grpc_server
+    try:
+        yield
+    finally:
+        await grpc_server.stop(grace=5.0)
+        idle_task.cancel()
+        if _gpu_loaded:
+            _release_gpu()
+        print("Whisper REST server shut down", flush=True)
 
 
 app = FastAPI(
@@ -380,21 +391,10 @@ app = FastAPI(
 )
 
 
-@app.get("/health")
-async def health():
-    """Health check endpoint."""
-    return {
-        "status": "ok",
-        "service": "whisper-rest",
-        "device": DEVICE,
-        "compute_type": COMPUTE_TYPE,
-        "gpu_loaded": _gpu_loaded,
-        "diarization_enabled": bool(HF_TOKEN),
-        "diarization_available": _diarization_available,
-        "timestamp": time.time(),
-        "active_transcriptions": _active_transcriptions,
-        "cached_models": list(_model_cache.keys()),
-    }
+# /health + /transcribe + /gpu/release migrated to gRPC
+# (WhisperService.{Health,Transcribe,GpuRelease} on :5501).
+# /diagnostic stays as FastAPI — it's an operator-facing debug endpoint
+# not consumed by any service.
 
 
 @app.get("/diagnostic")
@@ -428,200 +428,6 @@ async def diagnostic():
             diag["pipeline_import_error"] = str(e)
 
     return diag
-
-
-@app.post("/gpu/release")
-async def gpu_release():
-    """Release GPU VRAM (called by router before loading VL model on p40-2).
-
-    Returns immediately if no model loaded or transcription in progress.
-    If transcription is active, returns 409 Conflict.
-    """
-    if _active_transcriptions > 0:
-        return JSONResponse(
-            status_code=409,
-            content={"status": "busy", "active_transcriptions": _active_transcriptions},
-        )
-    if not _gpu_loaded:
-        return {"status": "already_released", "gpu_loaded": False}
-    _release_gpu()
-    return {"status": "released", "gpu_loaded": False}
-
-
-@app.post("/transcribe")
-async def transcribe(
-    audio: UploadFile = File(..., description="Audio file to transcribe"),
-    options: str = Form(default="{}", description="JSON string with transcription options"),
-):
-    """
-    Transcribe an uploaded audio file using Whisper with SSE streaming.
-
-    GPU VRAM lifecycle:
-    1. Unloads Ollama VLM if loaded (free VRAM)
-    2. Loads whisper model to GPU
-    3. Transcribes
-    4. Auto-unloads after idle timeout (GPU_IDLE_S)
-
-    The options JSON supports:
-    - task, model, language, beam_size, vad_filter, word_timestamps,
-      initial_prompt, condition_on_previous_text, no_speech_threshold,
-      extraction_ranges, diarize (bool — enable speaker diarization)
-    """
-    try:
-        opts = json.loads(options)
-    except (json.JSONDecodeError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=f"Invalid options JSON: {e}")
-
-    work_dir = tempfile.mkdtemp(prefix="whisper_rest_")
-    audio_ext = Path(audio.filename or "audio.wav").suffix or ".wav"
-    audio_path = os.path.join(work_dir, f"input{audio_ext}")
-    with open(audio_path, "wb") as f:
-        shutil.copyfileobj(audio.file, f)
-
-    # work_dir is freed by the worker thread after run_whisper finishes,
-    # NOT by the generator's finally — otherwise a dropped SSE connection
-    # would delete the audio while diarization is still using it.
-    cleanup_done = threading.Event()
-
-    file_size = os.path.getsize(audio_path)
-    request_id = uuid.uuid4().hex[:8]
-    model_name = opts.get("model", DEFAULT_MODEL)
-    task_name = opts.get("task", "transcribe")
-    do_diarize = opts.get("diarize", False)
-
-    print(
-        f"[{request_id}] Transcription request: model={model_name}, task={task_name}, "
-        f"diarize={do_diarize}, file={audio.filename} ({file_size} bytes)",
-        flush=True,
-    )
-
-    progress_queue = queue.Queue()
-
-    async def event_generator():
-        global _active_transcriptions, _last_transcription_end
-        with _active_lock:
-            _active_transcriptions += 1
-        try:
-            opts.pop("progress_file", None)
-
-            loop = asyncio.get_event_loop()
-            result_container = {}
-            error_container = {}
-            done_event = asyncio.Event()
-
-            def run_in_thread():
-                try:
-                    _router_notify_gpu()   # Tell router: I want GPU (blocks until VLM done)
-                    _acquire_gpu()         # Unload VLM + load whisper
-                    # Load diarization pipeline if needed and not yet loaded
-                    if do_diarize and not _diarization_available and HF_TOKEN:
-                        _load_diarization_pipeline()
-                    result_container["result"] = run_whisper(
-                        audio_path, opts, progress_queue, request_id,
-                    )
-                except Exception as e:
-                    error_container["error"] = str(e)
-                    traceback.print_exc()
-                finally:
-                    _last_transcription_end = time.monotonic()
-                    _router_notify_done()  # Always tell router we're done
-                    # Free temp audio AFTER whisper+diarize finished — never
-                    # earlier (a closed SSE generator would otherwise rmtree
-                    # the file mid-diarization).
-                    shutil.rmtree(work_dir, ignore_errors=True)
-                    cleanup_done.set()
-                    loop.call_soon_threadsafe(done_event.set)
-
-            loop.run_in_executor(None, run_in_thread)
-
-            last_percent = -1.0
-            while not done_event.is_set():
-                try:
-                    await asyncio.wait_for(done_event.wait(), timeout=3.0)
-                except asyncio.TimeoutError:
-                    pass
-
-                latest_progress = None
-                while True:
-                    try:
-                        latest_progress = progress_queue.get_nowait()
-                    except queue.Empty:
-                        break
-
-                if latest_progress is not None:
-                    percent = latest_progress.get("percent", 0)
-                    if percent != last_percent:
-                        last_percent = percent
-                        yield {
-                            "event": "progress",
-                            "data": json.dumps(latest_progress),
-                        }
-
-            while True:
-                try:
-                    progress_queue.get_nowait()
-                except queue.Empty:
-                    break
-
-            if "error" in error_container:
-                error_msg = error_container["error"]
-                print(f"[{request_id}] Transcription failed: {error_msg}", flush=True)
-                yield {
-                    "event": "error",
-                    "data": json.dumps({
-                        "text": "",
-                        "segments": [],
-                        "error": f"Whisper REST server error: {error_msg}",
-                    }),
-                }
-            else:
-                result = result_container.get("result", {})
-                if result.get("error"):
-                    print(f"[{request_id}] Transcription error: {result['error']}", flush=True)
-                    yield {
-                        "event": "error",
-                        "data": json.dumps(result),
-                    }
-                else:
-                    print(
-                        f"[{request_id}] Transcription complete: "
-                        f"{len(result.get('segments', []))} segments, "
-                        f"{len(result.get('text', ''))} chars",
-                        flush=True,
-                    )
-                    yield {
-                        "event": "progress",
-                        "data": json.dumps({
-                            "percent": 100.0,
-                            "segments_done": len(result.get("segments", [])),
-                            "elapsed_seconds": 0,
-                            "last_segment_text": "",
-                        }),
-                    }
-                    yield {
-                        "event": "result",
-                        "data": json.dumps(result, ensure_ascii=False),
-                    }
-
-        except Exception as e:
-            traceback.print_exc()
-            yield {
-                "event": "error",
-                "data": json.dumps({
-                    "text": "",
-                    "segments": [],
-                    "error": f"Whisper REST server error: {str(e)}",
-                }),
-            }
-        finally:
-            with _active_lock:
-                _active_transcriptions -= 1
-            # Defensive: if the worker hasn't cleaned up yet (e.g. early error
-            # before run_in_thread was scheduled), do it here.
-            if not cleanup_done.is_set():
-                shutil.rmtree(work_dir, ignore_errors=True)
-
-    return EventSourceResponse(event_generator(), ping=5)
 
 
 def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue, request_id: str = "") -> dict:

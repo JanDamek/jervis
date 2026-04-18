@@ -3,16 +3,6 @@ package com.jervis.voice
 import com.jervis.infrastructure.config.properties.TtsProperties
 import com.jervis.infrastructure.config.properties.WhisperProperties
 import com.jervis.meeting.WhisperRestClient
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.client.statement.readBytes
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.utils.io.readUTF8Line
 import io.ktor.websocket.DefaultWebSocketSession
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
@@ -27,10 +17,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import mu.KotlinLogging
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -60,6 +48,8 @@ class VoiceWebSocketHandler(
     private val whisperRestClient: WhisperRestClient,
     private val whisperProperties: WhisperProperties,
     private val ttsProperties: TtsProperties,
+    private val voiceGrpc: com.jervis.infrastructure.grpc.OrchestratorVoiceGrpcClient,
+    private val ttsGrpc: com.jervis.infrastructure.grpc.TtsGrpcClient,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -84,21 +74,6 @@ class VoiceWebSocketHandler(
         val normalized = text.trim().lowercase()
         if (normalized.length < 3) return true
         return whisperHallucinations.any { normalized.contains(it) }
-    }
-
-    private val ttsClient = HttpClient(CIO) {
-        install(HttpTimeout) {
-            requestTimeoutMillis = 60_000
-            connectTimeoutMillis = 5_000
-        }
-    }
-
-    private val orchestratorClient = HttpClient(CIO) {
-        install(HttpTimeout) {
-            requestTimeoutMillis = 60_000
-            connectTimeoutMillis = 5_000
-            socketTimeoutMillis = 60_000
-        }
     }
 
     suspend fun handleSession(session: DefaultWebSocketSession) {
@@ -423,64 +398,44 @@ class VoiceWebSocketHandler(
         ttsEnabled: Boolean,
         orchestratorUrl: String,
     ): String {
-        val payload = buildJsonObject {
-            put("text", transcript)
-            put("source", source)
-            put("client_id", clientId)
-            put("project_id", projectId)
-            put("group_id", groupId)
-            put("tts", false)
-        }.toString()
-
         val responseText = StringBuilder()
 
         try {
             withTimeoutOrNull(30_000) {
-                val resp = orchestratorClient.post("$orchestratorUrl/voice/process") {
-                    contentType(ContentType.Application.Json)
-                    setBody(payload)
-                }
-
-                val channel = resp.bodyAsChannel()
-                var currentEvent = ""
-                var currentData = ""
-
-                while (!channel.isClosedForRead) {
-                    val line = channel.readUTF8Line() ?: break
-                    when {
-                        line.startsWith("event: ") -> currentEvent = line.removePrefix("event: ").trim()
-                        line.startsWith("data: ") -> currentData = line.removePrefix("data: ").trim()
-                        line.isBlank() && currentData.isNotEmpty() -> {
-                            try {
-                                val data = json.parseToJsonElement(currentData).jsonObject
-                                val text = data["text"]?.jsonPrimitive?.content ?: ""
-                                when (currentEvent) {
-                                    "token" -> {
-                                        responseText.append(text)
-                                        session.sendJsonEvent("token", text)
-                                    }
-                                    "response" -> {
-                                        if (responseText.isEmpty()) responseText.append(text)
-                                        session.sendJsonEvent("response", text)
-                                        break
-                                    }
-                                    "stored" -> {
-                                        val summary = data["summary"]?.jsonPrimitive?.content ?: transcript.take(80)
-                                        session.sendJsonEvent("stored", summary)
-                                        if (responseText.isEmpty()) responseText.append("Zaznamenáno.")
-                                        break
-                                    }
-                                    "error" -> {
-                                        if (responseText.isEmpty()) responseText.append(text)
-                                        break
-                                    }
-                                    "done" -> break
-                                }
-                            } catch (_: Exception) {}
-                            currentEvent = ""
-                            currentData = ""
+                voiceGrpc.process(
+                    text = transcript,
+                    source = source,
+                    clientId = clientId,
+                    projectId = projectId,
+                    groupId = groupId,
+                    tts = false,
+                ).collect { event ->
+                    try {
+                        val data = json.parseToJsonElement(event.dataJson).jsonObject
+                        val text = data["text"]?.jsonPrimitive?.content ?: ""
+                        when (event.event) {
+                            "token" -> {
+                                responseText.append(text)
+                                session.sendJsonEvent("token", text)
+                            }
+                            "response" -> {
+                                if (responseText.isEmpty()) responseText.append(text)
+                                session.sendJsonEvent("response", text)
+                                return@collect
+                            }
+                            "stored" -> {
+                                val summary = data["summary"]?.jsonPrimitive?.content ?: transcript.take(80)
+                                session.sendJsonEvent("stored", summary)
+                                if (responseText.isEmpty()) responseText.append("Zaznamenáno.")
+                                return@collect
+                            }
+                            "error" -> {
+                                if (responseText.isEmpty()) responseText.append(text)
+                                return@collect
+                            }
+                            "done" -> return@collect
                         }
-                    }
+                    } catch (_: Exception) {}
                 }
             }
 
@@ -502,21 +457,17 @@ class VoiceWebSocketHandler(
      * All processing on own GPU — no paid APIs.
      */
     private suspend fun generateTts(text: String): ByteArray? {
-        val body = buildJsonObject {
-            put("text", text)
-            put("language", ttsProperties.language)
-            put("speed", ttsProperties.speed.toDouble())
-            if (ttsProperties.speakerWav != null) {
-                put("voice", ttsProperties.speakerWav)
-            }
-        }.toString()
-
         logger.info { "VOICE_WS: TTS request: ${text.take(80)}" }
-        val resp = ttsClient.post("${ttsProperties.url}/tts") {
-            contentType(ContentType.Application.Json)
-            setBody(body)
+        val audio = try {
+            ttsGrpc.speak(
+                text = text,
+                speed = ttsProperties.speed.toDouble(),
+                language = ttsProperties.language ?: "",
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "VOICE_WS: TTS error: ${e.message}" }
+            return null
         }
-        val audio = resp.readBytes()
         logger.info { "VOICE_WS: TTS response: ${audio.size} bytes" }
         return if (audio.isNotEmpty()) audio else null
     }

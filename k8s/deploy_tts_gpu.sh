@@ -38,16 +38,28 @@ ssh_cmd "echo '$SSH_PASS' | sudo -S mkdir -p $INSTALL_DIR 2>/dev/null; echo '$SS
 echo "  directory and venv OK"
 
 # Step 2: Install Python dependencies with CUDA support
-echo "Step 2/5: Installing Python dependencies (onnxruntime-gpu)..."
+echo "Step 2/5: Installing Python dependencies (onnxruntime-gpu + grpcio)..."
 ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q \
     fastapi uvicorn pydantic \
     piper-tts \
+    grpcio grpcio-reflection protobuf \
     onnxruntime-gpu 2>&1 | tail -5"
 echo "  dependencies OK"
 
-# Step 3: Copy server files
-echo "Step 3/5: Copying TTS server..."
-ssh_cmd "cat > $INSTALL_DIR/tts_server.py" < "$PROJECT_ROOT/backend/service-tts/app/tts_server.py"
+# Step 3: Copy server files + jervis_contracts stubs
+echo "Step 3/5: Copying TTS server + jervis_contracts..."
+ssh_cmd "mkdir -p $INSTALL_DIR/app"
+ssh_cmd "cat > $INSTALL_DIR/app/tts_server.py" < "$PROJECT_ROOT/backend/service-tts/app/tts_server.py"
+ssh_cmd "cat > $INSTALL_DIR/app/grpc_server.py" < "$PROJECT_ROOT/backend/service-tts/app/grpc_server.py"
+ssh_cmd "touch $INSTALL_DIR/app/__init__.py"
+
+# Copy jervis_contracts as editable install.
+ssh_cmd "mkdir -p $INSTALL_DIR/libs/jervis_contracts"
+(cd "$PROJECT_ROOT/libs/jervis_contracts" && find . -type f) | while read -r f; do
+    ssh_cmd "mkdir -p $INSTALL_DIR/libs/jervis_contracts/\$(dirname $f)"
+    ssh_cmd "cat > $INSTALL_DIR/libs/jervis_contracts/$f" < "$PROJECT_ROOT/libs/jervis_contracts/$f"
+done
+ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q -e $INSTALL_DIR/libs/jervis_contracts"
 echo "  files copied"
 
 # Step 4: Create systemd service
@@ -61,11 +73,12 @@ After=network.target
 Type=simple
 User=$GPU_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/venv/bin/python3 -m uvicorn tts_server:app --host 0.0.0.0 --port 8787 --workers 1
+ExecStart=$INSTALL_DIR/venv/bin/python3 -m uvicorn app.tts_server:app --host 0.0.0.0 --port 8787 --workers 1
 Restart=on-failure
 RestartSec=10
 
 Environment=TTS_PORT=8787
+Environment=TTS_GRPC_PORT=5501
 Environment=TTS_MODEL=cs_CZ-jirka-medium
 Environment=TTS_DATA_DIR=/opt/jervis/data/tts
 Environment=TTS_MAX_TEXT_LENGTH=10000

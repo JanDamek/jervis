@@ -116,9 +116,18 @@ def _synthesize_text(voice, text: str, speed: float = 1.0) -> bytes:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
-    print(f"[TTS] Starting TTS service on port {TTS_PORT}")
-    yield
-    print("[TTS] Shutting down")
+    print(f"[TTS] Starting TTS service — FastAPI :{TTS_PORT} + gRPC :5501")
+    # Start the pod-to-pod gRPC server alongside FastAPI.
+    from app.grpc_server import start_grpc_server
+
+    grpc_port = int(os.getenv("TTS_GRPC_PORT", "5501"))
+    grpc_server = await start_grpc_server(port=grpc_port)
+    app.state.grpc_server = grpc_server
+    try:
+        yield
+    finally:
+        await grpc_server.stop(grace=5.0)
+        print("[TTS] Shutting down")
 
 
 app = FastAPI(title="Jervis TTS Service", lifespan=lifespan)
@@ -143,74 +152,7 @@ async def health() -> TtsHealthResponse:
     )
 
 
-@app.post("/tts")
-async def synthesize(request: TtsRequest) -> Response:
-    """Synthesize speech from text, return WAV audio."""
-    if not request.text.strip():
-        raise HTTPException(status_code=400, detail="Empty text")
-
-    if len(request.text) > TTS_MAX_TEXT_LENGTH:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Text too long: {len(request.text)} chars (max {TTS_MAX_TEXT_LENGTH})",
-        )
-
-    start = time.monotonic()
-
-    async with _lock:
-        voice = await asyncio.get_event_loop().run_in_executor(None, _load_voice)
-
-    wav_data = await asyncio.get_event_loop().run_in_executor(
-        None, _synthesize_text, voice, request.text, request.speed
-    )
-    elapsed = time.monotonic() - start
-    print(f"[TTS] Synthesized {len(request.text)} chars → {len(wav_data)} bytes in {elapsed:.2f}s")
-
-    return Response(
-        content=wav_data,
-        media_type="audio/wav",
-        headers={
-            "X-TTS-Duration-Ms": str(int(elapsed * 1000)),
-            "X-TTS-Text-Length": str(len(request.text)),
-        },
-    )
-
-
-@app.post("/tts/stream")
-async def synthesize_stream(request: TtsRequest):
-    """Synthesize speech from text, stream WAV audio chunks (for low-latency playback)."""
-    if not request.text.strip():
-        raise HTTPException(status_code=400, detail="Empty text")
-
-    if len(request.text) > TTS_MAX_TEXT_LENGTH:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Text too long: {len(request.text)} chars (max {TTS_MAX_TEXT_LENGTH})",
-        )
-
-    async with _lock:
-        voice = await asyncio.get_event_loop().run_in_executor(None, _load_voice)
-
-    def _generate_chunks():
-        """Generate audio sentence by sentence for low-latency streaming."""
-        import re
-        sentences = re.split(r'(?<=[.!?])\s+', request.text.strip())
-
-        for sentence in sentences:
-            if not sentence.strip():
-                continue
-            yield _synthesize_text(voice, sentence, request.speed)
-
-    async def _stream():
-        loop = asyncio.get_event_loop()
-        chunks = await loop.run_in_executor(None, lambda: list(_generate_chunks()))
-        for chunk in chunks:
-            yield chunk
-
-    return StreamingResponse(
-        _stream(),
-        media_type="audio/wav",
-    )
+# /tts + /tts/stream migrated to gRPC (TtsService.{Speak,SpeakStream} on :5501).
 
 
 if __name__ == "__main__":

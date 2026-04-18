@@ -320,6 +320,191 @@ class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer)
             found=True,
         )
 
+    async def DeleteVertex(
+        self,
+        request: graph_pb2.VertexIdRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.VertexMutationAck:
+        from app.agent.persistence import agent_store
+        from app.tools.kotlin_client import kotlin_client
+
+        graph = agent_store.get_memory_graph_cached()
+        if not graph:
+            return graph_pb2.VertexMutationAck(ok=False, error="Memory graph not loaded")
+        vertex_id = request.vertex_id
+        if vertex_id == graph.root_vertex_id:
+            return graph_pb2.VertexMutationAck(ok=False, error="Cannot delete root vertex")
+        if vertex_id not in graph.vertices:
+            return graph_pb2.VertexMutationAck(ok=False, error=f"Vertex '{vertex_id}' not found")
+
+        del graph.vertices[vertex_id]
+        graph.edges = [e for e in graph.edges if e.source_id != vertex_id and e.target_id != vertex_id]
+        agent_store._dirty.add(graph.task_id)
+        await agent_store.flush_dirty()
+        try:
+            await kotlin_client.notify_memory_graph_changed()
+        except Exception:
+            pass
+        return graph_pb2.VertexMutationAck(
+            ok=True, vertex_id=vertex_id, remaining_vertices=len(graph.vertices),
+        )
+
+    async def UpdateVertex(
+        self,
+        request: graph_pb2.UpdateVertexRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.VertexMutationAck:
+        from app.agent.persistence import agent_store
+        from app.agent.models import VertexStatus
+        from app.tools.kotlin_client import kotlin_client
+
+        graph = agent_store.get_memory_graph_cached()
+        if not graph:
+            return graph_pb2.VertexMutationAck(ok=False, error="Memory graph not loaded")
+        vertex = graph.vertices.get(request.vertex_id)
+        if not vertex:
+            return graph_pb2.VertexMutationAck(ok=False, error=f"Vertex '{request.vertex_id}' not found")
+
+        try:
+            body = json.loads(request.fields_json) if request.fields_json else {}
+        except Exception as e:
+            return graph_pb2.VertexMutationAck(ok=False, error=f"Invalid fields_json: {e}")
+        if "title" in body:
+            vertex.title = body["title"]
+        if "description" in body:
+            vertex.description = body["description"]
+        if "parent_id" in body:
+            vertex.parent_id = body["parent_id"]
+        if "input_request" in body:
+            vertex.input_request = body["input_request"]
+        if "status" in body:
+            try:
+                vertex.status = VertexStatus(body["status"])
+            except ValueError:
+                return graph_pb2.VertexMutationAck(ok=False, error=f"Invalid status: {body['status']}")
+
+        agent_store._dirty.add(graph.task_id)
+        await agent_store.flush_dirty()
+        try:
+            await kotlin_client.notify_memory_graph_changed()
+        except Exception:
+            pass
+        return graph_pb2.VertexMutationAck(
+            ok=True,
+            vertex_id=request.vertex_id,
+            vertex_json=json.dumps(vertex.model_dump(), default=str, ensure_ascii=False),
+        )
+
+    async def CreateVertex(
+        self,
+        request: graph_pb2.CreateVertexRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.VertexMutationAck:
+        from app.agent.persistence import agent_store
+        from app.agent.models import GraphVertex, VertexStatus, VertexType
+        from app.tools.kotlin_client import kotlin_client
+
+        graph = agent_store.get_memory_graph_cached()
+        if not graph:
+            return graph_pb2.VertexMutationAck(ok=False, error="Memory graph not loaded")
+        vertex_id = request.vertex_id
+        if not vertex_id:
+            return graph_pb2.VertexMutationAck(ok=False, error="vertex_id is required")
+        if vertex_id in graph.vertices:
+            return graph_pb2.VertexMutationAck(ok=False, error=f"Vertex '{vertex_id}' already exists")
+        try:
+            vertex = GraphVertex(
+                id=vertex_id,
+                title=request.title,
+                description=request.description,
+                vertex_type=VertexType(request.vertex_type or "executor"),
+                status=VertexStatus(request.status or "completed"),
+                parent_id=request.parent_id or None,
+                depth=request.depth or 1,
+                client_id=request.client_id,
+                input_request=request.input_request,
+            )
+        except ValueError as e:
+            return graph_pb2.VertexMutationAck(ok=False, error=str(e))
+
+        graph.vertices[vertex_id] = vertex
+        agent_store._dirty.add(graph.task_id)
+        await agent_store.flush_dirty()
+        try:
+            await kotlin_client.notify_memory_graph_changed()
+        except Exception:
+            pass
+        return graph_pb2.VertexMutationAck(
+            ok=True,
+            vertex_id=vertex_id,
+            remaining_vertices=len(graph.vertices),
+            vertex_json=json.dumps(vertex.model_dump(), default=str, ensure_ascii=False),
+        )
+
+    async def ForceCleanup(
+        self,
+        request: graph_pb2.CleanupRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.CleanupResult:
+        from app.agent.persistence import agent_store
+        from app.tools.kotlin_client import kotlin_client
+
+        graph = agent_store.get_memory_graph_cached()
+        if not graph:
+            return graph_pb2.CleanupResult(removed=0, remaining_vertices=0)
+        removed = agent_store.cleanup_memory_graph()
+        if removed > 0:
+            if hasattr(agent_store, "_pending_archive") and agent_store._pending_archive:
+                await agent_store._archive_vertices(agent_store._pending_archive)
+                agent_store._pending_archive = []
+            await agent_store.flush_dirty()
+        try:
+            await kotlin_client.notify_memory_graph_changed()
+        except Exception:
+            pass
+        return graph_pb2.CleanupResult(
+            removed=int(removed or 0),
+            remaining_vertices=len(graph.vertices),
+        )
+
+    async def PurgeStale(
+        self,
+        request: graph_pb2.PurgeStaleRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.PurgeStaleResult:
+        from app import main as orch_main
+
+        try:
+            result = await orch_main.purge_stale_vertices()
+        except Exception as e:
+            logger.warning("PURGE_STALE_ERROR: %s", e)
+            return graph_pb2.PurgeStaleResult(purged=0, remaining=0, detail=str(e))
+        return graph_pb2.PurgeStaleResult(
+            purged=int(result.get("purged", 0) or 0),
+            remaining=int(result.get("remaining_vertices", result.get("remaining", 0)) or 0),
+            detail=str(result.get("detail", "") or ""),
+        )
+
+    async def MemorySearch(
+        self,
+        request: graph_pb2.MemorySearchRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.MemorySearchResult:
+        from app import main as orch_main
+
+        if not request.client_id:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "client_id required")
+        try:
+            result = await orch_main.search_memory_impl(request.query or "", request.client_id)
+        except Exception as e:
+            logger.warning("MEMORY_SEARCH_ERROR: %s", e)
+            return graph_pb2.MemorySearchResult(
+                result_json=json.dumps({"error": str(e)}, ensure_ascii=False),
+            )
+        return graph_pb2.MemorySearchResult(
+            result_json=json.dumps(result, default=str, ensure_ascii=False),
+        )
+
     async def RunMaintenance(
         self,
         request: graph_pb2.MaintenanceRunRequest,

@@ -69,8 +69,9 @@ private val activeSessions = ConcurrentHashMap<String, VoiceSession>()
 private const val DEFAULT_CLIENT_ID = "68a332361b04695a243e5ae8"
 private const val DEFAULT_PROJECT_ID = "68a3318f1b04695a243e5adf"
 
-// TTS URL resolved at runtime from ttsProperties (configmap)
-private var TTS_URL = "http://ollama.lan.mazlusek.com:8787/tts"  // overridden in installVoiceChatApi
+// TTS client reference set at installVoiceChatApi entry.
+private var TTS_GRPC: com.jervis.infrastructure.grpc.TtsGrpcClient? = null
+private var TTS_SPEED: Double = 1.2
 
 private val ttsClient = HttpClient(CIO) {
     install(HttpTimeout) {
@@ -92,16 +93,19 @@ fun Routing.installVoiceChatApi(
     whisperProperties: WhisperProperties,
     chatService: ChatService,
     ttsProperties: com.jervis.infrastructure.config.properties.TtsProperties,
+    voiceGrpc: com.jervis.infrastructure.grpc.OrchestratorVoiceGrpcClient,
+    ttsGrpc: com.jervis.infrastructure.grpc.TtsGrpcClient,
 ) {
-    // Set TTS URL from configmap (not hardcoded)
-    TTS_URL = "${ttsProperties.url}/tts"
+    // Wire TTS client + speed from configmap.
+    TTS_GRPC = ttsGrpc
+    TTS_SPEED = ttsProperties.speed.toDouble()
 
     // ── WebSocket Continuous Voice Session ────────────────────────────────
     // All platforms (Watch, iOS, Android, Desktop) use this single endpoint.
     // Client sends PCM 16kHz chunks (binary) + JSON control (text).
     // Server detects speech boundaries (VAD), transcribes (Whisper GPU),
     // classifies intent, responds (TTS), stores to KB. Session persists.
-    val voiceHandler = com.jervis.voice.VoiceWebSocketHandler(whisperRestClient, whisperProperties, ttsProperties)
+    val voiceHandler = com.jervis.voice.VoiceWebSocketHandler(whisperRestClient, whisperProperties, ttsProperties, voiceGrpc, ttsGrpc)
     webSocket("/api/v1/voice/ws") {
         voiceHandler.handleSession(this)
     }
@@ -209,28 +213,14 @@ fun Routing.installVoiceChatApi(
             // Python pipeline handles: intent classify → KB store → orchestrator.
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
-                    val payload = """{"text":"${transcription.replace("\"", "\\\"").replace("\n", " ")}","source":"$source","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":false}"""
-                    val bgClient = io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO) {
-                        install(io.ktor.client.plugins.HttpTimeout) {
-                            requestTimeoutMillis = 60_000
-                            connectTimeoutMillis = 5_000
-                        }
-                    }
-                    try {
-                        val resp = bgClient.post("$orchestratorUrl/voice/process") {
-                            contentType(ContentType.Application.Json)
-                            setBody(payload)
-                        }
-                        // Drain the SSE stream to ensure pipeline completes
-                        val channel = resp.bodyAsChannel()
-                        while (!channel.isClosedForRead) {
-                            channel.readUTF8Line() ?: break
-                        }
-                        logger.info { "VOICE_BG_COMPLETE | source=$source | text=${transcription.take(60)}" }
-                    } finally {
-                        bgClient.close()
-                    }
+                    voiceGrpc.process(
+                        text = transcription,
+                        source = source,
+                        clientId = DEFAULT_CLIENT_ID,
+                        projectId = DEFAULT_PROJECT_ID,
+                        tts = false,
+                    ).collect { /* drain stream so pipeline completes */ }
+                    logger.info { "VOICE_BG_COMPLETE | source=$source | text=${transcription.take(60)}" }
                 } catch (e: Exception) {
                     logger.warn(e) { "VOICE_BG_PIPELINE_ERROR | source=$source" }
                 }
@@ -344,63 +334,33 @@ fun Routing.installVoiceChatApi(
                 sse("transcribed", """{"text":"${transcription.escapeJson()}"}""")
 
                 // Step 2: Forward to Python voice pipeline — intent classification + response
-                val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
-                val voicePayload = """{"text":"${transcription.escapeJson()}","source":"$source","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":$tts}"""
-
-                logger.info { "VOICE_STREAM_FORWARD | url=$orchestratorUrl/voice/process | text=${transcription.take(80)}" }
+                logger.info { "VOICE_STREAM_FORWARD | text=${transcription.take(80)}" }
 
                 val responseBuilder = StringBuilder()
 
                 try {
-                    val pythonClient = HttpClient(io.ktor.client.engine.cio.CIO) {
-                        install(HttpTimeout) {
-                            requestTimeoutMillis = 60_000
-                            connectTimeoutMillis = 5_000
-                            socketTimeoutMillis = 60_000
+                    voiceGrpc.process(
+                        text = transcription,
+                        source = source,
+                        clientId = DEFAULT_CLIENT_ID,
+                        projectId = DEFAULT_PROJECT_ID,
+                        tts = tts,
+                    ).collect { event ->
+                        sse(event.event, event.dataJson)
+                        if (event.event == "token") {
+                            try {
+                                val tokenJson = Json.parseToJsonElement(event.dataJson)
+                                val text = tokenJson.jsonObject["text"]?.jsonPrimitive?.content ?: ""
+                                responseBuilder.append(text)
+                            } catch (_: Exception) {}
                         }
-                    }
-                    try {
-                        val pythonResp = pythonClient.post("$orchestratorUrl/voice/process") {
-                            contentType(ContentType.Application.Json)
-                            setBody(voicePayload)
+                        if (event.event == "response") {
+                            try {
+                                val respJson = Json.parseToJsonElement(event.dataJson)
+                                val text = respJson.jsonObject["text"]?.jsonPrimitive?.content ?: ""
+                                if (responseBuilder.isEmpty()) responseBuilder.append(text)
+                            } catch (_: Exception) {}
                         }
-
-                        // Stream SSE events from Python → client
-                        val channel = pythonResp.bodyAsChannel()
-                        var pyEvent = ""
-                        var pyData = ""
-
-                        while (!channel.isClosedForRead) {
-                            val line = channel.readUTF8Line() ?: break
-                            when {
-                                line.startsWith("event: ") -> pyEvent = line.removePrefix("event: ").trim()
-                                line.startsWith("data: ") -> pyData = line.removePrefix("data: ").trim()
-                                line.isBlank() && pyData.isNotEmpty() -> {
-                                    // Forward most events directly, accumulate response text for TTS
-                                    sse(pyEvent, pyData)
-
-                                    if (pyEvent == "token") {
-                                        try {
-                                            val tokenJson = Json.parseToJsonElement(pyData)
-                                            val text = tokenJson.jsonObject["text"]?.jsonPrimitive?.content ?: ""
-                                            responseBuilder.append(text)
-                                        } catch (_: Exception) {}
-                                    }
-                                    if (pyEvent == "response") {
-                                        try {
-                                            val respJson = Json.parseToJsonElement(pyData)
-                                            val text = respJson.jsonObject["text"]?.jsonPrimitive?.content ?: ""
-                                            if (responseBuilder.isEmpty()) responseBuilder.append(text)
-                                        } catch (_: Exception) {}
-                                    }
-
-                                    pyEvent = ""
-                                    pyData = ""
-                                }
-                            }
-                        }
-                    } finally {
-                        pythonClient.close()
                     }
                 } catch (e: Exception) {
                     logger.warn { "VOICE_STREAM_PYTHON_ERROR: ${e.message}" }
@@ -462,7 +422,7 @@ fun Routing.installVoiceChatApi(
         }
     }
 
-    // TTS Stream — forwards SSE chunks from XTTS inference_stream() to client
+    // TTS Stream — forwards gRPC SpeakStream chunks as SSE tts_pcm events.
     post("/api/v1/tts/stream") {
         val body = call.receive<TtsStreamRequest>()
         if (body.text.isBlank()) {
@@ -478,44 +438,16 @@ fun Routing.installVoiceChatApi(
         call.respondTextWriter(contentType = ContentType.Text.EventStream) {
             suspend fun sse(event: String, data: String) { write("event: $event\ndata: $data\n\n"); flush() }
 
+            val grpc = TTS_GRPC
+            if (grpc == null) {
+                sse("error", """{"text":"TTS client not wired"}""")
+                return@respondTextWriter
+            }
             try {
-                // Connect to XTTS streaming endpoint (SSE)
-                val ttsStreamUrl = TTS_URL.replace("/tts", "/tts/stream")
-                val streamClient = HttpClient(io.ktor.client.engine.cio.CIO) {
-                    install(HttpTimeout) {
-                        requestTimeoutMillis = 300_000   // 5 min total for long texts
-                        connectTimeoutMillis = 5_000
-                        socketTimeoutMillis = 120_000    // 2 min between chunks
-                    }
-                }
-                try {
-                    // Use preparePost + execute to enable true streaming (don't buffer full response)
-                    val statement = streamClient.preparePost(ttsStreamUrl) {
-                        contentType(ContentType.Application.Json)
-                        setBody("""{"text":"${body.text.replace("\"", "\\\"").replace("\n", " ")}","speed":${body.speed}}""")
-                    }
-                    statement.execute { ttsResp ->
-                        // Forward SSE events from XTTS → client
-                        val channel = ttsResp.bodyAsChannel()
-                        var ttsEvent = ""
-                        var ttsData = ""
-
-                        while (!channel.isClosedForRead) {
-                            val line = channel.readUTF8Line(1_000_000) ?: break
-                            when {
-                                line.startsWith("event: ") -> ttsEvent = line.removePrefix("event: ").trim()
-                                line.startsWith("data: ") -> ttsData = line.removePrefix("data: ").trim()
-                                line.isBlank() && ttsData.isNotEmpty() -> {
-                                    // Forward directly — XTTS sends tts_header/tts_pcm/done/error events
-                                    sse(ttsEvent, ttsData)
-                                    ttsEvent = ""
-                                    ttsData = ""
-                                }
-                            }
-                        }
-                    }
-                } finally {
-                    streamClient.close()
+                grpc.speakStream(body.text, speed = body.speed.toDouble()).collect { chunk ->
+                    val b64 = Base64.getEncoder().encodeToString(chunk.data.toByteArray())
+                    sse("tts_pcm", """{"data":"$b64"}""")
+                    if (chunk.isLast) sse("done", "{}")
                 }
             } catch (e: Exception) {
                 logger.warn { "TTS_STREAM_ERROR: ${e::class.simpleName}: ${e.message}" }
@@ -524,60 +456,9 @@ fun Routing.installVoiceChatApi(
         }
     }
 
-    // ── Voice sample upload for voice cloning ──────────────────────────────
-    // POST /api/v1/voice/speaker — upload WAV reference for XTTS v2 voice cloning
-    post("/api/v1/voice/speaker") {
-        try {
-            val multipart = call.receiveMultipart()
-            var audioBytes: ByteArray? = null
-            var speakerName = "default"
-
-            multipart.forEachPart { part ->
-                when (part) {
-                    is PartData.FileItem -> {
-                        audioBytes = part.provider().readRemaining().readByteArray()
-                    }
-                    is PartData.FormItem -> {
-                        if (part.name == "name") speakerName = part.value
-                    }
-                    else -> {}
-                }
-                part.dispose()
-            }
-
-            if (audioBytes == null || audioBytes!!.isEmpty()) {
-                call.respondText("""{"error":"No audio data"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
-                return@post
-            }
-
-            // Forward to XTTS v2 service on VD for storage
-            val ttsBaseUrl = ttsProperties.url
-            val uploadClient = HttpClient(io.ktor.client.engine.cio.CIO) {
-                install(HttpTimeout) { requestTimeoutMillis = 30_000; connectTimeoutMillis = 5_000 }
-            }
-            try {
-                val resp = uploadClient.post("$ttsBaseUrl/upload_speaker") {
-                    setBody(io.ktor.client.request.forms.MultiPartFormDataContent(
-                        io.ktor.client.request.forms.formData {
-                            append("audio", audioBytes!!, io.ktor.http.Headers.build {
-                                append(io.ktor.http.HttpHeaders.ContentDisposition, "filename=\"$speakerName.wav\"")
-                                append(io.ktor.http.HttpHeaders.ContentType, "audio/wav")
-                            })
-                            append("name", speakerName)
-                        },
-                    ))
-                }
-                val result = resp.readBytes().decodeToString()
-                logger.info { "VOICE_SPEAKER_UPLOAD | name=$speakerName | size=${audioBytes!!.size} | result=$result" }
-                call.respondText(result, ContentType.Application.Json)
-            } finally {
-                uploadClient.close()
-            }
-        } catch (e: Exception) {
-            logger.warn { "VOICE_SPEAKER_UPLOAD_ERROR: ${e.message}" }
-            call.respondText("""{"error":"${e.message?.take(100)}"}""", ContentType.Application.Json, HttpStatusCode.InternalServerError)
-        }
-    }
+    // /api/v1/voice/speaker — removed. The previous XTTS /upload_speaker
+    // endpoint no longer exists on the Piper-based TTS service; voice
+    // cloning will return once a gRPC RegisterSpeaker RPC lands.
 
     // ── Session-based voice streaming (5s chunks during recording) ──────────
     // POST /api/v1/voice/session — start SSE session, receive events for chunks
@@ -669,24 +550,14 @@ fun Routing.installVoiceChatApi(
                 // Live assist: search KB for hints
                 if (session.liveAssist) {
                     try {
-                        val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
-                        val hintPayload = """{"text":"${chunkText.escapeJson()}","source":"${session.source}","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":false,"mode":"hint"}"""
-                        val hintClient = HttpClient(io.ktor.client.engine.cio.CIO) {
-                            install(HttpTimeout) { requestTimeoutMillis = 10_000; connectTimeoutMillis = 3_000 }
-                        }
-                        try {
-                            val hintResp = hintClient.post("$orchestratorUrl/voice/hint") {
-                                contentType(ContentType.Application.Json)
-                                setBody(hintPayload)
-                            }
-                            val hintBody = hintResp.readBytes().decodeToString()
-                            val hintJson = try { Json.parseToJsonElement(hintBody).jsonObject } catch (_: Exception) { null }
-                            val hintText = hintJson?.get("hint")?.jsonPrimitive?.content
-                            if (!hintText.isNullOrBlank()) {
-                                session.events.trySend("event: hint\ndata: {\"text\":\"${hintText.escapeJson()}\",\"push_to_wearable\":${session.wearableNotify}}\n\n")
-                            }
-                        } finally {
-                            hintClient.close()
+                        val hintResp = voiceGrpc.hint(
+                            text = chunkText,
+                            clientId = DEFAULT_CLIENT_ID,
+                            projectId = DEFAULT_PROJECT_ID,
+                        )
+                        val hintText = hintResp.hint
+                        if (hintText.isNotBlank()) {
+                            session.events.trySend("event: hint\ndata: {\"text\":\"${hintText.escapeJson()}\",\"push_to_wearable\":${session.wearableNotify}}\n\n")
                         }
                     } catch (e: Exception) {
                         logger.warn { "VOICE_HINT_ERROR: ${e.message}" }
@@ -748,67 +619,46 @@ fun Routing.installVoiceChatApi(
 
         // Forward full transcript to voice pipeline
         try {
-            val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
-            val voicePayload = """{"text":"${fullTranscript.escapeJson()}","source":"${session.source}","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":${session.tts},"is_final":true}"""
-
-            val pythonClient = HttpClient(io.ktor.client.engine.cio.CIO) {
-                install(HttpTimeout) { requestTimeoutMillis = 60_000; connectTimeoutMillis = 5_000; socketTimeoutMillis = 60_000 }
+            val responseBuilder = StringBuilder()
+            voiceGrpc.process(
+                text = fullTranscript,
+                source = session.source,
+                clientId = DEFAULT_CLIENT_ID,
+                projectId = DEFAULT_PROJECT_ID,
+                tts = session.tts,
+                isFinal = true,
+            ).collect { event ->
+                session.events.trySend("event: ${event.event}\ndata: ${event.dataJson}\n\n")
+                if (event.event == "token") {
+                    try {
+                        val tokenJson = Json.parseToJsonElement(event.dataJson)
+                        responseBuilder.append(tokenJson.jsonObject["text"]?.jsonPrimitive?.content ?: "")
+                    } catch (_: Exception) {}
+                }
+                if (event.event == "response" && responseBuilder.isEmpty()) {
+                    try {
+                        val respJson = Json.parseToJsonElement(event.dataJson)
+                        responseBuilder.append(respJson.jsonObject["text"]?.jsonPrimitive?.content ?: "")
+                    } catch (_: Exception) {}
+                }
             }
-            try {
-                val pythonResp = pythonClient.post("$orchestratorUrl/voice/process") {
-                    contentType(ContentType.Application.Json)
-                    setBody(voicePayload)
-                }
 
-                val channel = pythonResp.bodyAsChannel()
-                val responseBuilder = StringBuilder()
-                var pyEvent = ""
-                var pyData = ""
-
-                while (!channel.isClosedForRead) {
-                    val line = channel.readUTF8Line() ?: break
-                    when {
-                        line.startsWith("event: ") -> pyEvent = line.removePrefix("event: ").trim()
-                        line.startsWith("data: ") -> pyData = line.removePrefix("data: ").trim()
-                        line.isBlank() && pyData.isNotEmpty() -> {
-                            session.events.trySend("event: $pyEvent\ndata: $pyData\n\n")
-                            if (pyEvent == "token") {
-                                try {
-                                    val tokenJson = Json.parseToJsonElement(pyData)
-                                    responseBuilder.append(tokenJson.jsonObject["text"]?.jsonPrimitive?.content ?: "")
-                                } catch (_: Exception) {}
+            // TTS for final response
+            if (session.tts) {
+                val responseText = responseBuilder.toString().trim()
+                if (responseText.isNotBlank()) {
+                    try {
+                        val sentences = responseText.take(500).split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
+                        for (sentence in sentences) {
+                            val ttsAudio = generateTtsAudio(sentence)
+                            if (ttsAudio != null) {
+                                session.events.trySend("event: tts_audio\ndata: {\"data\":\"$ttsAudio\"}\n\n")
                             }
-                            if (pyEvent == "response" && responseBuilder.isEmpty()) {
-                                try {
-                                    val respJson = Json.parseToJsonElement(pyData)
-                                    responseBuilder.append(respJson.jsonObject["text"]?.jsonPrimitive?.content ?: "")
-                                } catch (_: Exception) {}
-                            }
-                            pyEvent = ""
-                            pyData = ""
                         }
+                    } catch (e: Exception) {
+                        logger.warn { "VOICE_SESSION_TTS_ERROR: ${e.message}" }
                     }
                 }
-
-                // TTS for final response
-                if (session.tts) {
-                    val responseText = responseBuilder.toString().trim()
-                    if (responseText.isNotBlank()) {
-                        try {
-                            val sentences = responseText.take(500).split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
-                            for (sentence in sentences) {
-                                val ttsAudio = generateTtsAudio(sentence)
-                                if (ttsAudio != null) {
-                                    session.events.trySend("event: tts_audio\ndata: {\"data\":\"$ttsAudio\"}\n\n")
-                                }
-                            }
-                        } catch (e: Exception) {
-                            logger.warn { "VOICE_SESSION_TTS_ERROR: ${e.message}" }
-                        }
-                    }
-                }
-            } finally {
-                pythonClient.close()
             }
         } catch (e: Exception) {
             logger.warn { "VOICE_SESSION_PROCESS_ERROR: ${e.message}" }
@@ -837,91 +687,6 @@ data class TtsStreamRequest(val text: String, val speed: Float = 1.2f)
 /** Escape JSON special chars for SSE data. */
 private fun String.escapeJson(): String =
     replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
-
-/**
- * Send transcription to Python voice pipeline (intent classification + KB store + response).
- * Same pipeline as /voice/stream — ensures instructions/dictation are stored in KB.
- */
-private suspend fun collectVoicePipelineResponse(
-    transcription: String,
-    source: String,
-): ChatResult {
-    val orchestratorUrl = System.getenv("ORCHESTRATOR_URL") ?: "http://jervis-orchestrator:8090"
-    val responseBuilder = StringBuilder()
-    var complete = false
-
-    try {
-        val client = io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO) {
-            install(io.ktor.client.plugins.HttpTimeout) {
-                requestTimeoutMillis = 45_000
-                connectTimeoutMillis = 5_000
-                socketTimeoutMillis = 45_000
-            }
-        }
-        try {
-            val payload = """{"text":"${transcription.replace("\"", "\\\"").replace("\n", " ")}","source":"$source","client_id":"$DEFAULT_CLIENT_ID","project_id":"$DEFAULT_PROJECT_ID","tts":false}"""
-            val resp = client.post("$orchestratorUrl/voice/process") {
-                contentType(io.ktor.http.ContentType.Application.Json)
-                setBody(payload)
-            }
-
-            // Parse SSE events from Python voice pipeline
-            val channel = resp.bodyAsChannel()
-            var currentEvent = ""
-            var currentData = ""
-
-            while (!channel.isClosedForRead) {
-                val line = channel.readUTF8Line() ?: break
-                when {
-                    line.startsWith("event: ") -> currentEvent = line.removePrefix("event: ").trim()
-                    line.startsWith("data: ") -> currentData = line.removePrefix("data: ").trim()
-                    line.isBlank() && currentData.isNotEmpty() -> {
-                        try {
-                            val data = kotlinx.serialization.json.Json.parseToJsonElement(currentData)
-                            val text = data.jsonObject["text"]?.jsonPrimitive?.content ?: ""
-                            when (currentEvent) {
-                                "token" -> responseBuilder.append(text)
-                                "response" -> {
-                                    if (responseBuilder.isEmpty()) responseBuilder.append(text)
-                                    complete = true
-                                }
-                                "stored" -> {
-                                    // KB store confirmed — build confirmation response
-                                    if (responseBuilder.isEmpty()) {
-                                        val summary = data.jsonObject["summary"]?.jsonPrimitive?.content ?: transcription.take(80)
-                                        responseBuilder.append("Uloženo: $summary")
-                                    }
-                                    complete = true
-                                }
-                                "done" -> {
-                                    complete = true
-                                }
-                                "error" -> {
-                                    if (responseBuilder.isEmpty()) responseBuilder.append(text)
-                                    complete = true
-                                }
-                            }
-                        } catch (_: Exception) {}
-                        currentEvent = ""
-                        currentData = ""
-                    }
-                }
-            }
-        } finally {
-            client.close()
-        }
-    } catch (e: Exception) {
-        logger.warn(e) { "VOICE_PIPELINE_COLLECT_ERROR" }
-        if (responseBuilder.isEmpty()) {
-            responseBuilder.append("Zpracovávám na pozadí.")
-        }
-    }
-
-    return ChatResult(
-        text = responseBuilder.toString().trim(),
-        complete = complete,
-    )
-}
 
 /**
  * Send message to orchestrator via ChatService and collect response tokens.
@@ -981,14 +746,15 @@ private suspend fun collectChatResponse(
 
 /**
  * Generate TTS audio (WAV) from text, return Base64 encoded.
+ * Dials TtsService.Speak over gRPC.
  */
 private suspend fun generateTtsAudio(text: String): String? {
-    val response = ttsClient.post(TTS_URL) {
-        contentType(ContentType.Application.Json)
-        setBody("""{"text":"${text.replace("\"", "\\\"").replace("\n", " ")}","speed":1.2}""")
+    val grpc = TTS_GRPC ?: return null
+    val audioBytes = try {
+        grpc.speak(text, speed = TTS_SPEED)
+    } catch (e: Exception) {
+        return null
     }
-
-    val audioBytes = response.readBytes()
     if (audioBytes.isEmpty()) return null
     return Base64.getEncoder().encodeToString(audioBytes)
 }

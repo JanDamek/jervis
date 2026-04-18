@@ -24,6 +24,9 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8787
+              name: http
+            - containerPort: 5501
+              name: grpc
           env:
             - name: TTS_PORT
               value: "8787"
@@ -42,16 +45,14 @@ spec:
               memory: "1Gi"
               cpu: "2000m"
           livenessProbe:
-            httpGet:
-              path: /health
-              port: 8787
+            tcpSocket:
+              port: 5501
             initialDelaySeconds: 15
             periodSeconds: 30
             timeoutSeconds: 10
           readinessProbe:
-            httpGet:
-              path: /health
-              port: 8787
+            tcpSocket:
+              port: 5501
             initialDelaySeconds: 10
             periodSeconds: 15
             timeoutSeconds: 10
@@ -72,3 +73,6 @@ spec:
     - name: http
       port: 8787
       targetPort: 8787
+    - name: grpc
+      port: 5501
+      targetPort: 5501

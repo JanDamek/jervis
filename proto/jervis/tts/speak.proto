@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package jervis.tts;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.tts";
+option java_multiple_files = true;
+option java_outer_classname = "TtsProto";
+
+// TtsService — text → audio synthesis. One-shot Speak returns a full
+// WAV blob; SpeakStream yields the audio sentence-by-sentence for
+// low-latency playback.
+service TtsService {
+  rpc Speak(SpeakRequest) returns (SpeakResponse);
+  rpc SpeakStream(SpeakRequest) returns (stream AudioChunk);
+}
+
+message SpeakRequest {
+  jervis.common.RequestContext ctx = 1;
+  string text = 2;
+  string voice = 3;             // reserved for future multi-voice
+  double speed = 4;             // default 1.0
+  string language = 5;          // optional language hint
+}
+
+message SpeakResponse {
+  bytes wav = 1;
+  int64 duration_ms = 2;
+  int32 text_length = 3;
+}
+
+message AudioChunk {
+  bytes data = 1;
+  bool is_last = 2;
+}

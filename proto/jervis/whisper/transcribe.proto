@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package jervis.whisper;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.whisper";
+option java_multiple_files = true;
+option java_outer_classname = "WhisperProto";
+
+// WhisperService — audio transcription with progress streaming.
+// Transcribe is unary-request → server-streaming-response: the request
+// carries the full audio bytes inline (64 MiB cap; multi-hour meeting
+// audio goes via blob side channel once that lands). Progress + result
+// events stream back over the response.
+service WhisperService {
+  rpc Transcribe(TranscribeRequest) returns (stream TranscribeEvent);
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc GpuRelease(GpuReleaseRequest) returns (GpuReleaseResponse);
+}
+
+message TranscribeRequest {
+  jervis.common.RequestContext ctx = 1;
+  bytes audio = 2;              // inline audio bytes
+  string filename = 3;          // original filename (extension hint)
+  // options carries the legacy JSON shape (task, model, language,
+  // beam_size, vad_filter, word_timestamps, initial_prompt,
+  // condition_on_previous_text, no_speech_threshold, extraction_ranges,
+  // diarize).
+  string options_json = 4;
+  string blob_ref = 5;          // future use — blob side channel pointer
+}
+
+message TranscribeEvent {
+  // event ∈ {"progress", "result", "error"}.
+  // data_json carries the legacy per-event payload keys (percent /
+  // segments_done / elapsed_seconds / last_segment_text for progress;
+  // full WhisperResult for result; {text, segments, error} for error).
+  string event = 1;
+  string data_json = 2;
+}
+
+message HealthRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message HealthResponse {
+  bool ok = 1;
+  string status = 2;
+  bool model_loaded = 3;
+  string detail = 4;
+}
+
+message GpuReleaseRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message GpuReleaseResponse {
+  bool released = 1;
+}

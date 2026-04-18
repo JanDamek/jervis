@@ -56,13 +56,27 @@ ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q \
     faster-whisper \
     pyannote.audio \
     fastapi uvicorn python-multipart sse-starlette \
+    grpcio grpcio-reflection protobuf \
     torch torchaudio --index-url https://download.pytorch.org/whl/cu124 2>&1 | tail -3"
-echo "  dependencies OK (including pyannote-audio for speaker diarization)"
+echo "  dependencies OK (including grpcio + pyannote-audio for speaker diarization)"
 
 # Step 3: Copy server files (using ssh+cat — more reliable with sshpass than scp)
-echo "Step 3/6: Copying server files..."
+echo "Step 3/6: Copying server files + jervis_contracts..."
 ssh_cmd "cat > $INSTALL_DIR/whisper_runner.py" < "$PROJECT_ROOT/backend/service-whisper/whisper_runner.py"
 ssh_cmd "cat > $INSTALL_DIR/whisper_rest_server.py" < "$PROJECT_ROOT/backend/service-whisper/whisper_rest_server.py"
+ssh_cmd "cat > $INSTALL_DIR/grpc_server.py" < "$PROJECT_ROOT/backend/service-whisper/grpc_server.py"
+
+# Copy jervis_contracts as an editable install so gRPC stubs are available.
+ssh_cmd "mkdir -p $INSTALL_DIR/libs"
+ssh_cmd "rm -rf $INSTALL_DIR/libs/jervis_contracts"
+(cd "$PROJECT_ROOT" && tar cf - libs/jervis_contracts) | ssh_cmd "tar xf - -C $INSTALL_DIR/libs-tar && mv $INSTALL_DIR/libs-tar/libs/jervis_contracts $INSTALL_DIR/libs/jervis_contracts && rm -rf $INSTALL_DIR/libs-tar" 2>/dev/null || true
+# Fallback: rsync-free scp-cat loop for the package contents.
+ssh_cmd "mkdir -p $INSTALL_DIR/libs/jervis_contracts"
+(cd "$PROJECT_ROOT/libs/jervis_contracts" && find . -type f) | while read -r f; do
+    ssh_cmd "mkdir -p $INSTALL_DIR/libs/jervis_contracts/\$(dirname $f)"
+    ssh_cmd "cat > $INSTALL_DIR/libs/jervis_contracts/$f" < "$PROJECT_ROOT/libs/jervis_contracts/$f"
+done
+ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q -e $INSTALL_DIR/libs/jervis_contracts"
 echo "  files copied"
 
 # Step 4: Pre-download whisper models (if not cached)
@@ -103,6 +117,7 @@ Environment=WHISPER_DEVICE=cuda
 Environment=WHISPER_COMPUTE_TYPE=int8_float32
 Environment=WHISPER_DEFAULT_MODEL=medium
 Environment=WHISPER_REST_PORT=8786
+Environment=WHISPER_GRPC_PORT=5501
 Environment=WHISPER_REST_HOST=0.0.0.0
 Environment=WHISPER_REST_WORKERS=1
 Environment=ROUTER_URL=http://jervis-router.lan.mazlusek.com

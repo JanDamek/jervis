@@ -297,60 +297,8 @@ from app.companion.routes import router as companion_router
 app.include_router(companion_router)
 
 
-# --- Voice Pipeline Endpoint ---
-# NOTE (Phase 3 slice 19): Voice is also exposed via
-# OrchestratorVoiceService.{Process,Hint} on :5501. The FastAPI routes
-# below stay live so the existing Kotlin inline call sites in
-# rpc/VoiceChatRouting.kt + voice/VoiceWebSocketHandler.kt keep working
-# during the migration window. A follow-up slice will move every call
-# site onto the gRPC stub and delete these routes.
-
-
-@app.post("/voice/process")
-async def voice_process(request_body: dict):
-    """Process transcribed voice input — intent classification + quick/full response.
-
-    Called by Kotlin VoiceChatRouting AFTER Whisper STT.
-    Receives text (not audio), classifies intent, and streams SSE events.
-
-    Events: preliminary_answer, responding, token, response, stored, error, done
-    """
-    from app.voice.models import VoiceStreamRequest
-    from app.voice.stream_handler import handle_voice_stream
-
-    voice_request = VoiceStreamRequest(**request_body)
-    logger.info("VOICE_PROCESS | text=%s | source=%s", voice_request.text[:80], voice_request.source)
-
-    async def event_generator():
-        try:
-            async for event in handle_voice_stream(voice_request):
-                yield {"event": event.event, "data": json.dumps(event.data, ensure_ascii=False)}
-        except Exception as e:
-            logger.exception("Voice handler failed: %s", e)
-            yield {"event": "error", "data": json.dumps({"text": str(e)[:100]})}
-            yield {"event": "done", "data": "{}"}
-
-    return EventSourceResponse(event_generator())
-
-
-@app.post("/voice/hint")
-async def voice_hint(request_body: dict):
-    """Generate a KB-based hint for live assist mode.
-
-    Called by Kotlin server during session-based voice streaming.
-    Returns JSON with hint text (or empty if nothing relevant).
-    """
-    from app.voice.stream_handler import generate_hint
-
-    text = request_body.get("text", "").strip()
-    client_id = request_body.get("client_id", "")
-    project_id = request_body.get("project_id", "")
-
-    if not text:
-        return {"hint": None}
-
-    hint = await generate_hint(text, client_id, project_id)
-    return {"hint": hint}
+# /voice/process + /voice/hint migrated to gRPC
+# (OrchestratorVoiceService.{Process,Hint} on :5501 — see app/grpc_server.py).
 
 
 # --- Foreground Chat Endpoint ---
@@ -367,20 +315,9 @@ _active_chat_stops: dict[str, asyncio.Event] = {}
 
 
 # /health + /status/{thread_id} migrated to gRPC
-# (OrchestratorControlService.{Health,GetStatus} on :5501 —
-# see app/grpc_server.py). The K8s liveness probe still dials
-# the FastAPI /health — see _fallback_health below for the stub.
-
-
-@app.get("/health")
-async def _fallback_health():
-    """Stub for the K8s liveness probe only. Real health telemetry flows
-    through the gRPC OrchestratorControlService.Health RPC."""
-    return {
-        "status": "ok",
-        "service": "orchestrator",
-        "active_tasks": len(_active_tasks),
-    }
+# (OrchestratorControlService.{Health,GetStatus} on :5501).
+# K8s probe switched to tcpSocket on the gRPC port — see
+# k8s/app_orchestrator.yaml.
 
 
 # /approve/{thread_id}, /interrupt/{thread_id}, /cancel/{thread_id} migrated to
@@ -431,164 +368,23 @@ def _filter_graph_for_client(graph: "AgentGraph", client_id: str) -> dict:
     return result
 
 
-# --- Memory Graph Admin Endpoints ---
+# Memory graph admin + memory search migrated to gRPC
+# (OrchestratorGraphService.{DeleteVertex,UpdateVertex,CreateVertex,
+# ForceCleanup,PurgeStale,MemorySearch} on :5501). Shared helper stays
+# here because the servicer imports it.
 
 
-@app.delete("/graph/master/vertex/{vertex_id}")
-async def delete_memory_graph_vertex(vertex_id: str):
-    """Delete a vertex from the memory graph (RAM + DB flush)."""
-    from app.agent.persistence import agent_store
-
-    graph = agent_store.get_memory_graph_cached()
-    if not graph:
-        raise HTTPException(status_code=404, detail="Memory graph not loaded")
-
-    if vertex_id == graph.root_vertex_id:
-        raise HTTPException(status_code=400, detail="Cannot delete root vertex")
-
-    if vertex_id not in graph.vertices:
-        raise HTTPException(status_code=404, detail=f"Vertex '{vertex_id}' not found")
-
-    del graph.vertices[vertex_id]
-    graph.edges = [e for e in graph.edges if e.source_id != vertex_id and e.target_id != vertex_id]
-    agent_store._dirty.add(graph.task_id)
-    await agent_store.flush_dirty()
-    try:
-        await kotlin_client.notify_memory_graph_changed()
-    except Exception:
-        pass
-    return {"deleted": vertex_id, "remaining_vertices": len(graph.vertices)}
-
-
-@app.patch("/graph/master/vertex/{vertex_id}")
-async def update_memory_graph_vertex(vertex_id: str, request: Request):
-    """Update a vertex in the memory graph (title, status, description).
-
-    Body: { "title": "...", "status": "completed", "description": "..." }
-    All fields optional.
-    """
-    from app.agent.persistence import agent_store
-    from app.agent.models import VertexStatus
-
-    graph = agent_store.get_memory_graph_cached()
-    if not graph:
-        raise HTTPException(status_code=404, detail="Memory graph not loaded")
-
-    vertex = graph.vertices.get(vertex_id)
-    if not vertex:
-        raise HTTPException(status_code=404, detail=f"Vertex '{vertex_id}' not found")
-
-    body = await request.json()
-    if "title" in body:
-        vertex.title = body["title"]
-    if "description" in body:
-        vertex.description = body["description"]
-    if "parent_id" in body:
-        vertex.parent_id = body["parent_id"]
-    if "input_request" in body:
-        vertex.input_request = body["input_request"]
-    if "status" in body:
-        try:
-            vertex.status = VertexStatus(body["status"])
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid status: {body['status']}")
-
-    agent_store._dirty.add(graph.task_id)
-    await agent_store.flush_dirty()
-    try:
-        await kotlin_client.notify_memory_graph_changed()
-    except Exception:
-        pass
-    return {"updated": vertex_id, "vertex": vertex.model_dump()}
-
-
-@app.post("/graph/master/vertex")
-async def create_memory_graph_vertex(request: Request):
-    """Create a new vertex in the memory graph.
-
-    Body: { "id": "v-...", "title": "...", "vertex_type": "group", "status": "completed",
-            "parent_id": "v-client-...", "input_request": "...", "client_id": "..." }
-    """
-    from app.agent.persistence import agent_store
-    from app.agent.models import GraphVertex, VertexType, VertexStatus
-
-    graph = agent_store.get_memory_graph_cached()
-    if not graph:
-        raise HTTPException(status_code=404, detail="Memory graph not loaded")
-
-    body = await request.json()
-    vertex_id = body.get("id")
-    if not vertex_id:
-        raise HTTPException(status_code=400, detail="'id' is required")
-    if vertex_id in graph.vertices:
-        raise HTTPException(status_code=409, detail=f"Vertex '{vertex_id}' already exists")
-
-    vertex = GraphVertex(
-        id=vertex_id,
-        title=body.get("title", ""),
-        description=body.get("description", ""),
-        vertex_type=VertexType(body.get("vertex_type", "executor")),
-        status=VertexStatus(body.get("status", "completed")),
-        parent_id=body.get("parent_id"),
-        depth=body.get("depth", 1),
-        client_id=body.get("client_id", ""),
-        input_request=body.get("input_request", ""),
-    )
-
-    graph.vertices[vertex_id] = vertex
-    agent_store._dirty.add(graph.task_id)
-    await agent_store.flush_dirty()
-    try:
-        await kotlin_client.notify_memory_graph_changed()
-    except Exception:
-        pass
-    return {"created": vertex_id, "total_vertices": len(graph.vertices)}
-
-
-@app.post("/graph/master/cleanup")
-async def force_cleanup_memory_graph():
-    """Force cleanup of the memory graph — removes stale vertices."""
-    from app.agent.persistence import agent_store
-
-    graph = agent_store.get_memory_graph_cached()
-    if not graph:
-        raise HTTPException(status_code=404, detail="Memory graph not loaded")
-
-    removed = agent_store.cleanup_memory_graph()
-    if removed > 0:
-        if hasattr(agent_store, "_pending_archive") and agent_store._pending_archive:
-            await agent_store._archive_vertices(agent_store._pending_archive)
-            agent_store._pending_archive = []
-        await agent_store.flush_dirty()
-
-    try:
-        await kotlin_client.notify_memory_graph_changed()
-    except Exception:
-        pass
-    return {
-        "removed": removed,
-        "remaining_vertices": len(graph.vertices),
-    }
-
-
-@app.get("/memory/search")
-async def search_memory(query: str, client_id: str):
-    """3-tier memory search cascade.
+async def search_memory_impl(query: str, client_id: str) -> dict:
+    """3-tier memory search cascade. Shared by the gRPC MemorySearch RPC.
 
     Tier 1: RAM (Paměťový graf) — instant
     Tier 2: MongoDB archive (7d) — fast
     Tier 3: KB — slower
-
-    Client isolation enforced at all tiers.
     """
-    import httpx
     from app.agent.persistence import agent_store
 
-    if not client_id:
-        raise HTTPException(status_code=400, detail="client_id required")
-
     results: dict[str, list] = {"tier1_ram": [], "tier2_archive": [], "tier3_kb": []}
-    query_lower = query.lower()
+    query_lower = (query or "").lower()
 
     # Tier 1: RAM search in memory graph
     graph = agent_store.get_memory_graph_cached()
@@ -819,7 +615,6 @@ def _similarity(a: str, b: str) -> float:
     return intersection / union if union > 0 else 0.0
 
 
-@app.post("/graph/master/purge-stale")
 async def purge_stale_vertices():
     """Purge stale RUNNING vertices and duplicates from memory graph.
 

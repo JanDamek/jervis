@@ -41,6 +41,30 @@ public object OrchestratorGraphServiceGrpcKt {
     @JvmStatic
     get() = OrchestratorGraphServiceGrpc.getRunMaintenanceMethod()
 
+  public val deleteVertexMethod: MethodDescriptor<VertexIdRequest, VertexMutationAck>
+    @JvmStatic
+    get() = OrchestratorGraphServiceGrpc.getDeleteVertexMethod()
+
+  public val updateVertexMethod: MethodDescriptor<UpdateVertexRequest, VertexMutationAck>
+    @JvmStatic
+    get() = OrchestratorGraphServiceGrpc.getUpdateVertexMethod()
+
+  public val createVertexMethod: MethodDescriptor<CreateVertexRequest, VertexMutationAck>
+    @JvmStatic
+    get() = OrchestratorGraphServiceGrpc.getCreateVertexMethod()
+
+  public val forceCleanupMethod: MethodDescriptor<CleanupRequest, CleanupResult>
+    @JvmStatic
+    get() = OrchestratorGraphServiceGrpc.getForceCleanupMethod()
+
+  public val purgeStaleMethod: MethodDescriptor<PurgeStaleRequest, PurgeStaleResult>
+    @JvmStatic
+    get() = OrchestratorGraphServiceGrpc.getPurgeStaleMethod()
+
+  public val memorySearchMethod: MethodDescriptor<MemorySearchRequest, MemorySearchResult>
+    @JvmStatic
+    get() = OrchestratorGraphServiceGrpc.getMemorySearchMethod()
+
   /**
    * A stub for issuing RPCs to a(n) jervis.orchestrator.OrchestratorGraphService service as
    * suspending coroutines.
@@ -97,6 +121,138 @@ public object OrchestratorGraphServiceGrpcKt {
       callOptions,
       headers
     )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun deleteVertex(request: VertexIdRequest, headers: Metadata = Metadata()):
+        VertexMutationAck = unaryRpc(
+      channel,
+      OrchestratorGraphServiceGrpc.getDeleteVertexMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun updateVertex(request: UpdateVertexRequest, headers: Metadata = Metadata()):
+        VertexMutationAck = unaryRpc(
+      channel,
+      OrchestratorGraphServiceGrpc.getUpdateVertexMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun createVertex(request: CreateVertexRequest, headers: Metadata = Metadata()):
+        VertexMutationAck = unaryRpc(
+      channel,
+      OrchestratorGraphServiceGrpc.getCreateVertexMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun forceCleanup(request: CleanupRequest, headers: Metadata = Metadata()):
+        CleanupResult = unaryRpc(
+      channel,
+      OrchestratorGraphServiceGrpc.getForceCleanupMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun purgeStale(request: PurgeStaleRequest, headers: Metadata = Metadata()):
+        PurgeStaleResult = unaryRpc(
+      channel,
+      OrchestratorGraphServiceGrpc.getPurgeStaleMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun memorySearch(request: MemorySearchRequest, headers: Metadata = Metadata()):
+        MemorySearchResult = unaryRpc(
+      channel,
+      OrchestratorGraphServiceGrpc.getMemorySearchMethod(),
+      request,
+      callOptions,
+      headers
+    )
   }
 
   /**
@@ -136,6 +292,90 @@ public object OrchestratorGraphServiceGrpcKt {
         throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorGraphService.RunMaintenance is unimplemented"))
 
+    /**
+     * Returns the response to an RPC for jervis.orchestrator.OrchestratorGraphService.DeleteVertex.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun deleteVertex(request: VertexIdRequest): VertexMutationAck = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorGraphService.DeleteVertex is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.orchestrator.OrchestratorGraphService.UpdateVertex.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun updateVertex(request: UpdateVertexRequest): VertexMutationAck = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorGraphService.UpdateVertex is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.orchestrator.OrchestratorGraphService.CreateVertex.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun createVertex(request: CreateVertexRequest): VertexMutationAck = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorGraphService.CreateVertex is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.orchestrator.OrchestratorGraphService.ForceCleanup.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun forceCleanup(request: CleanupRequest): CleanupResult = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorGraphService.ForceCleanup is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.orchestrator.OrchestratorGraphService.PurgeStale.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun purgeStale(request: PurgeStaleRequest): PurgeStaleResult = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorGraphService.PurgeStale is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.orchestrator.OrchestratorGraphService.MemorySearch.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun memorySearch(request: MemorySearchRequest): MemorySearchResult = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorGraphService.MemorySearch is unimplemented"))
+
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
@@ -146,6 +386,36 @@ public object OrchestratorGraphServiceGrpcKt {
       context = this.context,
       descriptor = OrchestratorGraphServiceGrpc.getRunMaintenanceMethod(),
       implementation = ::runMaintenance
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = OrchestratorGraphServiceGrpc.getDeleteVertexMethod(),
+      implementation = ::deleteVertex
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = OrchestratorGraphServiceGrpc.getUpdateVertexMethod(),
+      implementation = ::updateVertex
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = OrchestratorGraphServiceGrpc.getCreateVertexMethod(),
+      implementation = ::createVertex
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = OrchestratorGraphServiceGrpc.getForceCleanupMethod(),
+      implementation = ::forceCleanup
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = OrchestratorGraphServiceGrpc.getPurgeStaleMethod(),
+      implementation = ::purgeStale
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = OrchestratorGraphServiceGrpc.getMemorySearchMethod(),
+      implementation = ::memorySearch
     )).build()
   }
 }

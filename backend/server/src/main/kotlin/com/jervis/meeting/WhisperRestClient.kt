@@ -1,80 +1,93 @@
 package com.jervis.meeting
 
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.forms.formData
-import io.ktor.client.request.forms.prepareFormWithBinaryData
-import io.ktor.client.request.get
-import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.http.Headers
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.utils.io.readUTF8Line
+import com.google.protobuf.ByteString
+import com.jervis.contracts.common.RequestContext
+import com.jervis.contracts.common.Scope
+import com.jervis.contracts.whisper.HealthRequest
+import com.jervis.contracts.whisper.TranscribeRequest
+import com.jervis.contracts.whisper.WhisperServiceGrpcKt
+import io.grpc.ManagedChannel
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
+import jakarta.annotation.PreDestroy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 private val logger = KotlinLogging.logger {}
 
 private val json = Json { ignoreUnknownKeys = true }
 
 /**
- * REST client for calling a remote Whisper transcription service.
+ * Client for the Whisper transcription service over gRPC.
  *
- * Sends audio file over HTTP multipart
- * to a persistent Whisper server and reads an SSE stream for progress + result.
+ * Name + public shape kept for source-compatibility — internally the
+ * transport is now WhisperService.{Transcribe(stream), Health, GpuRelease}.
+ * Audio bytes travel inline in the TranscribeRequest (up to 256 MiB);
+ * multi-hour meeting audio will migrate to the blob side channel when
+ * that lands.
  *
- * Uses Ktor's streaming `execute {}` pattern to read SSE events in real-time
- * (not buffered). This is critical for UI progress display.
- *
- * SSE event types from server:
- * - "progress": {"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340}
- * - "result": full WhisperResult JSON
- * - "error": {"text": "", "segments": [], "error": "..."}
+ * `baseUrl` is reinterpreted as `host[:port]` for the gRPC channel —
+ * callers pass the same URL the REST client used, we strip the scheme +
+ * any path and point Netty at it on port 5501.
  */
 @Component
 class WhisperRestClient {
 
-    private val client = HttpClient(CIO) {
-        install(HttpTimeout) {
-            // Whisper transcription can take a very long time (large files, large models)
-            requestTimeoutMillis = Long.MAX_VALUE
-            connectTimeoutMillis = 30_000
-            socketTimeoutMillis = Long.MAX_VALUE
+    private val channels = ConcurrentHashMap<String, ManagedChannel>()
+
+    private fun channelFor(baseUrl: String): ManagedChannel =
+        channels.computeIfAbsent(baseUrl) { url ->
+            val (host, port) = parseTarget(url)
+            NettyChannelBuilder.forAddress(host, port)
+                .usePlaintext()
+                .maxInboundMessageSize(256 * 1024 * 1024)
+                .keepAliveTime(30, TimeUnit.SECONDS)
+                .keepAliveTimeout(5, TimeUnit.SECONDS)
+                .keepAliveWithoutCalls(true)
+                .build()
+                .also { logger.info { "gRPC channel → $host:$port (whisper)" } }
         }
+
+    private fun parseTarget(baseUrl: String): Pair<String, Int> {
+        val normalized = if (baseUrl.contains("://")) baseUrl else "http://$baseUrl"
+        val uri = URI(normalized)
+        val host = uri.host ?: baseUrl.substringBefore(":")
+        // REST used variable ports (8786 default); gRPC is always 5501 on
+        // the whisper pod. Override at call time via `grpc.whisper.port`
+        // if a different deployment moves the port.
+        return host to 5501
     }
 
-    /**
-     * Check if the remote Whisper REST service is reachable.
-     */
-    suspend fun isHealthy(baseUrl: String): Boolean {
-        return try {
-            val response = client.get("$baseUrl/health")
-            response.status == HttpStatusCode.OK
+    private fun ctx(): RequestContext =
+        RequestContext.newBuilder()
+            .setScope(Scope.newBuilder().build())
+            .setRequestId(UUID.randomUUID().toString())
+            .setIssuedAtUnixMs(System.currentTimeMillis())
+            .build()
+
+    suspend fun isHealthy(baseUrl: String): Boolean =
+        try {
+            val stub = WhisperServiceGrpcKt.WhisperServiceCoroutineStub(channelFor(baseUrl))
+            val resp = stub.health(HealthRequest.newBuilder().setCtx(ctx()).build())
+            resp.ok
         } catch (e: Exception) {
-            logger.warn(e) { "Whisper REST health check failed for $baseUrl" }
+            logger.warn(e) { "Whisper gRPC health check failed for $baseUrl" }
             false
         }
-    }
 
     /**
-     * Send audio file to remote Whisper REST service for transcription.
-     * Reads SSE stream with progress updates and final result.
-     *
-     * Uses `prepareFormWithBinaryData().execute {}` for true streaming — SSE events
-     * are read line-by-line from the network socket, not buffered in memory.
-     *
-     * @param baseUrl Base URL of the Whisper REST service (e.g. "http://192.168.100.117:8786")
-     * @param audioFilePath Local path to audio file
-     * @param optionsJson JSON string with Whisper options
-     * @param onProgress Called with progress updates (percent, segmentsDone, elapsedSeconds)
-     * @return WhisperResult with transcription
+     * Send audio file to the Whisper service for transcription via
+     * WhisperService.Transcribe (server-streaming). Progress events are
+     * forwarded to `onProgress`; the final result is returned.
      */
     suspend fun transcribe(
         baseUrl: String,
@@ -85,134 +98,81 @@ class WhisperRestClient {
         val audioPath = Path.of(audioFilePath)
         val audioBytes = Files.readAllBytes(audioPath)
         val fileName = audioPath.fileName.toString()
+        logger.info { "Sending audio to Whisper gRPC: $baseUrl (file=$fileName, ${audioBytes.size} bytes)" }
 
-        logger.info { "Sending audio to Whisper REST service: $baseUrl/transcribe (file=$fileName, ${audioBytes.size} bytes)" }
+        val stub = WhisperServiceGrpcKt.WhisperServiceCoroutineStub(channelFor(baseUrl))
+        val req = TranscribeRequest.newBuilder()
+            .setCtx(ctx())
+            .setAudio(ByteString.copyFrom(audioBytes))
+            .setFilename(fileName)
+            .setOptionsJson(optionsJson)
+            .build()
 
-        // Use prepareFormWithBinaryData + execute for streaming SSE response.
-        // Regular submitFormWithBinaryData buffers the entire response body,
-        // causing all SSE progress events to arrive in a burst instead of real-time.
-        val statement = client.prepareFormWithBinaryData(
-            url = "$baseUrl/transcribe",
-            formData = formData {
-                append("audio", audioBytes, Headers.build {
-                    append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
-                    append(HttpHeaders.ContentType, "audio/wav")
-                })
-                append("options", optionsJson)
-            },
-        )
-
-        return statement.execute { response ->
-            if (response.status != HttpStatusCode.OK) {
-                val errorText = try {
-                    val channel = response.bodyAsChannel()
-                    buildString {
-                        while (true) {
-                            val line = channel.readUTF8Line() ?: break
-                            append(line)
-                        }
-                    }
-                } catch (_: Exception) { "unknown error" }
-                logger.error { "Whisper REST service returned ${response.status}: ${errorText.take(500)}" }
-                return@execute WhisperResult(
-                    text = "",
-                    segments = emptyList(),
-                    error = "Whisper REST error (${response.status}): ${errorText.take(500)}",
-                )
-            }
-
-            readSseStream(response, onProgress)
-        }
-    }
-
-    /**
-     * Parse SSE event stream from Whisper REST server.
-     *
-     * SSE format:
-     *   event: progress
-     *   data: {"percent": 45.2, ...}
-     *
-     *   event: result
-     *   data: {"text": "...", "segments": [...], ...}
-     *
-     *   event: error
-     *   data: {"text": "", "segments": [], "error": "..."}
-     */
-    private suspend fun readSseStream(
-        response: HttpResponse,
-        onProgress: (suspend (percent: Double, segmentsDone: Int, elapsedSeconds: Double, lastSegmentText: String?) -> Unit)?,
-    ): WhisperResult {
-        val channel = response.bodyAsChannel()
-        var currentEvent = ""
-        var dataBuffer = StringBuilder()
         var result: WhisperResult? = null
-
-        while (true) {
-            val line = channel.readUTF8Line() ?: break
-
-            when {
-                line.startsWith("event:") -> {
-                    currentEvent = line.removePrefix("event:").trim()
-                }
-                line.startsWith("data:") -> {
-                    dataBuffer.append(line.removePrefix("data:").trim())
-                }
-                line.isEmpty() -> {
-                    // Empty line = end of SSE event, process it
-                    if (currentEvent.isNotEmpty() && dataBuffer.isNotEmpty()) {
-                        val data = dataBuffer.toString()
-                        when (currentEvent) {
-                            "progress" -> {
-                                try {
-                                    val progress = json.decodeFromString<WhisperSseProgress>(data)
-                                    onProgress?.invoke(progress.percent, progress.segmentsDone, progress.elapsedSeconds, progress.lastSegmentText)
-                                } catch (e: Exception) {
-                                    logger.warn { "Failed to parse progress SSE event: ${data.take(200)}" }
-                                }
-                            }
-                            "result" -> {
-                                try {
-                                    result = json.decodeFromString<WhisperResult>(data)
-                                    logger.info { "Whisper REST result received: ${result!!.segments.size} segments, ${result!!.text.length} chars" }
-                                } catch (e: Exception) {
-                                    logger.error(e) { "Failed to parse result SSE event: ${data.take(500)}" }
-                                    result = WhisperResult(
-                                        text = "",
-                                        segments = emptyList(),
-                                        error = "Failed to parse Whisper REST result: ${e.message}",
-                                    )
-                                }
-                            }
-                            "error" -> {
-                                try {
-                                    result = json.decodeFromString<WhisperResult>(data)
-                                    logger.error { "Whisper REST error: ${result!!.error}" }
-                                } catch (e: Exception) {
-                                    logger.error(e) { "Failed to parse error SSE event: ${data.take(500)}" }
-                                    result = WhisperResult(
-                                        text = "",
-                                        segments = emptyList(),
-                                        error = "Whisper REST error (unparseable): ${data.take(500)}",
-                                    )
-                                }
-                            }
+        try {
+            stub.transcribe(req).collect { event ->
+                when (event.event) {
+                    "progress" -> {
+                        val progress = try {
+                            json.decodeFromString<WhisperSseProgress>(event.dataJson)
+                        } catch (e: Exception) {
+                            logger.warn { "Failed to parse progress event: ${event.dataJson.take(200)}" }
+                            null
+                        }
+                        if (progress != null) {
+                            onProgress?.invoke(progress.percent, progress.segmentsDone, progress.elapsedSeconds, progress.lastSegmentText)
                         }
                     }
-                    currentEvent = ""
-                    dataBuffer = StringBuilder()
+                    "result" -> {
+                        result = try {
+                            json.decodeFromString<WhisperResult>(event.dataJson)
+                        } catch (e: Exception) {
+                            logger.error(e) { "Failed to parse result event: ${event.dataJson.take(500)}" }
+                            WhisperResult(
+                                text = "",
+                                segments = emptyList(),
+                                error = "Failed to parse Whisper result: ${e.message}",
+                            )
+                        }
+                    }
+                    "error" -> {
+                        result = try {
+                            json.decodeFromString<WhisperResult>(event.dataJson)
+                        } catch (_: Exception) {
+                            WhisperResult(
+                                text = "",
+                                segments = emptyList(),
+                                error = "Whisper error (unparseable): ${event.dataJson.take(500)}",
+                            )
+                        }
+                    }
                 }
             }
+        } catch (e: Exception) {
+            logger.error(e) { "Whisper transcribe stream failed: ${e.message}" }
+            return WhisperResult(
+                text = "",
+                segments = emptyList(),
+                error = "Whisper gRPC error: ${e.message}",
+            )
         }
 
         return result ?: WhisperResult(
             text = "",
             segments = emptyList(),
-            error = "Whisper REST stream ended without result or error event",
+            error = "Whisper gRPC stream ended without result or error event",
         )
+    }
+
+    @PreDestroy
+    fun shutdown() {
+        channels.values.forEach {
+            runCatching { it.shutdown().awaitTermination(5, TimeUnit.SECONDS) }
+        }
     }
 }
 
-/** SSE progress event from the Whisper REST server (includes last_segment_text). */
+/** Progress event payload from the Whisper server (legacy JSON shape). */
 @Serializable
 private data class WhisperSseProgress(
     val percent: Double = 0.0,
