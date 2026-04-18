@@ -17,6 +17,7 @@ import logging
 import grpc
 from grpc_reflection.v1alpha import reflection
 
+from jervis.knowledgebase import graph_pb2, graph_pb2_grpc
 from jervis.knowledgebase import ingest_pb2, ingest_pb2_grpc
 from jervis.knowledgebase import maintenance_pb2, maintenance_pb2_grpc
 from jervis.knowledgebase import queue_pb2, queue_pb2_grpc
@@ -377,6 +378,110 @@ class IngestServicer(ingest_pb2_grpc.KnowledgeIngestServiceServicer):
         )
 
 
+class GraphServicer(graph_pb2_grpc.KnowledgeGraphServiceServicer):
+    """KnowledgeGraphService — alias registry RPCs land first.
+
+    Graph traversal + thought map RPCs still live on FastAPI until their
+    corresponding slices migrate.
+    """
+
+    def _service(self):
+        from app.api import routes as api_routes
+
+        if api_routes.service is None:
+            raise RuntimeError("KnowledgeService not initialized")
+        return api_routes.service
+
+    async def ResolveAlias(
+        self,
+        request: graph_pb2.ResolveAliasRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.AliasResolveResult:
+        registry = self._service().graph_service.alias_registry
+        try:
+            canonical = await registry.resolve(request.client_id, request.alias)
+        except Exception as e:
+            logger.error("ALIAS_RESOLVE_ERROR alias=%s error=%s", request.alias, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        # resolve() returns the normalized alias when no entry exists; the
+        # REST handler expressed this as canonical=<normalized>. Keep that
+        # shape, with `found` telling the caller whether an entry existed.
+        return graph_pb2.AliasResolveResult(
+            found=bool(canonical and canonical != request.alias),
+            canonical_key=str(canonical or ""),
+            canonical_label="",
+        )
+
+    async def ListAliases(
+        self,
+        request: graph_pb2.ListAliasesRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.AliasList:
+        registry = self._service().graph_service.alias_registry
+        try:
+            aliases = await registry.get_aliases("", request.canonical_key)
+        except Exception as e:
+            logger.error("ALIAS_LIST_ERROR canonical=%s error=%s", request.canonical_key, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return graph_pb2.AliasList(aliases=list(aliases or []))
+
+    async def GetAliasStats(
+        self,
+        request: graph_pb2.AliasStatsRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.AliasStats:
+        registry = self._service().graph_service.alias_registry
+        try:
+            stats = await registry.get_stats(request.client_id)
+        except Exception as e:
+            logger.error("ALIAS_STATS_ERROR client=%s error=%s", request.client_id, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+
+        return graph_pb2.AliasStats(
+            total_aliases=int(stats.get("totalAliases", 0) or 0),
+            unique_canonicals=int(stats.get("uniqueCanonicals", 0) or 0),
+            top_aliases=[
+                graph_pb2.AliasTopItem(
+                    alias=str(t.get("alias", "") or ""),
+                    canonical=str(t.get("canonical", "") or ""),
+                    count=int(t.get("count", 0) or 0),
+                )
+                for t in (stats.get("topAliases") or [])
+            ],
+        )
+
+    async def RegisterAlias(
+        self,
+        request: graph_pb2.RegisterAliasRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.AliasAck:
+        registry = self._service().graph_service.alias_registry
+        try:
+            await registry.register(
+                request.client_id,
+                request.alias,
+                request.canonical_key or None,
+            )
+        except Exception as e:
+            logger.error("ALIAS_REGISTER_ERROR alias=%s error=%s", request.alias, e)
+            return graph_pb2.AliasAck(ok=False, error=str(e))
+        return graph_pb2.AliasAck(ok=True, error="")
+
+    async def MergeAlias(
+        self,
+        request: graph_pb2.MergeAliasRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.AliasAck:
+        registry = self._service().graph_service.alias_registry
+        try:
+            await registry.merge(request.client_id, request.from_key, request.into_key)
+        except Exception as e:
+            logger.error("ALIAS_MERGE_ERROR from=%s into=%s error=%s",
+                         request.from_key, request.into_key, e)
+            return graph_pb2.AliasAck(ok=False, error=str(e))
+        return graph_pb2.AliasAck(ok=True, error="")
+
+
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for later cleanup.
 
@@ -394,11 +499,15 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     ingest_pb2_grpc.add_KnowledgeIngestServiceServicer_to_server(
         IngestServicer(), server
     )
+    graph_pb2_grpc.add_KnowledgeGraphServiceServicer_to_server(
+        GraphServicer(), server
+    )
 
     service_names = (
         maintenance_pb2.DESCRIPTOR.services_by_name["KnowledgeMaintenanceService"].full_name,
         queue_pb2.DESCRIPTOR.services_by_name["KnowledgeQueueService"].full_name,
         ingest_pb2.DESCRIPTOR.services_by_name["KnowledgeIngestService"].full_name,
+        graph_pb2.DESCRIPTOR.services_by_name["KnowledgeGraphService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
@@ -407,7 +516,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     await server.start()
     logger.info(
         "gRPC KB services listening on :%d "
-        "(Maintenance + Queue + Ingest[cpg,git-structure,git-commits])",
+        "(Maintenance + Queue + Ingest[cpg,git-structure,git-commits,purge] + Graph[alias])",
         port,
     )
     return server

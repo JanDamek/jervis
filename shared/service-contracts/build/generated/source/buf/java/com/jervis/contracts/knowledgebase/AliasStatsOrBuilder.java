@@ -17,40 +17,32 @@ public interface AliasStatsOrBuilder extends
   int getTotalAliases();
 
   /**
-   * <code>int32 total_canonicals = 2;</code>
-   * @return The totalCanonicals.
+   * <code>int32 unique_canonicals = 2;</code>
+   * @return The uniqueCanonicals.
    */
-  int getTotalCanonicals();
+  int getUniqueCanonicals();
 
   /**
-   * <code>map&lt;string, int32&gt; by_type = 3;</code>
+   * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
    */
-  int getByTypeCount();
+  java.util.List<com.jervis.contracts.knowledgebase.AliasTopItem> 
+      getTopAliasesList();
   /**
-   * <code>map&lt;string, int32&gt; by_type = 3;</code>
+   * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
    */
-  boolean containsByType(
-      java.lang.String key);
+  com.jervis.contracts.knowledgebase.AliasTopItem getTopAliases(int index);
   /**
-   * Use {@link #getByTypeMap()} instead.
+   * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
    */
-  @java.lang.Deprecated
-  java.util.Map<java.lang.String, java.lang.Integer>
-  getByType();
+  int getTopAliasesCount();
   /**
-   * <code>map&lt;string, int32&gt; by_type = 3;</code>
+   * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
    */
-  java.util.Map<java.lang.String, java.lang.Integer>
-  getByTypeMap();
+  java.util.List<? extends com.jervis.contracts.knowledgebase.AliasTopItemOrBuilder> 
+      getTopAliasesOrBuilderList();
   /**
-   * <code>map&lt;string, int32&gt; by_type = 3;</code>
+   * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
    */
-  int getByTypeOrDefault(
-      java.lang.String key,
-      int defaultValue);
-  /**
-   * <code>map&lt;string, int32&gt; by_type = 3;</code>
-   */
-  int getByTypeOrThrow(
-      java.lang.String key);
+  com.jervis.contracts.knowledgebase.AliasTopItemOrBuilder getTopAliasesOrBuilder(
+      int index);
 }

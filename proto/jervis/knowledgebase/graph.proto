@@ -105,8 +105,14 @@ message AliasStatsRequest {
 
 message AliasStats {
   int32 total_aliases = 1;
-  int32 total_canonicals = 2;
-  map<string, int32> by_type = 3;
+  int32 unique_canonicals = 2;
+  repeated AliasTopItem top_aliases = 3;
+}
+
+message AliasTopItem {
+  string alias = 1;
+  string canonical = 2;
+  int32 count = 3;
 }
 
 message RegisterAliasRequest {

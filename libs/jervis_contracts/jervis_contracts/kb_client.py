@@ -22,6 +22,7 @@ from typing import Optional
 import grpc.aio
 
 from jervis.common import types_pb2
+from jervis.knowledgebase import graph_pb2_grpc
 from jervis.knowledgebase import ingest_pb2_grpc
 from jervis.knowledgebase import maintenance_pb2_grpc
 from jervis.knowledgebase import queue_pb2_grpc
@@ -33,6 +34,7 @@ _channel: Optional[grpc.aio.Channel] = None
 _ingest_stub: Optional[ingest_pb2_grpc.KnowledgeIngestServiceStub] = None
 _maintenance_stub: Optional[maintenance_pb2_grpc.KnowledgeMaintenanceServiceStub] = None
 _queue_stub: Optional[queue_pb2_grpc.KnowledgeQueueServiceStub] = None
+_graph_stub: Optional[graph_pb2_grpc.KnowledgeGraphServiceStub] = None
 
 
 def _kb_host() -> str:
@@ -90,6 +92,13 @@ def queue_stub() -> queue_pb2_grpc.KnowledgeQueueServiceStub:
     return _queue_stub
 
 
+def graph_stub() -> graph_pb2_grpc.KnowledgeGraphServiceStub:
+    global _graph_stub
+    if _graph_stub is None:
+        _graph_stub = graph_pb2_grpc.KnowledgeGraphServiceStub(get_channel())
+    return _graph_stub
+
+
 def build_request_context(caller: str, client_id: str = "") -> types_pb2.RequestContext:
     """Minimal RequestContext for pod → KB calls.
 
@@ -108,7 +117,7 @@ def build_request_context(caller: str, client_id: str = "") -> types_pb2.Request
 
 async def close() -> None:
     """Shut down the cached channel. Safe to call multiple times."""
-    global _channel, _ingest_stub, _maintenance_stub, _queue_stub
+    global _channel, _ingest_stub, _maintenance_stub, _queue_stub, _graph_stub
     if _channel is not None:
         try:
             await _channel.close()
@@ -118,3 +127,4 @@ async def close() -> None:
         _ingest_stub = None
         _maintenance_stub = None
         _queue_stub = None
+        _graph_stub = None

@@ -211,38 +211,9 @@ async def extract_query_entities(query: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@read_router.get("/alias/resolve")
-async def resolve_alias(alias: str, clientId: str = ""):
-    """
-    Resolve an alias to its canonical key.
-
-    Returns the canonical key, or the normalized alias if not found.
-    """
-    try:
-        canonical = await service.graph_service.alias_registry.resolve(clientId, alias)
-        return {"alias": alias, "canonical": canonical}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@read_router.get("/alias/list/{canonical_key}")
-async def list_aliases(canonical_key: str, clientId: str = ""):
-    """Get all aliases that point to a canonical key."""
-    try:
-        aliases = await service.graph_service.alias_registry.get_aliases(clientId, canonical_key)
-        return {"canonical": canonical_key, "aliases": aliases}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@read_router.get("/alias/stats")
-async def alias_stats(clientId: str = ""):
-    """Get statistics about the alias registry for a client."""
-    try:
-        stats = await service.graph_service.alias_registry.get_stats(clientId)
-        return stats
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /alias/resolve, /alias/list/{key}, /alias/stats migrated to gRPC
+# (KnowledgeGraphService.ResolveAlias / ListAliases / GetAliasStats
+# on :5501 — see app/grpc_server.py).
 
 
 @read_router.post("/chunks/by-kind")
@@ -523,40 +494,8 @@ async def crawl(request: CrawlRequest):
 # (KnowledgeMaintenanceService on :5501 — see app/grpc_server.py).
 
 
-@write_router.post("/alias/register")
-async def register_alias(
-    alias: str,
-    canonical: str = None,
-    clientId: str = ""
-):
-    """
-    Register an alias in the registry.
-
-    If canonical is not provided, the alias becomes its own canonical.
-    """
-    try:
-        result = await service.graph_service.alias_registry.register(clientId, alias, canonical)
-        return {"alias": alias, "canonical": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@write_router.post("/alias/merge")
-async def merge_aliases(
-    sourceKey: str,
-    targetKey: str,
-    clientId: str = ""
-):
-    """
-    Merge two entities: all aliases pointing to source → point to target.
-
-    Use this when you discover that two entities are actually the same.
-    """
-    try:
-        count = await service.graph_service.alias_registry.merge(clientId, sourceKey, targetKey)
-        return {"merged": count, "source": sourceKey, "target": targetKey}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /alias/register, /alias/merge migrated to gRPC
+# (KnowledgeGraphService.RegisterAlias / MergeAlias on :5501).
 
 
 # ---------------------------------------------------------------------------

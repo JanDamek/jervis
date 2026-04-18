@@ -322,15 +322,26 @@ async def kb_resolve_alias(alias: str, client_id: str = "") -> str:
         alias: The alias or alternate name to resolve
         client_id: Client ID (leave empty for default)
     """
+    from jervis.knowledgebase import graph_pb2
+    from jervis_contracts import kb_client
+    import grpc
+
     cid = client_id or settings.default_client_id
-    async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.get(
-            f"{settings.knowledgebase_url}/api/v1/alias/resolve",
-            params={"alias": alias, "clientId": cid},
+    stub = kb_client.graph_stub()
+    try:
+        result = await stub.ResolveAlias(
+            graph_pb2.ResolveAliasRequest(
+                ctx=kb_client.build_request_context(caller="service-mcp", client_id=cid),
+                alias=alias,
+                client_id=cid,
+            ),
+            timeout=120.0,
         )
-        resp.raise_for_status()
-        data = resp.json()
-        return f"'{data.get('alias')}' -> canonical: '{data.get('canonical')}'"
+    except grpc.aio.AioRpcError as e:
+        return f"Error resolving alias ({e.code().name}): {e.details() or ''}"
+
+    canonical = result.canonical_key or alias
+    return f"'{alias}' -> canonical: '{canonical}'"
 
 
 @mcp.tool

@@ -28,6 +28,7 @@ private static final long serialVersionUID = 0L;
     super(builder);
   }
   private AliasStats() {
+    topAliases_ = java.util.Collections.emptyList();
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -35,18 +36,6 @@ private static final long serialVersionUID = 0L;
     return com.jervis.contracts.knowledgebase.KnowledgeGraphProto.internal_static_jervis_knowledgebase_AliasStats_descriptor;
   }
 
-  @SuppressWarnings({"rawtypes"})
-  @java.lang.Override
-  protected com.google.protobuf.MapFieldReflectionAccessor internalGetMapFieldReflection(
-      int number) {
-    switch (number) {
-      case 3:
-        return internalGetByType();
-      default:
-        throw new RuntimeException(
-            "Invalid map field number: " + number);
-    }
-  }
   @java.lang.Override
   protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internalGetFieldAccessorTable() {
@@ -66,92 +55,56 @@ private static final long serialVersionUID = 0L;
     return totalAliases_;
   }
 
-  public static final int TOTAL_CANONICALS_FIELD_NUMBER = 2;
-  private int totalCanonicals_ = 0;
+  public static final int UNIQUE_CANONICALS_FIELD_NUMBER = 2;
+  private int uniqueCanonicals_ = 0;
   /**
-   * <code>int32 total_canonicals = 2;</code>
-   * @return The totalCanonicals.
+   * <code>int32 unique_canonicals = 2;</code>
+   * @return The uniqueCanonicals.
    */
   @java.lang.Override
-  public int getTotalCanonicals() {
-    return totalCanonicals_;
+  public int getUniqueCanonicals() {
+    return uniqueCanonicals_;
   }
 
-  public static final int BY_TYPE_FIELD_NUMBER = 3;
-  private static final class ByTypeDefaultEntryHolder {
-    static final com.google.protobuf.MapEntry<
-        java.lang.String, java.lang.Integer> defaultEntry =
-            com.google.protobuf.MapEntry
-            .<java.lang.String, java.lang.Integer>newDefaultInstance(
-                com.jervis.contracts.knowledgebase.KnowledgeGraphProto.internal_static_jervis_knowledgebase_AliasStats_ByTypeEntry_descriptor, 
-                com.google.protobuf.WireFormat.FieldType.STRING,
-                "",
-                com.google.protobuf.WireFormat.FieldType.INT32,
-                0);
-  }
+  public static final int TOP_ALIASES_FIELD_NUMBER = 3;
   @SuppressWarnings("serial")
-  private com.google.protobuf.MapField<
-      java.lang.String, java.lang.Integer> byType_;
-  private com.google.protobuf.MapField<java.lang.String, java.lang.Integer>
-  internalGetByType() {
-    if (byType_ == null) {
-      return com.google.protobuf.MapField.emptyMapField(
-          ByTypeDefaultEntryHolder.defaultEntry);
-    }
-    return byType_;
-  }
-  public int getByTypeCount() {
-    return internalGetByType().getMap().size();
-  }
+  private java.util.List<com.jervis.contracts.knowledgebase.AliasTopItem> topAliases_;
   /**
-   * <code>map&lt;string, int32&gt; by_type = 3;</code>
+   * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
    */
   @java.lang.Override
-  public boolean containsByType(
-      java.lang.String key) {
-    if (key == null) { throw new NullPointerException("map key"); }
-    return internalGetByType().getMap().containsKey(key);
+  public java.util.List<com.jervis.contracts.knowledgebase.AliasTopItem> getTopAliasesList() {
+    return topAliases_;
   }
   /**
-   * Use {@link #getByTypeMap()} instead.
+   * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
    */
   @java.lang.Override
-  @java.lang.Deprecated
-  public java.util.Map<java.lang.String, java.lang.Integer> getByType() {
-    return getByTypeMap();
+  public java.util.List<? extends com.jervis.contracts.knowledgebase.AliasTopItemOrBuilder> 
+      getTopAliasesOrBuilderList() {
+    return topAliases_;
   }
   /**
-   * <code>map&lt;string, int32&gt; by_type = 3;</code>
+   * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
    */
   @java.lang.Override
-  public java.util.Map<java.lang.String, java.lang.Integer> getByTypeMap() {
-    return internalGetByType().getMap();
+  public int getTopAliasesCount() {
+    return topAliases_.size();
   }
   /**
-   * <code>map&lt;string, int32&gt; by_type = 3;</code>
+   * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
    */
   @java.lang.Override
-  public int getByTypeOrDefault(
-      java.lang.String key,
-      int defaultValue) {
-    if (key == null) { throw new NullPointerException("map key"); }
-    java.util.Map<java.lang.String, java.lang.Integer> map =
-        internalGetByType().getMap();
-    return map.containsKey(key) ? map.get(key) : defaultValue;
+  public com.jervis.contracts.knowledgebase.AliasTopItem getTopAliases(int index) {
+    return topAliases_.get(index);
   }
   /**
-   * <code>map&lt;string, int32&gt; by_type = 3;</code>
+   * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
    */
   @java.lang.Override
-  public int getByTypeOrThrow(
-      java.lang.String key) {
-    if (key == null) { throw new NullPointerException("map key"); }
-    java.util.Map<java.lang.String, java.lang.Integer> map =
-        internalGetByType().getMap();
-    if (!map.containsKey(key)) {
-      throw new java.lang.IllegalArgumentException();
-    }
-    return map.get(key);
+  public com.jervis.contracts.knowledgebase.AliasTopItemOrBuilder getTopAliasesOrBuilder(
+      int index) {
+    return topAliases_.get(index);
   }
 
   private byte memoizedIsInitialized = -1;
@@ -171,15 +124,12 @@ private static final long serialVersionUID = 0L;
     if (totalAliases_ != 0) {
       output.writeInt32(1, totalAliases_);
     }
-    if (totalCanonicals_ != 0) {
-      output.writeInt32(2, totalCanonicals_);
+    if (uniqueCanonicals_ != 0) {
+      output.writeInt32(2, uniqueCanonicals_);
     }
-    com.google.protobuf.GeneratedMessage
-      .serializeStringMapTo(
-        output,
-        internalGetByType(),
-        ByTypeDefaultEntryHolder.defaultEntry,
-        3);
+    for (int i = 0; i < topAliases_.size(); i++) {
+      output.writeMessage(3, topAliases_.get(i));
+    }
     getUnknownFields().writeTo(output);
   }
 
@@ -193,19 +143,13 @@ private static final long serialVersionUID = 0L;
       size += com.google.protobuf.CodedOutputStream
         .computeInt32Size(1, totalAliases_);
     }
-    if (totalCanonicals_ != 0) {
+    if (uniqueCanonicals_ != 0) {
       size += com.google.protobuf.CodedOutputStream
-        .computeInt32Size(2, totalCanonicals_);
+        .computeInt32Size(2, uniqueCanonicals_);
     }
-    for (java.util.Map.Entry<java.lang.String, java.lang.Integer> entry
-         : internalGetByType().getMap().entrySet()) {
-      com.google.protobuf.MapEntry<java.lang.String, java.lang.Integer>
-      byType__ = ByTypeDefaultEntryHolder.defaultEntry.newBuilderForType()
-          .setKey(entry.getKey())
-          .setValue(entry.getValue())
-          .build();
+    for (int i = 0; i < topAliases_.size(); i++) {
       size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(3, byType__);
+        .computeMessageSize(3, topAliases_.get(i));
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -224,10 +168,10 @@ private static final long serialVersionUID = 0L;
 
     if (getTotalAliases()
         != other.getTotalAliases()) return false;
-    if (getTotalCanonicals()
-        != other.getTotalCanonicals()) return false;
-    if (!internalGetByType().equals(
-        other.internalGetByType())) return false;
+    if (getUniqueCanonicals()
+        != other.getUniqueCanonicals()) return false;
+    if (!getTopAliasesList()
+        .equals(other.getTopAliasesList())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -241,11 +185,11 @@ private static final long serialVersionUID = 0L;
     hash = (19 * hash) + getDescriptor().hashCode();
     hash = (37 * hash) + TOTAL_ALIASES_FIELD_NUMBER;
     hash = (53 * hash) + getTotalAliases();
-    hash = (37 * hash) + TOTAL_CANONICALS_FIELD_NUMBER;
-    hash = (53 * hash) + getTotalCanonicals();
-    if (!internalGetByType().getMap().isEmpty()) {
-      hash = (37 * hash) + BY_TYPE_FIELD_NUMBER;
-      hash = (53 * hash) + internalGetByType().hashCode();
+    hash = (37 * hash) + UNIQUE_CANONICALS_FIELD_NUMBER;
+    hash = (53 * hash) + getUniqueCanonicals();
+    if (getTopAliasesCount() > 0) {
+      hash = (37 * hash) + TOP_ALIASES_FIELD_NUMBER;
+      hash = (53 * hash) + getTopAliasesList().hashCode();
     }
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
@@ -356,28 +300,6 @@ private static final long serialVersionUID = 0L;
       return com.jervis.contracts.knowledgebase.KnowledgeGraphProto.internal_static_jervis_knowledgebase_AliasStats_descriptor;
     }
 
-    @SuppressWarnings({"rawtypes"})
-    protected com.google.protobuf.MapFieldReflectionAccessor internalGetMapFieldReflection(
-        int number) {
-      switch (number) {
-        case 3:
-          return internalGetByType();
-        default:
-          throw new RuntimeException(
-              "Invalid map field number: " + number);
-      }
-    }
-    @SuppressWarnings({"rawtypes"})
-    protected com.google.protobuf.MapFieldReflectionAccessor internalGetMutableMapFieldReflection(
-        int number) {
-      switch (number) {
-        case 3:
-          return internalGetMutableByType();
-        default:
-          throw new RuntimeException(
-              "Invalid map field number: " + number);
-      }
-    }
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
         internalGetFieldAccessorTable() {
@@ -401,8 +323,14 @@ private static final long serialVersionUID = 0L;
       super.clear();
       bitField0_ = 0;
       totalAliases_ = 0;
-      totalCanonicals_ = 0;
-      internalGetMutableByType().clear();
+      uniqueCanonicals_ = 0;
+      if (topAliasesBuilder_ == null) {
+        topAliases_ = java.util.Collections.emptyList();
+      } else {
+        topAliases_ = null;
+        topAliasesBuilder_.clear();
+      }
+      bitField0_ = (bitField0_ & ~0x00000004);
       return this;
     }
 
@@ -429,9 +357,22 @@ private static final long serialVersionUID = 0L;
     @java.lang.Override
     public com.jervis.contracts.knowledgebase.AliasStats buildPartial() {
       com.jervis.contracts.knowledgebase.AliasStats result = new com.jervis.contracts.knowledgebase.AliasStats(this);
+      buildPartialRepeatedFields(result);
       if (bitField0_ != 0) { buildPartial0(result); }
       onBuilt();
       return result;
+    }
+
+    private void buildPartialRepeatedFields(com.jervis.contracts.knowledgebase.AliasStats result) {
+      if (topAliasesBuilder_ == null) {
+        if (((bitField0_ & 0x00000004) != 0)) {
+          topAliases_ = java.util.Collections.unmodifiableList(topAliases_);
+          bitField0_ = (bitField0_ & ~0x00000004);
+        }
+        result.topAliases_ = topAliases_;
+      } else {
+        result.topAliases_ = topAliasesBuilder_.build();
+      }
     }
 
     private void buildPartial0(com.jervis.contracts.knowledgebase.AliasStats result) {
@@ -440,11 +381,7 @@ private static final long serialVersionUID = 0L;
         result.totalAliases_ = totalAliases_;
       }
       if (((from_bitField0_ & 0x00000002) != 0)) {
-        result.totalCanonicals_ = totalCanonicals_;
-      }
-      if (((from_bitField0_ & 0x00000004) != 0)) {
-        result.byType_ = internalGetByType();
-        result.byType_.makeImmutable();
+        result.uniqueCanonicals_ = uniqueCanonicals_;
       }
     }
 
@@ -463,12 +400,35 @@ private static final long serialVersionUID = 0L;
       if (other.getTotalAliases() != 0) {
         setTotalAliases(other.getTotalAliases());
       }
-      if (other.getTotalCanonicals() != 0) {
-        setTotalCanonicals(other.getTotalCanonicals());
+      if (other.getUniqueCanonicals() != 0) {
+        setUniqueCanonicals(other.getUniqueCanonicals());
       }
-      internalGetMutableByType().mergeFrom(
-          other.internalGetByType());
-      bitField0_ |= 0x00000004;
+      if (topAliasesBuilder_ == null) {
+        if (!other.topAliases_.isEmpty()) {
+          if (topAliases_.isEmpty()) {
+            topAliases_ = other.topAliases_;
+            bitField0_ = (bitField0_ & ~0x00000004);
+          } else {
+            ensureTopAliasesIsMutable();
+            topAliases_.addAll(other.topAliases_);
+          }
+          onChanged();
+        }
+      } else {
+        if (!other.topAliases_.isEmpty()) {
+          if (topAliasesBuilder_.isEmpty()) {
+            topAliasesBuilder_.dispose();
+            topAliasesBuilder_ = null;
+            topAliases_ = other.topAliases_;
+            bitField0_ = (bitField0_ & ~0x00000004);
+            topAliasesBuilder_ = 
+              com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders ?
+                 internalGetTopAliasesFieldBuilder() : null;
+          } else {
+            topAliasesBuilder_.addAllMessages(other.topAliases_);
+          }
+        }
+      }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
       return this;
@@ -501,17 +461,21 @@ private static final long serialVersionUID = 0L;
               break;
             } // case 8
             case 16: {
-              totalCanonicals_ = input.readInt32();
+              uniqueCanonicals_ = input.readInt32();
               bitField0_ |= 0x00000002;
               break;
             } // case 16
             case 26: {
-              com.google.protobuf.MapEntry<java.lang.String, java.lang.Integer>
-              byType__ = input.readMessage(
-                  ByTypeDefaultEntryHolder.defaultEntry.getParserForType(), extensionRegistry);
-              internalGetMutableByType().getMutableMap().put(
-                  byType__.getKey(), byType__.getValue());
-              bitField0_ |= 0x00000004;
+              com.jervis.contracts.knowledgebase.AliasTopItem m =
+                  input.readMessage(
+                      com.jervis.contracts.knowledgebase.AliasTopItem.parser(),
+                      extensionRegistry);
+              if (topAliasesBuilder_ == null) {
+                ensureTopAliasesIsMutable();
+                topAliases_.add(m);
+              } else {
+                topAliasesBuilder_.addMessage(m);
+              }
               break;
             } // case 26
             default: {
@@ -563,161 +527,276 @@ private static final long serialVersionUID = 0L;
       return this;
     }
 
-    private int totalCanonicals_ ;
+    private int uniqueCanonicals_ ;
     /**
-     * <code>int32 total_canonicals = 2;</code>
-     * @return The totalCanonicals.
+     * <code>int32 unique_canonicals = 2;</code>
+     * @return The uniqueCanonicals.
      */
     @java.lang.Override
-    public int getTotalCanonicals() {
-      return totalCanonicals_;
+    public int getUniqueCanonicals() {
+      return uniqueCanonicals_;
     }
     /**
-     * <code>int32 total_canonicals = 2;</code>
-     * @param value The totalCanonicals to set.
+     * <code>int32 unique_canonicals = 2;</code>
+     * @param value The uniqueCanonicals to set.
      * @return This builder for chaining.
      */
-    public Builder setTotalCanonicals(int value) {
+    public Builder setUniqueCanonicals(int value) {
 
-      totalCanonicals_ = value;
+      uniqueCanonicals_ = value;
       bitField0_ |= 0x00000002;
       onChanged();
       return this;
     }
     /**
-     * <code>int32 total_canonicals = 2;</code>
+     * <code>int32 unique_canonicals = 2;</code>
      * @return This builder for chaining.
      */
-    public Builder clearTotalCanonicals() {
+    public Builder clearUniqueCanonicals() {
       bitField0_ = (bitField0_ & ~0x00000002);
-      totalCanonicals_ = 0;
+      uniqueCanonicals_ = 0;
       onChanged();
       return this;
     }
 
-    private com.google.protobuf.MapField<
-        java.lang.String, java.lang.Integer> byType_;
-    private com.google.protobuf.MapField<java.lang.String, java.lang.Integer>
-        internalGetByType() {
-      if (byType_ == null) {
-        return com.google.protobuf.MapField.emptyMapField(
-            ByTypeDefaultEntryHolder.defaultEntry);
-      }
-      return byType_;
+    private java.util.List<com.jervis.contracts.knowledgebase.AliasTopItem> topAliases_ =
+      java.util.Collections.emptyList();
+    private void ensureTopAliasesIsMutable() {
+      if (!((bitField0_ & 0x00000004) != 0)) {
+        topAliases_ = new java.util.ArrayList<com.jervis.contracts.knowledgebase.AliasTopItem>(topAliases_);
+        bitField0_ |= 0x00000004;
+       }
     }
-    private com.google.protobuf.MapField<java.lang.String, java.lang.Integer>
-        internalGetMutableByType() {
-      if (byType_ == null) {
-        byType_ = com.google.protobuf.MapField.newMapField(
-            ByTypeDefaultEntryHolder.defaultEntry);
-      }
-      if (!byType_.isMutable()) {
-        byType_ = byType_.copy();
-      }
-      bitField0_ |= 0x00000004;
-      onChanged();
-      return byType_;
-    }
-    public int getByTypeCount() {
-      return internalGetByType().getMap().size();
-    }
-    /**
-     * <code>map&lt;string, int32&gt; by_type = 3;</code>
-     */
-    @java.lang.Override
-    public boolean containsByType(
-        java.lang.String key) {
-      if (key == null) { throw new NullPointerException("map key"); }
-      return internalGetByType().getMap().containsKey(key);
-    }
-    /**
-     * Use {@link #getByTypeMap()} instead.
-     */
-    @java.lang.Override
-    @java.lang.Deprecated
-    public java.util.Map<java.lang.String, java.lang.Integer> getByType() {
-      return getByTypeMap();
-    }
-    /**
-     * <code>map&lt;string, int32&gt; by_type = 3;</code>
-     */
-    @java.lang.Override
-    public java.util.Map<java.lang.String, java.lang.Integer> getByTypeMap() {
-      return internalGetByType().getMap();
-    }
-    /**
-     * <code>map&lt;string, int32&gt; by_type = 3;</code>
-     */
-    @java.lang.Override
-    public int getByTypeOrDefault(
-        java.lang.String key,
-        int defaultValue) {
-      if (key == null) { throw new NullPointerException("map key"); }
-      java.util.Map<java.lang.String, java.lang.Integer> map =
-          internalGetByType().getMap();
-      return map.containsKey(key) ? map.get(key) : defaultValue;
-    }
-    /**
-     * <code>map&lt;string, int32&gt; by_type = 3;</code>
-     */
-    @java.lang.Override
-    public int getByTypeOrThrow(
-        java.lang.String key) {
-      if (key == null) { throw new NullPointerException("map key"); }
-      java.util.Map<java.lang.String, java.lang.Integer> map =
-          internalGetByType().getMap();
-      if (!map.containsKey(key)) {
-        throw new java.lang.IllegalArgumentException();
-      }
-      return map.get(key);
-    }
-    public Builder clearByType() {
-      bitField0_ = (bitField0_ & ~0x00000004);
-      internalGetMutableByType().getMutableMap()
-          .clear();
-      return this;
-    }
-    /**
-     * <code>map&lt;string, int32&gt; by_type = 3;</code>
-     */
-    public Builder removeByType(
-        java.lang.String key) {
-      if (key == null) { throw new NullPointerException("map key"); }
-      internalGetMutableByType().getMutableMap()
-          .remove(key);
-      return this;
-    }
-    /**
-     * Use alternate mutation accessors instead.
-     */
-    @java.lang.Deprecated
-    public java.util.Map<java.lang.String, java.lang.Integer>
-        getMutableByType() {
-      bitField0_ |= 0x00000004;
-      return internalGetMutableByType().getMutableMap();
-    }
-    /**
-     * <code>map&lt;string, int32&gt; by_type = 3;</code>
-     */
-    public Builder putByType(
-        java.lang.String key,
-        int value) {
-      if (key == null) { throw new NullPointerException("map key"); }
 
-      internalGetMutableByType().getMutableMap()
-          .put(key, value);
-      bitField0_ |= 0x00000004;
+    private com.google.protobuf.RepeatedFieldBuilder<
+        com.jervis.contracts.knowledgebase.AliasTopItem, com.jervis.contracts.knowledgebase.AliasTopItem.Builder, com.jervis.contracts.knowledgebase.AliasTopItemOrBuilder> topAliasesBuilder_;
+
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public java.util.List<com.jervis.contracts.knowledgebase.AliasTopItem> getTopAliasesList() {
+      if (topAliasesBuilder_ == null) {
+        return java.util.Collections.unmodifiableList(topAliases_);
+      } else {
+        return topAliasesBuilder_.getMessageList();
+      }
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public int getTopAliasesCount() {
+      if (topAliasesBuilder_ == null) {
+        return topAliases_.size();
+      } else {
+        return topAliasesBuilder_.getCount();
+      }
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public com.jervis.contracts.knowledgebase.AliasTopItem getTopAliases(int index) {
+      if (topAliasesBuilder_ == null) {
+        return topAliases_.get(index);
+      } else {
+        return topAliasesBuilder_.getMessage(index);
+      }
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public Builder setTopAliases(
+        int index, com.jervis.contracts.knowledgebase.AliasTopItem value) {
+      if (topAliasesBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        ensureTopAliasesIsMutable();
+        topAliases_.set(index, value);
+        onChanged();
+      } else {
+        topAliasesBuilder_.setMessage(index, value);
+      }
       return this;
     }
     /**
-     * <code>map&lt;string, int32&gt; by_type = 3;</code>
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
      */
-    public Builder putAllByType(
-        java.util.Map<java.lang.String, java.lang.Integer> values) {
-      internalGetMutableByType().getMutableMap()
-          .putAll(values);
-      bitField0_ |= 0x00000004;
+    public Builder setTopAliases(
+        int index, com.jervis.contracts.knowledgebase.AliasTopItem.Builder builderForValue) {
+      if (topAliasesBuilder_ == null) {
+        ensureTopAliasesIsMutable();
+        topAliases_.set(index, builderForValue.build());
+        onChanged();
+      } else {
+        topAliasesBuilder_.setMessage(index, builderForValue.build());
+      }
       return this;
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public Builder addTopAliases(com.jervis.contracts.knowledgebase.AliasTopItem value) {
+      if (topAliasesBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        ensureTopAliasesIsMutable();
+        topAliases_.add(value);
+        onChanged();
+      } else {
+        topAliasesBuilder_.addMessage(value);
+      }
+      return this;
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public Builder addTopAliases(
+        int index, com.jervis.contracts.knowledgebase.AliasTopItem value) {
+      if (topAliasesBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        ensureTopAliasesIsMutable();
+        topAliases_.add(index, value);
+        onChanged();
+      } else {
+        topAliasesBuilder_.addMessage(index, value);
+      }
+      return this;
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public Builder addTopAliases(
+        com.jervis.contracts.knowledgebase.AliasTopItem.Builder builderForValue) {
+      if (topAliasesBuilder_ == null) {
+        ensureTopAliasesIsMutable();
+        topAliases_.add(builderForValue.build());
+        onChanged();
+      } else {
+        topAliasesBuilder_.addMessage(builderForValue.build());
+      }
+      return this;
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public Builder addTopAliases(
+        int index, com.jervis.contracts.knowledgebase.AliasTopItem.Builder builderForValue) {
+      if (topAliasesBuilder_ == null) {
+        ensureTopAliasesIsMutable();
+        topAliases_.add(index, builderForValue.build());
+        onChanged();
+      } else {
+        topAliasesBuilder_.addMessage(index, builderForValue.build());
+      }
+      return this;
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public Builder addAllTopAliases(
+        java.lang.Iterable<? extends com.jervis.contracts.knowledgebase.AliasTopItem> values) {
+      if (topAliasesBuilder_ == null) {
+        ensureTopAliasesIsMutable();
+        com.google.protobuf.AbstractMessageLite.Builder.addAll(
+            values, topAliases_);
+        onChanged();
+      } else {
+        topAliasesBuilder_.addAllMessages(values);
+      }
+      return this;
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public Builder clearTopAliases() {
+      if (topAliasesBuilder_ == null) {
+        topAliases_ = java.util.Collections.emptyList();
+        bitField0_ = (bitField0_ & ~0x00000004);
+        onChanged();
+      } else {
+        topAliasesBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public Builder removeTopAliases(int index) {
+      if (topAliasesBuilder_ == null) {
+        ensureTopAliasesIsMutable();
+        topAliases_.remove(index);
+        onChanged();
+      } else {
+        topAliasesBuilder_.remove(index);
+      }
+      return this;
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public com.jervis.contracts.knowledgebase.AliasTopItem.Builder getTopAliasesBuilder(
+        int index) {
+      return internalGetTopAliasesFieldBuilder().getBuilder(index);
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public com.jervis.contracts.knowledgebase.AliasTopItemOrBuilder getTopAliasesOrBuilder(
+        int index) {
+      if (topAliasesBuilder_ == null) {
+        return topAliases_.get(index);  } else {
+        return topAliasesBuilder_.getMessageOrBuilder(index);
+      }
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public java.util.List<? extends com.jervis.contracts.knowledgebase.AliasTopItemOrBuilder> 
+         getTopAliasesOrBuilderList() {
+      if (topAliasesBuilder_ != null) {
+        return topAliasesBuilder_.getMessageOrBuilderList();
+      } else {
+        return java.util.Collections.unmodifiableList(topAliases_);
+      }
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public com.jervis.contracts.knowledgebase.AliasTopItem.Builder addTopAliasesBuilder() {
+      return internalGetTopAliasesFieldBuilder().addBuilder(
+          com.jervis.contracts.knowledgebase.AliasTopItem.getDefaultInstance());
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public com.jervis.contracts.knowledgebase.AliasTopItem.Builder addTopAliasesBuilder(
+        int index) {
+      return internalGetTopAliasesFieldBuilder().addBuilder(
+          index, com.jervis.contracts.knowledgebase.AliasTopItem.getDefaultInstance());
+    }
+    /**
+     * <code>repeated .jervis.knowledgebase.AliasTopItem top_aliases = 3;</code>
+     */
+    public java.util.List<com.jervis.contracts.knowledgebase.AliasTopItem.Builder> 
+         getTopAliasesBuilderList() {
+      return internalGetTopAliasesFieldBuilder().getBuilderList();
+    }
+    private com.google.protobuf.RepeatedFieldBuilder<
+        com.jervis.contracts.knowledgebase.AliasTopItem, com.jervis.contracts.knowledgebase.AliasTopItem.Builder, com.jervis.contracts.knowledgebase.AliasTopItemOrBuilder> 
+        internalGetTopAliasesFieldBuilder() {
+      if (topAliasesBuilder_ == null) {
+        topAliasesBuilder_ = new com.google.protobuf.RepeatedFieldBuilder<
+            com.jervis.contracts.knowledgebase.AliasTopItem, com.jervis.contracts.knowledgebase.AliasTopItem.Builder, com.jervis.contracts.knowledgebase.AliasTopItemOrBuilder>(
+                topAliases_,
+                ((bitField0_ & 0x00000004) != 0),
+                getParentForChildren(),
+                isClean());
+        topAliases_ = null;
+      }
+      return topAliasesBuilder_;
     }
 
     // @@protoc_insertion_point(builder_scope:jervis.knowledgebase.AliasStats)

@@ -132,21 +132,24 @@ class AliasStatsRequest(_message.Message):
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ...) -> None: ...
 
 class AliasStats(_message.Message):
-    __slots__ = ("total_aliases", "total_canonicals", "by_type")
-    class ByTypeEntry(_message.Message):
-        __slots__ = ("key", "value")
-        KEY_FIELD_NUMBER: _ClassVar[int]
-        VALUE_FIELD_NUMBER: _ClassVar[int]
-        key: str
-        value: int
-        def __init__(self, key: _Optional[str] = ..., value: _Optional[int] = ...) -> None: ...
+    __slots__ = ("total_aliases", "unique_canonicals", "top_aliases")
     TOTAL_ALIASES_FIELD_NUMBER: _ClassVar[int]
-    TOTAL_CANONICALS_FIELD_NUMBER: _ClassVar[int]
-    BY_TYPE_FIELD_NUMBER: _ClassVar[int]
+    UNIQUE_CANONICALS_FIELD_NUMBER: _ClassVar[int]
+    TOP_ALIASES_FIELD_NUMBER: _ClassVar[int]
     total_aliases: int
-    total_canonicals: int
-    by_type: _containers.ScalarMap[str, int]
-    def __init__(self, total_aliases: _Optional[int] = ..., total_canonicals: _Optional[int] = ..., by_type: _Optional[_Mapping[str, int]] = ...) -> None: ...
+    unique_canonicals: int
+    top_aliases: _containers.RepeatedCompositeFieldContainer[AliasTopItem]
+    def __init__(self, total_aliases: _Optional[int] = ..., unique_canonicals: _Optional[int] = ..., top_aliases: _Optional[_Iterable[_Union[AliasTopItem, _Mapping]]] = ...) -> None: ...
+
+class AliasTopItem(_message.Message):
+    __slots__ = ("alias", "canonical", "count")
+    ALIAS_FIELD_NUMBER: _ClassVar[int]
+    CANONICAL_FIELD_NUMBER: _ClassVar[int]
+    COUNT_FIELD_NUMBER: _ClassVar[int]
+    alias: str
+    canonical: str
+    count: int
+    def __init__(self, alias: _Optional[str] = ..., canonical: _Optional[str] = ..., count: _Optional[int] = ...) -> None: ...
 
 class RegisterAliasRequest(_message.Message):
     __slots__ = ("ctx", "alias", "canonical_key", "client_id", "project_id")
