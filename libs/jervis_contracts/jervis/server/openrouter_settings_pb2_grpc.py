@@ -30,13 +30,6 @@ class ServerOpenRouterSettingsServiceStub(object):
     ollama-router (router) calls the Kotlin server to (a) fetch settings
     including model queues + persisted per-model stats, and (b) push back
     in-memory stats periodically for MongoDB persistence.
-
-    Payloads are opaque JSON strings because the router never inspects
-    deeply-nested DTO trees beyond a handful of well-known top-level keys
-    (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
-    mirroring the entire OpenRouterSettingsDto tree into proto, which the
-    contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
-    explicitly advises against for deep DTO trees with passthrough consumers.
     """
 
     def __init__(self, channel):
@@ -48,7 +41,7 @@ class ServerOpenRouterSettingsServiceStub(object):
         self.GetSettings = channel.unary_unary(
                 '/jervis.server.ServerOpenRouterSettingsService/GetSettings',
                 request_serializer=jervis_dot_server_dot_openrouter__settings__pb2.GetOpenRouterSettingsRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_openrouter__settings__pb2.GetOpenRouterSettingsResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_openrouter__settings__pb2.OpenRouterSettings.FromString,
                 _registered_method=True)
         self.PersistModelStats = channel.unary_unary(
                 '/jervis.server.ServerOpenRouterSettingsService/PersistModelStats',
@@ -62,31 +55,16 @@ class ServerOpenRouterSettingsServiceServicer(object):
     ollama-router (router) calls the Kotlin server to (a) fetch settings
     including model queues + persisted per-model stats, and (b) push back
     in-memory stats periodically for MongoDB persistence.
-
-    Payloads are opaque JSON strings because the router never inspects
-    deeply-nested DTO trees beyond a handful of well-known top-level keys
-    (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
-    mirroring the entire OpenRouterSettingsDto tree into proto, which the
-    contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
-    explicitly advises against for deep DTO trees with passthrough consumers.
     """
 
     def GetSettings(self, request, context):
-        """Fetch OpenRouter settings JSON (mirrors the former
-        GET /internal/openrouter-settings).
-        """
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def PersistModelStats(self, request, context):
-        """Persist per-model call stats pushed from the router's in-memory
-        tracker (mirrors the former POST /internal/openrouter-model-stats).
-
-        stats_json shape: {"<model_id>": {"call_count": N,
-        "total_time_s": F, "total_input_tokens": N, "total_output_tokens": N,
-        "tokens_per_s": F, "last_call": F}, ...}
-        """
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -97,7 +75,7 @@ def add_ServerOpenRouterSettingsServiceServicer_to_server(servicer, server):
             'GetSettings': grpc.unary_unary_rpc_method_handler(
                     servicer.GetSettings,
                     request_deserializer=jervis_dot_server_dot_openrouter__settings__pb2.GetOpenRouterSettingsRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_openrouter__settings__pb2.GetOpenRouterSettingsResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_openrouter__settings__pb2.OpenRouterSettings.SerializeToString,
             ),
             'PersistModelStats': grpc.unary_unary_rpc_method_handler(
                     servicer.PersistModelStats,
@@ -117,13 +95,6 @@ class ServerOpenRouterSettingsService(object):
     ollama-router (router) calls the Kotlin server to (a) fetch settings
     including model queues + persisted per-model stats, and (b) push back
     in-memory stats periodically for MongoDB persistence.
-
-    Payloads are opaque JSON strings because the router never inspects
-    deeply-nested DTO trees beyond a handful of well-known top-level keys
-    (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
-    mirroring the entire OpenRouterSettingsDto tree into proto, which the
-    contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
-    explicitly advises against for deep DTO trees with passthrough consumers.
     """
 
     @staticmethod
@@ -142,7 +113,7 @@ class ServerOpenRouterSettingsService(object):
             target,
             '/jervis.server.ServerOpenRouterSettingsService/GetSettings',
             jervis_dot_server_dot_openrouter__settings__pb2.GetOpenRouterSettingsRequest.SerializeToString,
-            jervis_dot_server_dot_openrouter__settings__pb2.GetOpenRouterSettingsResponse.FromString,
+            jervis_dot_server_dot_openrouter__settings__pb2.OpenRouterSettings.FromString,
             options,
             channel_credentials,
             insecure,

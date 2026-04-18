@@ -34,11 +34,6 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.double
-import kotlinx.serialization.json.int
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
@@ -212,27 +207,29 @@ class OpenRouterSettingsRpcImpl(
 
     /**
      * Persist model stats from router into MongoDB queue entries.
-     * Called by POST /internal/openrouter-model-stats.
+     * Called by ServerOpenRouterSettingsService.PersistModelStats gRPC RPC.
      * Merges stats into existing QueueModelEntry.stats fields.
      */
-    suspend fun persistModelStats(statsJson: kotlinx.serialization.json.JsonObject) {
-        val doc = repository.findById(OpenRouterSettingsDocument.SINGLETON_ID) ?: return
+    suspend fun persistModelStats(
+        stats: Map<String, com.jervis.contracts.server.ModelStatsEntry>,
+    ): Int {
+        val doc = repository.findById(OpenRouterSettingsDocument.SINGLETON_ID) ?: return 0
         var changed = false
 
         val updatedQueues = doc.modelQueues.map { queue ->
             queue.copy(
                 models = queue.models.map { entry ->
-                    val modelStats = statsJson[entry.modelId]?.jsonObject
+                    val modelStats = stats[entry.modelId]
                     if (modelStats != null) {
                         changed = true
                         entry.copy(
                             stats = ModelCallStats(
-                                callCount = modelStats["call_count"]?.jsonPrimitive?.int ?: entry.stats.callCount,
-                                totalTimeS = modelStats["total_time_s"]?.jsonPrimitive?.double ?: entry.stats.totalTimeS,
-                                totalInputTokens = modelStats["total_input_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: entry.stats.totalInputTokens,
-                                totalOutputTokens = modelStats["total_output_tokens"]?.jsonPrimitive?.content?.toLongOrNull() ?: entry.stats.totalOutputTokens,
-                                tokensPerS = modelStats["tokens_per_s"]?.jsonPrimitive?.double ?: entry.stats.tokensPerS,
-                                lastCall = modelStats["last_call"]?.jsonPrimitive?.double ?: entry.stats.lastCall,
+                                callCount = modelStats.callCount,
+                                totalTimeS = modelStats.totalTimeS,
+                                totalInputTokens = modelStats.totalInputTokens,
+                                totalOutputTokens = modelStats.totalOutputTokens,
+                                tokensPerS = modelStats.tokensPerS,
+                                lastCall = modelStats.lastCall,
                             ),
                         )
                     } else {
@@ -244,8 +241,9 @@ class OpenRouterSettingsRpcImpl(
 
         if (changed) {
             repository.save(doc.copy(modelQueues = updatedQueues))
-            logger.info { "Model stats persisted for ${statsJson.size} models" }
+            logger.info { "Model stats persisted for ${stats.size} models" }
         }
+        return stats.size
     }
 
     private fun applyFilters(model: OpenRouterModelData, filters: OpenRouterFilters): Boolean {

@@ -8,12 +8,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * ollama-router (router) calls the Kotlin server to (a) fetch settings
  * including model queues + persisted per-model stats, and (b) push back
  * in-memory stats periodically for MongoDB persistence.
- * Payloads are opaque JSON strings because the router never inspects
- * deeply-nested DTO trees beyond a handful of well-known top-level keys
- * (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
- * mirroring the entire OpenRouterSettingsDto tree into proto, which the
- * contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
- * explicitly advises against for deep DTO trees with passthrough consumers.
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -25,28 +19,28 @@ public final class ServerOpenRouterSettingsServiceGrpc {
 
   // Static method descriptors that strictly reflect the proto.
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.GetOpenRouterSettingsRequest,
-      com.jervis.contracts.server.GetOpenRouterSettingsResponse> getGetSettingsMethod;
+      com.jervis.contracts.server.OpenRouterSettings> getGetSettingsMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "GetSettings",
       requestType = com.jervis.contracts.server.GetOpenRouterSettingsRequest.class,
-      responseType = com.jervis.contracts.server.GetOpenRouterSettingsResponse.class,
+      responseType = com.jervis.contracts.server.OpenRouterSettings.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.GetOpenRouterSettingsRequest,
-      com.jervis.contracts.server.GetOpenRouterSettingsResponse> getGetSettingsMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetOpenRouterSettingsRequest, com.jervis.contracts.server.GetOpenRouterSettingsResponse> getGetSettingsMethod;
+      com.jervis.contracts.server.OpenRouterSettings> getGetSettingsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetOpenRouterSettingsRequest, com.jervis.contracts.server.OpenRouterSettings> getGetSettingsMethod;
     if ((getGetSettingsMethod = ServerOpenRouterSettingsServiceGrpc.getGetSettingsMethod) == null) {
       synchronized (ServerOpenRouterSettingsServiceGrpc.class) {
         if ((getGetSettingsMethod = ServerOpenRouterSettingsServiceGrpc.getGetSettingsMethod) == null) {
           ServerOpenRouterSettingsServiceGrpc.getGetSettingsMethod = getGetSettingsMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetOpenRouterSettingsRequest, com.jervis.contracts.server.GetOpenRouterSettingsResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetOpenRouterSettingsRequest, com.jervis.contracts.server.OpenRouterSettings>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetSettings"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.GetOpenRouterSettingsRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.GetOpenRouterSettingsResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.OpenRouterSettings.getDefaultInstance()))
               .setSchemaDescriptor(new ServerOpenRouterSettingsServiceMethodDescriptorSupplier("GetSettings"))
               .build();
         }
@@ -151,35 +145,18 @@ public final class ServerOpenRouterSettingsServiceGrpc {
    * ollama-router (router) calls the Kotlin server to (a) fetch settings
    * including model queues + persisted per-model stats, and (b) push back
    * in-memory stats periodically for MongoDB persistence.
-   * Payloads are opaque JSON strings because the router never inspects
-   * deeply-nested DTO trees beyond a handful of well-known top-level keys
-   * (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
-   * mirroring the entire OpenRouterSettingsDto tree into proto, which the
-   * contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
-   * explicitly advises against for deep DTO trees with passthrough consumers.
    * </pre>
    */
   public interface AsyncService {
 
     /**
-     * <pre>
-     * Fetch OpenRouter settings JSON (mirrors the former
-     * GET /internal/openrouter-settings).
-     * </pre>
      */
     default void getSettings(com.jervis.contracts.server.GetOpenRouterSettingsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GetOpenRouterSettingsResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.OpenRouterSettings> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetSettingsMethod(), responseObserver);
     }
 
     /**
-     * <pre>
-     * Persist per-model call stats pushed from the router's in-memory
-     * tracker (mirrors the former POST /internal/openrouter-model-stats).
-     * stats_json shape: {"&lt;model_id&gt;": {"call_count": N,
-     *   "total_time_s": F, "total_input_tokens": N, "total_output_tokens": N,
-     *   "tokens_per_s": F, "last_call": F}, ...}
-     * </pre>
      */
     default void persistModelStats(com.jervis.contracts.server.PersistModelStatsRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.server.PersistModelStatsResponse> responseObserver) {
@@ -194,12 +171,6 @@ public final class ServerOpenRouterSettingsServiceGrpc {
    * ollama-router (router) calls the Kotlin server to (a) fetch settings
    * including model queues + persisted per-model stats, and (b) push back
    * in-memory stats periodically for MongoDB persistence.
-   * Payloads are opaque JSON strings because the router never inspects
-   * deeply-nested DTO trees beyond a handful of well-known top-level keys
-   * (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
-   * mirroring the entire OpenRouterSettingsDto tree into proto, which the
-   * contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
-   * explicitly advises against for deep DTO trees with passthrough consumers.
    * </pre>
    */
   public static abstract class ServerOpenRouterSettingsServiceImplBase
@@ -217,12 +188,6 @@ public final class ServerOpenRouterSettingsServiceGrpc {
    * ollama-router (router) calls the Kotlin server to (a) fetch settings
    * including model queues + persisted per-model stats, and (b) push back
    * in-memory stats periodically for MongoDB persistence.
-   * Payloads are opaque JSON strings because the router never inspects
-   * deeply-nested DTO trees beyond a handful of well-known top-level keys
-   * (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
-   * mirroring the entire OpenRouterSettingsDto tree into proto, which the
-   * contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
-   * explicitly advises against for deep DTO trees with passthrough consumers.
    * </pre>
    */
   public static final class ServerOpenRouterSettingsServiceStub
@@ -239,25 +204,14 @@ public final class ServerOpenRouterSettingsServiceGrpc {
     }
 
     /**
-     * <pre>
-     * Fetch OpenRouter settings JSON (mirrors the former
-     * GET /internal/openrouter-settings).
-     * </pre>
      */
     public void getSettings(com.jervis.contracts.server.GetOpenRouterSettingsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GetOpenRouterSettingsResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.OpenRouterSettings> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetSettingsMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
-     * <pre>
-     * Persist per-model call stats pushed from the router's in-memory
-     * tracker (mirrors the former POST /internal/openrouter-model-stats).
-     * stats_json shape: {"&lt;model_id&gt;": {"call_count": N,
-     *   "total_time_s": F, "total_input_tokens": N, "total_output_tokens": N,
-     *   "tokens_per_s": F, "last_call": F}, ...}
-     * </pre>
      */
     public void persistModelStats(com.jervis.contracts.server.PersistModelStatsRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.server.PersistModelStatsResponse> responseObserver) {
@@ -273,12 +227,6 @@ public final class ServerOpenRouterSettingsServiceGrpc {
    * ollama-router (router) calls the Kotlin server to (a) fetch settings
    * including model queues + persisted per-model stats, and (b) push back
    * in-memory stats periodically for MongoDB persistence.
-   * Payloads are opaque JSON strings because the router never inspects
-   * deeply-nested DTO trees beyond a handful of well-known top-level keys
-   * (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
-   * mirroring the entire OpenRouterSettingsDto tree into proto, which the
-   * contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
-   * explicitly advises against for deep DTO trees with passthrough consumers.
    * </pre>
    */
   public static final class ServerOpenRouterSettingsServiceBlockingV2Stub
@@ -295,24 +243,13 @@ public final class ServerOpenRouterSettingsServiceGrpc {
     }
 
     /**
-     * <pre>
-     * Fetch OpenRouter settings JSON (mirrors the former
-     * GET /internal/openrouter-settings).
-     * </pre>
      */
-    public com.jervis.contracts.server.GetOpenRouterSettingsResponse getSettings(com.jervis.contracts.server.GetOpenRouterSettingsRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.OpenRouterSettings getSettings(com.jervis.contracts.server.GetOpenRouterSettingsRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getGetSettingsMethod(), getCallOptions(), request);
     }
 
     /**
-     * <pre>
-     * Persist per-model call stats pushed from the router's in-memory
-     * tracker (mirrors the former POST /internal/openrouter-model-stats).
-     * stats_json shape: {"&lt;model_id&gt;": {"call_count": N,
-     *   "total_time_s": F, "total_input_tokens": N, "total_output_tokens": N,
-     *   "tokens_per_s": F, "last_call": F}, ...}
-     * </pre>
      */
     public com.jervis.contracts.server.PersistModelStatsResponse persistModelStats(com.jervis.contracts.server.PersistModelStatsRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
@@ -327,12 +264,6 @@ public final class ServerOpenRouterSettingsServiceGrpc {
    * ollama-router (router) calls the Kotlin server to (a) fetch settings
    * including model queues + persisted per-model stats, and (b) push back
    * in-memory stats periodically for MongoDB persistence.
-   * Payloads are opaque JSON strings because the router never inspects
-   * deeply-nested DTO trees beyond a handful of well-known top-level keys
-   * (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
-   * mirroring the entire OpenRouterSettingsDto tree into proto, which the
-   * contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
-   * explicitly advises against for deep DTO trees with passthrough consumers.
    * </pre>
    */
   public static final class ServerOpenRouterSettingsServiceBlockingStub
@@ -349,24 +280,13 @@ public final class ServerOpenRouterSettingsServiceGrpc {
     }
 
     /**
-     * <pre>
-     * Fetch OpenRouter settings JSON (mirrors the former
-     * GET /internal/openrouter-settings).
-     * </pre>
      */
-    public com.jervis.contracts.server.GetOpenRouterSettingsResponse getSettings(com.jervis.contracts.server.GetOpenRouterSettingsRequest request) {
+    public com.jervis.contracts.server.OpenRouterSettings getSettings(com.jervis.contracts.server.GetOpenRouterSettingsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetSettingsMethod(), getCallOptions(), request);
     }
 
     /**
-     * <pre>
-     * Persist per-model call stats pushed from the router's in-memory
-     * tracker (mirrors the former POST /internal/openrouter-model-stats).
-     * stats_json shape: {"&lt;model_id&gt;": {"call_count": N,
-     *   "total_time_s": F, "total_input_tokens": N, "total_output_tokens": N,
-     *   "tokens_per_s": F, "last_call": F}, ...}
-     * </pre>
      */
     public com.jervis.contracts.server.PersistModelStatsResponse persistModelStats(com.jervis.contracts.server.PersistModelStatsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
@@ -381,12 +301,6 @@ public final class ServerOpenRouterSettingsServiceGrpc {
    * ollama-router (router) calls the Kotlin server to (a) fetch settings
    * including model queues + persisted per-model stats, and (b) push back
    * in-memory stats periodically for MongoDB persistence.
-   * Payloads are opaque JSON strings because the router never inspects
-   * deeply-nested DTO trees beyond a handful of well-known top-level keys
-   * (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
-   * mirroring the entire OpenRouterSettingsDto tree into proto, which the
-   * contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
-   * explicitly advises against for deep DTO trees with passthrough consumers.
    * </pre>
    */
   public static final class ServerOpenRouterSettingsServiceFutureStub
@@ -403,25 +317,14 @@ public final class ServerOpenRouterSettingsServiceGrpc {
     }
 
     /**
-     * <pre>
-     * Fetch OpenRouter settings JSON (mirrors the former
-     * GET /internal/openrouter-settings).
-     * </pre>
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.GetOpenRouterSettingsResponse> getSettings(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.OpenRouterSettings> getSettings(
         com.jervis.contracts.server.GetOpenRouterSettingsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetSettingsMethod(), getCallOptions()), request);
     }
 
     /**
-     * <pre>
-     * Persist per-model call stats pushed from the router's in-memory
-     * tracker (mirrors the former POST /internal/openrouter-model-stats).
-     * stats_json shape: {"&lt;model_id&gt;": {"call_count": N,
-     *   "total_time_s": F, "total_input_tokens": N, "total_output_tokens": N,
-     *   "tokens_per_s": F, "last_call": F}, ...}
-     * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.PersistModelStatsResponse> persistModelStats(
         com.jervis.contracts.server.PersistModelStatsRequest request) {
@@ -452,7 +355,7 @@ public final class ServerOpenRouterSettingsServiceGrpc {
       switch (methodId) {
         case METHODID_GET_SETTINGS:
           serviceImpl.getSettings((com.jervis.contracts.server.GetOpenRouterSettingsRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.GetOpenRouterSettingsResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.OpenRouterSettings>) responseObserver);
           break;
         case METHODID_PERSIST_MODEL_STATS:
           serviceImpl.persistModelStats((com.jervis.contracts.server.PersistModelStatsRequest) request,
@@ -481,7 +384,7 @@ public final class ServerOpenRouterSettingsServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.GetOpenRouterSettingsRequest,
-              com.jervis.contracts.server.GetOpenRouterSettingsResponse>(
+              com.jervis.contracts.server.OpenRouterSettings>(
                 service, METHODID_GET_SETTINGS)))
         .addMethod(
           getPersistModelStatsMethod(),

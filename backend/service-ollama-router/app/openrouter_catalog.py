@@ -100,7 +100,7 @@ async def _fetch_openrouter_settings() -> dict | None:
             ctx=build_request_context()
         )
         resp = await stub.GetSettings(req, timeout=5.0)
-        _openrouter_settings_cache = _json.loads(resp.body_json)
+        _openrouter_settings_cache = _settings_to_dict(resp)
         _openrouter_settings_ts = now
         logger.debug(
             "Fetched OpenRouter settings: %d queues",
@@ -113,6 +113,73 @@ async def _fetch_openrouter_settings() -> dict | None:
     except Exception as e:
         logger.warning("Failed to fetch OpenRouter settings: %s", e)
         return _openrouter_settings_cache  # Return stale cache if available
+
+
+def _settings_to_dict(s) -> dict:
+    """Convert the typed OpenRouterSettings proto into the dict shape the
+    router's consumers already expect (camelCase keys matching the Kotlin
+    DTO)."""
+    return {
+        "apiKey": s.api_key,
+        "apiBaseUrl": s.api_base_url,
+        "enabled": s.enabled,
+        "filters": {
+            "allowedProviders": list(s.filters.allowed_providers),
+            "blockedProviders": list(s.filters.blocked_providers),
+            "minContextLength": s.filters.min_context_length,
+            "maxInputPricePerMillion": s.filters.max_input_price_per_million,
+            "maxOutputPricePerMillion": s.filters.max_output_price_per_million,
+            "requireToolSupport": s.filters.require_tool_support,
+            "requireStreaming": s.filters.require_streaming,
+            "modelNameFilter": s.filters.model_name_filter,
+        },
+        "models": [
+            {
+                "modelId": m.model_id,
+                "displayName": m.display_name,
+                "enabled": m.enabled,
+                "maxContextTokens": m.max_context_tokens,
+                "inputPricePerMillion": m.input_price_per_million,
+                "outputPricePerMillion": m.output_price_per_million,
+                "preferredFor": list(m.preferred_for),
+                "maxOutputTokens": m.max_output_tokens,
+                "free": m.free,
+            }
+            for m in s.models
+        ],
+        "monthlyBudgetUsd": s.monthly_budget_usd,
+        "fallbackStrategy": s.fallback_strategy,
+        "modelQueues": [
+            {
+                "name": q.name,
+                "enabled": q.enabled,
+                "models": [
+                    {
+                        "modelId": qm.model_id,
+                        "isLocal": qm.is_local,
+                        "maxContextTokens": qm.max_context_tokens,
+                        "enabled": qm.enabled,
+                        "label": qm.label,
+                        "capabilities": list(qm.capabilities),
+                        "inputPricePerMillion": qm.input_price_per_million,
+                        "outputPricePerMillion": qm.output_price_per_million,
+                        "supportsTools": qm.supports_tools,
+                        "provider": qm.provider,
+                        "stats": {
+                            "callCount": qm.stats.call_count,
+                            "totalTimeS": qm.stats.total_time_s,
+                            "totalInputTokens": qm.stats.total_input_tokens,
+                            "totalOutputTokens": qm.stats.total_output_tokens,
+                            "tokensPerS": qm.stats.tokens_per_s,
+                            "lastCall": qm.stats.last_call,
+                        },
+                    }
+                    for qm in q.models
+                ],
+            }
+            for q in s.model_queues
+        ],
+    }
 
 
 async def get_api_key() -> str | None:
@@ -449,9 +516,22 @@ async def persist_stats() -> None:
         return
     try:
         stub = server_openrouter_stub()
+        entries = [
+            openrouter_settings_pb2.ModelStatsEntry(
+                model_id=model_id,
+                call_count=int(s.get("call_count") or 0),
+                avg_response_s=float(s.get("avg_response_s") or 0.0),
+                total_time_s=float(s.get("total_time_s") or 0.0),
+                total_input_tokens=int(s.get("total_input_tokens") or 0),
+                total_output_tokens=int(s.get("total_output_tokens") or 0),
+                tokens_per_s=float(s.get("tokens_per_s") or 0.0),
+                last_call=float(s.get("last_call") or 0.0),
+            )
+            for model_id, s in stats.items()
+        ]
         req = openrouter_settings_pb2.PersistModelStatsRequest(
             ctx=build_request_context(),
-            stats_json=_json.dumps(stats),
+            stats=entries,
         )
         resp = await stub.PersistModelStats(req, timeout=10.0)
         if resp.ok:

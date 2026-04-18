@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\'jervis/server/openrouter_settings.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"J\n\x1cGetOpenRouterSettingsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"2\n\x1dGetOpenRouterSettingsResponse\x12\x11\n\tbody_json\x18\x01 \x01(\t\"Z\n\x18PersistModelStatsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nstats_json\x18\x02 \x01(\t\"7\n\x19PersistModelStatsResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x0e\n\x06models\x18\x02 \x01(\x05\x32\xf3\x01\n\x1fServerOpenRouterSettingsService\x12h\n\x0bGetSettings\x12+.jervis.server.GetOpenRouterSettingsRequest\x1a,.jervis.server.GetOpenRouterSettingsResponse\x12\x66\n\x11PersistModelStats\x12\'.jervis.server.PersistModelStatsRequest\x1a(.jervis.server.PersistModelStatsResponseB>\n\x1b\x63om.jervis.contracts.serverB\x1dServerOpenRouterSettingsProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\'jervis/server/openrouter_settings.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"J\n\x1cGetOpenRouterSettingsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"u\n\x18PersistModelStatsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12-\n\x05stats\x18\x02 \x03(\x0b\x32\x1e.jervis.server.ModelStatsEntry\"7\n\x19PersistModelStatsResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x0e\n\x06models\x18\x02 \x01(\x05\"\x9c\x02\n\x12OpenRouterSettings\x12\x0f\n\x07\x61pi_key\x18\x01 \x01(\t\x12\x14\n\x0c\x61pi_base_url\x18\x02 \x01(\t\x12\x0f\n\x07\x65nabled\x18\x03 \x01(\x08\x12\x31\n\x07\x66ilters\x18\x04 \x01(\x0b\x32 .jervis.server.OpenRouterFilters\x12\x33\n\x06models\x18\x05 \x03(\x0b\x32#.jervis.server.OpenRouterModelEntry\x12\x1a\n\x12monthly_budget_usd\x18\x06 \x01(\x01\x12\x19\n\x11\x66\x61llback_strategy\x18\x07 \x01(\t\x12/\n\x0cmodel_queues\x18\x08 \x03(\x0b\x32\x19.jervis.server.ModelQueue\"\x84\x02\n\x11OpenRouterFilters\x12\x19\n\x11\x61llowed_providers\x18\x01 \x03(\t\x12\x19\n\x11\x62locked_providers\x18\x02 \x03(\t\x12\x1a\n\x12min_context_length\x18\x03 \x01(\x05\x12#\n\x1bmax_input_price_per_million\x18\x04 \x01(\x01\x12$\n\x1cmax_output_price_per_million\x18\x05 \x01(\x01\x12\x1c\n\x14require_tool_support\x18\x06 \x01(\x08\x12\x19\n\x11require_streaming\x18\x07 \x01(\x08\x12\x19\n\x11model_name_filter\x18\x08 \x01(\t\"\xee\x01\n\x14OpenRouterModelEntry\x12\x10\n\x08model_id\x18\x01 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x02 \x01(\t\x12\x0f\n\x07\x65nabled\x18\x03 \x01(\x08\x12\x1a\n\x12max_context_tokens\x18\x04 \x01(\x05\x12\x1f\n\x17input_price_per_million\x18\x05 \x01(\x01\x12 \n\x18output_price_per_million\x18\x06 \x01(\x01\x12\x15\n\rpreferred_for\x18\x07 \x03(\t\x12\x19\n\x11max_output_tokens\x18\x08 \x01(\x05\x12\x0c\n\x04\x66ree\x18\t \x01(\x08\"[\n\nModelQueue\x12\x0c\n\x04name\x18\x01 \x01(\t\x12.\n\x06models\x18\x02 \x03(\x0b\x32\x1e.jervis.server.QueueModelEntry\x12\x0f\n\x07\x65nabled\x18\x03 \x01(\x08\"\xa2\x02\n\x0fQueueModelEntry\x12\x10\n\x08model_id\x18\x01 \x01(\t\x12\x10\n\x08is_local\x18\x02 \x01(\x08\x12\x1a\n\x12max_context_tokens\x18\x03 \x01(\x05\x12\x0f\n\x07\x65nabled\x18\x04 \x01(\x08\x12\r\n\x05label\x18\x05 \x01(\t\x12\x14\n\x0c\x63\x61pabilities\x18\x06 \x03(\t\x12\x1f\n\x17input_price_per_million\x18\x07 \x01(\x01\x12 \n\x18output_price_per_million\x18\x08 \x01(\x01\x12\x16\n\x0esupports_tools\x18\t \x01(\x08\x12\x10\n\x08provider\x18\n \x01(\t\x12,\n\x05stats\x18\x0b \x01(\x0b\x32\x1d.jervis.server.ModelCallStats\"\x9c\x01\n\x0eModelCallStats\x12\x12\n\ncall_count\x18\x01 \x01(\x05\x12\x14\n\x0ctotal_time_s\x18\x02 \x01(\x01\x12\x1a\n\x12total_input_tokens\x18\x03 \x01(\x03\x12\x1b\n\x13total_output_tokens\x18\x04 \x01(\x03\x12\x14\n\x0ctokens_per_s\x18\x05 \x01(\x01\x12\x11\n\tlast_call\x18\x06 \x01(\x01\"\xc7\x01\n\x0fModelStatsEntry\x12\x10\n\x08model_id\x18\x01 \x01(\t\x12\x12\n\ncall_count\x18\x02 \x01(\x05\x12\x16\n\x0e\x61vg_response_s\x18\x03 \x01(\x01\x12\x14\n\x0ctotal_time_s\x18\x04 \x01(\x01\x12\x1a\n\x12total_input_tokens\x18\x05 \x01(\x03\x12\x1b\n\x13total_output_tokens\x18\x06 \x01(\x03\x12\x14\n\x0ctokens_per_s\x18\x07 \x01(\x01\x12\x11\n\tlast_call\x18\x08 \x01(\x01\x32\xe8\x01\n\x1fServerOpenRouterSettingsService\x12]\n\x0bGetSettings\x12+.jervis.server.GetOpenRouterSettingsRequest\x1a!.jervis.server.OpenRouterSettings\x12\x66\n\x11PersistModelStats\x12\'.jervis.server.PersistModelStatsRequest\x1a(.jervis.server.PersistModelStatsResponseB>\n\x1b\x63om.jervis.contracts.serverB\x1dServerOpenRouterSettingsProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,12 +35,24 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._serialized_options = b'\n\033com.jervis.contracts.serverB\035ServerOpenRouterSettingsProtoP\001'
   _globals['_GETOPENROUTERSETTINGSREQUEST']._serialized_start=85
   _globals['_GETOPENROUTERSETTINGSREQUEST']._serialized_end=159
-  _globals['_GETOPENROUTERSETTINGSRESPONSE']._serialized_start=161
-  _globals['_GETOPENROUTERSETTINGSRESPONSE']._serialized_end=211
-  _globals['_PERSISTMODELSTATSREQUEST']._serialized_start=213
-  _globals['_PERSISTMODELSTATSREQUEST']._serialized_end=303
-  _globals['_PERSISTMODELSTATSRESPONSE']._serialized_start=305
-  _globals['_PERSISTMODELSTATSRESPONSE']._serialized_end=360
-  _globals['_SERVEROPENROUTERSETTINGSSERVICE']._serialized_start=363
-  _globals['_SERVEROPENROUTERSETTINGSSERVICE']._serialized_end=606
+  _globals['_PERSISTMODELSTATSREQUEST']._serialized_start=161
+  _globals['_PERSISTMODELSTATSREQUEST']._serialized_end=278
+  _globals['_PERSISTMODELSTATSRESPONSE']._serialized_start=280
+  _globals['_PERSISTMODELSTATSRESPONSE']._serialized_end=335
+  _globals['_OPENROUTERSETTINGS']._serialized_start=338
+  _globals['_OPENROUTERSETTINGS']._serialized_end=622
+  _globals['_OPENROUTERFILTERS']._serialized_start=625
+  _globals['_OPENROUTERFILTERS']._serialized_end=885
+  _globals['_OPENROUTERMODELENTRY']._serialized_start=888
+  _globals['_OPENROUTERMODELENTRY']._serialized_end=1126
+  _globals['_MODELQUEUE']._serialized_start=1128
+  _globals['_MODELQUEUE']._serialized_end=1219
+  _globals['_QUEUEMODELENTRY']._serialized_start=1222
+  _globals['_QUEUEMODELENTRY']._serialized_end=1512
+  _globals['_MODELCALLSTATS']._serialized_start=1515
+  _globals['_MODELCALLSTATS']._serialized_end=1671
+  _globals['_MODELSTATSENTRY']._serialized_start=1674
+  _globals['_MODELSTATSENTRY']._serialized_end=1873
+  _globals['_SERVEROPENROUTERSETTINGSSERVICE']._serialized_start=1876
+  _globals['_SERVEROPENROUTERSETTINGSSERVICE']._serialized_end=2108
 # @@protoc_insertion_point(module_scope)

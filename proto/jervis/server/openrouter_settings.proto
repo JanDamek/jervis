@@ -12,47 +12,101 @@ option java_outer_classname = "ServerOpenRouterSettingsProto";
 // ollama-router (router) calls the Kotlin server to (a) fetch settings
 // including model queues + persisted per-model stats, and (b) push back
 // in-memory stats periodically for MongoDB persistence.
-//
-// Payloads are opaque JSON strings because the router never inspects
-// deeply-nested DTO trees beyond a handful of well-known top-level keys
-// (apiKey, modelQueues, apiBaseUrl). Typed fields here would require
-// mirroring the entire OpenRouterSettingsDto tree into proto, which the
-// contracts SSOT (§ "Payload strategy" in docs/inter-service-contracts.md)
-// explicitly advises against for deep DTO trees with passthrough consumers.
 service ServerOpenRouterSettingsService {
-  // Fetch OpenRouter settings JSON (mirrors the former
-  // GET /internal/openrouter-settings).
-  rpc GetSettings(GetOpenRouterSettingsRequest)
-      returns (GetOpenRouterSettingsResponse);
-
-  // Persist per-model call stats pushed from the router's in-memory
-  // tracker (mirrors the former POST /internal/openrouter-model-stats).
-  //
-  // stats_json shape: {"<model_id>": {"call_count": N,
-  //   "total_time_s": F, "total_input_tokens": N, "total_output_tokens": N,
-  //   "tokens_per_s": F, "last_call": F}, ...}
-  rpc PersistModelStats(PersistModelStatsRequest)
-      returns (PersistModelStatsResponse);
+  rpc GetSettings(GetOpenRouterSettingsRequest) returns (OpenRouterSettings);
+  rpc PersistModelStats(PersistModelStatsRequest) returns (PersistModelStatsResponse);
 }
 
 message GetOpenRouterSettingsRequest {
   jervis.common.RequestContext ctx = 1;
 }
 
-message GetOpenRouterSettingsResponse {
-  // OpenRouterSettingsDto serialized to JSON. See backend Kotlin DTO for
-  // the authoritative shape.
-  string body_json = 1;
-}
-
 message PersistModelStatsRequest {
   jervis.common.RequestContext ctx = 1;
-  string stats_json = 2;
+  repeated ModelStatsEntry stats = 2;
 }
 
 message PersistModelStatsResponse {
   bool ok = 1;
-  // Count of models for which stats were applied (mirrors the former
-  // "models": N HTTP response field).
+  // Count of models for which stats were applied.
   int32 models = 2;
+}
+
+// OpenRouterSettings mirrors com.jervis.dto.openrouter.OpenRouterSettingsDto.
+message OpenRouterSettings {
+  string api_key = 1;
+  string api_base_url = 2;                   // default "https://openrouter.ai/api/v1"
+  bool enabled = 3;
+  OpenRouterFilters filters = 4;
+  repeated OpenRouterModelEntry models = 5;
+  double monthly_budget_usd = 6;
+  string fallback_strategy = 7;              // OpenRouterFallbackStrategy name
+  repeated ModelQueue model_queues = 8;
+}
+
+message OpenRouterFilters {
+  repeated string allowed_providers = 1;
+  repeated string blocked_providers = 2;
+  int32 min_context_length = 3;
+  double max_input_price_per_million = 4;
+  double max_output_price_per_million = 5;
+  bool require_tool_support = 6;
+  bool require_streaming = 7;                // default true
+  string model_name_filter = 8;
+}
+
+message OpenRouterModelEntry {
+  string model_id = 1;
+  string display_name = 2;
+  bool enabled = 3;                          // default true
+  int32 max_context_tokens = 4;
+  double input_price_per_million = 5;
+  double output_price_per_million = 6;
+  repeated string preferred_for = 7;         // OpenRouterModelUseCase names
+  int32 max_output_tokens = 8;
+  bool free = 9;
+}
+
+// ModelQueue — named queue of models with fallback ordering (FREE / PAID / PREMIUM).
+message ModelQueue {
+  string name = 1;
+  repeated QueueModelEntry models = 2;
+  bool enabled = 3;                          // default true
+}
+
+message QueueModelEntry {
+  string model_id = 1;
+  bool is_local = 2;
+  int32 max_context_tokens = 3;              // default 32000
+  bool enabled = 4;                          // default true
+  string label = 5;
+  repeated string capabilities = 6;
+  double input_price_per_million = 7;
+  double output_price_per_million = 8;
+  bool supports_tools = 9;
+  string provider = 10;
+  ModelCallStats stats = 11;
+}
+
+message ModelCallStats {
+  int32 call_count = 1;
+  double total_time_s = 2;
+  int64 total_input_tokens = 3;
+  int64 total_output_tokens = 4;
+  double tokens_per_s = 5;
+  double last_call = 6;
+}
+
+// ModelStatsEntry is the per-model snapshot the router pushes back for
+// MongoDB persistence. Keys match the router's in-memory `_model_stats`
+// dict keys 1:1.
+message ModelStatsEntry {
+  string model_id = 1;
+  int32 call_count = 2;
+  double avg_response_s = 3;
+  double total_time_s = 4;
+  int64 total_input_tokens = 5;
+  int64 total_output_tokens = 6;
+  double tokens_per_s = 7;
+  double last_call = 8;
 }
