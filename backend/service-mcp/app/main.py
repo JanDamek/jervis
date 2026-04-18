@@ -523,17 +523,17 @@ async def kb_document_list(
         client_id: Client ID (leave empty for default)
         project_id: Project ID (leave empty for default, empty = all projects)
     """
+    from jervis_contracts import kb_client
+
     cid = client_id or settings.default_client_id
     pid = project_id or settings.default_project_id or None
 
-    url = f"{settings.knowledgebase_url}/api/v1/documents?clientId={cid}"
-    if pid:
-        url += f"&projectId={pid}"
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        docs = resp.json()
+    docs = await kb_client.list_documents(
+        caller="service-mcp.kb_document_list",
+        client_id=cid,
+        project_id=pid or "",
+        timeout=30.0,
+    )
 
     if not docs:
         return "No documents found."
@@ -560,14 +560,18 @@ async def kb_document_delete(doc_id: str) -> str:
     Args:
         doc_id: Document ID (from kb_document_list)
     """
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.delete(
-            f"{settings.knowledgebase_write_url}/api/v1/documents/{doc_id}"
-        )
-        if resp.status_code == 404:
+    from jervis_contracts import kb_client
+
+    ok, err = await kb_client.delete_document(
+        caller="service-mcp.kb_document_delete",
+        doc_id=doc_id,
+        timeout=60.0,
+    )
+    if not ok:
+        if err == "not-found":
             return f"Document not found: {doc_id}"
-        resp.raise_for_status()
-        return f"Document {doc_id} deleted successfully."
+        return f"Error deleting document {doc_id}: {err or 'unknown'}"
+    return f"Document {doc_id} deleted successfully."
 
 
 @mcp.tool

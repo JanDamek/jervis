@@ -17,12 +17,235 @@ import logging
 import grpc
 from grpc_reflection.v1alpha import reflection
 
+from jervis.knowledgebase import documents_pb2, documents_pb2_grpc
 from jervis.knowledgebase import graph_pb2, graph_pb2_grpc
 from jervis.knowledgebase import ingest_pb2, ingest_pb2_grpc
 from jervis.knowledgebase import maintenance_pb2, maintenance_pb2_grpc
 from jervis.knowledgebase import queue_pb2, queue_pb2_grpc
 from jervis.knowledgebase import retrieve_pb2, retrieve_pb2_grpc
 from jervis_contracts.interceptors import ServerContextInterceptor
+
+
+# Map Python KbDocumentStateEnum ↔ proto DocumentState.
+_DOC_STATE_TO_PROTO = {
+    "uploaded": documents_pb2.DOCUMENT_STATE_UPLOADED,
+    "extracted": documents_pb2.DOCUMENT_STATE_EXTRACTED,
+    "indexed": documents_pb2.DOCUMENT_STATE_INDEXED,
+    "failed": documents_pb2.DOCUMENT_STATE_FAILED,
+}
+_DOC_CATEGORY_TO_PROTO = {
+    "TECHNICAL": documents_pb2.DOCUMENT_CATEGORY_TECHNICAL,
+    "BUSINESS": documents_pb2.DOCUMENT_CATEGORY_BUSINESS,
+    "LEGAL": documents_pb2.DOCUMENT_CATEGORY_LEGAL,
+    "PROCESS": documents_pb2.DOCUMENT_CATEGORY_PROCESS,
+    "MEETING_NOTES": documents_pb2.DOCUMENT_CATEGORY_MEETING_NOTES,
+    "REPORT": documents_pb2.DOCUMENT_CATEGORY_REPORT,
+    "SPECIFICATION": documents_pb2.DOCUMENT_CATEGORY_SPECIFICATION,
+    "OTHER": documents_pb2.DOCUMENT_CATEGORY_OTHER,
+}
+_DOC_CATEGORY_FROM_PROTO = {
+    documents_pb2.DOCUMENT_CATEGORY_TECHNICAL: "TECHNICAL",
+    documents_pb2.DOCUMENT_CATEGORY_BUSINESS: "BUSINESS",
+    documents_pb2.DOCUMENT_CATEGORY_LEGAL: "LEGAL",
+    documents_pb2.DOCUMENT_CATEGORY_PROCESS: "PROCESS",
+    documents_pb2.DOCUMENT_CATEGORY_MEETING_NOTES: "MEETING_NOTES",
+    documents_pb2.DOCUMENT_CATEGORY_REPORT: "REPORT",
+    documents_pb2.DOCUMENT_CATEGORY_SPECIFICATION: "SPECIFICATION",
+    documents_pb2.DOCUMENT_CATEGORY_OTHER: "OTHER",
+}
+
+
+def _dto_to_document(dto) -> documents_pb2.Document:
+    """Project KbDocumentDto (Pydantic) → Document proto."""
+    if dto is None:
+        return documents_pb2.Document()
+    state_str = str(getattr(dto, "state", "") or "").lower()
+    if hasattr(getattr(dto, "state", None), "value"):
+        state_str = str(dto.state.value).lower()
+    state = _DOC_STATE_TO_PROTO.get(state_str, documents_pb2.DOCUMENT_STATE_UNSPECIFIED)
+
+    cat_val = getattr(dto, "category", None)
+    cat_str = str(cat_val.value if hasattr(cat_val, "value") else cat_val or "OTHER")
+    category = _DOC_CATEGORY_TO_PROTO.get(cat_str, documents_pb2.DOCUMENT_CATEGORY_OTHER)
+
+    return documents_pb2.Document(
+        id=str(getattr(dto, "id", "") or ""),
+        client_id=str(getattr(dto, "clientId", "") or ""),
+        project_id=str(getattr(dto, "projectId", None) or ""),
+        filename=str(getattr(dto, "filename", "") or ""),
+        mime_type=str(getattr(dto, "mimeType", "") or ""),
+        size_bytes=int(getattr(dto, "sizeBytes", 0) or 0),
+        storage_path=str(getattr(dto, "storagePath", "") or ""),
+        state=state,
+        category=category,
+        title=str(getattr(dto, "title", None) or ""),
+        description=str(getattr(dto, "description", None) or ""),
+        tags=list(getattr(dto, "tags", None) or []),
+        extracted_text_preview=str(getattr(dto, "extractedTextPreview", None) or ""),
+        page_count=int(getattr(dto, "pageCount", 0) or 0),
+        content_hash=str(getattr(dto, "contentHash", None) or ""),
+        source_urn=str(getattr(dto, "sourceUrn", "") or ""),
+        error_message=str(getattr(dto, "errorMessage", None) or ""),
+        rag_chunks=list(getattr(dto, "ragChunks", None) or []),
+        uploaded_at_iso=str(getattr(dto, "uploadedAt", "") or ""),
+        indexed_at_iso=str(getattr(dto, "indexedAt", "") or ""),
+    )
+
+
+class DocumentsServicer(documents_pb2_grpc.KnowledgeDocumentServiceServicer):
+    """KnowledgeDocumentService — metadata-only RPCs land here.
+
+    Upload (inline-bytes) and ExtractText (file upload) still live on
+    FastAPI for the multipart bytes path; this servicer covers Register
+    (already-stored file), List, Get, Update, Delete, Reindex.
+    """
+
+    def _service(self):
+        from app.api import routes as api_routes
+
+        if api_routes.service is None:
+            raise RuntimeError("KnowledgeService not initialized")
+        return api_routes.service
+
+    async def Register(
+        self,
+        request: documents_pb2.DocumentRegisterRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> documents_pb2.Document:
+        import os
+        from app.api.models import KbDocumentUploadRequest, KbDocumentCategoryEnum
+
+        cat = _DOC_CATEGORY_FROM_PROTO.get(request.category, "OTHER")
+        try:
+            cat_enum = KbDocumentCategoryEnum(cat)
+        except ValueError:
+            cat_enum = KbDocumentCategoryEnum.OTHER
+
+        req = KbDocumentUploadRequest(
+            clientId=request.client_id,
+            projectId=request.project_id or None,
+            filename=request.filename,
+            mimeType=request.mime_type,
+            sizeBytes=request.size_bytes,
+            storagePath=request.storage_path,
+            title=request.title or None,
+            description=request.description or None,
+            category=cat_enum,
+            tags=list(request.tags),
+            contentHash=request.content_hash or None,
+        )
+
+        # Read bytes from PVC storage path — mirrors the REST handler logic.
+        file_bytes = None
+        data_root = os.environ.get("DATA_ROOT_DIR", "/opt/jervis/data")
+        full_path = os.path.normpath(os.path.join(data_root, request.storage_path or ""))
+        if not full_path.startswith(os.path.normpath(data_root)):
+            await context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                "Invalid storage path: directory traversal detected",
+            )
+        if os.path.exists(full_path):
+            with open(full_path, "rb") as f:
+                file_bytes = f.read()
+
+        try:
+            dto = await self._service().upload_kb_document(req, file_bytes=file_bytes)
+        except Exception as e:
+            logger.warning("DOCUMENT_REGISTER_ERROR filename=%s error=%s", request.filename, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return _dto_to_document(dto)
+
+    async def List(
+        self,
+        request: documents_pb2.DocumentListRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> documents_pb2.DocumentList:
+        try:
+            dtos = await self._service().list_kb_documents(
+                request.client_id or "",
+                request.project_id or None,
+            )
+        except Exception as e:
+            logger.warning("DOCUMENT_LIST_ERROR client=%s error=%s", request.client_id, e)
+            return documents_pb2.DocumentList(items=[])
+        return documents_pb2.DocumentList(items=[_dto_to_document(d) for d in (dtos or [])])
+
+    async def Get(
+        self,
+        request: documents_pb2.DocumentId,
+        context: grpc.aio.ServicerContext,
+    ) -> documents_pb2.Document:
+        try:
+            dto = await self._service().get_kb_document(request.id)
+        except Exception as e:
+            logger.warning("DOCUMENT_GET_ERROR id=%s error=%s", request.id, e)
+            return documents_pb2.Document()
+        return _dto_to_document(dto)
+
+    async def Update(
+        self,
+        request: documents_pb2.DocumentUpdateRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> documents_pb2.Document:
+        # Apply field_mask: only fields in the mask (plus legacy always-apply
+        # fields when mask is empty) flow to the service. Matches the REST
+        # PUT semantics, which only wrote the fields supplied in the JSON body.
+        mask = set(request.field_mask)
+        kwargs: dict = {}
+        if not mask or "title" in mask:
+            kwargs["title"] = request.title or None
+        if not mask or "description" in mask:
+            kwargs["description"] = request.description or None
+        if not mask or "category" in mask:
+            kwargs["category"] = _DOC_CATEGORY_FROM_PROTO.get(request.category, None)
+        if not mask or "tags" in mask:
+            kwargs["tags"] = list(request.tags) if request.tags else None
+
+        try:
+            dto = await self._service().update_kb_document(
+                doc_id=request.id,
+                **kwargs,
+            )
+        except Exception as e:
+            logger.warning("DOCUMENT_UPDATE_ERROR id=%s error=%s", request.id, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return _dto_to_document(dto)
+
+    async def Delete(
+        self,
+        request: documents_pb2.DocumentId,
+        context: grpc.aio.ServicerContext,
+    ) -> documents_pb2.DocumentAck:
+        try:
+            ok = await self._service().delete_kb_document(request.id)
+        except Exception as e:
+            logger.warning("DOCUMENT_DELETE_ERROR id=%s error=%s", request.id, e)
+            return documents_pb2.DocumentAck(ok=False, error=str(e))
+        return documents_pb2.DocumentAck(ok=bool(ok), error="" if ok else "not-found")
+
+    async def Reindex(
+        self,
+        request: documents_pb2.DocumentId,
+        context: grpc.aio.ServicerContext,
+    ) -> documents_pb2.DocumentAck:
+        import os
+
+        service = self._service()
+        try:
+            dto = await service.get_kb_document(request.id)
+            if not dto:
+                return documents_pb2.DocumentAck(ok=False, error="not-found")
+            data_root = os.environ.get("DATA_ROOT_DIR", "/opt/jervis/data")
+            full_path = os.path.join(data_root, dto.storagePath)
+            if not os.path.exists(full_path):
+                return documents_pb2.DocumentAck(ok=False, error="file-not-found")
+            with open(full_path, "rb") as f:
+                file_bytes = f.read()
+            ok = await service.reindex_kb_document(request.id, file_bytes)
+        except Exception as e:
+            logger.warning("DOCUMENT_REINDEX_ERROR id=%s error=%s", request.id, e)
+            return documents_pb2.DocumentAck(ok=False, error=str(e))
+        return documents_pb2.DocumentAck(ok=bool(ok), error="" if ok else "reindex-failed")
 
 logger = logging.getLogger("kb.grpc")
 
@@ -1084,6 +1307,9 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     retrieve_pb2_grpc.add_KnowledgeRetrieveServiceServicer_to_server(
         RetrieveServicer(), server
     )
+    documents_pb2_grpc.add_KnowledgeDocumentServiceServicer_to_server(
+        DocumentsServicer(), server
+    )
 
     service_names = (
         maintenance_pb2.DESCRIPTOR.services_by_name["KnowledgeMaintenanceService"].full_name,
@@ -1091,6 +1317,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
         ingest_pb2.DESCRIPTOR.services_by_name["KnowledgeIngestService"].full_name,
         graph_pb2.DESCRIPTOR.services_by_name["KnowledgeGraphService"].full_name,
         retrieve_pb2.DESCRIPTOR.services_by_name["KnowledgeRetrieveService"].full_name,
+        documents_pb2.DESCRIPTOR.services_by_name["KnowledgeDocumentService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)

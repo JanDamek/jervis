@@ -397,116 +397,12 @@ async def extract_text_only(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@write_router.post("/documents/register", response_model=KbDocumentDto)
-async def register_kb_document(request: KbDocumentUploadRequest):
-    """Register a document already stored on shared FS.
-
-    No file binary is sent — the Kotlin server already stored the file.
-    Reads the file from storagePath on the shared PVC for extraction.
-    """
-    import os
-
-    try:
-        file_bytes = None
-        data_root = os.environ.get("DATA_ROOT_DIR", "/opt/jervis/data")
-        full_path = os.path.normpath(os.path.join(data_root, request.storagePath))
-        if not full_path.startswith(os.path.normpath(data_root)):
-            raise HTTPException(status_code=400, detail="Invalid storage path: directory traversal detected")
-        if os.path.exists(full_path):
-            with open(full_path, "rb") as f:
-                file_bytes = f.read()
-
-        return await service.upload_kb_document(request, file_bytes=file_bytes)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@read_router.get("/documents", response_model=List[KbDocumentDto])
-async def list_kb_documents(clientId: str, projectId: str = None):
-    """List all KB documents for a client."""
-    try:
-        return await service.list_kb_documents(clientId, projectId)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@read_router.get("/documents/{doc_id}", response_model=KbDocumentDto)
-async def get_kb_document(doc_id: str):
-    """Get a single KB document by ID."""
-    try:
-        doc = await service.get_kb_document(doc_id)
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
-        return doc
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@write_router.put("/documents/{doc_id}", response_model=KbDocumentDto)
-async def update_kb_document(doc_id: str, request: KbDocumentUpdateRequest):
-    """Update document metadata (title, description, category, tags)."""
-    try:
-        doc = await service.update_kb_document(
-            doc_id=doc_id,
-            title=request.title,
-            description=request.description,
-            category=request.category.value if request.category else None,
-            tags=request.tags,
-        )
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
-        return doc
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@write_router.delete("/documents/{doc_id}")
-async def delete_kb_document(doc_id: str):
-    """Delete a KB document (purges RAG data + graph node).
-
-    Note: The Kotlin server is responsible for deleting the file from shared FS.
-    """
-    try:
-        deleted = await service.delete_kb_document(doc_id)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Document not found")
-        return {"ok": True, "deleted": doc_id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@write_router.post("/documents/{doc_id}/reindex")
-async def reindex_kb_document(doc_id: str):
-    """Re-extract and re-index a document from its file on shared FS."""
-    import os
-
-    try:
-        doc = await service.get_kb_document(doc_id)
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
-
-        data_root = os.environ.get("DATA_ROOT_DIR", "/opt/jervis/data")
-        full_path = os.path.join(data_root, doc.storagePath)
-        if not os.path.exists(full_path):
-            raise HTTPException(status_code=404, detail="Document file not found on disk")
-
-        with open(full_path, "rb") as f:
-            file_bytes = f.read()
-
-        success = await service.reindex_kb_document(doc_id, file_bytes)
-        if not success:
-            raise HTTPException(status_code=500, detail="Reindex failed")
-        return {"ok": True, "reindexed": doc_id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /documents/register, /documents, /documents/{doc_id} (GET/PUT/DELETE),
+# /documents/{doc_id}/reindex migrated to gRPC
+# (KnowledgeDocumentService.{Register,List,Get,Update,Delete,Reindex} on :5501).
+# /documents/upload (multipart) and /documents/extract-text (multipart)
+# remain on FastAPI until slice 13 — the binary-upload path will use
+# the blob side channel described in inter-service-contracts-bigbang.md §2.3.
 
 
 # ---------------------------------------------------------------------------

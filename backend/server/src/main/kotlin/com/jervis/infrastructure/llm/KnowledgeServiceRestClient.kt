@@ -1,5 +1,8 @@
 package com.jervis.infrastructure.llm
 
+import com.jervis.contracts.knowledgebase.DocumentCategory
+import com.jervis.contracts.knowledgebase.DocumentState
+import com.jervis.infrastructure.grpc.KbDocumentGrpcClient
 import com.jervis.infrastructure.grpc.KbGraphGrpcClient
 import com.jervis.infrastructure.grpc.KbIngestGrpcClient
 import com.jervis.infrastructure.grpc.KbMaintenanceGrpcClient
@@ -67,7 +70,51 @@ class KnowledgeServiceRestClient(
     private val kbIngestGrpc: KbIngestGrpcClient? = null,
     private val kbRetrieveGrpc: KbRetrieveGrpcClient? = null,
     private val kbGraphGrpc: KbGraphGrpcClient? = null,
+    private val kbDocumentGrpc: KbDocumentGrpcClient? = null,
 ) : KnowledgeService {
+
+    private fun categoryToString(c: DocumentCategory): String = when (c) {
+        DocumentCategory.DOCUMENT_CATEGORY_TECHNICAL -> "TECHNICAL"
+        DocumentCategory.DOCUMENT_CATEGORY_BUSINESS -> "BUSINESS"
+        DocumentCategory.DOCUMENT_CATEGORY_LEGAL -> "LEGAL"
+        DocumentCategory.DOCUMENT_CATEGORY_PROCESS -> "PROCESS"
+        DocumentCategory.DOCUMENT_CATEGORY_MEETING_NOTES -> "MEETING_NOTES"
+        DocumentCategory.DOCUMENT_CATEGORY_REPORT -> "REPORT"
+        DocumentCategory.DOCUMENT_CATEGORY_SPECIFICATION -> "SPECIFICATION"
+        else -> "OTHER"
+    }
+
+    private fun stateToString(s: DocumentState): String = when (s) {
+        DocumentState.DOCUMENT_STATE_UPLOADED -> "UPLOADED"
+        DocumentState.DOCUMENT_STATE_EXTRACTED -> "EXTRACTED"
+        DocumentState.DOCUMENT_STATE_INDEXED -> "INDEXED"
+        DocumentState.DOCUMENT_STATE_FAILED -> "FAILED"
+        else -> "UPLOADED"
+    }
+
+    private fun protoToDto(d: com.jervis.contracts.knowledgebase.Document): PythonKbDocumentDto =
+        PythonKbDocumentDto(
+            id = d.id,
+            clientId = d.clientId,
+            projectId = d.projectId.takeIf { it.isNotEmpty() },
+            filename = d.filename,
+            mimeType = d.mimeType,
+            sizeBytes = d.sizeBytes,
+            storagePath = d.storagePath,
+            state = stateToString(d.state),
+            category = categoryToString(d.category),
+            title = d.title.takeIf { it.isNotEmpty() },
+            description = d.description.takeIf { it.isNotEmpty() },
+            tags = d.tagsList,
+            extractedTextPreview = d.extractedTextPreview.takeIf { it.isNotEmpty() },
+            pageCount = d.pageCount.takeIf { it > 0 },
+            contentHash = d.contentHash.takeIf { it.isNotEmpty() },
+            sourceUrn = d.sourceUrn,
+            errorMessage = d.errorMessage.takeIf { it.isNotEmpty() },
+            ragChunks = d.ragChunksList,
+            uploadedAt = d.uploadedAtIso,
+            indexedAt = d.indexedAtIso.takeIf { it.isNotEmpty() },
+        )
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(
@@ -524,6 +571,9 @@ class KnowledgeServiceRestClient(
      * Register a document already on shared FS (no binary upload).
      * KB reads the file from storagePath on the PVC.
      */
+    private fun docGrpc(): KbDocumentGrpcClient =
+        kbDocumentGrpc ?: error("KbDocumentGrpcClient not wired — see RpcClientsConfig.getKnowledgeService()")
+
     suspend fun registerKbDocument(
         clientId: String,
         projectId: String?,
@@ -538,8 +588,7 @@ class KnowledgeServiceRestClient(
         contentHash: String? = null,
     ): PythonKbDocumentDto {
         logger.info { "KB document register: filename=$filename client=$clientId storagePath=$storagePath" }
-
-        val request = PythonKbDocumentRegisterRequest(
+        val proto = docGrpc().register(
             clientId = clientId,
             projectId = projectId,
             filename = filename,
@@ -552,41 +601,25 @@ class KnowledgeServiceRestClient(
             tags = tags,
             contentHash = contentHash,
         )
-
-        val httpResponse = client.post("$apiBaseUrl/documents/register") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }
-
-        if (!httpResponse.status.isSuccess()) {
-            val errorBody = httpResponse.bodyAsText()
-            throw RuntimeException("KB document register failed ${httpResponse.status}: $errorBody")
-        }
-
-        return httpResponse.body()
+        return protoToDto(proto)
     }
 
-    suspend fun listKbDocuments(clientId: String, projectId: String?): List<PythonKbDocumentDto> {
-        val url = buildString {
-            append("$apiBaseUrl/documents?clientId=$clientId")
-            if (projectId != null) append("&projectId=$projectId")
-        }
-        return try {
-            client.get(url).body()
+    suspend fun listKbDocuments(clientId: String, projectId: String?): List<PythonKbDocumentDto> =
+        try {
+            docGrpc().list(clientId, projectId).itemsList.map(::protoToDto)
         } catch (e: Exception) {
             logger.error(e) { "Failed to list KB documents: ${e.message}" }
             emptyList()
         }
-    }
 
-    suspend fun getKbDocument(docId: String): PythonKbDocumentDto? {
-        return try {
-            client.get("$apiBaseUrl/documents/$docId").body()
+    suspend fun getKbDocument(docId: String): PythonKbDocumentDto? =
+        try {
+            val proto = docGrpc().get(docId)
+            if (proto.id.isEmpty()) null else protoToDto(proto)
         } catch (e: Exception) {
             logger.error(e) { "Failed to get KB document $docId: ${e.message}" }
             null
         }
-    }
 
     suspend fun updateKbDocument(
         docId: String,
@@ -594,51 +627,30 @@ class KnowledgeServiceRestClient(
         description: String? = null,
         category: String? = null,
         tags: List<String>? = null,
-    ): PythonKbDocumentDto? {
-        return try {
-            val request = PythonKbDocumentUpdateRequest(
-                title = title,
-                description = description,
-                category = category,
-                tags = tags,
-            )
-            val httpResponse = client.post("$apiBaseUrl/documents/$docId") {
-                contentType(ContentType.Application.Json)
-                setBody(request)
-            }
-            if (!httpResponse.status.isSuccess()) return null
-            httpResponse.body()
+    ): PythonKbDocumentDto? =
+        try {
+            val proto = docGrpc().update(docId, title, description, category, tags)
+            if (proto.id.isEmpty()) null else protoToDto(proto)
         } catch (e: Exception) {
             logger.error(e) { "Failed to update KB document $docId: ${e.message}" }
             null
         }
-    }
 
-    suspend fun deleteKbDocument(docId: String): Boolean {
-        return try {
-            val httpResponse = client.post("$apiBaseUrl/documents/$docId/delete") {
-                contentType(ContentType.Application.Json)
-                setBody("{}")
-            }
-            httpResponse.status.isSuccess()
+    suspend fun deleteKbDocument(docId: String): Boolean =
+        try {
+            docGrpc().delete(docId).ok
         } catch (e: Exception) {
             logger.error(e) { "Failed to delete KB document $docId: ${e.message}" }
             false
         }
-    }
 
-    suspend fun reindexKbDocument(docId: String): Boolean {
-        return try {
-            val httpResponse = client.post("$apiBaseUrl/documents/$docId/reindex") {
-                contentType(ContentType.Application.Json)
-                setBody("{}")
-            }
-            httpResponse.status.isSuccess()
+    suspend fun reindexKbDocument(docId: String): Boolean =
+        try {
+            docGrpc().reindex(docId).ok
         } catch (e: Exception) {
             logger.error(e) { "Failed to reindex KB document $docId: ${e.message}" }
             false
         }
-    }
 
     private fun grpc(): KbMaintenanceGrpcClient =
         kbMaintenanceGrpc ?: error("KbMaintenanceGrpcClient not wired — see RpcClientsConfig.getKnowledgeService()")
@@ -846,28 +858,7 @@ data class PythonKbDocumentDto(
     val indexedAt: String? = null,
 )
 
-@Serializable
-private data class PythonKbDocumentRegisterRequest(
-    val clientId: String,
-    val projectId: String? = null,
-    val filename: String,
-    val mimeType: String,
-    val sizeBytes: Long,
-    val storagePath: String,
-    val title: String? = null,
-    val description: String? = null,
-    val category: String = "OTHER",
-    val tags: List<String> = emptyList(),
-    val contentHash: String? = null,
-)
-
-@Serializable
-private data class PythonKbDocumentUpdateRequest(
-    val title: String? = null,
-    val description: String? = null,
-    val category: String? = null,
-    val tags: List<String>? = null,
-)
+// Document register/update DTOs moved to gRPC (KbDocumentGrpcClient).
 
 // KB extraction queue DTOs (used by IndexingQueueRpcImpl)
 

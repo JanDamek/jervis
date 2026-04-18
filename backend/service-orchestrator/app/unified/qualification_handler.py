@@ -684,41 +684,39 @@ async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -
                     "updatedAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
                 }
 
-                # Upload to KB if relevant (score >= 0.7)
-                if score >= 0.7:
+                # Register pre-stored attachment with KB if relevant (score >= 0.7)
+                if score >= 0.7 and extract.get("filePath"):
                     try:
-                        import httpx
-                        from app.config import settings as app_settings
+                        from jervis.knowledgebase import documents_pb2
+                        from jervis_contracts import kb_client
 
-                        kb_url = getattr(app_settings, "knowledgebase_write_url", None) or \
-                                 getattr(app_settings, "kb_write_url", None)
-
-                        if kb_url and extract.get("filePath"):
-                            # Register pre-stored attachment with KB
-                            async with httpx.AsyncClient(timeout=120) as client:
-                                resp = await client.post(
-                                    f"{kb_url}/api/v1/documents/register",
-                                    json={
-                                        "clientId": request.client_id,
-                                        "projectId": request.project_id or "",
-                                        "filename": filename,
-                                        "mimeType": extract.get("mimeType", "application/octet-stream"),
-                                        "sizeBytes": 0,
-                                        "storagePath": extract["filePath"],
-                                        "title": f"Attachment: {filename}",
-                                        "description": reason,
-                                        "category": "OTHER",
-                                        "tags": ["email-attachment", "qualifier-approved"],
-                                    },
-                                )
-                                if resp.status_code == 200:
-                                    kb_doc = resp.json()
-                                    update_fields["kbUploaded"] = True
-                                    update_fields["kbDocId"] = kb_doc.get("id", "")
-                                    logger.info(
-                                        "QUALIFY_ATTACHMENT_UPLOADED | task=%s | file=%s | score=%.2f | kbDocId=%s",
-                                        request.task_id, filename, score, kb_doc.get("id", ""),
-                                    )
+                        stub = kb_client.documents_stub()
+                        resp = await stub.Register(
+                            documents_pb2.DocumentRegisterRequest(
+                                ctx=kb_client.build_request_context(
+                                    caller="orchestrator.qualification_handler",
+                                    client_id=request.client_id,
+                                ),
+                                client_id=request.client_id,
+                                project_id=request.project_id or "",
+                                filename=filename,
+                                mime_type=extract.get("mimeType", "application/octet-stream"),
+                                size_bytes=0,
+                                storage_path=extract["filePath"],
+                                title=f"Attachment: {filename}",
+                                description=reason,
+                                category=documents_pb2.DOCUMENT_CATEGORY_OTHER,
+                                tags=["email-attachment", "qualifier-approved"],
+                            ),
+                            timeout=120.0,
+                        )
+                        if resp.id:
+                            update_fields["kbUploaded"] = True
+                            update_fields["kbDocId"] = resp.id
+                            logger.info(
+                                "QUALIFY_ATTACHMENT_UPLOADED | task=%s | file=%s | score=%.2f | kbDocId=%s",
+                                request.task_id, filename, score, resp.id,
+                            )
                     except Exception as e:
                         logger.warning("Failed to upload attachment %s to KB: %s", filename, e)
 

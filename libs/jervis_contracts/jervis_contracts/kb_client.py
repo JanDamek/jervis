@@ -22,6 +22,7 @@ from typing import Optional
 import grpc.aio
 
 from jervis.common import types_pb2
+from jervis.knowledgebase import documents_pb2_grpc
 from jervis.knowledgebase import graph_pb2_grpc
 from jervis.knowledgebase import ingest_pb2_grpc
 from jervis.knowledgebase import maintenance_pb2_grpc
@@ -37,6 +38,7 @@ _maintenance_stub: Optional[maintenance_pb2_grpc.KnowledgeMaintenanceServiceStub
 _queue_stub: Optional[queue_pb2_grpc.KnowledgeQueueServiceStub] = None
 _graph_stub: Optional[graph_pb2_grpc.KnowledgeGraphServiceStub] = None
 _retrieve_stub: Optional[retrieve_pb2_grpc.KnowledgeRetrieveServiceStub] = None
+_documents_stub: Optional[documents_pb2_grpc.KnowledgeDocumentServiceStub] = None
 
 
 def _kb_host() -> str:
@@ -106,6 +108,107 @@ def retrieve_stub() -> retrieve_pb2_grpc.KnowledgeRetrieveServiceStub:
     if _retrieve_stub is None:
         _retrieve_stub = retrieve_pb2_grpc.KnowledgeRetrieveServiceStub(get_channel())
     return _retrieve_stub
+
+
+def documents_stub() -> documents_pb2_grpc.KnowledgeDocumentServiceStub:
+    global _documents_stub
+    if _documents_stub is None:
+        _documents_stub = documents_pb2_grpc.KnowledgeDocumentServiceStub(get_channel())
+    return _documents_stub
+
+
+_DOC_STATE_NAMES = {1: "UPLOADED", 2: "EXTRACTED", 3: "INDEXED", 4: "FAILED"}
+_DOC_CATEGORY_NAMES = {
+    1: "TECHNICAL", 2: "BUSINESS", 3: "LEGAL", 4: "PROCESS",
+    5: "MEETING_NOTES", 6: "REPORT", 7: "SPECIFICATION", 8: "OTHER",
+}
+
+
+def _document_to_dict(doc) -> dict:
+    """Project proto Document to the legacy REST JSON shape."""
+    return {
+        "id": doc.id,
+        "clientId": doc.client_id,
+        "projectId": doc.project_id or None,
+        "filename": doc.filename,
+        "mimeType": doc.mime_type,
+        "sizeBytes": doc.size_bytes,
+        "storagePath": doc.storage_path,
+        "state": _DOC_STATE_NAMES.get(doc.state, "UPLOADED"),
+        "category": _DOC_CATEGORY_NAMES.get(doc.category, "OTHER"),
+        "title": doc.title or None,
+        "description": doc.description or None,
+        "tags": list(doc.tags),
+        "extractedTextPreview": doc.extracted_text_preview or None,
+        "pageCount": doc.page_count or None,
+        "contentHash": doc.content_hash or None,
+        "sourceUrn": doc.source_urn,
+        "errorMessage": doc.error_message or None,
+        "ragChunks": list(doc.rag_chunks),
+        "uploadedAt": doc.uploaded_at_iso,
+        "indexedAt": doc.indexed_at_iso or None,
+    }
+
+
+async def list_documents(
+    *,
+    caller: str,
+    client_id: str = "",
+    project_id: str = "",
+    timeout: float = 30.0,
+) -> list[dict]:
+    from jervis.knowledgebase import documents_pb2
+
+    stub = documents_stub()
+    resp = await stub.List(
+        documents_pb2.DocumentListRequest(
+            ctx=build_request_context(caller=caller, client_id=client_id),
+            client_id=client_id,
+            project_id=project_id,
+        ),
+        timeout=timeout,
+    )
+    return [_document_to_dict(d) for d in resp.items]
+
+
+async def get_document(
+    *,
+    caller: str,
+    doc_id: str,
+    timeout: float = 15.0,
+) -> Optional[dict]:
+    from jervis.knowledgebase import documents_pb2
+
+    stub = documents_stub()
+    resp = await stub.Get(
+        documents_pb2.DocumentId(
+            ctx=build_request_context(caller=caller),
+            id=doc_id,
+        ),
+        timeout=timeout,
+    )
+    if not resp.id:
+        return None
+    return _document_to_dict(resp)
+
+
+async def delete_document(
+    *,
+    caller: str,
+    doc_id: str,
+    timeout: float = 60.0,
+) -> tuple[bool, str]:
+    from jervis.knowledgebase import documents_pb2
+
+    stub = documents_stub()
+    resp = await stub.Delete(
+        documents_pb2.DocumentId(
+            ctx=build_request_context(caller=caller),
+            id=doc_id,
+        ),
+        timeout=timeout,
+    )
+    return bool(resp.ok), resp.error or ""
 
 
 def build_request_context(caller: str, client_id: str = "") -> types_pb2.RequestContext:
@@ -599,7 +702,7 @@ async def crawl(
 
 async def close() -> None:
     """Shut down the cached channel. Safe to call multiple times."""
-    global _channel, _ingest_stub, _maintenance_stub, _queue_stub, _graph_stub, _retrieve_stub
+    global _channel, _ingest_stub, _maintenance_stub, _queue_stub, _graph_stub, _retrieve_stub, _documents_stub
     if _channel is not None:
         try:
             await _channel.close()
@@ -611,3 +714,4 @@ async def close() -> None:
         _queue_stub = None
         _graph_stub = None
         _retrieve_stub = None
+        _documents_stub = None
