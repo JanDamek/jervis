@@ -33,11 +33,11 @@ public object OrchestratorDispatchServiceGrpcKt {
   public val serviceDescriptor: ServiceDescriptor
     get() = getServiceDescriptor()
 
-  public val qualifyMethod: MethodDescriptor<DispatchRequest, DispatchAck>
+  public val qualifyMethod: MethodDescriptor<QualifyRequest, DispatchAck>
     @JvmStatic
     get() = OrchestratorDispatchServiceGrpc.getQualifyMethod()
 
-  public val orchestrateMethod: MethodDescriptor<DispatchRequest, DispatchAck>
+  public val orchestrateMethod: MethodDescriptor<OrchestrateRequest, DispatchAck>
     @JvmStatic
     get() = OrchestratorDispatchServiceGrpc.getOrchestrateMethod()
 
@@ -67,8 +67,8 @@ public object OrchestratorDispatchServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun qualify(request: DispatchRequest, headers: Metadata = Metadata()):
-        DispatchAck = unaryRpc(
+    public suspend fun qualify(request: QualifyRequest, headers: Metadata = Metadata()): DispatchAck
+        = unaryRpc(
       channel,
       OrchestratorDispatchServiceGrpc.getQualifyMethod(),
       request,
@@ -89,7 +89,7 @@ public object OrchestratorDispatchServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun orchestrate(request: DispatchRequest, headers: Metadata = Metadata()):
+    public suspend fun orchestrate(request: OrchestrateRequest, headers: Metadata = Metadata()):
         DispatchAck = unaryRpc(
       channel,
       OrchestratorDispatchServiceGrpc.getOrchestrateMethod(),
@@ -117,7 +117,7 @@ public object OrchestratorDispatchServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun qualify(request: DispatchRequest): DispatchAck = throw
+    public open suspend fun qualify(request: QualifyRequest): DispatchAck = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorDispatchService.Qualify is unimplemented"))
 
     /**
@@ -132,7 +132,7 @@ public object OrchestratorDispatchServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun orchestrate(request: DispatchRequest): DispatchAck = throw
+    public open suspend fun orchestrate(request: OrchestrateRequest): DispatchAck = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorDispatchService.Orchestrate is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())

@@ -27,14 +27,12 @@ if _version_not_supported:
 
 class OrchestratorDispatchServiceStub(object):
     """OrchestratorDispatchService — fire-and-forget entry points for the
-    orchestrator's long-running flows (qualify + orchestrate).
-
-    Both RPCs accept the full legacy JSON request body inline so the Kotlin
-    QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
-    these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
-    environment JsonObject, and flattening them into a proto message would
-    duplicate every Pydantic model Python side while adding no contract
-    value (consumers already enforce schema at the DTO layer).
+    orchestrator's long-running flows (qualify + orchestrate). Both RPCs
+    now carry fully-typed request messages — no JSON passthrough. Shape
+    mirrors the Pydantic models on the Python side
+    (app/unified/qualification_handler.py::QualifyRequest,
+    app/models.py::OrchestrateRequest) and the Kotlin DTOs
+    (QualifyRequestDto, OrchestrateRequestDto).
 
     Response stays typed: thread_id + status. Progress + completion flow
     back via the Phase-1 ServerOrchestratorCallbackService callbacks.
@@ -48,26 +46,24 @@ class OrchestratorDispatchServiceStub(object):
         """
         self.Qualify = channel.unary_unary(
                 '/jervis.orchestrator.OrchestratorDispatchService/Qualify',
-                request_serializer=jervis_dot_orchestrator_dot_dispatch__pb2.DispatchRequest.SerializeToString,
+                request_serializer=jervis_dot_orchestrator_dot_dispatch__pb2.QualifyRequest.SerializeToString,
                 response_deserializer=jervis_dot_orchestrator_dot_dispatch__pb2.DispatchAck.FromString,
                 _registered_method=True)
         self.Orchestrate = channel.unary_unary(
                 '/jervis.orchestrator.OrchestratorDispatchService/Orchestrate',
-                request_serializer=jervis_dot_orchestrator_dot_dispatch__pb2.DispatchRequest.SerializeToString,
+                request_serializer=jervis_dot_orchestrator_dot_dispatch__pb2.OrchestrateRequest.SerializeToString,
                 response_deserializer=jervis_dot_orchestrator_dot_dispatch__pb2.DispatchAck.FromString,
                 _registered_method=True)
 
 
 class OrchestratorDispatchServiceServicer(object):
     """OrchestratorDispatchService — fire-and-forget entry points for the
-    orchestrator's long-running flows (qualify + orchestrate).
-
-    Both RPCs accept the full legacy JSON request body inline so the Kotlin
-    QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
-    these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
-    environment JsonObject, and flattening them into a proto message would
-    duplicate every Pydantic model Python side while adding no contract
-    value (consumers already enforce schema at the DTO layer).
+    orchestrator's long-running flows (qualify + orchestrate). Both RPCs
+    now carry fully-typed request messages — no JSON passthrough. Shape
+    mirrors the Pydantic models on the Python side
+    (app/unified/qualification_handler.py::QualifyRequest,
+    app/models.py::OrchestrateRequest) and the Kotlin DTOs
+    (QualifyRequestDto, OrchestrateRequestDto).
 
     Response stays typed: thread_id + status. Progress + completion flow
     back via the Phase-1 ServerOrchestratorCallbackService callbacks.
@@ -90,12 +86,12 @@ def add_OrchestratorDispatchServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Qualify': grpc.unary_unary_rpc_method_handler(
                     servicer.Qualify,
-                    request_deserializer=jervis_dot_orchestrator_dot_dispatch__pb2.DispatchRequest.FromString,
+                    request_deserializer=jervis_dot_orchestrator_dot_dispatch__pb2.QualifyRequest.FromString,
                     response_serializer=jervis_dot_orchestrator_dot_dispatch__pb2.DispatchAck.SerializeToString,
             ),
             'Orchestrate': grpc.unary_unary_rpc_method_handler(
                     servicer.Orchestrate,
-                    request_deserializer=jervis_dot_orchestrator_dot_dispatch__pb2.DispatchRequest.FromString,
+                    request_deserializer=jervis_dot_orchestrator_dot_dispatch__pb2.OrchestrateRequest.FromString,
                     response_serializer=jervis_dot_orchestrator_dot_dispatch__pb2.DispatchAck.SerializeToString,
             ),
     }
@@ -108,14 +104,12 @@ def add_OrchestratorDispatchServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class OrchestratorDispatchService(object):
     """OrchestratorDispatchService — fire-and-forget entry points for the
-    orchestrator's long-running flows (qualify + orchestrate).
-
-    Both RPCs accept the full legacy JSON request body inline so the Kotlin
-    QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
-    these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
-    environment JsonObject, and flattening them into a proto message would
-    duplicate every Pydantic model Python side while adding no contract
-    value (consumers already enforce schema at the DTO layer).
+    orchestrator's long-running flows (qualify + orchestrate). Both RPCs
+    now carry fully-typed request messages — no JSON passthrough. Shape
+    mirrors the Pydantic models on the Python side
+    (app/unified/qualification_handler.py::QualifyRequest,
+    app/models.py::OrchestrateRequest) and the Kotlin DTOs
+    (QualifyRequestDto, OrchestrateRequestDto).
 
     Response stays typed: thread_id + status. Progress + completion flow
     back via the Phase-1 ServerOrchestratorCallbackService callbacks.
@@ -136,7 +130,7 @@ class OrchestratorDispatchService(object):
             request,
             target,
             '/jervis.orchestrator.OrchestratorDispatchService/Qualify',
-            jervis_dot_orchestrator_dot_dispatch__pb2.DispatchRequest.SerializeToString,
+            jervis_dot_orchestrator_dot_dispatch__pb2.QualifyRequest.SerializeToString,
             jervis_dot_orchestrator_dot_dispatch__pb2.DispatchAck.FromString,
             options,
             channel_credentials,
@@ -163,7 +157,7 @@ class OrchestratorDispatchService(object):
             request,
             target,
             '/jervis.orchestrator.OrchestratorDispatchService/Orchestrate',
-            jervis_dot_orchestrator_dot_dispatch__pb2.DispatchRequest.SerializeToString,
+            jervis_dot_orchestrator_dot_dispatch__pb2.OrchestrateRequest.SerializeToString,
             jervis_dot_orchestrator_dot_dispatch__pb2.DispatchAck.FromString,
             options,
             channel_credentials,

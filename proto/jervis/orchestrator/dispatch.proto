@@ -9,30 +9,229 @@ option java_multiple_files = true;
 option java_outer_classname = "OrchestratorDispatchProto";
 
 // OrchestratorDispatchService — fire-and-forget entry points for the
-// orchestrator's long-running flows (qualify + orchestrate).
-//
-// Both RPCs accept the full legacy JSON request body inline so the Kotlin
-// QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
-// these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
-// environment JsonObject, and flattening them into a proto message would
-// duplicate every Pydantic model Python side while adding no contract
-// value (consumers already enforce schema at the DTO layer).
+// orchestrator's long-running flows (qualify + orchestrate). Both RPCs
+// now carry fully-typed request messages — no JSON passthrough. Shape
+// mirrors the Pydantic models on the Python side
+// (app/unified/qualification_handler.py::QualifyRequest,
+// app/models.py::OrchestrateRequest) and the Kotlin DTOs
+// (QualifyRequestDto, OrchestrateRequestDto).
 //
 // Response stays typed: thread_id + status. Progress + completion flow
 // back via the Phase-1 ServerOrchestratorCallbackService callbacks.
 service OrchestratorDispatchService {
-  rpc Qualify(DispatchRequest) returns (DispatchAck);
-  rpc Orchestrate(DispatchRequest) returns (DispatchAck);
+  rpc Qualify(QualifyRequest) returns (DispatchAck);
+  rpc Orchestrate(OrchestrateRequest) returns (DispatchAck);
 }
 
-message DispatchRequest {
+// ── Qualify ──────────────────────────────────────────────────────────
+
+message QualifyRequest {
   jervis.common.RequestContext ctx = 1;
+
+  // Identity
   string task_id = 2;
-  // JSON-encoded QualifyRequestDto / OrchestrateRequestDto — server-side
-  // parses with the existing Pydantic models (Qualify and Orchestrate
-  // FastAPI handlers used to accept the same JSON via `request.json()`).
-  string payload_json = 3;
+  string client_id = 3;
+  string project_id = 4;                       // empty = no project scope
+  string group_id = 5;
+  string client_name = 6;
+  string project_name = 7;
+
+  // Source + routing
+  string source_urn = 8;
+  string max_openrouter_tier = 9;              // default "FREE"
+  string deadline_iso = 10;                    // RFC3339 UTC; empty = BATCH
+  string priority = 11;                        // NORMAL | CASCADE | CRITICAL
+
+  // KB extraction
+  string summary = 12;
+  repeated string entities = 13;
+  repeated string suggested_actions = 14;
+  string urgency = 15;
+  string action_type = 16;
+  string estimated_complexity = 17;
+  bool is_assigned_to_me = 18;
+  bool has_future_deadline = 19;
+  string suggested_deadline = 20;
+
+  // Attachment metadata (email)
+  bool has_attachments = 21;
+  int32 attachment_count = 22;
+  repeated QualifyAttachment attachments = 23;
+
+  // KB extras
+  string suggested_agent = 24;
+  repeated string affected_files = 25;
+  repeated string related_kb_nodes = 26;
+
+  // Recent chat topics for context (role/content pairs, last ~5)
+  repeated QualifyChatTopic chat_topics = 27;
+
+  // Original content (email body, comment, …)
+  string content = 28;
+
+  // Active tasks for consolidation check
+  repeated QualifyActiveTask active_tasks = 29;
+
+  // @jervis mention detection
+  bool mentions_jervis = 30;
 }
+
+message QualifyAttachment {
+  string filename = 1;
+  string content_type = 2;
+  int64 size = 3;
+  int32 index = 4;
+}
+
+message QualifyChatTopic {
+  string role = 1;
+  string content = 2;
+}
+
+message QualifyActiveTask {
+  string task_id = 1;
+  string type = 2;
+  string state = 3;
+  string task_name = 4;
+  string topic_id = 5;
+}
+
+// ── Orchestrate ──────────────────────────────────────────────────────
+
+message OrchestrateRequest {
+  jervis.common.RequestContext ctx = 1;
+
+  // Identity
+  string task_id = 2;
+  string client_id = 3;
+  string project_id = 4;
+  string group_id = 5;
+  string client_name = 6;
+  string project_name = 7;
+  string group_name = 8;
+
+  // Workspace + query
+  string workspace_path = 9;
+  string query = 10;
+  string agent_preference = 11;                // default "auto"
+  string task_name = 12;                       // human-readable
+
+  // Policy
+  ProjectRules rules = 13;
+  string processing_mode = 14;                 // FOREGROUND | BACKGROUND
+  string max_openrouter_tier = 15;
+
+  // Environment
+  EnvironmentContext environment = 16;
+  string environment_id = 17;                  // MongoDB _id
+
+  // Jervis internal references
+  string jervis_project_id = 18;
+
+  // Context + history
+  ChatHistoryPayload chat_history = 19;
+  string qualifier_context = 20;               // JSON context prepared by GPU qualification
+  string source_urn = 21;
+
+  // Urgency forwarding (see task-routing-unified-design)
+  string deadline_iso = 22;
+  string priority = 23;                        // NORMAL | CASCADE | CRITICAL
+  string capability = 24;
+  string tier = 25;
+  int32 min_model_size = 26;
+}
+
+message ProjectRules {
+  string branch_naming = 1;                    // default "task/{taskId}"
+  string commit_prefix = 2;                    // default "task({taskId}):"
+  bool require_review = 3;
+  bool require_tests = 4;
+  bool require_approval_commit = 5;
+  bool require_approval_push = 6;
+  repeated string allowed_branches = 7;
+  repeated string forbidden_files = 8;
+  int32 max_changed_files = 9;
+  bool auto_push = 10;
+  bool auto_use_anthropic = 11;
+  bool auto_use_openai = 12;
+  bool auto_use_gemini = 13;
+  string max_openrouter_tier = 14;
+  // Git commit identity + signing
+  string git_author_name = 15;
+  string git_author_email = 16;
+  string git_committer_name = 17;
+  string git_committer_email = 18;
+  bool git_gpg_sign = 19;
+  string git_gpg_key_id = 20;
+  string git_message_pattern = 21;
+}
+
+// EnvironmentContext — shape of EnvironmentMapper.toAgentContextJson().
+// Flows into the orchestrator state as `environment` and is used by
+// coding/respond/intake prompts + the DevOps agent's namespace guard.
+message EnvironmentContext {
+  string id = 1;                               // environment._id as string
+  string namespace = 2;
+  string tier = 3;
+  string state = 4;
+  string group_id = 5;
+  string agent_instructions = 6;
+  repeated EnvironmentComponent components = 7;
+  repeated EnvironmentComponentLink component_links = 8;
+}
+
+message EnvironmentComponent {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string image = 4;
+  string project_id = 5;
+  string host = 6;                             // svc DNS: name.namespace.svc.cluster.local
+  repeated ComponentPort ports = 7;
+  map<string, string> env_vars = 8;
+  bool auto_start = 9;
+  int32 start_order = 10;
+  string source_repo = 11;
+  string source_branch = 12;
+  string dockerfile_path = 13;
+  string component_state = 14;
+}
+
+message ComponentPort {
+  int32 container = 1;
+  int32 service = 2;
+  string name = 3;
+}
+
+message EnvironmentComponentLink {
+  string source = 1;
+  string target = 2;
+  string description = 3;
+}
+
+message ChatHistoryPayload {
+  repeated ChatHistoryMessage recent_messages = 1;
+  repeated ChatSummaryBlock summary_blocks = 2;
+  int64 total_message_count = 3;
+}
+
+message ChatHistoryMessage {
+  string role = 1;
+  string content = 2;
+  string timestamp = 3;
+  int64 sequence = 4;
+}
+
+message ChatSummaryBlock {
+  string sequence_range = 1;
+  string summary = 2;
+  repeated string key_decisions = 3;
+  repeated string topics = 4;
+  bool is_checkpoint = 5;
+  string checkpoint_reason = 6;
+}
+
+// ── Response ──────────────────────────────────────────────────────────
 
 message DispatchAck {
   string status = 1;         // "accepted" | "busy" | "error"

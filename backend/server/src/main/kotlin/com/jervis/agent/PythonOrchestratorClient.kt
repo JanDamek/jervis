@@ -15,7 +15,6 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import mu.KotlinLogging
 import java.util.concurrent.atomic.AtomicInteger
@@ -288,8 +287,8 @@ class PythonOrchestratorClient(
     suspend fun qualify(request: QualifyRequestDto): QualifyResponseDto? {
         logger.info { "PYTHON_QUALIFY_START: taskId=${request.taskId}" }
         return try {
-            val payloadJson = Json.encodeToString(QualifyRequestDto.serializer(), request)
-            val ack = dispatchGrpcOrThrow().qualify(request.taskId, request.clientId, payloadJson)
+            val grpc = dispatchGrpcOrThrow()
+            val ack = grpc.qualify(request.toProto(grpc.ctx(request.clientId)))
             when (ack.status) {
                 "accepted" -> {
                     circuitBreaker.recordSuccess()
@@ -322,8 +321,8 @@ class PythonOrchestratorClient(
     suspend fun orchestrate(request: OrchestrateRequestDto): StreamStartResponseDto? {
         logger.info { "PYTHON_ORCHESTRATE_START: taskId=${request.taskId}" }
         return try {
-            val payloadJson = Json.encodeToString(OrchestrateRequestDto.serializer(), request)
-            val ack = dispatchGrpcOrThrow().orchestrate(request.taskId, request.clientId, payloadJson)
+            val grpc = dispatchGrpcOrThrow()
+            val ack = grpc.orchestrate(request.toProto(grpc.ctx(request.clientId)))
             when (ack.status) {
                 "busy" -> {
                     logger.info { "PYTHON_ORCHESTRATE_BUSY: orchestrator rejected, skipping dispatch" }
@@ -520,3 +519,211 @@ data class QualifyAttachmentDto(
 data class QualifyResponseDto(
     @SerialName("thread_id") val threadId: String,
 )
+
+// --------------------------------------------------------------------------
+// DTO → proto converters (no JSON on the wire — see dispatch.proto)
+// --------------------------------------------------------------------------
+
+private fun QualifyRequestDto.toProto(
+    ctx: com.jervis.contracts.common.RequestContext,
+): com.jervis.contracts.orchestrator.QualifyRequest {
+    val builder = com.jervis.contracts.orchestrator.QualifyRequest.newBuilder()
+        .setCtx(ctx)
+        .setTaskId(taskId)
+        .setClientId(clientId)
+        .setProjectId(projectId ?: "")
+        .setGroupId(groupId ?: "")
+        .setClientName(clientName ?: "")
+        .setProjectName(projectName ?: "")
+        .setSourceUrn(sourceUrn)
+        .setMaxOpenrouterTier(maxOpenRouterTier)
+        .setSummary(summary)
+        .addAllEntities(entities)
+        .addAllSuggestedActions(suggestedActions)
+        .setUrgency(urgency)
+        .setActionType(actionType ?: "")
+        .setEstimatedComplexity(estimatedComplexity ?: "")
+        .setIsAssignedToMe(isAssignedToMe)
+        .setHasFutureDeadline(hasFutureDeadline)
+        .setSuggestedDeadline(suggestedDeadline ?: "")
+        .setHasAttachments(hasAttachments)
+        .setAttachmentCount(attachmentCount)
+        .setSuggestedAgent(suggestedAgent ?: "")
+        .addAllAffectedFiles(affectedFiles)
+        .addAllRelatedKbNodes(relatedKbNodes)
+        .setContent(content)
+        .setMentionsJervis(mentionsJervis)
+    for (a in attachments) {
+        builder.addAttachments(
+            com.jervis.contracts.orchestrator.QualifyAttachment.newBuilder()
+                .setFilename(a.filename)
+                .setContentType(a.contentType)
+                .setSize(a.size)
+                .setIndex(a.index)
+                .build(),
+        )
+    }
+    return builder.build()
+}
+
+private fun OrchestrateRequestDto.toProto(
+    ctx: com.jervis.contracts.common.RequestContext,
+): com.jervis.contracts.orchestrator.OrchestrateRequest {
+    val builder = com.jervis.contracts.orchestrator.OrchestrateRequest.newBuilder()
+        .setCtx(ctx)
+        .setTaskId(taskId)
+        .setClientId(clientId)
+        .setProjectId(projectId ?: "")
+        .setGroupId(groupId ?: "")
+        .setClientName(clientName ?: "")
+        .setProjectName(projectName ?: "")
+        .setGroupName(groupName ?: "")
+        .setWorkspacePath(workspacePath)
+        .setQuery(query)
+        .setAgentPreference(agentPreference)
+        .setTaskName(taskName ?: "")
+        .setRules(rules.toProto())
+        .setProcessingMode(processingMode)
+        .setMaxOpenrouterTier(maxOpenRouterTier)
+        .setEnvironmentId(environmentId ?: "")
+        .setJervisProjectId(jervisProjectId ?: "")
+        .setQualifierContext(qualifierContext ?: "")
+        .setSourceUrn(sourceUrn ?: "")
+        .setDeadlineIso(deadlineIso ?: "")
+        .setPriority(priority)
+        .setCapability(capability ?: "")
+        .setTier(tier ?: "")
+        .setMinModelSize(minModelSize)
+    environment?.let { builder.setEnvironment(it.toEnvironmentContextProto()) }
+    chatHistory?.let { builder.setChatHistory(it.toProto()) }
+    return builder.build()
+}
+
+private fun ProjectRulesDto.toProto(): com.jervis.contracts.orchestrator.ProjectRules =
+    com.jervis.contracts.orchestrator.ProjectRules.newBuilder()
+        .setBranchNaming(branchNaming)
+        .setCommitPrefix(commitPrefix)
+        .setRequireReview(requireReview)
+        .setRequireTests(requireTests)
+        .setRequireApprovalCommit(requireApprovalCommit)
+        .setRequireApprovalPush(requireApprovalPush)
+        .addAllAllowedBranches(allowedBranches)
+        .addAllForbiddenFiles(forbiddenFiles)
+        .setMaxChangedFiles(maxChangedFiles)
+        .setAutoPush(autoPush)
+        .setAutoUseAnthropic(autoUseAnthropic)
+        .setAutoUseOpenai(autoUseOpenai)
+        .setAutoUseGemini(autoUseGemini)
+        .setMaxOpenrouterTier(maxOpenRouterTier)
+        .setGitAuthorName(gitAuthorName ?: "")
+        .setGitAuthorEmail(gitAuthorEmail ?: "")
+        .setGitCommitterName(gitCommitterName ?: "")
+        .setGitCommitterEmail(gitCommitterEmail ?: "")
+        .setGitGpgSign(gitGpgSign)
+        .setGitGpgKeyId(gitGpgKeyId ?: "")
+        .setGitMessagePattern(gitMessagePattern ?: "")
+        .build()
+
+private fun ChatHistoryPayloadDto.toProto(): com.jervis.contracts.orchestrator.ChatHistoryPayload {
+    val builder = com.jervis.contracts.orchestrator.ChatHistoryPayload.newBuilder()
+        .setTotalMessageCount(totalMessageCount)
+    recentMessages.forEach { m ->
+        builder.addRecentMessages(
+            com.jervis.contracts.orchestrator.ChatHistoryMessage.newBuilder()
+                .setRole(m.role)
+                .setContent(m.content)
+                .setTimestamp(m.timestamp)
+                .setSequence(m.sequence)
+                .build(),
+        )
+    }
+    summaryBlocks.forEach { b ->
+        builder.addSummaryBlocks(
+            com.jervis.contracts.orchestrator.ChatSummaryBlock.newBuilder()
+                .setSequenceRange(b.sequenceRange)
+                .setSummary(b.summary)
+                .addAllKeyDecisions(b.keyDecisions)
+                .addAllTopics(b.topics)
+                .setIsCheckpoint(b.isCheckpoint)
+                .setCheckpointReason(b.checkpointReason ?: "")
+                .build(),
+        )
+    }
+    return builder.build()
+}
+
+/**
+ * Convert the environment JsonObject (produced by
+ * EnvironmentMapper.toAgentContextJson) into the typed EnvironmentContext
+ * proto. The consumer on the Python side unpacks this back into a dict
+ * with the same keys (see grpc_server.py::_environment_from_proto).
+ */
+private fun kotlinx.serialization.json.JsonObject.toEnvironmentContextProto():
+    com.jervis.contracts.orchestrator.EnvironmentContext {
+    fun str(key: String): String =
+        (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: ""
+
+    val builder = com.jervis.contracts.orchestrator.EnvironmentContext.newBuilder()
+        .setId(str("id"))
+        .setNamespace(str("namespace"))
+        .setTier(str("tier"))
+        .setState(str("state"))
+        .setGroupId(str("groupId"))
+        .setAgentInstructions(str("agentInstructions"))
+
+    val components = this["components"] as? kotlinx.serialization.json.JsonArray
+    components?.forEach { el ->
+        val c = el as? kotlinx.serialization.json.JsonObject ?: return@forEach
+        fun cStr(key: String): String =
+            (c[key] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: ""
+        fun cBool(key: String): Boolean =
+            (c[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toBooleanStrictOrNull() ?: false
+        fun cInt(key: String): Int =
+            (c[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() ?: 0
+
+        val compBuilder = com.jervis.contracts.orchestrator.EnvironmentComponent.newBuilder()
+            .setId(cStr("id"))
+            .setName(cStr("name"))
+            .setType(cStr("type"))
+            .setImage(cStr("image"))
+            .setProjectId(cStr("projectId"))
+            .setHost(cStr("host"))
+            .setAutoStart(cBool("autoStart"))
+            .setStartOrder(cInt("startOrder"))
+            .setSourceRepo(cStr("sourceRepo"))
+            .setSourceBranch(cStr("sourceBranch"))
+            .setDockerfilePath(cStr("dockerfilePath"))
+            .setComponentState(cStr("componentState"))
+
+        (c["ports"] as? kotlinx.serialization.json.JsonArray)?.forEach { pEl ->
+            val p = pEl as? kotlinx.serialization.json.JsonObject ?: return@forEach
+            compBuilder.addPorts(
+                com.jervis.contracts.orchestrator.ComponentPort.newBuilder()
+                    .setContainer((p["container"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() ?: 0)
+                    .setService((p["service"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() ?: 0)
+                    .setName((p["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "")
+                    .build(),
+            )
+        }
+
+        (c["envVars"] as? kotlinx.serialization.json.JsonObject)?.forEach { (k, v) ->
+            compBuilder.putEnvVars(k, (v as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "")
+        }
+
+        builder.addComponents(compBuilder.build())
+    }
+
+    val links = this["componentLinks"] as? kotlinx.serialization.json.JsonArray
+    links?.forEach { el ->
+        val l = el as? kotlinx.serialization.json.JsonObject ?: return@forEach
+        builder.addComponentLinks(
+            com.jervis.contracts.orchestrator.EnvironmentComponentLink.newBuilder()
+                .setSource((l["source"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "")
+                .setTarget((l["target"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "")
+                .setDescription((l["description"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "")
+                .build(),
+        )
+    }
+
+    return builder.build()
+}

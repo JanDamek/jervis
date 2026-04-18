@@ -355,6 +355,207 @@ class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer)
         )
 
 
+def _empty_to_none(v: str) -> str | None:
+    return v if v else None
+
+
+def _qualify_request_from_proto(request: dispatch_pb2.QualifyRequest):
+    """Translate a typed dispatch.proto QualifyRequest into the pydantic
+    `app/unified/qualification_handler.py::QualifyRequest`."""
+    from app.unified.qualification_handler import QualifyRequest
+
+    attachments = [
+        {
+            "filename": a.filename,
+            "contentType": a.content_type,
+            "size": int(a.size),
+            "index": int(a.index),
+        }
+        for a in request.attachments
+    ]
+    chat_topics = [
+        {"role": t.role, "content": t.content} for t in request.chat_topics
+    ]
+    active_tasks = [
+        {
+            "task_id": t.task_id,
+            "type": t.type,
+            "state": t.state,
+            "task_name": t.task_name,
+            "topic_id": _empty_to_none(t.topic_id),
+        }
+        for t in request.active_tasks
+    ]
+    return QualifyRequest(
+        task_id=request.task_id,
+        client_id=request.client_id,
+        project_id=_empty_to_none(request.project_id),
+        group_id=_empty_to_none(request.group_id),
+        client_name=_empty_to_none(request.client_name),
+        project_name=_empty_to_none(request.project_name),
+        source_urn=request.source_urn,
+        max_openrouter_tier=request.max_openrouter_tier or "FREE",
+        deadline_iso=_empty_to_none(request.deadline_iso),
+        priority=request.priority or "NORMAL",
+        summary=request.summary,
+        entities=list(request.entities),
+        suggested_actions=list(request.suggested_actions),
+        urgency=request.urgency,
+        action_type=_empty_to_none(request.action_type),
+        estimated_complexity=_empty_to_none(request.estimated_complexity),
+        is_assigned_to_me=bool(request.is_assigned_to_me),
+        has_future_deadline=bool(request.has_future_deadline),
+        suggested_deadline=_empty_to_none(request.suggested_deadline),
+        has_attachments=bool(request.has_attachments),
+        attachment_count=int(request.attachment_count),
+        attachments=attachments,
+        suggested_agent=_empty_to_none(request.suggested_agent),
+        affected_files=list(request.affected_files),
+        related_kb_nodes=list(request.related_kb_nodes),
+        chat_topics=chat_topics,
+        content=request.content,
+        active_tasks=active_tasks,
+        mentions_jervis=bool(request.mentions_jervis),
+    )
+
+
+def _project_rules_from_proto(rules: dispatch_pb2.ProjectRules) -> dict:
+    return {
+        "branch_naming": rules.branch_naming or "task/{taskId}",
+        "commit_prefix": rules.commit_prefix or "task({taskId}):",
+        "require_review": bool(rules.require_review),
+        "require_tests": bool(rules.require_tests),
+        "require_approval_commit": bool(rules.require_approval_commit),
+        "require_approval_push": bool(rules.require_approval_push),
+        "allowed_branches": list(rules.allowed_branches) or ["task/*", "fix/*"],
+        "forbidden_files": list(rules.forbidden_files) or ["*.env", "secrets/*"],
+        "max_changed_files": int(rules.max_changed_files) or 20,
+        "auto_push": bool(rules.auto_push),
+        "auto_use_anthropic": bool(rules.auto_use_anthropic),
+        "auto_use_openai": bool(rules.auto_use_openai),
+        "auto_use_gemini": bool(rules.auto_use_gemini),
+        "max_openrouter_tier": rules.max_openrouter_tier or "NONE",
+        "git_author_name": _empty_to_none(rules.git_author_name),
+        "git_author_email": _empty_to_none(rules.git_author_email),
+        "git_committer_name": _empty_to_none(rules.git_committer_name),
+        "git_committer_email": _empty_to_none(rules.git_committer_email),
+        "git_gpg_sign": bool(rules.git_gpg_sign),
+        "git_gpg_key_id": _empty_to_none(rules.git_gpg_key_id),
+        "git_message_pattern": _empty_to_none(rules.git_message_pattern),
+    }
+
+
+def _environment_from_proto(env: dispatch_pb2.EnvironmentContext) -> dict | None:
+    # A zero-value (unset) EnvironmentContext has empty id + namespace → treat
+    # the whole block as "no environment attached".
+    if not env.id and not env.namespace:
+        return None
+    components = [
+        {
+            "id": c.id,
+            "name": c.name,
+            "type": c.type,
+            "image": c.image,
+            "projectId": c.project_id,
+            "host": c.host,
+            "ports": [
+                {
+                    "container": int(p.container),
+                    "service": int(p.service) if p.service else int(p.container),
+                    "name": p.name,
+                }
+                for p in c.ports
+            ],
+            "envVars": dict(c.env_vars),
+            "autoStart": bool(c.auto_start),
+            "startOrder": int(c.start_order),
+            "sourceRepo": c.source_repo,
+            "sourceBranch": c.source_branch,
+            "dockerfilePath": c.dockerfile_path,
+            "componentState": c.component_state,
+        }
+        for c in env.components
+    ]
+    component_links = [
+        {"source": l.source, "target": l.target, "description": l.description}
+        for l in env.component_links
+    ]
+    return {
+        "id": env.id,
+        "namespace": env.namespace,
+        "tier": env.tier,
+        "state": env.state,
+        "groupId": _empty_to_none(env.group_id),
+        "agentInstructions": env.agent_instructions,
+        "components": components,
+        "componentLinks": component_links,
+    }
+
+
+def _chat_history_from_proto(
+    history: dispatch_pb2.ChatHistoryPayload,
+):
+    from app.models import ChatHistoryMessage, ChatHistoryPayload, ChatSummaryBlock
+
+    if not history.recent_messages and not history.summary_blocks and history.total_message_count == 0:
+        return None
+    recent = [
+        ChatHistoryMessage(
+            role=m.role,
+            content=m.content,
+            timestamp=m.timestamp,
+            sequence=int(m.sequence),
+        )
+        for m in history.recent_messages
+    ]
+    blocks = [
+        ChatSummaryBlock(
+            sequence_range=b.sequence_range,
+            summary=b.summary,
+            key_decisions=list(b.key_decisions),
+            topics=list(b.topics),
+            is_checkpoint=bool(b.is_checkpoint),
+            checkpoint_reason=_empty_to_none(b.checkpoint_reason),
+        )
+        for b in history.summary_blocks
+    ]
+    return ChatHistoryPayload(
+        recent_messages=recent,
+        summary_blocks=blocks,
+        total_message_count=int(history.total_message_count),
+    )
+
+
+def _orchestrate_request_from_proto(request: dispatch_pb2.OrchestrateRequest):
+    from app.models import OrchestrateRequest, ProjectRules
+
+    rules = ProjectRules(**_project_rules_from_proto(request.rules))
+    environment = _environment_from_proto(request.environment)
+    chat_history = _chat_history_from_proto(request.chat_history)
+    return OrchestrateRequest(
+        task_id=request.task_id,
+        client_id=request.client_id,
+        project_id=_empty_to_none(request.project_id),
+        group_id=_empty_to_none(request.group_id),
+        client_name=_empty_to_none(request.client_name),
+        project_name=_empty_to_none(request.project_name),
+        group_name=_empty_to_none(request.group_name),
+        workspace_path=request.workspace_path,
+        query=request.query,
+        agent_preference=request.agent_preference or "auto",
+        rules=rules,
+        environment=environment,
+        environment_id=_empty_to_none(request.environment_id),
+        jervis_project_id=_empty_to_none(request.jervis_project_id),
+        chat_history=chat_history,
+        processing_mode=request.processing_mode or "FOREGROUND",
+        max_openrouter_tier=request.max_openrouter_tier or "NONE",
+        qualifier_context=_empty_to_none(request.qualifier_context),
+        source_urn=_empty_to_none(request.source_urn),
+        task_name=_empty_to_none(request.task_name),
+    )
+
+
 class OrchestratorDispatchServicer(dispatch_pb2_grpc.OrchestratorDispatchServiceServicer):
     """OrchestratorDispatchService — fire-and-forget dispatch RPCs.
 
@@ -367,20 +568,19 @@ class OrchestratorDispatchServicer(dispatch_pb2_grpc.OrchestratorDispatchService
 
     async def Qualify(
         self,
-        request: dispatch_pb2.DispatchRequest,
+        request: dispatch_pb2.QualifyRequest,
         context: grpc.aio.ServicerContext,
     ) -> dispatch_pb2.DispatchAck:
         import uuid as _uuid
 
         from app import main as orch_main
         from app.tools.kotlin_client import kotlin_client
-        from app.unified.qualification_handler import QualifyRequest, handle_qualification
+        from app.unified.qualification_handler import handle_qualification
 
         try:
-            payload = json.loads(request.payload_json) if request.payload_json else {}
-            qualify_request = QualifyRequest(**payload)
+            qualify_request = _qualify_request_from_proto(request)
         except Exception as e:
-            logger.error("QUALIFY_VALIDATION_FAILED: %s | keys=%s", e, list((payload or {}).keys()))
+            logger.error("QUALIFY_VALIDATION_FAILED: %s", e)
             return dispatch_pb2.DispatchAck(status="error", thread_id="", detail=f"Invalid qualify request: {e}")
 
         thread_id = f"qual-{qualify_request.task_id}-{_uuid.uuid4().hex[:8]}"
@@ -426,19 +626,17 @@ class OrchestratorDispatchServicer(dispatch_pb2_grpc.OrchestratorDispatchService
 
     async def Orchestrate(
         self,
-        request: dispatch_pb2.DispatchRequest,
+        request: dispatch_pb2.OrchestrateRequest,
         context: grpc.aio.ServicerContext,
     ) -> dispatch_pb2.DispatchAck:
         import uuid as _uuid
 
         from app import main as orch_main
         from app.background.handler import handle_background
-        from app.models import OrchestrateRequest
         from app.tools.kotlin_client import kotlin_client
 
         try:
-            payload = json.loads(request.payload_json) if request.payload_json else {}
-            orchestrate_request = OrchestrateRequest(**payload)
+            orchestrate_request = _orchestrate_request_from_proto(request)
         except Exception as e:
             return dispatch_pb2.DispatchAck(status="error", thread_id="", detail=f"Invalid orchestrate request: {e}")
 

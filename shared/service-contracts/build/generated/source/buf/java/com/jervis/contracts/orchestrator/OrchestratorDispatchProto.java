@@ -27,10 +27,75 @@ public final class OrchestratorDispatchProto extends com.google.protobuf.Generat
         (com.google.protobuf.ExtensionRegistryLite) registry);
   }
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_orchestrator_DispatchRequest_descriptor;
+    internal_static_jervis_orchestrator_QualifyRequest_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_orchestrator_DispatchRequest_fieldAccessorTable;
+      internal_static_jervis_orchestrator_QualifyRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_QualifyAttachment_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_QualifyAttachment_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_QualifyChatTopic_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_QualifyChatTopic_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_QualifyActiveTask_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_QualifyActiveTask_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_OrchestrateRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_OrchestrateRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_ProjectRules_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_ProjectRules_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_EnvironmentContext_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_EnvironmentContext_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_EnvironmentComponent_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_EnvironmentComponent_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_EnvironmentComponent_EnvVarsEntry_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_EnvironmentComponent_EnvVarsEntry_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_ComponentPort_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_ComponentPort_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_EnvironmentComponentLink_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_EnvironmentComponentLink_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_ChatHistoryPayload_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_ChatHistoryPayload_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_ChatHistoryMessage_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_ChatHistoryMessage_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_ChatSummaryBlock_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_ChatSummaryBlock_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_orchestrator_DispatchAck_descriptor;
   static final 
@@ -47,32 +112,197 @@ public final class OrchestratorDispatchProto extends com.google.protobuf.Generat
     java.lang.String[] descriptorData = {
       "\n\"jervis/orchestrator/dispatch.proto\022\023je" +
       "rvis.orchestrator\032\031jervis/common/types.p" +
-      "roto\"d\n\017DispatchRequest\022*\n\003ctx\030\001 \001(\0132\035.j" +
+      "roto\"\277\006\n\016QualifyRequest\022*\n\003ctx\030\001 \001(\0132\035.j" +
       "ervis.common.RequestContext\022\017\n\007task_id\030\002" +
-      " \001(\t\022\024\n\014payload_json\030\003 \001(\t\"@\n\013DispatchAc" +
-      "k\022\016\n\006status\030\001 \001(\t\022\021\n\tthread_id\030\002 \001(\t\022\016\n\006" +
-      "detail\030\003 \001(\t2\307\001\n\033OrchestratorDispatchSer" +
-      "vice\022Q\n\007Qualify\022$.jervis.orchestrator.Di" +
-      "spatchRequest\032 .jervis.orchestrator.Disp" +
-      "atchAck\022U\n\013Orchestrate\022$.jervis.orchestr" +
-      "ator.DispatchRequest\032 .jervis.orchestrat" +
-      "or.DispatchAckB@\n!com.jervis.contracts.o" +
-      "rchestratorB\031OrchestratorDispatchProtoP\001" +
-      "b\006proto3"
+      " \001(\t\022\021\n\tclient_id\030\003 \001(\t\022\022\n\nproject_id\030\004 " +
+      "\001(\t\022\020\n\010group_id\030\005 \001(\t\022\023\n\013client_name\030\006 \001" +
+      "(\t\022\024\n\014project_name\030\007 \001(\t\022\022\n\nsource_urn\030\010" +
+      " \001(\t\022\033\n\023max_openrouter_tier\030\t \001(\t\022\024\n\014dea" +
+      "dline_iso\030\n \001(\t\022\020\n\010priority\030\013 \001(\t\022\017\n\007sum" +
+      "mary\030\014 \001(\t\022\020\n\010entities\030\r \003(\t\022\031\n\021suggeste" +
+      "d_actions\030\016 \003(\t\022\017\n\007urgency\030\017 \001(\t\022\023\n\013acti" +
+      "on_type\030\020 \001(\t\022\034\n\024estimated_complexity\030\021 " +
+      "\001(\t\022\031\n\021is_assigned_to_me\030\022 \001(\010\022\033\n\023has_fu" +
+      "ture_deadline\030\023 \001(\010\022\032\n\022suggested_deadlin" +
+      "e\030\024 \001(\t\022\027\n\017has_attachments\030\025 \001(\010\022\030\n\020atta" +
+      "chment_count\030\026 \001(\005\022;\n\013attachments\030\027 \003(\0132" +
+      "&.jervis.orchestrator.QualifyAttachment\022" +
+      "\027\n\017suggested_agent\030\030 \001(\t\022\026\n\016affected_fil" +
+      "es\030\031 \003(\t\022\030\n\020related_kb_nodes\030\032 \003(\t\022:\n\013ch" +
+      "at_topics\030\033 \003(\0132%.jervis.orchestrator.Qu" +
+      "alifyChatTopic\022\017\n\007content\030\034 \001(\t\022<\n\014activ" +
+      "e_tasks\030\035 \003(\0132&.jervis.orchestrator.Qual" +
+      "ifyActiveTask\022\027\n\017mentions_jervis\030\036 \001(\010\"X" +
+      "\n\021QualifyAttachment\022\020\n\010filename\030\001 \001(\t\022\024\n" +
+      "\014content_type\030\002 \001(\t\022\014\n\004size\030\003 \001(\003\022\r\n\005ind" +
+      "ex\030\004 \001(\005\"1\n\020QualifyChatTopic\022\014\n\004role\030\001 \001" +
+      "(\t\022\017\n\007content\030\002 \001(\t\"f\n\021QualifyActiveTask" +
+      "\022\017\n\007task_id\030\001 \001(\t\022\014\n\004type\030\002 \001(\t\022\r\n\005state" +
+      "\030\003 \001(\t\022\021\n\ttask_name\030\004 \001(\t\022\020\n\010topic_id\030\005 " +
+      "\001(\t\"\306\005\n\022OrchestrateRequest\022*\n\003ctx\030\001 \001(\0132" +
+      "\035.jervis.common.RequestContext\022\017\n\007task_i" +
+      "d\030\002 \001(\t\022\021\n\tclient_id\030\003 \001(\t\022\022\n\nproject_id" +
+      "\030\004 \001(\t\022\020\n\010group_id\030\005 \001(\t\022\023\n\013client_name\030" +
+      "\006 \001(\t\022\024\n\014project_name\030\007 \001(\t\022\022\n\ngroup_nam" +
+      "e\030\010 \001(\t\022\026\n\016workspace_path\030\t \001(\t\022\r\n\005query" +
+      "\030\n \001(\t\022\030\n\020agent_preference\030\013 \001(\t\022\021\n\ttask" +
+      "_name\030\014 \001(\t\0220\n\005rules\030\r \001(\0132!.jervis.orch" +
+      "estrator.ProjectRules\022\027\n\017processing_mode" +
+      "\030\016 \001(\t\022\033\n\023max_openrouter_tier\030\017 \001(\t\022<\n\013e" +
+      "nvironment\030\020 \001(\0132\'.jervis.orchestrator.E" +
+      "nvironmentContext\022\026\n\016environment_id\030\021 \001(" +
+      "\t\022\031\n\021jervis_project_id\030\022 \001(\t\022=\n\014chat_his" +
+      "tory\030\023 \001(\0132\'.jervis.orchestrator.ChatHis" +
+      "toryPayload\022\031\n\021qualifier_context\030\024 \001(\t\022\022" +
+      "\n\nsource_urn\030\025 \001(\t\022\024\n\014deadline_iso\030\026 \001(\t" +
+      "\022\020\n\010priority\030\027 \001(\t\022\022\n\ncapability\030\030 \001(\t\022\014" +
+      "\n\004tier\030\031 \001(\t\022\026\n\016min_model_size\030\032 \001(\005\"\256\004\n" +
+      "\014ProjectRules\022\025\n\rbranch_naming\030\001 \001(\t\022\025\n\r" +
+      "commit_prefix\030\002 \001(\t\022\026\n\016require_review\030\003 " +
+      "\001(\010\022\025\n\rrequire_tests\030\004 \001(\010\022\037\n\027require_ap" +
+      "proval_commit\030\005 \001(\010\022\035\n\025require_approval_" +
+      "push\030\006 \001(\010\022\030\n\020allowed_branches\030\007 \003(\t\022\027\n\017" +
+      "forbidden_files\030\010 \003(\t\022\031\n\021max_changed_fil" +
+      "es\030\t \001(\005\022\021\n\tauto_push\030\n \001(\010\022\032\n\022auto_use_" +
+      "anthropic\030\013 \001(\010\022\027\n\017auto_use_openai\030\014 \001(\010" +
+      "\022\027\n\017auto_use_gemini\030\r \001(\010\022\033\n\023max_openrou" +
+      "ter_tier\030\016 \001(\t\022\027\n\017git_author_name\030\017 \001(\t\022" +
+      "\030\n\020git_author_email\030\020 \001(\t\022\032\n\022git_committ" +
+      "er_name\030\021 \001(\t\022\033\n\023git_committer_email\030\022 \001" +
+      "(\t\022\024\n\014git_gpg_sign\030\023 \001(\010\022\026\n\016git_gpg_key_" +
+      "id\030\024 \001(\t\022\033\n\023git_message_pattern\030\025 \001(\t\"\205\002" +
+      "\n\022EnvironmentContext\022\n\n\002id\030\001 \001(\t\022\021\n\tname" +
+      "space\030\002 \001(\t\022\014\n\004tier\030\003 \001(\t\022\r\n\005state\030\004 \001(\t" +
+      "\022\020\n\010group_id\030\005 \001(\t\022\032\n\022agent_instructions" +
+      "\030\006 \001(\t\022=\n\ncomponents\030\007 \003(\0132).jervis.orch" +
+      "estrator.EnvironmentComponent\022F\n\017compone" +
+      "nt_links\030\010 \003(\0132-.jervis.orchestrator.Env" +
+      "ironmentComponentLink\"\243\003\n\024EnvironmentCom" +
+      "ponent\022\n\n\002id\030\001 \001(\t\022\014\n\004name\030\002 \001(\t\022\014\n\004type" +
+      "\030\003 \001(\t\022\r\n\005image\030\004 \001(\t\022\022\n\nproject_id\030\005 \001(" +
+      "\t\022\014\n\004host\030\006 \001(\t\0221\n\005ports\030\007 \003(\0132\".jervis." +
+      "orchestrator.ComponentPort\022H\n\010env_vars\030\010" +
+      " \003(\01326.jervis.orchestrator.EnvironmentCo" +
+      "mponent.EnvVarsEntry\022\022\n\nauto_start\030\t \001(\010" +
+      "\022\023\n\013start_order\030\n \001(\005\022\023\n\013source_repo\030\013 \001" +
+      "(\t\022\025\n\rsource_branch\030\014 \001(\t\022\027\n\017dockerfile_" +
+      "path\030\r \001(\t\022\027\n\017component_state\030\016 \001(\t\032.\n\014E" +
+      "nvVarsEntry\022\013\n\003key\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:" +
+      "\0028\001\"A\n\rComponentPort\022\021\n\tcontainer\030\001 \001(\005\022" +
+      "\017\n\007service\030\002 \001(\005\022\014\n\004name\030\003 \001(\t\"O\n\030Enviro" +
+      "nmentComponentLink\022\016\n\006source\030\001 \001(\t\022\016\n\006ta" +
+      "rget\030\002 \001(\t\022\023\n\013description\030\003 \001(\t\"\262\001\n\022Chat" +
+      "HistoryPayload\022@\n\017recent_messages\030\001 \003(\0132" +
+      "\'.jervis.orchestrator.ChatHistoryMessage" +
+      "\022=\n\016summary_blocks\030\002 \003(\0132%.jervis.orches" +
+      "trator.ChatSummaryBlock\022\033\n\023total_message" +
+      "_count\030\003 \001(\003\"X\n\022ChatHistoryMessage\022\014\n\004ro" +
+      "le\030\001 \001(\t\022\017\n\007content\030\002 \001(\t\022\021\n\ttimestamp\030\003" +
+      " \001(\t\022\020\n\010sequence\030\004 \001(\003\"\224\001\n\020ChatSummaryBl" +
+      "ock\022\026\n\016sequence_range\030\001 \001(\t\022\017\n\007summary\030\002" +
+      " \001(\t\022\025\n\rkey_decisions\030\003 \003(\t\022\016\n\006topics\030\004 " +
+      "\003(\t\022\025\n\ris_checkpoint\030\005 \001(\010\022\031\n\021checkpoint" +
+      "_reason\030\006 \001(\t\"@\n\013DispatchAck\022\016\n\006status\030\001" +
+      " \001(\t\022\021\n\tthread_id\030\002 \001(\t\022\016\n\006detail\030\003 \001(\t2" +
+      "\311\001\n\033OrchestratorDispatchService\022P\n\007Quali" +
+      "fy\022#.jervis.orchestrator.QualifyRequest\032" +
+      " .jervis.orchestrator.DispatchAck\022X\n\013Orc" +
+      "hestrate\022\'.jervis.orchestrator.Orchestra" +
+      "teRequest\032 .jervis.orchestrator.Dispatch" +
+      "AckB@\n!com.jervis.contracts.orchestrator" +
+      "B\031OrchestratorDispatchProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
         new com.google.protobuf.Descriptors.FileDescriptor[] {
           com.jervis.contracts.common.TypesProto.getDescriptor(),
         });
-    internal_static_jervis_orchestrator_DispatchRequest_descriptor =
+    internal_static_jervis_orchestrator_QualifyRequest_descriptor =
       getDescriptor().getMessageTypes().get(0);
-    internal_static_jervis_orchestrator_DispatchRequest_fieldAccessorTable = new
+    internal_static_jervis_orchestrator_QualifyRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_orchestrator_DispatchRequest_descriptor,
-        new java.lang.String[] { "Ctx", "TaskId", "PayloadJson", });
-    internal_static_jervis_orchestrator_DispatchAck_descriptor =
+        internal_static_jervis_orchestrator_QualifyRequest_descriptor,
+        new java.lang.String[] { "Ctx", "TaskId", "ClientId", "ProjectId", "GroupId", "ClientName", "ProjectName", "SourceUrn", "MaxOpenrouterTier", "DeadlineIso", "Priority", "Summary", "Entities", "SuggestedActions", "Urgency", "ActionType", "EstimatedComplexity", "IsAssignedToMe", "HasFutureDeadline", "SuggestedDeadline", "HasAttachments", "AttachmentCount", "Attachments", "SuggestedAgent", "AffectedFiles", "RelatedKbNodes", "ChatTopics", "Content", "ActiveTasks", "MentionsJervis", });
+    internal_static_jervis_orchestrator_QualifyAttachment_descriptor =
       getDescriptor().getMessageTypes().get(1);
+    internal_static_jervis_orchestrator_QualifyAttachment_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_QualifyAttachment_descriptor,
+        new java.lang.String[] { "Filename", "ContentType", "Size", "Index", });
+    internal_static_jervis_orchestrator_QualifyChatTopic_descriptor =
+      getDescriptor().getMessageTypes().get(2);
+    internal_static_jervis_orchestrator_QualifyChatTopic_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_QualifyChatTopic_descriptor,
+        new java.lang.String[] { "Role", "Content", });
+    internal_static_jervis_orchestrator_QualifyActiveTask_descriptor =
+      getDescriptor().getMessageTypes().get(3);
+    internal_static_jervis_orchestrator_QualifyActiveTask_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_QualifyActiveTask_descriptor,
+        new java.lang.String[] { "TaskId", "Type", "State", "TaskName", "TopicId", });
+    internal_static_jervis_orchestrator_OrchestrateRequest_descriptor =
+      getDescriptor().getMessageTypes().get(4);
+    internal_static_jervis_orchestrator_OrchestrateRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_OrchestrateRequest_descriptor,
+        new java.lang.String[] { "Ctx", "TaskId", "ClientId", "ProjectId", "GroupId", "ClientName", "ProjectName", "GroupName", "WorkspacePath", "Query", "AgentPreference", "TaskName", "Rules", "ProcessingMode", "MaxOpenrouterTier", "Environment", "EnvironmentId", "JervisProjectId", "ChatHistory", "QualifierContext", "SourceUrn", "DeadlineIso", "Priority", "Capability", "Tier", "MinModelSize", });
+    internal_static_jervis_orchestrator_ProjectRules_descriptor =
+      getDescriptor().getMessageTypes().get(5);
+    internal_static_jervis_orchestrator_ProjectRules_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_ProjectRules_descriptor,
+        new java.lang.String[] { "BranchNaming", "CommitPrefix", "RequireReview", "RequireTests", "RequireApprovalCommit", "RequireApprovalPush", "AllowedBranches", "ForbiddenFiles", "MaxChangedFiles", "AutoPush", "AutoUseAnthropic", "AutoUseOpenai", "AutoUseGemini", "MaxOpenrouterTier", "GitAuthorName", "GitAuthorEmail", "GitCommitterName", "GitCommitterEmail", "GitGpgSign", "GitGpgKeyId", "GitMessagePattern", });
+    internal_static_jervis_orchestrator_EnvironmentContext_descriptor =
+      getDescriptor().getMessageTypes().get(6);
+    internal_static_jervis_orchestrator_EnvironmentContext_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_EnvironmentContext_descriptor,
+        new java.lang.String[] { "Id", "Namespace", "Tier", "State", "GroupId", "AgentInstructions", "Components", "ComponentLinks", });
+    internal_static_jervis_orchestrator_EnvironmentComponent_descriptor =
+      getDescriptor().getMessageTypes().get(7);
+    internal_static_jervis_orchestrator_EnvironmentComponent_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_EnvironmentComponent_descriptor,
+        new java.lang.String[] { "Id", "Name", "Type", "Image", "ProjectId", "Host", "Ports", "EnvVars", "AutoStart", "StartOrder", "SourceRepo", "SourceBranch", "DockerfilePath", "ComponentState", });
+    internal_static_jervis_orchestrator_EnvironmentComponent_EnvVarsEntry_descriptor =
+      internal_static_jervis_orchestrator_EnvironmentComponent_descriptor.getNestedTypes().get(0);
+    internal_static_jervis_orchestrator_EnvironmentComponent_EnvVarsEntry_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_EnvironmentComponent_EnvVarsEntry_descriptor,
+        new java.lang.String[] { "Key", "Value", });
+    internal_static_jervis_orchestrator_ComponentPort_descriptor =
+      getDescriptor().getMessageTypes().get(8);
+    internal_static_jervis_orchestrator_ComponentPort_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_ComponentPort_descriptor,
+        new java.lang.String[] { "Container", "Service", "Name", });
+    internal_static_jervis_orchestrator_EnvironmentComponentLink_descriptor =
+      getDescriptor().getMessageTypes().get(9);
+    internal_static_jervis_orchestrator_EnvironmentComponentLink_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_EnvironmentComponentLink_descriptor,
+        new java.lang.String[] { "Source", "Target", "Description", });
+    internal_static_jervis_orchestrator_ChatHistoryPayload_descriptor =
+      getDescriptor().getMessageTypes().get(10);
+    internal_static_jervis_orchestrator_ChatHistoryPayload_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_ChatHistoryPayload_descriptor,
+        new java.lang.String[] { "RecentMessages", "SummaryBlocks", "TotalMessageCount", });
+    internal_static_jervis_orchestrator_ChatHistoryMessage_descriptor =
+      getDescriptor().getMessageTypes().get(11);
+    internal_static_jervis_orchestrator_ChatHistoryMessage_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_ChatHistoryMessage_descriptor,
+        new java.lang.String[] { "Role", "Content", "Timestamp", "Sequence", });
+    internal_static_jervis_orchestrator_ChatSummaryBlock_descriptor =
+      getDescriptor().getMessageTypes().get(12);
+    internal_static_jervis_orchestrator_ChatSummaryBlock_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_ChatSummaryBlock_descriptor,
+        new java.lang.String[] { "SequenceRange", "Summary", "KeyDecisions", "Topics", "IsCheckpoint", "CheckpointReason", });
+    internal_static_jervis_orchestrator_DispatchAck_descriptor =
+      getDescriptor().getMessageTypes().get(13);
     internal_static_jervis_orchestrator_DispatchAck_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_DispatchAck_descriptor,

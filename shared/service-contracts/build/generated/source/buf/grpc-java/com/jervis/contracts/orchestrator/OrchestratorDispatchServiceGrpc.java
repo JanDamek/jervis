@@ -5,13 +5,12 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 /**
  * <pre>
  * OrchestratorDispatchService — fire-and-forget entry points for the
- * orchestrator's long-running flows (qualify + orchestrate).
- * Both RPCs accept the full legacy JSON request body inline so the Kotlin
- * QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
- * these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
- * environment JsonObject, and flattening them into a proto message would
- * duplicate every Pydantic model Python side while adding no contract
- * value (consumers already enforce schema at the DTO layer).
+ * orchestrator's long-running flows (qualify + orchestrate). Both RPCs
+ * now carry fully-typed request messages — no JSON passthrough. Shape
+ * mirrors the Pydantic models on the Python side
+ * (app/unified/qualification_handler.py::QualifyRequest,
+ * app/models.py::OrchestrateRequest) and the Kotlin DTOs
+ * (QualifyRequestDto, OrchestrateRequestDto).
  * Response stays typed: thread_id + status. Progress + completion flow
  * back via the Phase-1 ServerOrchestratorCallbackService callbacks.
  * </pre>
@@ -24,27 +23,27 @@ public final class OrchestratorDispatchServiceGrpc {
   public static final java.lang.String SERVICE_NAME = "jervis.orchestrator.OrchestratorDispatchService";
 
   // Static method descriptors that strictly reflect the proto.
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.DispatchRequest,
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.QualifyRequest,
       com.jervis.contracts.orchestrator.DispatchAck> getQualifyMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "Qualify",
-      requestType = com.jervis.contracts.orchestrator.DispatchRequest.class,
+      requestType = com.jervis.contracts.orchestrator.QualifyRequest.class,
       responseType = com.jervis.contracts.orchestrator.DispatchAck.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.DispatchRequest,
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.QualifyRequest,
       com.jervis.contracts.orchestrator.DispatchAck> getQualifyMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.DispatchRequest, com.jervis.contracts.orchestrator.DispatchAck> getQualifyMethod;
+    io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.QualifyRequest, com.jervis.contracts.orchestrator.DispatchAck> getQualifyMethod;
     if ((getQualifyMethod = OrchestratorDispatchServiceGrpc.getQualifyMethod) == null) {
       synchronized (OrchestratorDispatchServiceGrpc.class) {
         if ((getQualifyMethod = OrchestratorDispatchServiceGrpc.getQualifyMethod) == null) {
           OrchestratorDispatchServiceGrpc.getQualifyMethod = getQualifyMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.orchestrator.DispatchRequest, com.jervis.contracts.orchestrator.DispatchAck>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.orchestrator.QualifyRequest, com.jervis.contracts.orchestrator.DispatchAck>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "Qualify"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.orchestrator.DispatchRequest.getDefaultInstance()))
+                  com.jervis.contracts.orchestrator.QualifyRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.orchestrator.DispatchAck.getDefaultInstance()))
               .setSchemaDescriptor(new OrchestratorDispatchServiceMethodDescriptorSupplier("Qualify"))
@@ -55,27 +54,27 @@ public final class OrchestratorDispatchServiceGrpc {
     return getQualifyMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.DispatchRequest,
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.OrchestrateRequest,
       com.jervis.contracts.orchestrator.DispatchAck> getOrchestrateMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "Orchestrate",
-      requestType = com.jervis.contracts.orchestrator.DispatchRequest.class,
+      requestType = com.jervis.contracts.orchestrator.OrchestrateRequest.class,
       responseType = com.jervis.contracts.orchestrator.DispatchAck.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.DispatchRequest,
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.OrchestrateRequest,
       com.jervis.contracts.orchestrator.DispatchAck> getOrchestrateMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.DispatchRequest, com.jervis.contracts.orchestrator.DispatchAck> getOrchestrateMethod;
+    io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.OrchestrateRequest, com.jervis.contracts.orchestrator.DispatchAck> getOrchestrateMethod;
     if ((getOrchestrateMethod = OrchestratorDispatchServiceGrpc.getOrchestrateMethod) == null) {
       synchronized (OrchestratorDispatchServiceGrpc.class) {
         if ((getOrchestrateMethod = OrchestratorDispatchServiceGrpc.getOrchestrateMethod) == null) {
           OrchestratorDispatchServiceGrpc.getOrchestrateMethod = getOrchestrateMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.orchestrator.DispatchRequest, com.jervis.contracts.orchestrator.DispatchAck>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.orchestrator.OrchestrateRequest, com.jervis.contracts.orchestrator.DispatchAck>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "Orchestrate"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.orchestrator.DispatchRequest.getDefaultInstance()))
+                  com.jervis.contracts.orchestrator.OrchestrateRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.orchestrator.DispatchAck.getDefaultInstance()))
               .setSchemaDescriptor(new OrchestratorDispatchServiceMethodDescriptorSupplier("Orchestrate"))
@@ -148,13 +147,12 @@ public final class OrchestratorDispatchServiceGrpc {
   /**
    * <pre>
    * OrchestratorDispatchService — fire-and-forget entry points for the
-   * orchestrator's long-running flows (qualify + orchestrate).
-   * Both RPCs accept the full legacy JSON request body inline so the Kotlin
-   * QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
-   * these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
-   * environment JsonObject, and flattening them into a proto message would
-   * duplicate every Pydantic model Python side while adding no contract
-   * value (consumers already enforce schema at the DTO layer).
+   * orchestrator's long-running flows (qualify + orchestrate). Both RPCs
+   * now carry fully-typed request messages — no JSON passthrough. Shape
+   * mirrors the Pydantic models on the Python side
+   * (app/unified/qualification_handler.py::QualifyRequest,
+   * app/models.py::OrchestrateRequest) and the Kotlin DTOs
+   * (QualifyRequestDto, OrchestrateRequestDto).
    * Response stays typed: thread_id + status. Progress + completion flow
    * back via the Phase-1 ServerOrchestratorCallbackService callbacks.
    * </pre>
@@ -163,14 +161,14 @@ public final class OrchestratorDispatchServiceGrpc {
 
     /**
      */
-    default void qualify(com.jervis.contracts.orchestrator.DispatchRequest request,
+    default void qualify(com.jervis.contracts.orchestrator.QualifyRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.DispatchAck> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getQualifyMethod(), responseObserver);
     }
 
     /**
      */
-    default void orchestrate(com.jervis.contracts.orchestrator.DispatchRequest request,
+    default void orchestrate(com.jervis.contracts.orchestrator.OrchestrateRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.DispatchAck> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getOrchestrateMethod(), responseObserver);
     }
@@ -180,13 +178,12 @@ public final class OrchestratorDispatchServiceGrpc {
    * Base class for the server implementation of the service OrchestratorDispatchService.
    * <pre>
    * OrchestratorDispatchService — fire-and-forget entry points for the
-   * orchestrator's long-running flows (qualify + orchestrate).
-   * Both RPCs accept the full legacy JSON request body inline so the Kotlin
-   * QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
-   * these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
-   * environment JsonObject, and flattening them into a proto message would
-   * duplicate every Pydantic model Python side while adding no contract
-   * value (consumers already enforce schema at the DTO layer).
+   * orchestrator's long-running flows (qualify + orchestrate). Both RPCs
+   * now carry fully-typed request messages — no JSON passthrough. Shape
+   * mirrors the Pydantic models on the Python side
+   * (app/unified/qualification_handler.py::QualifyRequest,
+   * app/models.py::OrchestrateRequest) and the Kotlin DTOs
+   * (QualifyRequestDto, OrchestrateRequestDto).
    * Response stays typed: thread_id + status. Progress + completion flow
    * back via the Phase-1 ServerOrchestratorCallbackService callbacks.
    * </pre>
@@ -203,13 +200,12 @@ public final class OrchestratorDispatchServiceGrpc {
    * A stub to allow clients to do asynchronous rpc calls to service OrchestratorDispatchService.
    * <pre>
    * OrchestratorDispatchService — fire-and-forget entry points for the
-   * orchestrator's long-running flows (qualify + orchestrate).
-   * Both RPCs accept the full legacy JSON request body inline so the Kotlin
-   * QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
-   * these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
-   * environment JsonObject, and flattening them into a proto message would
-   * duplicate every Pydantic model Python side while adding no contract
-   * value (consumers already enforce schema at the DTO layer).
+   * orchestrator's long-running flows (qualify + orchestrate). Both RPCs
+   * now carry fully-typed request messages — no JSON passthrough. Shape
+   * mirrors the Pydantic models on the Python side
+   * (app/unified/qualification_handler.py::QualifyRequest,
+   * app/models.py::OrchestrateRequest) and the Kotlin DTOs
+   * (QualifyRequestDto, OrchestrateRequestDto).
    * Response stays typed: thread_id + status. Progress + completion flow
    * back via the Phase-1 ServerOrchestratorCallbackService callbacks.
    * </pre>
@@ -229,7 +225,7 @@ public final class OrchestratorDispatchServiceGrpc {
 
     /**
      */
-    public void qualify(com.jervis.contracts.orchestrator.DispatchRequest request,
+    public void qualify(com.jervis.contracts.orchestrator.QualifyRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.DispatchAck> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getQualifyMethod(), getCallOptions()), request, responseObserver);
@@ -237,7 +233,7 @@ public final class OrchestratorDispatchServiceGrpc {
 
     /**
      */
-    public void orchestrate(com.jervis.contracts.orchestrator.DispatchRequest request,
+    public void orchestrate(com.jervis.contracts.orchestrator.OrchestrateRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.DispatchAck> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getOrchestrateMethod(), getCallOptions()), request, responseObserver);
@@ -248,13 +244,12 @@ public final class OrchestratorDispatchServiceGrpc {
    * A stub to allow clients to do synchronous rpc calls to service OrchestratorDispatchService.
    * <pre>
    * OrchestratorDispatchService — fire-and-forget entry points for the
-   * orchestrator's long-running flows (qualify + orchestrate).
-   * Both RPCs accept the full legacy JSON request body inline so the Kotlin
-   * QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
-   * these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
-   * environment JsonObject, and flattening them into a proto message would
-   * duplicate every Pydantic model Python side while adding no contract
-   * value (consumers already enforce schema at the DTO layer).
+   * orchestrator's long-running flows (qualify + orchestrate). Both RPCs
+   * now carry fully-typed request messages — no JSON passthrough. Shape
+   * mirrors the Pydantic models on the Python side
+   * (app/unified/qualification_handler.py::QualifyRequest,
+   * app/models.py::OrchestrateRequest) and the Kotlin DTOs
+   * (QualifyRequestDto, OrchestrateRequestDto).
    * Response stays typed: thread_id + status. Progress + completion flow
    * back via the Phase-1 ServerOrchestratorCallbackService callbacks.
    * </pre>
@@ -274,14 +269,14 @@ public final class OrchestratorDispatchServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.orchestrator.DispatchAck qualify(com.jervis.contracts.orchestrator.DispatchRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.orchestrator.DispatchAck qualify(com.jervis.contracts.orchestrator.QualifyRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getQualifyMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.orchestrator.DispatchAck orchestrate(com.jervis.contracts.orchestrator.DispatchRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.orchestrator.DispatchAck orchestrate(com.jervis.contracts.orchestrator.OrchestrateRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getOrchestrateMethod(), getCallOptions(), request);
     }
@@ -291,13 +286,12 @@ public final class OrchestratorDispatchServiceGrpc {
    * A stub to allow clients to do limited synchronous rpc calls to service OrchestratorDispatchService.
    * <pre>
    * OrchestratorDispatchService — fire-and-forget entry points for the
-   * orchestrator's long-running flows (qualify + orchestrate).
-   * Both RPCs accept the full legacy JSON request body inline so the Kotlin
-   * QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
-   * these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
-   * environment JsonObject, and flattening them into a proto message would
-   * duplicate every Pydantic model Python side while adding no contract
-   * value (consumers already enforce schema at the DTO layer).
+   * orchestrator's long-running flows (qualify + orchestrate). Both RPCs
+   * now carry fully-typed request messages — no JSON passthrough. Shape
+   * mirrors the Pydantic models on the Python side
+   * (app/unified/qualification_handler.py::QualifyRequest,
+   * app/models.py::OrchestrateRequest) and the Kotlin DTOs
+   * (QualifyRequestDto, OrchestrateRequestDto).
    * Response stays typed: thread_id + status. Progress + completion flow
    * back via the Phase-1 ServerOrchestratorCallbackService callbacks.
    * </pre>
@@ -317,14 +311,14 @@ public final class OrchestratorDispatchServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.orchestrator.DispatchAck qualify(com.jervis.contracts.orchestrator.DispatchRequest request) {
+    public com.jervis.contracts.orchestrator.DispatchAck qualify(com.jervis.contracts.orchestrator.QualifyRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getQualifyMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.orchestrator.DispatchAck orchestrate(com.jervis.contracts.orchestrator.DispatchRequest request) {
+    public com.jervis.contracts.orchestrator.DispatchAck orchestrate(com.jervis.contracts.orchestrator.OrchestrateRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getOrchestrateMethod(), getCallOptions(), request);
     }
@@ -334,13 +328,12 @@ public final class OrchestratorDispatchServiceGrpc {
    * A stub to allow clients to do ListenableFuture-style rpc calls to service OrchestratorDispatchService.
    * <pre>
    * OrchestratorDispatchService — fire-and-forget entry points for the
-   * orchestrator's long-running flows (qualify + orchestrate).
-   * Both RPCs accept the full legacy JSON request body inline so the Kotlin
-   * QualifyRequestDto / OrchestrateRequestDto models can flow unchanged —
-   * these DTOs carry 30+ fields across ProjectRules + ChatHistoryPayload +
-   * environment JsonObject, and flattening them into a proto message would
-   * duplicate every Pydantic model Python side while adding no contract
-   * value (consumers already enforce schema at the DTO layer).
+   * orchestrator's long-running flows (qualify + orchestrate). Both RPCs
+   * now carry fully-typed request messages — no JSON passthrough. Shape
+   * mirrors the Pydantic models on the Python side
+   * (app/unified/qualification_handler.py::QualifyRequest,
+   * app/models.py::OrchestrateRequest) and the Kotlin DTOs
+   * (QualifyRequestDto, OrchestrateRequestDto).
    * Response stays typed: thread_id + status. Progress + completion flow
    * back via the Phase-1 ServerOrchestratorCallbackService callbacks.
    * </pre>
@@ -361,7 +354,7 @@ public final class OrchestratorDispatchServiceGrpc {
     /**
      */
     public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.orchestrator.DispatchAck> qualify(
-        com.jervis.contracts.orchestrator.DispatchRequest request) {
+        com.jervis.contracts.orchestrator.QualifyRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getQualifyMethod(), getCallOptions()), request);
     }
@@ -369,7 +362,7 @@ public final class OrchestratorDispatchServiceGrpc {
     /**
      */
     public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.orchestrator.DispatchAck> orchestrate(
-        com.jervis.contracts.orchestrator.DispatchRequest request) {
+        com.jervis.contracts.orchestrator.OrchestrateRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getOrchestrateMethod(), getCallOptions()), request);
     }
@@ -396,11 +389,11 @@ public final class OrchestratorDispatchServiceGrpc {
     public void invoke(Req request, io.grpc.stub.StreamObserver<Resp> responseObserver) {
       switch (methodId) {
         case METHODID_QUALIFY:
-          serviceImpl.qualify((com.jervis.contracts.orchestrator.DispatchRequest) request,
+          serviceImpl.qualify((com.jervis.contracts.orchestrator.QualifyRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.DispatchAck>) responseObserver);
           break;
         case METHODID_ORCHESTRATE:
-          serviceImpl.orchestrate((com.jervis.contracts.orchestrator.DispatchRequest) request,
+          serviceImpl.orchestrate((com.jervis.contracts.orchestrator.OrchestrateRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.DispatchAck>) responseObserver);
           break;
         default:
@@ -425,14 +418,14 @@ public final class OrchestratorDispatchServiceGrpc {
           getQualifyMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.orchestrator.DispatchRequest,
+              com.jervis.contracts.orchestrator.QualifyRequest,
               com.jervis.contracts.orchestrator.DispatchAck>(
                 service, METHODID_QUALIFY)))
         .addMethod(
           getOrchestrateMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.orchestrator.DispatchRequest,
+              com.jervis.contracts.orchestrator.OrchestrateRequest,
               com.jervis.contracts.orchestrator.DispatchAck>(
                 service, METHODID_ORCHESTRATE)))
         .build();
