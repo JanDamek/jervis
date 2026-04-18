@@ -7,11 +7,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libmupdf-dev libfreetype6-dev libharfbuzz-dev libjpeg62-turbo-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY backend/service-document-extraction/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app/ app/
+# Shared contracts package (proto stubs + interceptors)
+COPY libs/jervis_contracts /opt/libs/jervis_contracts
+RUN pip install --no-cache-dir -e /opt/libs/jervis_contracts
 
-EXPOSE 8080
+COPY backend/service-document-extraction/app/ app/
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "2"]
+EXPOSE 8080 5501
+
+# Single worker — the gRPC server owns port 5501 and must not be multi-replicated in-proc.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

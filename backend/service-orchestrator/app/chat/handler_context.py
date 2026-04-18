@@ -309,40 +309,29 @@ async def _index_attachment_to_kb(
 
 
 async def _extract_document_text(file_bytes: bytes, filename: str, mime_type: str = "") -> str:
-    """Extract text from any document via Document Extraction Service.
+    """Extract text from any document via gRPC DocumentExtractionService.
 
     Routes to the dedicated microservice which handles PDF, DOCX, XLSX,
     images (VLM), HTML, etc. Returns plain text.
     """
-    import httpx
-    import base64
-    from app.config import settings
-
-    docext_url = getattr(settings, "document_extraction_url", None) or "http://jervis-document-extraction:8080"
+    from app.document_extraction_client import document_extraction_extract
 
     try:
-        b64 = base64.b64encode(file_bytes).decode("ascii")
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(
-                f"{docext_url}/extract-base64",
-                data={
-                    "content_base64": b64,
-                    "filename": filename,
-                    "mime_type": mime_type,
-                    "max_tier": "NONE",
-                },
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                text = data.get("text", "")
-                logger.info("Document extracted: %s → %d chars (method=%s)", filename, len(text), data.get("method", "?"))
-                return text
-            else:
-                logger.warning("Document extraction failed: %s → HTTP %d: %s", filename, resp.status_code, resp.text[:200])
+        result = await document_extraction_extract(
+            content=file_bytes,
+            filename=filename,
+            mime_type=mime_type,
+            max_tier="NONE",
+        )
+        text = result.get("text", "")
+        logger.info(
+            "Document extracted: %s → %d chars (method=%s)",
+            filename, len(text), result.get("method", "?"),
+        )
+        return text
     except Exception as e:
         logger.warning("Document extraction error: %s → %s", filename, e)
-
-    return ""
+        return ""
 
 
 async def build_messages(

@@ -1,8 +1,9 @@
 """Document text extraction via jervis-document-extraction microservice.
 
 All extraction logic (VLM, pymupdf, python-docx, openpyxl, etc.) lives in the
-dedicated jervis-document-extraction service. This module is a thin HTTP client
-that delegates to it, keeping KB service focused on ingestion and retrieval.
+dedicated jervis-document-extraction service. This module is a thin gRPC
+client that delegates to it over DocumentExtractionService.Extract, keeping
+KB service focused on ingestion and retrieval.
 
 The dataclass interfaces (ExtractedDocument, PageContent, ImageDescription) are
 preserved for backward compatibility with all callers in knowledge_service.py.
@@ -13,9 +14,13 @@ from __future__ import annotations
 import logging
 import mimetypes
 from dataclasses import dataclass, field
+from typing import Optional
 
-import httpx
+import grpc.aio
+
 from app.core.config import settings
+from jervis.common import types_pb2
+from jervis.document_extraction import extract_pb2, extract_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
@@ -42,16 +47,44 @@ class ExtractedDocument:
     metadata: dict = field(default_factory=dict)
 
 
+_channel: Optional[grpc.aio.Channel] = None
+_stub: Optional[extract_pb2_grpc.DocumentExtractionServiceStub] = None
+
+
+def _target() -> str:
+    url = (settings.DOCUMENT_EXTRACTION_URL or "").rstrip("/")
+    if not url:
+        raise ValueError(
+            "DOCUMENT_EXTRACTION_URL not configured. "
+            "Set it in ConfigMap (k8s/configmap.yaml) or environment.",
+        )
+    if "://" in url:
+        url = url.split("://", 1)[1]
+    host = url.split("/")[0].split(":")[0]
+    return f"{host}:5501"
+
+
+def _get_stub() -> extract_pb2_grpc.DocumentExtractionServiceStub:
+    global _channel, _stub
+    if _stub is None:
+        _channel = grpc.aio.insecure_channel(
+            _target(),
+            options=[
+                ("grpc.max_receive_message_length", 64 * 1024 * 1024),
+                ("grpc.max_send_message_length", 64 * 1024 * 1024),
+            ],
+        )
+        _stub = extract_pb2_grpc.DocumentExtractionServiceStub(_channel)
+    return _stub
+
+
 class DocumentExtractor:
-    """Thin HTTP client to jervis-document-extraction microservice."""
+    """Thin gRPC client to jervis-document-extraction microservice."""
 
     def __init__(self):
+        # Validate config at construction; stub is lazy so no network on init.
+        _target()
         self._base_url = settings.DOCUMENT_EXTRACTION_URL
-        if not self._base_url:
-            raise ValueError(
-                "DOCUMENT_EXTRACTION_URL not configured. "
-                "Set it in ConfigMap (k8s/configmap.yaml) or environment."
-            )
 
     async def extract(
         self,
@@ -60,10 +93,7 @@ class DocumentExtractor:
         mime_type: str = "",
         max_tier: str = "NONE",
     ) -> ExtractedDocument:
-        """Extract text from file via jervis-document-extraction service.
-
-        Calls POST /extract (multipart) and maps response to ExtractedDocument.
-        """
+        """Extract text via gRPC DocumentExtractionService.Extract."""
         if not mime_type:
             mime_type, _ = mimetypes.guess_type(filename)
             mime_type = mime_type or "application/octet-stream"
@@ -73,35 +103,25 @@ class DocumentExtractor:
             self._base_url, filename, mime_type, len(file_bytes),
         )
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0)) as client:
-            resp = await client.post(
-                f"{self._base_url}/extract",
-                files={"file": (filename, file_bytes, mime_type)},
-                data={
-                    "filename": filename,
-                    "mime_type": mime_type,
-                    "max_tier": max_tier,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        stub = _get_stub()
+        resp = await stub.Extract(
+            extract_pb2.ExtractRequest(
+                ctx=types_pb2.RequestContext(trace={"caller": "service-knowledgebase"}),
+                content=bytes(file_bytes),
+                filename=filename,
+                mime_type=mime_type,
+                max_tier=max_tier,
+            ),
+            timeout=1800.0,   # VLM extraction can take long on large PDFs
+        )
 
-        text = data.get("text", "")
-        method = data.get("method", "unknown")
-        metadata = data.get("metadata", {})
-
-        # Map pages if present (PDF extraction)
-        pages = []
-        for p in data.get("pages", []):
-            images = [
-                ImageDescription(description=img.get("description", ""), ocr_text=img.get("ocr_text", ""))
-                for img in p.get("images", [])
-            ]
-            pages.append(PageContent(
-                page_number=p.get("page_number", 0),
-                text=p.get("text", ""),
-                images=images,
-            ))
+        text = resp.text
+        method = resp.method or "unknown"
+        metadata = dict(resp.metadata)
+        pages = [
+            PageContent(page_number=int(p.page_number), text=str(p.text), images=[])
+            for p in resp.pages
+        ]
 
         logger.info(
             "DocumentExtractor: result file=%s method=%s chars=%d pages=%d",
@@ -111,7 +131,7 @@ class DocumentExtractor:
         return ExtractedDocument(
             text=text,
             pages=pages,
-            language=data.get("language", ""),
+            language="",
             method=method,
             metadata=metadata,
         )

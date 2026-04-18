@@ -17,7 +17,7 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 echo "Step 1/3: Building Docker image..."
 docker build --platform linux/amd64 \
   -t "${IMAGE}" \
-  -f "${PROJECT_ROOT}/${DOCKERFILE}" "${PROJECT_ROOT}/backend/service-document-extraction"
+  -f "${PROJECT_ROOT}/${DOCKERFILE}" "${PROJECT_ROOT}"
 echo "✓ Docker image built"
 
 echo "Step 2/3: Pushing Docker image..."

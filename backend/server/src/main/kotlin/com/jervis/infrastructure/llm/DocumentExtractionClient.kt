@@ -1,117 +1,92 @@
 package com.jervis.infrastructure.llm
 
-import com.jervis.infrastructure.llm.DocumentExtractionClient
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.forms.submitForm
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.isSuccess
-import io.ktor.http.parameters
-import io.ktor.serialization.kotlinx.json.json
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import com.google.protobuf.ByteString
+import com.jervis.contracts.common.RequestContext
+import com.jervis.contracts.common.Scope
+import com.jervis.contracts.document_extraction.DocumentExtractionServiceGrpcKt
+import com.jervis.contracts.document_extraction.ExtractRequest
+import io.grpc.ManagedChannel
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import mu.KotlinLogging
-import java.util.Base64
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 private val logger = KotlinLogging.logger {}
 
 /**
- * REST client for the Python document-extraction microservice.
+ * gRPC client for the Python document-extraction microservice.
  *
- * Replaces local Jsoup-based TikaTextExtractionService with proper
- * extraction via BeautifulSoup (HTML), python-docx (DOCX), pymupdf (PDF),
- * openpyxl (XLSX), and VLM (images/scanned PDFs).
- *
- * Endpoint: POST /extract-base64
+ * Replaces the former REST client on `POST /extract-base64`. The base
+ * URL is still expressed as "host[:port]" (legacy config shape) — port
+ * 5501 is the fixed gRPC target on the document-extraction pod.
  */
 class DocumentExtractionClient(baseUrl: String) {
 
-    private val apiBaseUrl = baseUrl.trimEnd('/')
-
-    private val client = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(
-                Json {
-                    ignoreUnknownKeys = true
-                    isLenient = true
-                },
-            )
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = Long.MAX_VALUE   // VLM trvá jak trvá, žádný read timeout
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis = Long.MAX_VALUE
-        }
+    private val channel: ManagedChannel = run {
+        val cleaned = baseUrl.trim().trimEnd('/')
+        val hostPart = if ("://" in cleaned) cleaned.substringAfter("://") else cleaned
+        val host = hostPart.substringBefore('/').substringBefore(':')
+        NettyChannelBuilder.forAddress(host, 5501)
+            .usePlaintext()
+            .maxInboundMessageSize(64 * 1024 * 1024)
+            .keepAliveTime(30, TimeUnit.SECONDS)
+            .keepAliveTimeout(5, TimeUnit.SECONDS)
+            .keepAliveWithoutCalls(true)
+            .build()
     }
 
-    /**
-     * Extract plain text from string content (HTML, XML, plain text).
-     *
-     * For plain text content, the service detects type=text and returns as-is (no-op).
-     * For HTML/XML, BeautifulSoup extracts text with structure preserved.
-     */
+    private val stub = DocumentExtractionServiceGrpcKt
+        .DocumentExtractionServiceCoroutineStub(channel)
+
+    private fun ctx(): RequestContext =
+        RequestContext.newBuilder()
+            .setScope(Scope.newBuilder().build())
+            .setRequestId(UUID.randomUUID().toString())
+            .setIssuedAtUnixMs(System.currentTimeMillis())
+            .build()
+
     suspend fun extractText(content: String, mimeType: String = "text/html"): String {
         if (content.isBlank()) return content
 
-        val b64 = Base64.getEncoder().encodeToString(content.toByteArray(Charsets.UTF_8))
         val filename = when {
             mimeType.contains("html") -> "content.html"
             mimeType.contains("xml") -> "content.xml"
             else -> "content.txt"
         }
 
-        val response = client.submitForm(
-            url = "$apiBaseUrl/extract-base64",
-            formParameters = parameters {
-                append("content_base64", b64)
-                append("filename", filename)
-                append("mime_type", mimeType)
-                append("max_tier", "NONE")
-            },
+        val resp = stub.extract(
+            ExtractRequest.newBuilder()
+                .setCtx(ctx())
+                .setContent(ByteString.copyFrom(content.toByteArray(Charsets.UTF_8)))
+                .setFilename(filename)
+                .setMimeType(mimeType)
+                .setMaxTier("NONE")
+                .build(),
         )
-
-        if (!response.status.isSuccess()) {
-            val errorBody = response.bodyAsText()
-            throw RuntimeException("document-extraction failed (${response.status}): $errorBody")
-        }
-
-        val result: ExtractResponse = response.body()
-        logger.info { "Document extraction: ${content.length} chars → ${result.text.length} chars (method=${result.method})" }
-        return result.text
+        logger.info { "Document extraction: ${content.length} chars → ${resp.text.length} chars (method=${resp.method})" }
+        return resp.text
     }
 
-    /**
-     * Extract plain text from binary file content (PDF, DOCX, XLSX, images).
-     */
-    suspend fun extractBytes(fileBytes: ByteArray, filename: String, mimeType: String, maxTier: String = "NONE"): String {
-        val b64 = Base64.getEncoder().encodeToString(fileBytes)
-
-        val response = client.submitForm(
-            url = "$apiBaseUrl/extract-base64",
-            formParameters = parameters {
-                append("content_base64", b64)
-                append("filename", filename)
-                append("mime_type", mimeType)
-                append("max_tier", maxTier)
-            },
+    suspend fun extractBytes(
+        fileBytes: ByteArray,
+        filename: String,
+        mimeType: String,
+        maxTier: String = "NONE",
+    ): String {
+        val resp = stub.extract(
+            ExtractRequest.newBuilder()
+                .setCtx(ctx())
+                .setContent(ByteString.copyFrom(fileBytes))
+                .setFilename(filename)
+                .setMimeType(mimeType)
+                .setMaxTier(maxTier)
+                .build(),
         )
+        logger.info { "Document extraction: $filename (${fileBytes.size} bytes) → ${resp.text.length} chars (method=${resp.method})" }
+        return resp.text
+    }
 
-        if (!response.status.isSuccess()) {
-            val errorBody = response.bodyAsText()
-            throw RuntimeException("document-extraction failed for $filename (${response.status}): $errorBody")
-        }
-
-        val result: ExtractResponse = response.body()
-        logger.info { "Document extraction: $filename (${fileBytes.size} bytes) → ${result.text.length} chars (method=${result.method})" }
-        return result.text
+    fun shutdown() {
+        runCatching { channel.shutdown().awaitTermination(5, TimeUnit.SECONDS) }
     }
 }
-
-@Serializable
-data class ExtractResponse(
-    val text: String = "",
-    val method: String = "",
-)

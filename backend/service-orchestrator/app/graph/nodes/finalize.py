@@ -14,9 +14,6 @@ from __future__ import annotations
 
 import logging
 
-import httpx
-
-from app.config import settings
 from app.models import CodingTask, StepResult
 from app.graph.nodes._helpers import llm_with_cloud_fallback
 from app.kb.outcome_ingest import is_significant_task, extract_outcome, ingest_outcome_to_kb
@@ -203,28 +200,30 @@ async def _generate_summary_async(state: dict, task_category: str) -> dict:
 
 
 async def _try_stop_environment(environment_id: str) -> None:
-    """Stop environment via Kotlin internal API (fire-and-forget).
+    """Stop environment via ServerEnvironmentService.StopEnvironment (gRPC, fire-and-forget).
 
     Called when a coding task finishes and the user didn't request
     to keep the environment running for manual testing.
     Non-blocking — errors are logged but never prevent task completion.
     """
+    from app.grpc_server_client import build_request_context, server_environment_stub
+    from jervis.server import environment_pb2
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{settings.kotlin_server_url}/internal/environments/{environment_id}/stop",
-            )
-            if resp.status_code == 200:
-                env = resp.json()
-                logger.info(
-                    "ENV_AUTO_STOP | id=%s | name=%s | state=%s",
-                    environment_id, env.get("name"), env.get("state"),
-                )
-            else:
-                logger.warning(
-                    "ENV_AUTO_STOP_FAILED | id=%s | status=%d | body=%s",
-                    environment_id, resp.status_code, resp.text[:200],
-                )
+        stub = server_environment_stub()
+        resp = await stub.StopEnvironment(
+            environment_pb2.EnvironmentIdRequest(
+                ctx=build_request_context(),
+                environment_id=environment_id,
+            ),
+            timeout=30.0,
+        )
+        logger.info(
+            "ENV_AUTO_STOP | id=%s | name=%s | state=%s",
+            environment_id,
+            getattr(resp, "name", "") or "",
+            getattr(resp, "state", "") or "",
+        )
     except Exception as e:
         logger.warning("ENV_AUTO_STOP_ERROR | id=%s | error=%s", environment_id, e)
 
