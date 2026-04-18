@@ -27,9 +27,10 @@ if _version_not_supported:
 
 class CorrectionServiceStub(object):
     """CorrectionService — transcript correction service (KB-stored rules +
-    Ollama GPU). Passthrough JSON: the Kotlin DTOs on the caller side
-    already ride kotlinx.serialization, so we keep the body_json pattern
-    to avoid double-typing every field in the proto.
+    Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and
+    field shapes mirror the retired REST routes 1:1 so the Python agent +
+    Kotlin caller can both reach the same semantics without per-message
+    JSON hand-parsing.
     """
 
     def __init__(self, channel):
@@ -40,46 +41,47 @@ class CorrectionServiceStub(object):
         """
         self.SubmitCorrection = channel.unary_unary(
                 '/jervis.correction.CorrectionService/SubmitCorrection',
-                request_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-                response_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+                request_serializer=jervis_dot_correction_dot_correction__pb2.SubmitCorrectionRequest.SerializeToString,
+                response_deserializer=jervis_dot_correction_dot_correction__pb2.SubmitCorrectionResponse.FromString,
                 _registered_method=True)
         self.CorrectTranscript = channel.unary_unary(
                 '/jervis.correction.CorrectionService/CorrectTranscript',
-                request_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-                response_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+                request_serializer=jervis_dot_correction_dot_correction__pb2.CorrectTranscriptRequest.SerializeToString,
+                response_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectResult.FromString,
                 _registered_method=True)
         self.ListCorrections = channel.unary_unary(
                 '/jervis.correction.CorrectionService/ListCorrections',
-                request_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-                response_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+                request_serializer=jervis_dot_correction_dot_correction__pb2.ListCorrectionsRequest.SerializeToString,
+                response_deserializer=jervis_dot_correction_dot_correction__pb2.ListCorrectionsResponse.FromString,
                 _registered_method=True)
         self.AnswerCorrectionQuestions = channel.unary_unary(
                 '/jervis.correction.CorrectionService/AnswerCorrectionQuestions',
-                request_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-                response_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+                request_serializer=jervis_dot_correction_dot_correction__pb2.AnswerCorrectionsRequest.SerializeToString,
+                response_deserializer=jervis_dot_correction_dot_correction__pb2.AnswerCorrectionsResponse.FromString,
                 _registered_method=True)
         self.CorrectWithInstruction = channel.unary_unary(
                 '/jervis.correction.CorrectionService/CorrectWithInstruction',
-                request_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-                response_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+                request_serializer=jervis_dot_correction_dot_correction__pb2.CorrectWithInstructionRequest.SerializeToString,
+                response_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectWithInstructionResponse.FromString,
                 _registered_method=True)
         self.CorrectTargeted = channel.unary_unary(
                 '/jervis.correction.CorrectionService/CorrectTargeted',
-                request_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-                response_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+                request_serializer=jervis_dot_correction_dot_correction__pb2.CorrectTargetedRequest.SerializeToString,
+                response_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectResult.FromString,
                 _registered_method=True)
         self.DeleteCorrection = channel.unary_unary(
                 '/jervis.correction.CorrectionService/DeleteCorrection',
-                request_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-                response_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+                request_serializer=jervis_dot_correction_dot_correction__pb2.DeleteCorrectionRequest.SerializeToString,
+                response_deserializer=jervis_dot_correction_dot_correction__pb2.DeleteCorrectionResponse.FromString,
                 _registered_method=True)
 
 
 class CorrectionServiceServicer(object):
     """CorrectionService — transcript correction service (KB-stored rules +
-    Ollama GPU). Passthrough JSON: the Kotlin DTOs on the caller side
-    already ride kotlinx.serialization, so we keep the body_json pattern
-    to avoid double-typing every field in the proto.
+    Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and
+    field shapes mirror the retired REST routes 1:1 so the Python agent +
+    Kotlin caller can both reach the same semantics without per-message
+    JSON hand-parsing.
     """
 
     def SubmitCorrection(self, request, context):
@@ -129,38 +131,38 @@ def add_CorrectionServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'SubmitCorrection': grpc.unary_unary_rpc_method_handler(
                     servicer.SubmitCorrection,
-                    request_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.FromString,
-                    response_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.SerializeToString,
+                    request_deserializer=jervis_dot_correction_dot_correction__pb2.SubmitCorrectionRequest.FromString,
+                    response_serializer=jervis_dot_correction_dot_correction__pb2.SubmitCorrectionResponse.SerializeToString,
             ),
             'CorrectTranscript': grpc.unary_unary_rpc_method_handler(
                     servicer.CorrectTranscript,
-                    request_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.FromString,
-                    response_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.SerializeToString,
+                    request_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectTranscriptRequest.FromString,
+                    response_serializer=jervis_dot_correction_dot_correction__pb2.CorrectResult.SerializeToString,
             ),
             'ListCorrections': grpc.unary_unary_rpc_method_handler(
                     servicer.ListCorrections,
-                    request_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.FromString,
-                    response_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.SerializeToString,
+                    request_deserializer=jervis_dot_correction_dot_correction__pb2.ListCorrectionsRequest.FromString,
+                    response_serializer=jervis_dot_correction_dot_correction__pb2.ListCorrectionsResponse.SerializeToString,
             ),
             'AnswerCorrectionQuestions': grpc.unary_unary_rpc_method_handler(
                     servicer.AnswerCorrectionQuestions,
-                    request_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.FromString,
-                    response_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.SerializeToString,
+                    request_deserializer=jervis_dot_correction_dot_correction__pb2.AnswerCorrectionsRequest.FromString,
+                    response_serializer=jervis_dot_correction_dot_correction__pb2.AnswerCorrectionsResponse.SerializeToString,
             ),
             'CorrectWithInstruction': grpc.unary_unary_rpc_method_handler(
                     servicer.CorrectWithInstruction,
-                    request_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.FromString,
-                    response_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.SerializeToString,
+                    request_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectWithInstructionRequest.FromString,
+                    response_serializer=jervis_dot_correction_dot_correction__pb2.CorrectWithInstructionResponse.SerializeToString,
             ),
             'CorrectTargeted': grpc.unary_unary_rpc_method_handler(
                     servicer.CorrectTargeted,
-                    request_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.FromString,
-                    response_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.SerializeToString,
+                    request_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectTargetedRequest.FromString,
+                    response_serializer=jervis_dot_correction_dot_correction__pb2.CorrectResult.SerializeToString,
             ),
             'DeleteCorrection': grpc.unary_unary_rpc_method_handler(
                     servicer.DeleteCorrection,
-                    request_deserializer=jervis_dot_correction_dot_correction__pb2.CorrectionRequest.FromString,
-                    response_serializer=jervis_dot_correction_dot_correction__pb2.CorrectionResponse.SerializeToString,
+                    request_deserializer=jervis_dot_correction_dot_correction__pb2.DeleteCorrectionRequest.FromString,
+                    response_serializer=jervis_dot_correction_dot_correction__pb2.DeleteCorrectionResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -172,9 +174,10 @@ def add_CorrectionServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class CorrectionService(object):
     """CorrectionService — transcript correction service (KB-stored rules +
-    Ollama GPU). Passthrough JSON: the Kotlin DTOs on the caller side
-    already ride kotlinx.serialization, so we keep the body_json pattern
-    to avoid double-typing every field in the proto.
+    Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and
+    field shapes mirror the retired REST routes 1:1 so the Python agent +
+    Kotlin caller can both reach the same semantics without per-message
+    JSON hand-parsing.
     """
 
     @staticmethod
@@ -192,8 +195,8 @@ class CorrectionService(object):
             request,
             target,
             '/jervis.correction.CorrectionService/SubmitCorrection',
-            jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-            jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+            jervis_dot_correction_dot_correction__pb2.SubmitCorrectionRequest.SerializeToString,
+            jervis_dot_correction_dot_correction__pb2.SubmitCorrectionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -219,8 +222,8 @@ class CorrectionService(object):
             request,
             target,
             '/jervis.correction.CorrectionService/CorrectTranscript',
-            jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-            jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+            jervis_dot_correction_dot_correction__pb2.CorrectTranscriptRequest.SerializeToString,
+            jervis_dot_correction_dot_correction__pb2.CorrectResult.FromString,
             options,
             channel_credentials,
             insecure,
@@ -246,8 +249,8 @@ class CorrectionService(object):
             request,
             target,
             '/jervis.correction.CorrectionService/ListCorrections',
-            jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-            jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+            jervis_dot_correction_dot_correction__pb2.ListCorrectionsRequest.SerializeToString,
+            jervis_dot_correction_dot_correction__pb2.ListCorrectionsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -273,8 +276,8 @@ class CorrectionService(object):
             request,
             target,
             '/jervis.correction.CorrectionService/AnswerCorrectionQuestions',
-            jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-            jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+            jervis_dot_correction_dot_correction__pb2.AnswerCorrectionsRequest.SerializeToString,
+            jervis_dot_correction_dot_correction__pb2.AnswerCorrectionsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -300,8 +303,8 @@ class CorrectionService(object):
             request,
             target,
             '/jervis.correction.CorrectionService/CorrectWithInstruction',
-            jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-            jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+            jervis_dot_correction_dot_correction__pb2.CorrectWithInstructionRequest.SerializeToString,
+            jervis_dot_correction_dot_correction__pb2.CorrectWithInstructionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -327,8 +330,8 @@ class CorrectionService(object):
             request,
             target,
             '/jervis.correction.CorrectionService/CorrectTargeted',
-            jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-            jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+            jervis_dot_correction_dot_correction__pb2.CorrectTargetedRequest.SerializeToString,
+            jervis_dot_correction_dot_correction__pb2.CorrectResult.FromString,
             options,
             channel_credentials,
             insecure,
@@ -354,8 +357,8 @@ class CorrectionService(object):
             request,
             target,
             '/jervis.correction.CorrectionService/DeleteCorrection',
-            jervis_dot_correction_dot_correction__pb2.CorrectionRequest.SerializeToString,
-            jervis_dot_correction_dot_correction__pb2.CorrectionResponse.FromString,
+            jervis_dot_correction_dot_correction__pb2.DeleteCorrectionRequest.SerializeToString,
+            jervis_dot_correction_dot_correction__pb2.DeleteCorrectionResponse.FromString,
             options,
             channel_credentials,
             insecure,

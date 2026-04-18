@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#jervis/visual_capture/capture.proto\x12\x15jervis.visual_capture\x1a\x19jervis/common/types.proto\"S\n\x0fSnapshotRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x14\n\x0crequest_json\x18\x02 \x01(\t\"R\n\x0ePtzGotoRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x14\n\x0crequest_json\x18\x02 \x01(\t\"?\n\x11PtzPresetsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"4\n\x0fRawJsonResponse\x12\x0e\n\x06status\x18\x01 \x01(\x05\x12\x11\n\tbody_json\x18\x02 \x01(\t2\xac\x02\n\x14VisualCaptureService\x12Z\n\x08Snapshot\x12&.jervis.visual_capture.SnapshotRequest\x1a&.jervis.visual_capture.RawJsonResponse\x12X\n\x07PtzGoto\x12%.jervis.visual_capture.PtzGotoRequest\x1a&.jervis.visual_capture.RawJsonResponse\x12^\n\nPtzPresets\x12(.jervis.visual_capture.PtzPresetsRequest\x1a&.jervis.visual_capture.RawJsonResponseB;\n#com.jervis.contracts.visual_captureB\x12VisualCaptureProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#jervis/visual_capture/capture.proto\x12\x15jervis.visual_capture\x1a\x19jervis/common/types.proto\"r\n\x0fSnapshotRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0c\n\x04mode\x18\x02 \x01(\t\x12\x0e\n\x06preset\x18\x03 \x01(\t\x12\x15\n\rcustom_prompt\x18\x04 \x01(\t\"\xa2\x01\n\x10SnapshotResponse\x12\x13\n\x0b\x64\x65scription\x18\x01 \x01(\t\x12\x10\n\x08ocr_text\x18\x02 \x01(\t\x12\x0c\n\x04mode\x18\x03 \x01(\t\x12\r\n\x05model\x18\x04 \x01(\t\x12\x18\n\x10\x66rame_size_bytes\x18\x05 \x01(\x03\x12\x11\n\ttimestamp\x18\x06 \x01(\t\x12\x0e\n\x06preset\x18\x07 \x01(\t\x12\r\n\x05\x65rror\x18\x08 \x01(\t\"L\n\x0ePtzGotoRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0e\n\x06preset\x18\x02 \x01(\t\"@\n\x0fPtzGotoResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0e\n\x06preset\x18\x02 \x01(\t\x12\r\n\x05\x65rror\x18\x03 \x01(\t\"?\n\x11PtzPresetsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"%\n\x12PtzPresetsResponse\x12\x0f\n\x07presets\x18\x01 \x03(\t2\xb0\x02\n\x14VisualCaptureService\x12[\n\x08Snapshot\x12&.jervis.visual_capture.SnapshotRequest\x1a\'.jervis.visual_capture.SnapshotResponse\x12X\n\x07PtzGoto\x12%.jervis.visual_capture.PtzGotoRequest\x1a&.jervis.visual_capture.PtzGotoResponse\x12\x61\n\nPtzPresets\x12(.jervis.visual_capture.PtzPresetsRequest\x1a).jervis.visual_capture.PtzPresetsResponseB;\n#com.jervis.contracts.visual_captureB\x12VisualCaptureProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -34,13 +34,17 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n#com.jervis.contracts.visual_captureB\022VisualCaptureProtoP\001'
   _globals['_SNAPSHOTREQUEST']._serialized_start=89
-  _globals['_SNAPSHOTREQUEST']._serialized_end=172
-  _globals['_PTZGOTOREQUEST']._serialized_start=174
-  _globals['_PTZGOTOREQUEST']._serialized_end=256
-  _globals['_PTZPRESETSREQUEST']._serialized_start=258
-  _globals['_PTZPRESETSREQUEST']._serialized_end=321
-  _globals['_RAWJSONRESPONSE']._serialized_start=323
-  _globals['_RAWJSONRESPONSE']._serialized_end=375
-  _globals['_VISUALCAPTURESERVICE']._serialized_start=378
-  _globals['_VISUALCAPTURESERVICE']._serialized_end=678
+  _globals['_SNAPSHOTREQUEST']._serialized_end=203
+  _globals['_SNAPSHOTRESPONSE']._serialized_start=206
+  _globals['_SNAPSHOTRESPONSE']._serialized_end=368
+  _globals['_PTZGOTOREQUEST']._serialized_start=370
+  _globals['_PTZGOTOREQUEST']._serialized_end=446
+  _globals['_PTZGOTORESPONSE']._serialized_start=448
+  _globals['_PTZGOTORESPONSE']._serialized_end=512
+  _globals['_PTZPRESETSREQUEST']._serialized_start=514
+  _globals['_PTZPRESETSREQUEST']._serialized_end=577
+  _globals['_PTZPRESETSRESPONSE']._serialized_start=579
+  _globals['_PTZPRESETSRESPONSE']._serialized_end=616
+  _globals['_VISUALCAPTURESERVICE']._serialized_start=619
+  _globals['_VISUALCAPTURESERVICE']._serialized_end=923
 # @@protoc_insertion_point(module_scope)

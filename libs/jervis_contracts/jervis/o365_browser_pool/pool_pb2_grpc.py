@@ -26,12 +26,12 @@ if _version_not_supported:
 
 
 class O365BrowserPoolServiceStub(object):
-    """O365BrowserPoolService — gRPC passthrough on top of the per-client
-    browser pod. Replaces the former REST surface consumed by the Kotlin
+    """O365BrowserPoolService — typed wrapper over the per-client browser pod.
+    Replaces the former REST surface that was consumed by the Kotlin
     server (/health, /session/{cid}, /session/{cid}/init,
-    /session/{cid}/mfa, /session/{cid}/rediscover, /scrape/{cid}/discover,
-    /vnc-token/{cid}, /instruction/{cid}). The VNC proxy routes
-    (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+    /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
+    proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
+    not pod-to-pod.
     """
 
     def __init__(self, channel):
@@ -43,52 +43,42 @@ class O365BrowserPoolServiceStub(object):
         self.Health = channel.unary_unary(
                 '/jervis.o365_browser_pool.O365BrowserPoolService/Health',
                 request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.HealthRequest.SerializeToString,
-                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.HealthResponse.FromString,
                 _registered_method=True)
-        self.SessionStatus = channel.unary_unary(
-                '/jervis.o365_browser_pool.O365BrowserPoolService/SessionStatus',
-                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+        self.GetSession = channel.unary_unary(
+                '/jervis.o365_browser_pool.O365BrowserPoolService/GetSession',
+                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.SessionRef.SerializeToString,
+                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.SessionStatus.FromString,
                 _registered_method=True)
-        self.SessionInit = channel.unary_unary(
-                '/jervis.o365_browser_pool.O365BrowserPoolService/SessionInit',
-                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+        self.InitSession = channel.unary_unary(
+                '/jervis.o365_browser_pool.O365BrowserPoolService/InitSession',
+                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.InitSessionRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.InitSessionResponse.FromString,
                 _registered_method=True)
-        self.SessionMfa = channel.unary_unary(
-                '/jervis.o365_browser_pool.O365BrowserPoolService/SessionMfa',
-                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+        self.SubmitMfa = channel.unary_unary(
+                '/jervis.o365_browser_pool.O365BrowserPoolService/SubmitMfa',
+                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.SubmitMfaRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.InitSessionResponse.FromString,
                 _registered_method=True)
-        self.SessionRediscover = channel.unary_unary(
-                '/jervis.o365_browser_pool.O365BrowserPoolService/SessionRediscover',
-                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+        self.CreateVncToken = channel.unary_unary(
+                '/jervis.o365_browser_pool.O365BrowserPoolService/CreateVncToken',
+                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.SessionRef.SerializeToString,
+                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.VncTokenResponse.FromString,
                 _registered_method=True)
-        self.ScrapeDiscover = channel.unary_unary(
-                '/jervis.o365_browser_pool.O365BrowserPoolService/ScrapeDiscover',
-                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
-                _registered_method=True)
-        self.VncToken = channel.unary_unary(
-                '/jervis.o365_browser_pool.O365BrowserPoolService/VncToken',
-                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
-                _registered_method=True)
-        self.SendInstruction = channel.unary_unary(
-                '/jervis.o365_browser_pool.O365BrowserPoolService/SendInstruction',
-                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+        self.PushInstruction = channel.unary_unary(
+                '/jervis.o365_browser_pool.O365BrowserPoolService/PushInstruction',
+                request_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.InstructionRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.InstructionResponse.FromString,
                 _registered_method=True)
 
 
 class O365BrowserPoolServiceServicer(object):
-    """O365BrowserPoolService — gRPC passthrough on top of the per-client
-    browser pod. Replaces the former REST surface consumed by the Kotlin
+    """O365BrowserPoolService — typed wrapper over the per-client browser pod.
+    Replaces the former REST surface that was consumed by the Kotlin
     server (/health, /session/{cid}, /session/{cid}/init,
-    /session/{cid}/mfa, /session/{cid}/rediscover, /scrape/{cid}/discover,
-    /vnc-token/{cid}, /instruction/{cid}). The VNC proxy routes
-    (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+    /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
+    proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
+    not pod-to-pod.
     """
 
     def Health(self, request, context):
@@ -97,43 +87,31 @@ class O365BrowserPoolServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SessionStatus(self, request, context):
+    def GetSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SessionInit(self, request, context):
+    def InitSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SessionMfa(self, request, context):
+    def SubmitMfa(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SessionRediscover(self, request, context):
+    def CreateVncToken(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def ScrapeDiscover(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def VncToken(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def SendInstruction(self, request, context):
+    def PushInstruction(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -145,42 +123,32 @@ def add_O365BrowserPoolServiceServicer_to_server(servicer, server):
             'Health': grpc.unary_unary_rpc_method_handler(
                     servicer.Health,
                     request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.HealthRequest.FromString,
-                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.SerializeToString,
+                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.HealthResponse.SerializeToString,
             ),
-            'SessionStatus': grpc.unary_unary_rpc_method_handler(
-                    servicer.SessionStatus,
-                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.FromString,
-                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.SerializeToString,
+            'GetSession': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSession,
+                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.SessionRef.FromString,
+                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.SessionStatus.SerializeToString,
             ),
-            'SessionInit': grpc.unary_unary_rpc_method_handler(
-                    servicer.SessionInit,
-                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.FromString,
-                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.SerializeToString,
+            'InitSession': grpc.unary_unary_rpc_method_handler(
+                    servicer.InitSession,
+                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.InitSessionRequest.FromString,
+                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.InitSessionResponse.SerializeToString,
             ),
-            'SessionMfa': grpc.unary_unary_rpc_method_handler(
-                    servicer.SessionMfa,
-                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.FromString,
-                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.SerializeToString,
+            'SubmitMfa': grpc.unary_unary_rpc_method_handler(
+                    servicer.SubmitMfa,
+                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.SubmitMfaRequest.FromString,
+                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.InitSessionResponse.SerializeToString,
             ),
-            'SessionRediscover': grpc.unary_unary_rpc_method_handler(
-                    servicer.SessionRediscover,
-                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.FromString,
-                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.SerializeToString,
+            'CreateVncToken': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateVncToken,
+                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.SessionRef.FromString,
+                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.VncTokenResponse.SerializeToString,
             ),
-            'ScrapeDiscover': grpc.unary_unary_rpc_method_handler(
-                    servicer.ScrapeDiscover,
-                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.FromString,
-                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.SerializeToString,
-            ),
-            'VncToken': grpc.unary_unary_rpc_method_handler(
-                    servicer.VncToken,
-                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.FromString,
-                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.SerializeToString,
-            ),
-            'SendInstruction': grpc.unary_unary_rpc_method_handler(
-                    servicer.SendInstruction,
-                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.FromString,
-                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.SerializeToString,
+            'PushInstruction': grpc.unary_unary_rpc_method_handler(
+                    servicer.PushInstruction,
+                    request_deserializer=jervis_dot_o365__browser__pool_dot_pool__pb2.InstructionRequest.FromString,
+                    response_serializer=jervis_dot_o365__browser__pool_dot_pool__pb2.InstructionResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -191,12 +159,12 @@ def add_O365BrowserPoolServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class O365BrowserPoolService(object):
-    """O365BrowserPoolService — gRPC passthrough on top of the per-client
-    browser pod. Replaces the former REST surface consumed by the Kotlin
+    """O365BrowserPoolService — typed wrapper over the per-client browser pod.
+    Replaces the former REST surface that was consumed by the Kotlin
     server (/health, /session/{cid}, /session/{cid}/init,
-    /session/{cid}/mfa, /session/{cid}/rediscover, /scrape/{cid}/discover,
-    /vnc-token/{cid}, /instruction/{cid}). The VNC proxy routes
-    (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+    /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
+    proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
+    not pod-to-pod.
     """
 
     @staticmethod
@@ -215,7 +183,7 @@ class O365BrowserPoolService(object):
             target,
             '/jervis.o365_browser_pool.O365BrowserPoolService/Health',
             jervis_dot_o365__browser__pool_dot_pool__pb2.HealthRequest.SerializeToString,
-            jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+            jervis_dot_o365__browser__pool_dot_pool__pb2.HealthResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -227,7 +195,7 @@ class O365BrowserPoolService(object):
             _registered_method=True)
 
     @staticmethod
-    def SessionStatus(request,
+    def GetSession(request,
             target,
             options=(),
             channel_credentials=None,
@@ -240,9 +208,9 @@ class O365BrowserPoolService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jervis.o365_browser_pool.O365BrowserPoolService/SessionStatus',
-            jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-            jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+            '/jervis.o365_browser_pool.O365BrowserPoolService/GetSession',
+            jervis_dot_o365__browser__pool_dot_pool__pb2.SessionRef.SerializeToString,
+            jervis_dot_o365__browser__pool_dot_pool__pb2.SessionStatus.FromString,
             options,
             channel_credentials,
             insecure,
@@ -254,7 +222,7 @@ class O365BrowserPoolService(object):
             _registered_method=True)
 
     @staticmethod
-    def SessionInit(request,
+    def InitSession(request,
             target,
             options=(),
             channel_credentials=None,
@@ -267,9 +235,9 @@ class O365BrowserPoolService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jervis.o365_browser_pool.O365BrowserPoolService/SessionInit',
-            jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-            jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+            '/jervis.o365_browser_pool.O365BrowserPoolService/InitSession',
+            jervis_dot_o365__browser__pool_dot_pool__pb2.InitSessionRequest.SerializeToString,
+            jervis_dot_o365__browser__pool_dot_pool__pb2.InitSessionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -281,7 +249,7 @@ class O365BrowserPoolService(object):
             _registered_method=True)
 
     @staticmethod
-    def SessionMfa(request,
+    def SubmitMfa(request,
             target,
             options=(),
             channel_credentials=None,
@@ -294,9 +262,9 @@ class O365BrowserPoolService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jervis.o365_browser_pool.O365BrowserPoolService/SessionMfa',
-            jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-            jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+            '/jervis.o365_browser_pool.O365BrowserPoolService/SubmitMfa',
+            jervis_dot_o365__browser__pool_dot_pool__pb2.SubmitMfaRequest.SerializeToString,
+            jervis_dot_o365__browser__pool_dot_pool__pb2.InitSessionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -308,7 +276,7 @@ class O365BrowserPoolService(object):
             _registered_method=True)
 
     @staticmethod
-    def SessionRediscover(request,
+    def CreateVncToken(request,
             target,
             options=(),
             channel_credentials=None,
@@ -321,9 +289,9 @@ class O365BrowserPoolService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jervis.o365_browser_pool.O365BrowserPoolService/SessionRediscover',
-            jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-            jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+            '/jervis.o365_browser_pool.O365BrowserPoolService/CreateVncToken',
+            jervis_dot_o365__browser__pool_dot_pool__pb2.SessionRef.SerializeToString,
+            jervis_dot_o365__browser__pool_dot_pool__pb2.VncTokenResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -335,7 +303,7 @@ class O365BrowserPoolService(object):
             _registered_method=True)
 
     @staticmethod
-    def ScrapeDiscover(request,
+    def PushInstruction(request,
             target,
             options=(),
             channel_credentials=None,
@@ -348,63 +316,9 @@ class O365BrowserPoolService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jervis.o365_browser_pool.O365BrowserPoolService/ScrapeDiscover',
-            jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-            jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def VncToken(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/jervis.o365_browser_pool.O365BrowserPoolService/VncToken',
-            jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-            jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def SendInstruction(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/jervis.o365_browser_pool.O365BrowserPoolService/SendInstruction',
-            jervis_dot_o365__browser__pool_dot_pool__pb2.PodRequest.SerializeToString,
-            jervis_dot_o365__browser__pool_dot_pool__pb2.RawResponse.FromString,
+            '/jervis.o365_browser_pool.O365BrowserPoolService/PushInstruction',
+            jervis_dot_o365__browser__pool_dot_pool__pb2.InstructionRequest.SerializeToString,
+            jervis_dot_o365__browser__pool_dot_pool__pb2.InstructionResponse.FromString,
             options,
             channel_credentials,
             insecure,

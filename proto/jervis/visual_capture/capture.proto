@@ -9,33 +9,54 @@ option java_multiple_files = true;
 option java_outer_classname = "VisualCaptureProto";
 
 // VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
-// Replaces the former FastAPI /capture/* and /ptz/* routes exposed by
-// jervis-visual-capture. Kotlin server's ServerVisualCaptureGrpcImpl
-// forwards Snapshot/PtzGoto requests from the orchestrator through this
-// RPC instead of the retired REST surface.
+// Fully-typed surface — no passthrough JSON. Kotlin server's
+// ServerVisualCaptureGrpcImpl forwards Snapshot/PtzGoto requests from
+// the orchestrator through this RPC.
 service VisualCaptureService {
-  rpc Snapshot(SnapshotRequest) returns (RawJsonResponse);
-  rpc PtzGoto(PtzGotoRequest) returns (RawJsonResponse);
-  rpc PtzPresets(PtzPresetsRequest) returns (RawJsonResponse);
+  rpc Snapshot(SnapshotRequest) returns (SnapshotResponse);
+  rpc PtzGoto(PtzGotoRequest) returns (PtzGotoResponse);
+  rpc PtzPresets(PtzPresetsRequest) returns (PtzPresetsResponse);
 }
+
+// ── Snapshot ──────────────────────────────────────────────────────────
 
 message SnapshotRequest {
   jervis.common.RequestContext ctx = 1;
-  // Raw JSON body matching the legacy SnapshotRequest model (preset,
-  // mode, custom_prompt). Empty string = default snapshot.
-  string request_json = 2;
+  string mode = 2;                           // "scene" | "whiteboard" | "screen"
+  string preset = 3;                         // optional — move camera first
+  string custom_prompt = 4;                  // optional VLM prompt override
 }
+
+message SnapshotResponse {
+  string description = 1;                    // free-form VLM output
+  string ocr_text = 2;                       // OCR-extracted text (when applicable)
+  string mode = 3;                           // echo of the analysis mode used
+  string model = 4;                          // VLM model identifier
+  int64 frame_size_bytes = 5;
+  string timestamp = 6;                      // ISO-8601
+  string preset = 7;                         // current camera preset after capture
+  string error = 8;                          // populated on non-2xx paths
+}
+
+// ── PtzGoto ───────────────────────────────────────────────────────────
 
 message PtzGotoRequest {
   jervis.common.RequestContext ctx = 1;
-  string request_json = 2;              // {preset: "..."}
+  string preset = 2;
 }
+
+message PtzGotoResponse {
+  string status = 1;                         // "ok" | "error"
+  string preset = 2;
+  string error = 3;
+}
+
+// ── PtzPresets ────────────────────────────────────────────────────────
 
 message PtzPresetsRequest {
   jervis.common.RequestContext ctx = 1;
 }
 
-message RawJsonResponse {
-  int32 status = 1;                    // HTTP-style status (200 / 404 / 502)
-  string body_json = 2;
+message PtzPresetsResponse {
+  repeated string presets = 1;
 }

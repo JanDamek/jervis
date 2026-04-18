@@ -5,9 +5,10 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 /**
  * <pre>
  * CorrectionService — transcript correction service (KB-stored rules +
- * Ollama GPU). Passthrough JSON: the Kotlin DTOs on the caller side
- * already ride kotlinx.serialization, so we keep the body_json pattern
- * to avoid double-typing every field in the proto.
+ * Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and
+ * field shapes mirror the retired REST routes 1:1 so the Python agent +
+ * Kotlin caller can both reach the same semantics without per-message
+ * JSON hand-parsing.
  * </pre>
  */
 @javax.annotation.Generated(
@@ -21,29 +22,29 @@ public final class CorrectionServiceGrpc {
   public static final java.lang.String SERVICE_NAME = "jervis.correction.CorrectionService";
 
   // Static method descriptors that strictly reflect the proto.
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getSubmitCorrectionMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.SubmitCorrectionRequest,
+      com.jervis.contracts.correction.SubmitCorrectionResponse> getSubmitCorrectionMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "SubmitCorrection",
-      requestType = com.jervis.contracts.correction.CorrectionRequest.class,
-      responseType = com.jervis.contracts.correction.CorrectionResponse.class,
+      requestType = com.jervis.contracts.correction.SubmitCorrectionRequest.class,
+      responseType = com.jervis.contracts.correction.SubmitCorrectionResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getSubmitCorrectionMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse> getSubmitCorrectionMethod;
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.SubmitCorrectionRequest,
+      com.jervis.contracts.correction.SubmitCorrectionResponse> getSubmitCorrectionMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.correction.SubmitCorrectionRequest, com.jervis.contracts.correction.SubmitCorrectionResponse> getSubmitCorrectionMethod;
     if ((getSubmitCorrectionMethod = CorrectionServiceGrpc.getSubmitCorrectionMethod) == null) {
       synchronized (CorrectionServiceGrpc.class) {
         if ((getSubmitCorrectionMethod = CorrectionServiceGrpc.getSubmitCorrectionMethod) == null) {
           CorrectionServiceGrpc.getSubmitCorrectionMethod = getSubmitCorrectionMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.SubmitCorrectionRequest, com.jervis.contracts.correction.SubmitCorrectionResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SubmitCorrection"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionRequest.getDefaultInstance()))
+                  com.jervis.contracts.correction.SubmitCorrectionRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionResponse.getDefaultInstance()))
+                  com.jervis.contracts.correction.SubmitCorrectionResponse.getDefaultInstance()))
               .setSchemaDescriptor(new CorrectionServiceMethodDescriptorSupplier("SubmitCorrection"))
               .build();
         }
@@ -52,29 +53,29 @@ public final class CorrectionServiceGrpc {
     return getSubmitCorrectionMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getCorrectTranscriptMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectTranscriptRequest,
+      com.jervis.contracts.correction.CorrectResult> getCorrectTranscriptMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "CorrectTranscript",
-      requestType = com.jervis.contracts.correction.CorrectionRequest.class,
-      responseType = com.jervis.contracts.correction.CorrectionResponse.class,
+      requestType = com.jervis.contracts.correction.CorrectTranscriptRequest.class,
+      responseType = com.jervis.contracts.correction.CorrectResult.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getCorrectTranscriptMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse> getCorrectTranscriptMethod;
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectTranscriptRequest,
+      com.jervis.contracts.correction.CorrectResult> getCorrectTranscriptMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectTranscriptRequest, com.jervis.contracts.correction.CorrectResult> getCorrectTranscriptMethod;
     if ((getCorrectTranscriptMethod = CorrectionServiceGrpc.getCorrectTranscriptMethod) == null) {
       synchronized (CorrectionServiceGrpc.class) {
         if ((getCorrectTranscriptMethod = CorrectionServiceGrpc.getCorrectTranscriptMethod) == null) {
           CorrectionServiceGrpc.getCorrectTranscriptMethod = getCorrectTranscriptMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.CorrectTranscriptRequest, com.jervis.contracts.correction.CorrectResult>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "CorrectTranscript"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionRequest.getDefaultInstance()))
+                  com.jervis.contracts.correction.CorrectTranscriptRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionResponse.getDefaultInstance()))
+                  com.jervis.contracts.correction.CorrectResult.getDefaultInstance()))
               .setSchemaDescriptor(new CorrectionServiceMethodDescriptorSupplier("CorrectTranscript"))
               .build();
         }
@@ -83,29 +84,29 @@ public final class CorrectionServiceGrpc {
     return getCorrectTranscriptMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getListCorrectionsMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.ListCorrectionsRequest,
+      com.jervis.contracts.correction.ListCorrectionsResponse> getListCorrectionsMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "ListCorrections",
-      requestType = com.jervis.contracts.correction.CorrectionRequest.class,
-      responseType = com.jervis.contracts.correction.CorrectionResponse.class,
+      requestType = com.jervis.contracts.correction.ListCorrectionsRequest.class,
+      responseType = com.jervis.contracts.correction.ListCorrectionsResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getListCorrectionsMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse> getListCorrectionsMethod;
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.ListCorrectionsRequest,
+      com.jervis.contracts.correction.ListCorrectionsResponse> getListCorrectionsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.correction.ListCorrectionsRequest, com.jervis.contracts.correction.ListCorrectionsResponse> getListCorrectionsMethod;
     if ((getListCorrectionsMethod = CorrectionServiceGrpc.getListCorrectionsMethod) == null) {
       synchronized (CorrectionServiceGrpc.class) {
         if ((getListCorrectionsMethod = CorrectionServiceGrpc.getListCorrectionsMethod) == null) {
           CorrectionServiceGrpc.getListCorrectionsMethod = getListCorrectionsMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.ListCorrectionsRequest, com.jervis.contracts.correction.ListCorrectionsResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListCorrections"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionRequest.getDefaultInstance()))
+                  com.jervis.contracts.correction.ListCorrectionsRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionResponse.getDefaultInstance()))
+                  com.jervis.contracts.correction.ListCorrectionsResponse.getDefaultInstance()))
               .setSchemaDescriptor(new CorrectionServiceMethodDescriptorSupplier("ListCorrections"))
               .build();
         }
@@ -114,29 +115,29 @@ public final class CorrectionServiceGrpc {
     return getListCorrectionsMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getAnswerCorrectionQuestionsMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.AnswerCorrectionsRequest,
+      com.jervis.contracts.correction.AnswerCorrectionsResponse> getAnswerCorrectionQuestionsMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "AnswerCorrectionQuestions",
-      requestType = com.jervis.contracts.correction.CorrectionRequest.class,
-      responseType = com.jervis.contracts.correction.CorrectionResponse.class,
+      requestType = com.jervis.contracts.correction.AnswerCorrectionsRequest.class,
+      responseType = com.jervis.contracts.correction.AnswerCorrectionsResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getAnswerCorrectionQuestionsMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse> getAnswerCorrectionQuestionsMethod;
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.AnswerCorrectionsRequest,
+      com.jervis.contracts.correction.AnswerCorrectionsResponse> getAnswerCorrectionQuestionsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.correction.AnswerCorrectionsRequest, com.jervis.contracts.correction.AnswerCorrectionsResponse> getAnswerCorrectionQuestionsMethod;
     if ((getAnswerCorrectionQuestionsMethod = CorrectionServiceGrpc.getAnswerCorrectionQuestionsMethod) == null) {
       synchronized (CorrectionServiceGrpc.class) {
         if ((getAnswerCorrectionQuestionsMethod = CorrectionServiceGrpc.getAnswerCorrectionQuestionsMethod) == null) {
           CorrectionServiceGrpc.getAnswerCorrectionQuestionsMethod = getAnswerCorrectionQuestionsMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.AnswerCorrectionsRequest, com.jervis.contracts.correction.AnswerCorrectionsResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "AnswerCorrectionQuestions"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionRequest.getDefaultInstance()))
+                  com.jervis.contracts.correction.AnswerCorrectionsRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionResponse.getDefaultInstance()))
+                  com.jervis.contracts.correction.AnswerCorrectionsResponse.getDefaultInstance()))
               .setSchemaDescriptor(new CorrectionServiceMethodDescriptorSupplier("AnswerCorrectionQuestions"))
               .build();
         }
@@ -145,29 +146,29 @@ public final class CorrectionServiceGrpc {
     return getAnswerCorrectionQuestionsMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getCorrectWithInstructionMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectWithInstructionRequest,
+      com.jervis.contracts.correction.CorrectWithInstructionResponse> getCorrectWithInstructionMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "CorrectWithInstruction",
-      requestType = com.jervis.contracts.correction.CorrectionRequest.class,
-      responseType = com.jervis.contracts.correction.CorrectionResponse.class,
+      requestType = com.jervis.contracts.correction.CorrectWithInstructionRequest.class,
+      responseType = com.jervis.contracts.correction.CorrectWithInstructionResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getCorrectWithInstructionMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse> getCorrectWithInstructionMethod;
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectWithInstructionRequest,
+      com.jervis.contracts.correction.CorrectWithInstructionResponse> getCorrectWithInstructionMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectWithInstructionRequest, com.jervis.contracts.correction.CorrectWithInstructionResponse> getCorrectWithInstructionMethod;
     if ((getCorrectWithInstructionMethod = CorrectionServiceGrpc.getCorrectWithInstructionMethod) == null) {
       synchronized (CorrectionServiceGrpc.class) {
         if ((getCorrectWithInstructionMethod = CorrectionServiceGrpc.getCorrectWithInstructionMethod) == null) {
           CorrectionServiceGrpc.getCorrectWithInstructionMethod = getCorrectWithInstructionMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.CorrectWithInstructionRequest, com.jervis.contracts.correction.CorrectWithInstructionResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "CorrectWithInstruction"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionRequest.getDefaultInstance()))
+                  com.jervis.contracts.correction.CorrectWithInstructionRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionResponse.getDefaultInstance()))
+                  com.jervis.contracts.correction.CorrectWithInstructionResponse.getDefaultInstance()))
               .setSchemaDescriptor(new CorrectionServiceMethodDescriptorSupplier("CorrectWithInstruction"))
               .build();
         }
@@ -176,29 +177,29 @@ public final class CorrectionServiceGrpc {
     return getCorrectWithInstructionMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getCorrectTargetedMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectTargetedRequest,
+      com.jervis.contracts.correction.CorrectResult> getCorrectTargetedMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "CorrectTargeted",
-      requestType = com.jervis.contracts.correction.CorrectionRequest.class,
-      responseType = com.jervis.contracts.correction.CorrectionResponse.class,
+      requestType = com.jervis.contracts.correction.CorrectTargetedRequest.class,
+      responseType = com.jervis.contracts.correction.CorrectResult.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getCorrectTargetedMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse> getCorrectTargetedMethod;
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectTargetedRequest,
+      com.jervis.contracts.correction.CorrectResult> getCorrectTargetedMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectTargetedRequest, com.jervis.contracts.correction.CorrectResult> getCorrectTargetedMethod;
     if ((getCorrectTargetedMethod = CorrectionServiceGrpc.getCorrectTargetedMethod) == null) {
       synchronized (CorrectionServiceGrpc.class) {
         if ((getCorrectTargetedMethod = CorrectionServiceGrpc.getCorrectTargetedMethod) == null) {
           CorrectionServiceGrpc.getCorrectTargetedMethod = getCorrectTargetedMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.CorrectTargetedRequest, com.jervis.contracts.correction.CorrectResult>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "CorrectTargeted"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionRequest.getDefaultInstance()))
+                  com.jervis.contracts.correction.CorrectTargetedRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionResponse.getDefaultInstance()))
+                  com.jervis.contracts.correction.CorrectResult.getDefaultInstance()))
               .setSchemaDescriptor(new CorrectionServiceMethodDescriptorSupplier("CorrectTargeted"))
               .build();
         }
@@ -207,29 +208,29 @@ public final class CorrectionServiceGrpc {
     return getCorrectTargetedMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getDeleteCorrectionMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.correction.DeleteCorrectionRequest,
+      com.jervis.contracts.correction.DeleteCorrectionResponse> getDeleteCorrectionMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "DeleteCorrection",
-      requestType = com.jervis.contracts.correction.CorrectionRequest.class,
-      responseType = com.jervis.contracts.correction.CorrectionResponse.class,
+      requestType = com.jervis.contracts.correction.DeleteCorrectionRequest.class,
+      responseType = com.jervis.contracts.correction.DeleteCorrectionResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest,
-      com.jervis.contracts.correction.CorrectionResponse> getDeleteCorrectionMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse> getDeleteCorrectionMethod;
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.correction.DeleteCorrectionRequest,
+      com.jervis.contracts.correction.DeleteCorrectionResponse> getDeleteCorrectionMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.correction.DeleteCorrectionRequest, com.jervis.contracts.correction.DeleteCorrectionResponse> getDeleteCorrectionMethod;
     if ((getDeleteCorrectionMethod = CorrectionServiceGrpc.getDeleteCorrectionMethod) == null) {
       synchronized (CorrectionServiceGrpc.class) {
         if ((getDeleteCorrectionMethod = CorrectionServiceGrpc.getDeleteCorrectionMethod) == null) {
           CorrectionServiceGrpc.getDeleteCorrectionMethod = getDeleteCorrectionMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.CorrectionRequest, com.jervis.contracts.correction.CorrectionResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.correction.DeleteCorrectionRequest, com.jervis.contracts.correction.DeleteCorrectionResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "DeleteCorrection"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionRequest.getDefaultInstance()))
+                  com.jervis.contracts.correction.DeleteCorrectionRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.correction.CorrectionResponse.getDefaultInstance()))
+                  com.jervis.contracts.correction.DeleteCorrectionResponse.getDefaultInstance()))
               .setSchemaDescriptor(new CorrectionServiceMethodDescriptorSupplier("DeleteCorrection"))
               .build();
         }
@@ -285,59 +286,60 @@ public final class CorrectionServiceGrpc {
   /**
    * <pre>
    * CorrectionService — transcript correction service (KB-stored rules +
-   * Ollama GPU). Passthrough JSON: the Kotlin DTOs on the caller side
-   * already ride kotlinx.serialization, so we keep the body_json pattern
-   * to avoid double-typing every field in the proto.
+   * Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and
+   * field shapes mirror the retired REST routes 1:1 so the Python agent +
+   * Kotlin caller can both reach the same semantics without per-message
+   * JSON hand-parsing.
    * </pre>
    */
   public interface AsyncService {
 
     /**
      */
-    default void submitCorrection(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    default void submitCorrection(com.jervis.contracts.correction.SubmitCorrectionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.SubmitCorrectionResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSubmitCorrectionMethod(), responseObserver);
     }
 
     /**
      */
-    default void correctTranscript(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    default void correctTranscript(com.jervis.contracts.correction.CorrectTranscriptRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectResult> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCorrectTranscriptMethod(), responseObserver);
     }
 
     /**
      */
-    default void listCorrections(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    default void listCorrections(com.jervis.contracts.correction.ListCorrectionsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.ListCorrectionsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListCorrectionsMethod(), responseObserver);
     }
 
     /**
      */
-    default void answerCorrectionQuestions(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    default void answerCorrectionQuestions(com.jervis.contracts.correction.AnswerCorrectionsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.AnswerCorrectionsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getAnswerCorrectionQuestionsMethod(), responseObserver);
     }
 
     /**
      */
-    default void correctWithInstruction(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    default void correctWithInstruction(com.jervis.contracts.correction.CorrectWithInstructionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectWithInstructionResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCorrectWithInstructionMethod(), responseObserver);
     }
 
     /**
      */
-    default void correctTargeted(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    default void correctTargeted(com.jervis.contracts.correction.CorrectTargetedRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectResult> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCorrectTargetedMethod(), responseObserver);
     }
 
     /**
      */
-    default void deleteCorrection(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    default void deleteCorrection(com.jervis.contracts.correction.DeleteCorrectionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.DeleteCorrectionResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getDeleteCorrectionMethod(), responseObserver);
     }
   }
@@ -346,9 +348,10 @@ public final class CorrectionServiceGrpc {
    * Base class for the server implementation of the service CorrectionService.
    * <pre>
    * CorrectionService — transcript correction service (KB-stored rules +
-   * Ollama GPU). Passthrough JSON: the Kotlin DTOs on the caller side
-   * already ride kotlinx.serialization, so we keep the body_json pattern
-   * to avoid double-typing every field in the proto.
+   * Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and
+   * field shapes mirror the retired REST routes 1:1 so the Python agent +
+   * Kotlin caller can both reach the same semantics without per-message
+   * JSON hand-parsing.
    * </pre>
    */
   public static abstract class CorrectionServiceImplBase
@@ -363,9 +366,10 @@ public final class CorrectionServiceGrpc {
    * A stub to allow clients to do asynchronous rpc calls to service CorrectionService.
    * <pre>
    * CorrectionService — transcript correction service (KB-stored rules +
-   * Ollama GPU). Passthrough JSON: the Kotlin DTOs on the caller side
-   * already ride kotlinx.serialization, so we keep the body_json pattern
-   * to avoid double-typing every field in the proto.
+   * Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and
+   * field shapes mirror the retired REST routes 1:1 so the Python agent +
+   * Kotlin caller can both reach the same semantics without per-message
+   * JSON hand-parsing.
    * </pre>
    */
   public static final class CorrectionServiceStub
@@ -383,56 +387,56 @@ public final class CorrectionServiceGrpc {
 
     /**
      */
-    public void submitCorrection(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    public void submitCorrection(com.jervis.contracts.correction.SubmitCorrectionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.SubmitCorrectionResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getSubmitCorrectionMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void correctTranscript(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    public void correctTranscript(com.jervis.contracts.correction.CorrectTranscriptRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectResult> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getCorrectTranscriptMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void listCorrections(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    public void listCorrections(com.jervis.contracts.correction.ListCorrectionsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.ListCorrectionsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getListCorrectionsMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void answerCorrectionQuestions(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    public void answerCorrectionQuestions(com.jervis.contracts.correction.AnswerCorrectionsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.AnswerCorrectionsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getAnswerCorrectionQuestionsMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void correctWithInstruction(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    public void correctWithInstruction(com.jervis.contracts.correction.CorrectWithInstructionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectWithInstructionResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getCorrectWithInstructionMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void correctTargeted(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    public void correctTargeted(com.jervis.contracts.correction.CorrectTargetedRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectResult> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getCorrectTargetedMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void deleteCorrection(com.jervis.contracts.correction.CorrectionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse> responseObserver) {
+    public void deleteCorrection(com.jervis.contracts.correction.DeleteCorrectionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.correction.DeleteCorrectionResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getDeleteCorrectionMethod(), getCallOptions()), request, responseObserver);
     }
@@ -442,9 +446,10 @@ public final class CorrectionServiceGrpc {
    * A stub to allow clients to do synchronous rpc calls to service CorrectionService.
    * <pre>
    * CorrectionService — transcript correction service (KB-stored rules +
-   * Ollama GPU). Passthrough JSON: the Kotlin DTOs on the caller side
-   * already ride kotlinx.serialization, so we keep the body_json pattern
-   * to avoid double-typing every field in the proto.
+   * Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and
+   * field shapes mirror the retired REST routes 1:1 so the Python agent +
+   * Kotlin caller can both reach the same semantics without per-message
+   * JSON hand-parsing.
    * </pre>
    */
   public static final class CorrectionServiceBlockingStub
@@ -462,49 +467,49 @@ public final class CorrectionServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.correction.CorrectionResponse submitCorrection(com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.jervis.contracts.correction.SubmitCorrectionResponse submitCorrection(com.jervis.contracts.correction.SubmitCorrectionRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getSubmitCorrectionMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.correction.CorrectionResponse correctTranscript(com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.jervis.contracts.correction.CorrectResult correctTranscript(com.jervis.contracts.correction.CorrectTranscriptRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getCorrectTranscriptMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.correction.CorrectionResponse listCorrections(com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.jervis.contracts.correction.ListCorrectionsResponse listCorrections(com.jervis.contracts.correction.ListCorrectionsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getListCorrectionsMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.correction.CorrectionResponse answerCorrectionQuestions(com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.jervis.contracts.correction.AnswerCorrectionsResponse answerCorrectionQuestions(com.jervis.contracts.correction.AnswerCorrectionsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getAnswerCorrectionQuestionsMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.correction.CorrectionResponse correctWithInstruction(com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.jervis.contracts.correction.CorrectWithInstructionResponse correctWithInstruction(com.jervis.contracts.correction.CorrectWithInstructionRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getCorrectWithInstructionMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.correction.CorrectionResponse correctTargeted(com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.jervis.contracts.correction.CorrectResult correctTargeted(com.jervis.contracts.correction.CorrectTargetedRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getCorrectTargetedMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.correction.CorrectionResponse deleteCorrection(com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.jervis.contracts.correction.DeleteCorrectionResponse deleteCorrection(com.jervis.contracts.correction.DeleteCorrectionRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getDeleteCorrectionMethod(), getCallOptions(), request);
     }
@@ -514,9 +519,10 @@ public final class CorrectionServiceGrpc {
    * A stub to allow clients to do ListenableFuture-style rpc calls to service CorrectionService.
    * <pre>
    * CorrectionService — transcript correction service (KB-stored rules +
-   * Ollama GPU). Passthrough JSON: the Kotlin DTOs on the caller side
-   * already ride kotlinx.serialization, so we keep the body_json pattern
-   * to avoid double-typing every field in the proto.
+   * Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and
+   * field shapes mirror the retired REST routes 1:1 so the Python agent +
+   * Kotlin caller can both reach the same semantics without per-message
+   * JSON hand-parsing.
    * </pre>
    */
   public static final class CorrectionServiceFutureStub
@@ -534,56 +540,56 @@ public final class CorrectionServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.CorrectionResponse> submitCorrection(
-        com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.SubmitCorrectionResponse> submitCorrection(
+        com.jervis.contracts.correction.SubmitCorrectionRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getSubmitCorrectionMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.CorrectionResponse> correctTranscript(
-        com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.CorrectResult> correctTranscript(
+        com.jervis.contracts.correction.CorrectTranscriptRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getCorrectTranscriptMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.CorrectionResponse> listCorrections(
-        com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.ListCorrectionsResponse> listCorrections(
+        com.jervis.contracts.correction.ListCorrectionsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getListCorrectionsMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.CorrectionResponse> answerCorrectionQuestions(
-        com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.AnswerCorrectionsResponse> answerCorrectionQuestions(
+        com.jervis.contracts.correction.AnswerCorrectionsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getAnswerCorrectionQuestionsMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.CorrectionResponse> correctWithInstruction(
-        com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.CorrectWithInstructionResponse> correctWithInstruction(
+        com.jervis.contracts.correction.CorrectWithInstructionRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getCorrectWithInstructionMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.CorrectionResponse> correctTargeted(
-        com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.CorrectResult> correctTargeted(
+        com.jervis.contracts.correction.CorrectTargetedRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getCorrectTargetedMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.CorrectionResponse> deleteCorrection(
-        com.jervis.contracts.correction.CorrectionRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.correction.DeleteCorrectionResponse> deleteCorrection(
+        com.jervis.contracts.correction.DeleteCorrectionRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getDeleteCorrectionMethod(), getCallOptions()), request);
     }
@@ -615,32 +621,32 @@ public final class CorrectionServiceGrpc {
     public void invoke(Req request, io.grpc.stub.StreamObserver<Resp> responseObserver) {
       switch (methodId) {
         case METHODID_SUBMIT_CORRECTION:
-          serviceImpl.submitCorrection((com.jervis.contracts.correction.CorrectionRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse>) responseObserver);
+          serviceImpl.submitCorrection((com.jervis.contracts.correction.SubmitCorrectionRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.SubmitCorrectionResponse>) responseObserver);
           break;
         case METHODID_CORRECT_TRANSCRIPT:
-          serviceImpl.correctTranscript((com.jervis.contracts.correction.CorrectionRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse>) responseObserver);
+          serviceImpl.correctTranscript((com.jervis.contracts.correction.CorrectTranscriptRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectResult>) responseObserver);
           break;
         case METHODID_LIST_CORRECTIONS:
-          serviceImpl.listCorrections((com.jervis.contracts.correction.CorrectionRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse>) responseObserver);
+          serviceImpl.listCorrections((com.jervis.contracts.correction.ListCorrectionsRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.ListCorrectionsResponse>) responseObserver);
           break;
         case METHODID_ANSWER_CORRECTION_QUESTIONS:
-          serviceImpl.answerCorrectionQuestions((com.jervis.contracts.correction.CorrectionRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse>) responseObserver);
+          serviceImpl.answerCorrectionQuestions((com.jervis.contracts.correction.AnswerCorrectionsRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.AnswerCorrectionsResponse>) responseObserver);
           break;
         case METHODID_CORRECT_WITH_INSTRUCTION:
-          serviceImpl.correctWithInstruction((com.jervis.contracts.correction.CorrectionRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse>) responseObserver);
+          serviceImpl.correctWithInstruction((com.jervis.contracts.correction.CorrectWithInstructionRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectWithInstructionResponse>) responseObserver);
           break;
         case METHODID_CORRECT_TARGETED:
-          serviceImpl.correctTargeted((com.jervis.contracts.correction.CorrectionRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse>) responseObserver);
+          serviceImpl.correctTargeted((com.jervis.contracts.correction.CorrectTargetedRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectResult>) responseObserver);
           break;
         case METHODID_DELETE_CORRECTION:
-          serviceImpl.deleteCorrection((com.jervis.contracts.correction.CorrectionRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.CorrectionResponse>) responseObserver);
+          serviceImpl.deleteCorrection((com.jervis.contracts.correction.DeleteCorrectionRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.correction.DeleteCorrectionResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -664,50 +670,50 @@ public final class CorrectionServiceGrpc {
           getSubmitCorrectionMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.correction.CorrectionRequest,
-              com.jervis.contracts.correction.CorrectionResponse>(
+              com.jervis.contracts.correction.SubmitCorrectionRequest,
+              com.jervis.contracts.correction.SubmitCorrectionResponse>(
                 service, METHODID_SUBMIT_CORRECTION)))
         .addMethod(
           getCorrectTranscriptMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.correction.CorrectionRequest,
-              com.jervis.contracts.correction.CorrectionResponse>(
+              com.jervis.contracts.correction.CorrectTranscriptRequest,
+              com.jervis.contracts.correction.CorrectResult>(
                 service, METHODID_CORRECT_TRANSCRIPT)))
         .addMethod(
           getListCorrectionsMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.correction.CorrectionRequest,
-              com.jervis.contracts.correction.CorrectionResponse>(
+              com.jervis.contracts.correction.ListCorrectionsRequest,
+              com.jervis.contracts.correction.ListCorrectionsResponse>(
                 service, METHODID_LIST_CORRECTIONS)))
         .addMethod(
           getAnswerCorrectionQuestionsMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.correction.CorrectionRequest,
-              com.jervis.contracts.correction.CorrectionResponse>(
+              com.jervis.contracts.correction.AnswerCorrectionsRequest,
+              com.jervis.contracts.correction.AnswerCorrectionsResponse>(
                 service, METHODID_ANSWER_CORRECTION_QUESTIONS)))
         .addMethod(
           getCorrectWithInstructionMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.correction.CorrectionRequest,
-              com.jervis.contracts.correction.CorrectionResponse>(
+              com.jervis.contracts.correction.CorrectWithInstructionRequest,
+              com.jervis.contracts.correction.CorrectWithInstructionResponse>(
                 service, METHODID_CORRECT_WITH_INSTRUCTION)))
         .addMethod(
           getCorrectTargetedMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.correction.CorrectionRequest,
-              com.jervis.contracts.correction.CorrectionResponse>(
+              com.jervis.contracts.correction.CorrectTargetedRequest,
+              com.jervis.contracts.correction.CorrectResult>(
                 service, METHODID_CORRECT_TARGETED)))
         .addMethod(
           getDeleteCorrectionMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.correction.CorrectionRequest,
-              com.jervis.contracts.correction.CorrectionResponse>(
+              com.jervis.contracts.correction.DeleteCorrectionRequest,
+              com.jervis.contracts.correction.DeleteCorrectionResponse>(
                 service, METHODID_DELETE_CORRECTION)))
         .build();
   }

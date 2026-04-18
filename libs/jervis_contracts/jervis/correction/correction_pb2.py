@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\"jervis/correction/correction.proto\x12\x11jervis.correction\x1a\x19jervis/common/types.proto\"R\n\x11\x43orrectionRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tbody_json\x18\x02 \x01(\t\"7\n\x12\x43orrectionResponse\x12\x0e\n\x06status\x18\x01 \x01(\x05\x12\x11\n\tbody_json\x18\x02 \x01(\t2\xc8\x05\n\x11\x43orrectionService\x12_\n\x10SubmitCorrection\x12$.jervis.correction.CorrectionRequest\x1a%.jervis.correction.CorrectionResponse\x12`\n\x11\x43orrectTranscript\x12$.jervis.correction.CorrectionRequest\x1a%.jervis.correction.CorrectionResponse\x12^\n\x0fListCorrections\x12$.jervis.correction.CorrectionRequest\x1a%.jervis.correction.CorrectionResponse\x12h\n\x19\x41nswerCorrectionQuestions\x12$.jervis.correction.CorrectionRequest\x1a%.jervis.correction.CorrectionResponse\x12\x65\n\x16\x43orrectWithInstruction\x12$.jervis.correction.CorrectionRequest\x1a%.jervis.correction.CorrectionResponse\x12^\n\x0f\x43orrectTargeted\x12$.jervis.correction.CorrectionRequest\x1a%.jervis.correction.CorrectionResponse\x12_\n\x10\x44\x65leteCorrection\x12$.jervis.correction.CorrectionRequest\x1a%.jervis.correction.CorrectionResponseB4\n\x1f\x63om.jervis.contracts.correctionB\x0f\x43orrectionProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\"jervis/correction/correction.proto\x12\x11jervis.correction\x1a\x19jervis/common/types.proto\"a\n\x11\x43orrectionSegment\x12\t\n\x01i\x18\x01 \x01(\x05\x12\x11\n\tstart_sec\x18\x02 \x01(\x01\x12\x0f\n\x07\x65nd_sec\x18\x03 \x01(\x01\x12\x0c\n\x04text\x18\x04 \x01(\t\x12\x0f\n\x07speaker\x18\x05 \x01(\t\"q\n\x12\x43orrectionQuestion\x12\n\n\x02id\x18\x01 \x01(\t\x12\t\n\x01i\x18\x02 \x01(\x05\x12\x10\n\x08original\x18\x03 \x01(\t\x12\x10\n\x08question\x18\x04 \x01(\t\x12\x0f\n\x07options\x18\x05 \x03(\t\x12\x0f\n\x07\x63ontext\x18\x06 \x01(\t\"X\n\x0e\x43orrectionRule\x12\x10\n\x08original\x18\x01 \x01(\t\x12\x11\n\tcorrected\x18\x02 \x01(\t\x12\x10\n\x08\x63\x61tegory\x18\x03 \x01(\t\x12\x0f\n\x07\x63ontext\x18\x04 \x01(\t\"\xb4\x01\n\x17SubmitCorrectionRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x12\n\nproject_id\x18\x03 \x01(\t\x12\x10\n\x08original\x18\x04 \x01(\t\x12\x11\n\tcorrected\x18\x05 \x01(\t\x12\x10\n\x08\x63\x61tegory\x18\x06 \x01(\t\x12\x0f\n\x07\x63ontext\x18\x07 \x01(\t\"d\n\x18SubmitCorrectionResponse\x12\x15\n\rcorrection_id\x18\x01 \x01(\t\x12\x12\n\nsource_urn\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t\x12\r\n\x05\x65rror\x18\x04 \x01(\t\"\xd8\x02\n\x18\x43orrectTranscriptRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x12\n\nproject_id\x18\x03 \x01(\t\x12\x12\n\nmeeting_id\x18\x04 \x01(\t\x12\x36\n\x08segments\x18\x05 \x03(\x0b\x32$.jervis.correction.CorrectionSegment\x12\x12\n\nchunk_size\x18\x06 \x01(\x05\x12T\n\rspeaker_hints\x18\x07 \x03(\x0b\x32=.jervis.correction.CorrectTranscriptRequest.SpeakerHintsEntry\x1a\x33\n\x11SpeakerHintsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\x91\x01\n\rCorrectResult\x12\x36\n\x08segments\x18\x01 \x03(\x0b\x32$.jervis.correction.CorrectionSegment\x12\x38\n\tquestions\x18\x02 \x03(\x0b\x32%.jervis.correction.CorrectionQuestion\x12\x0e\n\x06status\x18\x03 \x01(\t\"\x80\x01\n\x16ListCorrectionsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x12\n\nproject_id\x18\x03 \x01(\t\x12\x13\n\x0bmax_results\x18\x04 \x01(\x05\"t\n\x13\x43orrectionChunkMeta\x12\x10\n\x08original\x18\x01 \x01(\t\x12\x11\n\tcorrected\x18\x02 \x01(\t\x12\x10\n\x08\x63\x61tegory\x18\x03 \x01(\t\x12\x0f\n\x07\x63ontext\x18\x04 \x01(\t\x12\x15\n\rcorrection_id\x18\x05 \x01(\t\"p\n\x0f\x43orrectionChunk\x12\x0f\n\x07\x63ontent\x18\x01 \x01(\t\x12\x12\n\nsource_urn\x18\x02 \x01(\t\x12\x38\n\x08metadata\x18\x03 \x01(\x0b\x32&.jervis.correction.CorrectionChunkMeta\"R\n\x17ListCorrectionsResponse\x12\x37\n\x0b\x63orrections\x18\x01 \x03(\x0b\x32\".jervis.correction.CorrectionChunk\"\xa1\x01\n\x18\x41nswerCorrectionsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x12\n\nproject_id\x18\x03 \x01(\t\x12\x32\n\x07\x61nswers\x18\x04 \x03(\x0b\x32!.jervis.correction.CorrectionRule\"Q\n\x19\x41nswerCorrectionsResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x15\n\rrules_created\x18\x02 \x01(\x05\x12\r\n\x05\x65rror\x18\x03 \x01(\t\"\xbf\x01\n\x1d\x43orrectWithInstructionRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x12\n\nproject_id\x18\x03 \x01(\t\x12\x36\n\x08segments\x18\x04 \x03(\x0b\x32$.jervis.correction.CorrectionSegment\x12\x13\n\x0binstruction\x18\x05 \x01(\t\"O\n\x12InstructRuleResult\x12\x15\n\rcorrection_id\x18\x01 \x01(\t\x12\x12\n\nsource_urn\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t\"\xb3\x01\n\x1e\x43orrectWithInstructionResponse\x12\x36\n\x08segments\x18\x01 \x03(\x0b\x32$.jervis.correction.CorrectionSegment\x12\x38\n\tnew_rules\x18\x02 \x03(\x0b\x32%.jervis.correction.InstructRuleResult\x12\x0e\n\x06status\x18\x03 \x01(\t\x12\x0f\n\x07summary\x18\x04 \x01(\t\"\xf8\x02\n\x16\x43orrectTargetedRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x12\n\nproject_id\x18\x03 \x01(\t\x12\x12\n\nmeeting_id\x18\x04 \x01(\t\x12\x36\n\x08segments\x18\x05 \x03(\x0b\x32$.jervis.correction.CorrectionSegment\x12\x1d\n\x15retranscribed_indices\x18\x06 \x03(\x05\x12\x63\n\x16user_corrected_indices\x18\x07 \x03(\x0b\x32\x43.jervis.correction.CorrectTargetedRequest.UserCorrectedIndicesEntry\x1a;\n\x19UserCorrectedIndicesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"Y\n\x17\x44\x65leteCorrectionRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nsource_urn\x18\x02 \x01(\t\"\xad\x01\n\x18\x44\x65leteCorrectionResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x16\n\x0e\x63hunks_deleted\x18\x02 \x01(\x05\x12\x15\n\rnodes_cleaned\x18\x03 \x01(\x05\x12\x15\n\redges_cleaned\x18\x04 \x01(\x05\x12\x15\n\rnodes_deleted\x18\x05 \x01(\x05\x12\x15\n\redges_deleted\x18\x06 \x01(\x05\x12\r\n\x05\x65rror\x18\x07 \x01(\t2\x92\x06\n\x11\x43orrectionService\x12k\n\x10SubmitCorrection\x12*.jervis.correction.SubmitCorrectionRequest\x1a+.jervis.correction.SubmitCorrectionResponse\x12\x62\n\x11\x43orrectTranscript\x12+.jervis.correction.CorrectTranscriptRequest\x1a .jervis.correction.CorrectResult\x12h\n\x0fListCorrections\x12).jervis.correction.ListCorrectionsRequest\x1a*.jervis.correction.ListCorrectionsResponse\x12v\n\x19\x41nswerCorrectionQuestions\x12+.jervis.correction.AnswerCorrectionsRequest\x1a,.jervis.correction.AnswerCorrectionsResponse\x12}\n\x16\x43orrectWithInstruction\x12\x30.jervis.correction.CorrectWithInstructionRequest\x1a\x31.jervis.correction.CorrectWithInstructionResponse\x12^\n\x0f\x43orrectTargeted\x12).jervis.correction.CorrectTargetedRequest\x1a .jervis.correction.CorrectResult\x12k\n\x10\x44\x65leteCorrection\x12*.jervis.correction.DeleteCorrectionRequest\x1a+.jervis.correction.DeleteCorrectionResponseB4\n\x1f\x63om.jervis.contracts.correctionB\x0f\x43orrectionProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,10 +33,52 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'jervis.correction.correctio
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n\037com.jervis.contracts.correctionB\017CorrectionProtoP\001'
-  _globals['_CORRECTIONREQUEST']._serialized_start=84
-  _globals['_CORRECTIONREQUEST']._serialized_end=166
-  _globals['_CORRECTIONRESPONSE']._serialized_start=168
-  _globals['_CORRECTIONRESPONSE']._serialized_end=223
-  _globals['_CORRECTIONSERVICE']._serialized_start=226
-  _globals['_CORRECTIONSERVICE']._serialized_end=938
+  _globals['_CORRECTTRANSCRIPTREQUEST_SPEAKERHINTSENTRY']._loaded_options = None
+  _globals['_CORRECTTRANSCRIPTREQUEST_SPEAKERHINTSENTRY']._serialized_options = b'8\001'
+  _globals['_CORRECTTARGETEDREQUEST_USERCORRECTEDINDICESENTRY']._loaded_options = None
+  _globals['_CORRECTTARGETEDREQUEST_USERCORRECTEDINDICESENTRY']._serialized_options = b'8\001'
+  _globals['_CORRECTIONSEGMENT']._serialized_start=84
+  _globals['_CORRECTIONSEGMENT']._serialized_end=181
+  _globals['_CORRECTIONQUESTION']._serialized_start=183
+  _globals['_CORRECTIONQUESTION']._serialized_end=296
+  _globals['_CORRECTIONRULE']._serialized_start=298
+  _globals['_CORRECTIONRULE']._serialized_end=386
+  _globals['_SUBMITCORRECTIONREQUEST']._serialized_start=389
+  _globals['_SUBMITCORRECTIONREQUEST']._serialized_end=569
+  _globals['_SUBMITCORRECTIONRESPONSE']._serialized_start=571
+  _globals['_SUBMITCORRECTIONRESPONSE']._serialized_end=671
+  _globals['_CORRECTTRANSCRIPTREQUEST']._serialized_start=674
+  _globals['_CORRECTTRANSCRIPTREQUEST']._serialized_end=1018
+  _globals['_CORRECTTRANSCRIPTREQUEST_SPEAKERHINTSENTRY']._serialized_start=967
+  _globals['_CORRECTTRANSCRIPTREQUEST_SPEAKERHINTSENTRY']._serialized_end=1018
+  _globals['_CORRECTRESULT']._serialized_start=1021
+  _globals['_CORRECTRESULT']._serialized_end=1166
+  _globals['_LISTCORRECTIONSREQUEST']._serialized_start=1169
+  _globals['_LISTCORRECTIONSREQUEST']._serialized_end=1297
+  _globals['_CORRECTIONCHUNKMETA']._serialized_start=1299
+  _globals['_CORRECTIONCHUNKMETA']._serialized_end=1415
+  _globals['_CORRECTIONCHUNK']._serialized_start=1417
+  _globals['_CORRECTIONCHUNK']._serialized_end=1529
+  _globals['_LISTCORRECTIONSRESPONSE']._serialized_start=1531
+  _globals['_LISTCORRECTIONSRESPONSE']._serialized_end=1613
+  _globals['_ANSWERCORRECTIONSREQUEST']._serialized_start=1616
+  _globals['_ANSWERCORRECTIONSREQUEST']._serialized_end=1777
+  _globals['_ANSWERCORRECTIONSRESPONSE']._serialized_start=1779
+  _globals['_ANSWERCORRECTIONSRESPONSE']._serialized_end=1860
+  _globals['_CORRECTWITHINSTRUCTIONREQUEST']._serialized_start=1863
+  _globals['_CORRECTWITHINSTRUCTIONREQUEST']._serialized_end=2054
+  _globals['_INSTRUCTRULERESULT']._serialized_start=2056
+  _globals['_INSTRUCTRULERESULT']._serialized_end=2135
+  _globals['_CORRECTWITHINSTRUCTIONRESPONSE']._serialized_start=2138
+  _globals['_CORRECTWITHINSTRUCTIONRESPONSE']._serialized_end=2317
+  _globals['_CORRECTTARGETEDREQUEST']._serialized_start=2320
+  _globals['_CORRECTTARGETEDREQUEST']._serialized_end=2696
+  _globals['_CORRECTTARGETEDREQUEST_USERCORRECTEDINDICESENTRY']._serialized_start=2637
+  _globals['_CORRECTTARGETEDREQUEST_USERCORRECTEDINDICESENTRY']._serialized_end=2696
+  _globals['_DELETECORRECTIONREQUEST']._serialized_start=2698
+  _globals['_DELETECORRECTIONREQUEST']._serialized_end=2787
+  _globals['_DELETECORRECTIONRESPONSE']._serialized_start=2790
+  _globals['_DELETECORRECTIONRESPONSE']._serialized_end=2963
+  _globals['_CORRECTIONSERVICE']._serialized_start=2966
+  _globals['_CORRECTIONSERVICE']._serialized_end=3752
 # @@protoc_insertion_point(module_scope)

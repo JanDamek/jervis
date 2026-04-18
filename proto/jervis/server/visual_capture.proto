@@ -12,12 +12,12 @@ option java_outer_classname = "ServerVisualCaptureProto";
 // `service-visual-capture` K8s pod. The pod pushes VLM analysis results
 // here (scene/whiteboard/screen OCR) and the server fans them into
 // MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
-// proxy endpoints keep their dedicated RPCs so the Kotlin server remains
-// the single chokepoint between UI and the capture pod.
+// proxy RPCs are typed 1:1 with the downstream VisualCaptureService on
+// the capture pod.
 service ServerVisualCaptureService {
   rpc PostResult(VisualResultRequest) returns (VisualResultResponse);
-  rpc Snapshot(SnapshotRequest) returns (RawJsonResponse);
-  rpc Ptz(PtzRequest) returns (RawJsonResponse);
+  rpc Snapshot(ProxySnapshotRequest) returns (ProxySnapshotResponse);
+  rpc Ptz(ProxyPtzRequest) returns (ProxyPtzResponse);
 }
 
 message VisualResultRequest {
@@ -35,17 +35,33 @@ message VisualResultResponse {
   bool ok = 1;
 }
 
-message SnapshotRequest {
+// Mirror of jervis.visual_capture.SnapshotRequest so the server surface
+// stays typed end-to-end.
+message ProxySnapshotRequest {
   jervis.common.RequestContext ctx = 1;
-  string request_json = 2;        // passthrough body to the capture pod
+  string mode = 2;
+  string preset = 3;
+  string custom_prompt = 4;
 }
 
-message PtzRequest {
-  jervis.common.RequestContext ctx = 1;
-  string request_json = 2;
+message ProxySnapshotResponse {
+  string description = 1;
+  string ocr_text = 2;
+  string mode = 3;
+  string model = 4;
+  int64 frame_size_bytes = 5;
+  string timestamp = 6;
+  string preset = 7;
+  string error = 8;
 }
 
-message RawJsonResponse {
-  string body_json = 1;
-  int32 status = 2;
+message ProxyPtzRequest {
+  jervis.common.RequestContext ctx = 1;
+  string preset = 2;
+}
+
+message ProxyPtzResponse {
+  string status = 1;
+  string preset = 2;
+  string error = 3;
 }

@@ -32,32 +32,36 @@ public object CorrectionServiceGrpcKt {
   public val serviceDescriptor: ServiceDescriptor
     get() = getServiceDescriptor()
 
-  public val submitCorrectionMethod: MethodDescriptor<CorrectionRequest, CorrectionResponse>
+  public val submitCorrectionMethod:
+      MethodDescriptor<SubmitCorrectionRequest, SubmitCorrectionResponse>
     @JvmStatic
     get() = CorrectionServiceGrpc.getSubmitCorrectionMethod()
 
-  public val correctTranscriptMethod: MethodDescriptor<CorrectionRequest, CorrectionResponse>
+  public val correctTranscriptMethod: MethodDescriptor<CorrectTranscriptRequest, CorrectResult>
     @JvmStatic
     get() = CorrectionServiceGrpc.getCorrectTranscriptMethod()
 
-  public val listCorrectionsMethod: MethodDescriptor<CorrectionRequest, CorrectionResponse>
+  public val listCorrectionsMethod:
+      MethodDescriptor<ListCorrectionsRequest, ListCorrectionsResponse>
     @JvmStatic
     get() = CorrectionServiceGrpc.getListCorrectionsMethod()
 
   public val answerCorrectionQuestionsMethod:
-      MethodDescriptor<CorrectionRequest, CorrectionResponse>
+      MethodDescriptor<AnswerCorrectionsRequest, AnswerCorrectionsResponse>
     @JvmStatic
     get() = CorrectionServiceGrpc.getAnswerCorrectionQuestionsMethod()
 
-  public val correctWithInstructionMethod: MethodDescriptor<CorrectionRequest, CorrectionResponse>
+  public val correctWithInstructionMethod:
+      MethodDescriptor<CorrectWithInstructionRequest, CorrectWithInstructionResponse>
     @JvmStatic
     get() = CorrectionServiceGrpc.getCorrectWithInstructionMethod()
 
-  public val correctTargetedMethod: MethodDescriptor<CorrectionRequest, CorrectionResponse>
+  public val correctTargetedMethod: MethodDescriptor<CorrectTargetedRequest, CorrectResult>
     @JvmStatic
     get() = CorrectionServiceGrpc.getCorrectTargetedMethod()
 
-  public val deleteCorrectionMethod: MethodDescriptor<CorrectionRequest, CorrectionResponse>
+  public val deleteCorrectionMethod:
+      MethodDescriptor<DeleteCorrectionRequest, DeleteCorrectionResponse>
     @JvmStatic
     get() = CorrectionServiceGrpc.getDeleteCorrectionMethod()
 
@@ -86,8 +90,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun submitCorrection(request: CorrectionRequest, headers: Metadata = Metadata()):
-        CorrectionResponse = unaryRpc(
+    public suspend fun submitCorrection(request: SubmitCorrectionRequest, headers: Metadata =
+        Metadata()): SubmitCorrectionResponse = unaryRpc(
       channel,
       CorrectionServiceGrpc.getSubmitCorrectionMethod(),
       request,
@@ -108,8 +112,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun correctTranscript(request: CorrectionRequest, headers: Metadata =
-        Metadata()): CorrectionResponse = unaryRpc(
+    public suspend fun correctTranscript(request: CorrectTranscriptRequest, headers: Metadata =
+        Metadata()): CorrectResult = unaryRpc(
       channel,
       CorrectionServiceGrpc.getCorrectTranscriptMethod(),
       request,
@@ -130,8 +134,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listCorrections(request: CorrectionRequest, headers: Metadata = Metadata()):
-        CorrectionResponse = unaryRpc(
+    public suspend fun listCorrections(request: ListCorrectionsRequest, headers: Metadata =
+        Metadata()): ListCorrectionsResponse = unaryRpc(
       channel,
       CorrectionServiceGrpc.getListCorrectionsMethod(),
       request,
@@ -152,8 +156,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun answerCorrectionQuestions(request: CorrectionRequest, headers: Metadata =
-        Metadata()): CorrectionResponse = unaryRpc(
+    public suspend fun answerCorrectionQuestions(request: AnswerCorrectionsRequest,
+        headers: Metadata = Metadata()): AnswerCorrectionsResponse = unaryRpc(
       channel,
       CorrectionServiceGrpc.getAnswerCorrectionQuestionsMethod(),
       request,
@@ -174,8 +178,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun correctWithInstruction(request: CorrectionRequest, headers: Metadata =
-        Metadata()): CorrectionResponse = unaryRpc(
+    public suspend fun correctWithInstruction(request: CorrectWithInstructionRequest,
+        headers: Metadata = Metadata()): CorrectWithInstructionResponse = unaryRpc(
       channel,
       CorrectionServiceGrpc.getCorrectWithInstructionMethod(),
       request,
@@ -196,8 +200,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun correctTargeted(request: CorrectionRequest, headers: Metadata = Metadata()):
-        CorrectionResponse = unaryRpc(
+    public suspend fun correctTargeted(request: CorrectTargetedRequest, headers: Metadata =
+        Metadata()): CorrectResult = unaryRpc(
       channel,
       CorrectionServiceGrpc.getCorrectTargetedMethod(),
       request,
@@ -218,8 +222,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun deleteCorrection(request: CorrectionRequest, headers: Metadata = Metadata()):
-        CorrectionResponse = unaryRpc(
+    public suspend fun deleteCorrection(request: DeleteCorrectionRequest, headers: Metadata =
+        Metadata()): DeleteCorrectionResponse = unaryRpc(
       channel,
       CorrectionServiceGrpc.getDeleteCorrectionMethod(),
       request,
@@ -246,7 +250,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun submitCorrection(request: CorrectionRequest): CorrectionResponse = throw
+    public open suspend fun submitCorrection(request: SubmitCorrectionRequest):
+        SubmitCorrectionResponse = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.SubmitCorrection is unimplemented"))
 
     /**
@@ -260,7 +265,7 @@ public object CorrectionServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun correctTranscript(request: CorrectionRequest): CorrectionResponse =
+    public open suspend fun correctTranscript(request: CorrectTranscriptRequest): CorrectResult =
         throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.CorrectTranscript is unimplemented"))
 
@@ -275,7 +280,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun listCorrections(request: CorrectionRequest): CorrectionResponse = throw
+    public open suspend fun listCorrections(request: ListCorrectionsRequest):
+        ListCorrectionsResponse = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.ListCorrections is unimplemented"))
 
     /**
@@ -290,8 +296,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun answerCorrectionQuestions(request: CorrectionRequest):
-        CorrectionResponse = throw
+    public open suspend fun answerCorrectionQuestions(request: AnswerCorrectionsRequest):
+        AnswerCorrectionsResponse = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.AnswerCorrectionQuestions is unimplemented"))
 
     /**
@@ -306,8 +312,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun correctWithInstruction(request: CorrectionRequest): CorrectionResponse =
-        throw
+    public open suspend fun correctWithInstruction(request: CorrectWithInstructionRequest):
+        CorrectWithInstructionResponse = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.CorrectWithInstruction is unimplemented"))
 
     /**
@@ -321,7 +327,7 @@ public object CorrectionServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun correctTargeted(request: CorrectionRequest): CorrectionResponse = throw
+    public open suspend fun correctTargeted(request: CorrectTargetedRequest): CorrectResult = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.CorrectTargeted is unimplemented"))
 
     /**
@@ -335,7 +341,8 @@ public object CorrectionServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun deleteCorrection(request: CorrectionRequest): CorrectionResponse = throw
+    public open suspend fun deleteCorrection(request: DeleteCorrectionRequest):
+        DeleteCorrectionResponse = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.DeleteCorrection is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())

@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n&jervis/whatsapp_browser/whatsapp.proto\x12\x17jervis.whatsapp_browser\x1a\x19jervis/common/types.proto\"c\n\x0fWhatsAppRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x11\n\tbody_json\x18\x03 \x01(\t\"0\n\x0bRawResponse\x12\x0e\n\x06status\x18\x01 \x01(\x05\x12\x11\n\tbody_json\x18\x02 \x01(\t2\xf5\x03\n\x16WhatsAppBrowserService\x12_\n\rSessionStatus\x12(.jervis.whatsapp_browser.WhatsAppRequest\x1a$.jervis.whatsapp_browser.RawResponse\x12]\n\x0bSessionInit\x12(.jervis.whatsapp_browser.WhatsAppRequest\x1a$.jervis.whatsapp_browser.RawResponse\x12_\n\rScrapeTrigger\x12(.jervis.whatsapp_browser.WhatsAppRequest\x1a$.jervis.whatsapp_browser.RawResponse\x12^\n\x0cScrapeLatest\x12(.jervis.whatsapp_browser.WhatsAppRequest\x1a$.jervis.whatsapp_browser.RawResponse\x12Z\n\x08VncToken\x12(.jervis.whatsapp_browser.WhatsAppRequest\x1a$.jervis.whatsapp_browser.RawResponseB?\n%com.jervis.contracts.whatsapp_browserB\x14WhatsAppBrowserProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n&jervis/whatsapp_browser/whatsapp.proto\x12\x17jervis.whatsapp_browser\x1a\x19jervis/common/types.proto\"K\n\nSessionRef\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\"l\n\rSessionStatus\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12\r\n\x05state\x18\x02 \x01(\t\x12\x15\n\rlast_activity\x18\x03 \x01(\t\x12\x11\n\tnovnc_url\x18\x04 \x01(\t\x12\x0f\n\x07message\x18\x05 \x01(\t\"\xa6\x01\n\x12InitSessionRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x11\n\tlogin_url\x18\x03 \x01(\t\x12\x12\n\nuser_agent\x18\x04 \x01(\t\x12\x14\n\x0c\x63\x61pabilities\x18\x05 \x03(\t\x12\x14\n\x0cphone_number\x18\x06 \x01(\t\"[\n\x13InitSessionResponse\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12\r\n\x05state\x18\x02 \x01(\t\x12\x11\n\tnovnc_url\x18\x03 \x01(\t\x12\x0f\n\x07message\x18\x04 \x01(\t\"\x80\x01\n\x14TriggerScrapeRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x10\n\x08max_tier\x18\x03 \x01(\t\x12\x17\n\x0fprocessing_mode\x18\x04 \x01(\t\"\'\n\x15TriggerScrapeResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\"d\n\x14LatestScrapeResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x17\n\x0flast_scraped_at\x18\x03 \x01(\t\x12\x12\n\nchat_count\x18\x04 \x01(\x05\"4\n\x10VncTokenResponse\x12\r\n\x05token\x18\x01 \x01(\t\x12\x11\n\tclient_id\x18\x02 \x01(\t2\x96\x04\n\x16WhatsAppBrowserService\x12Y\n\nGetSession\x12#.jervis.whatsapp_browser.SessionRef\x1a&.jervis.whatsapp_browser.SessionStatus\x12h\n\x0bInitSession\x12+.jervis.whatsapp_browser.InitSessionRequest\x1a,.jervis.whatsapp_browser.InitSessionResponse\x12n\n\rTriggerScrape\x12-.jervis.whatsapp_browser.TriggerScrapeRequest\x1a..jervis.whatsapp_browser.TriggerScrapeResponse\x12\x65\n\x0fGetLatestScrape\x12#.jervis.whatsapp_browser.SessionRef\x1a-.jervis.whatsapp_browser.LatestScrapeResponse\x12`\n\x0e\x43reateVncToken\x12#.jervis.whatsapp_browser.SessionRef\x1a).jervis.whatsapp_browser.VncTokenResponseB?\n%com.jervis.contracts.whatsapp_browserB\x14WhatsAppBrowserProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,10 +33,22 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'jervis.whatsapp_browser.wha
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n%com.jervis.contracts.whatsapp_browserB\024WhatsAppBrowserProtoP\001'
-  _globals['_WHATSAPPREQUEST']._serialized_start=94
-  _globals['_WHATSAPPREQUEST']._serialized_end=193
-  _globals['_RAWRESPONSE']._serialized_start=195
-  _globals['_RAWRESPONSE']._serialized_end=243
-  _globals['_WHATSAPPBROWSERSERVICE']._serialized_start=246
-  _globals['_WHATSAPPBROWSERSERVICE']._serialized_end=747
+  _globals['_SESSIONREF']._serialized_start=94
+  _globals['_SESSIONREF']._serialized_end=169
+  _globals['_SESSIONSTATUS']._serialized_start=171
+  _globals['_SESSIONSTATUS']._serialized_end=279
+  _globals['_INITSESSIONREQUEST']._serialized_start=282
+  _globals['_INITSESSIONREQUEST']._serialized_end=448
+  _globals['_INITSESSIONRESPONSE']._serialized_start=450
+  _globals['_INITSESSIONRESPONSE']._serialized_end=541
+  _globals['_TRIGGERSCRAPEREQUEST']._serialized_start=544
+  _globals['_TRIGGERSCRAPEREQUEST']._serialized_end=672
+  _globals['_TRIGGERSCRAPERESPONSE']._serialized_start=674
+  _globals['_TRIGGERSCRAPERESPONSE']._serialized_end=713
+  _globals['_LATESTSCRAPERESPONSE']._serialized_start=715
+  _globals['_LATESTSCRAPERESPONSE']._serialized_end=815
+  _globals['_VNCTOKENRESPONSE']._serialized_start=817
+  _globals['_VNCTOKENRESPONSE']._serialized_end=869
+  _globals['_WHATSAPPBROWSERSERVICE']._serialized_start=872
+  _globals['_WHATSAPPBROWSERSERVICE']._serialized_end=1406
 # @@protoc_insertion_point(module_scope)

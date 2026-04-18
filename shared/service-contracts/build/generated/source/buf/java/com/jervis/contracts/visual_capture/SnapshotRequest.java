@@ -28,7 +28,9 @@ private static final long serialVersionUID = 0L;
     super(builder);
   }
   private SnapshotRequest() {
-    requestJson_ = "";
+    mode_ = "";
+    preset_ = "";
+    customPrompt_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -71,49 +73,141 @@ private static final long serialVersionUID = 0L;
     return ctx_ == null ? com.jervis.contracts.common.RequestContext.getDefaultInstance() : ctx_;
   }
 
-  public static final int REQUEST_JSON_FIELD_NUMBER = 2;
+  public static final int MODE_FIELD_NUMBER = 2;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object requestJson_ = "";
+  private volatile java.lang.Object mode_ = "";
   /**
    * <pre>
-   * Raw JSON body matching the legacy SnapshotRequest model (preset,
-   * mode, custom_prompt). Empty string = default snapshot.
+   * "scene" | "whiteboard" | "screen"
    * </pre>
    *
-   * <code>string request_json = 2;</code>
-   * @return The requestJson.
+   * <code>string mode = 2;</code>
+   * @return The mode.
    */
   @java.lang.Override
-  public java.lang.String getRequestJson() {
-    java.lang.Object ref = requestJson_;
+  public java.lang.String getMode() {
+    java.lang.Object ref = mode_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      requestJson_ = s;
+      mode_ = s;
       return s;
     }
   }
   /**
    * <pre>
-   * Raw JSON body matching the legacy SnapshotRequest model (preset,
-   * mode, custom_prompt). Empty string = default snapshot.
+   * "scene" | "whiteboard" | "screen"
    * </pre>
    *
-   * <code>string request_json = 2;</code>
-   * @return The bytes for requestJson.
+   * <code>string mode = 2;</code>
+   * @return The bytes for mode.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getRequestJsonBytes() {
-    java.lang.Object ref = requestJson_;
+      getModeBytes() {
+    java.lang.Object ref = mode_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      requestJson_ = b;
+      mode_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int PRESET_FIELD_NUMBER = 3;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object preset_ = "";
+  /**
+   * <pre>
+   * optional — move camera first
+   * </pre>
+   *
+   * <code>string preset = 3;</code>
+   * @return The preset.
+   */
+  @java.lang.Override
+  public java.lang.String getPreset() {
+    java.lang.Object ref = preset_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      preset_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * optional — move camera first
+   * </pre>
+   *
+   * <code>string preset = 3;</code>
+   * @return The bytes for preset.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getPresetBytes() {
+    java.lang.Object ref = preset_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      preset_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int CUSTOM_PROMPT_FIELD_NUMBER = 4;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object customPrompt_ = "";
+  /**
+   * <pre>
+   * optional VLM prompt override
+   * </pre>
+   *
+   * <code>string custom_prompt = 4;</code>
+   * @return The customPrompt.
+   */
+  @java.lang.Override
+  public java.lang.String getCustomPrompt() {
+    java.lang.Object ref = customPrompt_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      customPrompt_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * optional VLM prompt override
+   * </pre>
+   *
+   * <code>string custom_prompt = 4;</code>
+   * @return The bytes for customPrompt.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getCustomPromptBytes() {
+    java.lang.Object ref = customPrompt_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      customPrompt_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
@@ -137,8 +231,14 @@ private static final long serialVersionUID = 0L;
     if (((bitField0_ & 0x00000001) != 0)) {
       output.writeMessage(1, getCtx());
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(requestJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 2, requestJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(mode_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 2, mode_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(preset_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 3, preset_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(customPrompt_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 4, customPrompt_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -153,8 +253,14 @@ private static final long serialVersionUID = 0L;
       size += com.google.protobuf.CodedOutputStream
         .computeMessageSize(1, getCtx());
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(requestJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, requestJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(mode_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, mode_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(preset_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, preset_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(customPrompt_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(4, customPrompt_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -176,8 +282,12 @@ private static final long serialVersionUID = 0L;
       if (!getCtx()
           .equals(other.getCtx())) return false;
     }
-    if (!getRequestJson()
-        .equals(other.getRequestJson())) return false;
+    if (!getMode()
+        .equals(other.getMode())) return false;
+    if (!getPreset()
+        .equals(other.getPreset())) return false;
+    if (!getCustomPrompt()
+        .equals(other.getCustomPrompt())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -193,8 +303,12 @@ private static final long serialVersionUID = 0L;
       hash = (37 * hash) + CTX_FIELD_NUMBER;
       hash = (53 * hash) + getCtx().hashCode();
     }
-    hash = (37 * hash) + REQUEST_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getRequestJson().hashCode();
+    hash = (37 * hash) + MODE_FIELD_NUMBER;
+    hash = (53 * hash) + getMode().hashCode();
+    hash = (37 * hash) + PRESET_FIELD_NUMBER;
+    hash = (53 * hash) + getPreset().hashCode();
+    hash = (37 * hash) + CUSTOM_PROMPT_FIELD_NUMBER;
+    hash = (53 * hash) + getCustomPrompt().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -337,7 +451,9 @@ private static final long serialVersionUID = 0L;
         ctxBuilder_.dispose();
         ctxBuilder_ = null;
       }
-      requestJson_ = "";
+      mode_ = "";
+      preset_ = "";
+      customPrompt_ = "";
       return this;
     }
 
@@ -379,7 +495,13 @@ private static final long serialVersionUID = 0L;
         to_bitField0_ |= 0x00000001;
       }
       if (((from_bitField0_ & 0x00000002) != 0)) {
-        result.requestJson_ = requestJson_;
+        result.mode_ = mode_;
+      }
+      if (((from_bitField0_ & 0x00000004) != 0)) {
+        result.preset_ = preset_;
+      }
+      if (((from_bitField0_ & 0x00000008) != 0)) {
+        result.customPrompt_ = customPrompt_;
       }
       result.bitField0_ |= to_bitField0_;
     }
@@ -399,9 +521,19 @@ private static final long serialVersionUID = 0L;
       if (other.hasCtx()) {
         mergeCtx(other.getCtx());
       }
-      if (!other.getRequestJson().isEmpty()) {
-        requestJson_ = other.requestJson_;
+      if (!other.getMode().isEmpty()) {
+        mode_ = other.mode_;
         bitField0_ |= 0x00000002;
+        onChanged();
+      }
+      if (!other.getPreset().isEmpty()) {
+        preset_ = other.preset_;
+        bitField0_ |= 0x00000004;
+        onChanged();
+      }
+      if (!other.getCustomPrompt().isEmpty()) {
+        customPrompt_ = other.customPrompt_;
+        bitField0_ |= 0x00000008;
         onChanged();
       }
       this.mergeUnknownFields(other.getUnknownFields());
@@ -438,10 +570,20 @@ private static final long serialVersionUID = 0L;
               break;
             } // case 10
             case 18: {
-              requestJson_ = input.readStringRequireUtf8();
+              mode_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000002;
               break;
             } // case 18
+            case 26: {
+              preset_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000004;
+              break;
+            } // case 26
+            case 34: {
+              customPrompt_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000008;
+              break;
+            } // case 34
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -580,23 +722,22 @@ private static final long serialVersionUID = 0L;
       return ctxBuilder_;
     }
 
-    private java.lang.Object requestJson_ = "";
+    private java.lang.Object mode_ = "";
     /**
      * <pre>
-     * Raw JSON body matching the legacy SnapshotRequest model (preset,
-     * mode, custom_prompt). Empty string = default snapshot.
+     * "scene" | "whiteboard" | "screen"
      * </pre>
      *
-     * <code>string request_json = 2;</code>
-     * @return The requestJson.
+     * <code>string mode = 2;</code>
+     * @return The mode.
      */
-    public java.lang.String getRequestJson() {
-      java.lang.Object ref = requestJson_;
+    public java.lang.String getMode() {
+      java.lang.Object ref = mode_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        requestJson_ = s;
+        mode_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
@@ -604,21 +745,20 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * Raw JSON body matching the legacy SnapshotRequest model (preset,
-     * mode, custom_prompt). Empty string = default snapshot.
+     * "scene" | "whiteboard" | "screen"
      * </pre>
      *
-     * <code>string request_json = 2;</code>
-     * @return The bytes for requestJson.
+     * <code>string mode = 2;</code>
+     * @return The bytes for mode.
      */
     public com.google.protobuf.ByteString
-        getRequestJsonBytes() {
-      java.lang.Object ref = requestJson_;
+        getModeBytes() {
+      java.lang.Object ref = mode_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        requestJson_ = b;
+        mode_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
@@ -626,53 +766,234 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * Raw JSON body matching the legacy SnapshotRequest model (preset,
-     * mode, custom_prompt). Empty string = default snapshot.
+     * "scene" | "whiteboard" | "screen"
      * </pre>
      *
-     * <code>string request_json = 2;</code>
-     * @param value The requestJson to set.
+     * <code>string mode = 2;</code>
+     * @param value The mode to set.
      * @return This builder for chaining.
      */
-    public Builder setRequestJson(
+    public Builder setMode(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      requestJson_ = value;
+      mode_ = value;
       bitField0_ |= 0x00000002;
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * Raw JSON body matching the legacy SnapshotRequest model (preset,
-     * mode, custom_prompt). Empty string = default snapshot.
+     * "scene" | "whiteboard" | "screen"
      * </pre>
      *
-     * <code>string request_json = 2;</code>
+     * <code>string mode = 2;</code>
      * @return This builder for chaining.
      */
-    public Builder clearRequestJson() {
-      requestJson_ = getDefaultInstance().getRequestJson();
+    public Builder clearMode() {
+      mode_ = getDefaultInstance().getMode();
       bitField0_ = (bitField0_ & ~0x00000002);
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * Raw JSON body matching the legacy SnapshotRequest model (preset,
-     * mode, custom_prompt). Empty string = default snapshot.
+     * "scene" | "whiteboard" | "screen"
      * </pre>
      *
-     * <code>string request_json = 2;</code>
-     * @param value The bytes for requestJson to set.
+     * <code>string mode = 2;</code>
+     * @param value The bytes for mode to set.
      * @return This builder for chaining.
      */
-    public Builder setRequestJsonBytes(
+    public Builder setModeBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      requestJson_ = value;
+      mode_ = value;
       bitField0_ |= 0x00000002;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object preset_ = "";
+    /**
+     * <pre>
+     * optional — move camera first
+     * </pre>
+     *
+     * <code>string preset = 3;</code>
+     * @return The preset.
+     */
+    public java.lang.String getPreset() {
+      java.lang.Object ref = preset_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        preset_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * optional — move camera first
+     * </pre>
+     *
+     * <code>string preset = 3;</code>
+     * @return The bytes for preset.
+     */
+    public com.google.protobuf.ByteString
+        getPresetBytes() {
+      java.lang.Object ref = preset_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        preset_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * optional — move camera first
+     * </pre>
+     *
+     * <code>string preset = 3;</code>
+     * @param value The preset to set.
+     * @return This builder for chaining.
+     */
+    public Builder setPreset(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      preset_ = value;
+      bitField0_ |= 0x00000004;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * optional — move camera first
+     * </pre>
+     *
+     * <code>string preset = 3;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearPreset() {
+      preset_ = getDefaultInstance().getPreset();
+      bitField0_ = (bitField0_ & ~0x00000004);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * optional — move camera first
+     * </pre>
+     *
+     * <code>string preset = 3;</code>
+     * @param value The bytes for preset to set.
+     * @return This builder for chaining.
+     */
+    public Builder setPresetBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      preset_ = value;
+      bitField0_ |= 0x00000004;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object customPrompt_ = "";
+    /**
+     * <pre>
+     * optional VLM prompt override
+     * </pre>
+     *
+     * <code>string custom_prompt = 4;</code>
+     * @return The customPrompt.
+     */
+    public java.lang.String getCustomPrompt() {
+      java.lang.Object ref = customPrompt_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        customPrompt_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * optional VLM prompt override
+     * </pre>
+     *
+     * <code>string custom_prompt = 4;</code>
+     * @return The bytes for customPrompt.
+     */
+    public com.google.protobuf.ByteString
+        getCustomPromptBytes() {
+      java.lang.Object ref = customPrompt_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        customPrompt_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * optional VLM prompt override
+     * </pre>
+     *
+     * <code>string custom_prompt = 4;</code>
+     * @param value The customPrompt to set.
+     * @return This builder for chaining.
+     */
+    public Builder setCustomPrompt(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      customPrompt_ = value;
+      bitField0_ |= 0x00000008;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * optional VLM prompt override
+     * </pre>
+     *
+     * <code>string custom_prompt = 4;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearCustomPrompt() {
+      customPrompt_ = getDefaultInstance().getCustomPrompt();
+      bitField0_ = (bitField0_ & ~0x00000008);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * optional VLM prompt override
+     * </pre>
+     *
+     * <code>string custom_prompt = 4;</code>
+     * @param value The bytes for customPrompt to set.
+     * @return This builder for chaining.
+     */
+    public Builder setCustomPromptBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      customPrompt_ = value;
+      bitField0_ |= 0x00000008;
       onChanged();
       return this;
     }

@@ -8,10 +8,13 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * `service-visual-capture` K8s pod. The pod pushes VLM analysis results
  * here (scene/whiteboard/screen OCR) and the server fans them into
  * MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
- * proxy endpoints keep their dedicated RPCs so the Kotlin server remains
- * the single chokepoint between UI and the capture pod.
+ * proxy RPCs are typed 1:1 with the downstream VisualCaptureService on
+ * the capture pod.
  * </pre>
  */
+@javax.annotation.Generated(
+    value = "by gRPC proto compiler (version 1.68.0)",
+    comments = "Source: jervis/server/visual_capture.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class ServerVisualCaptureServiceGrpc {
 
@@ -51,29 +54,29 @@ public final class ServerVisualCaptureServiceGrpc {
     return getPostResultMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.SnapshotRequest,
-      com.jervis.contracts.server.RawJsonResponse> getSnapshotMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ProxySnapshotRequest,
+      com.jervis.contracts.server.ProxySnapshotResponse> getSnapshotMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "Snapshot",
-      requestType = com.jervis.contracts.server.SnapshotRequest.class,
-      responseType = com.jervis.contracts.server.RawJsonResponse.class,
+      requestType = com.jervis.contracts.server.ProxySnapshotRequest.class,
+      responseType = com.jervis.contracts.server.ProxySnapshotResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.SnapshotRequest,
-      com.jervis.contracts.server.RawJsonResponse> getSnapshotMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.SnapshotRequest, com.jervis.contracts.server.RawJsonResponse> getSnapshotMethod;
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ProxySnapshotRequest,
+      com.jervis.contracts.server.ProxySnapshotResponse> getSnapshotMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ProxySnapshotRequest, com.jervis.contracts.server.ProxySnapshotResponse> getSnapshotMethod;
     if ((getSnapshotMethod = ServerVisualCaptureServiceGrpc.getSnapshotMethod) == null) {
       synchronized (ServerVisualCaptureServiceGrpc.class) {
         if ((getSnapshotMethod = ServerVisualCaptureServiceGrpc.getSnapshotMethod) == null) {
           ServerVisualCaptureServiceGrpc.getSnapshotMethod = getSnapshotMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.SnapshotRequest, com.jervis.contracts.server.RawJsonResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ProxySnapshotRequest, com.jervis.contracts.server.ProxySnapshotResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "Snapshot"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.SnapshotRequest.getDefaultInstance()))
+                  com.jervis.contracts.server.ProxySnapshotRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.RawJsonResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.ProxySnapshotResponse.getDefaultInstance()))
               .setSchemaDescriptor(new ServerVisualCaptureServiceMethodDescriptorSupplier("Snapshot"))
               .build();
         }
@@ -82,29 +85,29 @@ public final class ServerVisualCaptureServiceGrpc {
     return getSnapshotMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.PtzRequest,
-      com.jervis.contracts.server.RawJsonResponse> getPtzMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ProxyPtzRequest,
+      com.jervis.contracts.server.ProxyPtzResponse> getPtzMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "Ptz",
-      requestType = com.jervis.contracts.server.PtzRequest.class,
-      responseType = com.jervis.contracts.server.RawJsonResponse.class,
+      requestType = com.jervis.contracts.server.ProxyPtzRequest.class,
+      responseType = com.jervis.contracts.server.ProxyPtzResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.PtzRequest,
-      com.jervis.contracts.server.RawJsonResponse> getPtzMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.PtzRequest, com.jervis.contracts.server.RawJsonResponse> getPtzMethod;
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ProxyPtzRequest,
+      com.jervis.contracts.server.ProxyPtzResponse> getPtzMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ProxyPtzRequest, com.jervis.contracts.server.ProxyPtzResponse> getPtzMethod;
     if ((getPtzMethod = ServerVisualCaptureServiceGrpc.getPtzMethod) == null) {
       synchronized (ServerVisualCaptureServiceGrpc.class) {
         if ((getPtzMethod = ServerVisualCaptureServiceGrpc.getPtzMethod) == null) {
           ServerVisualCaptureServiceGrpc.getPtzMethod = getPtzMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.PtzRequest, com.jervis.contracts.server.RawJsonResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ProxyPtzRequest, com.jervis.contracts.server.ProxyPtzResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "Ptz"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.PtzRequest.getDefaultInstance()))
+                  com.jervis.contracts.server.ProxyPtzRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.RawJsonResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.ProxyPtzResponse.getDefaultInstance()))
               .setSchemaDescriptor(new ServerVisualCaptureServiceMethodDescriptorSupplier("Ptz"))
               .build();
         }
@@ -125,21 +128,6 @@ public final class ServerVisualCaptureServiceGrpc {
         }
       };
     return ServerVisualCaptureServiceStub.newStub(factory, channel);
-  }
-
-  /**
-   * Creates a new blocking-style stub that supports all types of calls on the service
-   */
-  public static ServerVisualCaptureServiceBlockingV2Stub newBlockingV2Stub(
-      io.grpc.Channel channel) {
-    io.grpc.stub.AbstractStub.StubFactory<ServerVisualCaptureServiceBlockingV2Stub> factory =
-      new io.grpc.stub.AbstractStub.StubFactory<ServerVisualCaptureServiceBlockingV2Stub>() {
-        @java.lang.Override
-        public ServerVisualCaptureServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
-          return new ServerVisualCaptureServiceBlockingV2Stub(channel, callOptions);
-        }
-      };
-    return ServerVisualCaptureServiceBlockingV2Stub.newStub(factory, channel);
   }
 
   /**
@@ -178,8 +166,8 @@ public final class ServerVisualCaptureServiceGrpc {
    * `service-visual-capture` K8s pod. The pod pushes VLM analysis results
    * here (scene/whiteboard/screen OCR) and the server fans them into
    * MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
-   * proxy endpoints keep their dedicated RPCs so the Kotlin server remains
-   * the single chokepoint between UI and the capture pod.
+   * proxy RPCs are typed 1:1 with the downstream VisualCaptureService on
+   * the capture pod.
    * </pre>
    */
   public interface AsyncService {
@@ -193,15 +181,15 @@ public final class ServerVisualCaptureServiceGrpc {
 
     /**
      */
-    default void snapshot(com.jervis.contracts.server.SnapshotRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.RawJsonResponse> responseObserver) {
+    default void snapshot(com.jervis.contracts.server.ProxySnapshotRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProxySnapshotResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSnapshotMethod(), responseObserver);
     }
 
     /**
      */
-    default void ptz(com.jervis.contracts.server.PtzRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.RawJsonResponse> responseObserver) {
+    default void ptz(com.jervis.contracts.server.ProxyPtzRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProxyPtzResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getPtzMethod(), responseObserver);
     }
   }
@@ -213,8 +201,8 @@ public final class ServerVisualCaptureServiceGrpc {
    * `service-visual-capture` K8s pod. The pod pushes VLM analysis results
    * here (scene/whiteboard/screen OCR) and the server fans them into
    * MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
-   * proxy endpoints keep their dedicated RPCs so the Kotlin server remains
-   * the single chokepoint between UI and the capture pod.
+   * proxy RPCs are typed 1:1 with the downstream VisualCaptureService on
+   * the capture pod.
    * </pre>
    */
   public static abstract class ServerVisualCaptureServiceImplBase
@@ -232,8 +220,8 @@ public final class ServerVisualCaptureServiceGrpc {
    * `service-visual-capture` K8s pod. The pod pushes VLM analysis results
    * here (scene/whiteboard/screen OCR) and the server fans them into
    * MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
-   * proxy endpoints keep their dedicated RPCs so the Kotlin server remains
-   * the single chokepoint between UI and the capture pod.
+   * proxy RPCs are typed 1:1 with the downstream VisualCaptureService on
+   * the capture pod.
    * </pre>
    */
   public static final class ServerVisualCaptureServiceStub
@@ -259,16 +247,16 @@ public final class ServerVisualCaptureServiceGrpc {
 
     /**
      */
-    public void snapshot(com.jervis.contracts.server.SnapshotRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.RawJsonResponse> responseObserver) {
+    public void snapshot(com.jervis.contracts.server.ProxySnapshotRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProxySnapshotResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getSnapshotMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void ptz(com.jervis.contracts.server.PtzRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.RawJsonResponse> responseObserver) {
+    public void ptz(com.jervis.contracts.server.ProxyPtzRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProxyPtzResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getPtzMethod(), getCallOptions()), request, responseObserver);
     }
@@ -281,54 +269,8 @@ public final class ServerVisualCaptureServiceGrpc {
    * `service-visual-capture` K8s pod. The pod pushes VLM analysis results
    * here (scene/whiteboard/screen OCR) and the server fans them into
    * MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
-   * proxy endpoints keep their dedicated RPCs so the Kotlin server remains
-   * the single chokepoint between UI and the capture pod.
-   * </pre>
-   */
-  public static final class ServerVisualCaptureServiceBlockingV2Stub
-      extends io.grpc.stub.AbstractBlockingStub<ServerVisualCaptureServiceBlockingV2Stub> {
-    private ServerVisualCaptureServiceBlockingV2Stub(
-        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
-      super(channel, callOptions);
-    }
-
-    @java.lang.Override
-    protected ServerVisualCaptureServiceBlockingV2Stub build(
-        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
-      return new ServerVisualCaptureServiceBlockingV2Stub(channel, callOptions);
-    }
-
-    /**
-     */
-    public com.jervis.contracts.server.VisualResultResponse postResult(com.jervis.contracts.server.VisualResultRequest request) throws io.grpc.StatusException {
-      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
-          getChannel(), getPostResultMethod(), getCallOptions(), request);
-    }
-
-    /**
-     */
-    public com.jervis.contracts.server.RawJsonResponse snapshot(com.jervis.contracts.server.SnapshotRequest request) throws io.grpc.StatusException {
-      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
-          getChannel(), getSnapshotMethod(), getCallOptions(), request);
-    }
-
-    /**
-     */
-    public com.jervis.contracts.server.RawJsonResponse ptz(com.jervis.contracts.server.PtzRequest request) throws io.grpc.StatusException {
-      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
-          getChannel(), getPtzMethod(), getCallOptions(), request);
-    }
-  }
-
-  /**
-   * A stub to allow clients to do limited synchronous rpc calls to service ServerVisualCaptureService.
-   * <pre>
-   * ServerVisualCaptureService — inbound bridge for the
-   * `service-visual-capture` K8s pod. The pod pushes VLM analysis results
-   * here (scene/whiteboard/screen OCR) and the server fans them into
-   * MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
-   * proxy endpoints keep their dedicated RPCs so the Kotlin server remains
-   * the single chokepoint between UI and the capture pod.
+   * proxy RPCs are typed 1:1 with the downstream VisualCaptureService on
+   * the capture pod.
    * </pre>
    */
   public static final class ServerVisualCaptureServiceBlockingStub
@@ -353,14 +295,14 @@ public final class ServerVisualCaptureServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.RawJsonResponse snapshot(com.jervis.contracts.server.SnapshotRequest request) {
+    public com.jervis.contracts.server.ProxySnapshotResponse snapshot(com.jervis.contracts.server.ProxySnapshotRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getSnapshotMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.RawJsonResponse ptz(com.jervis.contracts.server.PtzRequest request) {
+    public com.jervis.contracts.server.ProxyPtzResponse ptz(com.jervis.contracts.server.ProxyPtzRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getPtzMethod(), getCallOptions(), request);
     }
@@ -373,8 +315,8 @@ public final class ServerVisualCaptureServiceGrpc {
    * `service-visual-capture` K8s pod. The pod pushes VLM analysis results
    * here (scene/whiteboard/screen OCR) and the server fans them into
    * MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
-   * proxy endpoints keep their dedicated RPCs so the Kotlin server remains
-   * the single chokepoint between UI and the capture pod.
+   * proxy RPCs are typed 1:1 with the downstream VisualCaptureService on
+   * the capture pod.
    * </pre>
    */
   public static final class ServerVisualCaptureServiceFutureStub
@@ -400,16 +342,16 @@ public final class ServerVisualCaptureServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.RawJsonResponse> snapshot(
-        com.jervis.contracts.server.SnapshotRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ProxySnapshotResponse> snapshot(
+        com.jervis.contracts.server.ProxySnapshotRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getSnapshotMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.RawJsonResponse> ptz(
-        com.jervis.contracts.server.PtzRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ProxyPtzResponse> ptz(
+        com.jervis.contracts.server.ProxyPtzRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getPtzMethod(), getCallOptions()), request);
     }
@@ -441,12 +383,12 @@ public final class ServerVisualCaptureServiceGrpc {
               (io.grpc.stub.StreamObserver<com.jervis.contracts.server.VisualResultResponse>) responseObserver);
           break;
         case METHODID_SNAPSHOT:
-          serviceImpl.snapshot((com.jervis.contracts.server.SnapshotRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.RawJsonResponse>) responseObserver);
+          serviceImpl.snapshot((com.jervis.contracts.server.ProxySnapshotRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProxySnapshotResponse>) responseObserver);
           break;
         case METHODID_PTZ:
-          serviceImpl.ptz((com.jervis.contracts.server.PtzRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.RawJsonResponse>) responseObserver);
+          serviceImpl.ptz((com.jervis.contracts.server.ProxyPtzRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProxyPtzResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -477,15 +419,15 @@ public final class ServerVisualCaptureServiceGrpc {
           getSnapshotMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.server.SnapshotRequest,
-              com.jervis.contracts.server.RawJsonResponse>(
+              com.jervis.contracts.server.ProxySnapshotRequest,
+              com.jervis.contracts.server.ProxySnapshotResponse>(
                 service, METHODID_SNAPSHOT)))
         .addMethod(
           getPtzMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.server.PtzRequest,
-              com.jervis.contracts.server.RawJsonResponse>(
+              com.jervis.contracts.server.ProxyPtzRequest,
+              com.jervis.contracts.server.ProxyPtzResponse>(
                 service, METHODID_PTZ)))
         .build();
   }

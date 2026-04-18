@@ -8,27 +8,77 @@ option java_package = "com.jervis.contracts.whatsapp_browser";
 option java_multiple_files = true;
 option java_outer_classname = "WhatsAppBrowserProto";
 
-// WhatsAppBrowserService — gRPC wrapper on top of the `jervis-whatsapp-browser`
-// pod. Kotlin server's ConnectionRpcImpl + WhatsAppPollingHandler dial
-// these RPCs instead of the former REST surface
+// WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
+// pod. Replaces the former REST surface consumed by the Kotlin server
 // (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
 // /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
-// (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+// (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
 service WhatsAppBrowserService {
-  rpc SessionStatus(WhatsAppRequest) returns (RawResponse);
-  rpc SessionInit(WhatsAppRequest) returns (RawResponse);
-  rpc ScrapeTrigger(WhatsAppRequest) returns (RawResponse);
-  rpc ScrapeLatest(WhatsAppRequest) returns (RawResponse);
-  rpc VncToken(WhatsAppRequest) returns (RawResponse);
+  rpc GetSession(SessionRef) returns (SessionStatus);
+  rpc InitSession(InitSessionRequest) returns (InitSessionResponse);
+  rpc TriggerScrape(TriggerScrapeRequest) returns (TriggerScrapeResponse);
+  rpc GetLatestScrape(SessionRef) returns (LatestScrapeResponse);
+  rpc CreateVncToken(SessionRef) returns (VncTokenResponse);
 }
 
-message WhatsAppRequest {
+// ── Shared ─────────────────────────────────────────────────────────────
+
+message SessionRef {
   jervis.common.RequestContext ctx = 1;
   string client_id = 2;
-  string body_json = 3;
 }
 
-message RawResponse {
-  int32 status = 1;
-  string body_json = 2;
+// ── GetSession ─────────────────────────────────────────────────────────
+
+message SessionStatus {
+  string client_id = 1;
+  string state = 2;                          // ACTIVE | EXPIRED | PENDING_LOGIN | ERROR
+  string last_activity = 3;
+  string novnc_url = 4;
+  string message = 5;
+}
+
+// ── InitSession ────────────────────────────────────────────────────────
+
+message InitSessionRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string login_url = 3;
+  string user_agent = 4;
+  repeated string capabilities = 5;
+  string phone_number = 6;
+}
+
+message InitSessionResponse {
+  string client_id = 1;
+  string state = 2;
+  string novnc_url = 3;
+  string message = 4;
+}
+
+// ── Scrape ─────────────────────────────────────────────────────────────
+
+message TriggerScrapeRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string max_tier = 3;                       // NONE | FREE | PAID | PREMIUM
+  string processing_mode = 4;                // FOREGROUND | BACKGROUND
+}
+
+message TriggerScrapeResponse {
+  string status = 1;                         // "triggered" | "already_running"
+}
+
+message LatestScrapeResponse {
+  string status = 1;                         // "ok" | "no_data"
+  string message = 2;
+  string last_scraped_at = 3;
+  int32 chat_count = 4;
+}
+
+// ── VNC token ──────────────────────────────────────────────────────────
+
+message VncTokenResponse {
+  string token = 1;
+  string client_id = 2;
 }

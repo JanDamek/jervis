@@ -27,15 +27,110 @@ public final class CorrectionProto extends com.google.protobuf.GeneratedFile {
         (com.google.protobuf.ExtensionRegistryLite) registry);
   }
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_correction_CorrectionRequest_descriptor;
+    internal_static_jervis_correction_CorrectionSegment_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_correction_CorrectionRequest_fieldAccessorTable;
+      internal_static_jervis_correction_CorrectionSegment_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_correction_CorrectionResponse_descriptor;
+    internal_static_jervis_correction_CorrectionQuestion_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_correction_CorrectionResponse_fieldAccessorTable;
+      internal_static_jervis_correction_CorrectionQuestion_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_CorrectionRule_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_CorrectionRule_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_SubmitCorrectionRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_SubmitCorrectionRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_SubmitCorrectionResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_SubmitCorrectionResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_CorrectTranscriptRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_CorrectTranscriptRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_CorrectTranscriptRequest_SpeakerHintsEntry_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_CorrectTranscriptRequest_SpeakerHintsEntry_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_CorrectResult_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_CorrectResult_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_ListCorrectionsRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_ListCorrectionsRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_CorrectionChunkMeta_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_CorrectionChunkMeta_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_CorrectionChunk_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_CorrectionChunk_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_ListCorrectionsResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_ListCorrectionsResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_AnswerCorrectionsRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_AnswerCorrectionsRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_AnswerCorrectionsResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_AnswerCorrectionsResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_CorrectWithInstructionRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_CorrectWithInstructionRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_InstructRuleResult_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_InstructRuleResult_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_CorrectWithInstructionResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_CorrectWithInstructionResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_CorrectTargetedRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_CorrectTargetedRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_CorrectTargetedRequest_UserCorrectedIndicesEntry_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_CorrectTargetedRequest_UserCorrectedIndicesEntry_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_DeleteCorrectionRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_DeleteCorrectionRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_correction_DeleteCorrectionResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_correction_DeleteCorrectionResponse_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -47,47 +142,232 @@ public final class CorrectionProto extends com.google.protobuf.GeneratedFile {
     java.lang.String[] descriptorData = {
       "\n\"jervis/correction/correction.proto\022\021je" +
       "rvis.correction\032\031jervis/common/types.pro" +
-      "to\"R\n\021CorrectionRequest\022*\n\003ctx\030\001 \001(\0132\035.j" +
-      "ervis.common.RequestContext\022\021\n\tbody_json" +
-      "\030\002 \001(\t\"7\n\022CorrectionResponse\022\016\n\006status\030\001" +
-      " \001(\005\022\021\n\tbody_json\030\002 \001(\t2\310\005\n\021CorrectionSe" +
-      "rvice\022_\n\020SubmitCorrection\022$.jervis.corre" +
-      "ction.CorrectionRequest\032%.jervis.correct" +
-      "ion.CorrectionResponse\022`\n\021CorrectTranscr" +
-      "ipt\022$.jervis.correction.CorrectionReques" +
-      "t\032%.jervis.correction.CorrectionResponse" +
-      "\022^\n\017ListCorrections\022$.jervis.correction." +
-      "CorrectionRequest\032%.jervis.correction.Co" +
-      "rrectionResponse\022h\n\031AnswerCorrectionQues" +
-      "tions\022$.jervis.correction.CorrectionRequ" +
-      "est\032%.jervis.correction.CorrectionRespon" +
-      "se\022e\n\026CorrectWithInstruction\022$.jervis.co" +
-      "rrection.CorrectionRequest\032%.jervis.corr" +
-      "ection.CorrectionResponse\022^\n\017CorrectTarg" +
-      "eted\022$.jervis.correction.CorrectionReque" +
-      "st\032%.jervis.correction.CorrectionRespons" +
-      "e\022_\n\020DeleteCorrection\022$.jervis.correctio" +
-      "n.CorrectionRequest\032%.jervis.correction." +
-      "CorrectionResponseB4\n\037com.jervis.contrac" +
-      "ts.correctionB\017CorrectionProtoP\001b\006proto3"
+      "to\"a\n\021CorrectionSegment\022\t\n\001i\030\001 \001(\005\022\021\n\tst" +
+      "art_sec\030\002 \001(\001\022\017\n\007end_sec\030\003 \001(\001\022\014\n\004text\030\004" +
+      " \001(\t\022\017\n\007speaker\030\005 \001(\t\"q\n\022CorrectionQuest" +
+      "ion\022\n\n\002id\030\001 \001(\t\022\t\n\001i\030\002 \001(\005\022\020\n\010original\030\003" +
+      " \001(\t\022\020\n\010question\030\004 \001(\t\022\017\n\007options\030\005 \003(\t\022" +
+      "\017\n\007context\030\006 \001(\t\"X\n\016CorrectionRule\022\020\n\010or" +
+      "iginal\030\001 \001(\t\022\021\n\tcorrected\030\002 \001(\t\022\020\n\010categ" +
+      "ory\030\003 \001(\t\022\017\n\007context\030\004 \001(\t\"\264\001\n\027SubmitCor" +
+      "rectionRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.com" +
+      "mon.RequestContext\022\021\n\tclient_id\030\002 \001(\t\022\022\n" +
+      "\nproject_id\030\003 \001(\t\022\020\n\010original\030\004 \001(\t\022\021\n\tc" +
+      "orrected\030\005 \001(\t\022\020\n\010category\030\006 \001(\t\022\017\n\007cont" +
+      "ext\030\007 \001(\t\"d\n\030SubmitCorrectionResponse\022\025\n" +
+      "\rcorrection_id\030\001 \001(\t\022\022\n\nsource_urn\030\002 \001(\t" +
+      "\022\016\n\006status\030\003 \001(\t\022\r\n\005error\030\004 \001(\t\"\330\002\n\030Corr" +
+      "ectTranscriptRequest\022*\n\003ctx\030\001 \001(\0132\035.jerv" +
+      "is.common.RequestContext\022\021\n\tclient_id\030\002 " +
+      "\001(\t\022\022\n\nproject_id\030\003 \001(\t\022\022\n\nmeeting_id\030\004 " +
+      "\001(\t\0226\n\010segments\030\005 \003(\0132$.jervis.correctio" +
+      "n.CorrectionSegment\022\022\n\nchunk_size\030\006 \001(\005\022" +
+      "T\n\rspeaker_hints\030\007 \003(\0132=.jervis.correcti" +
+      "on.CorrectTranscriptRequest.SpeakerHints" +
+      "Entry\0323\n\021SpeakerHintsEntry\022\013\n\003key\030\001 \001(\t\022" +
+      "\r\n\005value\030\002 \001(\t:\0028\001\"\221\001\n\rCorrectResult\0226\n\010" +
+      "segments\030\001 \003(\0132$.jervis.correction.Corre" +
+      "ctionSegment\0228\n\tquestions\030\002 \003(\0132%.jervis" +
+      ".correction.CorrectionQuestion\022\016\n\006status" +
+      "\030\003 \001(\t\"\200\001\n\026ListCorrectionsRequest\022*\n\003ctx" +
+      "\030\001 \001(\0132\035.jervis.common.RequestContext\022\021\n" +
+      "\tclient_id\030\002 \001(\t\022\022\n\nproject_id\030\003 \001(\t\022\023\n\013" +
+      "max_results\030\004 \001(\005\"t\n\023CorrectionChunkMeta" +
+      "\022\020\n\010original\030\001 \001(\t\022\021\n\tcorrected\030\002 \001(\t\022\020\n" +
+      "\010category\030\003 \001(\t\022\017\n\007context\030\004 \001(\t\022\025\n\rcorr" +
+      "ection_id\030\005 \001(\t\"p\n\017CorrectionChunk\022\017\n\007co" +
+      "ntent\030\001 \001(\t\022\022\n\nsource_urn\030\002 \001(\t\0228\n\010metad" +
+      "ata\030\003 \001(\0132&.jervis.correction.Correction" +
+      "ChunkMeta\"R\n\027ListCorrectionsResponse\0227\n\013" +
+      "corrections\030\001 \003(\0132\".jervis.correction.Co" +
+      "rrectionChunk\"\241\001\n\030AnswerCorrectionsReque" +
+      "st\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestC" +
+      "ontext\022\021\n\tclient_id\030\002 \001(\t\022\022\n\nproject_id\030" +
+      "\003 \001(\t\0222\n\007answers\030\004 \003(\0132!.jervis.correcti" +
+      "on.CorrectionRule\"Q\n\031AnswerCorrectionsRe" +
+      "sponse\022\016\n\006status\030\001 \001(\t\022\025\n\rrules_created\030" +
+      "\002 \001(\005\022\r\n\005error\030\003 \001(\t\"\277\001\n\035CorrectWithInst" +
+      "ructionRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.com" +
+      "mon.RequestContext\022\021\n\tclient_id\030\002 \001(\t\022\022\n" +
+      "\nproject_id\030\003 \001(\t\0226\n\010segments\030\004 \003(\0132$.je" +
+      "rvis.correction.CorrectionSegment\022\023\n\013ins" +
+      "truction\030\005 \001(\t\"O\n\022InstructRuleResult\022\025\n\r" +
+      "correction_id\030\001 \001(\t\022\022\n\nsource_urn\030\002 \001(\t\022" +
+      "\016\n\006status\030\003 \001(\t\"\263\001\n\036CorrectWithInstructi" +
+      "onResponse\0226\n\010segments\030\001 \003(\0132$.jervis.co" +
+      "rrection.CorrectionSegment\0228\n\tnew_rules\030" +
+      "\002 \003(\0132%.jervis.correction.InstructRuleRe" +
+      "sult\022\016\n\006status\030\003 \001(\t\022\017\n\007summary\030\004 \001(\t\"\370\002" +
+      "\n\026CorrectTargetedRequest\022*\n\003ctx\030\001 \001(\0132\035." +
+      "jervis.common.RequestContext\022\021\n\tclient_i" +
+      "d\030\002 \001(\t\022\022\n\nproject_id\030\003 \001(\t\022\022\n\nmeeting_i" +
+      "d\030\004 \001(\t\0226\n\010segments\030\005 \003(\0132$.jervis.corre" +
+      "ction.CorrectionSegment\022\035\n\025retranscribed" +
+      "_indices\030\006 \003(\005\022c\n\026user_corrected_indices" +
+      "\030\007 \003(\0132C.jervis.correction.CorrectTarget" +
+      "edRequest.UserCorrectedIndicesEntry\032;\n\031U" +
+      "serCorrectedIndicesEntry\022\013\n\003key\030\001 \001(\t\022\r\n" +
+      "\005value\030\002 \001(\t:\0028\001\"Y\n\027DeleteCorrectionRequ" +
+      "est\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Request" +
+      "Context\022\022\n\nsource_urn\030\002 \001(\t\"\255\001\n\030DeleteCo" +
+      "rrectionResponse\022\016\n\006status\030\001 \001(\t\022\026\n\016chun" +
+      "ks_deleted\030\002 \001(\005\022\025\n\rnodes_cleaned\030\003 \001(\005\022" +
+      "\025\n\redges_cleaned\030\004 \001(\005\022\025\n\rnodes_deleted\030" +
+      "\005 \001(\005\022\025\n\redges_deleted\030\006 \001(\005\022\r\n\005error\030\007 " +
+      "\001(\t2\222\006\n\021CorrectionService\022k\n\020SubmitCorre" +
+      "ction\022*.jervis.correction.SubmitCorrecti" +
+      "onRequest\032+.jervis.correction.SubmitCorr" +
+      "ectionResponse\022b\n\021CorrectTranscript\022+.je" +
+      "rvis.correction.CorrectTranscriptRequest" +
+      "\032 .jervis.correction.CorrectResult\022h\n\017Li" +
+      "stCorrections\022).jervis.correction.ListCo" +
+      "rrectionsRequest\032*.jervis.correction.Lis" +
+      "tCorrectionsResponse\022v\n\031AnswerCorrection" +
+      "Questions\022+.jervis.correction.AnswerCorr" +
+      "ectionsRequest\032,.jervis.correction.Answe" +
+      "rCorrectionsResponse\022}\n\026CorrectWithInstr" +
+      "uction\0220.jervis.correction.CorrectWithIn" +
+      "structionRequest\0321.jervis.correction.Cor" +
+      "rectWithInstructionResponse\022^\n\017CorrectTa" +
+      "rgeted\022).jervis.correction.CorrectTarget" +
+      "edRequest\032 .jervis.correction.CorrectRes" +
+      "ult\022k\n\020DeleteCorrection\022*.jervis.correct" +
+      "ion.DeleteCorrectionRequest\032+.jervis.cor" +
+      "rection.DeleteCorrectionResponseB4\n\037com." +
+      "jervis.contracts.correctionB\017CorrectionP" +
+      "rotoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
         new com.google.protobuf.Descriptors.FileDescriptor[] {
           com.jervis.contracts.common.TypesProto.getDescriptor(),
         });
-    internal_static_jervis_correction_CorrectionRequest_descriptor =
+    internal_static_jervis_correction_CorrectionSegment_descriptor =
       getDescriptor().getMessageTypes().get(0);
-    internal_static_jervis_correction_CorrectionRequest_fieldAccessorTable = new
+    internal_static_jervis_correction_CorrectionSegment_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_correction_CorrectionRequest_descriptor,
-        new java.lang.String[] { "Ctx", "BodyJson", });
-    internal_static_jervis_correction_CorrectionResponse_descriptor =
+        internal_static_jervis_correction_CorrectionSegment_descriptor,
+        new java.lang.String[] { "I", "StartSec", "EndSec", "Text", "Speaker", });
+    internal_static_jervis_correction_CorrectionQuestion_descriptor =
       getDescriptor().getMessageTypes().get(1);
-    internal_static_jervis_correction_CorrectionResponse_fieldAccessorTable = new
+    internal_static_jervis_correction_CorrectionQuestion_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_correction_CorrectionResponse_descriptor,
-        new java.lang.String[] { "Status", "BodyJson", });
+        internal_static_jervis_correction_CorrectionQuestion_descriptor,
+        new java.lang.String[] { "Id", "I", "Original", "Question", "Options", "Context", });
+    internal_static_jervis_correction_CorrectionRule_descriptor =
+      getDescriptor().getMessageTypes().get(2);
+    internal_static_jervis_correction_CorrectionRule_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_CorrectionRule_descriptor,
+        new java.lang.String[] { "Original", "Corrected", "Category", "Context", });
+    internal_static_jervis_correction_SubmitCorrectionRequest_descriptor =
+      getDescriptor().getMessageTypes().get(3);
+    internal_static_jervis_correction_SubmitCorrectionRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_SubmitCorrectionRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "ProjectId", "Original", "Corrected", "Category", "Context", });
+    internal_static_jervis_correction_SubmitCorrectionResponse_descriptor =
+      getDescriptor().getMessageTypes().get(4);
+    internal_static_jervis_correction_SubmitCorrectionResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_SubmitCorrectionResponse_descriptor,
+        new java.lang.String[] { "CorrectionId", "SourceUrn", "Status", "Error", });
+    internal_static_jervis_correction_CorrectTranscriptRequest_descriptor =
+      getDescriptor().getMessageTypes().get(5);
+    internal_static_jervis_correction_CorrectTranscriptRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_CorrectTranscriptRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "ProjectId", "MeetingId", "Segments", "ChunkSize", "SpeakerHints", });
+    internal_static_jervis_correction_CorrectTranscriptRequest_SpeakerHintsEntry_descriptor =
+      internal_static_jervis_correction_CorrectTranscriptRequest_descriptor.getNestedTypes().get(0);
+    internal_static_jervis_correction_CorrectTranscriptRequest_SpeakerHintsEntry_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_CorrectTranscriptRequest_SpeakerHintsEntry_descriptor,
+        new java.lang.String[] { "Key", "Value", });
+    internal_static_jervis_correction_CorrectResult_descriptor =
+      getDescriptor().getMessageTypes().get(6);
+    internal_static_jervis_correction_CorrectResult_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_CorrectResult_descriptor,
+        new java.lang.String[] { "Segments", "Questions", "Status", });
+    internal_static_jervis_correction_ListCorrectionsRequest_descriptor =
+      getDescriptor().getMessageTypes().get(7);
+    internal_static_jervis_correction_ListCorrectionsRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_ListCorrectionsRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "ProjectId", "MaxResults", });
+    internal_static_jervis_correction_CorrectionChunkMeta_descriptor =
+      getDescriptor().getMessageTypes().get(8);
+    internal_static_jervis_correction_CorrectionChunkMeta_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_CorrectionChunkMeta_descriptor,
+        new java.lang.String[] { "Original", "Corrected", "Category", "Context", "CorrectionId", });
+    internal_static_jervis_correction_CorrectionChunk_descriptor =
+      getDescriptor().getMessageTypes().get(9);
+    internal_static_jervis_correction_CorrectionChunk_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_CorrectionChunk_descriptor,
+        new java.lang.String[] { "Content", "SourceUrn", "Metadata", });
+    internal_static_jervis_correction_ListCorrectionsResponse_descriptor =
+      getDescriptor().getMessageTypes().get(10);
+    internal_static_jervis_correction_ListCorrectionsResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_ListCorrectionsResponse_descriptor,
+        new java.lang.String[] { "Corrections", });
+    internal_static_jervis_correction_AnswerCorrectionsRequest_descriptor =
+      getDescriptor().getMessageTypes().get(11);
+    internal_static_jervis_correction_AnswerCorrectionsRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_AnswerCorrectionsRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "ProjectId", "Answers", });
+    internal_static_jervis_correction_AnswerCorrectionsResponse_descriptor =
+      getDescriptor().getMessageTypes().get(12);
+    internal_static_jervis_correction_AnswerCorrectionsResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_AnswerCorrectionsResponse_descriptor,
+        new java.lang.String[] { "Status", "RulesCreated", "Error", });
+    internal_static_jervis_correction_CorrectWithInstructionRequest_descriptor =
+      getDescriptor().getMessageTypes().get(13);
+    internal_static_jervis_correction_CorrectWithInstructionRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_CorrectWithInstructionRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "ProjectId", "Segments", "Instruction", });
+    internal_static_jervis_correction_InstructRuleResult_descriptor =
+      getDescriptor().getMessageTypes().get(14);
+    internal_static_jervis_correction_InstructRuleResult_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_InstructRuleResult_descriptor,
+        new java.lang.String[] { "CorrectionId", "SourceUrn", "Status", });
+    internal_static_jervis_correction_CorrectWithInstructionResponse_descriptor =
+      getDescriptor().getMessageTypes().get(15);
+    internal_static_jervis_correction_CorrectWithInstructionResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_CorrectWithInstructionResponse_descriptor,
+        new java.lang.String[] { "Segments", "NewRules", "Status", "Summary", });
+    internal_static_jervis_correction_CorrectTargetedRequest_descriptor =
+      getDescriptor().getMessageTypes().get(16);
+    internal_static_jervis_correction_CorrectTargetedRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_CorrectTargetedRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "ProjectId", "MeetingId", "Segments", "RetranscribedIndices", "UserCorrectedIndices", });
+    internal_static_jervis_correction_CorrectTargetedRequest_UserCorrectedIndicesEntry_descriptor =
+      internal_static_jervis_correction_CorrectTargetedRequest_descriptor.getNestedTypes().get(0);
+    internal_static_jervis_correction_CorrectTargetedRequest_UserCorrectedIndicesEntry_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_CorrectTargetedRequest_UserCorrectedIndicesEntry_descriptor,
+        new java.lang.String[] { "Key", "Value", });
+    internal_static_jervis_correction_DeleteCorrectionRequest_descriptor =
+      getDescriptor().getMessageTypes().get(17);
+    internal_static_jervis_correction_DeleteCorrectionRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_DeleteCorrectionRequest_descriptor,
+        new java.lang.String[] { "Ctx", "SourceUrn", });
+    internal_static_jervis_correction_DeleteCorrectionResponse_descriptor =
+      getDescriptor().getMessageTypes().get(18);
+    internal_static_jervis_correction_DeleteCorrectionResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_correction_DeleteCorrectionResponse_descriptor,
+        new java.lang.String[] { "Status", "ChunksDeleted", "NodesCleaned", "EdgesCleaned", "NodesDeleted", "EdgesDeleted", "Error", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

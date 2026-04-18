@@ -5,10 +5,9 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 /**
  * <pre>
  * VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
- * Replaces the former FastAPI /capture/&#42; and /ptz/&#42; routes exposed by
- * jervis-visual-capture. Kotlin server's ServerVisualCaptureGrpcImpl
- * forwards Snapshot/PtzGoto requests from the orchestrator through this
- * RPC instead of the retired REST surface.
+ * Fully-typed surface — no passthrough JSON. Kotlin server's
+ * ServerVisualCaptureGrpcImpl forwards Snapshot/PtzGoto requests from
+ * the orchestrator through this RPC.
  * </pre>
  */
 @javax.annotation.Generated(
@@ -23,28 +22,28 @@ public final class VisualCaptureServiceGrpc {
 
   // Static method descriptors that strictly reflect the proto.
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.SnapshotRequest,
-      com.jervis.contracts.visual_capture.RawJsonResponse> getSnapshotMethod;
+      com.jervis.contracts.visual_capture.SnapshotResponse> getSnapshotMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "Snapshot",
       requestType = com.jervis.contracts.visual_capture.SnapshotRequest.class,
-      responseType = com.jervis.contracts.visual_capture.RawJsonResponse.class,
+      responseType = com.jervis.contracts.visual_capture.SnapshotResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.SnapshotRequest,
-      com.jervis.contracts.visual_capture.RawJsonResponse> getSnapshotMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.SnapshotRequest, com.jervis.contracts.visual_capture.RawJsonResponse> getSnapshotMethod;
+      com.jervis.contracts.visual_capture.SnapshotResponse> getSnapshotMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.SnapshotRequest, com.jervis.contracts.visual_capture.SnapshotResponse> getSnapshotMethod;
     if ((getSnapshotMethod = VisualCaptureServiceGrpc.getSnapshotMethod) == null) {
       synchronized (VisualCaptureServiceGrpc.class) {
         if ((getSnapshotMethod = VisualCaptureServiceGrpc.getSnapshotMethod) == null) {
           VisualCaptureServiceGrpc.getSnapshotMethod = getSnapshotMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.visual_capture.SnapshotRequest, com.jervis.contracts.visual_capture.RawJsonResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.visual_capture.SnapshotRequest, com.jervis.contracts.visual_capture.SnapshotResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "Snapshot"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.visual_capture.SnapshotRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.visual_capture.RawJsonResponse.getDefaultInstance()))
+                  com.jervis.contracts.visual_capture.SnapshotResponse.getDefaultInstance()))
               .setSchemaDescriptor(new VisualCaptureServiceMethodDescriptorSupplier("Snapshot"))
               .build();
         }
@@ -54,28 +53,28 @@ public final class VisualCaptureServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.PtzGotoRequest,
-      com.jervis.contracts.visual_capture.RawJsonResponse> getPtzGotoMethod;
+      com.jervis.contracts.visual_capture.PtzGotoResponse> getPtzGotoMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "PtzGoto",
       requestType = com.jervis.contracts.visual_capture.PtzGotoRequest.class,
-      responseType = com.jervis.contracts.visual_capture.RawJsonResponse.class,
+      responseType = com.jervis.contracts.visual_capture.PtzGotoResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.PtzGotoRequest,
-      com.jervis.contracts.visual_capture.RawJsonResponse> getPtzGotoMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.PtzGotoRequest, com.jervis.contracts.visual_capture.RawJsonResponse> getPtzGotoMethod;
+      com.jervis.contracts.visual_capture.PtzGotoResponse> getPtzGotoMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.PtzGotoRequest, com.jervis.contracts.visual_capture.PtzGotoResponse> getPtzGotoMethod;
     if ((getPtzGotoMethod = VisualCaptureServiceGrpc.getPtzGotoMethod) == null) {
       synchronized (VisualCaptureServiceGrpc.class) {
         if ((getPtzGotoMethod = VisualCaptureServiceGrpc.getPtzGotoMethod) == null) {
           VisualCaptureServiceGrpc.getPtzGotoMethod = getPtzGotoMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.visual_capture.PtzGotoRequest, com.jervis.contracts.visual_capture.RawJsonResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.visual_capture.PtzGotoRequest, com.jervis.contracts.visual_capture.PtzGotoResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "PtzGoto"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.visual_capture.PtzGotoRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.visual_capture.RawJsonResponse.getDefaultInstance()))
+                  com.jervis.contracts.visual_capture.PtzGotoResponse.getDefaultInstance()))
               .setSchemaDescriptor(new VisualCaptureServiceMethodDescriptorSupplier("PtzGoto"))
               .build();
         }
@@ -85,28 +84,28 @@ public final class VisualCaptureServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.PtzPresetsRequest,
-      com.jervis.contracts.visual_capture.RawJsonResponse> getPtzPresetsMethod;
+      com.jervis.contracts.visual_capture.PtzPresetsResponse> getPtzPresetsMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "PtzPresets",
       requestType = com.jervis.contracts.visual_capture.PtzPresetsRequest.class,
-      responseType = com.jervis.contracts.visual_capture.RawJsonResponse.class,
+      responseType = com.jervis.contracts.visual_capture.PtzPresetsResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.PtzPresetsRequest,
-      com.jervis.contracts.visual_capture.RawJsonResponse> getPtzPresetsMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.PtzPresetsRequest, com.jervis.contracts.visual_capture.RawJsonResponse> getPtzPresetsMethod;
+      com.jervis.contracts.visual_capture.PtzPresetsResponse> getPtzPresetsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.visual_capture.PtzPresetsRequest, com.jervis.contracts.visual_capture.PtzPresetsResponse> getPtzPresetsMethod;
     if ((getPtzPresetsMethod = VisualCaptureServiceGrpc.getPtzPresetsMethod) == null) {
       synchronized (VisualCaptureServiceGrpc.class) {
         if ((getPtzPresetsMethod = VisualCaptureServiceGrpc.getPtzPresetsMethod) == null) {
           VisualCaptureServiceGrpc.getPtzPresetsMethod = getPtzPresetsMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.visual_capture.PtzPresetsRequest, com.jervis.contracts.visual_capture.RawJsonResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.visual_capture.PtzPresetsRequest, com.jervis.contracts.visual_capture.PtzPresetsResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "PtzPresets"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.visual_capture.PtzPresetsRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.visual_capture.RawJsonResponse.getDefaultInstance()))
+                  com.jervis.contracts.visual_capture.PtzPresetsResponse.getDefaultInstance()))
               .setSchemaDescriptor(new VisualCaptureServiceMethodDescriptorSupplier("PtzPresets"))
               .build();
         }
@@ -162,10 +161,9 @@ public final class VisualCaptureServiceGrpc {
   /**
    * <pre>
    * VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
-   * Replaces the former FastAPI /capture/&#42; and /ptz/&#42; routes exposed by
-   * jervis-visual-capture. Kotlin server's ServerVisualCaptureGrpcImpl
-   * forwards Snapshot/PtzGoto requests from the orchestrator through this
-   * RPC instead of the retired REST surface.
+   * Fully-typed surface — no passthrough JSON. Kotlin server's
+   * ServerVisualCaptureGrpcImpl forwards Snapshot/PtzGoto requests from
+   * the orchestrator through this RPC.
    * </pre>
    */
   public interface AsyncService {
@@ -173,21 +171,21 @@ public final class VisualCaptureServiceGrpc {
     /**
      */
     default void snapshot(com.jervis.contracts.visual_capture.SnapshotRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.RawJsonResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.SnapshotResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSnapshotMethod(), responseObserver);
     }
 
     /**
      */
     default void ptzGoto(com.jervis.contracts.visual_capture.PtzGotoRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.RawJsonResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.PtzGotoResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getPtzGotoMethod(), responseObserver);
     }
 
     /**
      */
     default void ptzPresets(com.jervis.contracts.visual_capture.PtzPresetsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.RawJsonResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.PtzPresetsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getPtzPresetsMethod(), responseObserver);
     }
   }
@@ -196,10 +194,9 @@ public final class VisualCaptureServiceGrpc {
    * Base class for the server implementation of the service VisualCaptureService.
    * <pre>
    * VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
-   * Replaces the former FastAPI /capture/&#42; and /ptz/&#42; routes exposed by
-   * jervis-visual-capture. Kotlin server's ServerVisualCaptureGrpcImpl
-   * forwards Snapshot/PtzGoto requests from the orchestrator through this
-   * RPC instead of the retired REST surface.
+   * Fully-typed surface — no passthrough JSON. Kotlin server's
+   * ServerVisualCaptureGrpcImpl forwards Snapshot/PtzGoto requests from
+   * the orchestrator through this RPC.
    * </pre>
    */
   public static abstract class VisualCaptureServiceImplBase
@@ -214,10 +211,9 @@ public final class VisualCaptureServiceGrpc {
    * A stub to allow clients to do asynchronous rpc calls to service VisualCaptureService.
    * <pre>
    * VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
-   * Replaces the former FastAPI /capture/&#42; and /ptz/&#42; routes exposed by
-   * jervis-visual-capture. Kotlin server's ServerVisualCaptureGrpcImpl
-   * forwards Snapshot/PtzGoto requests from the orchestrator through this
-   * RPC instead of the retired REST surface.
+   * Fully-typed surface — no passthrough JSON. Kotlin server's
+   * ServerVisualCaptureGrpcImpl forwards Snapshot/PtzGoto requests from
+   * the orchestrator through this RPC.
    * </pre>
    */
   public static final class VisualCaptureServiceStub
@@ -236,7 +232,7 @@ public final class VisualCaptureServiceGrpc {
     /**
      */
     public void snapshot(com.jervis.contracts.visual_capture.SnapshotRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.RawJsonResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.SnapshotResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getSnapshotMethod(), getCallOptions()), request, responseObserver);
     }
@@ -244,7 +240,7 @@ public final class VisualCaptureServiceGrpc {
     /**
      */
     public void ptzGoto(com.jervis.contracts.visual_capture.PtzGotoRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.RawJsonResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.PtzGotoResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getPtzGotoMethod(), getCallOptions()), request, responseObserver);
     }
@@ -252,7 +248,7 @@ public final class VisualCaptureServiceGrpc {
     /**
      */
     public void ptzPresets(com.jervis.contracts.visual_capture.PtzPresetsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.RawJsonResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.PtzPresetsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getPtzPresetsMethod(), getCallOptions()), request, responseObserver);
     }
@@ -262,10 +258,9 @@ public final class VisualCaptureServiceGrpc {
    * A stub to allow clients to do synchronous rpc calls to service VisualCaptureService.
    * <pre>
    * VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
-   * Replaces the former FastAPI /capture/&#42; and /ptz/&#42; routes exposed by
-   * jervis-visual-capture. Kotlin server's ServerVisualCaptureGrpcImpl
-   * forwards Snapshot/PtzGoto requests from the orchestrator through this
-   * RPC instead of the retired REST surface.
+   * Fully-typed surface — no passthrough JSON. Kotlin server's
+   * ServerVisualCaptureGrpcImpl forwards Snapshot/PtzGoto requests from
+   * the orchestrator through this RPC.
    * </pre>
    */
   public static final class VisualCaptureServiceBlockingStub
@@ -283,21 +278,21 @@ public final class VisualCaptureServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.visual_capture.RawJsonResponse snapshot(com.jervis.contracts.visual_capture.SnapshotRequest request) {
+    public com.jervis.contracts.visual_capture.SnapshotResponse snapshot(com.jervis.contracts.visual_capture.SnapshotRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getSnapshotMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.visual_capture.RawJsonResponse ptzGoto(com.jervis.contracts.visual_capture.PtzGotoRequest request) {
+    public com.jervis.contracts.visual_capture.PtzGotoResponse ptzGoto(com.jervis.contracts.visual_capture.PtzGotoRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getPtzGotoMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.visual_capture.RawJsonResponse ptzPresets(com.jervis.contracts.visual_capture.PtzPresetsRequest request) {
+    public com.jervis.contracts.visual_capture.PtzPresetsResponse ptzPresets(com.jervis.contracts.visual_capture.PtzPresetsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getPtzPresetsMethod(), getCallOptions(), request);
     }
@@ -307,10 +302,9 @@ public final class VisualCaptureServiceGrpc {
    * A stub to allow clients to do ListenableFuture-style rpc calls to service VisualCaptureService.
    * <pre>
    * VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
-   * Replaces the former FastAPI /capture/&#42; and /ptz/&#42; routes exposed by
-   * jervis-visual-capture. Kotlin server's ServerVisualCaptureGrpcImpl
-   * forwards Snapshot/PtzGoto requests from the orchestrator through this
-   * RPC instead of the retired REST surface.
+   * Fully-typed surface — no passthrough JSON. Kotlin server's
+   * ServerVisualCaptureGrpcImpl forwards Snapshot/PtzGoto requests from
+   * the orchestrator through this RPC.
    * </pre>
    */
   public static final class VisualCaptureServiceFutureStub
@@ -328,7 +322,7 @@ public final class VisualCaptureServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.visual_capture.RawJsonResponse> snapshot(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.visual_capture.SnapshotResponse> snapshot(
         com.jervis.contracts.visual_capture.SnapshotRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getSnapshotMethod(), getCallOptions()), request);
@@ -336,7 +330,7 @@ public final class VisualCaptureServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.visual_capture.RawJsonResponse> ptzGoto(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.visual_capture.PtzGotoResponse> ptzGoto(
         com.jervis.contracts.visual_capture.PtzGotoRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getPtzGotoMethod(), getCallOptions()), request);
@@ -344,7 +338,7 @@ public final class VisualCaptureServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.visual_capture.RawJsonResponse> ptzPresets(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.visual_capture.PtzPresetsResponse> ptzPresets(
         com.jervis.contracts.visual_capture.PtzPresetsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getPtzPresetsMethod(), getCallOptions()), request);
@@ -374,15 +368,15 @@ public final class VisualCaptureServiceGrpc {
       switch (methodId) {
         case METHODID_SNAPSHOT:
           serviceImpl.snapshot((com.jervis.contracts.visual_capture.SnapshotRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.RawJsonResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.SnapshotResponse>) responseObserver);
           break;
         case METHODID_PTZ_GOTO:
           serviceImpl.ptzGoto((com.jervis.contracts.visual_capture.PtzGotoRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.RawJsonResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.PtzGotoResponse>) responseObserver);
           break;
         case METHODID_PTZ_PRESETS:
           serviceImpl.ptzPresets((com.jervis.contracts.visual_capture.PtzPresetsRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.RawJsonResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.visual_capture.PtzPresetsResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -407,21 +401,21 @@ public final class VisualCaptureServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.visual_capture.SnapshotRequest,
-              com.jervis.contracts.visual_capture.RawJsonResponse>(
+              com.jervis.contracts.visual_capture.SnapshotResponse>(
                 service, METHODID_SNAPSHOT)))
         .addMethod(
           getPtzGotoMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.visual_capture.PtzGotoRequest,
-              com.jervis.contracts.visual_capture.RawJsonResponse>(
+              com.jervis.contracts.visual_capture.PtzGotoResponse>(
                 service, METHODID_PTZ_GOTO)))
         .addMethod(
           getPtzPresetsMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.visual_capture.PtzPresetsRequest,
-              com.jervis.contracts.visual_capture.RawJsonResponse>(
+              com.jervis.contracts.visual_capture.PtzPresetsResponse>(
                 service, METHODID_PTZ_PRESETS)))
         .build();
   }

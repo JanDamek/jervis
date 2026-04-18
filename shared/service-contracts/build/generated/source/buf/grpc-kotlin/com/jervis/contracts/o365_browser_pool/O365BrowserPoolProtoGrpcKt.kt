@@ -33,37 +33,29 @@ public object O365BrowserPoolServiceGrpcKt {
   public val serviceDescriptor: ServiceDescriptor
     get() = getServiceDescriptor()
 
-  public val healthMethod: MethodDescriptor<HealthRequest, RawResponse>
+  public val healthMethod: MethodDescriptor<HealthRequest, HealthResponse>
     @JvmStatic
     get() = O365BrowserPoolServiceGrpc.getHealthMethod()
 
-  public val sessionStatusMethod: MethodDescriptor<PodRequest, RawResponse>
+  public val getSessionMethod: MethodDescriptor<SessionRef, SessionStatus>
     @JvmStatic
-    get() = O365BrowserPoolServiceGrpc.getSessionStatusMethod()
+    get() = O365BrowserPoolServiceGrpc.getGetSessionMethod()
 
-  public val sessionInitMethod: MethodDescriptor<PodRequest, RawResponse>
+  public val initSessionMethod: MethodDescriptor<InitSessionRequest, InitSessionResponse>
     @JvmStatic
-    get() = O365BrowserPoolServiceGrpc.getSessionInitMethod()
+    get() = O365BrowserPoolServiceGrpc.getInitSessionMethod()
 
-  public val sessionMfaMethod: MethodDescriptor<PodRequest, RawResponse>
+  public val submitMfaMethod: MethodDescriptor<SubmitMfaRequest, InitSessionResponse>
     @JvmStatic
-    get() = O365BrowserPoolServiceGrpc.getSessionMfaMethod()
+    get() = O365BrowserPoolServiceGrpc.getSubmitMfaMethod()
 
-  public val sessionRediscoverMethod: MethodDescriptor<PodRequest, RawResponse>
+  public val createVncTokenMethod: MethodDescriptor<SessionRef, VncTokenResponse>
     @JvmStatic
-    get() = O365BrowserPoolServiceGrpc.getSessionRediscoverMethod()
+    get() = O365BrowserPoolServiceGrpc.getCreateVncTokenMethod()
 
-  public val scrapeDiscoverMethod: MethodDescriptor<PodRequest, RawResponse>
+  public val pushInstructionMethod: MethodDescriptor<InstructionRequest, InstructionResponse>
     @JvmStatic
-    get() = O365BrowserPoolServiceGrpc.getScrapeDiscoverMethod()
-
-  public val vncTokenMethod: MethodDescriptor<PodRequest, RawResponse>
-    @JvmStatic
-    get() = O365BrowserPoolServiceGrpc.getVncTokenMethod()
-
-  public val sendInstructionMethod: MethodDescriptor<PodRequest, RawResponse>
-    @JvmStatic
-    get() = O365BrowserPoolServiceGrpc.getSendInstructionMethod()
+    get() = O365BrowserPoolServiceGrpc.getPushInstructionMethod()
 
   /**
    * A stub for issuing RPCs to a(n) jervis.o365_browser_pool.O365BrowserPoolService service as
@@ -91,8 +83,8 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun health(request: HealthRequest, headers: Metadata = Metadata()): RawResponse =
-        unaryRpc(
+    public suspend fun health(request: HealthRequest, headers: Metadata = Metadata()):
+        HealthResponse = unaryRpc(
       channel,
       O365BrowserPoolServiceGrpc.getHealthMethod(),
       request,
@@ -113,10 +105,10 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun sessionStatus(request: PodRequest, headers: Metadata = Metadata()):
-        RawResponse = unaryRpc(
+    public suspend fun getSession(request: SessionRef, headers: Metadata = Metadata()):
+        SessionStatus = unaryRpc(
       channel,
-      O365BrowserPoolServiceGrpc.getSessionStatusMethod(),
+      O365BrowserPoolServiceGrpc.getGetSessionMethod(),
       request,
       callOptions,
       headers
@@ -135,10 +127,10 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun sessionInit(request: PodRequest, headers: Metadata = Metadata()): RawResponse
-        = unaryRpc(
+    public suspend fun initSession(request: InitSessionRequest, headers: Metadata = Metadata()):
+        InitSessionResponse = unaryRpc(
       channel,
-      O365BrowserPoolServiceGrpc.getSessionInitMethod(),
+      O365BrowserPoolServiceGrpc.getInitSessionMethod(),
       request,
       callOptions,
       headers
@@ -157,10 +149,10 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun sessionMfa(request: PodRequest, headers: Metadata = Metadata()): RawResponse
-        = unaryRpc(
+    public suspend fun submitMfa(request: SubmitMfaRequest, headers: Metadata = Metadata()):
+        InitSessionResponse = unaryRpc(
       channel,
-      O365BrowserPoolServiceGrpc.getSessionMfaMethod(),
+      O365BrowserPoolServiceGrpc.getSubmitMfaMethod(),
       request,
       callOptions,
       headers
@@ -179,10 +171,10 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun sessionRediscover(request: PodRequest, headers: Metadata = Metadata()):
-        RawResponse = unaryRpc(
+    public suspend fun createVncToken(request: SessionRef, headers: Metadata = Metadata()):
+        VncTokenResponse = unaryRpc(
       channel,
-      O365BrowserPoolServiceGrpc.getSessionRediscoverMethod(),
+      O365BrowserPoolServiceGrpc.getCreateVncTokenMethod(),
       request,
       callOptions,
       headers
@@ -201,54 +193,10 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun scrapeDiscover(request: PodRequest, headers: Metadata = Metadata()):
-        RawResponse = unaryRpc(
+    public suspend fun pushInstruction(request: InstructionRequest, headers: Metadata = Metadata()):
+        InstructionResponse = unaryRpc(
       channel,
-      O365BrowserPoolServiceGrpc.getScrapeDiscoverMethod(),
-      request,
-      callOptions,
-      headers
-    )
-
-    /**
-     * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
-     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
-     * with the corresponding exception as a cause.
-     *
-     * @param request The request message to send to the server.
-     *
-     * @param headers Metadata to attach to the request.  Most users will not need this.
-     *
-     * @return The single response from the server.
-     */
-    public suspend fun vncToken(request: PodRequest, headers: Metadata = Metadata()): RawResponse =
-        unaryRpc(
-      channel,
-      O365BrowserPoolServiceGrpc.getVncTokenMethod(),
-      request,
-      callOptions,
-      headers
-    )
-
-    /**
-     * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
-     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
-     * with the corresponding exception as a cause.
-     *
-     * @param request The request message to send to the server.
-     *
-     * @param headers Metadata to attach to the request.  Most users will not need this.
-     *
-     * @return The single response from the server.
-     */
-    public suspend fun sendInstruction(request: PodRequest, headers: Metadata = Metadata()):
-        RawResponse = unaryRpc(
-      channel,
-      O365BrowserPoolServiceGrpc.getSendInstructionMethod(),
+      O365BrowserPoolServiceGrpc.getPushInstructionMethod(),
       request,
       callOptions,
       headers
@@ -273,12 +221,12 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun health(request: HealthRequest): RawResponse = throw
+    public open suspend fun health(request: HealthRequest): HealthResponse = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.Health is unimplemented"))
 
     /**
      * Returns the response to an RPC for
-     * jervis.o365_browser_pool.O365BrowserPoolService.SessionStatus.
+     * jervis.o365_browser_pool.O365BrowserPoolService.GetSession.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
      * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
@@ -288,12 +236,12 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun sessionStatus(request: PodRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.SessionStatus is unimplemented"))
+    public open suspend fun getSession(request: SessionRef): SessionStatus = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.GetSession is unimplemented"))
 
     /**
      * Returns the response to an RPC for
-     * jervis.o365_browser_pool.O365BrowserPoolService.SessionInit.
+     * jervis.o365_browser_pool.O365BrowserPoolService.InitSession.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
      * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
@@ -303,12 +251,26 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun sessionInit(request: PodRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.SessionInit is unimplemented"))
+    public open suspend fun initSession(request: InitSessionRequest): InitSessionResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.InitSession is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.o365_browser_pool.O365BrowserPoolService.SubmitMfa.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun submitMfa(request: SubmitMfaRequest): InitSessionResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.SubmitMfa is unimplemented"))
 
     /**
      * Returns the response to an RPC for
-     * jervis.o365_browser_pool.O365BrowserPoolService.SessionMfa.
+     * jervis.o365_browser_pool.O365BrowserPoolService.CreateVncToken.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
      * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
@@ -318,12 +280,12 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun sessionMfa(request: PodRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.SessionMfa is unimplemented"))
+    public open suspend fun createVncToken(request: SessionRef): VncTokenResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.CreateVncToken is unimplemented"))
 
     /**
      * Returns the response to an RPC for
-     * jervis.o365_browser_pool.O365BrowserPoolService.SessionRediscover.
+     * jervis.o365_browser_pool.O365BrowserPoolService.PushInstruction.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
      * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
@@ -333,52 +295,9 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun sessionRediscover(request: PodRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.SessionRediscover is unimplemented"))
-
-    /**
-     * Returns the response to an RPC for
-     * jervis.o365_browser_pool.O365BrowserPoolService.ScrapeDiscover.
-     *
-     * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
-     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
-     * fail with `Status.UNKNOWN` with the exception as a cause.
-     *
-     * @param request The request from the client.
-     */
-    public open suspend fun scrapeDiscover(request: PodRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.ScrapeDiscover is unimplemented"))
-
-    /**
-     * Returns the response to an RPC for jervis.o365_browser_pool.O365BrowserPoolService.VncToken.
-     *
-     * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
-     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
-     * fail with `Status.UNKNOWN` with the exception as a cause.
-     *
-     * @param request The request from the client.
-     */
-    public open suspend fun vncToken(request: PodRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.VncToken is unimplemented"))
-
-    /**
-     * Returns the response to an RPC for
-     * jervis.o365_browser_pool.O365BrowserPoolService.SendInstruction.
-     *
-     * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
-     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
-     * fail with `Status.UNKNOWN` with the exception as a cause.
-     *
-     * @param request The request from the client.
-     */
-    public open suspend fun sendInstruction(request: PodRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.SendInstruction is unimplemented"))
+    public open suspend fun pushInstruction(request: InstructionRequest): InstructionResponse =
+        throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.PushInstruction is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
@@ -388,38 +307,28 @@ public object O365BrowserPoolServiceGrpcKt {
     ))
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
-      descriptor = O365BrowserPoolServiceGrpc.getSessionStatusMethod(),
-      implementation = ::sessionStatus
+      descriptor = O365BrowserPoolServiceGrpc.getGetSessionMethod(),
+      implementation = ::getSession
     ))
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
-      descriptor = O365BrowserPoolServiceGrpc.getSessionInitMethod(),
-      implementation = ::sessionInit
+      descriptor = O365BrowserPoolServiceGrpc.getInitSessionMethod(),
+      implementation = ::initSession
     ))
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
-      descriptor = O365BrowserPoolServiceGrpc.getSessionMfaMethod(),
-      implementation = ::sessionMfa
+      descriptor = O365BrowserPoolServiceGrpc.getSubmitMfaMethod(),
+      implementation = ::submitMfa
     ))
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
-      descriptor = O365BrowserPoolServiceGrpc.getSessionRediscoverMethod(),
-      implementation = ::sessionRediscover
+      descriptor = O365BrowserPoolServiceGrpc.getCreateVncTokenMethod(),
+      implementation = ::createVncToken
     ))
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
-      descriptor = O365BrowserPoolServiceGrpc.getScrapeDiscoverMethod(),
-      implementation = ::scrapeDiscover
-    ))
-      .addMethod(unaryServerMethodDefinition(
-      context = this.context,
-      descriptor = O365BrowserPoolServiceGrpc.getVncTokenMethod(),
-      implementation = ::vncToken
-    ))
-      .addMethod(unaryServerMethodDefinition(
-      context = this.context,
-      descriptor = O365BrowserPoolServiceGrpc.getSendInstructionMethod(),
-      implementation = ::sendInstruction
+      descriptor = O365BrowserPoolServiceGrpc.getPushInstructionMethod(),
+      implementation = ::pushInstruction
     )).build()
   }
 }

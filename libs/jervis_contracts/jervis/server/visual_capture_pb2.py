@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\"jervis/server/visual_capture.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"\xc5\x01\n\x13VisualResultRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nmeeting_id\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x04 \x01(\t\x12\x10\n\x08ocr_text\x18\x05 \x01(\t\x12\x13\n\x0bpreset_name\x18\x06 \x01(\t\x12\x15\n\rtimestamp_iso\x18\x07 \x01(\t\x12\r\n\x05model\x18\x08 \x01(\t\"\"\n\x14VisualResultResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\"S\n\x0fSnapshotRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x14\n\x0crequest_json\x18\x02 \x01(\t\"N\n\nPtzRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x14\n\x0crequest_json\x18\x02 \x01(\t\"4\n\x0fRawJsonResponse\x12\x11\n\tbody_json\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\x05\x32\x81\x02\n\x1aServerVisualCaptureService\x12U\n\nPostResult\x12\".jervis.server.VisualResultRequest\x1a#.jervis.server.VisualResultResponse\x12J\n\x08Snapshot\x12\x1e.jervis.server.SnapshotRequest\x1a\x1e.jervis.server.RawJsonResponse\x12@\n\x03Ptz\x12\x19.jervis.server.PtzRequest\x1a\x1e.jervis.server.RawJsonResponseB9\n\x1b\x63om.jervis.contracts.serverB\x18ServerVisualCaptureProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\"jervis/server/visual_capture.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"\xc5\x01\n\x13VisualResultRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nmeeting_id\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x04 \x01(\t\x12\x10\n\x08ocr_text\x18\x05 \x01(\t\x12\x13\n\x0bpreset_name\x18\x06 \x01(\t\x12\x15\n\rtimestamp_iso\x18\x07 \x01(\t\x12\r\n\x05model\x18\x08 \x01(\t\"\"\n\x14VisualResultResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\"w\n\x14ProxySnapshotRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0c\n\x04mode\x18\x02 \x01(\t\x12\x0e\n\x06preset\x18\x03 \x01(\t\x12\x15\n\rcustom_prompt\x18\x04 \x01(\t\"\xa7\x01\n\x15ProxySnapshotResponse\x12\x13\n\x0b\x64\x65scription\x18\x01 \x01(\t\x12\x10\n\x08ocr_text\x18\x02 \x01(\t\x12\x0c\n\x04mode\x18\x03 \x01(\t\x12\r\n\x05model\x18\x04 \x01(\t\x12\x18\n\x10\x66rame_size_bytes\x18\x05 \x01(\x03\x12\x11\n\ttimestamp\x18\x06 \x01(\t\x12\x0e\n\x06preset\x18\x07 \x01(\t\x12\r\n\x05\x65rror\x18\x08 \x01(\t\"M\n\x0fProxyPtzRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0e\n\x06preset\x18\x02 \x01(\t\"A\n\x10ProxyPtzResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0e\n\x06preset\x18\x02 \x01(\t\x12\r\n\x05\x65rror\x18\x03 \x01(\t2\x92\x02\n\x1aServerVisualCaptureService\x12U\n\nPostResult\x12\".jervis.server.VisualResultRequest\x1a#.jervis.server.VisualResultResponse\x12U\n\x08Snapshot\x12#.jervis.server.ProxySnapshotRequest\x1a$.jervis.server.ProxySnapshotResponse\x12\x46\n\x03Ptz\x12\x1e.jervis.server.ProxyPtzRequest\x1a\x1f.jervis.server.ProxyPtzResponseB9\n\x1b\x63om.jervis.contracts.serverB\x18ServerVisualCaptureProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -37,12 +37,14 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_VISUALRESULTREQUEST']._serialized_end=278
   _globals['_VISUALRESULTRESPONSE']._serialized_start=280
   _globals['_VISUALRESULTRESPONSE']._serialized_end=314
-  _globals['_SNAPSHOTREQUEST']._serialized_start=316
-  _globals['_SNAPSHOTREQUEST']._serialized_end=399
-  _globals['_PTZREQUEST']._serialized_start=401
-  _globals['_PTZREQUEST']._serialized_end=479
-  _globals['_RAWJSONRESPONSE']._serialized_start=481
-  _globals['_RAWJSONRESPONSE']._serialized_end=533
-  _globals['_SERVERVISUALCAPTURESERVICE']._serialized_start=536
-  _globals['_SERVERVISUALCAPTURESERVICE']._serialized_end=793
+  _globals['_PROXYSNAPSHOTREQUEST']._serialized_start=316
+  _globals['_PROXYSNAPSHOTREQUEST']._serialized_end=435
+  _globals['_PROXYSNAPSHOTRESPONSE']._serialized_start=438
+  _globals['_PROXYSNAPSHOTRESPONSE']._serialized_end=605
+  _globals['_PROXYPTZREQUEST']._serialized_start=607
+  _globals['_PROXYPTZREQUEST']._serialized_end=684
+  _globals['_PROXYPTZRESPONSE']._serialized_start=686
+  _globals['_PROXYPTZRESPONSE']._serialized_end=751
+  _globals['_SERVERVISUALCAPTURESERVICE']._serialized_start=754
+  _globals['_SERVERVISUALCAPTURESERVICE']._serialized_end=1028
 # @@protoc_insertion_point(module_scope)

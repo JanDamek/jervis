@@ -32,20 +32,30 @@ public final class VisualCaptureProto extends com.google.protobuf.GeneratedFile 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_visual_capture_SnapshotRequest_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_visual_capture_SnapshotResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_visual_capture_SnapshotResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_visual_capture_PtzGotoRequest_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_visual_capture_PtzGotoRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_visual_capture_PtzGotoResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_visual_capture_PtzGotoResponse_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_visual_capture_PtzPresetsRequest_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_visual_capture_PtzPresetsRequest_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_visual_capture_RawJsonResponse_descriptor;
+    internal_static_jervis_visual_capture_PtzPresetsResponse_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_visual_capture_RawJsonResponse_fieldAccessorTable;
+      internal_static_jervis_visual_capture_PtzPresetsResponse_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -57,23 +67,29 @@ public final class VisualCaptureProto extends com.google.protobuf.GeneratedFile 
     java.lang.String[] descriptorData = {
       "\n#jervis/visual_capture/capture.proto\022\025j" +
       "ervis.visual_capture\032\031jervis/common/type" +
-      "s.proto\"S\n\017SnapshotRequest\022*\n\003ctx\030\001 \001(\0132" +
-      "\035.jervis.common.RequestContext\022\024\n\014reques" +
-      "t_json\030\002 \001(\t\"R\n\016PtzGotoRequest\022*\n\003ctx\030\001 " +
-      "\001(\0132\035.jervis.common.RequestContext\022\024\n\014re" +
-      "quest_json\030\002 \001(\t\"?\n\021PtzPresetsRequest\022*\n" +
-      "\003ctx\030\001 \001(\0132\035.jervis.common.RequestContex" +
-      "t\"4\n\017RawJsonResponse\022\016\n\006status\030\001 \001(\005\022\021\n\t" +
-      "body_json\030\002 \001(\t2\254\002\n\024VisualCaptureService" +
-      "\022Z\n\010Snapshot\022&.jervis.visual_capture.Sna" +
-      "pshotRequest\032&.jervis.visual_capture.Raw" +
-      "JsonResponse\022X\n\007PtzGoto\022%.jervis.visual_" +
-      "capture.PtzGotoRequest\032&.jervis.visual_c" +
-      "apture.RawJsonResponse\022^\n\nPtzPresets\022(.j" +
-      "ervis.visual_capture.PtzPresetsRequest\032&" +
-      ".jervis.visual_capture.RawJsonResponseB;" +
-      "\n#com.jervis.contracts.visual_captureB\022V" +
-      "isualCaptureProtoP\001b\006proto3"
+      "s.proto\"r\n\017SnapshotRequest\022*\n\003ctx\030\001 \001(\0132" +
+      "\035.jervis.common.RequestContext\022\014\n\004mode\030\002" +
+      " \001(\t\022\016\n\006preset\030\003 \001(\t\022\025\n\rcustom_prompt\030\004 " +
+      "\001(\t\"\242\001\n\020SnapshotResponse\022\023\n\013description\030" +
+      "\001 \001(\t\022\020\n\010ocr_text\030\002 \001(\t\022\014\n\004mode\030\003 \001(\t\022\r\n" +
+      "\005model\030\004 \001(\t\022\030\n\020frame_size_bytes\030\005 \001(\003\022\021" +
+      "\n\ttimestamp\030\006 \001(\t\022\016\n\006preset\030\007 \001(\t\022\r\n\005err" +
+      "or\030\010 \001(\t\"L\n\016PtzGotoRequest\022*\n\003ctx\030\001 \001(\0132" +
+      "\035.jervis.common.RequestContext\022\016\n\006preset" +
+      "\030\002 \001(\t\"@\n\017PtzGotoResponse\022\016\n\006status\030\001 \001(" +
+      "\t\022\016\n\006preset\030\002 \001(\t\022\r\n\005error\030\003 \001(\t\"?\n\021PtzP" +
+      "resetsRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.comm" +
+      "on.RequestContext\"%\n\022PtzPresetsResponse\022" +
+      "\017\n\007presets\030\001 \003(\t2\260\002\n\024VisualCaptureServic" +
+      "e\022[\n\010Snapshot\022&.jervis.visual_capture.Sn" +
+      "apshotRequest\032\'.jervis.visual_capture.Sn" +
+      "apshotResponse\022X\n\007PtzGoto\022%.jervis.visua" +
+      "l_capture.PtzGotoRequest\032&.jervis.visual" +
+      "_capture.PtzGotoResponse\022a\n\nPtzPresets\022(" +
+      ".jervis.visual_capture.PtzPresetsRequest" +
+      "\032).jervis.visual_capture.PtzPresetsRespo" +
+      "nseB;\n#com.jervis.contracts.visual_captu" +
+      "reB\022VisualCaptureProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -85,25 +101,37 @@ public final class VisualCaptureProto extends com.google.protobuf.GeneratedFile 
     internal_static_jervis_visual_capture_SnapshotRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_visual_capture_SnapshotRequest_descriptor,
-        new java.lang.String[] { "Ctx", "RequestJson", });
-    internal_static_jervis_visual_capture_PtzGotoRequest_descriptor =
+        new java.lang.String[] { "Ctx", "Mode", "Preset", "CustomPrompt", });
+    internal_static_jervis_visual_capture_SnapshotResponse_descriptor =
       getDescriptor().getMessageTypes().get(1);
+    internal_static_jervis_visual_capture_SnapshotResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_visual_capture_SnapshotResponse_descriptor,
+        new java.lang.String[] { "Description", "OcrText", "Mode", "Model", "FrameSizeBytes", "Timestamp", "Preset", "Error", });
+    internal_static_jervis_visual_capture_PtzGotoRequest_descriptor =
+      getDescriptor().getMessageTypes().get(2);
     internal_static_jervis_visual_capture_PtzGotoRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_visual_capture_PtzGotoRequest_descriptor,
-        new java.lang.String[] { "Ctx", "RequestJson", });
+        new java.lang.String[] { "Ctx", "Preset", });
+    internal_static_jervis_visual_capture_PtzGotoResponse_descriptor =
+      getDescriptor().getMessageTypes().get(3);
+    internal_static_jervis_visual_capture_PtzGotoResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_visual_capture_PtzGotoResponse_descriptor,
+        new java.lang.String[] { "Status", "Preset", "Error", });
     internal_static_jervis_visual_capture_PtzPresetsRequest_descriptor =
-      getDescriptor().getMessageTypes().get(2);
+      getDescriptor().getMessageTypes().get(4);
     internal_static_jervis_visual_capture_PtzPresetsRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_visual_capture_PtzPresetsRequest_descriptor,
         new java.lang.String[] { "Ctx", });
-    internal_static_jervis_visual_capture_RawJsonResponse_descriptor =
-      getDescriptor().getMessageTypes().get(3);
-    internal_static_jervis_visual_capture_RawJsonResponse_fieldAccessorTable = new
+    internal_static_jervis_visual_capture_PtzPresetsResponse_descriptor =
+      getDescriptor().getMessageTypes().get(5);
+    internal_static_jervis_visual_capture_PtzPresetsResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_visual_capture_RawJsonResponse_descriptor,
-        new java.lang.String[] { "Status", "BodyJson", });
+        internal_static_jervis_visual_capture_PtzPresetsResponse_descriptor,
+        new java.lang.String[] { "Presets", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

@@ -30,8 +30,8 @@ class ServerVisualCaptureServiceStub(object):
     `service-visual-capture` K8s pod. The pod pushes VLM analysis results
     here (scene/whiteboard/screen OCR) and the server fans them into
     MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
-    proxy endpoints keep their dedicated RPCs so the Kotlin server remains
-    the single chokepoint between UI and the capture pod.
+    proxy RPCs are typed 1:1 with the downstream VisualCaptureService on
+    the capture pod.
     """
 
     def __init__(self, channel):
@@ -47,13 +47,13 @@ class ServerVisualCaptureServiceStub(object):
                 _registered_method=True)
         self.Snapshot = channel.unary_unary(
                 '/jervis.server.ServerVisualCaptureService/Snapshot',
-                request_serializer=jervis_dot_server_dot_visual__capture__pb2.SnapshotRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_visual__capture__pb2.RawJsonResponse.FromString,
+                request_serializer=jervis_dot_server_dot_visual__capture__pb2.ProxySnapshotRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_visual__capture__pb2.ProxySnapshotResponse.FromString,
                 _registered_method=True)
         self.Ptz = channel.unary_unary(
                 '/jervis.server.ServerVisualCaptureService/Ptz',
-                request_serializer=jervis_dot_server_dot_visual__capture__pb2.PtzRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_visual__capture__pb2.RawJsonResponse.FromString,
+                request_serializer=jervis_dot_server_dot_visual__capture__pb2.ProxyPtzRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_visual__capture__pb2.ProxyPtzResponse.FromString,
                 _registered_method=True)
 
 
@@ -62,8 +62,8 @@ class ServerVisualCaptureServiceServicer(object):
     `service-visual-capture` K8s pod. The pod pushes VLM analysis results
     here (scene/whiteboard/screen OCR) and the server fans them into
     MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
-    proxy endpoints keep their dedicated RPCs so the Kotlin server remains
-    the single chokepoint between UI and the capture pod.
+    proxy RPCs are typed 1:1 with the downstream VisualCaptureService on
+    the capture pod.
     """
 
     def PostResult(self, request, context):
@@ -94,13 +94,13 @@ def add_ServerVisualCaptureServiceServicer_to_server(servicer, server):
             ),
             'Snapshot': grpc.unary_unary_rpc_method_handler(
                     servicer.Snapshot,
-                    request_deserializer=jervis_dot_server_dot_visual__capture__pb2.SnapshotRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_visual__capture__pb2.RawJsonResponse.SerializeToString,
+                    request_deserializer=jervis_dot_server_dot_visual__capture__pb2.ProxySnapshotRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_visual__capture__pb2.ProxySnapshotResponse.SerializeToString,
             ),
             'Ptz': grpc.unary_unary_rpc_method_handler(
                     servicer.Ptz,
-                    request_deserializer=jervis_dot_server_dot_visual__capture__pb2.PtzRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_visual__capture__pb2.RawJsonResponse.SerializeToString,
+                    request_deserializer=jervis_dot_server_dot_visual__capture__pb2.ProxyPtzRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_visual__capture__pb2.ProxyPtzResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -115,8 +115,8 @@ class ServerVisualCaptureService(object):
     `service-visual-capture` K8s pod. The pod pushes VLM analysis results
     here (scene/whiteboard/screen OCR) and the server fans them into
     MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
-    proxy endpoints keep their dedicated RPCs so the Kotlin server remains
-    the single chokepoint between UI and the capture pod.
+    proxy RPCs are typed 1:1 with the downstream VisualCaptureService on
+    the capture pod.
     """
 
     @staticmethod
@@ -161,8 +161,8 @@ class ServerVisualCaptureService(object):
             request,
             target,
             '/jervis.server.ServerVisualCaptureService/Snapshot',
-            jervis_dot_server_dot_visual__capture__pb2.SnapshotRequest.SerializeToString,
-            jervis_dot_server_dot_visual__capture__pb2.RawJsonResponse.FromString,
+            jervis_dot_server_dot_visual__capture__pb2.ProxySnapshotRequest.SerializeToString,
+            jervis_dot_server_dot_visual__capture__pb2.ProxySnapshotResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -188,8 +188,8 @@ class ServerVisualCaptureService(object):
             request,
             target,
             '/jervis.server.ServerVisualCaptureService/Ptz',
-            jervis_dot_server_dot_visual__capture__pb2.PtzRequest.SerializeToString,
-            jervis_dot_server_dot_visual__capture__pb2.RawJsonResponse.FromString,
+            jervis_dot_server_dot_visual__capture__pb2.ProxyPtzRequest.SerializeToString,
+            jervis_dot_server_dot_visual__capture__pb2.ProxyPtzResponse.FromString,
             options,
             channel_credentials,
             insecure,

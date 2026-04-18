@@ -28,7 +28,7 @@ private static final long serialVersionUID = 0L;
     super(builder);
   }
   private PtzGotoRequest() {
-    requestJson_ = "";
+    preset_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -71,47 +71,39 @@ private static final long serialVersionUID = 0L;
     return ctx_ == null ? com.jervis.contracts.common.RequestContext.getDefaultInstance() : ctx_;
   }
 
-  public static final int REQUEST_JSON_FIELD_NUMBER = 2;
+  public static final int PRESET_FIELD_NUMBER = 2;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object requestJson_ = "";
+  private volatile java.lang.Object preset_ = "";
   /**
-   * <pre>
-   * {preset: "..."}
-   * </pre>
-   *
-   * <code>string request_json = 2;</code>
-   * @return The requestJson.
+   * <code>string preset = 2;</code>
+   * @return The preset.
    */
   @java.lang.Override
-  public java.lang.String getRequestJson() {
-    java.lang.Object ref = requestJson_;
+  public java.lang.String getPreset() {
+    java.lang.Object ref = preset_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      requestJson_ = s;
+      preset_ = s;
       return s;
     }
   }
   /**
-   * <pre>
-   * {preset: "..."}
-   * </pre>
-   *
-   * <code>string request_json = 2;</code>
-   * @return The bytes for requestJson.
+   * <code>string preset = 2;</code>
+   * @return The bytes for preset.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getRequestJsonBytes() {
-    java.lang.Object ref = requestJson_;
+      getPresetBytes() {
+    java.lang.Object ref = preset_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      requestJson_ = b;
+      preset_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
@@ -135,8 +127,8 @@ private static final long serialVersionUID = 0L;
     if (((bitField0_ & 0x00000001) != 0)) {
       output.writeMessage(1, getCtx());
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(requestJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 2, requestJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(preset_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 2, preset_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -151,8 +143,8 @@ private static final long serialVersionUID = 0L;
       size += com.google.protobuf.CodedOutputStream
         .computeMessageSize(1, getCtx());
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(requestJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, requestJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(preset_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, preset_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -174,8 +166,8 @@ private static final long serialVersionUID = 0L;
       if (!getCtx()
           .equals(other.getCtx())) return false;
     }
-    if (!getRequestJson()
-        .equals(other.getRequestJson())) return false;
+    if (!getPreset()
+        .equals(other.getPreset())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -191,8 +183,8 @@ private static final long serialVersionUID = 0L;
       hash = (37 * hash) + CTX_FIELD_NUMBER;
       hash = (53 * hash) + getCtx().hashCode();
     }
-    hash = (37 * hash) + REQUEST_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getRequestJson().hashCode();
+    hash = (37 * hash) + PRESET_FIELD_NUMBER;
+    hash = (53 * hash) + getPreset().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -335,7 +327,7 @@ private static final long serialVersionUID = 0L;
         ctxBuilder_.dispose();
         ctxBuilder_ = null;
       }
-      requestJson_ = "";
+      preset_ = "";
       return this;
     }
 
@@ -377,7 +369,7 @@ private static final long serialVersionUID = 0L;
         to_bitField0_ |= 0x00000001;
       }
       if (((from_bitField0_ & 0x00000002) != 0)) {
-        result.requestJson_ = requestJson_;
+        result.preset_ = preset_;
       }
       result.bitField0_ |= to_bitField0_;
     }
@@ -397,8 +389,8 @@ private static final long serialVersionUID = 0L;
       if (other.hasCtx()) {
         mergeCtx(other.getCtx());
       }
-      if (!other.getRequestJson().isEmpty()) {
-        requestJson_ = other.requestJson_;
+      if (!other.getPreset().isEmpty()) {
+        preset_ = other.preset_;
         bitField0_ |= 0x00000002;
         onChanged();
       }
@@ -436,7 +428,7 @@ private static final long serialVersionUID = 0L;
               break;
             } // case 10
             case 18: {
-              requestJson_ = input.readStringRequireUtf8();
+              preset_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000002;
               break;
             } // case 18
@@ -578,93 +570,73 @@ private static final long serialVersionUID = 0L;
       return ctxBuilder_;
     }
 
-    private java.lang.Object requestJson_ = "";
+    private java.lang.Object preset_ = "";
     /**
-     * <pre>
-     * {preset: "..."}
-     * </pre>
-     *
-     * <code>string request_json = 2;</code>
-     * @return The requestJson.
+     * <code>string preset = 2;</code>
+     * @return The preset.
      */
-    public java.lang.String getRequestJson() {
-      java.lang.Object ref = requestJson_;
+    public java.lang.String getPreset() {
+      java.lang.Object ref = preset_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        requestJson_ = s;
+        preset_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
       }
     }
     /**
-     * <pre>
-     * {preset: "..."}
-     * </pre>
-     *
-     * <code>string request_json = 2;</code>
-     * @return The bytes for requestJson.
+     * <code>string preset = 2;</code>
+     * @return The bytes for preset.
      */
     public com.google.protobuf.ByteString
-        getRequestJsonBytes() {
-      java.lang.Object ref = requestJson_;
+        getPresetBytes() {
+      java.lang.Object ref = preset_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        requestJson_ = b;
+        preset_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
       }
     }
     /**
-     * <pre>
-     * {preset: "..."}
-     * </pre>
-     *
-     * <code>string request_json = 2;</code>
-     * @param value The requestJson to set.
+     * <code>string preset = 2;</code>
+     * @param value The preset to set.
      * @return This builder for chaining.
      */
-    public Builder setRequestJson(
+    public Builder setPreset(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      requestJson_ = value;
+      preset_ = value;
       bitField0_ |= 0x00000002;
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * {preset: "..."}
-     * </pre>
-     *
-     * <code>string request_json = 2;</code>
+     * <code>string preset = 2;</code>
      * @return This builder for chaining.
      */
-    public Builder clearRequestJson() {
-      requestJson_ = getDefaultInstance().getRequestJson();
+    public Builder clearPreset() {
+      preset_ = getDefaultInstance().getPreset();
       bitField0_ = (bitField0_ & ~0x00000002);
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * {preset: "..."}
-     * </pre>
-     *
-     * <code>string request_json = 2;</code>
-     * @param value The bytes for requestJson to set.
+     * <code>string preset = 2;</code>
+     * @param value The bytes for preset to set.
      * @return This builder for chaining.
      */
-    public Builder setRequestJsonBytes(
+    public Builder setPresetBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      requestJson_ = value;
+      preset_ = value;
       bitField0_ |= 0x00000002;
       onChanged();
       return this;

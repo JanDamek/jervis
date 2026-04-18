@@ -33,15 +33,15 @@ public object VisualCaptureServiceGrpcKt {
   public val serviceDescriptor: ServiceDescriptor
     get() = getServiceDescriptor()
 
-  public val snapshotMethod: MethodDescriptor<SnapshotRequest, RawJsonResponse>
+  public val snapshotMethod: MethodDescriptor<SnapshotRequest, SnapshotResponse>
     @JvmStatic
     get() = VisualCaptureServiceGrpc.getSnapshotMethod()
 
-  public val ptzGotoMethod: MethodDescriptor<PtzGotoRequest, RawJsonResponse>
+  public val ptzGotoMethod: MethodDescriptor<PtzGotoRequest, PtzGotoResponse>
     @JvmStatic
     get() = VisualCaptureServiceGrpc.getPtzGotoMethod()
 
-  public val ptzPresetsMethod: MethodDescriptor<PtzPresetsRequest, RawJsonResponse>
+  public val ptzPresetsMethod: MethodDescriptor<PtzPresetsRequest, PtzPresetsResponse>
     @JvmStatic
     get() = VisualCaptureServiceGrpc.getPtzPresetsMethod()
 
@@ -71,7 +71,7 @@ public object VisualCaptureServiceGrpcKt {
      * @return The single response from the server.
      */
     public suspend fun snapshot(request: SnapshotRequest, headers: Metadata = Metadata()):
-        RawJsonResponse = unaryRpc(
+        SnapshotResponse = unaryRpc(
       channel,
       VisualCaptureServiceGrpc.getSnapshotMethod(),
       request,
@@ -93,7 +93,7 @@ public object VisualCaptureServiceGrpcKt {
      * @return The single response from the server.
      */
     public suspend fun ptzGoto(request: PtzGotoRequest, headers: Metadata = Metadata()):
-        RawJsonResponse = unaryRpc(
+        PtzGotoResponse = unaryRpc(
       channel,
       VisualCaptureServiceGrpc.getPtzGotoMethod(),
       request,
@@ -115,7 +115,7 @@ public object VisualCaptureServiceGrpcKt {
      * @return The single response from the server.
      */
     public suspend fun ptzPresets(request: PtzPresetsRequest, headers: Metadata = Metadata()):
-        RawJsonResponse = unaryRpc(
+        PtzPresetsResponse = unaryRpc(
       channel,
       VisualCaptureServiceGrpc.getPtzPresetsMethod(),
       request,
@@ -142,7 +142,7 @@ public object VisualCaptureServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun snapshot(request: SnapshotRequest): RawJsonResponse = throw
+    public open suspend fun snapshot(request: SnapshotRequest): SnapshotResponse = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.visual_capture.VisualCaptureService.Snapshot is unimplemented"))
 
     /**
@@ -156,7 +156,7 @@ public object VisualCaptureServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun ptzGoto(request: PtzGotoRequest): RawJsonResponse = throw
+    public open suspend fun ptzGoto(request: PtzGotoRequest): PtzGotoResponse = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.visual_capture.VisualCaptureService.PtzGoto is unimplemented"))
 
     /**
@@ -170,7 +170,7 @@ public object VisualCaptureServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun ptzPresets(request: PtzPresetsRequest): RawJsonResponse = throw
+    public open suspend fun ptzPresets(request: PtzPresetsRequest): PtzPresetsResponse = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.visual_capture.VisualCaptureService.PtzPresets is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())

@@ -8,37 +8,98 @@ option java_package = "com.jervis.contracts.o365_browser_pool";
 option java_multiple_files = true;
 option java_outer_classname = "O365BrowserPoolProto";
 
-// O365BrowserPoolService — gRPC passthrough on top of the per-client
-// browser pod. Replaces the former REST surface consumed by the Kotlin
+// O365BrowserPoolService — typed wrapper over the per-client browser pod.
+// Replaces the former REST surface that was consumed by the Kotlin
 // server (/health, /session/{cid}, /session/{cid}/init,
-// /session/{cid}/mfa, /session/{cid}/rediscover, /scrape/{cid}/discover,
-// /vnc-token/{cid}, /instruction/{cid}). The VNC proxy routes
-// (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+// /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
+// proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
+// not pod-to-pod.
 service O365BrowserPoolService {
-  rpc Health(HealthRequest) returns (RawResponse);
-  rpc SessionStatus(PodRequest) returns (RawResponse);
-  rpc SessionInit(PodRequest) returns (RawResponse);
-  rpc SessionMfa(PodRequest) returns (RawResponse);
-  rpc SessionRediscover(PodRequest) returns (RawResponse);
-  rpc ScrapeDiscover(PodRequest) returns (RawResponse);
-  rpc VncToken(PodRequest) returns (RawResponse);
-  rpc SendInstruction(PodRequest) returns (RawResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc GetSession(SessionRef) returns (SessionStatus);
+  rpc InitSession(InitSessionRequest) returns (InitSessionResponse);
+  rpc SubmitMfa(SubmitMfaRequest) returns (InitSessionResponse);
+  rpc CreateVncToken(SessionRef) returns (VncTokenResponse);
+  rpc PushInstruction(InstructionRequest) returns (InstructionResponse);
 }
+
+// ── Shared identifiers ────────────────────────────────────────────────
+
+message SessionRef {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+}
+
+// ── Health ────────────────────────────────────────────────────────────
 
 message HealthRequest {
   jervis.common.RequestContext ctx = 1;
 }
 
-// PodRequest carries client_id + optional JSON body for POSTs. Each RPC
-// implements the corresponding route's semantics in the pod and returns
-// the legacy JSON response unchanged so Kotlin parsing stays identical.
-message PodRequest {
-  jervis.common.RequestContext ctx = 1;
-  string client_id = 2;
-  string body_json = 3;
+message HealthResponse {
+  string status = 1;                         // "ok" / "degraded"
+  string service = 2;                        // "o365-browser-pool"
 }
 
-message RawResponse {
-  int32 status = 1;
-  string body_json = 2;
+// ── GetSession ────────────────────────────────────────────────────────
+
+message SessionStatus {
+  string client_id = 1;
+  string state = 2;                          // PodState value
+  bool has_token = 3;
+  string last_activity = 4;                  // ISO-8601
+  string last_token_extract = 5;
+  string novnc_url = 6;
+  string mfa_type = 7;
+  string mfa_message = 8;
+  string mfa_number = 9;
+}
+
+// ── InitSession ───────────────────────────────────────────────────────
+
+message InitSessionRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string login_url = 3;
+  string user_agent = 4;
+  repeated string capabilities = 5;
+  string username = 6;
+  string password = 7;
+}
+
+message InitSessionResponse {
+  string client_id = 1;
+  string state = 2;                          // PodState value
+  string novnc_url = 3;
+  string message = 4;
+  string error = 5;                          // populated on 4xx/5xx
+}
+
+// ── SubmitMfa ─────────────────────────────────────────────────────────
+
+message SubmitMfaRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string code = 3;
+}
+
+// ── CreateVncToken ────────────────────────────────────────────────────
+
+message VncTokenResponse {
+  string token = 1;
+  string client_id = 2;
+}
+
+// ── PushInstruction ───────────────────────────────────────────────────
+
+message InstructionRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string instruction = 3;
+}
+
+message InstructionResponse {
+  string status = 1;                         // "queued" / "error"
+  string client_id = 2;
+  string error = 3;
 }

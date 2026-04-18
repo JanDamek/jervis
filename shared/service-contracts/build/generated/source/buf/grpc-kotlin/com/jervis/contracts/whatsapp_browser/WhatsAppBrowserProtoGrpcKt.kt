@@ -33,25 +33,25 @@ public object WhatsAppBrowserServiceGrpcKt {
   public val serviceDescriptor: ServiceDescriptor
     get() = getServiceDescriptor()
 
-  public val sessionStatusMethod: MethodDescriptor<WhatsAppRequest, RawResponse>
+  public val getSessionMethod: MethodDescriptor<SessionRef, SessionStatus>
     @JvmStatic
-    get() = WhatsAppBrowserServiceGrpc.getSessionStatusMethod()
+    get() = WhatsAppBrowserServiceGrpc.getGetSessionMethod()
 
-  public val sessionInitMethod: MethodDescriptor<WhatsAppRequest, RawResponse>
+  public val initSessionMethod: MethodDescriptor<InitSessionRequest, InitSessionResponse>
     @JvmStatic
-    get() = WhatsAppBrowserServiceGrpc.getSessionInitMethod()
+    get() = WhatsAppBrowserServiceGrpc.getInitSessionMethod()
 
-  public val scrapeTriggerMethod: MethodDescriptor<WhatsAppRequest, RawResponse>
+  public val triggerScrapeMethod: MethodDescriptor<TriggerScrapeRequest, TriggerScrapeResponse>
     @JvmStatic
-    get() = WhatsAppBrowserServiceGrpc.getScrapeTriggerMethod()
+    get() = WhatsAppBrowserServiceGrpc.getTriggerScrapeMethod()
 
-  public val scrapeLatestMethod: MethodDescriptor<WhatsAppRequest, RawResponse>
+  public val getLatestScrapeMethod: MethodDescriptor<SessionRef, LatestScrapeResponse>
     @JvmStatic
-    get() = WhatsAppBrowserServiceGrpc.getScrapeLatestMethod()
+    get() = WhatsAppBrowserServiceGrpc.getGetLatestScrapeMethod()
 
-  public val vncTokenMethod: MethodDescriptor<WhatsAppRequest, RawResponse>
+  public val createVncTokenMethod: MethodDescriptor<SessionRef, VncTokenResponse>
     @JvmStatic
-    get() = WhatsAppBrowserServiceGrpc.getVncTokenMethod()
+    get() = WhatsAppBrowserServiceGrpc.getCreateVncTokenMethod()
 
   /**
    * A stub for issuing RPCs to a(n) jervis.whatsapp_browser.WhatsAppBrowserService service as
@@ -79,10 +79,10 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun sessionStatus(request: WhatsAppRequest, headers: Metadata = Metadata()):
-        RawResponse = unaryRpc(
+    public suspend fun getSession(request: SessionRef, headers: Metadata = Metadata()):
+        SessionStatus = unaryRpc(
       channel,
-      WhatsAppBrowserServiceGrpc.getSessionStatusMethod(),
+      WhatsAppBrowserServiceGrpc.getGetSessionMethod(),
       request,
       callOptions,
       headers
@@ -101,10 +101,10 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun sessionInit(request: WhatsAppRequest, headers: Metadata = Metadata()):
-        RawResponse = unaryRpc(
+    public suspend fun initSession(request: InitSessionRequest, headers: Metadata = Metadata()):
+        InitSessionResponse = unaryRpc(
       channel,
-      WhatsAppBrowserServiceGrpc.getSessionInitMethod(),
+      WhatsAppBrowserServiceGrpc.getInitSessionMethod(),
       request,
       callOptions,
       headers
@@ -123,10 +123,10 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun scrapeTrigger(request: WhatsAppRequest, headers: Metadata = Metadata()):
-        RawResponse = unaryRpc(
+    public suspend fun triggerScrape(request: TriggerScrapeRequest, headers: Metadata = Metadata()):
+        TriggerScrapeResponse = unaryRpc(
       channel,
-      WhatsAppBrowserServiceGrpc.getScrapeTriggerMethod(),
+      WhatsAppBrowserServiceGrpc.getTriggerScrapeMethod(),
       request,
       callOptions,
       headers
@@ -145,10 +145,10 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun scrapeLatest(request: WhatsAppRequest, headers: Metadata = Metadata()):
-        RawResponse = unaryRpc(
+    public suspend fun getLatestScrape(request: SessionRef, headers: Metadata = Metadata()):
+        LatestScrapeResponse = unaryRpc(
       channel,
-      WhatsAppBrowserServiceGrpc.getScrapeLatestMethod(),
+      WhatsAppBrowserServiceGrpc.getGetLatestScrapeMethod(),
       request,
       callOptions,
       headers
@@ -167,10 +167,10 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun vncToken(request: WhatsAppRequest, headers: Metadata = Metadata()):
-        RawResponse = unaryRpc(
+    public suspend fun createVncToken(request: SessionRef, headers: Metadata = Metadata()):
+        VncTokenResponse = unaryRpc(
       channel,
-      WhatsAppBrowserServiceGrpc.getVncTokenMethod(),
+      WhatsAppBrowserServiceGrpc.getCreateVncTokenMethod(),
       request,
       callOptions,
       headers
@@ -185,8 +185,7 @@ public object WhatsAppBrowserServiceGrpcKt {
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
   ) : AbstractCoroutineServerImpl(coroutineContext) {
     /**
-     * Returns the response to an RPC for
-     * jervis.whatsapp_browser.WhatsAppBrowserService.SessionStatus.
+     * Returns the response to an RPC for jervis.whatsapp_browser.WhatsAppBrowserService.GetSession.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
      * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
@@ -196,12 +195,12 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun sessionStatus(request: WhatsAppRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.SessionStatus is unimplemented"))
+    public open suspend fun getSession(request: SessionRef): SessionStatus = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.GetSession is unimplemented"))
 
     /**
      * Returns the response to an RPC for
-     * jervis.whatsapp_browser.WhatsAppBrowserService.SessionInit.
+     * jervis.whatsapp_browser.WhatsAppBrowserService.InitSession.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
      * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
@@ -211,12 +210,12 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun sessionInit(request: WhatsAppRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.SessionInit is unimplemented"))
+    public open suspend fun initSession(request: InitSessionRequest): InitSessionResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.InitSession is unimplemented"))
 
     /**
      * Returns the response to an RPC for
-     * jervis.whatsapp_browser.WhatsAppBrowserService.ScrapeTrigger.
+     * jervis.whatsapp_browser.WhatsAppBrowserService.TriggerScrape.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
      * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
@@ -226,12 +225,13 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun scrapeTrigger(request: WhatsAppRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.ScrapeTrigger is unimplemented"))
+    public open suspend fun triggerScrape(request: TriggerScrapeRequest): TriggerScrapeResponse =
+        throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.TriggerScrape is unimplemented"))
 
     /**
      * Returns the response to an RPC for
-     * jervis.whatsapp_browser.WhatsAppBrowserService.ScrapeLatest.
+     * jervis.whatsapp_browser.WhatsAppBrowserService.GetLatestScrape.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
      * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
@@ -241,11 +241,12 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun scrapeLatest(request: WhatsAppRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.ScrapeLatest is unimplemented"))
+    public open suspend fun getLatestScrape(request: SessionRef): LatestScrapeResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.GetLatestScrape is unimplemented"))
 
     /**
-     * Returns the response to an RPC for jervis.whatsapp_browser.WhatsAppBrowserService.VncToken.
+     * Returns the response to an RPC for
+     * jervis.whatsapp_browser.WhatsAppBrowserService.CreateVncToken.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
      * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
@@ -255,34 +256,34 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun vncToken(request: WhatsAppRequest): RawResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.VncToken is unimplemented"))
+    public open suspend fun createVncToken(request: SessionRef): VncTokenResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.CreateVncToken is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
-      descriptor = WhatsAppBrowserServiceGrpc.getSessionStatusMethod(),
-      implementation = ::sessionStatus
+      descriptor = WhatsAppBrowserServiceGrpc.getGetSessionMethod(),
+      implementation = ::getSession
     ))
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
-      descriptor = WhatsAppBrowserServiceGrpc.getSessionInitMethod(),
-      implementation = ::sessionInit
+      descriptor = WhatsAppBrowserServiceGrpc.getInitSessionMethod(),
+      implementation = ::initSession
     ))
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
-      descriptor = WhatsAppBrowserServiceGrpc.getScrapeTriggerMethod(),
-      implementation = ::scrapeTrigger
+      descriptor = WhatsAppBrowserServiceGrpc.getTriggerScrapeMethod(),
+      implementation = ::triggerScrape
     ))
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
-      descriptor = WhatsAppBrowserServiceGrpc.getScrapeLatestMethod(),
-      implementation = ::scrapeLatest
+      descriptor = WhatsAppBrowserServiceGrpc.getGetLatestScrapeMethod(),
+      implementation = ::getLatestScrape
     ))
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
-      descriptor = WhatsAppBrowserServiceGrpc.getVncTokenMethod(),
-      implementation = ::vncToken
+      descriptor = WhatsAppBrowserServiceGrpc.getCreateVncTokenMethod(),
+      implementation = ::createVncToken
     )).build()
   }
 }

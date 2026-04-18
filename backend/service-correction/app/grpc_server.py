@@ -1,14 +1,13 @@
 """gRPC server for `jervis-correction`.
 
-Exposes CorrectionService — one RPC per former REST route. Request +
-response bodies ride as passthrough JSON strings, matching the legacy
-DTOs on the caller side (Kotlin CorrectionClient uses kotlinx
-serialisation, so we avoid re-encoding fields into the proto).
+Fully-typed surface — CorrectionService has one RPC per former REST
+route; every field is declared in the proto so callers never decode a
+free-form JSON body. Segment lists + question lists + rule lists are
+carried as repeated typed messages.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 
 import grpc
@@ -20,150 +19,247 @@ from jervis_contracts.interceptors import ServerContextInterceptor
 logger = logging.getLogger("correction.grpc")
 
 
+def _seg_from_proto(seg: correction_pb2.CorrectionSegment) -> dict:
+    out: dict = {
+        "i": int(seg.i),
+        "startSec": float(seg.start_sec),
+        "endSec": float(seg.end_sec),
+        "text": seg.text,
+    }
+    if seg.speaker:
+        out["speaker"] = seg.speaker
+    return out
+
+
+def _seg_to_proto(seg: dict) -> correction_pb2.CorrectionSegment:
+    return correction_pb2.CorrectionSegment(
+        i=int(seg.get("i", 0)),
+        start_sec=float(seg.get("startSec", 0.0)),
+        end_sec=float(seg.get("endSec", 0.0)),
+        text=str(seg.get("text", "")),
+        speaker=str(seg.get("speaker") or ""),
+    )
+
+
+def _question_to_proto(q: dict) -> correction_pb2.CorrectionQuestion:
+    return correction_pb2.CorrectionQuestion(
+        id=str(q.get("id", "")),
+        i=int(q.get("i", 0)),
+        original=str(q.get("original", "")),
+        question=str(q.get("question", "")),
+        options=[str(o) for o in q.get("options") or []],
+        context=str(q.get("context") or ""),
+    )
+
+
 class CorrectionServicer(correction_pb2_grpc.CorrectionServiceServicer):
+
     async def SubmitCorrection(
         self,
-        request: correction_pb2.CorrectionRequest,
+        request: correction_pb2.SubmitCorrectionRequest,
         context: grpc.aio.ServicerContext,
-    ) -> correction_pb2.CorrectionResponse:
+    ) -> correction_pb2.SubmitCorrectionResponse:
         from app.agent import correction_agent
 
-        body = _parse_json(request.body_json)
-        return await _dispatch("submit", context, lambda: correction_agent.submit_correction(
-            client_id=body["clientId"],
-            project_id=body.get("projectId"),
-            original=body["original"],
-            corrected=body["corrected"],
-            category=body.get("category", "general"),
-            context=body.get("context"),
-        ))
+        if not request.client_id or not request.original or not request.corrected:
+            return correction_pb2.SubmitCorrectionResponse(
+                status="error", error="client_id + original + corrected required",
+            )
+        try:
+            result = await correction_agent.submit_correction(
+                client_id=request.client_id,
+                project_id=request.project_id or None,
+                original=request.original,
+                corrected=request.corrected,
+                category=request.category or "general",
+                context=request.context or None,
+            )
+        except Exception as e:
+            logger.exception("CORRECTION_SUBMIT_FAIL")
+            return correction_pb2.SubmitCorrectionResponse(status="error", error=str(e)[:300])
+        return correction_pb2.SubmitCorrectionResponse(
+            correction_id=str(result.get("correctionId", "")),
+            source_urn=str(result.get("sourceUrn", "")),
+            status=str(result.get("status", "success")),
+        )
 
     async def CorrectTranscript(
         self,
-        request: correction_pb2.CorrectionRequest,
+        request: correction_pb2.CorrectTranscriptRequest,
         context: grpc.aio.ServicerContext,
-    ) -> correction_pb2.CorrectionResponse:
+    ) -> correction_pb2.CorrectResult:
         from app.agent import correction_agent
 
-        body = _parse_json(request.body_json)
-        return await _dispatch("correct", context, lambda: correction_agent.correct_transcript(
-            client_id=body["clientId"],
-            project_id=body.get("projectId"),
-            segments=body["segments"],
-            chunk_size=body.get("chunkSize", 20),
-            meeting_id=body.get("meetingId"),
-            speaker_hints=body.get("speakerHints"),
-        ))
+        segments = [_seg_from_proto(s) for s in request.segments]
+        try:
+            result = await correction_agent.correct_transcript(
+                client_id=request.client_id,
+                project_id=request.project_id or None,
+                segments=segments,
+                chunk_size=int(request.chunk_size) if request.chunk_size > 0 else 20,
+                meeting_id=request.meeting_id or None,
+                speaker_hints=dict(request.speaker_hints) if request.speaker_hints else None,
+            )
+        except Exception as e:
+            logger.exception("CORRECTION_CORRECT_FAIL")
+            return correction_pb2.CorrectResult(status="failed")
+
+        return correction_pb2.CorrectResult(
+            segments=[_seg_to_proto(s) for s in (result.get("segments") or [])],
+            questions=[_question_to_proto(q) for q in (result.get("questions") or [])],
+            status=str(result.get("status", "success")),
+        )
 
     async def ListCorrections(
         self,
-        request: correction_pb2.CorrectionRequest,
+        request: correction_pb2.ListCorrectionsRequest,
         context: grpc.aio.ServicerContext,
-    ) -> correction_pb2.CorrectionResponse:
+    ) -> correction_pb2.ListCorrectionsResponse:
         from app.agent import correction_agent
 
-        body = _parse_json(request.body_json)
-
-        async def _list():
+        try:
             corrections = await correction_agent.list_corrections(
-                client_id=body["clientId"],
-                project_id=body.get("projectId"),
-                max_results=body.get("maxResults", 100),
+                client_id=request.client_id,
+                project_id=request.project_id or None,
+                max_results=int(request.max_results) if request.max_results > 0 else 100,
             )
-            return {"corrections": corrections}
+        except Exception as e:
+            logger.exception("CORRECTION_LIST_FAIL")
+            corrections = []
 
-        return await _dispatch("list", context, _list)
+        out = []
+        for c in corrections:
+            meta = c.get("metadata") or {}
+            out.append(correction_pb2.CorrectionChunk(
+                content=str(c.get("content", "")),
+                source_urn=str(c.get("sourceUrn", "")),
+                metadata=correction_pb2.CorrectionChunkMeta(
+                    original=str(meta.get("original", "")),
+                    corrected=str(meta.get("corrected", "")),
+                    category=str(meta.get("category", "general")),
+                    context=str(meta.get("context", "")),
+                    correction_id=str(meta.get("correctionId", "")),
+                ),
+            ))
+        return correction_pb2.ListCorrectionsResponse(corrections=out)
 
     async def AnswerCorrectionQuestions(
         self,
-        request: correction_pb2.CorrectionRequest,
+        request: correction_pb2.AnswerCorrectionsRequest,
         context: grpc.aio.ServicerContext,
-    ) -> correction_pb2.CorrectionResponse:
+    ) -> correction_pb2.AnswerCorrectionsResponse:
         from app.agent import correction_agent
 
-        body = _parse_json(request.body_json)
-
-        async def _answer():
+        answers = [
+            {
+                "original": r.original,
+                "corrected": r.corrected,
+                "category": r.category or "general",
+                "context": r.context or None,
+            }
+            for r in request.answers
+        ]
+        try:
             results = await correction_agent.apply_answers_as_corrections(
-                client_id=body["clientId"],
-                project_id=body.get("projectId"),
-                answers=body.get("answers", []),
+                client_id=request.client_id,
+                project_id=request.project_id or None,
+                answers=answers,
             )
-            return {"status": "success", "rulesCreated": len(results)}
-
-        return await _dispatch("answer", context, _answer)
+        except Exception as e:
+            logger.exception("CORRECTION_ANSWER_FAIL")
+            return correction_pb2.AnswerCorrectionsResponse(
+                status="error", error=str(e)[:300],
+            )
+        return correction_pb2.AnswerCorrectionsResponse(
+            status="success", rules_created=len(results),
+        )
 
     async def CorrectWithInstruction(
         self,
-        request: correction_pb2.CorrectionRequest,
+        request: correction_pb2.CorrectWithInstructionRequest,
         context: grpc.aio.ServicerContext,
-    ) -> correction_pb2.CorrectionResponse:
+    ) -> correction_pb2.CorrectWithInstructionResponse:
         from app.agent import correction_agent
 
-        body = _parse_json(request.body_json)
-        return await _dispatch("instruct", context, lambda: correction_agent.correct_with_instruction(
-            client_id=body["clientId"],
-            project_id=body.get("projectId"),
-            segments=body["segments"],
-            instruction=body["instruction"],
-        ))
+        segments = [_seg_from_proto(s) for s in request.segments]
+        try:
+            result = await correction_agent.correct_with_instruction(
+                client_id=request.client_id,
+                project_id=request.project_id or None,
+                segments=segments,
+                instruction=request.instruction,
+            )
+        except Exception as e:
+            logger.exception("CORRECTION_INSTRUCT_FAIL")
+            return correction_pb2.CorrectWithInstructionResponse(
+                status="failed", summary=str(e)[:300],
+            )
+        new_rules = [
+            correction_pb2.InstructRuleResult(
+                correction_id=str(r.get("correctionId", "")),
+                source_urn=str(r.get("sourceUrn", "")),
+                status=str(r.get("status", "")),
+            )
+            for r in (result.get("newRules") or [])
+        ]
+        return correction_pb2.CorrectWithInstructionResponse(
+            segments=[_seg_to_proto(s) for s in (result.get("segments") or [])],
+            new_rules=new_rules,
+            status=str(result.get("status", "success")),
+            summary=str(result.get("summary") or ""),
+        )
 
     async def CorrectTargeted(
         self,
-        request: correction_pb2.CorrectionRequest,
+        request: correction_pb2.CorrectTargetedRequest,
         context: grpc.aio.ServicerContext,
-    ) -> correction_pb2.CorrectionResponse:
+    ) -> correction_pb2.CorrectResult:
         from app.agent import correction_agent
 
-        body = _parse_json(request.body_json)
-        return await _dispatch("targeted", context, lambda: correction_agent.correct_targeted(
-            client_id=body["clientId"],
-            project_id=body.get("projectId"),
-            segments=body["segments"],
-            retranscribed_indices=body.get("retranscribedIndices", []),
-            user_corrected_indices=body.get("userCorrectedIndices", {}),
-            meeting_id=body.get("meetingId"),
-        ))
+        segments = [_seg_from_proto(s) for s in request.segments]
+        try:
+            result = await correction_agent.correct_targeted(
+                client_id=request.client_id,
+                project_id=request.project_id or None,
+                segments=segments,
+                retranscribed_indices=list(request.retranscribed_indices),
+                user_corrected_indices=dict(request.user_corrected_indices) if request.user_corrected_indices else {},
+                meeting_id=request.meeting_id or None,
+            )
+        except Exception as e:
+            logger.exception("CORRECTION_TARGETED_FAIL")
+            return correction_pb2.CorrectResult(status="failed")
+
+        return correction_pb2.CorrectResult(
+            segments=[_seg_to_proto(s) for s in (result.get("segments") or [])],
+            questions=[_question_to_proto(q) for q in (result.get("questions") or [])],
+            status=str(result.get("status", "success")),
+        )
 
     async def DeleteCorrection(
         self,
-        request: correction_pb2.CorrectionRequest,
+        request: correction_pb2.DeleteCorrectionRequest,
         context: grpc.aio.ServicerContext,
-    ) -> correction_pb2.CorrectionResponse:
+    ) -> correction_pb2.DeleteCorrectionResponse:
         from app.agent import correction_agent
 
-        body = _parse_json(request.body_json)
-        return await _dispatch("delete", context, lambda: correction_agent.delete_correction(body["sourceUrn"]))
-
-
-def _parse_json(s: str) -> dict:
-    if not s:
-        return {}
-    try:
-        v = json.loads(s)
-        return v if isinstance(v, dict) else {}
-    except Exception:
-        return {}
-
-
-async def _dispatch(label: str, context: grpc.aio.ServicerContext, fn) -> correction_pb2.CorrectionResponse:
-    try:
-        result = await fn()
-    except KeyError as e:
-        return correction_pb2.CorrectionResponse(
-            status=400,
-            body_json=json.dumps({"detail": f"Missing field: {e}"}),
+        if not request.source_urn:
+            return correction_pb2.DeleteCorrectionResponse(
+                status="error", error="source_urn required",
+            )
+        try:
+            result = await correction_agent.delete_correction(request.source_urn)
+        except Exception as e:
+            logger.exception("CORRECTION_DELETE_FAIL")
+            return correction_pb2.DeleteCorrectionResponse(status="error", error=str(e)[:300])
+        return correction_pb2.DeleteCorrectionResponse(
+            status=str(result.get("status", "success")),
+            chunks_deleted=int(result.get("chunks_deleted") or 0),
+            nodes_cleaned=int(result.get("nodes_cleaned") or 0),
+            edges_cleaned=int(result.get("edges_cleaned") or 0),
+            nodes_deleted=int(result.get("nodes_deleted") or 0),
+            edges_deleted=int(result.get("edges_deleted") or 0),
         )
-    except Exception as e:
-        logger.exception("CORRECTION_%s_FAIL", label.upper())
-        return correction_pb2.CorrectionResponse(
-            status=500,
-            body_json=json.dumps({"detail": str(e)[:300]}),
-        )
-    return correction_pb2.CorrectionResponse(
-        status=200,
-        body_json=json.dumps(result, default=str, ensure_ascii=False),
-    )
 
 
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:

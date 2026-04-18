@@ -4,12 +4,11 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 
 /**
  * <pre>
- * WhatsAppBrowserService — gRPC wrapper on top of the `jervis-whatsapp-browser`
- * pod. Kotlin server's ConnectionRpcImpl + WhatsAppPollingHandler dial
- * these RPCs instead of the former REST surface
+ * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
+ * pod. Replaces the former REST surface consumed by the Kotlin server
  * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
  * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
- * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+ * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
  * </pre>
  */
 @javax.annotation.Generated(
@@ -23,159 +22,159 @@ public final class WhatsAppBrowserServiceGrpc {
   public static final java.lang.String SERVICE_NAME = "jervis.whatsapp_browser.WhatsAppBrowserService";
 
   // Static method descriptors that strictly reflect the proto.
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-      com.jervis.contracts.whatsapp_browser.RawResponse> getSessionStatusMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef,
+      com.jervis.contracts.whatsapp_browser.SessionStatus> getGetSessionMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "SessionStatus",
-      requestType = com.jervis.contracts.whatsapp_browser.WhatsAppRequest.class,
-      responseType = com.jervis.contracts.whatsapp_browser.RawResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "GetSession",
+      requestType = com.jervis.contracts.whatsapp_browser.SessionRef.class,
+      responseType = com.jervis.contracts.whatsapp_browser.SessionStatus.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-      com.jervis.contracts.whatsapp_browser.RawResponse> getSessionStatusMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest, com.jervis.contracts.whatsapp_browser.RawResponse> getSessionStatusMethod;
-    if ((getSessionStatusMethod = WhatsAppBrowserServiceGrpc.getSessionStatusMethod) == null) {
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef,
+      com.jervis.contracts.whatsapp_browser.SessionStatus> getGetSessionMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef, com.jervis.contracts.whatsapp_browser.SessionStatus> getGetSessionMethod;
+    if ((getGetSessionMethod = WhatsAppBrowserServiceGrpc.getGetSessionMethod) == null) {
       synchronized (WhatsAppBrowserServiceGrpc.class) {
-        if ((getSessionStatusMethod = WhatsAppBrowserServiceGrpc.getSessionStatusMethod) == null) {
-          WhatsAppBrowserServiceGrpc.getSessionStatusMethod = getSessionStatusMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.WhatsAppRequest, com.jervis.contracts.whatsapp_browser.RawResponse>newBuilder()
+        if ((getGetSessionMethod = WhatsAppBrowserServiceGrpc.getGetSessionMethod) == null) {
+          WhatsAppBrowserServiceGrpc.getGetSessionMethod = getGetSessionMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.SessionRef, com.jervis.contracts.whatsapp_browser.SessionStatus>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SessionStatus"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetSession"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.WhatsAppRequest.getDefaultInstance()))
+                  com.jervis.contracts.whatsapp_browser.SessionRef.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("SessionStatus"))
+                  com.jervis.contracts.whatsapp_browser.SessionStatus.getDefaultInstance()))
+              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("GetSession"))
               .build();
         }
       }
     }
-    return getSessionStatusMethod;
+    return getGetSessionMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-      com.jervis.contracts.whatsapp_browser.RawResponse> getSessionInitMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.InitSessionRequest,
+      com.jervis.contracts.whatsapp_browser.InitSessionResponse> getInitSessionMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "SessionInit",
-      requestType = com.jervis.contracts.whatsapp_browser.WhatsAppRequest.class,
-      responseType = com.jervis.contracts.whatsapp_browser.RawResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "InitSession",
+      requestType = com.jervis.contracts.whatsapp_browser.InitSessionRequest.class,
+      responseType = com.jervis.contracts.whatsapp_browser.InitSessionResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-      com.jervis.contracts.whatsapp_browser.RawResponse> getSessionInitMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest, com.jervis.contracts.whatsapp_browser.RawResponse> getSessionInitMethod;
-    if ((getSessionInitMethod = WhatsAppBrowserServiceGrpc.getSessionInitMethod) == null) {
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.InitSessionRequest,
+      com.jervis.contracts.whatsapp_browser.InitSessionResponse> getInitSessionMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.InitSessionRequest, com.jervis.contracts.whatsapp_browser.InitSessionResponse> getInitSessionMethod;
+    if ((getInitSessionMethod = WhatsAppBrowserServiceGrpc.getInitSessionMethod) == null) {
       synchronized (WhatsAppBrowserServiceGrpc.class) {
-        if ((getSessionInitMethod = WhatsAppBrowserServiceGrpc.getSessionInitMethod) == null) {
-          WhatsAppBrowserServiceGrpc.getSessionInitMethod = getSessionInitMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.WhatsAppRequest, com.jervis.contracts.whatsapp_browser.RawResponse>newBuilder()
+        if ((getInitSessionMethod = WhatsAppBrowserServiceGrpc.getInitSessionMethod) == null) {
+          WhatsAppBrowserServiceGrpc.getInitSessionMethod = getInitSessionMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.InitSessionRequest, com.jervis.contracts.whatsapp_browser.InitSessionResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SessionInit"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "InitSession"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.WhatsAppRequest.getDefaultInstance()))
+                  com.jervis.contracts.whatsapp_browser.InitSessionRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("SessionInit"))
+                  com.jervis.contracts.whatsapp_browser.InitSessionResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("InitSession"))
               .build();
         }
       }
     }
-    return getSessionInitMethod;
+    return getInitSessionMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-      com.jervis.contracts.whatsapp_browser.RawResponse> getScrapeTriggerMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest,
+      com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse> getTriggerScrapeMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "ScrapeTrigger",
-      requestType = com.jervis.contracts.whatsapp_browser.WhatsAppRequest.class,
-      responseType = com.jervis.contracts.whatsapp_browser.RawResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "TriggerScrape",
+      requestType = com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest.class,
+      responseType = com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-      com.jervis.contracts.whatsapp_browser.RawResponse> getScrapeTriggerMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest, com.jervis.contracts.whatsapp_browser.RawResponse> getScrapeTriggerMethod;
-    if ((getScrapeTriggerMethod = WhatsAppBrowserServiceGrpc.getScrapeTriggerMethod) == null) {
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest,
+      com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse> getTriggerScrapeMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest, com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse> getTriggerScrapeMethod;
+    if ((getTriggerScrapeMethod = WhatsAppBrowserServiceGrpc.getTriggerScrapeMethod) == null) {
       synchronized (WhatsAppBrowserServiceGrpc.class) {
-        if ((getScrapeTriggerMethod = WhatsAppBrowserServiceGrpc.getScrapeTriggerMethod) == null) {
-          WhatsAppBrowserServiceGrpc.getScrapeTriggerMethod = getScrapeTriggerMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.WhatsAppRequest, com.jervis.contracts.whatsapp_browser.RawResponse>newBuilder()
+        if ((getTriggerScrapeMethod = WhatsAppBrowserServiceGrpc.getTriggerScrapeMethod) == null) {
+          WhatsAppBrowserServiceGrpc.getTriggerScrapeMethod = getTriggerScrapeMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest, com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ScrapeTrigger"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "TriggerScrape"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.WhatsAppRequest.getDefaultInstance()))
+                  com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("ScrapeTrigger"))
+                  com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("TriggerScrape"))
               .build();
         }
       }
     }
-    return getScrapeTriggerMethod;
+    return getTriggerScrapeMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-      com.jervis.contracts.whatsapp_browser.RawResponse> getScrapeLatestMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef,
+      com.jervis.contracts.whatsapp_browser.LatestScrapeResponse> getGetLatestScrapeMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "ScrapeLatest",
-      requestType = com.jervis.contracts.whatsapp_browser.WhatsAppRequest.class,
-      responseType = com.jervis.contracts.whatsapp_browser.RawResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "GetLatestScrape",
+      requestType = com.jervis.contracts.whatsapp_browser.SessionRef.class,
+      responseType = com.jervis.contracts.whatsapp_browser.LatestScrapeResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-      com.jervis.contracts.whatsapp_browser.RawResponse> getScrapeLatestMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest, com.jervis.contracts.whatsapp_browser.RawResponse> getScrapeLatestMethod;
-    if ((getScrapeLatestMethod = WhatsAppBrowserServiceGrpc.getScrapeLatestMethod) == null) {
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef,
+      com.jervis.contracts.whatsapp_browser.LatestScrapeResponse> getGetLatestScrapeMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef, com.jervis.contracts.whatsapp_browser.LatestScrapeResponse> getGetLatestScrapeMethod;
+    if ((getGetLatestScrapeMethod = WhatsAppBrowserServiceGrpc.getGetLatestScrapeMethod) == null) {
       synchronized (WhatsAppBrowserServiceGrpc.class) {
-        if ((getScrapeLatestMethod = WhatsAppBrowserServiceGrpc.getScrapeLatestMethod) == null) {
-          WhatsAppBrowserServiceGrpc.getScrapeLatestMethod = getScrapeLatestMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.WhatsAppRequest, com.jervis.contracts.whatsapp_browser.RawResponse>newBuilder()
+        if ((getGetLatestScrapeMethod = WhatsAppBrowserServiceGrpc.getGetLatestScrapeMethod) == null) {
+          WhatsAppBrowserServiceGrpc.getGetLatestScrapeMethod = getGetLatestScrapeMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.SessionRef, com.jervis.contracts.whatsapp_browser.LatestScrapeResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ScrapeLatest"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetLatestScrape"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.WhatsAppRequest.getDefaultInstance()))
+                  com.jervis.contracts.whatsapp_browser.SessionRef.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("ScrapeLatest"))
+                  com.jervis.contracts.whatsapp_browser.LatestScrapeResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("GetLatestScrape"))
               .build();
         }
       }
     }
-    return getScrapeLatestMethod;
+    return getGetLatestScrapeMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-      com.jervis.contracts.whatsapp_browser.RawResponse> getVncTokenMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef,
+      com.jervis.contracts.whatsapp_browser.VncTokenResponse> getCreateVncTokenMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "VncToken",
-      requestType = com.jervis.contracts.whatsapp_browser.WhatsAppRequest.class,
-      responseType = com.jervis.contracts.whatsapp_browser.RawResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "CreateVncToken",
+      requestType = com.jervis.contracts.whatsapp_browser.SessionRef.class,
+      responseType = com.jervis.contracts.whatsapp_browser.VncTokenResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-      com.jervis.contracts.whatsapp_browser.RawResponse> getVncTokenMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.WhatsAppRequest, com.jervis.contracts.whatsapp_browser.RawResponse> getVncTokenMethod;
-    if ((getVncTokenMethod = WhatsAppBrowserServiceGrpc.getVncTokenMethod) == null) {
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef,
+      com.jervis.contracts.whatsapp_browser.VncTokenResponse> getCreateVncTokenMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef, com.jervis.contracts.whatsapp_browser.VncTokenResponse> getCreateVncTokenMethod;
+    if ((getCreateVncTokenMethod = WhatsAppBrowserServiceGrpc.getCreateVncTokenMethod) == null) {
       synchronized (WhatsAppBrowserServiceGrpc.class) {
-        if ((getVncTokenMethod = WhatsAppBrowserServiceGrpc.getVncTokenMethod) == null) {
-          WhatsAppBrowserServiceGrpc.getVncTokenMethod = getVncTokenMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.WhatsAppRequest, com.jervis.contracts.whatsapp_browser.RawResponse>newBuilder()
+        if ((getCreateVncTokenMethod = WhatsAppBrowserServiceGrpc.getCreateVncTokenMethod) == null) {
+          WhatsAppBrowserServiceGrpc.getCreateVncTokenMethod = getCreateVncTokenMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.SessionRef, com.jervis.contracts.whatsapp_browser.VncTokenResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "VncToken"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "CreateVncToken"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.WhatsAppRequest.getDefaultInstance()))
+                  com.jervis.contracts.whatsapp_browser.SessionRef.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("VncToken"))
+                  com.jervis.contracts.whatsapp_browser.VncTokenResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("CreateVncToken"))
               .build();
         }
       }
     }
-    return getVncTokenMethod;
+    return getCreateVncTokenMethod;
   }
 
   /**
@@ -224,61 +223,59 @@ public final class WhatsAppBrowserServiceGrpc {
 
   /**
    * <pre>
-   * WhatsAppBrowserService — gRPC wrapper on top of the `jervis-whatsapp-browser`
-   * pod. Kotlin server's ConnectionRpcImpl + WhatsAppPollingHandler dial
-   * these RPCs instead of the former REST surface
+   * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
+   * pod. Replaces the former REST surface consumed by the Kotlin server
    * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
    * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
-   * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
    * </pre>
    */
   public interface AsyncService {
 
     /**
      */
-    default void sessionStatus(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSessionStatusMethod(), responseObserver);
+    default void getSession(com.jervis.contracts.whatsapp_browser.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.SessionStatus> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetSessionMethod(), responseObserver);
     }
 
     /**
      */
-    default void sessionInit(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSessionInitMethod(), responseObserver);
+    default void initSession(com.jervis.contracts.whatsapp_browser.InitSessionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.InitSessionResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getInitSessionMethod(), responseObserver);
     }
 
     /**
      */
-    default void scrapeTrigger(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getScrapeTriggerMethod(), responseObserver);
+    default void triggerScrape(com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getTriggerScrapeMethod(), responseObserver);
     }
 
     /**
      */
-    default void scrapeLatest(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getScrapeLatestMethod(), responseObserver);
+    default void getLatestScrape(com.jervis.contracts.whatsapp_browser.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.LatestScrapeResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetLatestScrapeMethod(), responseObserver);
     }
 
     /**
      */
-    default void vncToken(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getVncTokenMethod(), responseObserver);
+    default void createVncToken(com.jervis.contracts.whatsapp_browser.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.VncTokenResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCreateVncTokenMethod(), responseObserver);
     }
   }
 
   /**
    * Base class for the server implementation of the service WhatsAppBrowserService.
    * <pre>
-   * WhatsAppBrowserService — gRPC wrapper on top of the `jervis-whatsapp-browser`
-   * pod. Kotlin server's ConnectionRpcImpl + WhatsAppPollingHandler dial
-   * these RPCs instead of the former REST surface
+   * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
+   * pod. Replaces the former REST surface consumed by the Kotlin server
    * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
    * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
-   * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
    * </pre>
    */
   public static abstract class WhatsAppBrowserServiceImplBase
@@ -292,12 +289,11 @@ public final class WhatsAppBrowserServiceGrpc {
   /**
    * A stub to allow clients to do asynchronous rpc calls to service WhatsAppBrowserService.
    * <pre>
-   * WhatsAppBrowserService — gRPC wrapper on top of the `jervis-whatsapp-browser`
-   * pod. Kotlin server's ConnectionRpcImpl + WhatsAppPollingHandler dial
-   * these RPCs instead of the former REST surface
+   * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
+   * pod. Replaces the former REST surface consumed by the Kotlin server
    * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
    * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
-   * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
    * </pre>
    */
   public static final class WhatsAppBrowserServiceStub
@@ -315,54 +311,53 @@ public final class WhatsAppBrowserServiceGrpc {
 
     /**
      */
-    public void sessionStatus(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse> responseObserver) {
+    public void getSession(com.jervis.contracts.whatsapp_browser.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.SessionStatus> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getSessionStatusMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getGetSessionMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void sessionInit(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse> responseObserver) {
+    public void initSession(com.jervis.contracts.whatsapp_browser.InitSessionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.InitSessionResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getSessionInitMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getInitSessionMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void scrapeTrigger(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse> responseObserver) {
+    public void triggerScrape(com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getScrapeTriggerMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getTriggerScrapeMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void scrapeLatest(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse> responseObserver) {
+    public void getLatestScrape(com.jervis.contracts.whatsapp_browser.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.LatestScrapeResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getScrapeLatestMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getGetLatestScrapeMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void vncToken(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse> responseObserver) {
+    public void createVncToken(com.jervis.contracts.whatsapp_browser.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.VncTokenResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getVncTokenMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getCreateVncTokenMethod(), getCallOptions()), request, responseObserver);
     }
   }
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service WhatsAppBrowserService.
    * <pre>
-   * WhatsAppBrowserService — gRPC wrapper on top of the `jervis-whatsapp-browser`
-   * pod. Kotlin server's ConnectionRpcImpl + WhatsAppPollingHandler dial
-   * these RPCs instead of the former REST surface
+   * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
+   * pod. Replaces the former REST surface consumed by the Kotlin server
    * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
    * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
-   * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
    * </pre>
    */
   public static final class WhatsAppBrowserServiceBlockingStub
@@ -380,49 +375,48 @@ public final class WhatsAppBrowserServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.whatsapp_browser.RawResponse sessionStatus(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request) {
+    public com.jervis.contracts.whatsapp_browser.SessionStatus getSession(com.jervis.contracts.whatsapp_browser.SessionRef request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getSessionStatusMethod(), getCallOptions(), request);
+          getChannel(), getGetSessionMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.whatsapp_browser.RawResponse sessionInit(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request) {
+    public com.jervis.contracts.whatsapp_browser.InitSessionResponse initSession(com.jervis.contracts.whatsapp_browser.InitSessionRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getSessionInitMethod(), getCallOptions(), request);
+          getChannel(), getInitSessionMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.whatsapp_browser.RawResponse scrapeTrigger(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request) {
+    public com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse triggerScrape(com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getScrapeTriggerMethod(), getCallOptions(), request);
+          getChannel(), getTriggerScrapeMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.whatsapp_browser.RawResponse scrapeLatest(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request) {
+    public com.jervis.contracts.whatsapp_browser.LatestScrapeResponse getLatestScrape(com.jervis.contracts.whatsapp_browser.SessionRef request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getScrapeLatestMethod(), getCallOptions(), request);
+          getChannel(), getGetLatestScrapeMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.whatsapp_browser.RawResponse vncToken(com.jervis.contracts.whatsapp_browser.WhatsAppRequest request) {
+    public com.jervis.contracts.whatsapp_browser.VncTokenResponse createVncToken(com.jervis.contracts.whatsapp_browser.SessionRef request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getVncTokenMethod(), getCallOptions(), request);
+          getChannel(), getCreateVncTokenMethod(), getCallOptions(), request);
     }
   }
 
   /**
    * A stub to allow clients to do ListenableFuture-style rpc calls to service WhatsAppBrowserService.
    * <pre>
-   * WhatsAppBrowserService — gRPC wrapper on top of the `jervis-whatsapp-browser`
-   * pod. Kotlin server's ConnectionRpcImpl + WhatsAppPollingHandler dial
-   * these RPCs instead of the former REST surface
+   * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
+   * pod. Replaces the former REST surface consumed by the Kotlin server
    * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
    * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
-   * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
    * </pre>
    */
   public static final class WhatsAppBrowserServiceFutureStub
@@ -440,50 +434,50 @@ public final class WhatsAppBrowserServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.whatsapp_browser.RawResponse> sessionStatus(
-        com.jervis.contracts.whatsapp_browser.WhatsAppRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.whatsapp_browser.SessionStatus> getSession(
+        com.jervis.contracts.whatsapp_browser.SessionRef request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getSessionStatusMethod(), getCallOptions()), request);
+          getChannel().newCall(getGetSessionMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.whatsapp_browser.RawResponse> sessionInit(
-        com.jervis.contracts.whatsapp_browser.WhatsAppRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.whatsapp_browser.InitSessionResponse> initSession(
+        com.jervis.contracts.whatsapp_browser.InitSessionRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getSessionInitMethod(), getCallOptions()), request);
+          getChannel().newCall(getInitSessionMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.whatsapp_browser.RawResponse> scrapeTrigger(
-        com.jervis.contracts.whatsapp_browser.WhatsAppRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse> triggerScrape(
+        com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getScrapeTriggerMethod(), getCallOptions()), request);
+          getChannel().newCall(getTriggerScrapeMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.whatsapp_browser.RawResponse> scrapeLatest(
-        com.jervis.contracts.whatsapp_browser.WhatsAppRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.whatsapp_browser.LatestScrapeResponse> getLatestScrape(
+        com.jervis.contracts.whatsapp_browser.SessionRef request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getScrapeLatestMethod(), getCallOptions()), request);
+          getChannel().newCall(getGetLatestScrapeMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.whatsapp_browser.RawResponse> vncToken(
-        com.jervis.contracts.whatsapp_browser.WhatsAppRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.whatsapp_browser.VncTokenResponse> createVncToken(
+        com.jervis.contracts.whatsapp_browser.SessionRef request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getVncTokenMethod(), getCallOptions()), request);
+          getChannel().newCall(getCreateVncTokenMethod(), getCallOptions()), request);
     }
   }
 
-  private static final int METHODID_SESSION_STATUS = 0;
-  private static final int METHODID_SESSION_INIT = 1;
-  private static final int METHODID_SCRAPE_TRIGGER = 2;
-  private static final int METHODID_SCRAPE_LATEST = 3;
-  private static final int METHODID_VNC_TOKEN = 4;
+  private static final int METHODID_GET_SESSION = 0;
+  private static final int METHODID_INIT_SESSION = 1;
+  private static final int METHODID_TRIGGER_SCRAPE = 2;
+  private static final int METHODID_GET_LATEST_SCRAPE = 3;
+  private static final int METHODID_CREATE_VNC_TOKEN = 4;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -502,25 +496,25 @@ public final class WhatsAppBrowserServiceGrpc {
     @java.lang.SuppressWarnings("unchecked")
     public void invoke(Req request, io.grpc.stub.StreamObserver<Resp> responseObserver) {
       switch (methodId) {
-        case METHODID_SESSION_STATUS:
-          serviceImpl.sessionStatus((com.jervis.contracts.whatsapp_browser.WhatsAppRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse>) responseObserver);
+        case METHODID_GET_SESSION:
+          serviceImpl.getSession((com.jervis.contracts.whatsapp_browser.SessionRef) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.SessionStatus>) responseObserver);
           break;
-        case METHODID_SESSION_INIT:
-          serviceImpl.sessionInit((com.jervis.contracts.whatsapp_browser.WhatsAppRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse>) responseObserver);
+        case METHODID_INIT_SESSION:
+          serviceImpl.initSession((com.jervis.contracts.whatsapp_browser.InitSessionRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.InitSessionResponse>) responseObserver);
           break;
-        case METHODID_SCRAPE_TRIGGER:
-          serviceImpl.scrapeTrigger((com.jervis.contracts.whatsapp_browser.WhatsAppRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse>) responseObserver);
+        case METHODID_TRIGGER_SCRAPE:
+          serviceImpl.triggerScrape((com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse>) responseObserver);
           break;
-        case METHODID_SCRAPE_LATEST:
-          serviceImpl.scrapeLatest((com.jervis.contracts.whatsapp_browser.WhatsAppRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse>) responseObserver);
+        case METHODID_GET_LATEST_SCRAPE:
+          serviceImpl.getLatestScrape((com.jervis.contracts.whatsapp_browser.SessionRef) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.LatestScrapeResponse>) responseObserver);
           break;
-        case METHODID_VNC_TOKEN:
-          serviceImpl.vncToken((com.jervis.contracts.whatsapp_browser.WhatsAppRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.RawResponse>) responseObserver);
+        case METHODID_CREATE_VNC_TOKEN:
+          serviceImpl.createVncToken((com.jervis.contracts.whatsapp_browser.SessionRef) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.VncTokenResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -541,40 +535,40 @@ public final class WhatsAppBrowserServiceGrpc {
   public static final io.grpc.ServerServiceDefinition bindService(AsyncService service) {
     return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
         .addMethod(
-          getSessionStatusMethod(),
+          getGetSessionMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-              com.jervis.contracts.whatsapp_browser.RawResponse>(
-                service, METHODID_SESSION_STATUS)))
+              com.jervis.contracts.whatsapp_browser.SessionRef,
+              com.jervis.contracts.whatsapp_browser.SessionStatus>(
+                service, METHODID_GET_SESSION)))
         .addMethod(
-          getSessionInitMethod(),
+          getInitSessionMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-              com.jervis.contracts.whatsapp_browser.RawResponse>(
-                service, METHODID_SESSION_INIT)))
+              com.jervis.contracts.whatsapp_browser.InitSessionRequest,
+              com.jervis.contracts.whatsapp_browser.InitSessionResponse>(
+                service, METHODID_INIT_SESSION)))
         .addMethod(
-          getScrapeTriggerMethod(),
+          getTriggerScrapeMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-              com.jervis.contracts.whatsapp_browser.RawResponse>(
-                service, METHODID_SCRAPE_TRIGGER)))
+              com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest,
+              com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse>(
+                service, METHODID_TRIGGER_SCRAPE)))
         .addMethod(
-          getScrapeLatestMethod(),
+          getGetLatestScrapeMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-              com.jervis.contracts.whatsapp_browser.RawResponse>(
-                service, METHODID_SCRAPE_LATEST)))
+              com.jervis.contracts.whatsapp_browser.SessionRef,
+              com.jervis.contracts.whatsapp_browser.LatestScrapeResponse>(
+                service, METHODID_GET_LATEST_SCRAPE)))
         .addMethod(
-          getVncTokenMethod(),
+          getCreateVncTokenMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.whatsapp_browser.WhatsAppRequest,
-              com.jervis.contracts.whatsapp_browser.RawResponse>(
-                service, METHODID_VNC_TOKEN)))
+              com.jervis.contracts.whatsapp_browser.SessionRef,
+              com.jervis.contracts.whatsapp_browser.VncTokenResponse>(
+                service, METHODID_CREATE_VNC_TOKEN)))
         .build();
   }
 
@@ -623,11 +617,11 @@ public final class WhatsAppBrowserServiceGrpc {
         if (result == null) {
           serviceDescriptor = result = io.grpc.ServiceDescriptor.newBuilder(SERVICE_NAME)
               .setSchemaDescriptor(new WhatsAppBrowserServiceFileDescriptorSupplier())
-              .addMethod(getSessionStatusMethod())
-              .addMethod(getSessionInitMethod())
-              .addMethod(getScrapeTriggerMethod())
-              .addMethod(getScrapeLatestMethod())
-              .addMethod(getVncTokenMethod())
+              .addMethod(getGetSessionMethod())
+              .addMethod(getInitSessionMethod())
+              .addMethod(getTriggerScrapeMethod())
+              .addMethod(getGetLatestScrapeMethod())
+              .addMethod(getCreateVncTokenMethod())
               .build();
         }
       }

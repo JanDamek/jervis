@@ -26,22 +26,14 @@ public interface PtzGotoRequestOrBuilder extends
   com.jervis.contracts.common.RequestContextOrBuilder getCtxOrBuilder();
 
   /**
-   * <pre>
-   * {preset: "..."}
-   * </pre>
-   *
-   * <code>string request_json = 2;</code>
-   * @return The requestJson.
+   * <code>string preset = 2;</code>
+   * @return The preset.
    */
-  java.lang.String getRequestJson();
+  java.lang.String getPreset();
   /**
-   * <pre>
-   * {preset: "..."}
-   * </pre>
-   *
-   * <code>string request_json = 2;</code>
-   * @return The bytes for requestJson.
+   * <code>string preset = 2;</code>
+   * @return The bytes for preset.
    */
   com.google.protobuf.ByteString
-      getRequestJsonBytes();
+      getPresetBytes();
 }

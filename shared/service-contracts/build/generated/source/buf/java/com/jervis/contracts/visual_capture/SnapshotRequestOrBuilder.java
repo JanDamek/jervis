@@ -27,23 +27,61 @@ public interface SnapshotRequestOrBuilder extends
 
   /**
    * <pre>
-   * Raw JSON body matching the legacy SnapshotRequest model (preset,
-   * mode, custom_prompt). Empty string = default snapshot.
+   * "scene" | "whiteboard" | "screen"
    * </pre>
    *
-   * <code>string request_json = 2;</code>
-   * @return The requestJson.
+   * <code>string mode = 2;</code>
+   * @return The mode.
    */
-  java.lang.String getRequestJson();
+  java.lang.String getMode();
   /**
    * <pre>
-   * Raw JSON body matching the legacy SnapshotRequest model (preset,
-   * mode, custom_prompt). Empty string = default snapshot.
+   * "scene" | "whiteboard" | "screen"
    * </pre>
    *
-   * <code>string request_json = 2;</code>
-   * @return The bytes for requestJson.
+   * <code>string mode = 2;</code>
+   * @return The bytes for mode.
    */
   com.google.protobuf.ByteString
-      getRequestJsonBytes();
+      getModeBytes();
+
+  /**
+   * <pre>
+   * optional — move camera first
+   * </pre>
+   *
+   * <code>string preset = 3;</code>
+   * @return The preset.
+   */
+  java.lang.String getPreset();
+  /**
+   * <pre>
+   * optional — move camera first
+   * </pre>
+   *
+   * <code>string preset = 3;</code>
+   * @return The bytes for preset.
+   */
+  com.google.protobuf.ByteString
+      getPresetBytes();
+
+  /**
+   * <pre>
+   * optional VLM prompt override
+   * </pre>
+   *
+   * <code>string custom_prompt = 4;</code>
+   * @return The customPrompt.
+   */
+  java.lang.String getCustomPrompt();
+  /**
+   * <pre>
+   * optional VLM prompt override
+   * </pre>
+   *
+   * <code>string custom_prompt = 4;</code>
+   * @return The bytes for customPrompt.
+   */
+  com.google.protobuf.ByteString
+      getCustomPromptBytes();
 }

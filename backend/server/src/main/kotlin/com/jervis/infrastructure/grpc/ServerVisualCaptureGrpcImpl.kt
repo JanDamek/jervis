@@ -1,9 +1,10 @@
 package com.jervis.infrastructure.grpc
 
-import com.jervis.contracts.server.PtzRequest
-import com.jervis.contracts.server.RawJsonResponse
+import com.jervis.contracts.server.ProxyPtzRequest
+import com.jervis.contracts.server.ProxyPtzResponse
+import com.jervis.contracts.server.ProxySnapshotRequest
+import com.jervis.contracts.server.ProxySnapshotResponse
 import com.jervis.contracts.server.ServerVisualCaptureServiceGrpcKt
-import com.jervis.contracts.server.SnapshotRequest
 import com.jervis.contracts.server.VisualResultRequest
 import com.jervis.contracts.server.VisualResultResponse
 import com.jervis.dto.meeting.HelperMessageDto
@@ -52,33 +53,43 @@ class ServerVisualCaptureGrpcImpl(
         return VisualResultResponse.newBuilder().setOk(true).build()
     }
 
-    override suspend fun snapshot(request: SnapshotRequest): RawJsonResponse =
+    override suspend fun snapshot(request: ProxySnapshotRequest): ProxySnapshotResponse =
         try {
-            val resp = visualCaptureGrpc.snapshot(request.requestJson)
-            RawJsonResponse.newBuilder()
-                .setBodyJson(resp.bodyJson)
-                .setStatus(resp.status)
+            val resp = visualCaptureGrpc.snapshot(
+                mode = request.mode,
+                preset = request.preset,
+                customPrompt = request.customPrompt,
+            )
+            ProxySnapshotResponse.newBuilder()
+                .setDescription(resp.description)
+                .setOcrText(resp.ocrText)
+                .setMode(resp.mode)
+                .setModel(resp.model)
+                .setFrameSizeBytes(resp.frameSizeBytes)
+                .setTimestamp(resp.timestamp)
+                .setPreset(resp.preset)
+                .setError(resp.error)
                 .build()
         } catch (e: Exception) {
             logger.warn(e) { "VISUAL_SNAPSHOT_PROXY_ERROR" }
-            RawJsonResponse.newBuilder()
-                .setBodyJson("""{"status":"error","error":"${e.message?.take(200)}"}""")
-                .setStatus(502)
+            ProxySnapshotResponse.newBuilder()
+                .setError(e.message?.take(200).orEmpty())
                 .build()
         }
 
-    override suspend fun ptz(request: PtzRequest): RawJsonResponse =
+    override suspend fun ptz(request: ProxyPtzRequest): ProxyPtzResponse =
         try {
-            val resp = visualCaptureGrpc.ptzGoto(request.requestJson)
-            RawJsonResponse.newBuilder()
-                .setBodyJson(resp.bodyJson)
+            val resp = visualCaptureGrpc.ptzGoto(request.preset)
+            ProxyPtzResponse.newBuilder()
                 .setStatus(resp.status)
+                .setPreset(resp.preset)
+                .setError(resp.error)
                 .build()
         } catch (e: Exception) {
             logger.warn(e) { "VISUAL_PTZ_PROXY_ERROR" }
-            RawJsonResponse.newBuilder()
-                .setBodyJson("""{"status":"error","error":"${e.message?.take(200)}"}""")
-                .setStatus(502)
+            ProxyPtzResponse.newBuilder()
+                .setStatus("error")
+                .setError(e.message?.take(200).orEmpty())
                 .build()
         }
 }

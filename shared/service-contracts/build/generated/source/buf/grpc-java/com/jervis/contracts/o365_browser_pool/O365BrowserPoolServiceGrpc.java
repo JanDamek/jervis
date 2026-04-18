@@ -4,12 +4,12 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 
 /**
  * <pre>
- * O365BrowserPoolService — gRPC passthrough on top of the per-client
- * browser pod. Replaces the former REST surface consumed by the Kotlin
+ * O365BrowserPoolService — typed wrapper over the per-client browser pod.
+ * Replaces the former REST surface that was consumed by the Kotlin
  * server (/health, /session/{cid}, /session/{cid}/init,
- * /session/{cid}/mfa, /session/{cid}/rediscover, /scrape/{cid}/discover,
- * /vnc-token/{cid}, /instruction/{cid}). The VNC proxy routes
- * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+ * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
+ * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
+ * not pod-to-pod.
  * </pre>
  */
 @javax.annotation.Generated(
@@ -24,28 +24,28 @@ public final class O365BrowserPoolServiceGrpc {
 
   // Static method descriptors that strictly reflect the proto.
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.HealthRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getHealthMethod;
+      com.jervis.contracts.o365_browser_pool.HealthResponse> getHealthMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "Health",
       requestType = com.jervis.contracts.o365_browser_pool.HealthRequest.class,
-      responseType = com.jervis.contracts.o365_browser_pool.RawResponse.class,
+      responseType = com.jervis.contracts.o365_browser_pool.HealthResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.HealthRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getHealthMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.HealthRequest, com.jervis.contracts.o365_browser_pool.RawResponse> getHealthMethod;
+      com.jervis.contracts.o365_browser_pool.HealthResponse> getHealthMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.HealthRequest, com.jervis.contracts.o365_browser_pool.HealthResponse> getHealthMethod;
     if ((getHealthMethod = O365BrowserPoolServiceGrpc.getHealthMethod) == null) {
       synchronized (O365BrowserPoolServiceGrpc.class) {
         if ((getHealthMethod = O365BrowserPoolServiceGrpc.getHealthMethod) == null) {
           O365BrowserPoolServiceGrpc.getHealthMethod = getHealthMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.HealthRequest, com.jervis.contracts.o365_browser_pool.RawResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.HealthRequest, com.jervis.contracts.o365_browser_pool.HealthResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "Health"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.o365_browser_pool.HealthRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.RawResponse.getDefaultInstance()))
+                  com.jervis.contracts.o365_browser_pool.HealthResponse.getDefaultInstance()))
               .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("Health"))
               .build();
         }
@@ -54,221 +54,159 @@ public final class O365BrowserPoolServiceGrpc {
     return getHealthMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getSessionStatusMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SessionRef,
+      com.jervis.contracts.o365_browser_pool.SessionStatus> getGetSessionMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "SessionStatus",
-      requestType = com.jervis.contracts.o365_browser_pool.PodRequest.class,
-      responseType = com.jervis.contracts.o365_browser_pool.RawResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "GetSession",
+      requestType = com.jervis.contracts.o365_browser_pool.SessionRef.class,
+      responseType = com.jervis.contracts.o365_browser_pool.SessionStatus.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getSessionStatusMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse> getSessionStatusMethod;
-    if ((getSessionStatusMethod = O365BrowserPoolServiceGrpc.getSessionStatusMethod) == null) {
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SessionRef,
+      com.jervis.contracts.o365_browser_pool.SessionStatus> getGetSessionMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SessionRef, com.jervis.contracts.o365_browser_pool.SessionStatus> getGetSessionMethod;
+    if ((getGetSessionMethod = O365BrowserPoolServiceGrpc.getGetSessionMethod) == null) {
       synchronized (O365BrowserPoolServiceGrpc.class) {
-        if ((getSessionStatusMethod = O365BrowserPoolServiceGrpc.getSessionStatusMethod) == null) {
-          O365BrowserPoolServiceGrpc.getSessionStatusMethod = getSessionStatusMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse>newBuilder()
+        if ((getGetSessionMethod = O365BrowserPoolServiceGrpc.getGetSessionMethod) == null) {
+          O365BrowserPoolServiceGrpc.getGetSessionMethod = getGetSessionMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.SessionRef, com.jervis.contracts.o365_browser_pool.SessionStatus>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SessionStatus"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetSession"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.PodRequest.getDefaultInstance()))
+                  com.jervis.contracts.o365_browser_pool.SessionRef.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("SessionStatus"))
+                  com.jervis.contracts.o365_browser_pool.SessionStatus.getDefaultInstance()))
+              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("GetSession"))
               .build();
         }
       }
     }
-    return getSessionStatusMethod;
+    return getGetSessionMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getSessionInitMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.InitSessionRequest,
+      com.jervis.contracts.o365_browser_pool.InitSessionResponse> getInitSessionMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "SessionInit",
-      requestType = com.jervis.contracts.o365_browser_pool.PodRequest.class,
-      responseType = com.jervis.contracts.o365_browser_pool.RawResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "InitSession",
+      requestType = com.jervis.contracts.o365_browser_pool.InitSessionRequest.class,
+      responseType = com.jervis.contracts.o365_browser_pool.InitSessionResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getSessionInitMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse> getSessionInitMethod;
-    if ((getSessionInitMethod = O365BrowserPoolServiceGrpc.getSessionInitMethod) == null) {
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.InitSessionRequest,
+      com.jervis.contracts.o365_browser_pool.InitSessionResponse> getInitSessionMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.InitSessionRequest, com.jervis.contracts.o365_browser_pool.InitSessionResponse> getInitSessionMethod;
+    if ((getInitSessionMethod = O365BrowserPoolServiceGrpc.getInitSessionMethod) == null) {
       synchronized (O365BrowserPoolServiceGrpc.class) {
-        if ((getSessionInitMethod = O365BrowserPoolServiceGrpc.getSessionInitMethod) == null) {
-          O365BrowserPoolServiceGrpc.getSessionInitMethod = getSessionInitMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse>newBuilder()
+        if ((getInitSessionMethod = O365BrowserPoolServiceGrpc.getInitSessionMethod) == null) {
+          O365BrowserPoolServiceGrpc.getInitSessionMethod = getInitSessionMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.InitSessionRequest, com.jervis.contracts.o365_browser_pool.InitSessionResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SessionInit"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "InitSession"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.PodRequest.getDefaultInstance()))
+                  com.jervis.contracts.o365_browser_pool.InitSessionRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("SessionInit"))
+                  com.jervis.contracts.o365_browser_pool.InitSessionResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("InitSession"))
               .build();
         }
       }
     }
-    return getSessionInitMethod;
+    return getInitSessionMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getSessionMfaMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SubmitMfaRequest,
+      com.jervis.contracts.o365_browser_pool.InitSessionResponse> getSubmitMfaMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "SessionMfa",
-      requestType = com.jervis.contracts.o365_browser_pool.PodRequest.class,
-      responseType = com.jervis.contracts.o365_browser_pool.RawResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "SubmitMfa",
+      requestType = com.jervis.contracts.o365_browser_pool.SubmitMfaRequest.class,
+      responseType = com.jervis.contracts.o365_browser_pool.InitSessionResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getSessionMfaMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse> getSessionMfaMethod;
-    if ((getSessionMfaMethod = O365BrowserPoolServiceGrpc.getSessionMfaMethod) == null) {
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SubmitMfaRequest,
+      com.jervis.contracts.o365_browser_pool.InitSessionResponse> getSubmitMfaMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SubmitMfaRequest, com.jervis.contracts.o365_browser_pool.InitSessionResponse> getSubmitMfaMethod;
+    if ((getSubmitMfaMethod = O365BrowserPoolServiceGrpc.getSubmitMfaMethod) == null) {
       synchronized (O365BrowserPoolServiceGrpc.class) {
-        if ((getSessionMfaMethod = O365BrowserPoolServiceGrpc.getSessionMfaMethod) == null) {
-          O365BrowserPoolServiceGrpc.getSessionMfaMethod = getSessionMfaMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse>newBuilder()
+        if ((getSubmitMfaMethod = O365BrowserPoolServiceGrpc.getSubmitMfaMethod) == null) {
+          O365BrowserPoolServiceGrpc.getSubmitMfaMethod = getSubmitMfaMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.SubmitMfaRequest, com.jervis.contracts.o365_browser_pool.InitSessionResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SessionMfa"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SubmitMfa"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.PodRequest.getDefaultInstance()))
+                  com.jervis.contracts.o365_browser_pool.SubmitMfaRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("SessionMfa"))
+                  com.jervis.contracts.o365_browser_pool.InitSessionResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("SubmitMfa"))
               .build();
         }
       }
     }
-    return getSessionMfaMethod;
+    return getSubmitMfaMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getSessionRediscoverMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SessionRef,
+      com.jervis.contracts.o365_browser_pool.VncTokenResponse> getCreateVncTokenMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "SessionRediscover",
-      requestType = com.jervis.contracts.o365_browser_pool.PodRequest.class,
-      responseType = com.jervis.contracts.o365_browser_pool.RawResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "CreateVncToken",
+      requestType = com.jervis.contracts.o365_browser_pool.SessionRef.class,
+      responseType = com.jervis.contracts.o365_browser_pool.VncTokenResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getSessionRediscoverMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse> getSessionRediscoverMethod;
-    if ((getSessionRediscoverMethod = O365BrowserPoolServiceGrpc.getSessionRediscoverMethod) == null) {
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SessionRef,
+      com.jervis.contracts.o365_browser_pool.VncTokenResponse> getCreateVncTokenMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SessionRef, com.jervis.contracts.o365_browser_pool.VncTokenResponse> getCreateVncTokenMethod;
+    if ((getCreateVncTokenMethod = O365BrowserPoolServiceGrpc.getCreateVncTokenMethod) == null) {
       synchronized (O365BrowserPoolServiceGrpc.class) {
-        if ((getSessionRediscoverMethod = O365BrowserPoolServiceGrpc.getSessionRediscoverMethod) == null) {
-          O365BrowserPoolServiceGrpc.getSessionRediscoverMethod = getSessionRediscoverMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse>newBuilder()
+        if ((getCreateVncTokenMethod = O365BrowserPoolServiceGrpc.getCreateVncTokenMethod) == null) {
+          O365BrowserPoolServiceGrpc.getCreateVncTokenMethod = getCreateVncTokenMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.SessionRef, com.jervis.contracts.o365_browser_pool.VncTokenResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SessionRediscover"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "CreateVncToken"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.PodRequest.getDefaultInstance()))
+                  com.jervis.contracts.o365_browser_pool.SessionRef.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("SessionRediscover"))
+                  com.jervis.contracts.o365_browser_pool.VncTokenResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("CreateVncToken"))
               .build();
         }
       }
     }
-    return getSessionRediscoverMethod;
+    return getCreateVncTokenMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getScrapeDiscoverMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.InstructionRequest,
+      com.jervis.contracts.o365_browser_pool.InstructionResponse> getPushInstructionMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "ScrapeDiscover",
-      requestType = com.jervis.contracts.o365_browser_pool.PodRequest.class,
-      responseType = com.jervis.contracts.o365_browser_pool.RawResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "PushInstruction",
+      requestType = com.jervis.contracts.o365_browser_pool.InstructionRequest.class,
+      responseType = com.jervis.contracts.o365_browser_pool.InstructionResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getScrapeDiscoverMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse> getScrapeDiscoverMethod;
-    if ((getScrapeDiscoverMethod = O365BrowserPoolServiceGrpc.getScrapeDiscoverMethod) == null) {
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.InstructionRequest,
+      com.jervis.contracts.o365_browser_pool.InstructionResponse> getPushInstructionMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.InstructionRequest, com.jervis.contracts.o365_browser_pool.InstructionResponse> getPushInstructionMethod;
+    if ((getPushInstructionMethod = O365BrowserPoolServiceGrpc.getPushInstructionMethod) == null) {
       synchronized (O365BrowserPoolServiceGrpc.class) {
-        if ((getScrapeDiscoverMethod = O365BrowserPoolServiceGrpc.getScrapeDiscoverMethod) == null) {
-          O365BrowserPoolServiceGrpc.getScrapeDiscoverMethod = getScrapeDiscoverMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse>newBuilder()
+        if ((getPushInstructionMethod = O365BrowserPoolServiceGrpc.getPushInstructionMethod) == null) {
+          O365BrowserPoolServiceGrpc.getPushInstructionMethod = getPushInstructionMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.InstructionRequest, com.jervis.contracts.o365_browser_pool.InstructionResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ScrapeDiscover"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "PushInstruction"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.PodRequest.getDefaultInstance()))
+                  com.jervis.contracts.o365_browser_pool.InstructionRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("ScrapeDiscover"))
+                  com.jervis.contracts.o365_browser_pool.InstructionResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("PushInstruction"))
               .build();
         }
       }
     }
-    return getScrapeDiscoverMethod;
-  }
-
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getVncTokenMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "VncToken",
-      requestType = com.jervis.contracts.o365_browser_pool.PodRequest.class,
-      responseType = com.jervis.contracts.o365_browser_pool.RawResponse.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getVncTokenMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse> getVncTokenMethod;
-    if ((getVncTokenMethod = O365BrowserPoolServiceGrpc.getVncTokenMethod) == null) {
-      synchronized (O365BrowserPoolServiceGrpc.class) {
-        if ((getVncTokenMethod = O365BrowserPoolServiceGrpc.getVncTokenMethod) == null) {
-          O365BrowserPoolServiceGrpc.getVncTokenMethod = getVncTokenMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "VncToken"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.PodRequest.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("VncToken"))
-              .build();
-        }
-      }
-    }
-    return getVncTokenMethod;
-  }
-
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getSendInstructionMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "SendInstruction",
-      requestType = com.jervis.contracts.o365_browser_pool.PodRequest.class,
-      responseType = com.jervis.contracts.o365_browser_pool.RawResponse.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest,
-      com.jervis.contracts.o365_browser_pool.RawResponse> getSendInstructionMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse> getSendInstructionMethod;
-    if ((getSendInstructionMethod = O365BrowserPoolServiceGrpc.getSendInstructionMethod) == null) {
-      synchronized (O365BrowserPoolServiceGrpc.class) {
-        if ((getSendInstructionMethod = O365BrowserPoolServiceGrpc.getSendInstructionMethod) == null) {
-          O365BrowserPoolServiceGrpc.getSendInstructionMethod = getSendInstructionMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.PodRequest, com.jervis.contracts.o365_browser_pool.RawResponse>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SendInstruction"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.PodRequest.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.RawResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("SendInstruction"))
-              .build();
-        }
-      }
-    }
-    return getSendInstructionMethod;
+    return getPushInstructionMethod;
   }
 
   /**
@@ -317,12 +255,12 @@ public final class O365BrowserPoolServiceGrpc {
 
   /**
    * <pre>
-   * O365BrowserPoolService — gRPC passthrough on top of the per-client
-   * browser pod. Replaces the former REST surface consumed by the Kotlin
+   * O365BrowserPoolService — typed wrapper over the per-client browser pod.
+   * Replaces the former REST surface that was consumed by the Kotlin
    * server (/health, /session/{cid}, /session/{cid}/init,
-   * /session/{cid}/mfa, /session/{cid}/rediscover, /scrape/{cid}/discover,
-   * /vnc-token/{cid}, /instruction/{cid}). The VNC proxy routes
-   * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
+   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
+   * not pod-to-pod.
    * </pre>
    */
   public interface AsyncService {
@@ -330,69 +268,55 @@ public final class O365BrowserPoolServiceGrpc {
     /**
      */
     default void health(com.jervis.contracts.o365_browser_pool.HealthRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.HealthResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getHealthMethod(), responseObserver);
     }
 
     /**
      */
-    default void sessionStatus(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSessionStatusMethod(), responseObserver);
+    default void getSession(com.jervis.contracts.o365_browser_pool.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.SessionStatus> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetSessionMethod(), responseObserver);
     }
 
     /**
      */
-    default void sessionInit(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSessionInitMethod(), responseObserver);
+    default void initSession(com.jervis.contracts.o365_browser_pool.InitSessionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InitSessionResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getInitSessionMethod(), responseObserver);
     }
 
     /**
      */
-    default void sessionMfa(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSessionMfaMethod(), responseObserver);
+    default void submitMfa(com.jervis.contracts.o365_browser_pool.SubmitMfaRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InitSessionResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSubmitMfaMethod(), responseObserver);
     }
 
     /**
      */
-    default void sessionRediscover(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSessionRediscoverMethod(), responseObserver);
+    default void createVncToken(com.jervis.contracts.o365_browser_pool.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.VncTokenResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCreateVncTokenMethod(), responseObserver);
     }
 
     /**
      */
-    default void scrapeDiscover(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getScrapeDiscoverMethod(), responseObserver);
-    }
-
-    /**
-     */
-    default void vncToken(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getVncTokenMethod(), responseObserver);
-    }
-
-    /**
-     */
-    default void sendInstruction(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSendInstructionMethod(), responseObserver);
+    default void pushInstruction(com.jervis.contracts.o365_browser_pool.InstructionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InstructionResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getPushInstructionMethod(), responseObserver);
     }
   }
 
   /**
    * Base class for the server implementation of the service O365BrowserPoolService.
    * <pre>
-   * O365BrowserPoolService — gRPC passthrough on top of the per-client
-   * browser pod. Replaces the former REST surface consumed by the Kotlin
+   * O365BrowserPoolService — typed wrapper over the per-client browser pod.
+   * Replaces the former REST surface that was consumed by the Kotlin
    * server (/health, /session/{cid}, /session/{cid}/init,
-   * /session/{cid}/mfa, /session/{cid}/rediscover, /scrape/{cid}/discover,
-   * /vnc-token/{cid}, /instruction/{cid}). The VNC proxy routes
-   * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
+   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
+   * not pod-to-pod.
    * </pre>
    */
   public static abstract class O365BrowserPoolServiceImplBase
@@ -406,12 +330,12 @@ public final class O365BrowserPoolServiceGrpc {
   /**
    * A stub to allow clients to do asynchronous rpc calls to service O365BrowserPoolService.
    * <pre>
-   * O365BrowserPoolService — gRPC passthrough on top of the per-client
-   * browser pod. Replaces the former REST surface consumed by the Kotlin
+   * O365BrowserPoolService — typed wrapper over the per-client browser pod.
+   * Replaces the former REST surface that was consumed by the Kotlin
    * server (/health, /session/{cid}, /session/{cid}/init,
-   * /session/{cid}/mfa, /session/{cid}/rediscover, /scrape/{cid}/discover,
-   * /vnc-token/{cid}, /instruction/{cid}). The VNC proxy routes
-   * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
+   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
+   * not pod-to-pod.
    * </pre>
    */
   public static final class O365BrowserPoolServiceStub
@@ -430,77 +354,61 @@ public final class O365BrowserPoolServiceGrpc {
     /**
      */
     public void health(com.jervis.contracts.o365_browser_pool.HealthRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.HealthResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getHealthMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void sessionStatus(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
+    public void getSession(com.jervis.contracts.o365_browser_pool.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.SessionStatus> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getSessionStatusMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getGetSessionMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void sessionInit(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
+    public void initSession(com.jervis.contracts.o365_browser_pool.InitSessionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InitSessionResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getSessionInitMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getInitSessionMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void sessionMfa(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
+    public void submitMfa(com.jervis.contracts.o365_browser_pool.SubmitMfaRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InitSessionResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getSessionMfaMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getSubmitMfaMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void sessionRediscover(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
+    public void createVncToken(com.jervis.contracts.o365_browser_pool.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.VncTokenResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getSessionRediscoverMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getCreateVncTokenMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void scrapeDiscover(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
+    public void pushInstruction(com.jervis.contracts.o365_browser_pool.InstructionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InstructionResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getScrapeDiscoverMethod(), getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     */
-    public void vncToken(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getVncTokenMethod(), getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     */
-    public void sendInstruction(com.jervis.contracts.o365_browser_pool.PodRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getSendInstructionMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getPushInstructionMethod(), getCallOptions()), request, responseObserver);
     }
   }
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service O365BrowserPoolService.
    * <pre>
-   * O365BrowserPoolService — gRPC passthrough on top of the per-client
-   * browser pod. Replaces the former REST surface consumed by the Kotlin
+   * O365BrowserPoolService — typed wrapper over the per-client browser pod.
+   * Replaces the former REST surface that was consumed by the Kotlin
    * server (/health, /session/{cid}, /session/{cid}/init,
-   * /session/{cid}/mfa, /session/{cid}/rediscover, /scrape/{cid}/discover,
-   * /vnc-token/{cid}, /instruction/{cid}). The VNC proxy routes
-   * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
+   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
+   * not pod-to-pod.
    * </pre>
    */
   public static final class O365BrowserPoolServiceBlockingStub
@@ -518,70 +426,56 @@ public final class O365BrowserPoolServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.o365_browser_pool.RawResponse health(com.jervis.contracts.o365_browser_pool.HealthRequest request) {
+    public com.jervis.contracts.o365_browser_pool.HealthResponse health(com.jervis.contracts.o365_browser_pool.HealthRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getHealthMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.o365_browser_pool.RawResponse sessionStatus(com.jervis.contracts.o365_browser_pool.PodRequest request) {
+    public com.jervis.contracts.o365_browser_pool.SessionStatus getSession(com.jervis.contracts.o365_browser_pool.SessionRef request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getSessionStatusMethod(), getCallOptions(), request);
+          getChannel(), getGetSessionMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.o365_browser_pool.RawResponse sessionInit(com.jervis.contracts.o365_browser_pool.PodRequest request) {
+    public com.jervis.contracts.o365_browser_pool.InitSessionResponse initSession(com.jervis.contracts.o365_browser_pool.InitSessionRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getSessionInitMethod(), getCallOptions(), request);
+          getChannel(), getInitSessionMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.o365_browser_pool.RawResponse sessionMfa(com.jervis.contracts.o365_browser_pool.PodRequest request) {
+    public com.jervis.contracts.o365_browser_pool.InitSessionResponse submitMfa(com.jervis.contracts.o365_browser_pool.SubmitMfaRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getSessionMfaMethod(), getCallOptions(), request);
+          getChannel(), getSubmitMfaMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.o365_browser_pool.RawResponse sessionRediscover(com.jervis.contracts.o365_browser_pool.PodRequest request) {
+    public com.jervis.contracts.o365_browser_pool.VncTokenResponse createVncToken(com.jervis.contracts.o365_browser_pool.SessionRef request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getSessionRediscoverMethod(), getCallOptions(), request);
+          getChannel(), getCreateVncTokenMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.o365_browser_pool.RawResponse scrapeDiscover(com.jervis.contracts.o365_browser_pool.PodRequest request) {
+    public com.jervis.contracts.o365_browser_pool.InstructionResponse pushInstruction(com.jervis.contracts.o365_browser_pool.InstructionRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getScrapeDiscoverMethod(), getCallOptions(), request);
-    }
-
-    /**
-     */
-    public com.jervis.contracts.o365_browser_pool.RawResponse vncToken(com.jervis.contracts.o365_browser_pool.PodRequest request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getVncTokenMethod(), getCallOptions(), request);
-    }
-
-    /**
-     */
-    public com.jervis.contracts.o365_browser_pool.RawResponse sendInstruction(com.jervis.contracts.o365_browser_pool.PodRequest request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getSendInstructionMethod(), getCallOptions(), request);
+          getChannel(), getPushInstructionMethod(), getCallOptions(), request);
     }
   }
 
   /**
    * A stub to allow clients to do ListenableFuture-style rpc calls to service O365BrowserPoolService.
    * <pre>
-   * O365BrowserPoolService — gRPC passthrough on top of the per-client
-   * browser pod. Replaces the former REST surface consumed by the Kotlin
+   * O365BrowserPoolService — typed wrapper over the per-client browser pod.
+   * Replaces the former REST surface that was consumed by the Kotlin
    * server (/health, /session/{cid}, /session/{cid}/init,
-   * /session/{cid}/mfa, /session/{cid}/rediscover, /scrape/{cid}/discover,
-   * /vnc-token/{cid}, /instruction/{cid}). The VNC proxy routes
-   * (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
+   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
+   * not pod-to-pod.
    * </pre>
    */
   public static final class O365BrowserPoolServiceFutureStub
@@ -599,7 +493,7 @@ public final class O365BrowserPoolServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.RawResponse> health(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.HealthResponse> health(
         com.jervis.contracts.o365_browser_pool.HealthRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getHealthMethod(), getCallOptions()), request);
@@ -607,69 +501,51 @@ public final class O365BrowserPoolServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.RawResponse> sessionStatus(
-        com.jervis.contracts.o365_browser_pool.PodRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.SessionStatus> getSession(
+        com.jervis.contracts.o365_browser_pool.SessionRef request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getSessionStatusMethod(), getCallOptions()), request);
+          getChannel().newCall(getGetSessionMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.RawResponse> sessionInit(
-        com.jervis.contracts.o365_browser_pool.PodRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.InitSessionResponse> initSession(
+        com.jervis.contracts.o365_browser_pool.InitSessionRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getSessionInitMethod(), getCallOptions()), request);
+          getChannel().newCall(getInitSessionMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.RawResponse> sessionMfa(
-        com.jervis.contracts.o365_browser_pool.PodRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.InitSessionResponse> submitMfa(
+        com.jervis.contracts.o365_browser_pool.SubmitMfaRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getSessionMfaMethod(), getCallOptions()), request);
+          getChannel().newCall(getSubmitMfaMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.RawResponse> sessionRediscover(
-        com.jervis.contracts.o365_browser_pool.PodRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.VncTokenResponse> createVncToken(
+        com.jervis.contracts.o365_browser_pool.SessionRef request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getSessionRediscoverMethod(), getCallOptions()), request);
+          getChannel().newCall(getCreateVncTokenMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.RawResponse> scrapeDiscover(
-        com.jervis.contracts.o365_browser_pool.PodRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.InstructionResponse> pushInstruction(
+        com.jervis.contracts.o365_browser_pool.InstructionRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getScrapeDiscoverMethod(), getCallOptions()), request);
-    }
-
-    /**
-     */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.RawResponse> vncToken(
-        com.jervis.contracts.o365_browser_pool.PodRequest request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getVncTokenMethod(), getCallOptions()), request);
-    }
-
-    /**
-     */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.RawResponse> sendInstruction(
-        com.jervis.contracts.o365_browser_pool.PodRequest request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getSendInstructionMethod(), getCallOptions()), request);
+          getChannel().newCall(getPushInstructionMethod(), getCallOptions()), request);
     }
   }
 
   private static final int METHODID_HEALTH = 0;
-  private static final int METHODID_SESSION_STATUS = 1;
-  private static final int METHODID_SESSION_INIT = 2;
-  private static final int METHODID_SESSION_MFA = 3;
-  private static final int METHODID_SESSION_REDISCOVER = 4;
-  private static final int METHODID_SCRAPE_DISCOVER = 5;
-  private static final int METHODID_VNC_TOKEN = 6;
-  private static final int METHODID_SEND_INSTRUCTION = 7;
+  private static final int METHODID_GET_SESSION = 1;
+  private static final int METHODID_INIT_SESSION = 2;
+  private static final int METHODID_SUBMIT_MFA = 3;
+  private static final int METHODID_CREATE_VNC_TOKEN = 4;
+  private static final int METHODID_PUSH_INSTRUCTION = 5;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -690,35 +566,27 @@ public final class O365BrowserPoolServiceGrpc {
       switch (methodId) {
         case METHODID_HEALTH:
           serviceImpl.health((com.jervis.contracts.o365_browser_pool.HealthRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.HealthResponse>) responseObserver);
           break;
-        case METHODID_SESSION_STATUS:
-          serviceImpl.sessionStatus((com.jervis.contracts.o365_browser_pool.PodRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse>) responseObserver);
+        case METHODID_GET_SESSION:
+          serviceImpl.getSession((com.jervis.contracts.o365_browser_pool.SessionRef) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.SessionStatus>) responseObserver);
           break;
-        case METHODID_SESSION_INIT:
-          serviceImpl.sessionInit((com.jervis.contracts.o365_browser_pool.PodRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse>) responseObserver);
+        case METHODID_INIT_SESSION:
+          serviceImpl.initSession((com.jervis.contracts.o365_browser_pool.InitSessionRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InitSessionResponse>) responseObserver);
           break;
-        case METHODID_SESSION_MFA:
-          serviceImpl.sessionMfa((com.jervis.contracts.o365_browser_pool.PodRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse>) responseObserver);
+        case METHODID_SUBMIT_MFA:
+          serviceImpl.submitMfa((com.jervis.contracts.o365_browser_pool.SubmitMfaRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InitSessionResponse>) responseObserver);
           break;
-        case METHODID_SESSION_REDISCOVER:
-          serviceImpl.sessionRediscover((com.jervis.contracts.o365_browser_pool.PodRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse>) responseObserver);
+        case METHODID_CREATE_VNC_TOKEN:
+          serviceImpl.createVncToken((com.jervis.contracts.o365_browser_pool.SessionRef) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.VncTokenResponse>) responseObserver);
           break;
-        case METHODID_SCRAPE_DISCOVER:
-          serviceImpl.scrapeDiscover((com.jervis.contracts.o365_browser_pool.PodRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse>) responseObserver);
-          break;
-        case METHODID_VNC_TOKEN:
-          serviceImpl.vncToken((com.jervis.contracts.o365_browser_pool.PodRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse>) responseObserver);
-          break;
-        case METHODID_SEND_INSTRUCTION:
-          serviceImpl.sendInstruction((com.jervis.contracts.o365_browser_pool.PodRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.RawResponse>) responseObserver);
+        case METHODID_PUSH_INSTRUCTION:
+          serviceImpl.pushInstruction((com.jervis.contracts.o365_browser_pool.InstructionRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InstructionResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -743,57 +611,43 @@ public final class O365BrowserPoolServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.o365_browser_pool.HealthRequest,
-              com.jervis.contracts.o365_browser_pool.RawResponse>(
+              com.jervis.contracts.o365_browser_pool.HealthResponse>(
                 service, METHODID_HEALTH)))
         .addMethod(
-          getSessionStatusMethod(),
+          getGetSessionMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.o365_browser_pool.PodRequest,
-              com.jervis.contracts.o365_browser_pool.RawResponse>(
-                service, METHODID_SESSION_STATUS)))
+              com.jervis.contracts.o365_browser_pool.SessionRef,
+              com.jervis.contracts.o365_browser_pool.SessionStatus>(
+                service, METHODID_GET_SESSION)))
         .addMethod(
-          getSessionInitMethod(),
+          getInitSessionMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.o365_browser_pool.PodRequest,
-              com.jervis.contracts.o365_browser_pool.RawResponse>(
-                service, METHODID_SESSION_INIT)))
+              com.jervis.contracts.o365_browser_pool.InitSessionRequest,
+              com.jervis.contracts.o365_browser_pool.InitSessionResponse>(
+                service, METHODID_INIT_SESSION)))
         .addMethod(
-          getSessionMfaMethod(),
+          getSubmitMfaMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.o365_browser_pool.PodRequest,
-              com.jervis.contracts.o365_browser_pool.RawResponse>(
-                service, METHODID_SESSION_MFA)))
+              com.jervis.contracts.o365_browser_pool.SubmitMfaRequest,
+              com.jervis.contracts.o365_browser_pool.InitSessionResponse>(
+                service, METHODID_SUBMIT_MFA)))
         .addMethod(
-          getSessionRediscoverMethod(),
+          getCreateVncTokenMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.o365_browser_pool.PodRequest,
-              com.jervis.contracts.o365_browser_pool.RawResponse>(
-                service, METHODID_SESSION_REDISCOVER)))
+              com.jervis.contracts.o365_browser_pool.SessionRef,
+              com.jervis.contracts.o365_browser_pool.VncTokenResponse>(
+                service, METHODID_CREATE_VNC_TOKEN)))
         .addMethod(
-          getScrapeDiscoverMethod(),
+          getPushInstructionMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.o365_browser_pool.PodRequest,
-              com.jervis.contracts.o365_browser_pool.RawResponse>(
-                service, METHODID_SCRAPE_DISCOVER)))
-        .addMethod(
-          getVncTokenMethod(),
-          io.grpc.stub.ServerCalls.asyncUnaryCall(
-            new MethodHandlers<
-              com.jervis.contracts.o365_browser_pool.PodRequest,
-              com.jervis.contracts.o365_browser_pool.RawResponse>(
-                service, METHODID_VNC_TOKEN)))
-        .addMethod(
-          getSendInstructionMethod(),
-          io.grpc.stub.ServerCalls.asyncUnaryCall(
-            new MethodHandlers<
-              com.jervis.contracts.o365_browser_pool.PodRequest,
-              com.jervis.contracts.o365_browser_pool.RawResponse>(
-                service, METHODID_SEND_INSTRUCTION)))
+              com.jervis.contracts.o365_browser_pool.InstructionRequest,
+              com.jervis.contracts.o365_browser_pool.InstructionResponse>(
+                service, METHODID_PUSH_INSTRUCTION)))
         .build();
   }
 
@@ -843,13 +697,11 @@ public final class O365BrowserPoolServiceGrpc {
           serviceDescriptor = result = io.grpc.ServiceDescriptor.newBuilder(SERVICE_NAME)
               .setSchemaDescriptor(new O365BrowserPoolServiceFileDescriptorSupplier())
               .addMethod(getHealthMethod())
-              .addMethod(getSessionStatusMethod())
-              .addMethod(getSessionInitMethod())
-              .addMethod(getSessionMfaMethod())
-              .addMethod(getSessionRediscoverMethod())
-              .addMethod(getScrapeDiscoverMethod())
-              .addMethod(getVncTokenMethod())
-              .addMethod(getSendInstructionMethod())
+              .addMethod(getGetSessionMethod())
+              .addMethod(getInitSessionMethod())
+              .addMethod(getSubmitMfaMethod())
+              .addMethod(getCreateVncTokenMethod())
+              .addMethod(getPushInstructionMethod())
               .build();
         }
       }

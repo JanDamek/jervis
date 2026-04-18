@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#jervis/o365_browser_pool/pool.proto\x12\x18jervis.o365_browser_pool\x1a\x19jervis/common/types.proto\";\n\rHealthRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"^\n\nPodRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x11\n\tbody_json\x18\x03 \x01(\t\"0\n\x0bRawResponse\x12\x0e\n\x06status\x18\x01 \x01(\x05\x12\x11\n\tbody_json\x18\x02 \x01(\t2\x81\x06\n\x16O365BrowserPoolService\x12X\n\x06Health\x12\'.jervis.o365_browser_pool.HealthRequest\x1a%.jervis.o365_browser_pool.RawResponse\x12\\\n\rSessionStatus\x12$.jervis.o365_browser_pool.PodRequest\x1a%.jervis.o365_browser_pool.RawResponse\x12Z\n\x0bSessionInit\x12$.jervis.o365_browser_pool.PodRequest\x1a%.jervis.o365_browser_pool.RawResponse\x12Y\n\nSessionMfa\x12$.jervis.o365_browser_pool.PodRequest\x1a%.jervis.o365_browser_pool.RawResponse\x12`\n\x11SessionRediscover\x12$.jervis.o365_browser_pool.PodRequest\x1a%.jervis.o365_browser_pool.RawResponse\x12]\n\x0eScrapeDiscover\x12$.jervis.o365_browser_pool.PodRequest\x1a%.jervis.o365_browser_pool.RawResponse\x12W\n\x08VncToken\x12$.jervis.o365_browser_pool.PodRequest\x1a%.jervis.o365_browser_pool.RawResponse\x12^\n\x0fSendInstruction\x12$.jervis.o365_browser_pool.PodRequest\x1a%.jervis.o365_browser_pool.RawResponseB@\n&com.jervis.contracts.o365_browser_poolB\x14O365BrowserPoolProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#jervis/o365_browser_pool/pool.proto\x12\x18jervis.o365_browser_pool\x1a\x19jervis/common/types.proto\"K\n\nSessionRef\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\";\n\rHealthRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"1\n\x0eHealthResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0f\n\x07service\x18\x02 \x01(\t\"\xc5\x01\n\rSessionStatus\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12\r\n\x05state\x18\x02 \x01(\t\x12\x11\n\thas_token\x18\x03 \x01(\x08\x12\x15\n\rlast_activity\x18\x04 \x01(\t\x12\x1a\n\x12last_token_extract\x18\x05 \x01(\t\x12\x11\n\tnovnc_url\x18\x06 \x01(\t\x12\x10\n\x08mfa_type\x18\x07 \x01(\t\x12\x13\n\x0bmfa_message\x18\x08 \x01(\t\x12\x12\n\nmfa_number\x18\t \x01(\t\"\xb4\x01\n\x12InitSessionRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x11\n\tlogin_url\x18\x03 \x01(\t\x12\x12\n\nuser_agent\x18\x04 \x01(\t\x12\x14\n\x0c\x63\x61pabilities\x18\x05 \x03(\t\x12\x10\n\x08username\x18\x06 \x01(\t\x12\x10\n\x08password\x18\x07 \x01(\t\"j\n\x13InitSessionResponse\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12\r\n\x05state\x18\x02 \x01(\t\x12\x11\n\tnovnc_url\x18\x03 \x01(\t\x12\x0f\n\x07message\x18\x04 \x01(\t\x12\r\n\x05\x65rror\x18\x05 \x01(\t\"_\n\x10SubmitMfaRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x0c\n\x04\x63ode\x18\x03 \x01(\t\"4\n\x10VncTokenResponse\x12\r\n\x05token\x18\x01 \x01(\t\x12\x11\n\tclient_id\x18\x02 \x01(\t\"h\n\x12InstructionRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x13\n\x0binstruction\x18\x03 \x01(\t\"G\n\x13InstructionResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\r\n\x05\x65rror\x18\x03 \x01(\t2\xfa\x04\n\x16O365BrowserPoolService\x12[\n\x06Health\x12\'.jervis.o365_browser_pool.HealthRequest\x1a(.jervis.o365_browser_pool.HealthResponse\x12[\n\nGetSession\x12$.jervis.o365_browser_pool.SessionRef\x1a\'.jervis.o365_browser_pool.SessionStatus\x12j\n\x0bInitSession\x12,.jervis.o365_browser_pool.InitSessionRequest\x1a-.jervis.o365_browser_pool.InitSessionResponse\x12\x66\n\tSubmitMfa\x12*.jervis.o365_browser_pool.SubmitMfaRequest\x1a-.jervis.o365_browser_pool.InitSessionResponse\x12\x62\n\x0e\x43reateVncToken\x12$.jervis.o365_browser_pool.SessionRef\x1a*.jervis.o365_browser_pool.VncTokenResponse\x12n\n\x0fPushInstruction\x12,.jervis.o365_browser_pool.InstructionRequest\x1a-.jervis.o365_browser_pool.InstructionResponseB@\n&com.jervis.contracts.o365_browser_poolB\x14O365BrowserPoolProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,12 +33,26 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'jervis.o365_browser_pool.po
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n&com.jervis.contracts.o365_browser_poolB\024O365BrowserPoolProtoP\001'
-  _globals['_HEALTHREQUEST']._serialized_start=92
-  _globals['_HEALTHREQUEST']._serialized_end=151
-  _globals['_PODREQUEST']._serialized_start=153
-  _globals['_PODREQUEST']._serialized_end=247
-  _globals['_RAWRESPONSE']._serialized_start=249
-  _globals['_RAWRESPONSE']._serialized_end=297
-  _globals['_O365BROWSERPOOLSERVICE']._serialized_start=300
-  _globals['_O365BROWSERPOOLSERVICE']._serialized_end=1069
+  _globals['_SESSIONREF']._serialized_start=92
+  _globals['_SESSIONREF']._serialized_end=167
+  _globals['_HEALTHREQUEST']._serialized_start=169
+  _globals['_HEALTHREQUEST']._serialized_end=228
+  _globals['_HEALTHRESPONSE']._serialized_start=230
+  _globals['_HEALTHRESPONSE']._serialized_end=279
+  _globals['_SESSIONSTATUS']._serialized_start=282
+  _globals['_SESSIONSTATUS']._serialized_end=479
+  _globals['_INITSESSIONREQUEST']._serialized_start=482
+  _globals['_INITSESSIONREQUEST']._serialized_end=662
+  _globals['_INITSESSIONRESPONSE']._serialized_start=664
+  _globals['_INITSESSIONRESPONSE']._serialized_end=770
+  _globals['_SUBMITMFAREQUEST']._serialized_start=772
+  _globals['_SUBMITMFAREQUEST']._serialized_end=867
+  _globals['_VNCTOKENRESPONSE']._serialized_start=869
+  _globals['_VNCTOKENRESPONSE']._serialized_end=921
+  _globals['_INSTRUCTIONREQUEST']._serialized_start=923
+  _globals['_INSTRUCTIONREQUEST']._serialized_end=1027
+  _globals['_INSTRUCTIONRESPONSE']._serialized_start=1029
+  _globals['_INSTRUCTIONRESPONSE']._serialized_end=1100
+  _globals['_O365BROWSERPOOLSERVICE']._serialized_start=1103
+  _globals['_O365BROWSERPOOLSERVICE']._serialized_end=1737
 # @@protoc_insertion_point(module_scope)

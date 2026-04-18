@@ -1,17 +1,14 @@
 """gRPC server for jervis-visual-capture.
 
-Exposes VisualCaptureService{Snapshot, PtzGoto, PtzPresets} on :5501.
-The Python capture/PTZ handlers keep the same semantics the FastAPI
-routes used; the passthrough JSON shape matches the legacy request
-bodies so the Kotlin caller doesn't need per-field decoding.
+Fully-typed surface — VisualCaptureService has three RPCs, each with
+explicit proto messages. The Python capture/PTZ handlers live as plain
+async functions in `app.main`; the servicer invokes them and maps the
+result dicts onto the proto response fields.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-from typing import Any
 
 import grpc
 from grpc_reflection.v1alpha import reflection
@@ -27,82 +24,67 @@ class VisualCaptureServicer(capture_pb2_grpc.VisualCaptureServiceServicer):
         self,
         request: capture_pb2.SnapshotRequest,
         context: grpc.aio.ServicerContext,
-    ) -> capture_pb2.RawJsonResponse:
+    ) -> capture_pb2.SnapshotResponse:
         from app.main import capture_snapshot, SnapshotRequest as SnapshotModel
 
-        body = _parse_json(request.request_json)
         try:
-            model = SnapshotModel(**body) if body else SnapshotModel()
-        except Exception as e:
-            return capture_pb2.RawJsonResponse(
-                status=400,
-                body_json=json.dumps({"detail": f"Invalid snapshot request: {e}"}),
+            model = SnapshotModel(
+                mode=request.mode or "scene",
+                preset=request.preset or None,
+                custom_prompt=request.custom_prompt or None,
             )
+        except Exception as e:
+            return capture_pb2.SnapshotResponse(error=f"Invalid snapshot request: {e}")
         try:
             result = await capture_snapshot(model)
         except Exception as e:
             logger.exception("VISUAL_SNAPSHOT_GRPC_FAIL")
-            return capture_pb2.RawJsonResponse(
-                status=502,
-                body_json=json.dumps({"status": "error", "error": str(e)[:300]}),
-            )
-        return capture_pb2.RawJsonResponse(status=200, body_json=_dump_json(result))
+            return capture_pb2.SnapshotResponse(error=str(e)[:300])
+
+        return capture_pb2.SnapshotResponse(
+            description=str(result.get("description") or ""),
+            ocr_text=str(result.get("ocr_text") or ""),
+            mode=str(result.get("mode") or request.mode or "scene"),
+            model=str(result.get("model") or ""),
+            frame_size_bytes=int(result.get("frame_size_bytes") or 0),
+            timestamp=str(result.get("timestamp") or ""),
+            preset=str(result.get("preset") or ""),
+            error=str(result.get("error") or ""),
+        )
 
     async def PtzGoto(
         self,
         request: capture_pb2.PtzGotoRequest,
         context: grpc.aio.ServicerContext,
-    ) -> capture_pb2.RawJsonResponse:
+    ) -> capture_pb2.PtzGotoResponse:
         from app.main import ptz_goto, PTZRequest
 
-        body = _parse_json(request.request_json)
-        preset = body.get("preset", "")
-        if not preset:
-            return capture_pb2.RawJsonResponse(
-                status=400, body_json=json.dumps({"detail": "preset required"}),
-            )
+        if not request.preset:
+            return capture_pb2.PtzGotoResponse(status="error", error="preset required")
         try:
-            result = await ptz_goto(PTZRequest(preset=preset))
+            result = await ptz_goto(PTZRequest(preset=request.preset))
         except Exception as e:
             logger.exception("VISUAL_PTZ_GRPC_FAIL")
-            return capture_pb2.RawJsonResponse(
-                status=502,
-                body_json=json.dumps({"status": "error", "error": str(e)[:300]}),
-            )
-        return capture_pb2.RawJsonResponse(status=200, body_json=_dump_json(result))
+            return capture_pb2.PtzGotoResponse(status="error", error=str(e)[:300])
+        return capture_pb2.PtzGotoResponse(
+            status=str(result.get("status") or "ok"),
+            preset=str(result.get("preset") or request.preset),
+        )
 
     async def PtzPresets(
         self,
         request: capture_pb2.PtzPresetsRequest,
         context: grpc.aio.ServicerContext,
-    ) -> capture_pb2.RawJsonResponse:
+    ) -> capture_pb2.PtzPresetsResponse:
         from app.main import ptz_presets
 
         try:
             result = await ptz_presets()
         except Exception as e:
-            return capture_pb2.RawJsonResponse(
-                status=502,
-                body_json=json.dumps({"status": "error", "error": str(e)[:300]}),
-            )
-        return capture_pb2.RawJsonResponse(status=200, body_json=_dump_json(result))
-
-
-def _parse_json(s: str) -> dict:
-    if not s:
-        return {}
-    try:
-        v = json.loads(s)
-        return v if isinstance(v, dict) else {}
-    except Exception:
-        return {}
-
-
-def _dump_json(v: Any) -> str:
-    try:
-        return json.dumps(v, default=str, ensure_ascii=False)
-    except Exception:
-        return "{}"
+            logger.exception("VISUAL_PTZ_PRESETS_GRPC_FAIL")
+            return capture_pb2.PtzPresetsResponse()
+        presets = result.get("presets") or []
+        return capture_pb2.PtzPresetsResponse(presets=[str(p) for p in presets])
 
 
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:

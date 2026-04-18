@@ -27,15 +27,45 @@ public final class WhatsAppBrowserProto extends com.google.protobuf.GeneratedFil
         (com.google.protobuf.ExtensionRegistryLite) registry);
   }
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_whatsapp_browser_WhatsAppRequest_descriptor;
+    internal_static_jervis_whatsapp_browser_SessionRef_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_whatsapp_browser_WhatsAppRequest_fieldAccessorTable;
+      internal_static_jervis_whatsapp_browser_SessionRef_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_whatsapp_browser_RawResponse_descriptor;
+    internal_static_jervis_whatsapp_browser_SessionStatus_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_whatsapp_browser_RawResponse_fieldAccessorTable;
+      internal_static_jervis_whatsapp_browser_SessionStatus_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whatsapp_browser_InitSessionRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whatsapp_browser_InitSessionRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whatsapp_browser_InitSessionResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whatsapp_browser_InitSessionResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whatsapp_browser_TriggerScrapeRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whatsapp_browser_TriggerScrapeRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whatsapp_browser_TriggerScrapeResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whatsapp_browser_TriggerScrapeResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whatsapp_browser_LatestScrapeResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whatsapp_browser_LatestScrapeResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whatsapp_browser_VncTokenResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whatsapp_browser_VncTokenResponse_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -47,43 +77,95 @@ public final class WhatsAppBrowserProto extends com.google.protobuf.GeneratedFil
     java.lang.String[] descriptorData = {
       "\n&jervis/whatsapp_browser/whatsapp.proto" +
       "\022\027jervis.whatsapp_browser\032\031jervis/common" +
-      "/types.proto\"c\n\017WhatsAppRequest\022*\n\003ctx\030\001" +
-      " \001(\0132\035.jervis.common.RequestContext\022\021\n\tc" +
-      "lient_id\030\002 \001(\t\022\021\n\tbody_json\030\003 \001(\t\"0\n\013Raw" +
-      "Response\022\016\n\006status\030\001 \001(\005\022\021\n\tbody_json\030\002 " +
-      "\001(\t2\365\003\n\026WhatsAppBrowserService\022_\n\rSessio" +
-      "nStatus\022(.jervis.whatsapp_browser.WhatsA" +
-      "ppRequest\032$.jervis.whatsapp_browser.RawR" +
-      "esponse\022]\n\013SessionInit\022(.jervis.whatsapp" +
-      "_browser.WhatsAppRequest\032$.jervis.whatsa" +
-      "pp_browser.RawResponse\022_\n\rScrapeTrigger\022" +
-      "(.jervis.whatsapp_browser.WhatsAppReques" +
-      "t\032$.jervis.whatsapp_browser.RawResponse\022" +
-      "^\n\014ScrapeLatest\022(.jervis.whatsapp_browse" +
-      "r.WhatsAppRequest\032$.jervis.whatsapp_brow" +
-      "ser.RawResponse\022Z\n\010VncToken\022(.jervis.wha" +
-      "tsapp_browser.WhatsAppRequest\032$.jervis.w" +
-      "hatsapp_browser.RawResponseB?\n%com.jervi" +
-      "s.contracts.whatsapp_browserB\024WhatsAppBr" +
-      "owserProtoP\001b\006proto3"
+      "/types.proto\"K\n\nSessionRef\022*\n\003ctx\030\001 \001(\0132" +
+      "\035.jervis.common.RequestContext\022\021\n\tclient" +
+      "_id\030\002 \001(\t\"l\n\rSessionStatus\022\021\n\tclient_id\030" +
+      "\001 \001(\t\022\r\n\005state\030\002 \001(\t\022\025\n\rlast_activity\030\003 " +
+      "\001(\t\022\021\n\tnovnc_url\030\004 \001(\t\022\017\n\007message\030\005 \001(\t\"" +
+      "\246\001\n\022InitSessionRequest\022*\n\003ctx\030\001 \001(\0132\035.je" +
+      "rvis.common.RequestContext\022\021\n\tclient_id\030" +
+      "\002 \001(\t\022\021\n\tlogin_url\030\003 \001(\t\022\022\n\nuser_agent\030\004" +
+      " \001(\t\022\024\n\014capabilities\030\005 \003(\t\022\024\n\014phone_numb" +
+      "er\030\006 \001(\t\"[\n\023InitSessionResponse\022\021\n\tclien" +
+      "t_id\030\001 \001(\t\022\r\n\005state\030\002 \001(\t\022\021\n\tnovnc_url\030\003" +
+      " \001(\t\022\017\n\007message\030\004 \001(\t\"\200\001\n\024TriggerScrapeR" +
+      "equest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Requ" +
+      "estContext\022\021\n\tclient_id\030\002 \001(\t\022\020\n\010max_tie" +
+      "r\030\003 \001(\t\022\027\n\017processing_mode\030\004 \001(\t\"\'\n\025Trig" +
+      "gerScrapeResponse\022\016\n\006status\030\001 \001(\t\"d\n\024Lat" +
+      "estScrapeResponse\022\016\n\006status\030\001 \001(\t\022\017\n\007mes" +
+      "sage\030\002 \001(\t\022\027\n\017last_scraped_at\030\003 \001(\t\022\022\n\nc" +
+      "hat_count\030\004 \001(\005\"4\n\020VncTokenResponse\022\r\n\005t" +
+      "oken\030\001 \001(\t\022\021\n\tclient_id\030\002 \001(\t2\226\004\n\026WhatsA" +
+      "ppBrowserService\022Y\n\nGetSession\022#.jervis." +
+      "whatsapp_browser.SessionRef\032&.jervis.wha" +
+      "tsapp_browser.SessionStatus\022h\n\013InitSessi" +
+      "on\022+.jervis.whatsapp_browser.InitSession" +
+      "Request\032,.jervis.whatsapp_browser.InitSe" +
+      "ssionResponse\022n\n\rTriggerScrape\022-.jervis." +
+      "whatsapp_browser.TriggerScrapeRequest\032.." +
+      "jervis.whatsapp_browser.TriggerScrapeRes" +
+      "ponse\022e\n\017GetLatestScrape\022#.jervis.whatsa" +
+      "pp_browser.SessionRef\032-.jervis.whatsapp_" +
+      "browser.LatestScrapeResponse\022`\n\016CreateVn" +
+      "cToken\022#.jervis.whatsapp_browser.Session" +
+      "Ref\032).jervis.whatsapp_browser.VncTokenRe" +
+      "sponseB?\n%com.jervis.contracts.whatsapp_" +
+      "browserB\024WhatsAppBrowserProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
         new com.google.protobuf.Descriptors.FileDescriptor[] {
           com.jervis.contracts.common.TypesProto.getDescriptor(),
         });
-    internal_static_jervis_whatsapp_browser_WhatsAppRequest_descriptor =
+    internal_static_jervis_whatsapp_browser_SessionRef_descriptor =
       getDescriptor().getMessageTypes().get(0);
-    internal_static_jervis_whatsapp_browser_WhatsAppRequest_fieldAccessorTable = new
+    internal_static_jervis_whatsapp_browser_SessionRef_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_whatsapp_browser_WhatsAppRequest_descriptor,
-        new java.lang.String[] { "Ctx", "ClientId", "BodyJson", });
-    internal_static_jervis_whatsapp_browser_RawResponse_descriptor =
+        internal_static_jervis_whatsapp_browser_SessionRef_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", });
+    internal_static_jervis_whatsapp_browser_SessionStatus_descriptor =
       getDescriptor().getMessageTypes().get(1);
-    internal_static_jervis_whatsapp_browser_RawResponse_fieldAccessorTable = new
+    internal_static_jervis_whatsapp_browser_SessionStatus_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_whatsapp_browser_RawResponse_descriptor,
-        new java.lang.String[] { "Status", "BodyJson", });
+        internal_static_jervis_whatsapp_browser_SessionStatus_descriptor,
+        new java.lang.String[] { "ClientId", "State", "LastActivity", "NovncUrl", "Message", });
+    internal_static_jervis_whatsapp_browser_InitSessionRequest_descriptor =
+      getDescriptor().getMessageTypes().get(2);
+    internal_static_jervis_whatsapp_browser_InitSessionRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whatsapp_browser_InitSessionRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "LoginUrl", "UserAgent", "Capabilities", "PhoneNumber", });
+    internal_static_jervis_whatsapp_browser_InitSessionResponse_descriptor =
+      getDescriptor().getMessageTypes().get(3);
+    internal_static_jervis_whatsapp_browser_InitSessionResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whatsapp_browser_InitSessionResponse_descriptor,
+        new java.lang.String[] { "ClientId", "State", "NovncUrl", "Message", });
+    internal_static_jervis_whatsapp_browser_TriggerScrapeRequest_descriptor =
+      getDescriptor().getMessageTypes().get(4);
+    internal_static_jervis_whatsapp_browser_TriggerScrapeRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whatsapp_browser_TriggerScrapeRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "MaxTier", "ProcessingMode", });
+    internal_static_jervis_whatsapp_browser_TriggerScrapeResponse_descriptor =
+      getDescriptor().getMessageTypes().get(5);
+    internal_static_jervis_whatsapp_browser_TriggerScrapeResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whatsapp_browser_TriggerScrapeResponse_descriptor,
+        new java.lang.String[] { "Status", });
+    internal_static_jervis_whatsapp_browser_LatestScrapeResponse_descriptor =
+      getDescriptor().getMessageTypes().get(6);
+    internal_static_jervis_whatsapp_browser_LatestScrapeResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whatsapp_browser_LatestScrapeResponse_descriptor,
+        new java.lang.String[] { "Status", "Message", "LastScrapedAt", "ChatCount", });
+    internal_static_jervis_whatsapp_browser_VncTokenResponse_descriptor =
+      getDescriptor().getMessageTypes().get(7);
+    internal_static_jervis_whatsapp_browser_VncTokenResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whatsapp_browser_VncTokenResponse_descriptor,
+        new java.lang.String[] { "Token", "ClientId", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

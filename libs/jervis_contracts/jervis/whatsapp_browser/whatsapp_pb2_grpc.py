@@ -26,12 +26,11 @@ if _version_not_supported:
 
 
 class WhatsAppBrowserServiceStub(object):
-    """WhatsAppBrowserService — gRPC wrapper on top of the `jervis-whatsapp-browser`
-    pod. Kotlin server's ConnectionRpcImpl + WhatsAppPollingHandler dial
-    these RPCs instead of the former REST surface
+    """WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
+    pod. Replaces the former REST surface consumed by the Kotlin server
     (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
     /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
-    (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+    (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
     """
 
     def __init__(self, channel):
@@ -40,67 +39,66 @@ class WhatsAppBrowserServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.SessionStatus = channel.unary_unary(
-                '/jervis.whatsapp_browser.WhatsAppBrowserService/SessionStatus',
-                request_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.SerializeToString,
-                response_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.FromString,
+        self.GetSession = channel.unary_unary(
+                '/jervis.whatsapp_browser.WhatsAppBrowserService/GetSession',
+                request_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionRef.SerializeToString,
+                response_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionStatus.FromString,
                 _registered_method=True)
-        self.SessionInit = channel.unary_unary(
-                '/jervis.whatsapp_browser.WhatsAppBrowserService/SessionInit',
-                request_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.SerializeToString,
-                response_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.FromString,
+        self.InitSession = channel.unary_unary(
+                '/jervis.whatsapp_browser.WhatsAppBrowserService/InitSession',
+                request_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.InitSessionRequest.SerializeToString,
+                response_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.InitSessionResponse.FromString,
                 _registered_method=True)
-        self.ScrapeTrigger = channel.unary_unary(
-                '/jervis.whatsapp_browser.WhatsAppBrowserService/ScrapeTrigger',
-                request_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.SerializeToString,
-                response_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.FromString,
+        self.TriggerScrape = channel.unary_unary(
+                '/jervis.whatsapp_browser.WhatsAppBrowserService/TriggerScrape',
+                request_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.TriggerScrapeRequest.SerializeToString,
+                response_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.TriggerScrapeResponse.FromString,
                 _registered_method=True)
-        self.ScrapeLatest = channel.unary_unary(
-                '/jervis.whatsapp_browser.WhatsAppBrowserService/ScrapeLatest',
-                request_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.SerializeToString,
-                response_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.FromString,
+        self.GetLatestScrape = channel.unary_unary(
+                '/jervis.whatsapp_browser.WhatsAppBrowserService/GetLatestScrape',
+                request_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionRef.SerializeToString,
+                response_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.LatestScrapeResponse.FromString,
                 _registered_method=True)
-        self.VncToken = channel.unary_unary(
-                '/jervis.whatsapp_browser.WhatsAppBrowserService/VncToken',
-                request_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.SerializeToString,
-                response_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.FromString,
+        self.CreateVncToken = channel.unary_unary(
+                '/jervis.whatsapp_browser.WhatsAppBrowserService/CreateVncToken',
+                request_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionRef.SerializeToString,
+                response_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.VncTokenResponse.FromString,
                 _registered_method=True)
 
 
 class WhatsAppBrowserServiceServicer(object):
-    """WhatsAppBrowserService — gRPC wrapper on top of the `jervis-whatsapp-browser`
-    pod. Kotlin server's ConnectionRpcImpl + WhatsAppPollingHandler dial
-    these RPCs instead of the former REST surface
+    """WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
+    pod. Replaces the former REST surface consumed by the Kotlin server
     (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
     /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
-    (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+    (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
     """
 
-    def SessionStatus(self, request, context):
+    def GetSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SessionInit(self, request, context):
+    def InitSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def ScrapeTrigger(self, request, context):
+    def TriggerScrape(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def ScrapeLatest(self, request, context):
+    def GetLatestScrape(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def VncToken(self, request, context):
+    def CreateVncToken(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -109,30 +107,30 @@ class WhatsAppBrowserServiceServicer(object):
 
 def add_WhatsAppBrowserServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'SessionStatus': grpc.unary_unary_rpc_method_handler(
-                    servicer.SessionStatus,
-                    request_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.FromString,
-                    response_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.SerializeToString,
+            'GetSession': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSession,
+                    request_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionRef.FromString,
+                    response_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionStatus.SerializeToString,
             ),
-            'SessionInit': grpc.unary_unary_rpc_method_handler(
-                    servicer.SessionInit,
-                    request_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.FromString,
-                    response_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.SerializeToString,
+            'InitSession': grpc.unary_unary_rpc_method_handler(
+                    servicer.InitSession,
+                    request_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.InitSessionRequest.FromString,
+                    response_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.InitSessionResponse.SerializeToString,
             ),
-            'ScrapeTrigger': grpc.unary_unary_rpc_method_handler(
-                    servicer.ScrapeTrigger,
-                    request_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.FromString,
-                    response_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.SerializeToString,
+            'TriggerScrape': grpc.unary_unary_rpc_method_handler(
+                    servicer.TriggerScrape,
+                    request_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.TriggerScrapeRequest.FromString,
+                    response_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.TriggerScrapeResponse.SerializeToString,
             ),
-            'ScrapeLatest': grpc.unary_unary_rpc_method_handler(
-                    servicer.ScrapeLatest,
-                    request_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.FromString,
-                    response_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.SerializeToString,
+            'GetLatestScrape': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetLatestScrape,
+                    request_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionRef.FromString,
+                    response_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.LatestScrapeResponse.SerializeToString,
             ),
-            'VncToken': grpc.unary_unary_rpc_method_handler(
-                    servicer.VncToken,
-                    request_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.FromString,
-                    response_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.SerializeToString,
+            'CreateVncToken': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateVncToken,
+                    request_deserializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionRef.FromString,
+                    response_serializer=jervis_dot_whatsapp__browser_dot_whatsapp__pb2.VncTokenResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -143,16 +141,15 @@ def add_WhatsAppBrowserServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class WhatsAppBrowserService(object):
-    """WhatsAppBrowserService — gRPC wrapper on top of the `jervis-whatsapp-browser`
-    pod. Kotlin server's ConnectionRpcImpl + WhatsAppPollingHandler dial
-    these RPCs instead of the former REST surface
+    """WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
+    pod. Replaces the former REST surface consumed by the Kotlin server
     (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
     /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
-    (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing.
+    (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
     """
 
     @staticmethod
-    def SessionStatus(request,
+    def GetSession(request,
             target,
             options=(),
             channel_credentials=None,
@@ -165,9 +162,9 @@ class WhatsAppBrowserService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jervis.whatsapp_browser.WhatsAppBrowserService/SessionStatus',
-            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.SerializeToString,
-            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.FromString,
+            '/jervis.whatsapp_browser.WhatsAppBrowserService/GetSession',
+            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionRef.SerializeToString,
+            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionStatus.FromString,
             options,
             channel_credentials,
             insecure,
@@ -179,7 +176,7 @@ class WhatsAppBrowserService(object):
             _registered_method=True)
 
     @staticmethod
-    def SessionInit(request,
+    def InitSession(request,
             target,
             options=(),
             channel_credentials=None,
@@ -192,9 +189,9 @@ class WhatsAppBrowserService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jervis.whatsapp_browser.WhatsAppBrowserService/SessionInit',
-            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.SerializeToString,
-            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.FromString,
+            '/jervis.whatsapp_browser.WhatsAppBrowserService/InitSession',
+            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.InitSessionRequest.SerializeToString,
+            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.InitSessionResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -206,7 +203,7 @@ class WhatsAppBrowserService(object):
             _registered_method=True)
 
     @staticmethod
-    def ScrapeTrigger(request,
+    def TriggerScrape(request,
             target,
             options=(),
             channel_credentials=None,
@@ -219,9 +216,9 @@ class WhatsAppBrowserService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jervis.whatsapp_browser.WhatsAppBrowserService/ScrapeTrigger',
-            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.SerializeToString,
-            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.FromString,
+            '/jervis.whatsapp_browser.WhatsAppBrowserService/TriggerScrape',
+            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.TriggerScrapeRequest.SerializeToString,
+            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.TriggerScrapeResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -233,7 +230,7 @@ class WhatsAppBrowserService(object):
             _registered_method=True)
 
     @staticmethod
-    def ScrapeLatest(request,
+    def GetLatestScrape(request,
             target,
             options=(),
             channel_credentials=None,
@@ -246,9 +243,9 @@ class WhatsAppBrowserService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jervis.whatsapp_browser.WhatsAppBrowserService/ScrapeLatest',
-            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.SerializeToString,
-            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.FromString,
+            '/jervis.whatsapp_browser.WhatsAppBrowserService/GetLatestScrape',
+            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionRef.SerializeToString,
+            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.LatestScrapeResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -260,7 +257,7 @@ class WhatsAppBrowserService(object):
             _registered_method=True)
 
     @staticmethod
-    def VncToken(request,
+    def CreateVncToken(request,
             target,
             options=(),
             channel_credentials=None,
@@ -273,9 +270,9 @@ class WhatsAppBrowserService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jervis.whatsapp_browser.WhatsAppBrowserService/VncToken',
-            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.WhatsAppRequest.SerializeToString,
-            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.RawResponse.FromString,
+            '/jervis.whatsapp_browser.WhatsAppBrowserService/CreateVncToken',
+            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.SessionRef.SerializeToString,
+            jervis_dot_whatsapp__browser_dot_whatsapp__pb2.VncTokenResponse.FromString,
             options,
             channel_credentials,
             insecure,

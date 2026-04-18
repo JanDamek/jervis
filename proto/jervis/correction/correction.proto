@@ -9,25 +9,175 @@ option java_multiple_files = true;
 option java_outer_classname = "CorrectionProto";
 
 // CorrectionService — transcript correction service (KB-stored rules +
-// Ollama GPU). Passthrough JSON: the Kotlin DTOs on the caller side
-// already ride kotlinx.serialization, so we keep the body_json pattern
-// to avoid double-typing every field in the proto.
+// Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and
+// field shapes mirror the retired REST routes 1:1 so the Python agent +
+// Kotlin caller can both reach the same semantics without per-message
+// JSON hand-parsing.
 service CorrectionService {
-  rpc SubmitCorrection(CorrectionRequest) returns (CorrectionResponse);
-  rpc CorrectTranscript(CorrectionRequest) returns (CorrectionResponse);
-  rpc ListCorrections(CorrectionRequest) returns (CorrectionResponse);
-  rpc AnswerCorrectionQuestions(CorrectionRequest) returns (CorrectionResponse);
-  rpc CorrectWithInstruction(CorrectionRequest) returns (CorrectionResponse);
-  rpc CorrectTargeted(CorrectionRequest) returns (CorrectionResponse);
-  rpc DeleteCorrection(CorrectionRequest) returns (CorrectionResponse);
+  rpc SubmitCorrection(SubmitCorrectionRequest) returns (SubmitCorrectionResponse);
+  rpc CorrectTranscript(CorrectTranscriptRequest) returns (CorrectResult);
+  rpc ListCorrections(ListCorrectionsRequest) returns (ListCorrectionsResponse);
+  rpc AnswerCorrectionQuestions(AnswerCorrectionsRequest) returns (AnswerCorrectionsResponse);
+  rpc CorrectWithInstruction(CorrectWithInstructionRequest) returns (CorrectWithInstructionResponse);
+  rpc CorrectTargeted(CorrectTargetedRequest) returns (CorrectResult);
+  rpc DeleteCorrection(DeleteCorrectionRequest) returns (DeleteCorrectionResponse);
 }
 
-message CorrectionRequest {
+// ── Shared pieces ──────────────────────────────────────────────────────
+
+message CorrectionSegment {
+  int32 i = 1;
+  double start_sec = 2;
+  double end_sec = 3;
+  string text = 4;
+  string speaker = 5;                        // optional
+}
+
+message CorrectionQuestion {
+  string id = 1;
+  int32 i = 2;
+  string original = 3;
+  string question = 4;
+  repeated string options = 5;
+  string context = 6;                        // optional
+}
+
+message CorrectionRule {
+  string original = 1;
+  string corrected = 2;
+  string category = 3;                       // default "general"
+  string context = 4;                        // optional
+}
+
+// ── SubmitCorrection ───────────────────────────────────────────────────
+
+message SubmitCorrectionRequest {
   jervis.common.RequestContext ctx = 1;
-  string body_json = 2;
+  string client_id = 2;
+  string project_id = 3;                     // empty → no project scope
+  string original = 4;
+  string corrected = 5;
+  string category = 6;                       // default "general"
+  string context = 7;                        // optional
 }
 
-message CorrectionResponse {
-  int32 status = 1;
-  string body_json = 2;
+message SubmitCorrectionResponse {
+  string correction_id = 1;
+  string source_urn = 2;
+  string status = 3;                         // "success" | "error"
+  string error = 4;
+}
+
+// ── CorrectTranscript ──────────────────────────────────────────────────
+
+message CorrectTranscriptRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string meeting_id = 4;                     // optional
+  repeated CorrectionSegment segments = 5;
+  int32 chunk_size = 6;                      // 0 → server default (20)
+  map<string, string> speaker_hints = 7;
+}
+
+message CorrectResult {
+  repeated CorrectionSegment segments = 1;
+  repeated CorrectionQuestion questions = 2;
+  string status = 3;                         // "success" | "needs_input" | "failed"
+}
+
+// ── ListCorrections ────────────────────────────────────────────────────
+
+message ListCorrectionsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  int32 max_results = 4;                     // 0 → 100
+}
+
+message CorrectionChunkMeta {
+  string original = 1;
+  string corrected = 2;
+  string category = 3;
+  string context = 4;
+  string correction_id = 5;
+}
+
+message CorrectionChunk {
+  string content = 1;
+  string source_urn = 2;
+  CorrectionChunkMeta metadata = 3;
+}
+
+message ListCorrectionsResponse {
+  repeated CorrectionChunk corrections = 1;
+}
+
+// ── AnswerCorrectionQuestions ──────────────────────────────────────────
+
+message AnswerCorrectionsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  repeated CorrectionRule answers = 4;
+}
+
+message AnswerCorrectionsResponse {
+  string status = 1;                         // "success" | "error"
+  int32 rules_created = 2;
+  string error = 3;
+}
+
+// ── CorrectWithInstruction ─────────────────────────────────────────────
+
+message CorrectWithInstructionRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  repeated CorrectionSegment segments = 4;
+  string instruction = 5;
+}
+
+message InstructRuleResult {
+  string correction_id = 1;
+  string source_urn = 2;
+  string status = 3;
+}
+
+message CorrectWithInstructionResponse {
+  repeated CorrectionSegment segments = 1;
+  repeated InstructRuleResult new_rules = 2;
+  string status = 3;                         // "success" | "failed"
+  string summary = 4;
+}
+
+// ── CorrectTargeted ────────────────────────────────────────────────────
+
+message CorrectTargetedRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string meeting_id = 4;
+  repeated CorrectionSegment segments = 5;
+  repeated int32 retranscribed_indices = 6;
+  map<string, string> user_corrected_indices = 7;
+}
+
+// CorrectTargeted reuses CorrectResult.
+
+// ── DeleteCorrection ───────────────────────────────────────────────────
+
+message DeleteCorrectionRequest {
+  jervis.common.RequestContext ctx = 1;
+  string source_urn = 2;
+}
+
+message DeleteCorrectionResponse {
+  string status = 1;                         // "success" | "error"
+  int32 chunks_deleted = 2;
+  int32 nodes_cleaned = 3;
+  int32 edges_cleaned = 4;
+  int32 nodes_deleted = 5;
+  int32 edges_deleted = 6;
+  string error = 7;
 }

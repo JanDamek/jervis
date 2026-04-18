@@ -27,10 +27,9 @@ if _version_not_supported:
 
 class VisualCaptureServiceStub(object):
     """VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
-    Replaces the former FastAPI /capture/* and /ptz/* routes exposed by
-    jervis-visual-capture. Kotlin server's ServerVisualCaptureGrpcImpl
-    forwards Snapshot/PtzGoto requests from the orchestrator through this
-    RPC instead of the retired REST surface.
+    Fully-typed surface — no passthrough JSON. Kotlin server's
+    ServerVisualCaptureGrpcImpl forwards Snapshot/PtzGoto requests from
+    the orchestrator through this RPC.
     """
 
     def __init__(self, channel):
@@ -42,26 +41,25 @@ class VisualCaptureServiceStub(object):
         self.Snapshot = channel.unary_unary(
                 '/jervis.visual_capture.VisualCaptureService/Snapshot',
                 request_serializer=jervis_dot_visual__capture_dot_capture__pb2.SnapshotRequest.SerializeToString,
-                response_deserializer=jervis_dot_visual__capture_dot_capture__pb2.RawJsonResponse.FromString,
+                response_deserializer=jervis_dot_visual__capture_dot_capture__pb2.SnapshotResponse.FromString,
                 _registered_method=True)
         self.PtzGoto = channel.unary_unary(
                 '/jervis.visual_capture.VisualCaptureService/PtzGoto',
                 request_serializer=jervis_dot_visual__capture_dot_capture__pb2.PtzGotoRequest.SerializeToString,
-                response_deserializer=jervis_dot_visual__capture_dot_capture__pb2.RawJsonResponse.FromString,
+                response_deserializer=jervis_dot_visual__capture_dot_capture__pb2.PtzGotoResponse.FromString,
                 _registered_method=True)
         self.PtzPresets = channel.unary_unary(
                 '/jervis.visual_capture.VisualCaptureService/PtzPresets',
                 request_serializer=jervis_dot_visual__capture_dot_capture__pb2.PtzPresetsRequest.SerializeToString,
-                response_deserializer=jervis_dot_visual__capture_dot_capture__pb2.RawJsonResponse.FromString,
+                response_deserializer=jervis_dot_visual__capture_dot_capture__pb2.PtzPresetsResponse.FromString,
                 _registered_method=True)
 
 
 class VisualCaptureServiceServicer(object):
     """VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
-    Replaces the former FastAPI /capture/* and /ptz/* routes exposed by
-    jervis-visual-capture. Kotlin server's ServerVisualCaptureGrpcImpl
-    forwards Snapshot/PtzGoto requests from the orchestrator through this
-    RPC instead of the retired REST surface.
+    Fully-typed surface — no passthrough JSON. Kotlin server's
+    ServerVisualCaptureGrpcImpl forwards Snapshot/PtzGoto requests from
+    the orchestrator through this RPC.
     """
 
     def Snapshot(self, request, context):
@@ -88,17 +86,17 @@ def add_VisualCaptureServiceServicer_to_server(servicer, server):
             'Snapshot': grpc.unary_unary_rpc_method_handler(
                     servicer.Snapshot,
                     request_deserializer=jervis_dot_visual__capture_dot_capture__pb2.SnapshotRequest.FromString,
-                    response_serializer=jervis_dot_visual__capture_dot_capture__pb2.RawJsonResponse.SerializeToString,
+                    response_serializer=jervis_dot_visual__capture_dot_capture__pb2.SnapshotResponse.SerializeToString,
             ),
             'PtzGoto': grpc.unary_unary_rpc_method_handler(
                     servicer.PtzGoto,
                     request_deserializer=jervis_dot_visual__capture_dot_capture__pb2.PtzGotoRequest.FromString,
-                    response_serializer=jervis_dot_visual__capture_dot_capture__pb2.RawJsonResponse.SerializeToString,
+                    response_serializer=jervis_dot_visual__capture_dot_capture__pb2.PtzGotoResponse.SerializeToString,
             ),
             'PtzPresets': grpc.unary_unary_rpc_method_handler(
                     servicer.PtzPresets,
                     request_deserializer=jervis_dot_visual__capture_dot_capture__pb2.PtzPresetsRequest.FromString,
-                    response_serializer=jervis_dot_visual__capture_dot_capture__pb2.RawJsonResponse.SerializeToString,
+                    response_serializer=jervis_dot_visual__capture_dot_capture__pb2.PtzPresetsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -110,10 +108,9 @@ def add_VisualCaptureServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class VisualCaptureService(object):
     """VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
-    Replaces the former FastAPI /capture/* and /ptz/* routes exposed by
-    jervis-visual-capture. Kotlin server's ServerVisualCaptureGrpcImpl
-    forwards Snapshot/PtzGoto requests from the orchestrator through this
-    RPC instead of the retired REST surface.
+    Fully-typed surface — no passthrough JSON. Kotlin server's
+    ServerVisualCaptureGrpcImpl forwards Snapshot/PtzGoto requests from
+    the orchestrator through this RPC.
     """
 
     @staticmethod
@@ -132,7 +129,7 @@ class VisualCaptureService(object):
             target,
             '/jervis.visual_capture.VisualCaptureService/Snapshot',
             jervis_dot_visual__capture_dot_capture__pb2.SnapshotRequest.SerializeToString,
-            jervis_dot_visual__capture_dot_capture__pb2.RawJsonResponse.FromString,
+            jervis_dot_visual__capture_dot_capture__pb2.SnapshotResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -159,7 +156,7 @@ class VisualCaptureService(object):
             target,
             '/jervis.visual_capture.VisualCaptureService/PtzGoto',
             jervis_dot_visual__capture_dot_capture__pb2.PtzGotoRequest.SerializeToString,
-            jervis_dot_visual__capture_dot_capture__pb2.RawJsonResponse.FromString,
+            jervis_dot_visual__capture_dot_capture__pb2.PtzGotoResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -186,7 +183,7 @@ class VisualCaptureService(object):
             target,
             '/jervis.visual_capture.VisualCaptureService/PtzPresets',
             jervis_dot_visual__capture_dot_capture__pb2.PtzPresetsRequest.SerializeToString,
-            jervis_dot_visual__capture_dot_capture__pb2.RawJsonResponse.FromString,
+            jervis_dot_visual__capture_dot_capture__pb2.PtzPresetsResponse.FromString,
             options,
             channel_credentials,
             insecure,
