@@ -503,49 +503,8 @@ async def ingest_full_async(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@write_router.post("/ingest/git-structure", response_model=GitStructureIngestResult)
-async def ingest_git_structure(request: GitStructureIngestRequest):
-    """Structural ingest of git repository (no LLM).
-
-    Creates graph nodes for repository, branches, files, and classes.
-    Called from Kotlin GitContinuousIndexer during initial branch index.
-    """
-    try:
-        return await service.ingest_git_structure(request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@write_router.post("/ingest/git-commits", response_model=GitCommitIngestResult)
-async def ingest_git_commits(request: GitCommitIngestRequest):
-    """Ingest structured git commit data into KB graph.
-
-    Creates commit nodes in ArangoDB with edges to branch and file nodes.
-    Optional diff_content is ingested as RAG chunks for fulltext search.
-    Called from Kotlin GitContinuousIndexer for individual commits.
-    """
-    try:
-        return await service.ingest_git_commits(request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@write_router.post("/ingest/cpg", response_model=CpgIngestResult)
-async def ingest_cpg(request: CpgIngestRequest):
-    """Import Joern CPG deep analysis into knowledge graph.
-
-    Runs Joern CPG export (K8s Job) and imports semantic edges:
-    - calls: method → method (call graph)
-    - extends: class → class (inheritance)
-    - uses_type: class → class (type references)
-
-    Called from Kotlin GitContinuousIndexer after structural index completes.
-    Requires that tree-sitter structural ingest has already created method/class nodes.
-    """
-    try:
-        return await service.ingest_cpg(request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /ingest/git-structure, /ingest/git-commits, /ingest/cpg migrated to
+# gRPC (KnowledgeIngestService on :5501 — see app/grpc_server.py).
 
 
 @write_router.post("/crawl", response_model=IngestResult)

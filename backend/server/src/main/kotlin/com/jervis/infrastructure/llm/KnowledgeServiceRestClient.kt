@@ -1,5 +1,6 @@
 package com.jervis.infrastructure.llm
 
+import com.jervis.infrastructure.grpc.KbIngestGrpcClient
 import com.jervis.infrastructure.grpc.KbMaintenanceGrpcClient
 import com.jervis.infrastructure.grpc.KbQueueGrpcClient
 import com.jervis.infrastructure.llm.KnowledgeServiceRestClient
@@ -61,6 +62,7 @@ class KnowledgeServiceRestClient(
     private val callbackBaseUrl: String = "",
     private val kbMaintenanceGrpc: KbMaintenanceGrpcClient? = null,
     private val kbQueueGrpc: KbQueueGrpcClient? = null,
+    private val kbIngestGrpc: KbIngestGrpcClient? = null,
 ) : KnowledgeService {
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -371,147 +373,60 @@ class KnowledgeServiceRestClient(
         }
     }
 
+    private fun ingestGrpc(): KbIngestGrpcClient =
+        kbIngestGrpc ?: error("KbIngestGrpcClient not wired — see RpcClientsConfig.getKnowledgeService()")
+
     override suspend fun ingestGitStructure(request: GitStructureIngestRequest): GitStructureIngestResult {
         logger.debug { "Calling knowledgebase ingestGitStructure: repo=${request.repositoryIdentifier} branch=${request.branch}" }
-
-        val pythonRequest = PythonGitStructureIngestRequest(
-            clientId = request.clientId,
-            projectId = request.projectId,
-            repositoryIdentifier = request.repositoryIdentifier,
-            branch = request.branch,
-            defaultBranch = request.defaultBranch,
-            branches = request.branches.map { b ->
-                PythonGitBranchInfo(
-                    name = b.name,
-                    isDefault = b.isDefault,
-                    status = b.status,
-                    lastCommitHash = b.lastCommitHash,
-                )
-            },
-            files = request.files.map { f ->
-                PythonGitFileInfo(
-                    path = f.path,
-                    extension = f.extension,
-                    language = f.language,
-                    sizeBytes = f.sizeBytes,
-                )
-            },
-            classes = request.classes.map { c ->
-                PythonGitClassInfo(
-                    name = c.name,
-                    qualifiedName = c.qualifiedName,
-                    filePath = c.filePath,
-                    visibility = c.visibility,
-                    isInterface = c.isInterface,
-                    methods = c.methods,
-                )
-            },
-            fileContents = request.fileContents.map { fc ->
-                PythonGitFileContent(
-                    path = fc.path,
-                    content = fc.content,
-                )
-            },
-            metadata = request.metadata,
-        )
-
         return try {
-            val response: PythonGitStructureIngestResult = client.post("$apiBaseUrl/ingest/git-structure") {
-                contentType(ContentType.Application.Json)
-                setBody(pythonRequest)
-            }.body()
-
+            val proto = ingestGrpc().ingestGitStructure(request)
             GitStructureIngestResult(
-                status = response.status,
-                nodesCreated = response.nodesCreated,
-                edgesCreated = response.edgesCreated,
-                nodesUpdated = response.nodesUpdated,
-                repositoryKey = response.repositoryKey,
-                branchKey = response.branchKey,
-                filesIndexed = response.filesIndexed,
-                classesIndexed = response.classesIndexed,
+                status = proto.status,
+                nodesCreated = proto.nodesCreated,
+                edgesCreated = proto.edgesCreated,
+                nodesUpdated = proto.nodesUpdated,
+                repositoryKey = proto.repositoryKey,
+                branchKey = proto.branchKey,
+                filesIndexed = proto.filesIndexed,
+                classesIndexed = proto.classesIndexed,
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to ingest git structure to knowledgebase: ${e.message}" }
-            GitStructureIngestResult(
-                status = "error: ${e.message}",
-            )
+            GitStructureIngestResult(status = "error: ${e.message}")
         }
     }
 
     override suspend fun ingestGitCommits(request: GitCommitIngestRequest): GitCommitIngestResult {
         logger.debug { "Calling knowledgebase ingestGitCommits: repo=${request.repositoryIdentifier} branch=${request.branch} commits=${request.commits.size}" }
-
-        val pythonRequest = PythonGitCommitIngestRequest(
-            clientId = request.clientId,
-            projectId = request.projectId,
-            repositoryIdentifier = request.repositoryIdentifier,
-            branch = request.branch,
-            commits = request.commits.map { c ->
-                PythonGitCommitInfo(
-                    hash = c.hash,
-                    message = c.message,
-                    author = c.author,
-                    date = c.date,
-                    branch = c.branch,
-                    parentHash = c.parentHash,
-                    filesModified = c.filesModified,
-                    filesCreated = c.filesCreated,
-                    filesDeleted = c.filesDeleted,
-                )
-            },
-            diffContent = request.diffContent,
-        )
-
         return try {
-            val response: PythonGitCommitIngestResult = client.post("$apiBaseUrl/ingest/git-commits") {
-                contentType(ContentType.Application.Json)
-                setBody(pythonRequest)
-            }.body()
-
+            val proto = ingestGrpc().ingestGitCommits(request)
             GitCommitIngestResult(
-                status = response.status,
-                commitsIngested = response.commitsIngested,
-                nodesCreated = response.nodesCreated,
-                edgesCreated = response.edgesCreated,
-                ragChunks = response.ragChunks,
+                status = proto.status,
+                commitsIngested = proto.commitsIngested,
+                nodesCreated = proto.nodesCreated,
+                edgesCreated = proto.edgesCreated,
+                ragChunks = proto.ragChunks,
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to ingest git commits to knowledgebase: ${e.message}" }
-            GitCommitIngestResult(
-                status = "error: ${e.message}",
-            )
+            GitCommitIngestResult(status = "error: ${e.message}")
         }
     }
 
     override suspend fun ingestCpg(request: CpgIngestRequest): CpgIngestResult {
         logger.debug { "Calling knowledgebase ingestCpg: project=${request.projectId} branch=${request.branch}" }
-
-        val pythonRequest = PythonCpgIngestRequest(
-            clientId = request.clientId,
-            projectId = request.projectId,
-            branch = request.branch,
-            workspacePath = request.workspacePath,
-        )
-
         return try {
-            val response: PythonCpgIngestResult = client.post("$apiBaseUrl/ingest/cpg") {
-                contentType(ContentType.Application.Json)
-                setBody(pythonRequest)
-            }.body()
-
+            val proto = ingestGrpc().ingestCpg(request)
             CpgIngestResult(
-                status = response.status,
-                methodsEnriched = response.methodsEnriched,
-                extendsEdges = response.extendsEdges,
-                callsEdges = response.callsEdges,
-                usesTypeEdges = response.usesTypeEdges,
+                status = proto.status,
+                methodsEnriched = proto.methodsEnriched,
+                extendsEdges = proto.extendsEdges,
+                callsEdges = proto.callsEdges,
+                usesTypeEdges = proto.usesTypeEdges,
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to ingest CPG to knowledgebase: ${e.message}" }
-            CpgIngestResult(
-                status = "error: ${e.message}",
-            )
+            CpgIngestResult(status = "error: ${e.message}")
         }
     }
 
@@ -1018,132 +933,7 @@ private data class PythonFullIngestResult(
     val urgency: String = "normal",
 )
 
-@Serializable
-private data class PythonGitStructureIngestRequest(
-    val clientId: String,
-    val projectId: String,
-    val repositoryIdentifier: String,
-    val branch: String,
-    val defaultBranch: String = "main",
-    val branches: List<PythonGitBranchInfo> = emptyList(),
-    val files: List<PythonGitFileInfo> = emptyList(),
-    val classes: List<PythonGitClassInfo> = emptyList(),
-    val fileContents: List<PythonGitFileContent> = emptyList(),
-    val metadata: Map<String, String> = emptyMap(),
-)
-
-@Serializable
-private data class PythonGitBranchInfo(
-    val name: String,
-    val isDefault: Boolean = false,
-    val status: String = "active",
-    val lastCommitHash: String = "",
-)
-
-@Serializable
-private data class PythonGitFileInfo(
-    val path: String,
-    val extension: String = "",
-    val language: String = "",
-    val sizeBytes: Long = 0,
-)
-
-@Serializable
-private data class PythonGitClassInfo(
-    val name: String,
-    val qualifiedName: String = "",
-    val filePath: String,
-    val visibility: String = "public",
-    val isInterface: Boolean = false,
-    val methods: List<String> = emptyList(),
-)
-
-@Serializable
-private data class PythonGitFileContent(
-    val path: String,
-    val content: String,
-)
-
-@Serializable
-private data class PythonGitStructureIngestResult(
-    val status: String,
-    @SerialName("nodes_created")
-    val nodesCreated: Int = 0,
-    @SerialName("edges_created")
-    val edgesCreated: Int = 0,
-    @SerialName("nodes_updated")
-    val nodesUpdated: Int = 0,
-    @SerialName("repository_key")
-    val repositoryKey: String = "",
-    @SerialName("branch_key")
-    val branchKey: String = "",
-    @SerialName("files_indexed")
-    val filesIndexed: Int = 0,
-    @SerialName("classes_indexed")
-    val classesIndexed: Int = 0,
-)
-
-@Serializable
-private data class PythonGitCommitInfo(
-    val hash: String,
-    val message: String,
-    val author: String,
-    val date: String,
-    val branch: String,
-    @SerialName("parent_hash")
-    val parentHash: String? = null,
-    @SerialName("files_modified")
-    val filesModified: List<String> = emptyList(),
-    @SerialName("files_created")
-    val filesCreated: List<String> = emptyList(),
-    @SerialName("files_deleted")
-    val filesDeleted: List<String> = emptyList(),
-)
-
-@Serializable
-private data class PythonGitCommitIngestRequest(
-    val clientId: String,
-    val projectId: String,
-    val repositoryIdentifier: String,
-    val branch: String,
-    val commits: List<PythonGitCommitInfo>,
-    @SerialName("diff_content")
-    val diffContent: String? = null,
-)
-
-@Serializable
-private data class PythonGitCommitIngestResult(
-    val status: String,
-    @SerialName("commits_ingested")
-    val commitsIngested: Int = 0,
-    @SerialName("nodes_created")
-    val nodesCreated: Int = 0,
-    @SerialName("edges_created")
-    val edgesCreated: Int = 0,
-    @SerialName("rag_chunks")
-    val ragChunks: Int = 0,
-)
-
-@Serializable
-private data class PythonCpgIngestRequest(
-    val clientId: String,
-    val projectId: String,
-    val branch: String,
-    val workspacePath: String,
-)
-
-@Serializable
-private data class PythonCpgIngestResult(
-    val status: String,
-    @SerialName("methods_enriched")
-    val methodsEnriched: Int = 0,
-    @SerialName("extends_edges")
-    val extendsEdges: Int = 0,
-    @SerialName("calls_edges")
-    val callsEdges: Int = 0,
-    @SerialName("uses_type_edges")
-    val usesTypeEdges: Int = 0,
-)
+// Git / CPG ingest DTOs moved to gRPC (see KbIngestGrpcClient).
 
 // KB document DTOs (internal REST models)
 

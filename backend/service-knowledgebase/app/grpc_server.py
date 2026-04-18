@@ -17,6 +17,7 @@ import logging
 import grpc
 from grpc_reflection.v1alpha import reflection
 
+from jervis.knowledgebase import ingest_pb2, ingest_pb2_grpc
 from jervis.knowledgebase import maintenance_pb2, maintenance_pb2_grpc
 from jervis.knowledgebase import queue_pb2, queue_pb2_grpc
 from jervis_contracts.interceptors import ServerContextInterceptor
@@ -197,6 +198,161 @@ class QueueServicer(queue_pb2_grpc.KnowledgeQueueServiceServicer):
         return queue_pb2.QueueList(items=items, stats=stats)
 
 
+class IngestServicer(ingest_pb2_grpc.KnowledgeIngestServiceServicer):
+    """KnowledgeIngestService — Kotlin-only surfaces land first.
+
+    RPCs not yet migrated (Ingest, IngestImmediate, IngestFull, IngestFile,
+    Crawl, Purge, …) stay on FastAPI and return UNIMPLEMENTED here — the
+    Python clients that still call those endpoints dial the REST port
+    until the matching slice lands.
+    """
+
+    def _service(self):
+        from app.api import routes as api_routes
+
+        if api_routes.service is None:
+            raise RuntimeError("KnowledgeService not initialized")
+        return api_routes.service
+
+    async def IngestCpg(
+        self,
+        request: ingest_pb2.CpgIngestRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> ingest_pb2.CpgIngestResult:
+        from app.api.models import CpgIngestRequest as CpgReq
+
+        req = CpgReq(
+            clientId=request.client_id,
+            projectId=request.project_id,
+            branch=request.branch,
+            workspacePath=request.workspace_path,
+        )
+        try:
+            result = await self._service().ingest_cpg(req)
+        except Exception as e:
+            logger.error("INGEST_CPG_ERROR project=%s branch=%s error=%s",
+                         request.project_id, request.branch, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return ingest_pb2.CpgIngestResult(
+            status=getattr(result, "status", "error"),
+            methods_enriched=int(getattr(result, "methods_enriched", 0)),
+            extends_edges=int(getattr(result, "extends_edges", 0)),
+            calls_edges=int(getattr(result, "calls_edges", 0)),
+            uses_type_edges=int(getattr(result, "uses_type_edges", 0)),
+        )
+
+    async def IngestGitStructure(
+        self,
+        request: ingest_pb2.GitStructureIngestRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> ingest_pb2.GitStructureIngestResult:
+        from app.api.models import (
+            GitBranchInfo, GitClassInfo, GitFileContent, GitFileInfo,
+            GitStructureIngestRequest as GSIR,
+        )
+
+        req = GSIR(
+            clientId=request.client_id,
+            projectId=request.project_id,
+            repositoryIdentifier=request.repository_identifier,
+            branch=request.branch,
+            defaultBranch=request.default_branch,
+            branches=[
+                GitBranchInfo(
+                    name=b.name,
+                    isDefault=b.is_default,
+                    status=b.status,
+                    lastCommitHash=b.last_commit_hash,
+                )
+                for b in request.branches
+            ],
+            files=[
+                GitFileInfo(
+                    path=f.path,
+                    extension=f.extension,
+                    language=f.language,
+                    sizeBytes=f.size_bytes,
+                )
+                for f in request.files
+            ],
+            classes=[
+                GitClassInfo(
+                    name=c.name,
+                    qualifiedName=c.qualified_name,
+                    filePath=c.file_path,
+                    visibility=c.visibility,
+                    isInterface=c.is_interface,
+                    methods=list(c.methods),
+                )
+                for c in request.classes
+            ],
+            fileContents=[
+                GitFileContent(path=fc.path, content=fc.content)
+                for fc in request.file_contents
+            ],
+            metadata=dict(request.metadata),
+        )
+        try:
+            result = await self._service().ingest_git_structure(req)
+        except Exception as e:
+            logger.error("INGEST_GIT_STRUCTURE_ERROR project=%s branch=%s error=%s",
+                         request.project_id, request.branch, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return ingest_pb2.GitStructureIngestResult(
+            status=getattr(result, "status", "error"),
+            nodes_created=int(getattr(result, "nodesCreated", getattr(result, "nodes_created", 0))),
+            edges_created=int(getattr(result, "edgesCreated", getattr(result, "edges_created", 0))),
+            nodes_updated=int(getattr(result, "nodesUpdated", getattr(result, "nodes_updated", 0))),
+            repository_key=str(getattr(result, "repositoryKey", getattr(result, "repository_key", "")) or ""),
+            branch_key=str(getattr(result, "branchKey", getattr(result, "branch_key", "")) or ""),
+            files_indexed=int(getattr(result, "filesIndexed", getattr(result, "files_indexed", 0))),
+            classes_indexed=int(getattr(result, "classesIndexed", getattr(result, "classes_indexed", 0))),
+            methods_indexed=int(getattr(result, "methodsIndexed", getattr(result, "methods_indexed", 0))),
+        )
+
+    async def IngestGitCommits(
+        self,
+        request: ingest_pb2.GitCommitIngestRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> ingest_pb2.GitCommitIngestResult:
+        from app.api.models import GitCommitIngestRequest as GCIR, GitCommitInfo
+
+        req = GCIR(
+            clientId=request.client_id,
+            projectId=request.project_id,
+            repositoryIdentifier=request.repository_identifier,
+            branch=request.branch,
+            commits=[
+                GitCommitInfo(
+                    hash=c.hash,
+                    message=c.message,
+                    author=c.author,
+                    date=c.date,
+                    branch=c.branch,
+                    parentHash=c.parent_hash,
+                    filesModified=list(c.files_modified),
+                    filesCreated=list(c.files_created),
+                    filesDeleted=list(c.files_deleted),
+                )
+                for c in request.commits
+            ],
+            diffContent=request.diff_content or None,
+        )
+        try:
+            result = await self._service().ingest_git_commits(req)
+        except Exception as e:
+            logger.error("INGEST_GIT_COMMITS_ERROR project=%s branch=%s commits=%d error=%s",
+                         request.project_id, request.branch, len(request.commits), e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return ingest_pb2.GitCommitIngestResult(
+            status=getattr(result, "status", "error"),
+            commits_ingested=int(getattr(result, "commitsIngested", getattr(result, "commits_ingested", 0))),
+            nodes_created=int(getattr(result, "nodesCreated", getattr(result, "nodes_created", 0))),
+            edges_created=int(getattr(result, "edgesCreated", getattr(result, "edges_created", 0))),
+            rag_chunks=int(getattr(result, "ragChunks", getattr(result, "rag_chunks", 0))),
+        )
+
+
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for later cleanup.
 
@@ -211,10 +367,14 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     queue_pb2_grpc.add_KnowledgeQueueServiceServicer_to_server(
         QueueServicer(), server
     )
+    ingest_pb2_grpc.add_KnowledgeIngestServiceServicer_to_server(
+        IngestServicer(), server
+    )
 
     service_names = (
         maintenance_pb2.DESCRIPTOR.services_by_name["KnowledgeMaintenanceService"].full_name,
         queue_pb2.DESCRIPTOR.services_by_name["KnowledgeQueueService"].full_name,
+        ingest_pb2.DESCRIPTOR.services_by_name["KnowledgeIngestService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
@@ -223,7 +383,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     await server.start()
     logger.info(
         "gRPC KB services listening on :%d "
-        "(KnowledgeMaintenanceService + KnowledgeQueueService)",
+        "(Maintenance + Queue + Ingest[cpg,git-structure,git-commits])",
         port,
     )
     return server
