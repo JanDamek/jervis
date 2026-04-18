@@ -27,6 +27,9 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+              name: http
+            - containerPort: 5501
+              name: grpc
           env:
             # Timezone — all backend services MUST run in UTC
             - name: TZ
@@ -114,6 +117,9 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+              name: http
+            - containerPort: 5501
+              name: grpc
           env:
             # Timezone — all backend services MUST run in UTC
             - name: TZ
@@ -192,6 +198,9 @@ spec:
     - name: http
       port: 8080
       targetPort: 8080
+    - name: grpc
+      port: 5501
+      targetPort: 5501
 ---
 # ===== WRITE Service =====
 apiVersion: v1
@@ -208,3 +217,6 @@ spec:
     - name: http
       port: 8080
       targetPort: 8080
+    - name: grpc
+      port: 5501
+      targetPort: 5501

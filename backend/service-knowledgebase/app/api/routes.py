@@ -574,87 +574,8 @@ async def purge(request: PurgeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@write_router.post("/maintenance/batch")
-async def maintenance_batch(request: dict):
-    """Process one batch of KB maintenance work.
-
-    Checkpoint-based: accepts cursor, returns nextCursor for resume.
-    Called by Kotlin BackgroundEngine during GPU idle time.
-
-    Types: dedup, orphan_cleanup, consistency_check, thought_decay, thought_merge, embedding_quality
-    """
-    mtype = request.get("maintenanceType", "")
-    client_id = request.get("clientId", "")
-    cursor = request.get("cursor")
-    batch_size = request.get("batchSize", 100)
-
-    if not mtype or not client_id:
-        raise HTTPException(status_code=400, detail="maintenanceType and clientId required")
-
-    try:
-        if mtype == "dedup":
-            result = await service.graph_service.maintenance_dedup_batch(client_id, cursor, batch_size)
-        elif mtype == "orphan_cleanup":
-            result = await service.graph_service.maintenance_orphan_batch(client_id, cursor, batch_size)
-        elif mtype == "consistency_check":
-            result = await service.graph_service.maintenance_consistency_batch(client_id, cursor, batch_size)
-        elif mtype == "thought_decay":
-            result = await service.thought_service.maintenance_decay_batch(client_id, cursor, batch_size)
-        elif mtype == "thought_merge":
-            result = await service.thought_service.maintenance_merge_batch(client_id, cursor, batch_size)
-        elif mtype == "embedding_quality":
-            result = await service.rag_service.maintenance_embedding_batch(client_id, cursor, batch_size)
-        else:
-            raise HTTPException(status_code=400, detail=f"Unknown maintenance type: {mtype}")
-
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Maintenance batch error: type=%s client=%s error=%s", mtype, client_id, e)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@write_router.post("/retag-project")
-async def retag_project(request: dict):
-    """Migrate all KB data from one projectId to another.
-
-    Called during project merge. Updates ArangoDB (KnowledgeNodes, KnowledgeEdges,
-    ThoughtNodes, ThoughtEdges, ThoughtAnchors) and Weaviate (KnowledgeChunk).
-    """
-    source = request.get("sourceProjectId", "")
-    target = request.get("targetProjectId", "")
-    if not source or not target:
-        raise HTTPException(status_code=400, detail="sourceProjectId and targetProjectId are required")
-    try:
-        graph_results = await service.graph_service.retag_project(source, target)
-        weaviate_updated = await service.rag_service.retag_project(source, target)
-        return {
-            "status": "success",
-            "graphResults": graph_results,
-            "weaviateUpdated": weaviate_updated,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@write_router.post("/retag-group")
-async def retag_group(request: dict):
-    """Update groupId on all KB items for a project.
-
-    Called when a project's group membership changes.
-    Updates both ArangoDB nodes and Weaviate chunks for the given projectId.
-    """
-    project_id = request.get("projectId", "")
-    group_id = request.get("groupId")
-    if not project_id:
-        raise HTTPException(status_code=400, detail="projectId is required")
-    try:
-        graph_updated = await service.graph_service.retag_group(project_id, group_id)
-        weaviate_updated = await service.rag_service.retag_group(project_id, group_id)
-        return {"status": "success", "graphUpdated": graph_updated, "weaviateUpdated": weaviate_updated}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /maintenance/batch, /retag-project, /retag-group migrated to gRPC
+# (KnowledgeMaintenanceService on :5501 — see app/grpc_server.py).
 
 
 @write_router.post("/alias/register")

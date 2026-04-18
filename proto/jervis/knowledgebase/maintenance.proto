@@ -8,42 +8,55 @@ option java_package = "com.jervis.contracts.knowledgebase";
 option java_multiple_files = true;
 option java_outer_classname = "KnowledgeMaintenanceProto";
 
-// KnowledgeMaintenanceService — batch / retag maintenance. Long-running
-// operations are synchronous here (caller already dispatches them from
-// a background worker); streaming progress goes via
+// KnowledgeMaintenanceService — cursor-driven maintenance batches + retag
+// operations. RunBatch is called by Kotlin BackgroundEngine during GPU idle
+// time; RetagProject + RetagGroup are invoked during project merge / group
+// reassignment flows. Progress for long-running RunBatch streams back via
 // ServerKbCallbacksService.KbProgress on the callback channel.
 service KnowledgeMaintenanceService {
-  rpc RunBatch(MaintenanceBatchRequest) returns (MaintenanceResult);
-  rpc RetagProject(RetagProjectRequest) returns (MaintenanceResult);
-  rpc RetagGroup(RetagGroupRequest) returns (MaintenanceResult);
+  rpc RunBatch(MaintenanceBatchRequest) returns (MaintenanceBatchResult);
+  rpc RetagProject(RetagProjectRequest) returns (RetagResult);
+  rpc RetagGroup(RetagGroupRequest) returns (RetagResult);
 }
 
+// RunBatch — cursor-paginated batch of maintenance work.
+// maintenance_type ∈ {dedup, orphan_cleanup, consistency_check, thought_decay,
+// thought_merge, embedding_quality}. cursor is opaque; empty on first call.
 message MaintenanceBatchRequest {
   jervis.common.RequestContext ctx = 1;
-  string client_id = 2;
-  string project_id = 3;
-  string group_id = 4;
-  repeated string operations = 5;  // e.g. ["dedupe", "reembed", "gc"]
-  int32 limit = 6;
-  bool dry_run = 7;
+  string maintenance_type = 2;
+  string client_id = 3;
+  string cursor = 4;      // "" on first batch
+  int32 batch_size = 5;
 }
 
+message MaintenanceBatchResult {
+  bool completed = 1;             // true when no more work for this client
+  string next_cursor = 2;         // resume cursor when !completed
+  int32 processed = 3;            // items processed this batch
+  int32 findings = 4;             // issues discovered this batch
+  int32 fixed = 5;                // issues auto-fixed this batch
+  int32 total_estimate = 6;       // running estimate of total work
+}
+
+// RetagProject — migrate all KB data from source_project_id to
+// target_project_id (ArangoDB + Weaviate). Idempotent.
 message RetagProjectRequest {
   jervis.common.RequestContext ctx = 1;
   string source_project_id = 2;
   string target_project_id = 3;
 }
 
+// RetagGroup — update groupId on all KB items for a given project. new_group_id
+// may be empty string, meaning the project leaves its current group. Idempotent.
 message RetagGroupRequest {
   jervis.common.RequestContext ctx = 1;
   string project_id = 2;
   string new_group_id = 3;
 }
 
-message MaintenanceResult {
-  string status = 1;
-  int32 scanned = 2;
-  int32 modified = 3;
-  int32 deleted = 4;
-  string detail = 5;
+message RetagResult {
+  string status = 1;            // "success" on success; else error detail
+  int32 graph_updated = 2;      // ArangoDB rows touched
+  int32 weaviate_updated = 3;   // Weaviate chunks touched
 }

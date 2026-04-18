@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     #   "write" — ingest, crawl, purge, alias/register, alias/merge
     KB_MODE: str = "all"
 
+    # -- Pod-to-pod gRPC (Phase 2 — KnowledgeMaintenanceService and later) ------
+    GRPC_PORT: int = 5501
+
     # -- Graph traversal limits --------------------------------------------------
     # Prevents OOM kills on high-connectivity hub nodes (user:*, client_id:*, etc.)
     MAX_GRAPH_TRAVERSAL_RESULTS: int = 200   # LIMIT per single AQL traversal

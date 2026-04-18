@@ -20,6 +20,10 @@ class GrpcChannels(
     private val routerHost: String,
     @Value("\${grpc.ollama-router.port:5501}")
     private val routerPort: Int,
+    @Value("\${grpc.knowledgebase.host:jervis-knowledgebase-write}")
+    private val kbHost: String,
+    @Value("\${grpc.knowledgebase.port:5501}")
+    private val kbPort: Int,
 ) {
     private val logger = KotlinLogging.logger {}
     private val channels = mutableListOf<ManagedChannel>()
@@ -37,6 +41,19 @@ class GrpcChannels(
         return channel
     }
 
+    @Bean(name = [KNOWLEDGEBASE_CHANNEL])
+    fun knowledgebaseChannel(): ManagedChannel {
+        val channel = NettyChannelBuilder.forAddress(kbHost, kbPort)
+            .usePlaintext()
+            .keepAliveTime(30, TimeUnit.SECONDS)
+            .keepAliveTimeout(5, TimeUnit.SECONDS)
+            .keepAliveWithoutCalls(true)
+            .build()
+        channels += channel
+        logger.info { "gRPC channel → $kbHost:$kbPort (knowledgebase)" }
+        return channel
+    }
+
     @PreDestroy
     fun shutdown() {
         for (c in channels) {
@@ -46,5 +63,6 @@ class GrpcChannels(
 
     companion object {
         const val ROUTER_ADMIN_CHANNEL = "routerAdminChannel"
+        const val KNOWLEDGEBASE_CHANNEL = "knowledgebaseChannel"
     }
 }

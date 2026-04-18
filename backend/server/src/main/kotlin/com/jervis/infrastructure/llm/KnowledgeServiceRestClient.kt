@@ -1,5 +1,6 @@
 package com.jervis.infrastructure.llm
 
+import com.jervis.infrastructure.grpc.KbMaintenanceGrpcClient
 import com.jervis.infrastructure.llm.KnowledgeServiceRestClient
 import com.jervis.common.types.ClientId
 import com.jervis.knowledgebase.KnowledgeService
@@ -57,6 +58,7 @@ private val logger = KotlinLogging.logger {}
 class KnowledgeServiceRestClient(
     private val baseUrl: String,
     private val callbackBaseUrl: String = "",
+    private val kbMaintenanceGrpc: KbMaintenanceGrpcClient? = null,
 ) : KnowledgeService {
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -718,12 +720,13 @@ class KnowledgeServiceRestClient(
         }
     }
 
+    private fun grpc(): KbMaintenanceGrpcClient =
+        kbMaintenanceGrpc ?: error("KbMaintenanceGrpcClient not wired — see RpcClientsConfig.getKnowledgeService()")
+
     /**
-     * Update groupId on all KB items for a project.
-     * Called when a project's group membership changes.
-     *
-     * Retries with exponential backoff on transient failures (network, 5xx).
-     * Returns true on success, false on failure (caller handles crash recovery).
+     * Update groupId on all KB items for a project. Retries with exponential
+     * backoff on transient gRPC errors; returns false if all attempts fail
+     * so the caller can record a pending-retag state for crash recovery.
      */
     suspend fun retagGroupId(projectId: String, newGroupId: String?): Boolean {
         logger.info { "KB retag-group: projectId=$projectId newGroupId=$newGroupId" }
@@ -735,20 +738,22 @@ class KnowledgeServiceRestClient(
                 kotlinx.coroutines.delay(delayMs)
             }
             try {
-                val response = client.post("$apiBaseUrl/retag-group") {
-                    contentType(ContentType.Application.Json)
-                    setBody(PythonRetagGroupRequest(projectId = projectId, groupId = newGroupId))
+                val result = grpc().retagGroup(projectId, newGroupId)
+                logger.info {
+                    "KB retag-group succeeded for projectId=$projectId " +
+                        "(graph=${result.graphUpdated}, weaviate=${result.weaviateUpdated})"
                 }
-                if (response.status.isSuccess()) {
-                    logger.info { "KB retag-group succeeded for projectId=$projectId" }
-                    return true
+                return true
+            } catch (e: io.grpc.StatusException) {
+                lastException = e
+                val code = e.status.code
+                logger.warn(e) { "KB retag-group attempt $attempt failed (status=$code): ${e.message}" }
+                if (code == io.grpc.Status.Code.INVALID_ARGUMENT || code == io.grpc.Status.Code.NOT_FOUND) {
+                    return false // non-retryable
                 }
-                val errorBody = response.bodyAsText()
-                logger.warn { "KB retag-group failed: ${response.status} $errorBody" }
-                if (response.status.value in 400..499) return false // non-retryable
             } catch (e: Exception) {
                 lastException = e
-                logger.warn(e) { "KB retag-group attempt $attempt failed for project $projectId: ${e.message}" }
+                logger.warn(e) { "KB retag-group attempt $attempt failed: ${e.message}" }
             }
         }
         logger.error(lastException) { "KB retag-group failed after $MAX_RETRIES retries for project $projectId" }
@@ -759,37 +764,28 @@ class KnowledgeServiceRestClient(
      * Run one batch of KB maintenance work.
      * Called by KbMaintenanceService during GPU idle time.
      *
-     * @param maintenanceType Type: dedup, orphan_cleanup, consistency_check, thought_decay, thought_merge, embedding_quality
-     * @param clientId Client to process
-     * @param cursor Resume cursor from previous batch (null = start from beginning)
-     * @param batchSize Number of items to process in this batch
-     * @return Batch result with next cursor, or null on error
+     * @return Batch result with next cursor, or null on error.
      */
     suspend fun runMaintenanceBatch(
         maintenanceType: String,
         clientId: String,
         cursor: String?,
         batchSize: Int,
-    ): MaintenanceBatchResult? {
+    ): MaintenanceBatchResult? =
         try {
-            val response = client.post("$apiBaseUrl/maintenance/batch") {
-                contentType(ContentType.Application.Json)
-                setBody(mapOf(
-                    "maintenanceType" to maintenanceType,
-                    "clientId" to clientId,
-                    "cursor" to cursor,
-                    "batchSize" to batchSize,
-                ))
-            }
-            if (response.status.isSuccess()) {
-                return response.body<MaintenanceBatchResult>()
-            }
-            logger.warn { "KB maintenance batch failed: ${response.status}" }
+            val proto = grpc().runBatch(maintenanceType, clientId, cursor, batchSize)
+            MaintenanceBatchResult(
+                completed = proto.completed,
+                nextCursor = proto.nextCursor.takeIf { it.isNotEmpty() },
+                processed = proto.processed,
+                findings = proto.findings,
+                fixed = proto.fixed,
+                totalEstimate = proto.totalEstimate,
+            )
         } catch (e: Exception) {
             logger.warn(e) { "KB maintenance batch error: ${e.message}" }
+            null
         }
-        return null
-    }
 
     /**
      * Result from KB maintenance batch processing.
@@ -807,24 +803,18 @@ class KnowledgeServiceRestClient(
     /**
      * Retag all KB entries from one project to another (for project merge).
      */
-    suspend fun retagProjectId(sourceProjectId: String, targetProjectId: String): Boolean {
-        logger.info { "KB retag-project: source=$sourceProjectId target=$targetProjectId" }
+    suspend fun retagProjectId(sourceProjectId: String, targetProjectId: String): Boolean =
         try {
-            val response = client.post("$apiBaseUrl/retag-project") {
-                contentType(ContentType.Application.Json)
-                setBody(mapOf("sourceProjectId" to sourceProjectId, "targetProjectId" to targetProjectId))
+            val result = grpc().retagProject(sourceProjectId, targetProjectId)
+            logger.info {
+                "KB retag-project succeeded: $sourceProjectId → $targetProjectId " +
+                    "(graph=${result.graphUpdated}, weaviate=${result.weaviateUpdated})"
             }
-            if (response.status.isSuccess()) {
-                logger.info { "KB retag-project succeeded: $sourceProjectId → $targetProjectId" }
-                return true
-            }
-            val errorBody = response.bodyAsText()
-            logger.warn { "KB retag-project failed: ${response.status} $errorBody" }
+            true
         } catch (e: Exception) {
             logger.warn(e) { "KB retag-project failed: ${e.message}" }
+            false
         }
-        return false
-    }
 
     /**
      * Extract text from a file without RAG indexing.
@@ -1162,12 +1152,6 @@ private data class PythonKbDocumentRegisterRequest(
     val category: String = "OTHER",
     val tags: List<String> = emptyList(),
     val contentHash: String? = null,
-)
-
-@Serializable
-private data class PythonRetagGroupRequest(
-    val projectId: String,
-    val groupId: String? = null,
 )
 
 @Serializable

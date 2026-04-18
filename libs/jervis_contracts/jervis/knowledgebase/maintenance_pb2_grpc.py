@@ -26,9 +26,10 @@ if _version_not_supported:
 
 
 class KnowledgeMaintenanceServiceStub(object):
-    """KnowledgeMaintenanceService — batch / retag maintenance. Long-running
-    operations are synchronous here (caller already dispatches them from
-    a background worker); streaming progress goes via
+    """KnowledgeMaintenanceService — cursor-driven maintenance batches + retag
+    operations. RunBatch is called by Kotlin BackgroundEngine during GPU idle
+    time; RetagProject + RetagGroup are invoked during project merge / group
+    reassignment flows. Progress for long-running RunBatch streams back via
     ServerKbCallbacksService.KbProgress on the callback channel.
     """
 
@@ -41,24 +42,25 @@ class KnowledgeMaintenanceServiceStub(object):
         self.RunBatch = channel.unary_unary(
                 '/jervis.knowledgebase.KnowledgeMaintenanceService/RunBatch',
                 request_serializer=jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceBatchRequest.SerializeToString,
-                response_deserializer=jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceResult.FromString,
+                response_deserializer=jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceBatchResult.FromString,
                 _registered_method=True)
         self.RetagProject = channel.unary_unary(
                 '/jervis.knowledgebase.KnowledgeMaintenanceService/RetagProject',
                 request_serializer=jervis_dot_knowledgebase_dot_maintenance__pb2.RetagProjectRequest.SerializeToString,
-                response_deserializer=jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceResult.FromString,
+                response_deserializer=jervis_dot_knowledgebase_dot_maintenance__pb2.RetagResult.FromString,
                 _registered_method=True)
         self.RetagGroup = channel.unary_unary(
                 '/jervis.knowledgebase.KnowledgeMaintenanceService/RetagGroup',
                 request_serializer=jervis_dot_knowledgebase_dot_maintenance__pb2.RetagGroupRequest.SerializeToString,
-                response_deserializer=jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceResult.FromString,
+                response_deserializer=jervis_dot_knowledgebase_dot_maintenance__pb2.RetagResult.FromString,
                 _registered_method=True)
 
 
 class KnowledgeMaintenanceServiceServicer(object):
-    """KnowledgeMaintenanceService — batch / retag maintenance. Long-running
-    operations are synchronous here (caller already dispatches them from
-    a background worker); streaming progress goes via
+    """KnowledgeMaintenanceService — cursor-driven maintenance batches + retag
+    operations. RunBatch is called by Kotlin BackgroundEngine during GPU idle
+    time; RetagProject + RetagGroup are invoked during project merge / group
+    reassignment flows. Progress for long-running RunBatch streams back via
     ServerKbCallbacksService.KbProgress on the callback channel.
     """
 
@@ -86,17 +88,17 @@ def add_KnowledgeMaintenanceServiceServicer_to_server(servicer, server):
             'RunBatch': grpc.unary_unary_rpc_method_handler(
                     servicer.RunBatch,
                     request_deserializer=jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceBatchRequest.FromString,
-                    response_serializer=jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceResult.SerializeToString,
+                    response_serializer=jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceBatchResult.SerializeToString,
             ),
             'RetagProject': grpc.unary_unary_rpc_method_handler(
                     servicer.RetagProject,
                     request_deserializer=jervis_dot_knowledgebase_dot_maintenance__pb2.RetagProjectRequest.FromString,
-                    response_serializer=jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceResult.SerializeToString,
+                    response_serializer=jervis_dot_knowledgebase_dot_maintenance__pb2.RetagResult.SerializeToString,
             ),
             'RetagGroup': grpc.unary_unary_rpc_method_handler(
                     servicer.RetagGroup,
                     request_deserializer=jervis_dot_knowledgebase_dot_maintenance__pb2.RetagGroupRequest.FromString,
-                    response_serializer=jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceResult.SerializeToString,
+                    response_serializer=jervis_dot_knowledgebase_dot_maintenance__pb2.RetagResult.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -107,9 +109,10 @@ def add_KnowledgeMaintenanceServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class KnowledgeMaintenanceService(object):
-    """KnowledgeMaintenanceService — batch / retag maintenance. Long-running
-    operations are synchronous here (caller already dispatches them from
-    a background worker); streaming progress goes via
+    """KnowledgeMaintenanceService — cursor-driven maintenance batches + retag
+    operations. RunBatch is called by Kotlin BackgroundEngine during GPU idle
+    time; RetagProject + RetagGroup are invoked during project merge / group
+    reassignment flows. Progress for long-running RunBatch streams back via
     ServerKbCallbacksService.KbProgress on the callback channel.
     """
 
@@ -129,7 +132,7 @@ class KnowledgeMaintenanceService(object):
             target,
             '/jervis.knowledgebase.KnowledgeMaintenanceService/RunBatch',
             jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceBatchRequest.SerializeToString,
-            jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceResult.FromString,
+            jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceBatchResult.FromString,
             options,
             channel_credentials,
             insecure,
@@ -156,7 +159,7 @@ class KnowledgeMaintenanceService(object):
             target,
             '/jervis.knowledgebase.KnowledgeMaintenanceService/RetagProject',
             jervis_dot_knowledgebase_dot_maintenance__pb2.RetagProjectRequest.SerializeToString,
-            jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceResult.FromString,
+            jervis_dot_knowledgebase_dot_maintenance__pb2.RetagResult.FromString,
             options,
             channel_credentials,
             insecure,
@@ -183,7 +186,7 @@ class KnowledgeMaintenanceService(object):
             target,
             '/jervis.knowledgebase.KnowledgeMaintenanceService/RetagGroup',
             jervis_dot_knowledgebase_dot_maintenance__pb2.RetagGroupRequest.SerializeToString,
-            jervis_dot_knowledgebase_dot_maintenance__pb2.MaintenanceResult.FromString,
+            jervis_dot_knowledgebase_dot_maintenance__pb2.RetagResult.FromString,
             options,
             channel_credentials,
             insecure,

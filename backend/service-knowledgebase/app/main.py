@@ -82,9 +82,20 @@ async def lifespan(app: FastAPI):
                 settings.KB_MODE, settings.MAX_CONCURRENT_READS, settings.MAX_CONCURRENT_WRITES,
                 settings.MAX_CONCURRENT_EMBEDDINGS)
 
+    # Start pod-to-pod gRPC surface (:5501). Runs alongside FastAPI (:8080)
+    # for the duration of Phase 2 — each slice moves more traffic off REST.
+    from app.grpc_server import start_grpc_server
+
+    grpc_port = int(getattr(settings, "GRPC_PORT", 5501))
+    grpc_server = await start_grpc_server(port=grpc_port)
+    app.state.grpc_server = grpc_server
+
     yield
 
-    # Shutdown: stop worker gracefully (only if it was started)
+    # Shutdown: drain gRPC first so in-flight RPCs finish, then stop worker.
+    await grpc_server.stop(grace=5.0)
+    logger.info("gRPC server stopped")
+
     if worker is not None:
         await worker.stop()
         logger.info("LLM extraction worker stopped")
