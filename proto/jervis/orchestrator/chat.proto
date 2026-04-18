@@ -18,14 +18,56 @@ service OrchestratorChatService {
   rpc Stop(StopChatRequest) returns (StopChatAck);
 }
 
-// ChatRequest carries the legacy PythonChatRequest fields inline via
-// JSON. The Python side decodes with `pydantic.BaseModel(**payload)` the
-// same way the FastAPI handler used `request.json()`. Keeps the proto
-// tight while leaving the Kotlin DTO shape frozen at the source boundary.
+// ChatRequest is the typed foreground-chat payload. Every field maps
+// 1:1 to `app/chat/models.py::ChatRequest` (pydantic) on the Python
+// side. Kotlin callers populate the proto builder directly — no JSON
+// passthrough on the wire.
 message ChatRequest {
   jervis.common.RequestContext ctx = 1;
-  string session_id = 2;
-  string payload_json = 3;         // PythonChatRequest (message, scope, attachments, ...)
+  string session_id = 2;               // ChatSession._id as string
+  string message = 3;                  // user message text
+  int32 message_sequence = 4;          // sequence number assigned by Kotlin
+  string user_id = 5;                  // default "jan"
+
+  // UI selection scope
+  string active_client_id = 6;
+  string active_project_id = 7;
+  string active_group_id = 8;
+  string active_client_name = 9;
+  string active_project_name = 10;
+  string active_group_name = 11;
+
+  // Context — when user clicks on a specific user_task
+  string context_task_id = 12;
+
+  // Timestamp / deadline / priority / tz
+  string timestamp = 13;               // RFC3339 UTC; empty = unset
+  string max_openrouter_tier = 14;     // "NONE" | "FREE" | "PAID" | "PREMIUM" | compat variants
+  string deadline_iso = 15;            // RFC3339 UTC; empty = unset
+  string priority = 16;                // CASCADE | CRITICAL | NORMAL
+  string client_timezone = 17;         // e.g. "Europe/Prague"
+
+  // Attachments — base64-encoded file content from UI
+  repeated Attachment attachments = 18;
+}
+
+// Attachment is one inline base64-encoded file payload. Mirrors the
+// per-attachment dict the FastAPI /chat route used to receive.
+message Attachment {
+  string filename = 1;
+  string mime_type = 2;
+  int64 size_bytes = 3;
+  string content_base64 = 4;           // empty = reference-only (future)
+}
+
+// ChatMessage — one entry in a persisted chat transcript. Reused from
+// control.proto (Approve carries a ChatMessage list instead of a JSON
+// blob) so the orchestrator sees a single typed message shape.
+message ChatMessage {
+  string role = 1;                     // "user" | "assistant" | "system" | "tool"
+  string content = 2;
+  string timestamp = 3;                // RFC3339 UTC; empty allowed
+  string tool_call_id = 4;             // for role=tool; empty otherwise
 }
 
 // ChatEvent mirrors the SSE shape {type, content, metadata}. Extra

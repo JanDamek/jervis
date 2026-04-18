@@ -26,11 +26,19 @@ public interface ChatRequestOrBuilder extends
   com.jervis.contracts.common.RequestContextOrBuilder getCtxOrBuilder();
 
   /**
+   * <pre>
+   * ChatSession._id as string
+   * </pre>
+   *
    * <code>string session_id = 2;</code>
    * @return The sessionId.
    */
   java.lang.String getSessionId();
   /**
+   * <pre>
+   * ChatSession._id as string
+   * </pre>
+   *
    * <code>string session_id = 2;</code>
    * @return The bytes for sessionId.
    */
@@ -39,21 +47,295 @@ public interface ChatRequestOrBuilder extends
 
   /**
    * <pre>
-   * PythonChatRequest (message, scope, attachments, ...)
+   * user message text
    * </pre>
    *
-   * <code>string payload_json = 3;</code>
-   * @return The payloadJson.
+   * <code>string message = 3;</code>
+   * @return The message.
    */
-  java.lang.String getPayloadJson();
+  java.lang.String getMessage();
   /**
    * <pre>
-   * PythonChatRequest (message, scope, attachments, ...)
+   * user message text
    * </pre>
    *
-   * <code>string payload_json = 3;</code>
-   * @return The bytes for payloadJson.
+   * <code>string message = 3;</code>
+   * @return The bytes for message.
    */
   com.google.protobuf.ByteString
-      getPayloadJsonBytes();
+      getMessageBytes();
+
+  /**
+   * <pre>
+   * sequence number assigned by Kotlin
+   * </pre>
+   *
+   * <code>int32 message_sequence = 4;</code>
+   * @return The messageSequence.
+   */
+  int getMessageSequence();
+
+  /**
+   * <pre>
+   * default "jan"
+   * </pre>
+   *
+   * <code>string user_id = 5;</code>
+   * @return The userId.
+   */
+  java.lang.String getUserId();
+  /**
+   * <pre>
+   * default "jan"
+   * </pre>
+   *
+   * <code>string user_id = 5;</code>
+   * @return The bytes for userId.
+   */
+  com.google.protobuf.ByteString
+      getUserIdBytes();
+
+  /**
+   * <pre>
+   * UI selection scope
+   * </pre>
+   *
+   * <code>string active_client_id = 6;</code>
+   * @return The activeClientId.
+   */
+  java.lang.String getActiveClientId();
+  /**
+   * <pre>
+   * UI selection scope
+   * </pre>
+   *
+   * <code>string active_client_id = 6;</code>
+   * @return The bytes for activeClientId.
+   */
+  com.google.protobuf.ByteString
+      getActiveClientIdBytes();
+
+  /**
+   * <code>string active_project_id = 7;</code>
+   * @return The activeProjectId.
+   */
+  java.lang.String getActiveProjectId();
+  /**
+   * <code>string active_project_id = 7;</code>
+   * @return The bytes for activeProjectId.
+   */
+  com.google.protobuf.ByteString
+      getActiveProjectIdBytes();
+
+  /**
+   * <code>string active_group_id = 8;</code>
+   * @return The activeGroupId.
+   */
+  java.lang.String getActiveGroupId();
+  /**
+   * <code>string active_group_id = 8;</code>
+   * @return The bytes for activeGroupId.
+   */
+  com.google.protobuf.ByteString
+      getActiveGroupIdBytes();
+
+  /**
+   * <code>string active_client_name = 9;</code>
+   * @return The activeClientName.
+   */
+  java.lang.String getActiveClientName();
+  /**
+   * <code>string active_client_name = 9;</code>
+   * @return The bytes for activeClientName.
+   */
+  com.google.protobuf.ByteString
+      getActiveClientNameBytes();
+
+  /**
+   * <code>string active_project_name = 10;</code>
+   * @return The activeProjectName.
+   */
+  java.lang.String getActiveProjectName();
+  /**
+   * <code>string active_project_name = 10;</code>
+   * @return The bytes for activeProjectName.
+   */
+  com.google.protobuf.ByteString
+      getActiveProjectNameBytes();
+
+  /**
+   * <code>string active_group_name = 11;</code>
+   * @return The activeGroupName.
+   */
+  java.lang.String getActiveGroupName();
+  /**
+   * <code>string active_group_name = 11;</code>
+   * @return The bytes for activeGroupName.
+   */
+  com.google.protobuf.ByteString
+      getActiveGroupNameBytes();
+
+  /**
+   * <pre>
+   * Context — when user clicks on a specific user_task
+   * </pre>
+   *
+   * <code>string context_task_id = 12;</code>
+   * @return The contextTaskId.
+   */
+  java.lang.String getContextTaskId();
+  /**
+   * <pre>
+   * Context — when user clicks on a specific user_task
+   * </pre>
+   *
+   * <code>string context_task_id = 12;</code>
+   * @return The bytes for contextTaskId.
+   */
+  com.google.protobuf.ByteString
+      getContextTaskIdBytes();
+
+  /**
+   * <pre>
+   * Timestamp / deadline / priority / tz
+   * </pre>
+   *
+   * <code>string timestamp = 13;</code>
+   * @return The timestamp.
+   */
+  java.lang.String getTimestamp();
+  /**
+   * <pre>
+   * Timestamp / deadline / priority / tz
+   * </pre>
+   *
+   * <code>string timestamp = 13;</code>
+   * @return The bytes for timestamp.
+   */
+  com.google.protobuf.ByteString
+      getTimestampBytes();
+
+  /**
+   * <pre>
+   * "NONE" | "FREE" | "PAID" | "PREMIUM" | compat variants
+   * </pre>
+   *
+   * <code>string max_openrouter_tier = 14;</code>
+   * @return The maxOpenrouterTier.
+   */
+  java.lang.String getMaxOpenrouterTier();
+  /**
+   * <pre>
+   * "NONE" | "FREE" | "PAID" | "PREMIUM" | compat variants
+   * </pre>
+   *
+   * <code>string max_openrouter_tier = 14;</code>
+   * @return The bytes for maxOpenrouterTier.
+   */
+  com.google.protobuf.ByteString
+      getMaxOpenrouterTierBytes();
+
+  /**
+   * <pre>
+   * RFC3339 UTC; empty = unset
+   * </pre>
+   *
+   * <code>string deadline_iso = 15;</code>
+   * @return The deadlineIso.
+   */
+  java.lang.String getDeadlineIso();
+  /**
+   * <pre>
+   * RFC3339 UTC; empty = unset
+   * </pre>
+   *
+   * <code>string deadline_iso = 15;</code>
+   * @return The bytes for deadlineIso.
+   */
+  com.google.protobuf.ByteString
+      getDeadlineIsoBytes();
+
+  /**
+   * <pre>
+   * CASCADE | CRITICAL | NORMAL
+   * </pre>
+   *
+   * <code>string priority = 16;</code>
+   * @return The priority.
+   */
+  java.lang.String getPriority();
+  /**
+   * <pre>
+   * CASCADE | CRITICAL | NORMAL
+   * </pre>
+   *
+   * <code>string priority = 16;</code>
+   * @return The bytes for priority.
+   */
+  com.google.protobuf.ByteString
+      getPriorityBytes();
+
+  /**
+   * <pre>
+   * e.g. "Europe/Prague"
+   * </pre>
+   *
+   * <code>string client_timezone = 17;</code>
+   * @return The clientTimezone.
+   */
+  java.lang.String getClientTimezone();
+  /**
+   * <pre>
+   * e.g. "Europe/Prague"
+   * </pre>
+   *
+   * <code>string client_timezone = 17;</code>
+   * @return The bytes for clientTimezone.
+   */
+  com.google.protobuf.ByteString
+      getClientTimezoneBytes();
+
+  /**
+   * <pre>
+   * Attachments — base64-encoded file content from UI
+   * </pre>
+   *
+   * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+   */
+  java.util.List<com.jervis.contracts.orchestrator.Attachment> 
+      getAttachmentsList();
+  /**
+   * <pre>
+   * Attachments — base64-encoded file content from UI
+   * </pre>
+   *
+   * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+   */
+  com.jervis.contracts.orchestrator.Attachment getAttachments(int index);
+  /**
+   * <pre>
+   * Attachments — base64-encoded file content from UI
+   * </pre>
+   *
+   * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+   */
+  int getAttachmentsCount();
+  /**
+   * <pre>
+   * Attachments — base64-encoded file content from UI
+   * </pre>
+   *
+   * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+   */
+  java.util.List<? extends com.jervis.contracts.orchestrator.AttachmentOrBuilder> 
+      getAttachmentsOrBuilderList();
+  /**
+   * <pre>
+   * Attachments — base64-encoded file content from UI
+   * </pre>
+   *
+   * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+   */
+  com.jervis.contracts.orchestrator.AttachmentOrBuilder getAttachmentsOrBuilder(
+      int index);
 }

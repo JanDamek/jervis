@@ -7,10 +7,10 @@ package com.jervis.contracts.orchestrator;
 
 /**
  * <pre>
- * ChatRequest carries the legacy PythonChatRequest fields inline via
- * JSON. The Python side decodes with `pydantic.BaseModel(**payload)` the
- * same way the FastAPI handler used `request.json()`. Keeps the proto
- * tight while leaving the Kotlin DTO shape frozen at the source boundary.
+ * ChatRequest is the typed foreground-chat payload. Every field maps
+ * 1:1 to `app/chat/models.py::ChatRequest` (pydantic) on the Python
+ * side. Kotlin callers populate the proto builder directly — no JSON
+ * passthrough on the wire.
  * </pre>
  *
  * Protobuf type {@code jervis.orchestrator.ChatRequest}
@@ -36,7 +36,21 @@ private static final long serialVersionUID = 0L;
   }
   private ChatRequest() {
     sessionId_ = "";
-    payloadJson_ = "";
+    message_ = "";
+    userId_ = "";
+    activeClientId_ = "";
+    activeProjectId_ = "";
+    activeGroupId_ = "";
+    activeClientName_ = "";
+    activeProjectName_ = "";
+    activeGroupName_ = "";
+    contextTaskId_ = "";
+    timestamp_ = "";
+    maxOpenrouterTier_ = "";
+    deadlineIso_ = "";
+    priority_ = "";
+    clientTimezone_ = "";
+    attachments_ = java.util.Collections.emptyList();
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -83,6 +97,10 @@ private static final long serialVersionUID = 0L;
   @SuppressWarnings("serial")
   private volatile java.lang.Object sessionId_ = "";
   /**
+   * <pre>
+   * ChatSession._id as string
+   * </pre>
+   *
    * <code>string session_id = 2;</code>
    * @return The sessionId.
    */
@@ -100,6 +118,10 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
+   * <pre>
+   * ChatSession._id as string
+   * </pre>
+   *
    * <code>string session_id = 2;</code>
    * @return The bytes for sessionId.
    */
@@ -118,51 +140,698 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int PAYLOAD_JSON_FIELD_NUMBER = 3;
+  public static final int MESSAGE_FIELD_NUMBER = 3;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object payloadJson_ = "";
+  private volatile java.lang.Object message_ = "";
   /**
    * <pre>
-   * PythonChatRequest (message, scope, attachments, ...)
+   * user message text
    * </pre>
    *
-   * <code>string payload_json = 3;</code>
-   * @return The payloadJson.
+   * <code>string message = 3;</code>
+   * @return The message.
    */
   @java.lang.Override
-  public java.lang.String getPayloadJson() {
-    java.lang.Object ref = payloadJson_;
+  public java.lang.String getMessage() {
+    java.lang.Object ref = message_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      payloadJson_ = s;
+      message_ = s;
       return s;
     }
   }
   /**
    * <pre>
-   * PythonChatRequest (message, scope, attachments, ...)
+   * user message text
    * </pre>
    *
-   * <code>string payload_json = 3;</code>
-   * @return The bytes for payloadJson.
+   * <code>string message = 3;</code>
+   * @return The bytes for message.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getPayloadJsonBytes() {
-    java.lang.Object ref = payloadJson_;
+      getMessageBytes() {
+    java.lang.Object ref = message_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      payloadJson_ = b;
+      message_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
     }
+  }
+
+  public static final int MESSAGE_SEQUENCE_FIELD_NUMBER = 4;
+  private int messageSequence_ = 0;
+  /**
+   * <pre>
+   * sequence number assigned by Kotlin
+   * </pre>
+   *
+   * <code>int32 message_sequence = 4;</code>
+   * @return The messageSequence.
+   */
+  @java.lang.Override
+  public int getMessageSequence() {
+    return messageSequence_;
+  }
+
+  public static final int USER_ID_FIELD_NUMBER = 5;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object userId_ = "";
+  /**
+   * <pre>
+   * default "jan"
+   * </pre>
+   *
+   * <code>string user_id = 5;</code>
+   * @return The userId.
+   */
+  @java.lang.Override
+  public java.lang.String getUserId() {
+    java.lang.Object ref = userId_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      userId_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * default "jan"
+   * </pre>
+   *
+   * <code>string user_id = 5;</code>
+   * @return The bytes for userId.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getUserIdBytes() {
+    java.lang.Object ref = userId_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      userId_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int ACTIVE_CLIENT_ID_FIELD_NUMBER = 6;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object activeClientId_ = "";
+  /**
+   * <pre>
+   * UI selection scope
+   * </pre>
+   *
+   * <code>string active_client_id = 6;</code>
+   * @return The activeClientId.
+   */
+  @java.lang.Override
+  public java.lang.String getActiveClientId() {
+    java.lang.Object ref = activeClientId_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      activeClientId_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * UI selection scope
+   * </pre>
+   *
+   * <code>string active_client_id = 6;</code>
+   * @return The bytes for activeClientId.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getActiveClientIdBytes() {
+    java.lang.Object ref = activeClientId_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      activeClientId_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int ACTIVE_PROJECT_ID_FIELD_NUMBER = 7;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object activeProjectId_ = "";
+  /**
+   * <code>string active_project_id = 7;</code>
+   * @return The activeProjectId.
+   */
+  @java.lang.Override
+  public java.lang.String getActiveProjectId() {
+    java.lang.Object ref = activeProjectId_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      activeProjectId_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string active_project_id = 7;</code>
+   * @return The bytes for activeProjectId.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getActiveProjectIdBytes() {
+    java.lang.Object ref = activeProjectId_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      activeProjectId_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int ACTIVE_GROUP_ID_FIELD_NUMBER = 8;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object activeGroupId_ = "";
+  /**
+   * <code>string active_group_id = 8;</code>
+   * @return The activeGroupId.
+   */
+  @java.lang.Override
+  public java.lang.String getActiveGroupId() {
+    java.lang.Object ref = activeGroupId_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      activeGroupId_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string active_group_id = 8;</code>
+   * @return The bytes for activeGroupId.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getActiveGroupIdBytes() {
+    java.lang.Object ref = activeGroupId_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      activeGroupId_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int ACTIVE_CLIENT_NAME_FIELD_NUMBER = 9;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object activeClientName_ = "";
+  /**
+   * <code>string active_client_name = 9;</code>
+   * @return The activeClientName.
+   */
+  @java.lang.Override
+  public java.lang.String getActiveClientName() {
+    java.lang.Object ref = activeClientName_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      activeClientName_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string active_client_name = 9;</code>
+   * @return The bytes for activeClientName.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getActiveClientNameBytes() {
+    java.lang.Object ref = activeClientName_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      activeClientName_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int ACTIVE_PROJECT_NAME_FIELD_NUMBER = 10;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object activeProjectName_ = "";
+  /**
+   * <code>string active_project_name = 10;</code>
+   * @return The activeProjectName.
+   */
+  @java.lang.Override
+  public java.lang.String getActiveProjectName() {
+    java.lang.Object ref = activeProjectName_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      activeProjectName_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string active_project_name = 10;</code>
+   * @return The bytes for activeProjectName.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getActiveProjectNameBytes() {
+    java.lang.Object ref = activeProjectName_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      activeProjectName_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int ACTIVE_GROUP_NAME_FIELD_NUMBER = 11;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object activeGroupName_ = "";
+  /**
+   * <code>string active_group_name = 11;</code>
+   * @return The activeGroupName.
+   */
+  @java.lang.Override
+  public java.lang.String getActiveGroupName() {
+    java.lang.Object ref = activeGroupName_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      activeGroupName_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string active_group_name = 11;</code>
+   * @return The bytes for activeGroupName.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getActiveGroupNameBytes() {
+    java.lang.Object ref = activeGroupName_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      activeGroupName_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int CONTEXT_TASK_ID_FIELD_NUMBER = 12;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object contextTaskId_ = "";
+  /**
+   * <pre>
+   * Context — when user clicks on a specific user_task
+   * </pre>
+   *
+   * <code>string context_task_id = 12;</code>
+   * @return The contextTaskId.
+   */
+  @java.lang.Override
+  public java.lang.String getContextTaskId() {
+    java.lang.Object ref = contextTaskId_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      contextTaskId_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * Context — when user clicks on a specific user_task
+   * </pre>
+   *
+   * <code>string context_task_id = 12;</code>
+   * @return The bytes for contextTaskId.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getContextTaskIdBytes() {
+    java.lang.Object ref = contextTaskId_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      contextTaskId_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int TIMESTAMP_FIELD_NUMBER = 13;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object timestamp_ = "";
+  /**
+   * <pre>
+   * Timestamp / deadline / priority / tz
+   * </pre>
+   *
+   * <code>string timestamp = 13;</code>
+   * @return The timestamp.
+   */
+  @java.lang.Override
+  public java.lang.String getTimestamp() {
+    java.lang.Object ref = timestamp_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      timestamp_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * Timestamp / deadline / priority / tz
+   * </pre>
+   *
+   * <code>string timestamp = 13;</code>
+   * @return The bytes for timestamp.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getTimestampBytes() {
+    java.lang.Object ref = timestamp_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      timestamp_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int MAX_OPENROUTER_TIER_FIELD_NUMBER = 14;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object maxOpenrouterTier_ = "";
+  /**
+   * <pre>
+   * "NONE" | "FREE" | "PAID" | "PREMIUM" | compat variants
+   * </pre>
+   *
+   * <code>string max_openrouter_tier = 14;</code>
+   * @return The maxOpenrouterTier.
+   */
+  @java.lang.Override
+  public java.lang.String getMaxOpenrouterTier() {
+    java.lang.Object ref = maxOpenrouterTier_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      maxOpenrouterTier_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * "NONE" | "FREE" | "PAID" | "PREMIUM" | compat variants
+   * </pre>
+   *
+   * <code>string max_openrouter_tier = 14;</code>
+   * @return The bytes for maxOpenrouterTier.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getMaxOpenrouterTierBytes() {
+    java.lang.Object ref = maxOpenrouterTier_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      maxOpenrouterTier_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int DEADLINE_ISO_FIELD_NUMBER = 15;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object deadlineIso_ = "";
+  /**
+   * <pre>
+   * RFC3339 UTC; empty = unset
+   * </pre>
+   *
+   * <code>string deadline_iso = 15;</code>
+   * @return The deadlineIso.
+   */
+  @java.lang.Override
+  public java.lang.String getDeadlineIso() {
+    java.lang.Object ref = deadlineIso_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      deadlineIso_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * RFC3339 UTC; empty = unset
+   * </pre>
+   *
+   * <code>string deadline_iso = 15;</code>
+   * @return The bytes for deadlineIso.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getDeadlineIsoBytes() {
+    java.lang.Object ref = deadlineIso_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      deadlineIso_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int PRIORITY_FIELD_NUMBER = 16;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object priority_ = "";
+  /**
+   * <pre>
+   * CASCADE | CRITICAL | NORMAL
+   * </pre>
+   *
+   * <code>string priority = 16;</code>
+   * @return The priority.
+   */
+  @java.lang.Override
+  public java.lang.String getPriority() {
+    java.lang.Object ref = priority_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      priority_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * CASCADE | CRITICAL | NORMAL
+   * </pre>
+   *
+   * <code>string priority = 16;</code>
+   * @return The bytes for priority.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getPriorityBytes() {
+    java.lang.Object ref = priority_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      priority_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int CLIENT_TIMEZONE_FIELD_NUMBER = 17;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object clientTimezone_ = "";
+  /**
+   * <pre>
+   * e.g. "Europe/Prague"
+   * </pre>
+   *
+   * <code>string client_timezone = 17;</code>
+   * @return The clientTimezone.
+   */
+  @java.lang.Override
+  public java.lang.String getClientTimezone() {
+    java.lang.Object ref = clientTimezone_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      clientTimezone_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * e.g. "Europe/Prague"
+   * </pre>
+   *
+   * <code>string client_timezone = 17;</code>
+   * @return The bytes for clientTimezone.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getClientTimezoneBytes() {
+    java.lang.Object ref = clientTimezone_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      clientTimezone_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int ATTACHMENTS_FIELD_NUMBER = 18;
+  @SuppressWarnings("serial")
+  private java.util.List<com.jervis.contracts.orchestrator.Attachment> attachments_;
+  /**
+   * <pre>
+   * Attachments — base64-encoded file content from UI
+   * </pre>
+   *
+   * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+   */
+  @java.lang.Override
+  public java.util.List<com.jervis.contracts.orchestrator.Attachment> getAttachmentsList() {
+    return attachments_;
+  }
+  /**
+   * <pre>
+   * Attachments — base64-encoded file content from UI
+   * </pre>
+   *
+   * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+   */
+  @java.lang.Override
+  public java.util.List<? extends com.jervis.contracts.orchestrator.AttachmentOrBuilder> 
+      getAttachmentsOrBuilderList() {
+    return attachments_;
+  }
+  /**
+   * <pre>
+   * Attachments — base64-encoded file content from UI
+   * </pre>
+   *
+   * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+   */
+  @java.lang.Override
+  public int getAttachmentsCount() {
+    return attachments_.size();
+  }
+  /**
+   * <pre>
+   * Attachments — base64-encoded file content from UI
+   * </pre>
+   *
+   * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.Attachment getAttachments(int index) {
+    return attachments_.get(index);
+  }
+  /**
+   * <pre>
+   * Attachments — base64-encoded file content from UI
+   * </pre>
+   *
+   * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.AttachmentOrBuilder getAttachmentsOrBuilder(
+      int index) {
+    return attachments_.get(index);
   }
 
   private byte memoizedIsInitialized = -1;
@@ -185,8 +854,53 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(sessionId_)) {
       com.google.protobuf.GeneratedMessage.writeString(output, 2, sessionId_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(payloadJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 3, payloadJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(message_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 3, message_);
+    }
+    if (messageSequence_ != 0) {
+      output.writeInt32(4, messageSequence_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(userId_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 5, userId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeClientId_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 6, activeClientId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeProjectId_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 7, activeProjectId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeGroupId_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 8, activeGroupId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeClientName_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 9, activeClientName_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeProjectName_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 10, activeProjectName_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeGroupName_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 11, activeGroupName_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(contextTaskId_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 12, contextTaskId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(timestamp_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 13, timestamp_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(maxOpenrouterTier_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 14, maxOpenrouterTier_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(deadlineIso_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 15, deadlineIso_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(priority_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 16, priority_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(clientTimezone_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 17, clientTimezone_);
+    }
+    for (int i = 0; i < attachments_.size(); i++) {
+      output.writeMessage(18, attachments_.get(i));
     }
     getUnknownFields().writeTo(output);
   }
@@ -204,8 +918,55 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(sessionId_)) {
       size += com.google.protobuf.GeneratedMessage.computeStringSize(2, sessionId_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(payloadJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, payloadJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(message_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, message_);
+    }
+    if (messageSequence_ != 0) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeInt32Size(4, messageSequence_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(userId_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(5, userId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeClientId_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(6, activeClientId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeProjectId_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(7, activeProjectId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeGroupId_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(8, activeGroupId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeClientName_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(9, activeClientName_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeProjectName_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(10, activeProjectName_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(activeGroupName_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(11, activeGroupName_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(contextTaskId_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(12, contextTaskId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(timestamp_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(13, timestamp_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(maxOpenrouterTier_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(14, maxOpenrouterTier_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(deadlineIso_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(15, deadlineIso_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(priority_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(16, priority_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(clientTimezone_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(17, clientTimezone_);
+    }
+    for (int i = 0; i < attachments_.size(); i++) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(18, attachments_.get(i));
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -229,8 +990,38 @@ private static final long serialVersionUID = 0L;
     }
     if (!getSessionId()
         .equals(other.getSessionId())) return false;
-    if (!getPayloadJson()
-        .equals(other.getPayloadJson())) return false;
+    if (!getMessage()
+        .equals(other.getMessage())) return false;
+    if (getMessageSequence()
+        != other.getMessageSequence()) return false;
+    if (!getUserId()
+        .equals(other.getUserId())) return false;
+    if (!getActiveClientId()
+        .equals(other.getActiveClientId())) return false;
+    if (!getActiveProjectId()
+        .equals(other.getActiveProjectId())) return false;
+    if (!getActiveGroupId()
+        .equals(other.getActiveGroupId())) return false;
+    if (!getActiveClientName()
+        .equals(other.getActiveClientName())) return false;
+    if (!getActiveProjectName()
+        .equals(other.getActiveProjectName())) return false;
+    if (!getActiveGroupName()
+        .equals(other.getActiveGroupName())) return false;
+    if (!getContextTaskId()
+        .equals(other.getContextTaskId())) return false;
+    if (!getTimestamp()
+        .equals(other.getTimestamp())) return false;
+    if (!getMaxOpenrouterTier()
+        .equals(other.getMaxOpenrouterTier())) return false;
+    if (!getDeadlineIso()
+        .equals(other.getDeadlineIso())) return false;
+    if (!getPriority()
+        .equals(other.getPriority())) return false;
+    if (!getClientTimezone()
+        .equals(other.getClientTimezone())) return false;
+    if (!getAttachmentsList()
+        .equals(other.getAttachmentsList())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -248,8 +1039,40 @@ private static final long serialVersionUID = 0L;
     }
     hash = (37 * hash) + SESSION_ID_FIELD_NUMBER;
     hash = (53 * hash) + getSessionId().hashCode();
-    hash = (37 * hash) + PAYLOAD_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getPayloadJson().hashCode();
+    hash = (37 * hash) + MESSAGE_FIELD_NUMBER;
+    hash = (53 * hash) + getMessage().hashCode();
+    hash = (37 * hash) + MESSAGE_SEQUENCE_FIELD_NUMBER;
+    hash = (53 * hash) + getMessageSequence();
+    hash = (37 * hash) + USER_ID_FIELD_NUMBER;
+    hash = (53 * hash) + getUserId().hashCode();
+    hash = (37 * hash) + ACTIVE_CLIENT_ID_FIELD_NUMBER;
+    hash = (53 * hash) + getActiveClientId().hashCode();
+    hash = (37 * hash) + ACTIVE_PROJECT_ID_FIELD_NUMBER;
+    hash = (53 * hash) + getActiveProjectId().hashCode();
+    hash = (37 * hash) + ACTIVE_GROUP_ID_FIELD_NUMBER;
+    hash = (53 * hash) + getActiveGroupId().hashCode();
+    hash = (37 * hash) + ACTIVE_CLIENT_NAME_FIELD_NUMBER;
+    hash = (53 * hash) + getActiveClientName().hashCode();
+    hash = (37 * hash) + ACTIVE_PROJECT_NAME_FIELD_NUMBER;
+    hash = (53 * hash) + getActiveProjectName().hashCode();
+    hash = (37 * hash) + ACTIVE_GROUP_NAME_FIELD_NUMBER;
+    hash = (53 * hash) + getActiveGroupName().hashCode();
+    hash = (37 * hash) + CONTEXT_TASK_ID_FIELD_NUMBER;
+    hash = (53 * hash) + getContextTaskId().hashCode();
+    hash = (37 * hash) + TIMESTAMP_FIELD_NUMBER;
+    hash = (53 * hash) + getTimestamp().hashCode();
+    hash = (37 * hash) + MAX_OPENROUTER_TIER_FIELD_NUMBER;
+    hash = (53 * hash) + getMaxOpenrouterTier().hashCode();
+    hash = (37 * hash) + DEADLINE_ISO_FIELD_NUMBER;
+    hash = (53 * hash) + getDeadlineIso().hashCode();
+    hash = (37 * hash) + PRIORITY_FIELD_NUMBER;
+    hash = (53 * hash) + getPriority().hashCode();
+    hash = (37 * hash) + CLIENT_TIMEZONE_FIELD_NUMBER;
+    hash = (53 * hash) + getClientTimezone().hashCode();
+    if (getAttachmentsCount() > 0) {
+      hash = (37 * hash) + ATTACHMENTS_FIELD_NUMBER;
+      hash = (53 * hash) + getAttachmentsList().hashCode();
+    }
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -349,10 +1172,10 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <pre>
-   * ChatRequest carries the legacy PythonChatRequest fields inline via
-   * JSON. The Python side decodes with `pydantic.BaseModel(**payload)` the
-   * same way the FastAPI handler used `request.json()`. Keeps the proto
-   * tight while leaving the Kotlin DTO shape frozen at the source boundary.
+   * ChatRequest is the typed foreground-chat payload. Every field maps
+   * 1:1 to `app/chat/models.py::ChatRequest` (pydantic) on the Python
+   * side. Kotlin callers populate the proto builder directly — no JSON
+   * passthrough on the wire.
    * </pre>
    *
    * Protobuf type {@code jervis.orchestrator.ChatRequest}
@@ -388,6 +1211,7 @@ private static final long serialVersionUID = 0L;
       if (com.google.protobuf.GeneratedMessage
               .alwaysUseFieldBuilders) {
         internalGetCtxFieldBuilder();
+        internalGetAttachmentsFieldBuilder();
       }
     }
     @java.lang.Override
@@ -400,7 +1224,28 @@ private static final long serialVersionUID = 0L;
         ctxBuilder_ = null;
       }
       sessionId_ = "";
-      payloadJson_ = "";
+      message_ = "";
+      messageSequence_ = 0;
+      userId_ = "";
+      activeClientId_ = "";
+      activeProjectId_ = "";
+      activeGroupId_ = "";
+      activeClientName_ = "";
+      activeProjectName_ = "";
+      activeGroupName_ = "";
+      contextTaskId_ = "";
+      timestamp_ = "";
+      maxOpenrouterTier_ = "";
+      deadlineIso_ = "";
+      priority_ = "";
+      clientTimezone_ = "";
+      if (attachmentsBuilder_ == null) {
+        attachments_ = java.util.Collections.emptyList();
+      } else {
+        attachments_ = null;
+        attachmentsBuilder_.clear();
+      }
+      bitField0_ = (bitField0_ & ~0x00020000);
       return this;
     }
 
@@ -427,9 +1272,22 @@ private static final long serialVersionUID = 0L;
     @java.lang.Override
     public com.jervis.contracts.orchestrator.ChatRequest buildPartial() {
       com.jervis.contracts.orchestrator.ChatRequest result = new com.jervis.contracts.orchestrator.ChatRequest(this);
+      buildPartialRepeatedFields(result);
       if (bitField0_ != 0) { buildPartial0(result); }
       onBuilt();
       return result;
+    }
+
+    private void buildPartialRepeatedFields(com.jervis.contracts.orchestrator.ChatRequest result) {
+      if (attachmentsBuilder_ == null) {
+        if (((bitField0_ & 0x00020000) != 0)) {
+          attachments_ = java.util.Collections.unmodifiableList(attachments_);
+          bitField0_ = (bitField0_ & ~0x00020000);
+        }
+        result.attachments_ = attachments_;
+      } else {
+        result.attachments_ = attachmentsBuilder_.build();
+      }
     }
 
     private void buildPartial0(com.jervis.contracts.orchestrator.ChatRequest result) {
@@ -445,7 +1303,49 @@ private static final long serialVersionUID = 0L;
         result.sessionId_ = sessionId_;
       }
       if (((from_bitField0_ & 0x00000004) != 0)) {
-        result.payloadJson_ = payloadJson_;
+        result.message_ = message_;
+      }
+      if (((from_bitField0_ & 0x00000008) != 0)) {
+        result.messageSequence_ = messageSequence_;
+      }
+      if (((from_bitField0_ & 0x00000010) != 0)) {
+        result.userId_ = userId_;
+      }
+      if (((from_bitField0_ & 0x00000020) != 0)) {
+        result.activeClientId_ = activeClientId_;
+      }
+      if (((from_bitField0_ & 0x00000040) != 0)) {
+        result.activeProjectId_ = activeProjectId_;
+      }
+      if (((from_bitField0_ & 0x00000080) != 0)) {
+        result.activeGroupId_ = activeGroupId_;
+      }
+      if (((from_bitField0_ & 0x00000100) != 0)) {
+        result.activeClientName_ = activeClientName_;
+      }
+      if (((from_bitField0_ & 0x00000200) != 0)) {
+        result.activeProjectName_ = activeProjectName_;
+      }
+      if (((from_bitField0_ & 0x00000400) != 0)) {
+        result.activeGroupName_ = activeGroupName_;
+      }
+      if (((from_bitField0_ & 0x00000800) != 0)) {
+        result.contextTaskId_ = contextTaskId_;
+      }
+      if (((from_bitField0_ & 0x00001000) != 0)) {
+        result.timestamp_ = timestamp_;
+      }
+      if (((from_bitField0_ & 0x00002000) != 0)) {
+        result.maxOpenrouterTier_ = maxOpenrouterTier_;
+      }
+      if (((from_bitField0_ & 0x00004000) != 0)) {
+        result.deadlineIso_ = deadlineIso_;
+      }
+      if (((from_bitField0_ & 0x00008000) != 0)) {
+        result.priority_ = priority_;
+      }
+      if (((from_bitField0_ & 0x00010000) != 0)) {
+        result.clientTimezone_ = clientTimezone_;
       }
       result.bitField0_ |= to_bitField0_;
     }
@@ -470,10 +1370,104 @@ private static final long serialVersionUID = 0L;
         bitField0_ |= 0x00000002;
         onChanged();
       }
-      if (!other.getPayloadJson().isEmpty()) {
-        payloadJson_ = other.payloadJson_;
+      if (!other.getMessage().isEmpty()) {
+        message_ = other.message_;
         bitField0_ |= 0x00000004;
         onChanged();
+      }
+      if (other.getMessageSequence() != 0) {
+        setMessageSequence(other.getMessageSequence());
+      }
+      if (!other.getUserId().isEmpty()) {
+        userId_ = other.userId_;
+        bitField0_ |= 0x00000010;
+        onChanged();
+      }
+      if (!other.getActiveClientId().isEmpty()) {
+        activeClientId_ = other.activeClientId_;
+        bitField0_ |= 0x00000020;
+        onChanged();
+      }
+      if (!other.getActiveProjectId().isEmpty()) {
+        activeProjectId_ = other.activeProjectId_;
+        bitField0_ |= 0x00000040;
+        onChanged();
+      }
+      if (!other.getActiveGroupId().isEmpty()) {
+        activeGroupId_ = other.activeGroupId_;
+        bitField0_ |= 0x00000080;
+        onChanged();
+      }
+      if (!other.getActiveClientName().isEmpty()) {
+        activeClientName_ = other.activeClientName_;
+        bitField0_ |= 0x00000100;
+        onChanged();
+      }
+      if (!other.getActiveProjectName().isEmpty()) {
+        activeProjectName_ = other.activeProjectName_;
+        bitField0_ |= 0x00000200;
+        onChanged();
+      }
+      if (!other.getActiveGroupName().isEmpty()) {
+        activeGroupName_ = other.activeGroupName_;
+        bitField0_ |= 0x00000400;
+        onChanged();
+      }
+      if (!other.getContextTaskId().isEmpty()) {
+        contextTaskId_ = other.contextTaskId_;
+        bitField0_ |= 0x00000800;
+        onChanged();
+      }
+      if (!other.getTimestamp().isEmpty()) {
+        timestamp_ = other.timestamp_;
+        bitField0_ |= 0x00001000;
+        onChanged();
+      }
+      if (!other.getMaxOpenrouterTier().isEmpty()) {
+        maxOpenrouterTier_ = other.maxOpenrouterTier_;
+        bitField0_ |= 0x00002000;
+        onChanged();
+      }
+      if (!other.getDeadlineIso().isEmpty()) {
+        deadlineIso_ = other.deadlineIso_;
+        bitField0_ |= 0x00004000;
+        onChanged();
+      }
+      if (!other.getPriority().isEmpty()) {
+        priority_ = other.priority_;
+        bitField0_ |= 0x00008000;
+        onChanged();
+      }
+      if (!other.getClientTimezone().isEmpty()) {
+        clientTimezone_ = other.clientTimezone_;
+        bitField0_ |= 0x00010000;
+        onChanged();
+      }
+      if (attachmentsBuilder_ == null) {
+        if (!other.attachments_.isEmpty()) {
+          if (attachments_.isEmpty()) {
+            attachments_ = other.attachments_;
+            bitField0_ = (bitField0_ & ~0x00020000);
+          } else {
+            ensureAttachmentsIsMutable();
+            attachments_.addAll(other.attachments_);
+          }
+          onChanged();
+        }
+      } else {
+        if (!other.attachments_.isEmpty()) {
+          if (attachmentsBuilder_.isEmpty()) {
+            attachmentsBuilder_.dispose();
+            attachmentsBuilder_ = null;
+            attachments_ = other.attachments_;
+            bitField0_ = (bitField0_ & ~0x00020000);
+            attachmentsBuilder_ = 
+              com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders ?
+                 internalGetAttachmentsFieldBuilder() : null;
+          } else {
+            attachmentsBuilder_.addAllMessages(other.attachments_);
+          }
+        }
       }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
@@ -514,10 +1508,93 @@ private static final long serialVersionUID = 0L;
               break;
             } // case 18
             case 26: {
-              payloadJson_ = input.readStringRequireUtf8();
+              message_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000004;
               break;
             } // case 26
+            case 32: {
+              messageSequence_ = input.readInt32();
+              bitField0_ |= 0x00000008;
+              break;
+            } // case 32
+            case 42: {
+              userId_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000010;
+              break;
+            } // case 42
+            case 50: {
+              activeClientId_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000020;
+              break;
+            } // case 50
+            case 58: {
+              activeProjectId_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000040;
+              break;
+            } // case 58
+            case 66: {
+              activeGroupId_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000080;
+              break;
+            } // case 66
+            case 74: {
+              activeClientName_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000100;
+              break;
+            } // case 74
+            case 82: {
+              activeProjectName_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000200;
+              break;
+            } // case 82
+            case 90: {
+              activeGroupName_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000400;
+              break;
+            } // case 90
+            case 98: {
+              contextTaskId_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000800;
+              break;
+            } // case 98
+            case 106: {
+              timestamp_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00001000;
+              break;
+            } // case 106
+            case 114: {
+              maxOpenrouterTier_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00002000;
+              break;
+            } // case 114
+            case 122: {
+              deadlineIso_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00004000;
+              break;
+            } // case 122
+            case 130: {
+              priority_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00008000;
+              break;
+            } // case 130
+            case 138: {
+              clientTimezone_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00010000;
+              break;
+            } // case 138
+            case 146: {
+              com.jervis.contracts.orchestrator.Attachment m =
+                  input.readMessage(
+                      com.jervis.contracts.orchestrator.Attachment.parser(),
+                      extensionRegistry);
+              if (attachmentsBuilder_ == null) {
+                ensureAttachmentsIsMutable();
+                attachments_.add(m);
+              } else {
+                attachmentsBuilder_.addMessage(m);
+              }
+              break;
+            } // case 146
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -658,6 +1735,10 @@ private static final long serialVersionUID = 0L;
 
     private java.lang.Object sessionId_ = "";
     /**
+     * <pre>
+     * ChatSession._id as string
+     * </pre>
+     *
      * <code>string session_id = 2;</code>
      * @return The sessionId.
      */
@@ -674,6 +1755,10 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
+     * <pre>
+     * ChatSession._id as string
+     * </pre>
+     *
      * <code>string session_id = 2;</code>
      * @return The bytes for sessionId.
      */
@@ -691,6 +1776,10 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
+     * <pre>
+     * ChatSession._id as string
+     * </pre>
+     *
      * <code>string session_id = 2;</code>
      * @param value The sessionId to set.
      * @return This builder for chaining.
@@ -704,6 +1793,10 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
+     * <pre>
+     * ChatSession._id as string
+     * </pre>
+     *
      * <code>string session_id = 2;</code>
      * @return This builder for chaining.
      */
@@ -714,6 +1807,10 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
+     * <pre>
+     * ChatSession._id as string
+     * </pre>
+     *
      * <code>string session_id = 2;</code>
      * @param value The bytes for sessionId to set.
      * @return This builder for chaining.
@@ -728,22 +1825,22 @@ private static final long serialVersionUID = 0L;
       return this;
     }
 
-    private java.lang.Object payloadJson_ = "";
+    private java.lang.Object message_ = "";
     /**
      * <pre>
-     * PythonChatRequest (message, scope, attachments, ...)
+     * user message text
      * </pre>
      *
-     * <code>string payload_json = 3;</code>
-     * @return The payloadJson.
+     * <code>string message = 3;</code>
+     * @return The message.
      */
-    public java.lang.String getPayloadJson() {
-      java.lang.Object ref = payloadJson_;
+    public java.lang.String getMessage() {
+      java.lang.Object ref = message_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        payloadJson_ = s;
+        message_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
@@ -751,20 +1848,20 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * PythonChatRequest (message, scope, attachments, ...)
+     * user message text
      * </pre>
      *
-     * <code>string payload_json = 3;</code>
-     * @return The bytes for payloadJson.
+     * <code>string message = 3;</code>
+     * @return The bytes for message.
      */
     public com.google.protobuf.ByteString
-        getPayloadJsonBytes() {
-      java.lang.Object ref = payloadJson_;
+        getMessageBytes() {
+      java.lang.Object ref = message_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        payloadJson_ = b;
+        message_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
@@ -772,52 +1869,1504 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * PythonChatRequest (message, scope, attachments, ...)
+     * user message text
      * </pre>
      *
-     * <code>string payload_json = 3;</code>
-     * @param value The payloadJson to set.
+     * <code>string message = 3;</code>
+     * @param value The message to set.
      * @return This builder for chaining.
      */
-    public Builder setPayloadJson(
+    public Builder setMessage(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      payloadJson_ = value;
+      message_ = value;
       bitField0_ |= 0x00000004;
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * PythonChatRequest (message, scope, attachments, ...)
+     * user message text
      * </pre>
      *
-     * <code>string payload_json = 3;</code>
+     * <code>string message = 3;</code>
      * @return This builder for chaining.
      */
-    public Builder clearPayloadJson() {
-      payloadJson_ = getDefaultInstance().getPayloadJson();
+    public Builder clearMessage() {
+      message_ = getDefaultInstance().getMessage();
       bitField0_ = (bitField0_ & ~0x00000004);
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * PythonChatRequest (message, scope, attachments, ...)
+     * user message text
      * </pre>
      *
-     * <code>string payload_json = 3;</code>
-     * @param value The bytes for payloadJson to set.
+     * <code>string message = 3;</code>
+     * @param value The bytes for message to set.
      * @return This builder for chaining.
      */
-    public Builder setPayloadJsonBytes(
+    public Builder setMessageBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      payloadJson_ = value;
+      message_ = value;
       bitField0_ |= 0x00000004;
       onChanged();
       return this;
+    }
+
+    private int messageSequence_ ;
+    /**
+     * <pre>
+     * sequence number assigned by Kotlin
+     * </pre>
+     *
+     * <code>int32 message_sequence = 4;</code>
+     * @return The messageSequence.
+     */
+    @java.lang.Override
+    public int getMessageSequence() {
+      return messageSequence_;
+    }
+    /**
+     * <pre>
+     * sequence number assigned by Kotlin
+     * </pre>
+     *
+     * <code>int32 message_sequence = 4;</code>
+     * @param value The messageSequence to set.
+     * @return This builder for chaining.
+     */
+    public Builder setMessageSequence(int value) {
+
+      messageSequence_ = value;
+      bitField0_ |= 0x00000008;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * sequence number assigned by Kotlin
+     * </pre>
+     *
+     * <code>int32 message_sequence = 4;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearMessageSequence() {
+      bitField0_ = (bitField0_ & ~0x00000008);
+      messageSequence_ = 0;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object userId_ = "";
+    /**
+     * <pre>
+     * default "jan"
+     * </pre>
+     *
+     * <code>string user_id = 5;</code>
+     * @return The userId.
+     */
+    public java.lang.String getUserId() {
+      java.lang.Object ref = userId_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        userId_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * default "jan"
+     * </pre>
+     *
+     * <code>string user_id = 5;</code>
+     * @return The bytes for userId.
+     */
+    public com.google.protobuf.ByteString
+        getUserIdBytes() {
+      java.lang.Object ref = userId_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        userId_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * default "jan"
+     * </pre>
+     *
+     * <code>string user_id = 5;</code>
+     * @param value The userId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setUserId(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      userId_ = value;
+      bitField0_ |= 0x00000010;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * default "jan"
+     * </pre>
+     *
+     * <code>string user_id = 5;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearUserId() {
+      userId_ = getDefaultInstance().getUserId();
+      bitField0_ = (bitField0_ & ~0x00000010);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * default "jan"
+     * </pre>
+     *
+     * <code>string user_id = 5;</code>
+     * @param value The bytes for userId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setUserIdBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      userId_ = value;
+      bitField0_ |= 0x00000010;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object activeClientId_ = "";
+    /**
+     * <pre>
+     * UI selection scope
+     * </pre>
+     *
+     * <code>string active_client_id = 6;</code>
+     * @return The activeClientId.
+     */
+    public java.lang.String getActiveClientId() {
+      java.lang.Object ref = activeClientId_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        activeClientId_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * UI selection scope
+     * </pre>
+     *
+     * <code>string active_client_id = 6;</code>
+     * @return The bytes for activeClientId.
+     */
+    public com.google.protobuf.ByteString
+        getActiveClientIdBytes() {
+      java.lang.Object ref = activeClientId_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        activeClientId_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * UI selection scope
+     * </pre>
+     *
+     * <code>string active_client_id = 6;</code>
+     * @param value The activeClientId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveClientId(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      activeClientId_ = value;
+      bitField0_ |= 0x00000020;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * UI selection scope
+     * </pre>
+     *
+     * <code>string active_client_id = 6;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearActiveClientId() {
+      activeClientId_ = getDefaultInstance().getActiveClientId();
+      bitField0_ = (bitField0_ & ~0x00000020);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * UI selection scope
+     * </pre>
+     *
+     * <code>string active_client_id = 6;</code>
+     * @param value The bytes for activeClientId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveClientIdBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      activeClientId_ = value;
+      bitField0_ |= 0x00000020;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object activeProjectId_ = "";
+    /**
+     * <code>string active_project_id = 7;</code>
+     * @return The activeProjectId.
+     */
+    public java.lang.String getActiveProjectId() {
+      java.lang.Object ref = activeProjectId_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        activeProjectId_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>string active_project_id = 7;</code>
+     * @return The bytes for activeProjectId.
+     */
+    public com.google.protobuf.ByteString
+        getActiveProjectIdBytes() {
+      java.lang.Object ref = activeProjectId_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        activeProjectId_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>string active_project_id = 7;</code>
+     * @param value The activeProjectId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveProjectId(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      activeProjectId_ = value;
+      bitField0_ |= 0x00000040;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string active_project_id = 7;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearActiveProjectId() {
+      activeProjectId_ = getDefaultInstance().getActiveProjectId();
+      bitField0_ = (bitField0_ & ~0x00000040);
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string active_project_id = 7;</code>
+     * @param value The bytes for activeProjectId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveProjectIdBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      activeProjectId_ = value;
+      bitField0_ |= 0x00000040;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object activeGroupId_ = "";
+    /**
+     * <code>string active_group_id = 8;</code>
+     * @return The activeGroupId.
+     */
+    public java.lang.String getActiveGroupId() {
+      java.lang.Object ref = activeGroupId_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        activeGroupId_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>string active_group_id = 8;</code>
+     * @return The bytes for activeGroupId.
+     */
+    public com.google.protobuf.ByteString
+        getActiveGroupIdBytes() {
+      java.lang.Object ref = activeGroupId_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        activeGroupId_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>string active_group_id = 8;</code>
+     * @param value The activeGroupId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveGroupId(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      activeGroupId_ = value;
+      bitField0_ |= 0x00000080;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string active_group_id = 8;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearActiveGroupId() {
+      activeGroupId_ = getDefaultInstance().getActiveGroupId();
+      bitField0_ = (bitField0_ & ~0x00000080);
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string active_group_id = 8;</code>
+     * @param value The bytes for activeGroupId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveGroupIdBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      activeGroupId_ = value;
+      bitField0_ |= 0x00000080;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object activeClientName_ = "";
+    /**
+     * <code>string active_client_name = 9;</code>
+     * @return The activeClientName.
+     */
+    public java.lang.String getActiveClientName() {
+      java.lang.Object ref = activeClientName_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        activeClientName_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>string active_client_name = 9;</code>
+     * @return The bytes for activeClientName.
+     */
+    public com.google.protobuf.ByteString
+        getActiveClientNameBytes() {
+      java.lang.Object ref = activeClientName_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        activeClientName_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>string active_client_name = 9;</code>
+     * @param value The activeClientName to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveClientName(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      activeClientName_ = value;
+      bitField0_ |= 0x00000100;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string active_client_name = 9;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearActiveClientName() {
+      activeClientName_ = getDefaultInstance().getActiveClientName();
+      bitField0_ = (bitField0_ & ~0x00000100);
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string active_client_name = 9;</code>
+     * @param value The bytes for activeClientName to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveClientNameBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      activeClientName_ = value;
+      bitField0_ |= 0x00000100;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object activeProjectName_ = "";
+    /**
+     * <code>string active_project_name = 10;</code>
+     * @return The activeProjectName.
+     */
+    public java.lang.String getActiveProjectName() {
+      java.lang.Object ref = activeProjectName_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        activeProjectName_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>string active_project_name = 10;</code>
+     * @return The bytes for activeProjectName.
+     */
+    public com.google.protobuf.ByteString
+        getActiveProjectNameBytes() {
+      java.lang.Object ref = activeProjectName_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        activeProjectName_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>string active_project_name = 10;</code>
+     * @param value The activeProjectName to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveProjectName(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      activeProjectName_ = value;
+      bitField0_ |= 0x00000200;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string active_project_name = 10;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearActiveProjectName() {
+      activeProjectName_ = getDefaultInstance().getActiveProjectName();
+      bitField0_ = (bitField0_ & ~0x00000200);
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string active_project_name = 10;</code>
+     * @param value The bytes for activeProjectName to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveProjectNameBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      activeProjectName_ = value;
+      bitField0_ |= 0x00000200;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object activeGroupName_ = "";
+    /**
+     * <code>string active_group_name = 11;</code>
+     * @return The activeGroupName.
+     */
+    public java.lang.String getActiveGroupName() {
+      java.lang.Object ref = activeGroupName_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        activeGroupName_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>string active_group_name = 11;</code>
+     * @return The bytes for activeGroupName.
+     */
+    public com.google.protobuf.ByteString
+        getActiveGroupNameBytes() {
+      java.lang.Object ref = activeGroupName_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        activeGroupName_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>string active_group_name = 11;</code>
+     * @param value The activeGroupName to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveGroupName(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      activeGroupName_ = value;
+      bitField0_ |= 0x00000400;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string active_group_name = 11;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearActiveGroupName() {
+      activeGroupName_ = getDefaultInstance().getActiveGroupName();
+      bitField0_ = (bitField0_ & ~0x00000400);
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string active_group_name = 11;</code>
+     * @param value The bytes for activeGroupName to set.
+     * @return This builder for chaining.
+     */
+    public Builder setActiveGroupNameBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      activeGroupName_ = value;
+      bitField0_ |= 0x00000400;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object contextTaskId_ = "";
+    /**
+     * <pre>
+     * Context — when user clicks on a specific user_task
+     * </pre>
+     *
+     * <code>string context_task_id = 12;</code>
+     * @return The contextTaskId.
+     */
+    public java.lang.String getContextTaskId() {
+      java.lang.Object ref = contextTaskId_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        contextTaskId_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * Context — when user clicks on a specific user_task
+     * </pre>
+     *
+     * <code>string context_task_id = 12;</code>
+     * @return The bytes for contextTaskId.
+     */
+    public com.google.protobuf.ByteString
+        getContextTaskIdBytes() {
+      java.lang.Object ref = contextTaskId_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        contextTaskId_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * Context — when user clicks on a specific user_task
+     * </pre>
+     *
+     * <code>string context_task_id = 12;</code>
+     * @param value The contextTaskId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setContextTaskId(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      contextTaskId_ = value;
+      bitField0_ |= 0x00000800;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * Context — when user clicks on a specific user_task
+     * </pre>
+     *
+     * <code>string context_task_id = 12;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearContextTaskId() {
+      contextTaskId_ = getDefaultInstance().getContextTaskId();
+      bitField0_ = (bitField0_ & ~0x00000800);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * Context — when user clicks on a specific user_task
+     * </pre>
+     *
+     * <code>string context_task_id = 12;</code>
+     * @param value The bytes for contextTaskId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setContextTaskIdBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      contextTaskId_ = value;
+      bitField0_ |= 0x00000800;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object timestamp_ = "";
+    /**
+     * <pre>
+     * Timestamp / deadline / priority / tz
+     * </pre>
+     *
+     * <code>string timestamp = 13;</code>
+     * @return The timestamp.
+     */
+    public java.lang.String getTimestamp() {
+      java.lang.Object ref = timestamp_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        timestamp_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * Timestamp / deadline / priority / tz
+     * </pre>
+     *
+     * <code>string timestamp = 13;</code>
+     * @return The bytes for timestamp.
+     */
+    public com.google.protobuf.ByteString
+        getTimestampBytes() {
+      java.lang.Object ref = timestamp_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        timestamp_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * Timestamp / deadline / priority / tz
+     * </pre>
+     *
+     * <code>string timestamp = 13;</code>
+     * @param value The timestamp to set.
+     * @return This builder for chaining.
+     */
+    public Builder setTimestamp(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      timestamp_ = value;
+      bitField0_ |= 0x00001000;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * Timestamp / deadline / priority / tz
+     * </pre>
+     *
+     * <code>string timestamp = 13;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearTimestamp() {
+      timestamp_ = getDefaultInstance().getTimestamp();
+      bitField0_ = (bitField0_ & ~0x00001000);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * Timestamp / deadline / priority / tz
+     * </pre>
+     *
+     * <code>string timestamp = 13;</code>
+     * @param value The bytes for timestamp to set.
+     * @return This builder for chaining.
+     */
+    public Builder setTimestampBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      timestamp_ = value;
+      bitField0_ |= 0x00001000;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object maxOpenrouterTier_ = "";
+    /**
+     * <pre>
+     * "NONE" | "FREE" | "PAID" | "PREMIUM" | compat variants
+     * </pre>
+     *
+     * <code>string max_openrouter_tier = 14;</code>
+     * @return The maxOpenrouterTier.
+     */
+    public java.lang.String getMaxOpenrouterTier() {
+      java.lang.Object ref = maxOpenrouterTier_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        maxOpenrouterTier_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * "NONE" | "FREE" | "PAID" | "PREMIUM" | compat variants
+     * </pre>
+     *
+     * <code>string max_openrouter_tier = 14;</code>
+     * @return The bytes for maxOpenrouterTier.
+     */
+    public com.google.protobuf.ByteString
+        getMaxOpenrouterTierBytes() {
+      java.lang.Object ref = maxOpenrouterTier_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        maxOpenrouterTier_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * "NONE" | "FREE" | "PAID" | "PREMIUM" | compat variants
+     * </pre>
+     *
+     * <code>string max_openrouter_tier = 14;</code>
+     * @param value The maxOpenrouterTier to set.
+     * @return This builder for chaining.
+     */
+    public Builder setMaxOpenrouterTier(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      maxOpenrouterTier_ = value;
+      bitField0_ |= 0x00002000;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * "NONE" | "FREE" | "PAID" | "PREMIUM" | compat variants
+     * </pre>
+     *
+     * <code>string max_openrouter_tier = 14;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearMaxOpenrouterTier() {
+      maxOpenrouterTier_ = getDefaultInstance().getMaxOpenrouterTier();
+      bitField0_ = (bitField0_ & ~0x00002000);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * "NONE" | "FREE" | "PAID" | "PREMIUM" | compat variants
+     * </pre>
+     *
+     * <code>string max_openrouter_tier = 14;</code>
+     * @param value The bytes for maxOpenrouterTier to set.
+     * @return This builder for chaining.
+     */
+    public Builder setMaxOpenrouterTierBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      maxOpenrouterTier_ = value;
+      bitField0_ |= 0x00002000;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object deadlineIso_ = "";
+    /**
+     * <pre>
+     * RFC3339 UTC; empty = unset
+     * </pre>
+     *
+     * <code>string deadline_iso = 15;</code>
+     * @return The deadlineIso.
+     */
+    public java.lang.String getDeadlineIso() {
+      java.lang.Object ref = deadlineIso_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        deadlineIso_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * RFC3339 UTC; empty = unset
+     * </pre>
+     *
+     * <code>string deadline_iso = 15;</code>
+     * @return The bytes for deadlineIso.
+     */
+    public com.google.protobuf.ByteString
+        getDeadlineIsoBytes() {
+      java.lang.Object ref = deadlineIso_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        deadlineIso_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * RFC3339 UTC; empty = unset
+     * </pre>
+     *
+     * <code>string deadline_iso = 15;</code>
+     * @param value The deadlineIso to set.
+     * @return This builder for chaining.
+     */
+    public Builder setDeadlineIso(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      deadlineIso_ = value;
+      bitField0_ |= 0x00004000;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * RFC3339 UTC; empty = unset
+     * </pre>
+     *
+     * <code>string deadline_iso = 15;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearDeadlineIso() {
+      deadlineIso_ = getDefaultInstance().getDeadlineIso();
+      bitField0_ = (bitField0_ & ~0x00004000);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * RFC3339 UTC; empty = unset
+     * </pre>
+     *
+     * <code>string deadline_iso = 15;</code>
+     * @param value The bytes for deadlineIso to set.
+     * @return This builder for chaining.
+     */
+    public Builder setDeadlineIsoBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      deadlineIso_ = value;
+      bitField0_ |= 0x00004000;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object priority_ = "";
+    /**
+     * <pre>
+     * CASCADE | CRITICAL | NORMAL
+     * </pre>
+     *
+     * <code>string priority = 16;</code>
+     * @return The priority.
+     */
+    public java.lang.String getPriority() {
+      java.lang.Object ref = priority_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        priority_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * CASCADE | CRITICAL | NORMAL
+     * </pre>
+     *
+     * <code>string priority = 16;</code>
+     * @return The bytes for priority.
+     */
+    public com.google.protobuf.ByteString
+        getPriorityBytes() {
+      java.lang.Object ref = priority_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        priority_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * CASCADE | CRITICAL | NORMAL
+     * </pre>
+     *
+     * <code>string priority = 16;</code>
+     * @param value The priority to set.
+     * @return This builder for chaining.
+     */
+    public Builder setPriority(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      priority_ = value;
+      bitField0_ |= 0x00008000;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * CASCADE | CRITICAL | NORMAL
+     * </pre>
+     *
+     * <code>string priority = 16;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearPriority() {
+      priority_ = getDefaultInstance().getPriority();
+      bitField0_ = (bitField0_ & ~0x00008000);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * CASCADE | CRITICAL | NORMAL
+     * </pre>
+     *
+     * <code>string priority = 16;</code>
+     * @param value The bytes for priority to set.
+     * @return This builder for chaining.
+     */
+    public Builder setPriorityBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      priority_ = value;
+      bitField0_ |= 0x00008000;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object clientTimezone_ = "";
+    /**
+     * <pre>
+     * e.g. "Europe/Prague"
+     * </pre>
+     *
+     * <code>string client_timezone = 17;</code>
+     * @return The clientTimezone.
+     */
+    public java.lang.String getClientTimezone() {
+      java.lang.Object ref = clientTimezone_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        clientTimezone_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * e.g. "Europe/Prague"
+     * </pre>
+     *
+     * <code>string client_timezone = 17;</code>
+     * @return The bytes for clientTimezone.
+     */
+    public com.google.protobuf.ByteString
+        getClientTimezoneBytes() {
+      java.lang.Object ref = clientTimezone_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        clientTimezone_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * e.g. "Europe/Prague"
+     * </pre>
+     *
+     * <code>string client_timezone = 17;</code>
+     * @param value The clientTimezone to set.
+     * @return This builder for chaining.
+     */
+    public Builder setClientTimezone(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      clientTimezone_ = value;
+      bitField0_ |= 0x00010000;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * e.g. "Europe/Prague"
+     * </pre>
+     *
+     * <code>string client_timezone = 17;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearClientTimezone() {
+      clientTimezone_ = getDefaultInstance().getClientTimezone();
+      bitField0_ = (bitField0_ & ~0x00010000);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * e.g. "Europe/Prague"
+     * </pre>
+     *
+     * <code>string client_timezone = 17;</code>
+     * @param value The bytes for clientTimezone to set.
+     * @return This builder for chaining.
+     */
+    public Builder setClientTimezoneBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      clientTimezone_ = value;
+      bitField0_ |= 0x00010000;
+      onChanged();
+      return this;
+    }
+
+    private java.util.List<com.jervis.contracts.orchestrator.Attachment> attachments_ =
+      java.util.Collections.emptyList();
+    private void ensureAttachmentsIsMutable() {
+      if (!((bitField0_ & 0x00020000) != 0)) {
+        attachments_ = new java.util.ArrayList<com.jervis.contracts.orchestrator.Attachment>(attachments_);
+        bitField0_ |= 0x00020000;
+       }
+    }
+
+    private com.google.protobuf.RepeatedFieldBuilder<
+        com.jervis.contracts.orchestrator.Attachment, com.jervis.contracts.orchestrator.Attachment.Builder, com.jervis.contracts.orchestrator.AttachmentOrBuilder> attachmentsBuilder_;
+
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public java.util.List<com.jervis.contracts.orchestrator.Attachment> getAttachmentsList() {
+      if (attachmentsBuilder_ == null) {
+        return java.util.Collections.unmodifiableList(attachments_);
+      } else {
+        return attachmentsBuilder_.getMessageList();
+      }
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public int getAttachmentsCount() {
+      if (attachmentsBuilder_ == null) {
+        return attachments_.size();
+      } else {
+        return attachmentsBuilder_.getCount();
+      }
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public com.jervis.contracts.orchestrator.Attachment getAttachments(int index) {
+      if (attachmentsBuilder_ == null) {
+        return attachments_.get(index);
+      } else {
+        return attachmentsBuilder_.getMessage(index);
+      }
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public Builder setAttachments(
+        int index, com.jervis.contracts.orchestrator.Attachment value) {
+      if (attachmentsBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        ensureAttachmentsIsMutable();
+        attachments_.set(index, value);
+        onChanged();
+      } else {
+        attachmentsBuilder_.setMessage(index, value);
+      }
+      return this;
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public Builder setAttachments(
+        int index, com.jervis.contracts.orchestrator.Attachment.Builder builderForValue) {
+      if (attachmentsBuilder_ == null) {
+        ensureAttachmentsIsMutable();
+        attachments_.set(index, builderForValue.build());
+        onChanged();
+      } else {
+        attachmentsBuilder_.setMessage(index, builderForValue.build());
+      }
+      return this;
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public Builder addAttachments(com.jervis.contracts.orchestrator.Attachment value) {
+      if (attachmentsBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        ensureAttachmentsIsMutable();
+        attachments_.add(value);
+        onChanged();
+      } else {
+        attachmentsBuilder_.addMessage(value);
+      }
+      return this;
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public Builder addAttachments(
+        int index, com.jervis.contracts.orchestrator.Attachment value) {
+      if (attachmentsBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        ensureAttachmentsIsMutable();
+        attachments_.add(index, value);
+        onChanged();
+      } else {
+        attachmentsBuilder_.addMessage(index, value);
+      }
+      return this;
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public Builder addAttachments(
+        com.jervis.contracts.orchestrator.Attachment.Builder builderForValue) {
+      if (attachmentsBuilder_ == null) {
+        ensureAttachmentsIsMutable();
+        attachments_.add(builderForValue.build());
+        onChanged();
+      } else {
+        attachmentsBuilder_.addMessage(builderForValue.build());
+      }
+      return this;
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public Builder addAttachments(
+        int index, com.jervis.contracts.orchestrator.Attachment.Builder builderForValue) {
+      if (attachmentsBuilder_ == null) {
+        ensureAttachmentsIsMutable();
+        attachments_.add(index, builderForValue.build());
+        onChanged();
+      } else {
+        attachmentsBuilder_.addMessage(index, builderForValue.build());
+      }
+      return this;
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public Builder addAllAttachments(
+        java.lang.Iterable<? extends com.jervis.contracts.orchestrator.Attachment> values) {
+      if (attachmentsBuilder_ == null) {
+        ensureAttachmentsIsMutable();
+        com.google.protobuf.AbstractMessageLite.Builder.addAll(
+            values, attachments_);
+        onChanged();
+      } else {
+        attachmentsBuilder_.addAllMessages(values);
+      }
+      return this;
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public Builder clearAttachments() {
+      if (attachmentsBuilder_ == null) {
+        attachments_ = java.util.Collections.emptyList();
+        bitField0_ = (bitField0_ & ~0x00020000);
+        onChanged();
+      } else {
+        attachmentsBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public Builder removeAttachments(int index) {
+      if (attachmentsBuilder_ == null) {
+        ensureAttachmentsIsMutable();
+        attachments_.remove(index);
+        onChanged();
+      } else {
+        attachmentsBuilder_.remove(index);
+      }
+      return this;
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public com.jervis.contracts.orchestrator.Attachment.Builder getAttachmentsBuilder(
+        int index) {
+      return internalGetAttachmentsFieldBuilder().getBuilder(index);
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public com.jervis.contracts.orchestrator.AttachmentOrBuilder getAttachmentsOrBuilder(
+        int index) {
+      if (attachmentsBuilder_ == null) {
+        return attachments_.get(index);  } else {
+        return attachmentsBuilder_.getMessageOrBuilder(index);
+      }
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public java.util.List<? extends com.jervis.contracts.orchestrator.AttachmentOrBuilder> 
+         getAttachmentsOrBuilderList() {
+      if (attachmentsBuilder_ != null) {
+        return attachmentsBuilder_.getMessageOrBuilderList();
+      } else {
+        return java.util.Collections.unmodifiableList(attachments_);
+      }
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public com.jervis.contracts.orchestrator.Attachment.Builder addAttachmentsBuilder() {
+      return internalGetAttachmentsFieldBuilder().addBuilder(
+          com.jervis.contracts.orchestrator.Attachment.getDefaultInstance());
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public com.jervis.contracts.orchestrator.Attachment.Builder addAttachmentsBuilder(
+        int index) {
+      return internalGetAttachmentsFieldBuilder().addBuilder(
+          index, com.jervis.contracts.orchestrator.Attachment.getDefaultInstance());
+    }
+    /**
+     * <pre>
+     * Attachments — base64-encoded file content from UI
+     * </pre>
+     *
+     * <code>repeated .jervis.orchestrator.Attachment attachments = 18;</code>
+     */
+    public java.util.List<com.jervis.contracts.orchestrator.Attachment.Builder> 
+         getAttachmentsBuilderList() {
+      return internalGetAttachmentsFieldBuilder().getBuilderList();
+    }
+    private com.google.protobuf.RepeatedFieldBuilder<
+        com.jervis.contracts.orchestrator.Attachment, com.jervis.contracts.orchestrator.Attachment.Builder, com.jervis.contracts.orchestrator.AttachmentOrBuilder> 
+        internalGetAttachmentsFieldBuilder() {
+      if (attachmentsBuilder_ == null) {
+        attachmentsBuilder_ = new com.google.protobuf.RepeatedFieldBuilder<
+            com.jervis.contracts.orchestrator.Attachment, com.jervis.contracts.orchestrator.Attachment.Builder, com.jervis.contracts.orchestrator.AttachmentOrBuilder>(
+                attachments_,
+                ((bitField0_ & 0x00020000) != 0),
+                getParentForChildren(),
+                isClean());
+        attachments_ = null;
+      }
+      return attachmentsBuilder_;
     }
 
     // @@protoc_insertion_point(builder_scope:jervis.orchestrator.ChatRequest)

@@ -899,6 +899,50 @@ class OrchestratorCompanionServicer(companion_pb2_grpc.OrchestratorCompanionServ
             raise
 
 
+def _chat_request_from_proto(request: chat_pb2.ChatRequest):
+    """Translate a typed chat.proto `ChatRequest` into the pydantic
+    `app/chat/models.py::ChatRequest` the rest of the pipeline consumes.
+
+    Proto3 scalar defaults (empty string, zero int) that stand in for
+    "not set" get mapped back to None / sensible defaults so the pydantic
+    model keeps its previous semantics.
+    """
+    from app.chat.models import ChatRequest
+
+    def _empty_to_none(v: str) -> str | None:
+        return v if v else None
+
+    attachments = [
+        {
+            "filename": a.filename,
+            "mime_type": a.mime_type,
+            "size_bytes": int(a.size_bytes),
+            "content_base64": _empty_to_none(a.content_base64),
+        }
+        for a in request.attachments
+    ]
+
+    return ChatRequest(
+        session_id=request.session_id,
+        message=request.message,
+        message_sequence=int(request.message_sequence),
+        user_id=request.user_id or "jan",
+        active_client_id=_empty_to_none(request.active_client_id),
+        active_project_id=_empty_to_none(request.active_project_id),
+        active_group_id=_empty_to_none(request.active_group_id),
+        active_client_name=_empty_to_none(request.active_client_name),
+        active_project_name=_empty_to_none(request.active_project_name),
+        active_group_name=_empty_to_none(request.active_group_name),
+        context_task_id=_empty_to_none(request.context_task_id),
+        timestamp=_empty_to_none(request.timestamp),
+        max_openrouter_tier=request.max_openrouter_tier or "NONE",
+        deadline_iso=_empty_to_none(request.deadline_iso),
+        priority=request.priority or "NORMAL",
+        client_timezone=_empty_to_none(request.client_timezone),
+        attachments=attachments,
+    )
+
+
 class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
     """OrchestratorChatService — foreground agentic chat stream.
 
@@ -915,11 +959,9 @@ class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
     ):
         from app import main as orch_main
         from app.agent.sse_handler import handle_chat_sse as handle_chat
-        from app.chat.models import ChatRequest
 
         try:
-            payload = json.loads(request.payload_json) if request.payload_json else {}
-            chat_request = ChatRequest(**payload)
+            chat_request = _chat_request_from_proto(request)
         except Exception as e:
             logger.error("CHAT_VALIDATION_FAILED: %s", e)
             yield chat_pb2.ChatEvent(type="error", content=f"Invalid chat request: {e}")

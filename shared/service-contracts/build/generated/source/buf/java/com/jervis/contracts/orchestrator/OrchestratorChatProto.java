@@ -32,6 +32,16 @@ public final class OrchestratorChatProto extends com.google.protobuf.GeneratedFi
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_orchestrator_ChatRequest_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_Attachment_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_Attachment_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_ChatMessage_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_ChatMessage_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_orchestrator_ChatEvent_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
@@ -72,30 +82,44 @@ public final class OrchestratorChatProto extends com.google.protobuf.GeneratedFi
     java.lang.String[] descriptorData = {
       "\n\036jervis/orchestrator/chat.proto\022\023jervis" +
       ".orchestrator\032\031jervis/common/types.proto" +
-      "\"c\n\013ChatRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.co" +
-      "mmon.RequestContext\022\022\n\nsession_id\030\002 \001(\t\022" +
-      "\024\n\014payload_json\030\003 \001(\t\"\233\001\n\tChatEvent\022\014\n\004t" +
-      "ype\030\001 \001(\t\022\017\n\007content\030\002 \001(\t\022>\n\010metadata\030\003" +
-      " \003(\0132,.jervis.orchestrator.ChatEvent.Met" +
-      "adataEntry\032/\n\rMetadataEntry\022\013\n\003key\030\001 \001(\t" +
-      "\022\r\n\005value\030\002 \001(\t:\0028\001\"\210\001\n\024ApproveActionReq" +
-      "uest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Reques" +
-      "tContext\022\022\n\nsession_id\030\002 \001(\t\022\020\n\010approved" +
-      "\030\003 \001(\010\022\016\n\006always\030\004 \001(\010\022\016\n\006action\030\005 \001(\t\"-" +
-      "\n\020ApproveActionAck\022\n\n\002ok\030\001 \001(\010\022\r\n\005error\030" +
-      "\002 \001(\t\"Q\n\017StopChatRequest\022*\n\003ctx\030\001 \001(\0132\035." +
-      "jervis.common.RequestContext\022\022\n\nsession_" +
-      "id\030\002 \001(\t\"(\n\013StopChatAck\022\n\n\002ok\030\001 \001(\010\022\r\n\005e" +
-      "rror\030\002 \001(\t2\230\002\n\027OrchestratorChatService\022J" +
-      "\n\004Chat\022 .jervis.orchestrator.ChatRequest" +
-      "\032\036.jervis.orchestrator.ChatEvent0\001\022a\n\rAp" +
-      "proveAction\022).jervis.orchestrator.Approv" +
-      "eActionRequest\032%.jervis.orchestrator.App" +
-      "roveActionAck\022N\n\004Stop\022$.jervis.orchestra" +
-      "tor.StopChatRequest\032 .jervis.orchestrato" +
-      "r.StopChatAckB<\n!com.jervis.contracts.or" +
-      "chestratorB\025OrchestratorChatProtoP\001b\006pro" +
-      "to3"
+      "\"\353\003\n\013ChatRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.c" +
+      "ommon.RequestContext\022\022\n\nsession_id\030\002 \001(\t" +
+      "\022\017\n\007message\030\003 \001(\t\022\030\n\020message_sequence\030\004 " +
+      "\001(\005\022\017\n\007user_id\030\005 \001(\t\022\030\n\020active_client_id" +
+      "\030\006 \001(\t\022\031\n\021active_project_id\030\007 \001(\t\022\027\n\017act" +
+      "ive_group_id\030\010 \001(\t\022\032\n\022active_client_name" +
+      "\030\t \001(\t\022\033\n\023active_project_name\030\n \001(\t\022\031\n\021a" +
+      "ctive_group_name\030\013 \001(\t\022\027\n\017context_task_i" +
+      "d\030\014 \001(\t\022\021\n\ttimestamp\030\r \001(\t\022\033\n\023max_openro" +
+      "uter_tier\030\016 \001(\t\022\024\n\014deadline_iso\030\017 \001(\t\022\020\n" +
+      "\010priority\030\020 \001(\t\022\027\n\017client_timezone\030\021 \001(\t" +
+      "\0224\n\013attachments\030\022 \003(\0132\037.jervis.orchestra" +
+      "tor.Attachment\"]\n\nAttachment\022\020\n\010filename" +
+      "\030\001 \001(\t\022\021\n\tmime_type\030\002 \001(\t\022\022\n\nsize_bytes\030" +
+      "\003 \001(\003\022\026\n\016content_base64\030\004 \001(\t\"U\n\013ChatMes" +
+      "sage\022\014\n\004role\030\001 \001(\t\022\017\n\007content\030\002 \001(\t\022\021\n\tt" +
+      "imestamp\030\003 \001(\t\022\024\n\014tool_call_id\030\004 \001(\t\"\233\001\n" +
+      "\tChatEvent\022\014\n\004type\030\001 \001(\t\022\017\n\007content\030\002 \001(" +
+      "\t\022>\n\010metadata\030\003 \003(\0132,.jervis.orchestrato" +
+      "r.ChatEvent.MetadataEntry\032/\n\rMetadataEnt" +
+      "ry\022\013\n\003key\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\"\210\001\n\024A" +
+      "pproveActionRequest\022*\n\003ctx\030\001 \001(\0132\035.jervi" +
+      "s.common.RequestContext\022\022\n\nsession_id\030\002 " +
+      "\001(\t\022\020\n\010approved\030\003 \001(\010\022\016\n\006always\030\004 \001(\010\022\016\n" +
+      "\006action\030\005 \001(\t\"-\n\020ApproveActionAck\022\n\n\002ok\030" +
+      "\001 \001(\010\022\r\n\005error\030\002 \001(\t\"Q\n\017StopChatRequest\022" +
+      "*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCont" +
+      "ext\022\022\n\nsession_id\030\002 \001(\t\"(\n\013StopChatAck\022\n" +
+      "\n\002ok\030\001 \001(\010\022\r\n\005error\030\002 \001(\t2\230\002\n\027Orchestrat" +
+      "orChatService\022J\n\004Chat\022 .jervis.orchestra" +
+      "tor.ChatRequest\032\036.jervis.orchestrator.Ch" +
+      "atEvent0\001\022a\n\rApproveAction\022).jervis.orch" +
+      "estrator.ApproveActionRequest\032%.jervis.o" +
+      "rchestrator.ApproveActionAck\022N\n\004Stop\022$.j" +
+      "ervis.orchestrator.StopChatRequest\032 .jer" +
+      "vis.orchestrator.StopChatAckB<\n!com.jerv" +
+      "is.contracts.orchestratorB\025OrchestratorC" +
+      "hatProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -107,9 +131,21 @@ public final class OrchestratorChatProto extends com.google.protobuf.GeneratedFi
     internal_static_jervis_orchestrator_ChatRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_ChatRequest_descriptor,
-        new java.lang.String[] { "Ctx", "SessionId", "PayloadJson", });
-    internal_static_jervis_orchestrator_ChatEvent_descriptor =
+        new java.lang.String[] { "Ctx", "SessionId", "Message", "MessageSequence", "UserId", "ActiveClientId", "ActiveProjectId", "ActiveGroupId", "ActiveClientName", "ActiveProjectName", "ActiveGroupName", "ContextTaskId", "Timestamp", "MaxOpenrouterTier", "DeadlineIso", "Priority", "ClientTimezone", "Attachments", });
+    internal_static_jervis_orchestrator_Attachment_descriptor =
       getDescriptor().getMessageTypes().get(1);
+    internal_static_jervis_orchestrator_Attachment_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_Attachment_descriptor,
+        new java.lang.String[] { "Filename", "MimeType", "SizeBytes", "ContentBase64", });
+    internal_static_jervis_orchestrator_ChatMessage_descriptor =
+      getDescriptor().getMessageTypes().get(2);
+    internal_static_jervis_orchestrator_ChatMessage_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_ChatMessage_descriptor,
+        new java.lang.String[] { "Role", "Content", "Timestamp", "ToolCallId", });
+    internal_static_jervis_orchestrator_ChatEvent_descriptor =
+      getDescriptor().getMessageTypes().get(3);
     internal_static_jervis_orchestrator_ChatEvent_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_ChatEvent_descriptor,
@@ -121,25 +157,25 @@ public final class OrchestratorChatProto extends com.google.protobuf.GeneratedFi
         internal_static_jervis_orchestrator_ChatEvent_MetadataEntry_descriptor,
         new java.lang.String[] { "Key", "Value", });
     internal_static_jervis_orchestrator_ApproveActionRequest_descriptor =
-      getDescriptor().getMessageTypes().get(2);
+      getDescriptor().getMessageTypes().get(4);
     internal_static_jervis_orchestrator_ApproveActionRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_ApproveActionRequest_descriptor,
         new java.lang.String[] { "Ctx", "SessionId", "Approved", "Always", "Action", });
     internal_static_jervis_orchestrator_ApproveActionAck_descriptor =
-      getDescriptor().getMessageTypes().get(3);
+      getDescriptor().getMessageTypes().get(5);
     internal_static_jervis_orchestrator_ApproveActionAck_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_ApproveActionAck_descriptor,
         new java.lang.String[] { "Ok", "Error", });
     internal_static_jervis_orchestrator_StopChatRequest_descriptor =
-      getDescriptor().getMessageTypes().get(4);
+      getDescriptor().getMessageTypes().get(6);
     internal_static_jervis_orchestrator_StopChatRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_StopChatRequest_descriptor,
         new java.lang.String[] { "Ctx", "SessionId", });
     internal_static_jervis_orchestrator_StopChatAck_descriptor =
-      getDescriptor().getMessageTypes().get(5);
+      getDescriptor().getMessageTypes().get(7);
     internal_static_jervis_orchestrator_StopChatAck_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_StopChatAck_descriptor,
