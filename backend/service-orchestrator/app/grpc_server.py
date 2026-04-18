@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 import grpc
 from grpc_reflection.v1alpha import reflection
 
+from jervis.orchestrator import companion_pb2, companion_pb2_grpc
 from jervis.orchestrator import control_pb2, control_pb2_grpc
 from jervis.orchestrator import dispatch_pb2, dispatch_pb2_grpc
 from jervis.orchestrator import graph_pb2, graph_pb2_grpc
@@ -548,6 +549,159 @@ class OrchestratorDispatchServicer(dispatch_pb2_grpc.OrchestratorDispatchService
         return dispatch_pb2.DispatchAck(status="accepted", thread_id=thread_id)
 
 
+class OrchestratorCompanionServicer(companion_pb2_grpc.OrchestratorCompanionServiceServicer):
+    """OrchestratorCompanionService — dispatch + persistent-session surface
+    for the Claude companion K8s Jobs. Unary RPCs delegate to the same
+    `companion_runner` instance the FastAPI handlers used; StreamSession
+    bridges the async generator into gRPC server-streaming.
+    """
+
+    async def Adhoc(
+        self,
+        request: companion_pb2.AdhocRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> companion_pb2.AdhocAck:
+        from pathlib import Path
+
+        from app.agents.companion_runner import companion_runner
+
+        attachments = [Path(p) for p in list(request.attachment_paths) if Path(p).exists()]
+        try:
+            disp = await companion_runner.dispatch_adhoc(
+                task_id=request.task_id,
+                brief=request.brief,
+                context=dict(request.context),
+                attachments=attachments,
+                client_id=request.client_id,
+                project_id=request.project_id or None,
+                language=request.language or "cs",
+            )
+        except RuntimeError as e:
+            # /adhoc used to return HTTP 429 on busy dispatch.
+            return companion_pb2.AdhocAck(error=str(e))
+        return companion_pb2.AdhocAck(
+            job_name=disp.job_name,
+            workspace_path=disp.workspace_path,
+            mode=disp.mode,
+        )
+
+    async def AdhocStatus(
+        self,
+        request: companion_pb2.AdhocStatusRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> companion_pb2.AdhocStatusResponse:
+        from app.agents.companion_runner import companion_runner
+
+        result = companion_runner.collect_adhoc_result(request.workspace_path)
+        if result is None:
+            return companion_pb2.AdhocStatusResponse(task_id=request.task_id, status="pending")
+        return companion_pb2.AdhocStatusResponse(
+            task_id=request.task_id,
+            status="done",
+            result_json=json.dumps(result, default=str, ensure_ascii=False),
+        )
+
+    async def StartSession(
+        self,
+        request: companion_pb2.SessionStartRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> companion_pb2.SessionStartResponse:
+        from pathlib import Path
+
+        from app.agents.companion_runner import companion_runner
+
+        attachments = [Path(p) for p in list(request.attachment_paths) if Path(p).exists()]
+        try:
+            disp = await companion_runner.start_session(
+                session_id=request.session_id or None,
+                brief=request.brief,
+                context=dict(request.context),
+                attachments=attachments,
+                client_id=request.client_id,
+                project_id=request.project_id or None,
+                language=request.language or "cs",
+            )
+        except RuntimeError as e:
+            return companion_pb2.SessionStartResponse(error=str(e))
+        return companion_pb2.SessionStartResponse(
+            job_name=disp.job_name,
+            workspace_path=disp.workspace_path,
+            session_id=disp.session_id,
+        )
+
+    async def SessionEvent(
+        self,
+        request: companion_pb2.SessionEventRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> companion_pb2.SessionEventAck:
+        from app.agents.companion_runner import companion_runner
+
+        try:
+            companion_runner.send_event(
+                request.session_id,
+                request.type or "user",
+                request.content,
+                dict(request.meta),
+            )
+        except Exception as e:
+            logger.warning("COMPANION_SESSION_EVENT_ERROR session=%s error=%s",
+                           request.session_id, e)
+            return companion_pb2.SessionEventAck(ok=False, error=str(e))
+        return companion_pb2.SessionEventAck(ok=True, error="")
+
+    async def StopSession(
+        self,
+        request: companion_pb2.SessionRef,
+        context: grpc.aio.ServicerContext,
+    ) -> companion_pb2.SessionAck:
+        from app.agents.companion_runner import companion_runner
+
+        try:
+            await companion_runner.stop_session(request.session_id)
+        except Exception as e:
+            logger.warning("COMPANION_STOP_SESSION_ERROR session=%s error=%s",
+                           request.session_id, e)
+            return companion_pb2.SessionAck(ok=False, error=str(e))
+        return companion_pb2.SessionAck(ok=True, error="")
+
+    async def StreamSession(
+        self,
+        request: companion_pb2.StreamSessionRequest,
+        context: grpc.aio.ServicerContext,
+    ):
+        from app.agents.companion_runner import companion_runner
+        from app.config import settings as _settings
+
+        max_age = request.max_age_seconds
+        if max_age == 0:
+            ttl = _settings.companion_assistant_event_ttl_seconds
+        elif max_age < 0:
+            ttl = None
+        else:
+            ttl = float(max_age)
+        effective_ttl = None if (ttl is not None and ttl <= 0) else ttl
+
+        stop_event = asyncio.Event()
+        try:
+            async for event in companion_runner.stream_outbox(
+                request.session_id,
+                stop_event=stop_event,
+                max_age_seconds=effective_ttl,
+            ):
+                if not isinstance(event, dict):
+                    continue
+                yield companion_pb2.OutboxEvent(
+                    ts=str(event.get("ts") or ""),
+                    type=str(event.get("type") or ""),
+                    content=str(event.get("content") or ""),
+                    final=bool(event.get("final", False)),
+                    meta={str(k): str(v) for k, v in (event.get("meta") or {}).items() if v is not None},
+                )
+        except asyncio.CancelledError:
+            stop_event.set()
+            raise
+
+
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for cleanup."""
     max_msg_bytes = 64 * 1024 * 1024
@@ -567,11 +721,15 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     dispatch_pb2_grpc.add_OrchestratorDispatchServiceServicer_to_server(
         OrchestratorDispatchServicer(), server,
     )
+    companion_pb2_grpc.add_OrchestratorCompanionServiceServicer_to_server(
+        OrchestratorCompanionServicer(), server,
+    )
 
     service_names = (
         control_pb2.DESCRIPTOR.services_by_name["OrchestratorControlService"].full_name,
         graph_pb2.DESCRIPTOR.services_by_name["OrchestratorGraphService"].full_name,
         dispatch_pb2.DESCRIPTOR.services_by_name["OrchestratorDispatchService"].full_name,
+        companion_pb2.DESCRIPTOR.services_by_name["OrchestratorCompanionService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
@@ -579,7 +737,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     server.add_insecure_port(f"[::]:{port}")
     await server.start()
     logger.info(
-        "gRPC orchestrator services listening on :%d (Control + Graph + Dispatch)",
+        "gRPC orchestrator services listening on :%d (Control + Graph + Dispatch + Companion)",
         port,
     )
     return server

@@ -1,54 +1,40 @@
 package com.jervis.meeting
 
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.get
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.http.ContentType
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.contentType
-import io.ktor.serialization.kotlinx.json.json
-import io.ktor.utils.io.readUTF8Line
+import com.jervis.contracts.common.RequestContext
+import com.jervis.contracts.common.Scope
+import com.jervis.contracts.orchestrator.OrchestratorCompanionServiceGrpcKt
+import com.jervis.contracts.orchestrator.OutboxEvent
+import com.jervis.contracts.orchestrator.SessionEventRequest as ProtoSessionEventRequest
+import com.jervis.contracts.orchestrator.SessionRef
+import com.jervis.contracts.orchestrator.SessionStartRequest as ProtoSessionStartRequest
+import com.jervis.contracts.orchestrator.StreamSessionRequest
+import com.jervis.infrastructure.grpc.GrpcChannels
+import io.grpc.ManagedChannel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Value
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
+import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
 
-// HTTP client for Python orchestrator companion endpoints.
-// Companion is a parallel K8s Job agent used for deep analyses and live
-// meeting assistant. This client starts a persistent companion session,
-// forwards meeting transcript events, and tails outbox SSE.
+// gRPC client for the Python orchestrator companion service. Starts /
+// forwards transcript events / tails outbox server-streaming RPC for the
+// live meeting assistant flow.
 @Component
 class OrchestratorCompanionClient(
-    @Value("\${endpoints.orchestrator.baseUrl:http://localhost:8090}") private val orchestratorBaseUrl: String,
+    @Qualifier(GrpcChannels.ORCHESTRATOR_CHANNEL) channel: ManagedChannel,
 ) {
-    private val jsonParser = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-        encodeDefaults = true
-    }
+    private val stub = OrchestratorCompanionServiceGrpcKt.OrchestratorCompanionServiceCoroutineStub(channel)
 
-    private val client = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(jsonParser)
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = Long.MAX_VALUE
-            connectTimeoutMillis = 15_000
-            socketTimeoutMillis = Long.MAX_VALUE
-        }
-    }
+    private fun ctx(clientId: String = ""): RequestContext =
+        RequestContext.newBuilder()
+            .setScope(Scope.newBuilder().setClientId(clientId).build())
+            .setRequestId(UUID.randomUUID().toString())
+            .setIssuedAtUnixMs(System.currentTimeMillis())
+            .build()
 
     @Serializable
     data class SessionStartRequest(
@@ -76,7 +62,7 @@ class OrchestratorCompanionClient(
     )
 
     @Serializable
-    data class OutboxEvent(
+    data class OutboxEventDto(
         val ts: String? = null,
         val type: String,
         val content: String,
@@ -84,53 +70,65 @@ class OrchestratorCompanionClient(
     )
 
     suspend fun startSession(req: SessionStartRequest): SessionStartResponse {
-        val resp = client.post("$orchestratorBaseUrl/companion/session") {
-            contentType(ContentType.Application.Json)
-            setBody(req)
+        val builder = ProtoSessionStartRequest.newBuilder()
+            .setCtx(ctx(req.client_id))
+            .setSessionId(req.session_id ?: "")
+            .setBrief(req.brief)
+            .setClientId(req.client_id)
+            .setProjectId(req.project_id ?: "")
+            .setLanguage(req.language)
+            .addAllAttachmentPaths(req.attachment_paths)
+        req.context.forEach { (k, v) -> builder.putContext(k, v) }
+        val resp = stub.startSession(builder.build())
+        if (resp.error.isNotEmpty()) {
+            throw IllegalStateException("Companion startSession rejected: ${resp.error}")
         }
-        if (resp.status != HttpStatusCode.OK) {
-            throw IllegalStateException("Companion startSession HTTP ${resp.status.value}: ${resp.body<String>()}")
-        }
-        return resp.body()
+        return SessionStartResponse(
+            job_name = resp.jobName,
+            workspace_path = resp.workspacePath,
+            session_id = resp.sessionId,
+        )
     }
 
     suspend fun sendEvent(sessionId: String, req: SessionEventRequest) {
-        val resp = client.post("$orchestratorBaseUrl/companion/session/$sessionId/event") {
-            contentType(ContentType.Application.Json)
-            setBody(req)
-        }
-        if (resp.status != HttpStatusCode.OK) {
-            logger.warn { "Companion sendEvent HTTP ${resp.status.value} for session=$sessionId" }
+        val builder = ProtoSessionEventRequest.newBuilder()
+            .setCtx(ctx())
+            .setSessionId(sessionId)
+            .setType(req.type)
+            .setContent(req.content)
+        req.meta.forEach { (k, v) -> builder.putMeta(k, v) }
+        val ack = stub.sessionEvent(builder.build())
+        if (!ack.ok) {
+            logger.warn { "Companion sendEvent failed for session=$sessionId: ${ack.error}" }
         }
     }
 
     suspend fun stopSession(sessionId: String) {
         runCatching {
-            client.post("$orchestratorBaseUrl/companion/session/$sessionId/stop")
+            stub.stopSession(
+                SessionRef.newBuilder().setCtx(ctx()).setSessionId(sessionId).build(),
+            )
         }.onFailure { e ->
             logger.warn(e) { "Companion stopSession failed: $sessionId" }
         }
     }
 
-    // Tail outbox SSE stream. Each emitted event is a parsed OutboxEvent.
-    fun streamOutbox(sessionId: String, maxAgeSeconds: Int? = null): Flow<OutboxEvent> = flow {
-        val url = buildString {
-            append("$orchestratorBaseUrl/companion/session/$sessionId/stream")
-            if (maxAgeSeconds != null) append("?max_age_seconds=$maxAgeSeconds")
-        }
-        val resp: HttpResponse = client.get(url)
-        val channel = resp.bodyAsChannel()
-        while (!channel.isClosedForRead) {
-            val line = channel.readUTF8Line() ?: break
-            if (!line.startsWith("data:")) continue
-            val payload = line.substring(5).trim()
-            if (payload.isEmpty()) continue
-            val parsed = runCatching { jsonParser.decodeFromString<OutboxEvent>(payload) }
-                .getOrElse {
-                    logger.debug { "Bad SSE payload: $payload" }
-                    null
-                } ?: continue
-            emit(parsed)
+    // Tail outbox via gRPC server streaming. Each emitted value is the
+    // legacy OutboxEvent DTO shape.
+    fun streamOutbox(sessionId: String, maxAgeSeconds: Int? = null): Flow<OutboxEventDto> {
+        val maxAge = maxAgeSeconds?.toDouble() ?: 0.0
+        val req = StreamSessionRequest.newBuilder()
+            .setCtx(ctx())
+            .setSessionId(sessionId)
+            .setMaxAgeSeconds(maxAge)
+            .build()
+        return stub.streamSession(req).map { proto: OutboxEvent ->
+            OutboxEventDto(
+                ts = proto.ts.takeIf { it.isNotEmpty() },
+                type = proto.type,
+                content = proto.content,
+                final = if (proto.final) true else null,
+            )
         }
     }
 }
