@@ -2183,7 +2183,7 @@ async def _get_workspace_path(
     """Get workspace path from KB graph (repository node).
 
     If the workspace is not yet cloned and auto_init=True, triggers the
-    Kotlin server's BLOCKING /internal/git/init-workspace endpoint which
+    Kotlin server's ServerGitService.InitWorkspace gRPC (blocking) which
     clones the repo synchronously and returns the agent workspace path.
 
     Returns None only when:
@@ -2223,34 +2223,35 @@ async def _get_workspace_path(
     if not auto_init:
         return None
 
-    init_url = f"{settings.kotlin_server_url.rstrip('/')}/internal/git/init-workspace"
     try:
-        async with httpx.AsyncClient(timeout=600.0) as client:
+        from app.grpc_server_client import server_git_stub
+        from jervis.common import types_pb2
+        from jervis.server import git_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        logger.info(
+            "AUTO_INIT_WORKSPACE | project=%s — triggering blocking clone",
+            project_id,
+        )
+        resp = await server_git_stub().InitWorkspace(
+            git_pb2.InitWorkspaceRequest(ctx=ctx, project_id=project_id),
+            timeout=600.0,
+        )
+        status = resp.status or ""
+        path = resp.workspace_path or ""
+        if resp.ok and path:
             logger.info(
-                "AUTO_INIT_WORKSPACE | project=%s — triggering blocking clone",
-                project_id,
+                "AUTO_INIT_WORKSPACE | project=%s status=%s path=%s",
+                project_id, status, path,
             )
-            resp = await client.post(init_url, json={"projectId": project_id})
-            if resp.status_code != 200:
-                logger.warning(
-                    "init-workspace returned HTTP %d: %s",
-                    resp.status_code, resp.text[:200],
-                )
-                return None
-            data = resp.json()
-            status = data.get("status", "")
-            path = data.get("workspacePath", "")
-            if data.get("ok") and path:
-                logger.info(
-                    "AUTO_INIT_WORKSPACE | project=%s status=%s path=%s",
-                    project_id, status, path,
-                )
-                return path
-            logger.warning(
-                "AUTO_INIT_WORKSPACE | project=%s FAILED status=%s error=%s",
-                project_id, status, data.get("error", ""),
-            )
-            return None
+            return path
+        logger.warning(
+            "AUTO_INIT_WORKSPACE | project=%s FAILED status=%s error=%s",
+            project_id, status, resp.error or "",
+        )
+        return None
     except Exception as e:
         logger.error("AUTO_INIT_WORKSPACE | project=%s exception: %s", project_id, e)
         return None
@@ -2874,10 +2875,6 @@ async def _execute_command(
 # Environment management tools
 # ============================================================
 
-_KOTLIN_INTERNAL_URL = settings.kotlin_server_url
-_O365_GATEWAY_URL = settings.o365_gateway_url
-
-
 def _env_stub_imports():
     from app.grpc_server_client import server_environment_stub
     from jervis.common import types_pb2
@@ -3394,26 +3391,40 @@ async def _execute_create_git_repository(
     client_id: str, name: str, description: str = "",
     connection_id: str = "", is_private: bool = True,
 ) -> str:
-    """Create a git repository via Kotlin internal API."""
+    """Create a git repository via ServerGitService.CreateRepository (gRPC)."""
     if not client_id or not name:
         return "Error: client_id and name are required."
-    body: dict = {"clientId": client_id, "name": name, "isPrivate": is_private}
-    if description:
-        body["description"] = description
-    if connection_id:
-        body["connectionId"] = connection_id
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/git/repos", json=body)
-            if resp.status_code not in (200, 201):
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            data = resp.json()
-            return (
-                f"Repository created: {data.get('fullName', name)}\n"
-                f"  Clone URL: {data.get('cloneUrl', '?')}\n"
-                f"  Web URL: {data.get('htmlUrl', '?')}\n"
-                f"  Provider: {data.get('provider', '?')}"
-            )
+        import json as _json
+
+        from app.grpc_server_client import server_git_stub
+        from jervis.common import types_pb2
+        from jervis.server import git_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_git_stub().CreateRepository(
+            git_pb2.CreateRepositoryRequest(
+                ctx=ctx,
+                client_id=client_id,
+                connection_id=connection_id or "",
+                name=name,
+                description=description or "",
+                is_private=bool(is_private),
+            ),
+            timeout=60.0,
+        )
+        try:
+            data = _json.loads(resp.body_json or "{}")
+        except Exception:
+            data = {}
+        return (
+            f"Repository created: {data.get('fullName', name)}\n"
+            f"  Clone URL: {data.get('cloneUrl', '?')}\n"
+            f"  Web URL: {data.get('htmlUrl', '?')}\n"
+            f"  Provider: {data.get('provider', '?')}"
+        )
     except Exception as e:
         return f"Error creating git repository: {str(e)[:300]}"
 
@@ -3448,21 +3459,24 @@ async def _execute_update_project(
 
 
 async def _execute_init_workspace(project_id: str) -> str:
-    """Trigger workspace initialization via Kotlin internal API."""
+    """Trigger workspace initialization via ServerGitService.InitWorkspace (gRPC)."""
     if not project_id:
         return "Error: project_id is required."
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_KOTLIN_INTERNAL_URL}/internal/git/init-workspace",
-                json={"projectId": project_id},
-            )
-            if resp.status_code not in (200, 201):
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            data = resp.json()
-            if data.get("ok"):
-                return f"Workspace init triggered for project {project_id}."
-            return f"Error: {data.get('error', 'unknown')}"
+        from app.grpc_server_client import server_git_stub
+        from jervis.common import types_pb2
+        from jervis.server import git_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        ctx = types_pb2.RequestContext()
+        prepare_context(ctx)
+        resp = await server_git_stub().InitWorkspace(
+            git_pb2.InitWorkspaceRequest(ctx=ctx, project_id=project_id),
+            timeout=30.0,
+        )
+        if resp.ok:
+            return f"Workspace init triggered for project {project_id}."
+        return f"Error: {resp.error or 'unknown'}"
     except Exception as e:
         return f"Error initializing workspace: {str(e)[:300]}"
 
@@ -3766,37 +3780,36 @@ async def _execute_mongo_update_document(
 
 
 # ============================================================
-# O365 tools (via O365 Gateway)
+# O365 tools (via O365 Gateway — gRPC passthrough)
 # ============================================================
 
 
 async def _execute_o365_teams_list_chats(client_id: str, top: int = 20) -> str:
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_O365_GATEWAY_URL}/api/o365/chats/{client_id}",
-                params={"top": min(top, 50)},
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            chats = resp.json()
-            if not chats:
-                return "No chats found."
-            lines = []
-            for c in chats:
-                topic = c.get("topic") or "(no topic)"
-                chat_type = c.get("chatType", "?")
-                chat_id = c.get("id", "?")
-                preview = ""
-                mp = c.get("lastMessagePreview")
-                if mp and mp.get("body"):
-                    preview_text = mp["body"].get("content", "")[:100]
-                    from_user = ""
-                    if mp.get("from") and mp["from"].get("user"):
-                        from_user = mp["from"]["user"].get("displayName", "")
-                    preview = f" | {from_user}: {preview_text}"
-                lines.append(f"[{chat_type}] {topic} (id={chat_id}){preview}")
-            return "\n".join(lines)
+        chats = await o365_request(
+            "GET", f"chats/{client_id}", query={"top": min(top, 50)},
+        )
+        if not chats:
+            return "No chats found."
+        lines = []
+        for c in chats:
+            topic = c.get("topic") or "(no topic)"
+            chat_type = c.get("chatType", "?")
+            chat_id = c.get("id", "?")
+            preview = ""
+            mp = c.get("lastMessagePreview")
+            if mp and mp.get("body"):
+                preview_text = mp["body"].get("content", "")[:100]
+                from_user = ""
+                if mp.get("from") and mp["from"].get("user"):
+                    from_user = mp["from"]["user"].get("displayName", "")
+                preview = f" | {from_user}: {preview_text}"
+            lines.append(f"[{chat_type}] {topic} (id={chat_id}){preview}")
+        return "\n".join(lines)
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error listing Teams chats: {str(e)[:300]}"
 
@@ -3804,24 +3817,23 @@ async def _execute_o365_teams_list_chats(client_id: str, top: int = 20) -> str:
 async def _execute_o365_teams_read_chat(client_id: str, chat_id: str, top: int = 20) -> str:
     if not chat_id:
         return "Error: chat_id is required."
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_O365_GATEWAY_URL}/api/o365/chats/{client_id}/{chat_id}/messages",
-                params={"top": top},
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            messages = resp.json()
-            if not messages:
-                return "No messages found."
-            lines = []
-            for m in messages:
-                sender = _extract_sender(m)
-                body = (m.get("body") or {}).get("content", "")[:500]
-                ts = m.get("createdDateTime", "")
-                lines.append(f"[{ts}] {sender}: {body}")
-            return "\n---\n".join(lines)
+        messages = await o365_request(
+            "GET", f"chats/{client_id}/{chat_id}/messages", query={"top": top},
+        )
+        if not messages:
+            return "No messages found."
+        lines = []
+        for m in messages:
+            sender = _extract_sender(m)
+            body = (m.get("body") or {}).get("content", "")[:500]
+            ts = m.get("createdDateTime", "")
+            lines.append(f"[{ts}] {sender}: {body}")
+        return "\n---\n".join(lines)
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error reading Teams chat: {str(e)[:300]}"
 
@@ -3831,32 +3843,32 @@ async def _execute_o365_teams_send_message(
 ) -> str:
     if not chat_id or not content:
         return "Error: chat_id and content are required."
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_O365_GATEWAY_URL}/api/o365/chats/{client_id}/{chat_id}/messages",
-                json={"contentType": content_type, "content": content},
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            data = resp.json()
-            return f"Message sent (id={data.get('id', '?')})"
+        data = await o365_request(
+            "POST", f"chats/{client_id}/{chat_id}/messages",
+            body={"contentType": content_type, "content": content},
+        )
+        return f"Message sent (id={data.get('id', '?')})"
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error sending Teams message: {str(e)[:300]}"
 
 
 async def _execute_o365_teams_list_teams(client_id: str) -> str:
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(f"{_O365_GATEWAY_URL}/api/o365/teams/{client_id}")
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            teams = resp.json()
-            if not teams:
-                return "No teams found."
-            return "\n".join(
-                f"{t.get('displayName', '?')} (id={t.get('id', '?')})" for t in teams
-            )
+        teams = await o365_request("GET", f"teams/{client_id}")
+        if not teams:
+            return "No teams found."
+        return "\n".join(
+            f"{t.get('displayName', '?')} (id={t.get('id', '?')})" for t in teams
+        )
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error listing Teams: {str(e)[:300]}"
 
@@ -3864,20 +3876,18 @@ async def _execute_o365_teams_list_teams(client_id: str) -> str:
 async def _execute_o365_teams_list_channels(client_id: str, team_id: str) -> str:
     if not team_id:
         return "Error: team_id is required."
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_O365_GATEWAY_URL}/api/o365/teams/{client_id}/{team_id}/channels",
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            channels = resp.json()
-            if not channels:
-                return "No channels found."
-            return "\n".join(
-                f"{ch.get('displayName', '?')} (id={ch.get('id', '?')}, type={ch.get('membershipType', '?')})"
-                for ch in channels
-            )
+        channels = await o365_request("GET", f"teams/{client_id}/{team_id}/channels")
+        if not channels:
+            return "No channels found."
+        return "\n".join(
+            f"{ch.get('displayName', '?')} (id={ch.get('id', '?')}, type={ch.get('membershipType', '?')})"
+            for ch in channels
+        )
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error listing channels: {str(e)[:300]}"
 
@@ -3887,24 +3897,25 @@ async def _execute_o365_teams_read_channel(
 ) -> str:
     if not team_id or not channel_id:
         return "Error: team_id and channel_id are required."
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_O365_GATEWAY_URL}/api/o365/teams/{client_id}/{team_id}/channels/{channel_id}/messages",
-                params={"top": top},
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            messages = resp.json()
-            if not messages:
-                return "No messages found."
-            lines = []
-            for m in messages:
-                sender = _extract_sender(m)
-                body = (m.get("body") or {}).get("content", "")[:500]
-                ts = m.get("createdDateTime", "")
-                lines.append(f"[{ts}] {sender}: {body}")
-            return "\n---\n".join(lines)
+        messages = await o365_request(
+            "GET",
+            f"teams/{client_id}/{team_id}/channels/{channel_id}/messages",
+            query={"top": top},
+        )
+        if not messages:
+            return "No messages found."
+        lines = []
+        for m in messages:
+            sender = _extract_sender(m)
+            body = (m.get("body") or {}).get("content", "")[:500]
+            ts = m.get("createdDateTime", "")
+            lines.append(f"[{ts}] {sender}: {body}")
+        return "\n---\n".join(lines)
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error reading channel: {str(e)[:300]}"
 
@@ -3914,39 +3925,41 @@ async def _execute_o365_teams_send_channel_message(
 ) -> str:
     if not team_id or not channel_id or not content:
         return "Error: team_id, channel_id, and content are required."
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_O365_GATEWAY_URL}/api/o365/teams/{client_id}/{team_id}/channels/{channel_id}/messages",
-                json={"contentType": "text", "content": content},
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            data = resp.json()
-            return f"Channel message sent (id={data.get('id', '?')})"
+        data = await o365_request(
+            "POST",
+            f"teams/{client_id}/{team_id}/channels/{channel_id}/messages",
+            body={"contentType": "text", "content": content},
+        )
+        return f"Channel message sent (id={data.get('id', '?')})"
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error sending channel message: {str(e)[:300]}"
 
 
 async def _execute_o365_session_status(client_id: str) -> str:
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(f"{_O365_GATEWAY_URL}/api/o365/session/{client_id}")
-            if resp.status_code == 404:
-                return f"No O365 session for client '{client_id}'. Session needs to be initialized."
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            data = resp.json()
-            parts = [f"Session state: {data.get('state', '?')}"]
-            if data.get("lastActivity"):
-                parts.append(f"Last activity: {data['lastActivity']}")
-            if data.get("lastTokenExtract"):
-                parts.append(f"Last token extract: {data['lastTokenExtract']}")
-            if data.get("novncUrl"):
-                parts.append(f"noVNC URL (for manual login): {data['novncUrl']}")
-            return "\n".join(parts)
+        data = await o365_request("GET", f"session/{client_id}", timeout=15.0)
+    except O365GatewayError as e:
+        if e.status_code == 404:
+            return f"No O365 session for client '{client_id}'. Session needs to be initialized."
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error checking session status: {str(e)[:300]}"
+
+    parts = [f"Session state: {data.get('state', '?')}"]
+    if data.get("lastActivity"):
+        parts.append(f"Last activity: {data['lastActivity']}")
+    if data.get("lastTokenExtract"):
+        parts.append(f"Last token extract: {data['lastTokenExtract']}")
+    if data.get("novncUrl"):
+        parts.append(f"noVNC URL (for manual login): {data['novncUrl']}")
+    return "\n".join(parts)
 
 
 # -- Mail --
@@ -3954,33 +3967,32 @@ async def _execute_o365_session_status(client_id: str) -> str:
 async def _execute_o365_mail_list(
     client_id: str, top: int = 20, folder: str = "inbox",
 ) -> str:
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_O365_GATEWAY_URL}/api/o365/mail/{client_id}",
-                params={"top": top, "folder": folder},
+        messages = await o365_request(
+            "GET", f"mail/{client_id}", query={"top": top, "folder": folder},
+        )
+        if not messages:
+            return f"No emails found in '{folder}'."
+        lines = []
+        for m in messages:
+            subj = m.get("subject", "(no subject)")
+            sender = ""
+            if m.get("from") and m["from"].get("emailAddress"):
+                ea = m["from"]["emailAddress"]
+                sender = ea.get("name") or ea.get("address", "?")
+            ts = m.get("receivedDateTime", "")
+            read = "" if m.get("isRead") else " [UNREAD]"
+            attach = " [ATTACH]" if m.get("hasAttachments") else ""
+            msg_id = m.get("id", "?")
+            preview = (m.get("bodyPreview") or "")[:120]
+            lines.append(
+                f"[{ts}] {sender}: {subj}{read}{attach}\n  id={msg_id}\n  {preview}"
             )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            messages = resp.json()
-            if not messages:
-                return f"No emails found in '{folder}'."
-            lines = []
-            for m in messages:
-                subj = m.get("subject", "(no subject)")
-                sender = ""
-                if m.get("from") and m["from"].get("emailAddress"):
-                    ea = m["from"]["emailAddress"]
-                    sender = ea.get("name") or ea.get("address", "?")
-                ts = m.get("receivedDateTime", "")
-                read = "" if m.get("isRead") else " [UNREAD]"
-                attach = " [ATTACH]" if m.get("hasAttachments") else ""
-                msg_id = m.get("id", "?")
-                preview = (m.get("bodyPreview") or "")[:120]
-                lines.append(
-                    f"[{ts}] {sender}: {subj}{read}{attach}\n  id={msg_id}\n  {preview}"
-                )
-            return "\n---\n".join(lines)
+        return "\n---\n".join(lines)
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error listing mail: {str(e)[:300]}"
 
@@ -3988,43 +4000,42 @@ async def _execute_o365_mail_list(
 async def _execute_o365_mail_read(client_id: str, message_id: str) -> str:
     if not message_id:
         return "Error: message_id is required."
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_O365_GATEWAY_URL}/api/o365/mail/{client_id}/{message_id}",
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            m = resp.json()
-            sender = ""
-            if m.get("from") and m["from"].get("emailAddress"):
-                ea = m["from"]["emailAddress"]
-                sender = f"{ea.get('name', '')} <{ea.get('address', '')}>"
-            to_list = [
-                r["emailAddress"].get("address", "")
-                for r in (m.get("toRecipients") or [])
-                if r.get("emailAddress")
-            ]
-            cc_list = [
-                r["emailAddress"].get("address", "")
-                for r in (m.get("ccRecipients") or [])
-                if r.get("emailAddress")
-            ]
-            body_content = (m.get("body") or {}).get("content", "")
-            parts = [
-                f"Subject: {m.get('subject', '(none)')}",
-                f"From: {sender}",
-                f"To: {', '.join(to_list)}",
-            ]
-            if cc_list:
-                parts.append(f"CC: {', '.join(cc_list)}")
-            parts.append(f"Date: {m.get('receivedDateTime', '?')}")
-            if m.get("hasAttachments"):
-                parts.append("Has attachments: yes")
-            parts.append(f"\n{body_content}")
-            return "\n".join(parts)
+        m = await o365_request("GET", f"mail/{client_id}/{message_id}")
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error reading mail: {str(e)[:300]}"
+
+    sender = ""
+    if m.get("from") and m["from"].get("emailAddress"):
+        ea = m["from"]["emailAddress"]
+        sender = f"{ea.get('name', '')} <{ea.get('address', '')}>"
+    to_list = [
+        r["emailAddress"].get("address", "")
+        for r in (m.get("toRecipients") or [])
+        if r.get("emailAddress")
+    ]
+    cc_list = [
+        r["emailAddress"].get("address", "")
+        for r in (m.get("ccRecipients") or [])
+        if r.get("emailAddress")
+    ]
+    body_content = (m.get("body") or {}).get("content", "")
+    parts = [
+        f"Subject: {m.get('subject', '(none)')}",
+        f"From: {sender}",
+        f"To: {', '.join(to_list)}",
+    ]
+    if cc_list:
+        parts.append(f"CC: {', '.join(cc_list)}")
+    parts.append(f"Date: {m.get('receivedDateTime', '?')}")
+    if m.get("hasAttachments"):
+        parts.append("Has attachments: yes")
+    parts.append(f"\n{body_content}")
+    return "\n".join(parts)
 
 
 async def _execute_o365_mail_send(
@@ -4050,15 +4061,13 @@ async def _execute_o365_mail_send(
         },
         "saveToSentItems": True,
     }
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_O365_GATEWAY_URL}/api/o365/mail/{client_id}/send",
-                json=payload,
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            return "Email sent successfully."
+        await o365_request("POST", f"mail/{client_id}/send", body=payload)
+        return "Email sent successfully."
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error sending mail: {str(e)[:300]}"
 
@@ -4074,42 +4083,40 @@ async def _execute_o365_calendar_events(
         params["startDateTime"] = start_date_time
     if end_date_time:
         params["endDateTime"] = end_date_time
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_O365_GATEWAY_URL}/api/o365/calendar/{client_id}",
-                params=params,
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            events = resp.json()
-            if not events:
-                return "No events found."
-            lines = []
-            for ev in events:
-                subj = ev.get("subject", "(no subject)")
-                start = (ev.get("start") or {}).get("dateTime", "?")
-                end = (ev.get("end") or {}).get("dateTime", "?")
-                loc = ""
-                if ev.get("location") and ev["location"].get("displayName"):
-                    loc = f" @ {ev['location']['displayName']}"
-                online = " [ONLINE]" if ev.get("isOnlineMeeting") else ""
-                all_day = " [ALL DAY]" if ev.get("isAllDay") else ""
-                ev_id = ev.get("id", "?")
-                attendees = []
-                for a in ev.get("attendees") or []:
-                    if a.get("emailAddress"):
-                        attendees.append(
-                            a["emailAddress"].get("name")
-                            or a["emailAddress"].get("address", "")
-                        )
-                att_str = f"\n  Attendees: {', '.join(attendees)}" if attendees else ""
-                lines.append(
-                    f"{subj}{all_day}{online}{loc}\n  {start} → {end}\n  id={ev_id}{att_str}"
-                )
-            return "\n---\n".join(lines)
+        events = await o365_request("GET", f"calendar/{client_id}", query=params)
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error listing calendar events: {str(e)[:300]}"
+
+    if not events:
+        return "No events found."
+    lines = []
+    for ev in events:
+        subj = ev.get("subject", "(no subject)")
+        start = (ev.get("start") or {}).get("dateTime", "?")
+        end = (ev.get("end") or {}).get("dateTime", "?")
+        loc = ""
+        if ev.get("location") and ev["location"].get("displayName"):
+            loc = f" @ {ev['location']['displayName']}"
+        online = " [ONLINE]" if ev.get("isOnlineMeeting") else ""
+        all_day = " [ALL DAY]" if ev.get("isAllDay") else ""
+        ev_id = ev.get("id", "?")
+        attendees = []
+        for a in ev.get("attendees") or []:
+            if a.get("emailAddress"):
+                attendees.append(
+                    a["emailAddress"].get("name")
+                    or a["emailAddress"].get("address", "")
+                )
+        att_str = f"\n  Attendees: {', '.join(attendees)}" if attendees else ""
+        lines.append(
+            f"{subj}{all_day}{online}{loc}\n  {start} → {end}\n  id={ev_id}{att_str}"
+        )
+    return "\n---\n".join(lines)
 
 
 async def _execute_o365_calendar_create(
@@ -4136,23 +4143,21 @@ async def _execute_o365_calendar_create(
             {"emailAddress": {"address": addr.strip()}, "type": "required"}
             for addr in attendees.split(",") if addr.strip()
         ]
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_O365_GATEWAY_URL}/api/o365/calendar/{client_id}",
-                json=payload,
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            ev = resp.json()
-            result = f"Event created: {ev.get('subject', subject)} (id={ev.get('id', '?')})"
-            if ev.get("onlineMeetingUrl"):
-                result += f"\nTeams meeting URL: {ev['onlineMeetingUrl']}"
-            if ev.get("webLink"):
-                result += f"\nWeb link: {ev['webLink']}"
-            return result
+        ev = await o365_request("POST", f"calendar/{client_id}", body=payload)
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error creating calendar event: {str(e)[:300]}"
+
+    result = f"Event created: {ev.get('subject', subject)} (id={ev.get('id', '?')})"
+    if ev.get("onlineMeetingUrl"):
+        result += f"\nTeams meeting URL: {ev['onlineMeetingUrl']}"
+    if ev.get("webLink"):
+        result += f"\nWeb link: {ev['webLink']}"
+    return result
 
 
 # -- OneDrive --
@@ -4160,58 +4165,57 @@ async def _execute_o365_calendar_create(
 async def _execute_o365_files_list(
     client_id: str, path: str = "root", top: int = 50,
 ) -> str:
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_O365_GATEWAY_URL}/api/o365/drive/{client_id}",
-                params={"path": path, "top": top},
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            items = resp.json()
-            if not items:
-                return f"No items found at '{path}'."
-            lines = []
-            for item in items:
-                name = item.get("name", "?")
-                is_folder = item.get("folder") is not None
-                icon = "[DIR]" if is_folder else "[FILE]"
-                size = ""
-                if not is_folder and item.get("size"):
-                    size_kb = item["size"] / 1024
-                    size = f" ({size_kb:.1f} KB)" if size_kb < 1024 else f" ({size_kb / 1024:.1f} MB)"
-                modified = item.get("lastModifiedDateTime", "")
-                item_id = item.get("id", "?")
-                lines.append(f"{icon} {name}{size} (modified={modified}, id={item_id})")
-            return "\n".join(lines)
+        items = await o365_request(
+            "GET", f"drive/{client_id}", query={"path": path, "top": top},
+        )
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error listing drive files: {str(e)[:300]}"
+
+    if not items:
+        return f"No items found at '{path}'."
+    lines = []
+    for item in items:
+        name = item.get("name", "?")
+        is_folder = item.get("folder") is not None
+        icon = "[DIR]" if is_folder else "[FILE]"
+        size = ""
+        if not is_folder and item.get("size"):
+            size_kb = item["size"] / 1024
+            size = f" ({size_kb:.1f} KB)" if size_kb < 1024 else f" ({size_kb / 1024:.1f} MB)"
+        modified = item.get("lastModifiedDateTime", "")
+        item_id = item.get("id", "?")
+        lines.append(f"{icon} {name}{size} (modified={modified}, id={item_id})")
+    return "\n".join(lines)
 
 
 async def _execute_o365_files_download(client_id: str, item_id: str) -> str:
     if not item_id:
         return "Error: item_id is required."
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_O365_GATEWAY_URL}/api/o365/drive/{client_id}/item/{item_id}",
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            item = resp.json()
-            parts = [
-                f"Name: {item.get('name', '?')}",
-                f"Size: {item.get('size', '?')} bytes",
-            ]
-            if item.get("file"):
-                parts.append(f"MIME type: {item['file'].get('mimeType', '?')}")
-            if item.get("webUrl"):
-                parts.append(f"Web URL: {item['webUrl']}")
-            if item.get("@microsoft.graph.downloadUrl"):
-                parts.append(f"Download URL: {item['@microsoft.graph.downloadUrl']}")
-            return "\n".join(parts)
+        item = await o365_request("GET", f"drive/{client_id}/item/{item_id}")
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error getting drive item: {str(e)[:300]}"
+
+    parts = [
+        f"Name: {item.get('name', '?')}",
+        f"Size: {item.get('size', '?')} bytes",
+    ]
+    if item.get("file"):
+        parts.append(f"MIME type: {item['file'].get('mimeType', '?')}")
+    if item.get("webUrl"):
+        parts.append(f"Web URL: {item['webUrl']}")
+    if item.get("@microsoft.graph.downloadUrl"):
+        parts.append(f"Download URL: {item['@microsoft.graph.downloadUrl']}")
+    return "\n".join(parts)
 
 
 async def _execute_o365_files_search(
@@ -4219,34 +4223,34 @@ async def _execute_o365_files_search(
 ) -> str:
     if not query:
         return "Error: query is required."
+    from app.o365_gateway_client import O365GatewayError, o365_request
+
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_O365_GATEWAY_URL}/api/o365/drive/{client_id}/search",
-                params={"q": query, "top": top},
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            items = resp.json()
-            if not items:
-                return f"No files found for query '{query}'."
-            lines = []
-            for item in items:
-                name = item.get("name", "?")
-                is_folder = item.get("folder") is not None
-                icon = "[DIR]" if is_folder else "[FILE]"
-                size = ""
-                if not is_folder and item.get("size"):
-                    size_kb = item["size"] / 1024
-                    size = f" ({size_kb:.1f} KB)" if size_kb < 1024 else f" ({size_kb / 1024:.1f} MB)"
-                path = ""
-                if item.get("parentReference") and item["parentReference"].get("path"):
-                    path = f" in {item['parentReference']['path']}"
-                item_id = item.get("id", "?")
-                lines.append(f"{icon} {name}{size}{path} (id={item_id})")
-            return "\n".join(lines)
+        items = await o365_request(
+            "GET", f"drive/{client_id}/search", query={"q": query, "top": top},
+        )
+    except O365GatewayError as e:
+        return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error searching drive: {str(e)[:300]}"
+
+    if not items:
+        return f"No files found for query '{query}'."
+    lines = []
+    for item in items:
+        name = item.get("name", "?")
+        is_folder = item.get("folder") is not None
+        icon = "[DIR]" if is_folder else "[FILE]"
+        size = ""
+        if not is_folder and item.get("size"):
+            size_kb = item["size"] / 1024
+            size = f" ({size_kb:.1f} KB)" if size_kb < 1024 else f" ({size_kb / 1024:.1f} MB)"
+        path = ""
+        if item.get("parentReference") and item["parentReference"].get("path"):
+            path = f" in {item['parentReference']['path']}"
+        item_id = item.get("id", "?")
+        lines.append(f"{icon} {name}{size}{path} (id={item_id})")
+    return "\n".join(lines)
 
 
 # -- Helper --

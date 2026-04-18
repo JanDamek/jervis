@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package jervis.o365_gateway;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.o365_gateway";
+option java_multiple_files = true;
+option java_outer_classname = "O365GatewayProto";
+
+// O365GatewayService — thin pod-to-pod proxy on top of the jervis-o365-gateway
+// service. The orchestrator's Teams / Mail / Calendar / Drive tools dial
+// this one RPC; the gateway routes based on `path` and forwards the
+// (token-managed) Microsoft Graph call. Response bodies are returned as
+// JSON text (or binary via RequestBytes) exactly as the gateway receives
+// them from Graph, so tool code can keep the existing parsing.
+service O365GatewayService {
+  rpc Request(O365Request) returns (O365Response);
+  rpc RequestBytes(O365Request) returns (O365BytesResponse);
+}
+
+message O365Request {
+  jervis.common.RequestContext ctx = 1;
+  string method = 2;                // GET / POST (uppercase)
+  string path = 3;                   // relative to /api/o365/ — e.g. "chats/{clientId}/{chatId}/messages"
+  map<string, string> query = 4;     // query parameters
+  string body_json = 5;              // optional JSON body for POST
+  string content_type = 6;           // override content-type (defaults to application/json)
+}
+
+message O365Response {
+  int32 status_code = 1;
+  string body_json = 2;              // raw JSON response body (Graph API passthrough)
+  map<string, string> headers = 3;   // selected response headers (content-type, etc.)
+}
+
+message O365BytesResponse {
+  int32 status_code = 1;
+  bytes body = 2;                    // raw binary body (drive content, recording audio/video)
+  string content_type = 3;
+  string filename = 4;
+  map<string, string> headers = 5;
+}

@@ -42,6 +42,9 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.client.logging)
 
+    // gRPC server (pod-to-pod contracts)
+    implementation(project(":shared:service-contracts"))
+
     testImplementation(libs.junit.jupiter)
 }
 

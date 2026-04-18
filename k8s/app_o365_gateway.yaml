@@ -3,6 +3,8 @@
 #
 # Stateless API service. Accepts tool calls from MCP/orchestrator,
 # fetches tokens from browser pool, calls Microsoft Graph API.
+# Traffic: gRPC on :5501 (O365GatewayService). HTTP on :8080 is kept
+# only for liveness/readiness probes.
 # =============================================================================
 
 # ===== Deployment =====
@@ -32,6 +34,12 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+              name: http
+            - containerPort: 5501
+              name: grpc
+          env:
+            - name: O365_GRPC_PORT
+              value: "5501"
           resources:
             requests:
               memory: "256Mi"
@@ -40,17 +48,15 @@ spec:
               memory: "768Mi"
               cpu: "500m"
           livenessProbe:
-            httpGet:
-              path: /health
-              port: 8080
+            tcpSocket:
+              port: 5501
             initialDelaySeconds: 15
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 6
           readinessProbe:
-            httpGet:
-              path: /health
-              port: 8080
+            tcpSocket:
+              port: 5501
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
@@ -69,3 +75,6 @@ spec:
     - name: http
       port: 8080
       targetPort: 8080
+    - name: grpc
+      port: 5501
+      targetPort: 5501
