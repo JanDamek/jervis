@@ -2,51 +2,54 @@ package com.jervis.infrastructure.grpc
 
 import com.jervis.client.ClientDocument
 import com.jervis.client.ClientService
-import com.jervis.client.toDto
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.ProjectId
 import com.jervis.connection.ConnectionDocument
 import com.jervis.connection.ConnectionService
+import com.jervis.contracts.server.Alternative
+import com.jervis.contracts.server.Client
+import com.jervis.contracts.server.ClientList
+import com.jervis.contracts.server.ConnectionSummary
+import com.jervis.contracts.server.ConnectionSummaryList
 import com.jervis.contracts.server.CreateClientRequest
 import com.jervis.contracts.server.CreateClientResponse
 import com.jervis.contracts.server.CreateConnectionRequest
 import com.jervis.contracts.server.CreateConnectionResponse
 import com.jervis.contracts.server.CreateProjectRequest
 import com.jervis.contracts.server.CreateProjectResponse
+import com.jervis.contracts.server.FeatureRecommendation
 import com.jervis.contracts.server.GetStackRecommendationsRequest
-import com.jervis.contracts.server.GetStackRecommendationsResponse
 import com.jervis.contracts.server.ListClientsRequest
-import com.jervis.contracts.server.ListClientsResponse
 import com.jervis.contracts.server.ListConnectionsRequest
-import com.jervis.contracts.server.ListConnectionsResponse
 import com.jervis.contracts.server.ListProjectsRequest
-import com.jervis.contracts.server.ListProjectsResponse
+import com.jervis.contracts.server.PlatformRecommendation
+import com.jervis.contracts.server.Project
+import com.jervis.contracts.server.ProjectList
+import com.jervis.contracts.server.ProjectRecommendations
 import com.jervis.contracts.server.ServerProjectManagementServiceGrpcKt
+import com.jervis.contracts.server.StackArchetype
+import com.jervis.contracts.server.StorageRecommendation
 import com.jervis.contracts.server.UpdateProjectRequest
-import com.jervis.contracts.server.UpdateProjectResponse
-import com.jervis.dto.client.ClientDto
 import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.dto.project.ProjectDto
 import com.jervis.project.ProjectDocument
-import com.jervis.project.ProjectRecommendations
 import com.jervis.project.ProjectResource
 import com.jervis.project.ProjectService
 import com.jervis.project.ProjectTemplateService
-import com.jervis.project.toDto
 import kotlinx.coroutines.flow.toList
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
+import com.jervis.project.Alternative as DomainAlternative
+import com.jervis.project.FeatureRecommendation as DomainFeatureRecommendation
+import com.jervis.project.PlatformRecommendation as DomainPlatformRecommendation
+import com.jervis.project.ProjectRecommendations as DomainProjectRecommendations
+import com.jervis.project.StackArchetype as DomainStackArchetype
+import com.jervis.project.StorageRecommendation as DomainStorageRecommendation
 
 @Component
 class ServerProjectManagementGrpcImpl(
@@ -56,22 +59,16 @@ class ServerProjectManagementGrpcImpl(
     private val projectTemplateService: ProjectTemplateService,
 ) : ServerProjectManagementServiceGrpcKt.ServerProjectManagementServiceCoroutineImplBase() {
     private val logger = KotlinLogging.logger {}
-    private val json = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-        prettyPrint = false
-    }
 
     // ── Clients ──
 
-    override suspend fun listClients(request: ListClientsRequest): ListClientsResponse {
+    override suspend fun listClients(request: ListClientsRequest): ClientList {
         val all = clientService.list()
         val filtered = if (request.clientId.isNotBlank()) {
             all.filter { it.id.value.toHexString() == request.clientId }
         } else all
-        val dtos = filtered.map { it.toDto() }
-        return ListClientsResponse.newBuilder()
-            .setItemsJson(json.encodeToString(ListSerializer(ClientDto.serializer()), dtos))
+        return ClientList.newBuilder()
+            .addAllItems(filtered.map { it.toClientProto() })
             .build()
     }
 
@@ -90,15 +87,14 @@ class ServerProjectManagementGrpcImpl(
 
     // ── Projects ──
 
-    override suspend fun listProjects(request: ListProjectsRequest): ListProjectsResponse {
+    override suspend fun listProjects(request: ListProjectsRequest): ProjectList {
         val projects = if (request.clientId.isNotBlank()) {
             projectService.listProjectsForClient(ClientId(ObjectId(request.clientId)))
         } else {
             projectService.getAllProjects()
         }
-        val dtos = projects.map { it.toDto() }
-        return ListProjectsResponse.newBuilder()
-            .setItemsJson(json.encodeToString(ListSerializer(ProjectDto.serializer()), dtos))
+        return ProjectList.newBuilder()
+            .addAllItems(projects.map { it.toProjectProto() })
             .build()
     }
 
@@ -115,11 +111,11 @@ class ServerProjectManagementGrpcImpl(
         return CreateProjectResponse.newBuilder()
             .setId(dto.id)
             .setName(dto.name)
-            .setClientId(dto.clientId)
+            .setClientId(dto.clientId.orEmpty())
             .build()
     }
 
-    override suspend fun updateProject(request: UpdateProjectRequest): UpdateProjectResponse {
+    override suspend fun updateProject(request: UpdateProjectRequest): Project {
         val project = projectService.getProjectByIdOrNull(ProjectId(ObjectId(request.projectId)))
             ?: throw IllegalArgumentException("Project ${request.projectId} not found")
 
@@ -155,39 +151,23 @@ class ServerProjectManagementGrpcImpl(
             )
         }
 
-        val dto = projectService.saveProject(updated)
-        return UpdateProjectResponse.newBuilder()
-            .setId(dto.id)
-            .setName(dto.name)
-            .setBodyJson(json.encodeToString(ProjectDto.serializer(), dto))
-            .build()
+        val saved = projectService.saveProject(updated)
+        return saved.toProjectProto()
     }
+
+
 
     // ── Connections ──
 
-    override suspend fun listConnections(request: ListConnectionsRequest): ListConnectionsResponse {
+    override suspend fun listConnections(request: ListConnectionsRequest): ConnectionSummaryList {
         val all = connectionService.findAll().toList()
         val filtered = if (request.clientId.isNotBlank()) {
             val client = clientService.getClientById(ClientId(ObjectId(request.clientId)))
             val allowed = client.connectionIds.toSet()
             all.filter { it.id.value in allowed }
         } else all
-        val arr = buildJsonArray {
-            for (conn in filtered) {
-                add(buildJsonObject {
-                    put("id", JsonPrimitive(conn.id.toString()))
-                    put("name", JsonPrimitive(conn.name))
-                    put("provider", JsonPrimitive(conn.provider.name))
-                    put("state", JsonPrimitive(conn.state.name))
-                    put("baseUrl", JsonPrimitive(conn.baseUrl))
-                    put("capabilities", buildJsonArray {
-                        conn.availableCapabilities.forEach { add(JsonPrimitive(it.name)) }
-                    })
-                })
-            }
-        }
-        return ListConnectionsResponse.newBuilder()
-            .setItemsJson(arr.toString())
+        return ConnectionSummaryList.newBuilder()
+            .addAllItems(filtered.map { it.toSummaryProto() })
             .build()
     }
 
@@ -216,7 +196,7 @@ class ServerProjectManagementGrpcImpl(
 
         logger.info { "CONNECTION_CREATED | id=${saved.id} provider=${saved.provider} name=${saved.name}" }
         return CreateConnectionResponse.newBuilder()
-            .setId(saved.id.toString())
+            .setId(saved.id.value.toHexString())
             .setName(saved.name)
             .setProvider(saved.provider.name)
             .setState(saved.state.name)
@@ -227,12 +207,8 @@ class ServerProjectManagementGrpcImpl(
 
     override suspend fun getStackRecommendations(
         request: GetStackRecommendationsRequest,
-    ): GetStackRecommendationsResponse {
-        val recommendations = projectTemplateService.getRecommendations(request.requirements)
-        return GetStackRecommendationsResponse.newBuilder()
-            .setBodyJson(json.encodeToString(ProjectRecommendations.serializer(), recommendations))
-            .build()
-    }
+    ): ProjectRecommendations =
+        projectTemplateService.getRecommendations(request.requirements).toProto()
 
     // ── Helpers (local copy of legacy InternalProjectManagementRouting logic) ──
 
@@ -291,5 +267,93 @@ class ServerProjectManagementGrpcImpl(
         }
         return url
     }
-
 }
+
+// ── DTO/document → proto converters ──────────────────────────────────────
+
+private fun ClientDocument.toClientProto(): Client =
+    Client.newBuilder()
+        .setId(id.value.toHexString())
+        .setName(name)
+        .setDescription(description.orEmpty())
+        .setArchived(archived)
+        .setDefaultLanguage(defaultLanguageEnum.name)
+        .build()
+
+private fun ProjectDocument.toProjectProto(): Project =
+    Project.newBuilder()
+        .setId(id.value.toHexString())
+        .setName(name)
+        .setClientId(clientId.value.toHexString())
+        .setGroupId(groupId?.value?.toHexString().orEmpty())
+        .setDescription(description.orEmpty())
+        .build()
+
+private fun ProjectDto.toProjectProto(): Project =
+    Project.newBuilder()
+        .setId(id)
+        .setName(name)
+        .setClientId(clientId.orEmpty())
+        .setGroupId(groupId.orEmpty())
+        .setDescription(description.orEmpty())
+        .build()
+
+private fun ConnectionDocument.toSummaryProto(): ConnectionSummary =
+    ConnectionSummary.newBuilder()
+        .setId(id.value.toHexString())
+        .setName(name)
+        .setProvider(provider.name)
+        .setState(state.name)
+        .setBaseUrl(baseUrl)
+        .addAllCapabilities(availableCapabilities.map { it.name })
+        .build()
+
+private fun DomainProjectRecommendations.toProto(): ProjectRecommendations =
+    ProjectRecommendations.newBuilder()
+        .setArchetype(archetype.toProto())
+        .addAllPlatforms(platforms.map { it.toProto() })
+        .addAllStorage(storage.map { it.toProto() })
+        .addAllFeatures(features.map { it.toProto() })
+        .setScaffoldingInstructions(scaffoldingInstructions)
+        .build()
+
+private fun DomainStackArchetype.toProto(): StackArchetype =
+    StackArchetype.newBuilder()
+        .setType(type)
+        .setName(name)
+        .setDescription(description)
+        .addAllPros(pros)
+        .addAllCons(cons)
+        .setBestFor(bestFor)
+        .build()
+
+private fun DomainPlatformRecommendation.toProto(): PlatformRecommendation =
+    PlatformRecommendation.newBuilder()
+        .setPlatform(platform)
+        .setRecommended(recommended)
+        .setRationale(rationale)
+        .addAllAlternatives(alternatives.map { it.toProto() })
+        .build()
+
+private fun DomainStorageRecommendation.toProto(): StorageRecommendation =
+    StorageRecommendation.newBuilder()
+        .setTechnology(technology)
+        .setRecommended(recommended)
+        .setUseCase(useCase)
+        .setSpringDependency(springDependency)
+        .addAllPros(pros)
+        .addAllCons(cons)
+        .build()
+
+private fun DomainFeatureRecommendation.toProto(): FeatureRecommendation =
+    FeatureRecommendation.newBuilder()
+        .setFeature(feature)
+        .setRecommended(recommended)
+        .addAllOptions(options.map { it.toProto() })
+        .build()
+
+private fun DomainAlternative.toProto(): Alternative =
+    Alternative.newBuilder()
+        .setName(name)
+        .setDescription(description)
+        .build()

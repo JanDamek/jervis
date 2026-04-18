@@ -1281,9 +1281,6 @@ async def _execute_store_knowledge(
     cross_project_note = ""
     if target_project_name:
         try:
-            import json as _json
-            from google.protobuf.json_format import MessageToDict
-
             from app.grpc_server_client import server_project_management_stub
             from jervis.common import types_pb2
             from jervis.server import project_management_pb2
@@ -1298,13 +1295,12 @@ async def _execute_store_knowledge(
                 ),
                 timeout=10.0,
             )
-            projects = _json.loads(resp2.items_json)
             target_proj = next(
-                (p for p in projects if target_project_name.lower() in p.get("name", "").lower()),
+                (p for p in resp2.items if target_project_name.lower() in (p.name or "").lower()),
                 None,
             )
             if target_proj:
-                target_pid = target_proj.get("id", "")
+                target_pid = target_proj.id or ""
                 try:
                     await kb_client.ingest(
                         caller="orchestrator.tools.store_knowledge.cross_ref",
@@ -3485,8 +3481,6 @@ async def _execute_get_stack_recommendations(requirements: str) -> str:
     if not requirements:
         return "Error: requirements parameter is required. Pass the full project requirements."
     try:
-        import json as _json
-
         from app.grpc_server_client import server_project_management_stub
         from jervis.common import types_pb2
         from jervis.server import project_management_pb2
@@ -3501,58 +3495,53 @@ async def _execute_get_stack_recommendations(requirements: str) -> str:
             ),
             timeout=15.0,
         )
-        data = _json.loads(resp.body_json)
 
         # Format recommendations for the LLM
         parts = []
 
         # Archetype
-        arch = data.get("archetype", {})
-        parts.append(f"## Recommended Architecture: {arch.get('name', 'unknown')}")
-        parts.append(f"Type: {arch.get('type', '')}")
-        parts.append(f"Description: {arch.get('description', '')}")
-        if arch.get("pros"):
-            parts.append(f"Pros: {', '.join(arch['pros'])}")
-        if arch.get("cons"):
-            parts.append(f"Cons: {', '.join(arch['cons'])}")
-        parts.append(f"Best for: {arch.get('bestFor', '')}")
+        arch = resp.archetype
+        parts.append(f"## Recommended Architecture: {arch.name or 'unknown'}")
+        parts.append(f"Type: {arch.type}")
+        parts.append(f"Description: {arch.description}")
+        if arch.pros:
+            parts.append(f"Pros: {', '.join(arch.pros)}")
+        if arch.cons:
+            parts.append(f"Cons: {', '.join(arch.cons)}")
+        parts.append(f"Best for: {arch.best_for}")
 
         # Platforms
-        platforms = data.get("platforms", [])
-        if platforms:
+        if resp.platforms:
             parts.append("\n## Platform Recommendations")
-            for p in platforms:
-                rec = "RECOMMENDED" if p.get("recommended") else "optional"
-                parts.append(f"- {p['platform']} [{rec}]: {p.get('rationale', '')}")
-                for alt in p.get("alternatives", []):
-                    parts.append(f"    Alternative: {alt['name']} — {alt['description']}")
+            for p in resp.platforms:
+                rec = "RECOMMENDED" if p.recommended else "optional"
+                parts.append(f"- {p.platform} [{rec}]: {p.rationale}")
+                for alt in p.alternatives:
+                    parts.append(f"    Alternative: {alt.name} — {alt.description}")
 
         # Storage
-        storage = data.get("storage", [])
-        if storage:
+        if resp.storage:
             parts.append("\n## Storage Recommendations")
-            for s in storage:
-                rec = "RECOMMENDED" if s.get("recommended") else "optional"
-                parts.append(f"- {s['technology']} [{rec}]: {s.get('useCase', '')}")
-                parts.append(f"    Spring dependency: {s.get('springDependency', '')}")
-                if s.get("pros"):
-                    parts.append(f"    Pros: {', '.join(s['pros'])}")
-                if s.get("cons"):
-                    parts.append(f"    Cons: {', '.join(s['cons'])}")
+            for s in resp.storage:
+                rec = "RECOMMENDED" if s.recommended else "optional"
+                parts.append(f"- {s.technology} [{rec}]: {s.use_case}")
+                parts.append(f"    Spring dependency: {s.spring_dependency}")
+                if s.pros:
+                    parts.append(f"    Pros: {', '.join(s.pros)}")
+                if s.cons:
+                    parts.append(f"    Cons: {', '.join(s.cons)}")
 
         # Features
-        features = data.get("features", [])
-        if features:
+        if resp.features:
             parts.append("\n## Feature Recommendations")
-            for f in features:
-                parts.append(f"- {f['feature']}:")
-                for opt in f.get("options", []):
-                    parts.append(f"    Option: {opt['name']} — {opt['description']}")
+            for f in resp.features:
+                parts.append(f"- {f.feature}:")
+                for opt in f.options:
+                    parts.append(f"    Option: {opt.name} — {opt.description}")
 
         # Scaffolding instructions (for coding agent dispatch later)
-        instructions = data.get("scaffoldingInstructions", "")
-        if instructions:
-            parts.append(f"\n## Scaffolding Instructions (for coding agent)\n{instructions}")
+        if resp.scaffolding_instructions:
+            parts.append(f"\n## Scaffolding Instructions (for coding agent)\n{resp.scaffolding_instructions}")
 
         return "\n".join(parts)
     except Exception as e:

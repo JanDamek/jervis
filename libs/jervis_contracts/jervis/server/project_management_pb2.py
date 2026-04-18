@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n&jervis/server/project_management.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"S\n\x12ListClientsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\")\n\x13ListClientsResponse\x12\x12\n\nitems_json\x18\x01 \x01(\t\"d\n\x13\x43reateClientRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\"0\n\x14\x43reateClientResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"T\n\x13ListProjectsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\"*\n\x14ListProjectsResponse\x12\x12\n\nitems_json\x18\x01 \x01(\t\"x\n\x14\x43reateProjectRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x0c\n\x04name\x18\x03 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x04 \x01(\t\"D\n\x15\x43reateProjectResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\"\x9a\x01\n\x14UpdateProjectRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\x12\x16\n\x0egit_remote_url\x18\x04 \x01(\t\x12\x15\n\rconnection_id\x18\x05 \x01(\t\"D\n\x15UpdateProjectResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x11\n\tbody_json\x18\x03 \x01(\t\"W\n\x16ListConnectionsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\"-\n\x17ListConnectionsResponse\x12\x12\n\nitems_json\x18\x01 \x01(\t\"\xfb\x01\n\x17\x43reateConnectionRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x10\n\x08provider\x18\x03 \x01(\t\x12\x10\n\x08protocol\x18\x04 \x01(\t\x12\x11\n\tauth_type\x18\x05 \x01(\t\x12\x10\n\x08\x62\x61se_url\x18\x06 \x01(\t\x12\x10\n\x08is_cloud\x18\x07 \x01(\x08\x12\x14\n\x0c\x62\x65\x61rer_token\x18\x08 \x01(\t\x12\x10\n\x08username\x18\t \x01(\t\x12\x10\n\x08password\x18\n \x01(\t\x12\x11\n\tclient_id\x18\x0b \x01(\t\"U\n\x18\x43reateConnectionResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x10\n\x08provider\x18\x03 \x01(\t\x12\r\n\x05state\x18\x04 \x01(\t\"b\n\x1eGetStackRecommendationsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x14\n\x0crequirements\x18\x02 \x01(\t\"4\n\x1fGetStackRecommendationsResponse\x12\x11\n\tbody_json\x18\x01 \x01(\t2\xa1\x06\n\x1eServerProjectManagementService\x12T\n\x0bListClients\x12!.jervis.server.ListClientsRequest\x1a\".jervis.server.ListClientsResponse\x12W\n\x0c\x43reateClient\x12\".jervis.server.CreateClientRequest\x1a#.jervis.server.CreateClientResponse\x12W\n\x0cListProjects\x12\".jervis.server.ListProjectsRequest\x1a#.jervis.server.ListProjectsResponse\x12Z\n\rCreateProject\x12#.jervis.server.CreateProjectRequest\x1a$.jervis.server.CreateProjectResponse\x12Z\n\rUpdateProject\x12#.jervis.server.UpdateProjectRequest\x1a$.jervis.server.UpdateProjectResponse\x12`\n\x0fListConnections\x12%.jervis.server.ListConnectionsRequest\x1a&.jervis.server.ListConnectionsResponse\x12\x63\n\x10\x43reateConnection\x12&.jervis.server.CreateConnectionRequest\x1a\'.jervis.server.CreateConnectionResponse\x12x\n\x17GetStackRecommendations\x12-.jervis.server.GetStackRecommendationsRequest\x1a..jervis.server.GetStackRecommendationsResponseB=\n\x1b\x63om.jervis.contracts.serverB\x1cServerProjectManagementProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n&jervis/server/project_management.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"S\n\x12ListClientsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\"c\n\x06\x43lient\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\x12\x10\n\x08\x61rchived\x18\x04 \x01(\x08\x12\x18\n\x10\x64\x65\x66\x61ult_language\x18\x05 \x01(\t\"2\n\nClientList\x12$\n\x05items\x18\x01 \x03(\x0b\x32\x15.jervis.server.Client\"d\n\x13\x43reateClientRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\"0\n\x14\x43reateClientResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"T\n\x13ListProjectsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\"]\n\x07Project\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\x12\x10\n\x08group_id\x18\x04 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x05 \x01(\t\"4\n\x0bProjectList\x12%\n\x05items\x18\x01 \x03(\x0b\x32\x16.jervis.server.Project\"x\n\x14\x43reateProjectRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x0c\n\x04name\x18\x03 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x04 \x01(\t\"D\n\x15\x43reateProjectResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\"\x9a\x01\n\x14UpdateProjectRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\x12\x16\n\x0egit_remote_url\x18\x04 \x01(\t\x12\x15\n\rconnection_id\x18\x05 \x01(\t\"W\n\x16ListConnectionsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\"v\n\x11\x43onnectionSummary\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x10\n\x08provider\x18\x03 \x01(\t\x12\r\n\x05state\x18\x04 \x01(\t\x12\x10\n\x08\x62\x61se_url\x18\x05 \x01(\t\x12\x14\n\x0c\x63\x61pabilities\x18\x06 \x03(\t\"H\n\x15\x43onnectionSummaryList\x12/\n\x05items\x18\x01 \x03(\x0b\x32 .jervis.server.ConnectionSummary\"\xfb\x01\n\x17\x43reateConnectionRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x10\n\x08provider\x18\x03 \x01(\t\x12\x10\n\x08protocol\x18\x04 \x01(\t\x12\x11\n\tauth_type\x18\x05 \x01(\t\x12\x10\n\x08\x62\x61se_url\x18\x06 \x01(\t\x12\x10\n\x08is_cloud\x18\x07 \x01(\x08\x12\x14\n\x0c\x62\x65\x61rer_token\x18\x08 \x01(\t\x12\x10\n\x08username\x18\t \x01(\t\x12\x10\n\x08password\x18\n \x01(\t\x12\x11\n\tclient_id\x18\x0b \x01(\t\"U\n\x18\x43reateConnectionResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x10\n\x08provider\x18\x03 \x01(\t\x12\r\n\x05state\x18\x04 \x01(\t\"b\n\x1eGetStackRecommendationsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x14\n\x0crequirements\x18\x02 \x01(\t\"\x95\x02\n\x16ProjectRecommendations\x12\x30\n\tarchetype\x18\x01 \x01(\x0b\x32\x1d.jervis.server.StackArchetype\x12\x38\n\tplatforms\x18\x02 \x03(\x0b\x32%.jervis.server.PlatformRecommendation\x12\x35\n\x07storage\x18\x03 \x03(\x0b\x32$.jervis.server.StorageRecommendation\x12\x36\n\x08\x66\x65\x61tures\x18\x04 \x03(\x0b\x32$.jervis.server.FeatureRecommendation\x12 \n\x18scaffolding_instructions\x18\x05 \x01(\t\"o\n\x0eStackArchetype\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\x12\x0c\n\x04pros\x18\x04 \x03(\t\x12\x0c\n\x04\x63ons\x18\x05 \x03(\t\x12\x10\n\x08\x62\x65st_for\x18\x06 \x01(\t\"\x84\x01\n\x16PlatformRecommendation\x12\x10\n\x08platform\x18\x01 \x01(\t\x12\x13\n\x0brecommended\x18\x02 \x01(\x08\x12\x11\n\trationale\x18\x03 \x01(\t\x12\x30\n\x0c\x61lternatives\x18\x04 \x03(\x0b\x32\x1a.jervis.server.Alternative\"\x89\x01\n\x15StorageRecommendation\x12\x12\n\ntechnology\x18\x01 \x01(\t\x12\x13\n\x0brecommended\x18\x02 \x01(\x08\x12\x10\n\x08use_case\x18\x03 \x01(\t\x12\x19\n\x11spring_dependency\x18\x04 \x01(\t\x12\x0c\n\x04pros\x18\x05 \x03(\t\x12\x0c\n\x04\x63ons\x18\x06 \x03(\t\"j\n\x15\x46\x65\x61tureRecommendation\x12\x0f\n\x07\x66\x65\x61ture\x18\x01 \x01(\t\x12\x13\n\x0brecommended\x18\x02 \x01(\x08\x12+\n\x07options\x18\x03 \x03(\x0b\x32\x1a.jervis.server.Alternative\"0\n\x0b\x41lternative\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x02 \x01(\t2\xf6\x05\n\x1eServerProjectManagementService\x12K\n\x0bListClients\x12!.jervis.server.ListClientsRequest\x1a\x19.jervis.server.ClientList\x12W\n\x0c\x43reateClient\x12\".jervis.server.CreateClientRequest\x1a#.jervis.server.CreateClientResponse\x12N\n\x0cListProjects\x12\".jervis.server.ListProjectsRequest\x1a\x1a.jervis.server.ProjectList\x12Z\n\rCreateProject\x12#.jervis.server.CreateProjectRequest\x1a$.jervis.server.CreateProjectResponse\x12L\n\rUpdateProject\x12#.jervis.server.UpdateProjectRequest\x1a\x16.jervis.server.Project\x12^\n\x0fListConnections\x12%.jervis.server.ListConnectionsRequest\x1a$.jervis.server.ConnectionSummaryList\x12\x63\n\x10\x43reateConnection\x12&.jervis.server.CreateConnectionRequest\x1a\'.jervis.server.CreateConnectionResponse\x12o\n\x17GetStackRecommendations\x12-.jervis.server.GetStackRecommendationsRequest\x1a%.jervis.server.ProjectRecommendationsB=\n\x1b\x63om.jervis.contracts.serverB\x1cServerProjectManagementProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,36 +35,50 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._serialized_options = b'\n\033com.jervis.contracts.serverB\034ServerProjectManagementProtoP\001'
   _globals['_LISTCLIENTSREQUEST']._serialized_start=84
   _globals['_LISTCLIENTSREQUEST']._serialized_end=167
-  _globals['_LISTCLIENTSRESPONSE']._serialized_start=169
-  _globals['_LISTCLIENTSRESPONSE']._serialized_end=210
-  _globals['_CREATECLIENTREQUEST']._serialized_start=212
-  _globals['_CREATECLIENTREQUEST']._serialized_end=312
-  _globals['_CREATECLIENTRESPONSE']._serialized_start=314
-  _globals['_CREATECLIENTRESPONSE']._serialized_end=362
-  _globals['_LISTPROJECTSREQUEST']._serialized_start=364
-  _globals['_LISTPROJECTSREQUEST']._serialized_end=448
-  _globals['_LISTPROJECTSRESPONSE']._serialized_start=450
-  _globals['_LISTPROJECTSRESPONSE']._serialized_end=492
-  _globals['_CREATEPROJECTREQUEST']._serialized_start=494
-  _globals['_CREATEPROJECTREQUEST']._serialized_end=614
-  _globals['_CREATEPROJECTRESPONSE']._serialized_start=616
-  _globals['_CREATEPROJECTRESPONSE']._serialized_end=684
-  _globals['_UPDATEPROJECTREQUEST']._serialized_start=687
-  _globals['_UPDATEPROJECTREQUEST']._serialized_end=841
-  _globals['_UPDATEPROJECTRESPONSE']._serialized_start=843
-  _globals['_UPDATEPROJECTRESPONSE']._serialized_end=911
-  _globals['_LISTCONNECTIONSREQUEST']._serialized_start=913
-  _globals['_LISTCONNECTIONSREQUEST']._serialized_end=1000
-  _globals['_LISTCONNECTIONSRESPONSE']._serialized_start=1002
-  _globals['_LISTCONNECTIONSRESPONSE']._serialized_end=1047
-  _globals['_CREATECONNECTIONREQUEST']._serialized_start=1050
-  _globals['_CREATECONNECTIONREQUEST']._serialized_end=1301
-  _globals['_CREATECONNECTIONRESPONSE']._serialized_start=1303
-  _globals['_CREATECONNECTIONRESPONSE']._serialized_end=1388
-  _globals['_GETSTACKRECOMMENDATIONSREQUEST']._serialized_start=1390
-  _globals['_GETSTACKRECOMMENDATIONSREQUEST']._serialized_end=1488
-  _globals['_GETSTACKRECOMMENDATIONSRESPONSE']._serialized_start=1490
-  _globals['_GETSTACKRECOMMENDATIONSRESPONSE']._serialized_end=1542
-  _globals['_SERVERPROJECTMANAGEMENTSERVICE']._serialized_start=1545
-  _globals['_SERVERPROJECTMANAGEMENTSERVICE']._serialized_end=2346
+  _globals['_CLIENT']._serialized_start=169
+  _globals['_CLIENT']._serialized_end=268
+  _globals['_CLIENTLIST']._serialized_start=270
+  _globals['_CLIENTLIST']._serialized_end=320
+  _globals['_CREATECLIENTREQUEST']._serialized_start=322
+  _globals['_CREATECLIENTREQUEST']._serialized_end=422
+  _globals['_CREATECLIENTRESPONSE']._serialized_start=424
+  _globals['_CREATECLIENTRESPONSE']._serialized_end=472
+  _globals['_LISTPROJECTSREQUEST']._serialized_start=474
+  _globals['_LISTPROJECTSREQUEST']._serialized_end=558
+  _globals['_PROJECT']._serialized_start=560
+  _globals['_PROJECT']._serialized_end=653
+  _globals['_PROJECTLIST']._serialized_start=655
+  _globals['_PROJECTLIST']._serialized_end=707
+  _globals['_CREATEPROJECTREQUEST']._serialized_start=709
+  _globals['_CREATEPROJECTREQUEST']._serialized_end=829
+  _globals['_CREATEPROJECTRESPONSE']._serialized_start=831
+  _globals['_CREATEPROJECTRESPONSE']._serialized_end=899
+  _globals['_UPDATEPROJECTREQUEST']._serialized_start=902
+  _globals['_UPDATEPROJECTREQUEST']._serialized_end=1056
+  _globals['_LISTCONNECTIONSREQUEST']._serialized_start=1058
+  _globals['_LISTCONNECTIONSREQUEST']._serialized_end=1145
+  _globals['_CONNECTIONSUMMARY']._serialized_start=1147
+  _globals['_CONNECTIONSUMMARY']._serialized_end=1265
+  _globals['_CONNECTIONSUMMARYLIST']._serialized_start=1267
+  _globals['_CONNECTIONSUMMARYLIST']._serialized_end=1339
+  _globals['_CREATECONNECTIONREQUEST']._serialized_start=1342
+  _globals['_CREATECONNECTIONREQUEST']._serialized_end=1593
+  _globals['_CREATECONNECTIONRESPONSE']._serialized_start=1595
+  _globals['_CREATECONNECTIONRESPONSE']._serialized_end=1680
+  _globals['_GETSTACKRECOMMENDATIONSREQUEST']._serialized_start=1682
+  _globals['_GETSTACKRECOMMENDATIONSREQUEST']._serialized_end=1780
+  _globals['_PROJECTRECOMMENDATIONS']._serialized_start=1783
+  _globals['_PROJECTRECOMMENDATIONS']._serialized_end=2060
+  _globals['_STACKARCHETYPE']._serialized_start=2062
+  _globals['_STACKARCHETYPE']._serialized_end=2173
+  _globals['_PLATFORMRECOMMENDATION']._serialized_start=2176
+  _globals['_PLATFORMRECOMMENDATION']._serialized_end=2308
+  _globals['_STORAGERECOMMENDATION']._serialized_start=2311
+  _globals['_STORAGERECOMMENDATION']._serialized_end=2448
+  _globals['_FEATURERECOMMENDATION']._serialized_start=2450
+  _globals['_FEATURERECOMMENDATION']._serialized_end=2556
+  _globals['_ALTERNATIVE']._serialized_start=2558
+  _globals['_ALTERNATIVE']._serialized_end=2606
+  _globals['_SERVERPROJECTMANAGEMENTSERVICE']._serialized_start=2609
+  _globals['_SERVERPROJECTMANAGEMENTSERVICE']._serialized_end=3367
 # @@protoc_insertion_point(module_scope)

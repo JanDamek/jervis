@@ -800,8 +800,6 @@ async def _fetch_resource_context(client_id: str, project_id: str | None) -> str
     Returns a formatted string describing available resources so the decomposer
     can make informed decisions about what already exists vs. what needs creation.
     """
-    import json as _json
-
     from app.grpc_server_client import server_project_management_stub
     from jervis.common import types_pb2
     from jervis.server import project_management_pb2
@@ -819,34 +817,33 @@ async def _fetch_resource_context(client_id: str, project_id: str | None) -> str
             project_management_pb2.ListClientsRequest(ctx=ctx, client_id=cid),
             timeout=10.0,
         )
-        clients = _json.loads(clients_resp.items_json)
+        clients = list(clients_resp.items)
         if clients:
             parts.append(f"Existing clients ({len(clients)}):")
             for c in clients[:10]:
-                parts.append(f"  - {c.get('name', '?')} (id={c.get('id', '?')})")
+                parts.append(f"  - {c.name or '?'} (id={c.id or '?'})")
 
         projects_resp = await stub.ListProjects(
             project_management_pb2.ListProjectsRequest(ctx=ctx, client_id=cid),
             timeout=10.0,
         )
-        projects = _json.loads(projects_resp.items_json)
+        projects = list(projects_resp.items)
         if projects:
             parts.append(f"Existing projects ({len(projects)}):")
             for p in projects[:10]:
-                parts.append(f"  - {p.get('name', '?')} (id={p.get('id', '?')})")
+                parts.append(f"  - {p.name or '?'} (id={p.id or '?'})")
 
         conns_resp = await stub.ListConnections(
             project_management_pb2.ListConnectionsRequest(ctx=ctx, client_id=cid),
             timeout=10.0,
         )
-        conns = _json.loads(conns_resp.items_json)
+        conns = list(conns_resp.items)
         if conns:
             parts.append(f"Available connections ({len(conns)}):")
             for c in conns[:10]:
-                caps = c.get("capabilities", [])
+                caps = list(c.capabilities)
                 parts.append(
-                    f"  - {c.get('name', '?')} ({c.get('provider', '?')}) "
-                    f"caps={caps}"
+                    f"  - {c.name or '?'} ({c.provider or '?'}) caps={caps}"
                 )
     except Exception as e:
         logger.debug("Failed to fetch resource context: %s", e)

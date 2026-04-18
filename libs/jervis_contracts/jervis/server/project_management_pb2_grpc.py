@@ -27,14 +27,8 @@ if _version_not_supported:
 
 class ServerProjectManagementServiceStub(object):
     """ServerProjectManagementService is the pod-to-pod surface for creating
-    and listing clients, projects and connections. List responses carry the
-    full DTO tree as JSON (`items_json`) because Python callers only read
-    a handful of surface fields (id, name, provider, capabilities). Create
-    responses stay typed — Python confirms id/name/provider only.
-
-    The `project-advisor/archetypes` endpoint had no Python consumer and is
-    dropped; recommendations remain available as typed JSON (the orchestrator
-    formats deeply-nested fields for the LLM prompt).
+    and listing clients, projects and connections, plus the project-advisor
+    stack recommendations.
     """
 
     def __init__(self, channel):
@@ -46,7 +40,7 @@ class ServerProjectManagementServiceStub(object):
         self.ListClients = channel.unary_unary(
                 '/jervis.server.ServerProjectManagementService/ListClients',
                 request_serializer=jervis_dot_server_dot_project__management__pb2.ListClientsRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_project__management__pb2.ListClientsResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_project__management__pb2.ClientList.FromString,
                 _registered_method=True)
         self.CreateClient = channel.unary_unary(
                 '/jervis.server.ServerProjectManagementService/CreateClient',
@@ -56,7 +50,7 @@ class ServerProjectManagementServiceStub(object):
         self.ListProjects = channel.unary_unary(
                 '/jervis.server.ServerProjectManagementService/ListProjects',
                 request_serializer=jervis_dot_server_dot_project__management__pb2.ListProjectsRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_project__management__pb2.ListProjectsResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_project__management__pb2.ProjectList.FromString,
                 _registered_method=True)
         self.CreateProject = channel.unary_unary(
                 '/jervis.server.ServerProjectManagementService/CreateProject',
@@ -66,12 +60,12 @@ class ServerProjectManagementServiceStub(object):
         self.UpdateProject = channel.unary_unary(
                 '/jervis.server.ServerProjectManagementService/UpdateProject',
                 request_serializer=jervis_dot_server_dot_project__management__pb2.UpdateProjectRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_project__management__pb2.UpdateProjectResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_project__management__pb2.Project.FromString,
                 _registered_method=True)
         self.ListConnections = channel.unary_unary(
                 '/jervis.server.ServerProjectManagementService/ListConnections',
                 request_serializer=jervis_dot_server_dot_project__management__pb2.ListConnectionsRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_project__management__pb2.ListConnectionsResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_project__management__pb2.ConnectionSummaryList.FromString,
                 _registered_method=True)
         self.CreateConnection = channel.unary_unary(
                 '/jervis.server.ServerProjectManagementService/CreateConnection',
@@ -81,20 +75,14 @@ class ServerProjectManagementServiceStub(object):
         self.GetStackRecommendations = channel.unary_unary(
                 '/jervis.server.ServerProjectManagementService/GetStackRecommendations',
                 request_serializer=jervis_dot_server_dot_project__management__pb2.GetStackRecommendationsRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_project__management__pb2.GetStackRecommendationsResponse.FromString,
+                response_deserializer=jervis_dot_server_dot_project__management__pb2.ProjectRecommendations.FromString,
                 _registered_method=True)
 
 
 class ServerProjectManagementServiceServicer(object):
     """ServerProjectManagementService is the pod-to-pod surface for creating
-    and listing clients, projects and connections. List responses carry the
-    full DTO tree as JSON (`items_json`) because Python callers only read
-    a handful of surface fields (id, name, provider, capabilities). Create
-    responses stay typed — Python confirms id/name/provider only.
-
-    The `project-advisor/archetypes` endpoint had no Python consumer and is
-    dropped; recommendations remain available as typed JSON (the orchestrator
-    formats deeply-nested fields for the LLM prompt).
+    and listing clients, projects and connections, plus the project-advisor
+    stack recommendations.
     """
 
     def ListClients(self, request, context):
@@ -151,7 +139,7 @@ def add_ServerProjectManagementServiceServicer_to_server(servicer, server):
             'ListClients': grpc.unary_unary_rpc_method_handler(
                     servicer.ListClients,
                     request_deserializer=jervis_dot_server_dot_project__management__pb2.ListClientsRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_project__management__pb2.ListClientsResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_project__management__pb2.ClientList.SerializeToString,
             ),
             'CreateClient': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateClient,
@@ -161,7 +149,7 @@ def add_ServerProjectManagementServiceServicer_to_server(servicer, server):
             'ListProjects': grpc.unary_unary_rpc_method_handler(
                     servicer.ListProjects,
                     request_deserializer=jervis_dot_server_dot_project__management__pb2.ListProjectsRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_project__management__pb2.ListProjectsResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_project__management__pb2.ProjectList.SerializeToString,
             ),
             'CreateProject': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateProject,
@@ -171,12 +159,12 @@ def add_ServerProjectManagementServiceServicer_to_server(servicer, server):
             'UpdateProject': grpc.unary_unary_rpc_method_handler(
                     servicer.UpdateProject,
                     request_deserializer=jervis_dot_server_dot_project__management__pb2.UpdateProjectRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_project__management__pb2.UpdateProjectResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_project__management__pb2.Project.SerializeToString,
             ),
             'ListConnections': grpc.unary_unary_rpc_method_handler(
                     servicer.ListConnections,
                     request_deserializer=jervis_dot_server_dot_project__management__pb2.ListConnectionsRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_project__management__pb2.ListConnectionsResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_project__management__pb2.ConnectionSummaryList.SerializeToString,
             ),
             'CreateConnection': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateConnection,
@@ -186,7 +174,7 @@ def add_ServerProjectManagementServiceServicer_to_server(servicer, server):
             'GetStackRecommendations': grpc.unary_unary_rpc_method_handler(
                     servicer.GetStackRecommendations,
                     request_deserializer=jervis_dot_server_dot_project__management__pb2.GetStackRecommendationsRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_project__management__pb2.GetStackRecommendationsResponse.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_project__management__pb2.ProjectRecommendations.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -198,14 +186,8 @@ def add_ServerProjectManagementServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class ServerProjectManagementService(object):
     """ServerProjectManagementService is the pod-to-pod surface for creating
-    and listing clients, projects and connections. List responses carry the
-    full DTO tree as JSON (`items_json`) because Python callers only read
-    a handful of surface fields (id, name, provider, capabilities). Create
-    responses stay typed — Python confirms id/name/provider only.
-
-    The `project-advisor/archetypes` endpoint had no Python consumer and is
-    dropped; recommendations remain available as typed JSON (the orchestrator
-    formats deeply-nested fields for the LLM prompt).
+    and listing clients, projects and connections, plus the project-advisor
+    stack recommendations.
     """
 
     @staticmethod
@@ -224,7 +206,7 @@ class ServerProjectManagementService(object):
             target,
             '/jervis.server.ServerProjectManagementService/ListClients',
             jervis_dot_server_dot_project__management__pb2.ListClientsRequest.SerializeToString,
-            jervis_dot_server_dot_project__management__pb2.ListClientsResponse.FromString,
+            jervis_dot_server_dot_project__management__pb2.ClientList.FromString,
             options,
             channel_credentials,
             insecure,
@@ -278,7 +260,7 @@ class ServerProjectManagementService(object):
             target,
             '/jervis.server.ServerProjectManagementService/ListProjects',
             jervis_dot_server_dot_project__management__pb2.ListProjectsRequest.SerializeToString,
-            jervis_dot_server_dot_project__management__pb2.ListProjectsResponse.FromString,
+            jervis_dot_server_dot_project__management__pb2.ProjectList.FromString,
             options,
             channel_credentials,
             insecure,
@@ -332,7 +314,7 @@ class ServerProjectManagementService(object):
             target,
             '/jervis.server.ServerProjectManagementService/UpdateProject',
             jervis_dot_server_dot_project__management__pb2.UpdateProjectRequest.SerializeToString,
-            jervis_dot_server_dot_project__management__pb2.UpdateProjectResponse.FromString,
+            jervis_dot_server_dot_project__management__pb2.Project.FromString,
             options,
             channel_credentials,
             insecure,
@@ -359,7 +341,7 @@ class ServerProjectManagementService(object):
             target,
             '/jervis.server.ServerProjectManagementService/ListConnections',
             jervis_dot_server_dot_project__management__pb2.ListConnectionsRequest.SerializeToString,
-            jervis_dot_server_dot_project__management__pb2.ListConnectionsResponse.FromString,
+            jervis_dot_server_dot_project__management__pb2.ConnectionSummaryList.FromString,
             options,
             channel_credentials,
             insecure,
@@ -413,7 +395,7 @@ class ServerProjectManagementService(object):
             target,
             '/jervis.server.ServerProjectManagementService/GetStackRecommendations',
             jervis_dot_server_dot_project__management__pb2.GetStackRecommendationsRequest.SerializeToString,
-            jervis_dot_server_dot_project__management__pb2.GetStackRecommendationsResponse.FromString,
+            jervis_dot_server_dot_project__management__pb2.ProjectRecommendations.FromString,
             options,
             channel_credentials,
             insecure,

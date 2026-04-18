@@ -9,47 +9,49 @@ option java_multiple_files = true;
 option java_outer_classname = "ServerProjectManagementProto";
 
 // ServerProjectManagementService is the pod-to-pod surface for creating
-// and listing clients, projects and connections. List responses carry the
-// full DTO tree as JSON (`items_json`) because Python callers only read
-// a handful of surface fields (id, name, provider, capabilities). Create
-// responses stay typed — Python confirms id/name/provider only.
-//
-// The `project-advisor/archetypes` endpoint had no Python consumer and is
-// dropped; recommendations remain available as typed JSON (the orchestrator
-// formats deeply-nested fields for the LLM prompt).
+// and listing clients, projects and connections, plus the project-advisor
+// stack recommendations.
 service ServerProjectManagementService {
-  rpc ListClients(ListClientsRequest) returns (ListClientsResponse);
+  rpc ListClients(ListClientsRequest) returns (ClientList);
   rpc CreateClient(CreateClientRequest) returns (CreateClientResponse);
 
-  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc ListProjects(ListProjectsRequest) returns (ProjectList);
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
-  rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
+  rpc UpdateProject(UpdateProjectRequest) returns (Project);
 
-  rpc ListConnections(ListConnectionsRequest) returns (ListConnectionsResponse);
+  rpc ListConnections(ListConnectionsRequest) returns (ConnectionSummaryList);
   rpc CreateConnection(CreateConnectionRequest) returns (CreateConnectionResponse);
 
-  rpc GetStackRecommendations(GetStackRecommendationsRequest)
-      returns (GetStackRecommendationsResponse);
+  rpc GetStackRecommendations(GetStackRecommendationsRequest) returns (ProjectRecommendations);
 }
 
 // ── Clients ──────────────────────────────────────────────────────────────
 
 message ListClientsRequest {
   jervis.common.RequestContext ctx = 1;
-  // Optional tenant filter. Orchestrator passes its current client_id; MCP
-  // passes empty for the unfiltered list.
-  string client_id = 2;
+  string client_id = 2;                  // empty = unfiltered
 }
 
-message ListClientsResponse {
-  // Array of ClientDto JSON objects; full shape in shared/common-dto.
-  string items_json = 1;
+// Client — only the identity fields orchestrator/MCP consumers read.
+// The full ClientDto (cloud routing flags, git commit identity, connection
+// capabilities, …) lives on the Kotlin server; consumers never inspect
+// those over the pod-to-pod wire.
+message Client {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  bool archived = 4;
+  string default_language = 5;           // LanguageEnum name
+}
+
+message ClientList {
+  repeated Client items = 1;
 }
 
 message CreateClientRequest {
   jervis.common.RequestContext ctx = 1;
   string name = 2;
-  string description = 3;  // empty = null
+  string description = 3;
 }
 
 message CreateClientResponse {
@@ -61,12 +63,21 @@ message CreateClientResponse {
 
 message ListProjectsRequest {
   jervis.common.RequestContext ctx = 1;
-  string client_id = 2;   // empty = all projects across tenants
+  string client_id = 2;
 }
 
-message ListProjectsResponse {
-  // Array of ProjectDto JSON objects.
-  string items_json = 1;
+// Project — subset of com.jervis.dto.project.ProjectDto the orchestrator
+// + MCP consumers read over the pod-to-pod wire.
+message Project {
+  string id = 1;
+  string name = 2;
+  string client_id = 3;
+  string group_id = 4;
+  string description = 5;
+}
+
+message ProjectList {
+  repeated Project items = 1;
 }
 
 message CreateProjectRequest {
@@ -85,42 +96,42 @@ message CreateProjectResponse {
 message UpdateProjectRequest {
   jervis.common.RequestContext ctx = 1;
   string project_id = 2;
-  string description = 3;       // empty = leave unchanged
-  string git_remote_url = 4;    // empty = leave unchanged
-  string connection_id = 5;     // empty = auto-detect
-}
-
-message UpdateProjectResponse {
-  string id = 1;
-  string name = 2;
-  // Full ProjectDto after update (same shape as list items).
-  string body_json = 3;
+  string description = 3;                // empty = leave unchanged
+  string git_remote_url = 4;             // empty = leave unchanged
+  string connection_id = 5;              // empty = auto-detect
 }
 
 // ── Connections ──────────────────────────────────────────────────────────
 
 message ListConnectionsRequest {
   jervis.common.RequestContext ctx = 1;
-  string client_id = 2;   // empty = unfiltered
+  string client_id = 2;
 }
 
-message ListConnectionsResponse {
-  // Array of {id, name, provider, state, baseUrl, capabilities[]} JSON.
-  string items_json = 1;
+message ConnectionSummary {
+  string id = 1;
+  string name = 2;
+  string provider = 3;                   // ProviderEnum name
+  string state = 4;                      // ConnectionStateEnum name
+  string base_url = 5;
+  repeated string capabilities = 6;      // ConnectionCapability names
+}
+
+message ConnectionSummaryList {
+  repeated ConnectionSummary items = 1;
 }
 
 message CreateConnectionRequest {
   jervis.common.RequestContext ctx = 1;
   string name = 2;
-  string provider = 3;       // ProviderEnum name
-  string protocol = 4;       // ProtocolEnum name, default HTTP
-  string auth_type = 5;      // AuthTypeEnum name, default BEARER
+  string provider = 3;
+  string protocol = 4;
+  string auth_type = 5;
   string base_url = 6;
   bool is_cloud = 7;
   string bearer_token = 8;
   string username = 9;
   string password = 10;
-  // If present, links the new connection to the given client after save.
   string client_id = 11;
 }
 
@@ -138,10 +149,46 @@ message GetStackRecommendationsRequest {
   string requirements = 2;
 }
 
-message GetStackRecommendationsResponse {
-  // Full ProjectRecommendations JSON (archetype + platforms + storage +
-  // features + scaffoldingInstructions). Orchestrator iterates it to
-  // render an LLM prompt, so keeping it as JSON avoids mirroring a deep,
-  // frequently-evolving DTO tree into proto.
-  string body_json = 1;
+message ProjectRecommendations {
+  StackArchetype archetype = 1;
+  repeated PlatformRecommendation platforms = 2;
+  repeated StorageRecommendation storage = 3;
+  repeated FeatureRecommendation features = 4;
+  string scaffolding_instructions = 5;
+}
+
+message StackArchetype {
+  string type = 1;
+  string name = 2;
+  string description = 3;
+  repeated string pros = 4;
+  repeated string cons = 5;
+  string best_for = 6;
+}
+
+message PlatformRecommendation {
+  string platform = 1;
+  bool recommended = 2;
+  string rationale = 3;
+  repeated Alternative alternatives = 4;
+}
+
+message StorageRecommendation {
+  string technology = 1;
+  bool recommended = 2;
+  string use_case = 3;
+  string spring_dependency = 4;
+  repeated string pros = 5;
+  repeated string cons = 6;
+}
+
+message FeatureRecommendation {
+  string feature = 1;
+  bool recommended = 2;
+  repeated Alternative options = 3;
+}
+
+message Alternative {
+  string name = 1;
+  string description = 2;
 }
