@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package jervis.orchestrator;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.orchestrator";
+option java_multiple_files = true;
+option java_outer_classname = "OrchestratorVoiceProto";
+
+// OrchestratorVoiceService — post-transcription voice pipeline. Process
+// streams the intent-classified agentic reply (preliminary_answer /
+// responding / token / response / stored / done). Hint returns a KB-based
+// live-assist hint (single unary response).
+service OrchestratorVoiceService {
+  rpc Process(VoiceProcessRequest) returns (stream VoiceStreamEvent);
+  rpc Hint(VoiceHintRequest) returns (VoiceHintResponse);
+}
+
+message VoiceProcessRequest {
+  jervis.common.RequestContext ctx = 1;
+  string text = 2;                     // transcribed text from Whisper
+  string source = 3;                   // app_chat | watch_chat | siri_watch
+  string client_id = 4;
+  string project_id = 5;
+  string group_id = 6;
+  bool tts = 7;                        // generate TTS audio response
+  string meeting_id = 8;
+  bool live_assist = 9;
+  int32 chunk_index = 10;
+  bool is_final = 11;
+}
+
+message VoiceStreamEvent {
+  string event = 1;                    // preliminary_answer | responding | token | response | stored | done | error
+  // Event payload as JSON — maintains parity with the legacy SSE
+  // `data` field where keys varied per event type.
+  string data_json = 2;
+}
+
+message VoiceHintRequest {
+  jervis.common.RequestContext ctx = 1;
+  string text = 2;
+  string client_id = 3;
+  string project_id = 4;
+}
+
+message VoiceHintResponse {
+  string hint = 1;                     // empty when no relevant hint
+}

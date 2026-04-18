@@ -23,6 +23,7 @@ from jervis.orchestrator import companion_pb2, companion_pb2_grpc
 from jervis.orchestrator import control_pb2, control_pb2_grpc
 from jervis.orchestrator import dispatch_pb2, dispatch_pb2_grpc
 from jervis.orchestrator import graph_pb2, graph_pb2_grpc
+from jervis.orchestrator import voice_pb2, voice_pb2_grpc
 from jervis_contracts.interceptors import ServerContextInterceptor
 
 if TYPE_CHECKING:
@@ -803,6 +804,75 @@ class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
         return chat_pb2.StopChatAck(ok=False, error="no-active-chat")
 
 
+class OrchestratorVoiceServicer(voice_pb2_grpc.OrchestratorVoiceServiceServicer):
+    """OrchestratorVoiceService — post-transcription voice pipeline.
+
+    Process wraps handle_voice_stream(); Hint wraps generate_hint().
+    Events are projected into VoiceStreamEvent {event, data_json} so the
+    varied per-event-type payload keys ride inline JSON.
+    """
+
+    async def Process(
+        self,
+        request: voice_pb2.VoiceProcessRequest,
+        context: grpc.aio.ServicerContext,
+    ):
+        from app.voice.models import VoiceStreamRequest
+        from app.voice.stream_handler import handle_voice_stream
+
+        try:
+            voice_request = VoiceStreamRequest(
+                text=request.text,
+                source=request.source or "app_chat",
+                client_id=request.client_id or None,
+                project_id=request.project_id or None,
+                group_id=request.group_id or None,
+                tts=bool(request.tts),
+                meeting_id=request.meeting_id or None,
+                live_assist=bool(request.live_assist),
+                chunk_index=int(request.chunk_index or 0),
+                is_final=bool(request.is_final),
+            )
+        except Exception as e:
+            yield voice_pb2.VoiceStreamEvent(
+                event="error",
+                data_json=json.dumps({"text": f"Invalid voice request: {e}"}, ensure_ascii=False),
+            )
+            yield voice_pb2.VoiceStreamEvent(event="done", data_json="{}")
+            return
+
+        logger.info(
+            "VOICE_PROCESS | text=%s | source=%s",
+            voice_request.text[:80], voice_request.source,
+        )
+        try:
+            async for event in handle_voice_stream(voice_request):
+                yield voice_pb2.VoiceStreamEvent(
+                    event=event.event,
+                    data_json=json.dumps(event.data, ensure_ascii=False, default=str),
+                )
+        except Exception as e:
+            logger.exception("Voice handler failed: %s", e)
+            yield voice_pb2.VoiceStreamEvent(
+                event="error",
+                data_json=json.dumps({"text": str(e)[:100]}, ensure_ascii=False),
+            )
+            yield voice_pb2.VoiceStreamEvent(event="done", data_json="{}")
+
+    async def Hint(
+        self,
+        request: voice_pb2.VoiceHintRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> voice_pb2.VoiceHintResponse:
+        from app.voice.stream_handler import generate_hint
+
+        text = (request.text or "").strip()
+        if not text:
+            return voice_pb2.VoiceHintResponse(hint="")
+        hint = await generate_hint(text, request.client_id or "", request.project_id or "")
+        return voice_pb2.VoiceHintResponse(hint=str(hint or ""))
+
+
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for cleanup."""
     max_msg_bytes = 64 * 1024 * 1024
@@ -828,6 +898,9 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     chat_pb2_grpc.add_OrchestratorChatServiceServicer_to_server(
         OrchestratorChatServicer(), server,
     )
+    voice_pb2_grpc.add_OrchestratorVoiceServiceServicer_to_server(
+        OrchestratorVoiceServicer(), server,
+    )
 
     service_names = (
         control_pb2.DESCRIPTOR.services_by_name["OrchestratorControlService"].full_name,
@@ -835,6 +908,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
         dispatch_pb2.DESCRIPTOR.services_by_name["OrchestratorDispatchService"].full_name,
         companion_pb2.DESCRIPTOR.services_by_name["OrchestratorCompanionService"].full_name,
         chat_pb2.DESCRIPTOR.services_by_name["OrchestratorChatService"].full_name,
+        voice_pb2.DESCRIPTOR.services_by_name["OrchestratorVoiceService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
@@ -842,7 +916,8 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     server.add_insecure_port(f"[::]:{port}")
     await server.start()
     logger.info(
-        "gRPC orchestrator services listening on :%d (Control + Graph + Dispatch + Companion + Chat)",
+        "gRPC orchestrator services listening on :%d "
+        "(Control + Graph + Dispatch + Companion + Chat + Voice)",
         port,
     )
     return server

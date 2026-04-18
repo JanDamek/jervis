@@ -298,6 +298,13 @@ app.include_router(companion_router)
 
 
 # --- Voice Pipeline Endpoint ---
+# NOTE (Phase 3 slice 19): Voice is also exposed via
+# OrchestratorVoiceService.{Process,Hint} on :5501. The FastAPI routes
+# below stay live so the existing Kotlin inline call sites in
+# rpc/VoiceChatRouting.kt + voice/VoiceWebSocketHandler.kt keep working
+# during the migration window. A follow-up slice will move every call
+# site onto the gRPC stub and delete these routes.
+
 
 @app.post("/voice/process")
 async def voice_process(request_body: dict):
