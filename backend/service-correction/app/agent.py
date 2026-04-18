@@ -140,19 +140,17 @@ class CorrectionAgent:
         project_id: str | None = None,
         max_results: int = 100,
     ) -> list[dict]:
-        """List all corrections for a client/project from KB."""
-        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_READ) as http:
-            resp = await http.post(
-                f"{self.kb_url}/chunks/by-kind",
-                json={
-                    "clientId": client_id,
-                    "projectId": project_id,
-                    "kind": CORRECTION_KIND,
-                    "maxResults": max_results,
-                },
-            )
-            resp.raise_for_status()
-            return resp.json().get("chunks", [])
+        """List all corrections for a client/project from KB (gRPC)."""
+        from jervis_contracts import kb_client
+
+        return await kb_client.list_chunks_by_kind(
+            caller="service-correction",
+            kind=CORRECTION_KIND,
+            client_id=client_id,
+            project_id=project_id or "",
+            max_results=max_results,
+            timeout=_TIMEOUT_KB_READ,
+        )
 
     async def correct_transcript(
         self,

@@ -909,30 +909,28 @@ async def _execute_web_crawl(
     if not url.startswith(("http://", "https://")):
         return f"Error: Invalid URL: {url}"
 
-    kb_url = f"{settings.kb_service_url}/crawl"
-    payload = {
-        "url": url,
-        "maxDepth": max_depth,
-        "allowExternalDomains": allow_external,
-        "clientId": client_id or "",
-        "projectId": project_id or "",
-    }
+    from jervis_contracts import kb_client
+    import grpc
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(kb_url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.TimeoutException:
-        return f"Error: Web crawl timed out after 120s for {url}"
-    except httpx.HTTPStatusError as e:
-        return f"Error: KB crawl returned HTTP {e.response.status_code}: {e.response.text[:200]}"
+        data = await kb_client.crawl(
+            caller="orchestrator.tools.crawl",
+            url=url,
+            max_depth=max_depth,
+            allow_external_domains=allow_external,
+            client_id=client_id or "",
+            project_id=project_id or "",
+            timeout=120.0,
+        )
+    except grpc.aio.AioRpcError as e:
+        return f"Error: KB crawl returned {e.code().name}: {e.details() or ''}"
     except Exception as e:
         return f"Error: Web crawl failed: {str(e)[:200]}"
 
-    pages = data.get("pages_indexed", data.get("pagesIndexed", 0))
-    chunks = data.get("chunks_created", data.get("chunksCreated", 0))
-    skipped = data.get("pages_skipped", data.get("pagesSkipped", 0))
+    # Crawl returns IngestResult shape (chunks_count/nodes_created/...) via gRPC
+    pages = 0  # legacy field no longer exposed on ingest result
+    chunks = data.get("chunks_count", 0)
+    skipped = 0
 
     return (
         f"Web crawl complete for {url}:\n"
@@ -1482,8 +1480,8 @@ async def _execute_get_indexed_items(
     client_id: str = "",
     project_id: str | None = None,
 ) -> str:
-    """Get indexed items summary from KB via POST /api/v1/chunks/by-kind."""
-    url = f"{settings.knowledgebase_url}/api/v1/chunks/by-kind"
+    """Get indexed items summary from KB via ListChunksByKind (gRPC)."""
+    from jervis_contracts import kb_client
 
     # Map item_type to KB kind values
     kind_map = {
@@ -1497,19 +1495,17 @@ async def _execute_get_indexed_items(
 
     all_results: dict[str, list] = {}
     for kind in kinds_to_query:
-        payload = {
-            "clientId": client_id,
-            "projectId": project_id,
-            "kind": kind,
-            "maxResults": limit,
-        }
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(url, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                if data:
-                    all_results[kind] = data if isinstance(data, list) else [data]
+            data = await kb_client.list_chunks_by_kind(
+                caller="orchestrator.tools.indexed_items",
+                kind=kind,
+                client_id=client_id,
+                project_id=project_id or "",
+                max_results=limit,
+                timeout=10.0,
+            )
+            if data:
+                all_results[kind] = data
         except Exception as e:
             all_results[kind] = [{"error": str(e)[:100]}]
 
@@ -1699,24 +1695,20 @@ async def _execute_joern_quick_scan(
         if not workspace_path:
             return "Error: Repository node missing workspacePath property. Ensure repository is indexed on shared PVC."
 
-        # Call KB Joern scan endpoint
-        scan_url = f"{settings.knowledgebase_url}/api/v1/joern/scan"
-        payload = {
-            "scanType": scan_type,
-            "clientId": client_id,
-            "projectId": project_id,
-            "workspacePath": workspace_path,
-        }
+        # Call KB Joern scan via gRPC
+        import grpc
 
-        async with httpx.AsyncClient(timeout=120.0) as client:  # Joern can take time
-            resp = await client.post(scan_url, json=payload)
-            resp.raise_for_status()
-            result = resp.json()
+        result = await kb_client.joern_scan(
+            caller="orchestrator.tools.joern_scan",
+            scan_type=scan_type,
+            client_id=client_id,
+            project_id=project_id or "",
+            workspace_path=workspace_path,
+            timeout=120.0,
+        )
 
-    except httpx.TimeoutException:
-        return f"Error: Joern scan timed out after 120s for {scan_type} scan."
-    except httpx.HTTPStatusError as e:
-        return f"Error: KB Joern endpoint returned HTTP {e.response.status_code} for {scan_type} scan."
+    except grpc.aio.AioRpcError as e:
+        return f"Error: KB Joern endpoint returned {e.code().name} for {scan_type} scan."
     except Exception as e:
         return f"Error: Joern scan failed: {str(e)[:200]}"
 

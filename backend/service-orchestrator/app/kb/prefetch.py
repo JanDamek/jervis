@@ -458,61 +458,53 @@ async def fetch_user_context(
     sections: list[str] = []
     total_chars = 0
 
-    async with httpx.AsyncClient(timeout=30.0) as http:
-        for kind, label in USER_CONTEXT_KINDS.items():
-            if total_chars >= _USER_CONTEXT_MAX_CHARS:
-                break
+    from jervis_contracts import kb_client
 
-            try:
-                payload: dict = {
-                    "kind": kind,
-                    "clientId": client_id,
-                    "limit": 20,
-                }
-                if project_id:
-                    payload["projectId"] = project_id
+    for kind, label in USER_CONTEXT_KINDS.items():
+        if total_chars >= _USER_CONTEXT_MAX_CHARS:
+            break
 
-                resp = await http.post(
-                    f"{kb_url}/chunks/by-kind",
-                    json=payload,
-                )
-                resp.raise_for_status()
-                chunks = resp.json().get("chunks", [])
+        try:
+            chunks = await kb_client.list_chunks_by_kind(
+                caller="orchestrator.kb.prefetch.user_context",
+                kind=kind,
+                client_id=client_id,
+                project_id=project_id or "",
+                max_results=20,
+                timeout=30.0,
+            )
 
-                if not chunks:
-                    continue
-
-                section_lines = [f"### {label}"]
-                for chunk in chunks:
-                    content = chunk.get("content", "").strip()
-                    if not content:
-                        continue
-                    # Extract just the meaningful part (strip markdown header if present)
-                    if content.startswith("# "):
-                        # Format: "# Subject\n\nContent" — show as "Subject: Content"
-                        parts = content.split("\n\n", 1)
-                        subject = parts[0].lstrip("# ").strip()
-                        body = parts[1].strip() if len(parts) > 1 else ""
-                        line = f"- **{subject}**: {body}" if body else f"- {subject}"
-                    else:
-                        line = f"- {content}"
-
-                    # Truncate individual entries
-                    if len(line) > 300:
-                        line = line[:297] + "..."
-
-                    section_lines.append(line)
-                    total_chars += len(line)
-
-                    if total_chars >= _USER_CONTEXT_MAX_CHARS:
-                        break
-
-                if len(section_lines) > 1:  # More than just the header
-                    sections.append("\n".join(section_lines))
-
-            except Exception as e:
-                logger.debug("User context fetch failed for kind=%s: %s", kind, e)
+            if not chunks:
                 continue
+
+            section_lines = [f"### {label}"]
+            for chunk in chunks:
+                content = chunk.get("content", "").strip()
+                if not content:
+                    continue
+                if content.startswith("# "):
+                    parts = content.split("\n\n", 1)
+                    subject = parts[0].lstrip("# ").strip()
+                    body = parts[1].strip() if len(parts) > 1 else ""
+                    line = f"- **{subject}**: {body}" if body else f"- {subject}"
+                else:
+                    line = f"- {content}"
+
+                if len(line) > 300:
+                    line = line[:297] + "..."
+
+                section_lines.append(line)
+                total_chars += len(line)
+
+                if total_chars >= _USER_CONTEXT_MAX_CHARS:
+                    break
+
+            if len(section_lines) > 1:  # More than just the header
+                sections.append("\n".join(section_lines))
+
+        except Exception as e:
+            logger.debug("User context fetch failed for kind=%s: %s", kind, e)
+            continue
 
     context = "\n\n".join(sections) if sections else ""
     if context:

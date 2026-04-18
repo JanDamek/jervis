@@ -91,12 +91,7 @@ async def retrieve_hybrid(request: HybridRetrievalRequest):
 # /traverse migrated to gRPC (KnowledgeGraphService.Traverse on :5501).
 
 
-@read_router.post("/analyze/code", response_model=JoernResultDto)
-async def analyze_code(query: str, workspacePath: str = ""):
-    try:
-        return await service.analyze_code(query, workspacePath)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /analyze/code migrated to gRPC (KnowledgeRetrieveService.AnalyzeCode).
 
 
 # /graph/node/{key}, /graph/search, /graph/node/{key}/evidence migrated
@@ -105,23 +100,7 @@ async def analyze_code(query: str, workspacePath: str = ""):
 # in _graph_search_branch_aware to scope file/class nodes to a branch.
 
 
-@read_router.get("/query/entities")
-async def extract_query_entities(query: str):
-    """
-    Extract entities from a query string.
-
-    Useful for debugging and understanding what the hybrid retriever detects.
-    Returns list of normalized entity references.
-    """
-    try:
-        entities = service.hybrid_retriever._extract_query_entities(query)
-        return {
-            "query": query,
-            "entities": entities,
-            "count": len(entities)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /query/entities migrated to gRPC (KnowledgeGraphService.ListQueryEntities).
 
 
 # /alias/resolve, /alias/list/{key}, /alias/stats migrated to gRPC
@@ -129,38 +108,8 @@ async def extract_query_entities(query: str):
 # on :5501 — see app/grpc_server.py).
 
 
-@read_router.post("/chunks/by-kind")
-async def list_chunks_by_kind(request: ListByKindRequest):
-    """List all RAG chunks matching a specific kind with tenant filtering."""
-    try:
-        results = await service.rag_service.list_by_kind(
-            client_id=request.clientId,
-            project_id=request.projectId,
-            kind=request.kind,
-            limit=request.maxResults,
-        )
-        return {"chunks": results}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@read_router.post("/joern/scan", response_model=JoernScanResult)
-async def joern_scan(request: JoernScanRequest):
-    """
-    Run a pre-built Joern code analysis scan.
-
-    Available scan types:
-    - security: Find SQL injection, command injection, hardcoded secrets
-    - dataflow: Identify HTTP input sources and sensitive sinks
-    - callgraph: Method fan-out analysis and dead code detection
-    - complexity: Cyclomatic complexity and long method detection
-
-    Runs Joern as a K8s Job on the shared PVC.
-    """
-    try:
-        return await service.run_joern_scan(request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /chunks/by-kind + /joern/scan migrated to gRPC
+# (KnowledgeRetrieveService.{ListChunksByKind,JoernScan}).
 
 
 # ---------------------------------------------------------------------------
@@ -351,12 +300,7 @@ async def ingest_full_async(
 # gRPC (KnowledgeIngestService on :5501 — see app/grpc_server.py).
 
 
-@write_router.post("/crawl", response_model=IngestResult)
-async def crawl(request: CrawlRequest):
-    try:
-        return await service.crawl(request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /crawl migrated to gRPC (KnowledgeIngestService.Crawl).
 
 
 # /purge migrated to gRPC (KnowledgeIngestService.Purge on :5501 — see

@@ -398,6 +398,28 @@ class IngestServicer(ingest_pb2_grpc.KnowledgeIngestServiceServicer):
             await context.abort(grpc.StatusCode.INTERNAL, str(e))
         return ingest_pb2.IngestQueueAck(ok=True, queue_id=request.source_urn or "")
 
+    async def Crawl(
+        self,
+        request: ingest_pb2.CrawlRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> ingest_pb2.IngestResult:
+        from app.api.models import CrawlRequest as CReq
+
+        req = CReq(
+            url=request.url,
+            maxDepth=request.max_depth or 1,
+            allowExternalDomains=request.allow_external_domains,
+            clientId=request.client_id or "",
+            projectId=request.project_id or None,
+            groupId=request.group_id or None,
+        )
+        try:
+            result = await self._service().crawl(req)
+        except Exception as e:
+            logger.warning("CRAWL_ERROR url=%s error=%s", request.url, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return self._ingest_result_to_proto(result)
+
     async def Purge(
         self,
         request: ingest_pb2.PurgeRequest,
@@ -535,6 +557,88 @@ class RetrieveServicer(retrieve_pb2_grpc.KnowledgeRetrieveServiceServicer):
             return retrieve_pb2.EvidencePack(items=[])
         return self._evidence_to_proto(pack)
 
+    async def ListChunksByKind(
+        self,
+        request: retrieve_pb2.ListByKindRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> retrieve_pb2.ChunkList:
+        service = self._service()
+        try:
+            results = await service.rag_service.list_by_kind(
+                client_id=request.client_id or "",
+                project_id=request.project_id or None,
+                kind=request.kind or "",
+                limit=request.max_results or 50,
+            )
+        except Exception as e:
+            logger.warning("LIST_CHUNKS_BY_KIND_ERROR kind=%s error=%s", request.kind, e)
+            return retrieve_pb2.ChunkList(items=[])
+
+        items: list[retrieve_pb2.Chunk] = []
+        for c in (results or []):
+            meta: dict[str, str] = {}
+            for k, v in ((c.get("metadata") if isinstance(c, dict) else None) or {}).items():
+                meta[str(k)] = "" if v is None else str(v)
+            items.append(
+                retrieve_pb2.Chunk(
+                    id=str((c.get("id") if isinstance(c, dict) else "") or ""),
+                    content=str((c.get("content") if isinstance(c, dict) else "") or ""),
+                    source_urn=str(((c.get("sourceUrn") or c.get("source_urn")) if isinstance(c, dict) else "") or ""),
+                    kind=str((c.get("kind") if isinstance(c, dict) else "") or ""),
+                    metadata=meta,
+                )
+            )
+        return retrieve_pb2.ChunkList(items=items)
+
+    async def AnalyzeCode(
+        self,
+        request: retrieve_pb2.TraversalRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> retrieve_pb2.JoernAnalyzeResult:
+        # request.start_key carries the free-text query for analyze_code, and
+        # edge_collection holds the workspace_path (legacy signature — see
+        # knowledge_service.analyze_code).
+        try:
+            result = await self._service().analyze_code(
+                query=request.start_key,
+                workspacePath=(request.spec.edge_collection if request.HasField("spec") else ""),
+            )
+        except Exception as e:
+            logger.warning("ANALYZE_CODE_ERROR query=%r error=%s", request.start_key[:120], e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return retrieve_pb2.JoernAnalyzeResult(
+            status=str(getattr(result, "status", "success") or "success"),
+            output=str(getattr(result, "output", "") or ""),
+            warnings=str(getattr(result, "warnings", "") or ""),
+            exit_code=int(getattr(result, "exit_code", 0) or 0),
+        )
+
+    async def JoernScan(
+        self,
+        request: retrieve_pb2.JoernScanRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> retrieve_pb2.JoernScanResult:
+        from app.api.models import JoernScanRequest as JSR
+
+        req = JSR(
+            scanType=request.scan_type,
+            clientId=request.client_id,
+            projectId=request.project_id or None,
+            workspacePath=request.workspace_path,
+        )
+        try:
+            result = await self._service().run_joern_scan(req)
+        except Exception as e:
+            logger.warning("JOERN_SCAN_ERROR type=%s error=%s", request.scan_type, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return retrieve_pb2.JoernScanResult(
+            status=str(getattr(result, "status", "success") or "success"),
+            scan_type=str(getattr(result, "scanType", request.scan_type) or request.scan_type),
+            output=str(getattr(result, "output", "") or ""),
+            warnings=str(getattr(result, "warnings", "") or ""),
+            exit_code=int(getattr(result, "exit_code", 0) or 0),
+        )
+
 
 class GraphServicer(graph_pb2_grpc.KnowledgeGraphServiceServicer):
     """KnowledgeGraphService — graph traversal, node lookup, alias registry.
@@ -668,6 +772,19 @@ class GraphServicer(graph_pb2_grpc.KnowledgeGraphServiceServicer):
                 )
             )
         return retrieve_pb2.EvidencePack(items=items)
+
+    async def ListQueryEntities(
+        self,
+        request: graph_pb2.ListQueryEntitiesRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.EntityList:
+        svc = self._service()
+        try:
+            entities = svc.hybrid_retriever._extract_query_entities(request.query or "")
+        except Exception as e:
+            logger.warning("LIST_QUERY_ENTITIES_ERROR error=%s", e)
+            return graph_pb2.EntityList(entities=[])
+        return graph_pb2.EntityList(entities=[str(e) for e in (entities or [])])
 
     async def ResolveAlias(
         self,

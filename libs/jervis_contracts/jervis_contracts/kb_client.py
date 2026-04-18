@@ -499,6 +499,104 @@ async def thought_create(
     return bool(resp.ok), keys
 
 
+async def list_chunks_by_kind(
+    *,
+    caller: str,
+    kind: str,
+    client_id: str = "",
+    project_id: str = "",
+    max_results: int = 50,
+    timeout: float = 15.0,
+) -> list[dict]:
+    """Dial KnowledgeRetrieveService.ListChunksByKind."""
+    from jervis.knowledgebase import retrieve_pb2
+
+    stub = retrieve_stub()
+    resp = await stub.ListChunksByKind(
+        retrieve_pb2.ListByKindRequest(
+            ctx=build_request_context(caller=caller, client_id=client_id),
+            client_id=client_id,
+            project_id=project_id,
+            kind=kind,
+            max_results=max_results,
+        ),
+        timeout=timeout,
+    )
+    return [
+        {
+            "id": it.id,
+            "content": it.content,
+            "sourceUrn": it.source_urn,
+            "kind": it.kind,
+            "metadata": dict(it.metadata),
+        }
+        for it in resp.items
+    ]
+
+
+async def joern_scan(
+    *,
+    caller: str,
+    scan_type: str,
+    client_id: str = "",
+    project_id: str = "",
+    workspace_path: str = "",
+    timeout: float = 300.0,
+) -> dict:
+    """Dial KnowledgeRetrieveService.JoernScan. Returns
+    {status, scan_type, output, warnings, exit_code} dict."""
+    from jervis.knowledgebase import retrieve_pb2
+
+    stub = retrieve_stub()
+    resp = await stub.JoernScan(
+        retrieve_pb2.JoernScanRequest(
+            ctx=build_request_context(caller=caller, client_id=client_id),
+            scan_type=scan_type,
+            client_id=client_id,
+            project_id=project_id,
+            workspace_path=workspace_path,
+        ),
+        timeout=timeout,
+    )
+    return {
+        "status": resp.status,
+        "scan_type": resp.scan_type,
+        "output": resp.output,
+        "warnings": resp.warnings,
+        "exit_code": resp.exit_code,
+    }
+
+
+async def crawl(
+    *,
+    caller: str,
+    url: str,
+    max_depth: int = 1,
+    allow_external_domains: bool = False,
+    client_id: str = "",
+    project_id: str = "",
+    group_id: str = "",
+    timeout: float = 300.0,
+) -> dict:
+    """Dial KnowledgeIngestService.Crawl. Returns ingest-result dict."""
+    from jervis.knowledgebase import ingest_pb2
+
+    stub = ingest_stub()
+    resp = await stub.Crawl(
+        ingest_pb2.CrawlRequest(
+            ctx=build_request_context(caller=caller, client_id=client_id),
+            url=url,
+            max_depth=max_depth,
+            allow_external_domains=allow_external_domains,
+            client_id=client_id,
+            project_id=project_id,
+            group_id=group_id,
+        ),
+        timeout=timeout,
+    )
+    return _ingest_result_to_dict(resp)
+
+
 async def close() -> None:
     """Shut down the cached channel. Safe to call multiple times."""
     global _channel, _ingest_stub, _maintenance_stub, _queue_stub, _graph_stub, _retrieve_stub
