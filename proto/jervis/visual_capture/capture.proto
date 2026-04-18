@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package jervis.visual_capture;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.visual_capture";
+option java_multiple_files = true;
+option java_outer_classname = "VisualCaptureProto";
+
+// VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
+// Replaces the former FastAPI /capture/* and /ptz/* routes exposed by
+// jervis-visual-capture. Kotlin server's ServerVisualCaptureGrpcImpl
+// forwards Snapshot/PtzGoto requests from the orchestrator through this
+// RPC instead of the retired REST surface.
+service VisualCaptureService {
+  rpc Snapshot(SnapshotRequest) returns (RawJsonResponse);
+  rpc PtzGoto(PtzGotoRequest) returns (RawJsonResponse);
+  rpc PtzPresets(PtzPresetsRequest) returns (RawJsonResponse);
+}
+
+message SnapshotRequest {
+  jervis.common.RequestContext ctx = 1;
+  // Raw JSON body matching the legacy SnapshotRequest model (preset,
+  // mode, custom_prompt). Empty string = default snapshot.
+  string request_json = 2;
+}
+
+message PtzGotoRequest {
+  jervis.common.RequestContext ctx = 1;
+  string request_json = 2;              // {preset: "..."}
+}
+
+message PtzPresetsRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message RawJsonResponse {
+  int32 status = 1;                    // HTTP-style status (200 / 404 / 502)
+  string body_json = 2;
+}

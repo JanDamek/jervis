@@ -28,6 +28,10 @@ class GrpcChannels(
     private val orchestratorHost: String,
     @Value("\${grpc.orchestrator.port:5501}")
     private val orchestratorPort: Int,
+    @Value("\${grpc.visual-capture.host:jervis-visual-capture}")
+    private val visualCaptureHost: String,
+    @Value("\${grpc.visual-capture.port:5501}")
+    private val visualCapturePort: Int,
 ) {
     private val logger = KotlinLogging.logger {}
     private val channels = mutableListOf<ManagedChannel>()
@@ -85,9 +89,23 @@ class GrpcChannels(
         return channel
     }
 
+    @Bean(name = [VISUAL_CAPTURE_CHANNEL])
+    fun visualCaptureChannel(): ManagedChannel {
+        val channel = NettyChannelBuilder.forAddress(visualCaptureHost, visualCapturePort)
+            .usePlaintext()
+            .keepAliveTime(30, TimeUnit.SECONDS)
+            .keepAliveTimeout(5, TimeUnit.SECONDS)
+            .keepAliveWithoutCalls(true)
+            .build()
+        channels += channel
+        logger.info { "gRPC channel → $visualCaptureHost:$visualCapturePort (visual-capture)" }
+        return channel
+    }
+
     companion object {
         const val ROUTER_ADMIN_CHANNEL = "routerAdminChannel"
         const val KNOWLEDGEBASE_CHANNEL = "knowledgebaseChannel"
         const val ORCHESTRATOR_CHANNEL = "orchestratorChannel"
+        const val VISUAL_CAPTURE_CHANNEL = "visualCaptureChannel"
     }
 }

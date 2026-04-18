@@ -173,25 +173,40 @@ async def _post_result(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import os
+
+    from app.grpc_server import start_grpc_server
+
     # Startup: load ONVIF presets (best-effort, camera may not be ready)
     try:
         if settings.visual_capture_onvif_host:
             await onvif_client.load_presets()
     except Exception as e:
         logger.warning("ONVIF startup failed (will retry on first PTZ call): %s", e)
-    yield
-    # Shutdown: stop capture + release RTSP
-    state.running = False
-    if state.task and not state.task.done():
-        state.task.cancel()
+
+    grpc_port = int(os.getenv("VISUAL_CAPTURE_GRPC_PORT", "5501"))
+    grpc_server = await start_grpc_server(port=grpc_port)
+    app.state.grpc_server = grpc_server
+
+    try:
+        yield
+    finally:
+        # Shutdown: stop capture + release RTSP + gRPC
+        state.running = False
+        if state.task and not state.task.done():
+            state.task.cancel()
+            try:
+                await state.task
+            except asyncio.CancelledError:
+                pass
+        rtsp.release()
+        global _http
+        if _http is not None:
+            await _http.aclose()
         try:
-            await state.task
-        except asyncio.CancelledError:
-            pass
-    rtsp.release()
-    global _http
-    if _http is not None:
-        await _http.aclose()
+            await asyncio.wait_for(grpc_server.stop(grace=5.0), timeout=10.0)
+        except Exception as e:
+            logger.warning("gRPC shutdown failed: %s", e)
 
 
 app = FastAPI(title="Jervis Visual Capture", lifespan=lifespan)
@@ -200,7 +215,6 @@ app = FastAPI(title="Jervis Visual Capture", lifespan=lifespan)
 # ── Endpoints ─────────────────────────────────────────────────────────
 
 
-@app.post("/capture/start")
 async def capture_start(req: CaptureStartRequest) -> dict:
     """Start continuous capture loop."""
     if state.running:
@@ -223,7 +237,6 @@ async def capture_start(req: CaptureStartRequest) -> dict:
     }
 
 
-@app.post("/capture/stop")
 async def capture_stop(req: CaptureStopRequest = CaptureStopRequest()) -> dict:
     """Stop continuous capture loop."""
     if not state.running:
@@ -238,7 +251,6 @@ async def capture_stop(req: CaptureStopRequest = CaptureStopRequest()) -> dict:
     return {"status": "stopped", "frames_captured": state.frames_captured}
 
 
-@app.post("/capture/snapshot")
 async def capture_snapshot(req: SnapshotRequest = SnapshotRequest()) -> dict:
     """Grab a single frame, analyze with VLM, return result immediately."""
     if not settings.visual_capture_rtsp_url:
@@ -266,7 +278,6 @@ async def capture_snapshot(req: SnapshotRequest = SnapshotRequest()) -> dict:
     return result
 
 
-@app.post("/ptz/goto")
 async def ptz_goto(req: PTZRequest) -> dict:
     """Move camera to a named preset."""
     ok = await onvif_client.goto_preset(req.preset)
@@ -276,14 +287,12 @@ async def ptz_goto(req: PTZRequest) -> dict:
     raise HTTPException(status_code=404, detail=f"Preset '{req.preset}' not found or camera unreachable")
 
 
-@app.post("/ptz/presets")
 async def ptz_presets() -> dict:
     """List available camera presets."""
     presets = await onvif_client.list_presets()
     return {"presets": presets}
 
 
-@app.post("/ptz/set")
 async def ptz_set(req: PTZSetRequest) -> dict:
     """Save current camera position as a named preset."""
     token = await onvif_client.set_preset(req.name)

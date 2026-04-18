@@ -9,14 +9,6 @@ import com.jervis.contracts.server.VisualResultResponse
 import com.jervis.dto.meeting.HelperMessageDto
 import com.jervis.dto.meeting.HelperMessageType
 import com.jervis.meeting.MeetingHelperService
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import jakarta.annotation.PreDestroy
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 import java.time.Instant
@@ -24,16 +16,9 @@ import java.time.Instant
 @Component
 class ServerVisualCaptureGrpcImpl(
     private val helperService: MeetingHelperService,
+    private val visualCaptureGrpc: VisualCaptureGrpcClient,
 ) : ServerVisualCaptureServiceGrpcKt.ServerVisualCaptureServiceCoroutineImplBase() {
     private val logger = KotlinLogging.logger {}
-    private val httpClient = HttpClient(CIO)
-    private val captureBaseUrl: String =
-        System.getenv("VISUAL_CAPTURE_URL") ?: "http://jervis-visual-capture:8096"
-
-    @PreDestroy
-    fun shutdown() {
-        runCatching { httpClient.close() }
-    }
 
     override suspend fun postResult(request: VisualResultRequest): VisualResultResponse {
         if (request.meetingId.isNotBlank()) {
@@ -67,35 +52,33 @@ class ServerVisualCaptureGrpcImpl(
         return VisualResultResponse.newBuilder().setOk(true).build()
     }
 
-    override suspend fun snapshot(request: SnapshotRequest): RawJsonResponse = proxy(
-        path = "/capture/snapshot",
-        body = request.requestJson,
-        label = "VISUAL_SNAPSHOT_PROXY_ERROR",
-    )
-
-    override suspend fun ptz(request: PtzRequest): RawJsonResponse = proxy(
-        path = "/ptz/goto",
-        body = request.requestJson,
-        label = "VISUAL_PTZ_PROXY_ERROR",
-    )
-
-    private suspend fun proxy(path: String, body: String, label: String): RawJsonResponse {
-        return try {
-            val resp = httpClient.post("$captureBaseUrl$path") {
-                contentType(ContentType.Application.Json)
-                setBody(body)
-            }
-            val bodyText = resp.bodyAsText()
+    override suspend fun snapshot(request: SnapshotRequest): RawJsonResponse =
+        try {
+            val resp = visualCaptureGrpc.snapshot(request.requestJson)
             RawJsonResponse.newBuilder()
-                .setBodyJson(bodyText)
-                .setStatus(resp.status.value)
+                .setBodyJson(resp.bodyJson)
+                .setStatus(resp.status)
                 .build()
         } catch (e: Exception) {
-            logger.warn(e) { label }
+            logger.warn(e) { "VISUAL_SNAPSHOT_PROXY_ERROR" }
             RawJsonResponse.newBuilder()
                 .setBodyJson("""{"status":"error","error":"${e.message?.take(200)}"}""")
                 .setStatus(502)
                 .build()
         }
-    }
+
+    override suspend fun ptz(request: PtzRequest): RawJsonResponse =
+        try {
+            val resp = visualCaptureGrpc.ptzGoto(request.requestJson)
+            RawJsonResponse.newBuilder()
+                .setBodyJson(resp.bodyJson)
+                .setStatus(resp.status)
+                .build()
+        } catch (e: Exception) {
+            logger.warn(e) { "VISUAL_PTZ_PROXY_ERROR" }
+            RawJsonResponse.newBuilder()
+                .setBodyJson("""{"status":"error","error":"${e.message?.take(200)}"}""")
+                .setStatus(502)
+                .build()
+        }
 }

@@ -30,13 +30,17 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8096
-              name: api
+              name: http
+            - containerPort: 5501
+              name: grpc
           envFrom:
             - configMapRef:
                 name: jervis-config
           env:
             - name: KOTLIN_SERVER_URL
               value: "http://jervis-server:8084"
+            - name: VISUAL_CAPTURE_GRPC_PORT
+              value: "5501"
             - name: INTERNAL_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -82,7 +86,11 @@ spec:
   selector:
     app: jervis-visual-capture
   ports:
-    - name: api
+    - name: http
       port: 8096
       targetPort: 8096
+      protocol: TCP
+    - name: grpc
+      port: 5501
+      targetPort: 5501
       protocol: TCP
