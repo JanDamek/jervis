@@ -50,38 +50,38 @@ async def prefetch_thought_context(
     if not query or not client_id:
         return ThoughtContext()
 
-    url = f"{settings.knowledgebase_url}/api/v1/thoughts/traverse"
+    from jervis_contracts import kb_client
+
     # Tightened parameters 2026-04-08:
     # - floor raised 0.1 → 0.25 to cut low-confidence anchor chains that
     #   previously dragged in email/newsletter trash on every turn.
     # - maxResults 20 → 10 to keep the prompt section focused.
     # - maxDepth 3 → 2 to stop 3-hop paths that bridged unrelated topics
     #   via accidental shared anchors.
-    payload = {
-        "query": query,
-        "clientId": client_id,
-        "projectId": project_id or "",
-        "groupId": group_id or "",
-        "maxResults": 10,
-        "floor": 0.25,
-        "maxDepth": 2,
-        "entryTopK": 5,
-    }
-    headers = foreground_headers("FOREGROUND")
-
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+        data = await kb_client.thought_traverse(
+            caller="orchestrator.thought_prefetch",
+            query=query,
+            client_id=client_id,
+            project_id=project_id or "",
+            group_id=group_id or "",
+            max_results=10,
+            floor=0.25,
+            max_depth=2,
+            entry_top_k=5,
+            timeout=15.0,
+        )
     except Exception as e:
         logger.warning("THOUGHT_PREFETCH: failed query=%s error=%s (%s)", query[:50], e, type(e).__name__)
         return ThoughtContext()
 
     thoughts = data.get("thoughts", [])
     knowledge = data.get("knowledge", [])
-    activated_thought_ids = data.get("activatedThoughtIds", [])
-    activated_edge_ids = data.get("activatedEdgeIds", [])
+    # kb_client returns activated_{thought,edge}_ids with snake_case; the REST
+    # handler previously used camelCase. We only consume the snake_case keys
+    # here — kept as the stable on-wire shape via proto.
+    activated_thought_ids = data.get("activated_thought_ids", [])
+    activated_edge_ids = data.get("activated_edge_ids", [])
 
     if not thoughts and not knowledge:
         return ThoughtContext()

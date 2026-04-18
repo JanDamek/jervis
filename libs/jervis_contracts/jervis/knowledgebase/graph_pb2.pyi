@@ -224,7 +224,7 @@ class ThoughtTraversalResult(_message.Message):
     def __init__(self, thoughts: _Optional[_Iterable[_Union[ThoughtEntry, _Mapping]]] = ..., knowledge: _Optional[_Iterable[_Union[ThoughtEntry, _Mapping]]] = ..., activated_thought_ids: _Optional[_Iterable[str]] = ..., activated_edge_ids: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ThoughtEntry(_message.Message):
-    __slots__ = ("id", "label", "summary", "node_type", "activation", "metadata")
+    __slots__ = ("id", "label", "summary", "node_type", "activation", "path_weight", "is_entry_point", "description", "metadata")
     class MetadataEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -237,14 +237,20 @@ class ThoughtEntry(_message.Message):
     SUMMARY_FIELD_NUMBER: _ClassVar[int]
     NODE_TYPE_FIELD_NUMBER: _ClassVar[int]
     ACTIVATION_FIELD_NUMBER: _ClassVar[int]
+    PATH_WEIGHT_FIELD_NUMBER: _ClassVar[int]
+    IS_ENTRY_POINT_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
     METADATA_FIELD_NUMBER: _ClassVar[int]
     id: str
     label: str
     summary: str
     node_type: str
     activation: float
+    path_weight: float
+    is_entry_point: bool
+    description: str
     metadata: _containers.ScalarMap[str, str]
-    def __init__(self, id: _Optional[str] = ..., label: _Optional[str] = ..., summary: _Optional[str] = ..., node_type: _Optional[str] = ..., activation: _Optional[float] = ..., metadata: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., label: _Optional[str] = ..., summary: _Optional[str] = ..., node_type: _Optional[str] = ..., activation: _Optional[float] = ..., path_weight: _Optional[float] = ..., is_entry_point: bool = ..., description: _Optional[str] = ..., metadata: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class ThoughtReinforceRequest(_message.Message):
     __slots__ = ("ctx", "thought_keys", "edge_keys")

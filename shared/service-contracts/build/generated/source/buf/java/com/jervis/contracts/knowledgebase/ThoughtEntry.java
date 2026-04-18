@@ -32,6 +32,7 @@ private static final long serialVersionUID = 0L;
     label_ = "";
     summary_ = "";
     nodeType_ = "";
+    description_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -44,7 +45,7 @@ private static final long serialVersionUID = 0L;
   protected com.google.protobuf.MapFieldReflectionAccessor internalGetMapFieldReflection(
       int number) {
     switch (number) {
-      case 6:
+      case 9:
         return internalGetMetadata();
       default:
         throw new RuntimeException(
@@ -218,6 +219,10 @@ private static final long serialVersionUID = 0L;
   public static final int ACTIVATION_FIELD_NUMBER = 5;
   private double activation_ = 0D;
   /**
+   * <pre>
+   * node.activationScore
+   * </pre>
+   *
    * <code>double activation = 5;</code>
    * @return The activation.
    */
@@ -226,7 +231,84 @@ private static final long serialVersionUID = 0L;
     return activation_;
   }
 
-  public static final int METADATA_FIELD_NUMBER = 6;
+  public static final int PATH_WEIGHT_FIELD_NUMBER = 6;
+  private double pathWeight_ = 0D;
+  /**
+   * <pre>
+   * accumulated traversal weight
+   * </pre>
+   *
+   * <code>double path_weight = 6;</code>
+   * @return The pathWeight.
+   */
+  @java.lang.Override
+  public double getPathWeight() {
+    return pathWeight_;
+  }
+
+  public static final int IS_ENTRY_POINT_FIELD_NUMBER = 7;
+  private boolean isEntryPoint_ = false;
+  /**
+   * <pre>
+   * true when this node was an entry anchor
+   * </pre>
+   *
+   * <code>bool is_entry_point = 7;</code>
+   * @return The isEntryPoint.
+   */
+  @java.lang.Override
+  public boolean getIsEntryPoint() {
+    return isEntryPoint_;
+  }
+
+  public static final int DESCRIPTION_FIELD_NUMBER = 8;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object description_ = "";
+  /**
+   * <pre>
+   * knowledge-node description (optional)
+   * </pre>
+   *
+   * <code>string description = 8;</code>
+   * @return The description.
+   */
+  @java.lang.Override
+  public java.lang.String getDescription() {
+    java.lang.Object ref = description_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      description_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * knowledge-node description (optional)
+   * </pre>
+   *
+   * <code>string description = 8;</code>
+   * @return The bytes for description.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getDescriptionBytes() {
+    java.lang.Object ref = description_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      description_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int METADATA_FIELD_NUMBER = 9;
   private static final class MetadataDefaultEntryHolder {
     static final com.google.protobuf.MapEntry<
         java.lang.String, java.lang.String> defaultEntry =
@@ -253,7 +335,7 @@ private static final long serialVersionUID = 0L;
     return internalGetMetadata().getMap().size();
   }
   /**
-   * <code>map&lt;string, string&gt; metadata = 6;</code>
+   * <code>map&lt;string, string&gt; metadata = 9;</code>
    */
   @java.lang.Override
   public boolean containsMetadata(
@@ -270,14 +352,14 @@ private static final long serialVersionUID = 0L;
     return getMetadataMap();
   }
   /**
-   * <code>map&lt;string, string&gt; metadata = 6;</code>
+   * <code>map&lt;string, string&gt; metadata = 9;</code>
    */
   @java.lang.Override
   public java.util.Map<java.lang.String, java.lang.String> getMetadataMap() {
     return internalGetMetadata().getMap();
   }
   /**
-   * <code>map&lt;string, string&gt; metadata = 6;</code>
+   * <code>map&lt;string, string&gt; metadata = 9;</code>
    */
   @java.lang.Override
   public /* nullable */
@@ -291,7 +373,7 @@ java.lang.String defaultValue) {
     return map.containsKey(key) ? map.get(key) : defaultValue;
   }
   /**
-   * <code>map&lt;string, string&gt; metadata = 6;</code>
+   * <code>map&lt;string, string&gt; metadata = 9;</code>
    */
   @java.lang.Override
   public java.lang.String getMetadataOrThrow(
@@ -334,12 +416,21 @@ java.lang.String defaultValue) {
     if (java.lang.Double.doubleToRawLongBits(activation_) != 0) {
       output.writeDouble(5, activation_);
     }
+    if (java.lang.Double.doubleToRawLongBits(pathWeight_) != 0) {
+      output.writeDouble(6, pathWeight_);
+    }
+    if (isEntryPoint_ != false) {
+      output.writeBool(7, isEntryPoint_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(description_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 8, description_);
+    }
     com.google.protobuf.GeneratedMessage
       .serializeStringMapTo(
         output,
         internalGetMetadata(),
         MetadataDefaultEntryHolder.defaultEntry,
-        6);
+        9);
     getUnknownFields().writeTo(output);
   }
 
@@ -365,6 +456,17 @@ java.lang.String defaultValue) {
       size += com.google.protobuf.CodedOutputStream
         .computeDoubleSize(5, activation_);
     }
+    if (java.lang.Double.doubleToRawLongBits(pathWeight_) != 0) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeDoubleSize(6, pathWeight_);
+    }
+    if (isEntryPoint_ != false) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeBoolSize(7, isEntryPoint_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(description_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(8, description_);
+    }
     for (java.util.Map.Entry<java.lang.String, java.lang.String> entry
          : internalGetMetadata().getMap().entrySet()) {
       com.google.protobuf.MapEntry<java.lang.String, java.lang.String>
@@ -373,7 +475,7 @@ java.lang.String defaultValue) {
           .setValue(entry.getValue())
           .build();
       size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(6, metadata__);
+          .computeMessageSize(9, metadata__);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -401,6 +503,13 @@ java.lang.String defaultValue) {
     if (java.lang.Double.doubleToLongBits(getActivation())
         != java.lang.Double.doubleToLongBits(
             other.getActivation())) return false;
+    if (java.lang.Double.doubleToLongBits(getPathWeight())
+        != java.lang.Double.doubleToLongBits(
+            other.getPathWeight())) return false;
+    if (getIsEntryPoint()
+        != other.getIsEntryPoint()) return false;
+    if (!getDescription()
+        .equals(other.getDescription())) return false;
     if (!internalGetMetadata().equals(
         other.internalGetMetadata())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
@@ -425,6 +534,14 @@ java.lang.String defaultValue) {
     hash = (37 * hash) + ACTIVATION_FIELD_NUMBER;
     hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
         java.lang.Double.doubleToLongBits(getActivation()));
+    hash = (37 * hash) + PATH_WEIGHT_FIELD_NUMBER;
+    hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+        java.lang.Double.doubleToLongBits(getPathWeight()));
+    hash = (37 * hash) + IS_ENTRY_POINT_FIELD_NUMBER;
+    hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+        getIsEntryPoint());
+    hash = (37 * hash) + DESCRIPTION_FIELD_NUMBER;
+    hash = (53 * hash) + getDescription().hashCode();
     if (!internalGetMetadata().getMap().isEmpty()) {
       hash = (37 * hash) + METADATA_FIELD_NUMBER;
       hash = (53 * hash) + internalGetMetadata().hashCode();
@@ -542,7 +659,7 @@ java.lang.String defaultValue) {
     protected com.google.protobuf.MapFieldReflectionAccessor internalGetMapFieldReflection(
         int number) {
       switch (number) {
-        case 6:
+        case 9:
           return internalGetMetadata();
         default:
           throw new RuntimeException(
@@ -553,7 +670,7 @@ java.lang.String defaultValue) {
     protected com.google.protobuf.MapFieldReflectionAccessor internalGetMutableMapFieldReflection(
         int number) {
       switch (number) {
-        case 6:
+        case 9:
           return internalGetMutableMetadata();
         default:
           throw new RuntimeException(
@@ -587,6 +704,9 @@ java.lang.String defaultValue) {
       summary_ = "";
       nodeType_ = "";
       activation_ = 0D;
+      pathWeight_ = 0D;
+      isEntryPoint_ = false;
+      description_ = "";
       internalGetMutableMetadata().clear();
       return this;
     }
@@ -637,6 +757,15 @@ java.lang.String defaultValue) {
         result.activation_ = activation_;
       }
       if (((from_bitField0_ & 0x00000020) != 0)) {
+        result.pathWeight_ = pathWeight_;
+      }
+      if (((from_bitField0_ & 0x00000040) != 0)) {
+        result.isEntryPoint_ = isEntryPoint_;
+      }
+      if (((from_bitField0_ & 0x00000080) != 0)) {
+        result.description_ = description_;
+      }
+      if (((from_bitField0_ & 0x00000100) != 0)) {
         result.metadata_ = internalGetMetadata();
         result.metadata_.makeImmutable();
       }
@@ -677,9 +806,20 @@ java.lang.String defaultValue) {
       if (java.lang.Double.doubleToRawLongBits(other.getActivation()) != 0) {
         setActivation(other.getActivation());
       }
+      if (java.lang.Double.doubleToRawLongBits(other.getPathWeight()) != 0) {
+        setPathWeight(other.getPathWeight());
+      }
+      if (other.getIsEntryPoint() != false) {
+        setIsEntryPoint(other.getIsEntryPoint());
+      }
+      if (!other.getDescription().isEmpty()) {
+        description_ = other.description_;
+        bitField0_ |= 0x00000080;
+        onChanged();
+      }
       internalGetMutableMetadata().mergeFrom(
           other.internalGetMetadata());
-      bitField0_ |= 0x00000020;
+      bitField0_ |= 0x00000100;
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
       return this;
@@ -731,15 +871,30 @@ java.lang.String defaultValue) {
               bitField0_ |= 0x00000010;
               break;
             } // case 41
-            case 50: {
+            case 49: {
+              pathWeight_ = input.readDouble();
+              bitField0_ |= 0x00000020;
+              break;
+            } // case 49
+            case 56: {
+              isEntryPoint_ = input.readBool();
+              bitField0_ |= 0x00000040;
+              break;
+            } // case 56
+            case 66: {
+              description_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000080;
+              break;
+            } // case 66
+            case 74: {
               com.google.protobuf.MapEntry<java.lang.String, java.lang.String>
               metadata__ = input.readMessage(
                   MetadataDefaultEntryHolder.defaultEntry.getParserForType(), extensionRegistry);
               internalGetMutableMetadata().getMutableMap().put(
                   metadata__.getKey(), metadata__.getValue());
-              bitField0_ |= 0x00000020;
+              bitField0_ |= 0x00000100;
               break;
-            } // case 50
+            } // case 74
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -1047,6 +1202,10 @@ java.lang.String defaultValue) {
 
     private double activation_ ;
     /**
+     * <pre>
+     * node.activationScore
+     * </pre>
+     *
      * <code>double activation = 5;</code>
      * @return The activation.
      */
@@ -1055,6 +1214,10 @@ java.lang.String defaultValue) {
       return activation_;
     }
     /**
+     * <pre>
+     * node.activationScore
+     * </pre>
+     *
      * <code>double activation = 5;</code>
      * @param value The activation to set.
      * @return This builder for chaining.
@@ -1067,12 +1230,196 @@ java.lang.String defaultValue) {
       return this;
     }
     /**
+     * <pre>
+     * node.activationScore
+     * </pre>
+     *
      * <code>double activation = 5;</code>
      * @return This builder for chaining.
      */
     public Builder clearActivation() {
       bitField0_ = (bitField0_ & ~0x00000010);
       activation_ = 0D;
+      onChanged();
+      return this;
+    }
+
+    private double pathWeight_ ;
+    /**
+     * <pre>
+     * accumulated traversal weight
+     * </pre>
+     *
+     * <code>double path_weight = 6;</code>
+     * @return The pathWeight.
+     */
+    @java.lang.Override
+    public double getPathWeight() {
+      return pathWeight_;
+    }
+    /**
+     * <pre>
+     * accumulated traversal weight
+     * </pre>
+     *
+     * <code>double path_weight = 6;</code>
+     * @param value The pathWeight to set.
+     * @return This builder for chaining.
+     */
+    public Builder setPathWeight(double value) {
+
+      pathWeight_ = value;
+      bitField0_ |= 0x00000020;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * accumulated traversal weight
+     * </pre>
+     *
+     * <code>double path_weight = 6;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearPathWeight() {
+      bitField0_ = (bitField0_ & ~0x00000020);
+      pathWeight_ = 0D;
+      onChanged();
+      return this;
+    }
+
+    private boolean isEntryPoint_ ;
+    /**
+     * <pre>
+     * true when this node was an entry anchor
+     * </pre>
+     *
+     * <code>bool is_entry_point = 7;</code>
+     * @return The isEntryPoint.
+     */
+    @java.lang.Override
+    public boolean getIsEntryPoint() {
+      return isEntryPoint_;
+    }
+    /**
+     * <pre>
+     * true when this node was an entry anchor
+     * </pre>
+     *
+     * <code>bool is_entry_point = 7;</code>
+     * @param value The isEntryPoint to set.
+     * @return This builder for chaining.
+     */
+    public Builder setIsEntryPoint(boolean value) {
+
+      isEntryPoint_ = value;
+      bitField0_ |= 0x00000040;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * true when this node was an entry anchor
+     * </pre>
+     *
+     * <code>bool is_entry_point = 7;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearIsEntryPoint() {
+      bitField0_ = (bitField0_ & ~0x00000040);
+      isEntryPoint_ = false;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object description_ = "";
+    /**
+     * <pre>
+     * knowledge-node description (optional)
+     * </pre>
+     *
+     * <code>string description = 8;</code>
+     * @return The description.
+     */
+    public java.lang.String getDescription() {
+      java.lang.Object ref = description_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        description_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * knowledge-node description (optional)
+     * </pre>
+     *
+     * <code>string description = 8;</code>
+     * @return The bytes for description.
+     */
+    public com.google.protobuf.ByteString
+        getDescriptionBytes() {
+      java.lang.Object ref = description_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        description_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * knowledge-node description (optional)
+     * </pre>
+     *
+     * <code>string description = 8;</code>
+     * @param value The description to set.
+     * @return This builder for chaining.
+     */
+    public Builder setDescription(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      description_ = value;
+      bitField0_ |= 0x00000080;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * knowledge-node description (optional)
+     * </pre>
+     *
+     * <code>string description = 8;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearDescription() {
+      description_ = getDefaultInstance().getDescription();
+      bitField0_ = (bitField0_ & ~0x00000080);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * knowledge-node description (optional)
+     * </pre>
+     *
+     * <code>string description = 8;</code>
+     * @param value The bytes for description to set.
+     * @return This builder for chaining.
+     */
+    public Builder setDescriptionBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      description_ = value;
+      bitField0_ |= 0x00000080;
       onChanged();
       return this;
     }
@@ -1096,7 +1443,7 @@ java.lang.String defaultValue) {
       if (!metadata_.isMutable()) {
         metadata_ = metadata_.copy();
       }
-      bitField0_ |= 0x00000020;
+      bitField0_ |= 0x00000100;
       onChanged();
       return metadata_;
     }
@@ -1104,7 +1451,7 @@ java.lang.String defaultValue) {
       return internalGetMetadata().getMap().size();
     }
     /**
-     * <code>map&lt;string, string&gt; metadata = 6;</code>
+     * <code>map&lt;string, string&gt; metadata = 9;</code>
      */
     @java.lang.Override
     public boolean containsMetadata(
@@ -1121,14 +1468,14 @@ java.lang.String defaultValue) {
       return getMetadataMap();
     }
     /**
-     * <code>map&lt;string, string&gt; metadata = 6;</code>
+     * <code>map&lt;string, string&gt; metadata = 9;</code>
      */
     @java.lang.Override
     public java.util.Map<java.lang.String, java.lang.String> getMetadataMap() {
       return internalGetMetadata().getMap();
     }
     /**
-     * <code>map&lt;string, string&gt; metadata = 6;</code>
+     * <code>map&lt;string, string&gt; metadata = 9;</code>
      */
     @java.lang.Override
     public /* nullable */
@@ -1142,7 +1489,7 @@ java.lang.String defaultValue) {
       return map.containsKey(key) ? map.get(key) : defaultValue;
     }
     /**
-     * <code>map&lt;string, string&gt; metadata = 6;</code>
+     * <code>map&lt;string, string&gt; metadata = 9;</code>
      */
     @java.lang.Override
     public java.lang.String getMetadataOrThrow(
@@ -1156,13 +1503,13 @@ java.lang.String defaultValue) {
       return map.get(key);
     }
     public Builder clearMetadata() {
-      bitField0_ = (bitField0_ & ~0x00000020);
+      bitField0_ = (bitField0_ & ~0x00000100);
       internalGetMutableMetadata().getMutableMap()
           .clear();
       return this;
     }
     /**
-     * <code>map&lt;string, string&gt; metadata = 6;</code>
+     * <code>map&lt;string, string&gt; metadata = 9;</code>
      */
     public Builder removeMetadata(
         java.lang.String key) {
@@ -1177,11 +1524,11 @@ java.lang.String defaultValue) {
     @java.lang.Deprecated
     public java.util.Map<java.lang.String, java.lang.String>
         getMutableMetadata() {
-      bitField0_ |= 0x00000020;
+      bitField0_ |= 0x00000100;
       return internalGetMutableMetadata().getMutableMap();
     }
     /**
-     * <code>map&lt;string, string&gt; metadata = 6;</code>
+     * <code>map&lt;string, string&gt; metadata = 9;</code>
      */
     public Builder putMetadata(
         java.lang.String key,
@@ -1190,17 +1537,17 @@ java.lang.String defaultValue) {
       if (value == null) { throw new NullPointerException("map value"); }
       internalGetMutableMetadata().getMutableMap()
           .put(key, value);
-      bitField0_ |= 0x00000020;
+      bitField0_ |= 0x00000100;
       return this;
     }
     /**
-     * <code>map&lt;string, string&gt; metadata = 6;</code>
+     * <code>map&lt;string, string&gt; metadata = 9;</code>
      */
     public Builder putAllMetadata(
         java.util.Map<java.lang.String, java.lang.String> values) {
       internalGetMutableMetadata().getMutableMap()
           .putAll(values);
-      bitField0_ |= 0x00000020;
+      bitField0_ |= 0x00000100;
       return this;
     }
 

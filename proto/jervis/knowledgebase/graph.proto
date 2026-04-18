@@ -163,8 +163,11 @@ message ThoughtEntry {
   string label = 2;
   string summary = 3;
   string node_type = 4;
-  double activation = 5;
-  map<string, string> metadata = 6;
+  double activation = 5;         // node.activationScore
+  double path_weight = 6;        // accumulated traversal weight
+  bool is_entry_point = 7;       // true when this node was an entry anchor
+  string description = 8;        // knowledge-node description (optional)
+  map<string, string> metadata = 9;
 }
 
 message ThoughtReinforceRequest {

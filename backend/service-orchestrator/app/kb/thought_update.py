@@ -25,16 +25,15 @@ async def reinforce_activated_thoughts(
     if not thought_ids and not edge_ids:
         return
 
-    url = f"{settings.knowledgebase_write_url}/api/v1/thoughts/reinforce"
-    payload = {
-        "thoughtKeys": thought_ids,
-        "edgeKeys": edge_ids,
-    }
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
+        await kb_client.thought_reinforce(
+            caller="orchestrator.thought_update",
+            thought_keys=thought_ids,
+            edge_keys=edge_ids,
+            timeout=15.0,
+        )
         logger.info("THOUGHT_UPDATE: reinforced thoughts=%d edges=%d", len(thought_ids), len(edge_ids))
     except Exception as e:
         logger.warning("THOUGHT_UPDATE: reinforce failed: %s", e)
@@ -59,18 +58,17 @@ async def extract_and_store_response_thoughts(
     if not thoughts:
         return
 
-    url = f"{settings.knowledgebase_write_url}/api/v1/thoughts/create"
-    payload = {
-        "clientId": client_id,
-        "projectId": project_id or "",
-        "groupId": group_id or "",
-        "thoughts": thoughts,
-    }
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
+        await kb_client.thought_create(
+            caller="orchestrator.thought_update",
+            thoughts=thoughts,
+            client_id=client_id,
+            project_id=project_id or "",
+            group_id=group_id or "",
+            timeout=30.0,
+        )
         logger.info("THOUGHT_UPDATE: stored %d thoughts from response", len(thoughts))
     except Exception as e:
         logger.warning("THOUGHT_UPDATE: store thoughts failed: %s", e)

@@ -59,17 +59,61 @@ public interface ThoughtEntryOrBuilder extends
       getNodeTypeBytes();
 
   /**
+   * <pre>
+   * node.activationScore
+   * </pre>
+   *
    * <code>double activation = 5;</code>
    * @return The activation.
    */
   double getActivation();
 
   /**
-   * <code>map&lt;string, string&gt; metadata = 6;</code>
+   * <pre>
+   * accumulated traversal weight
+   * </pre>
+   *
+   * <code>double path_weight = 6;</code>
+   * @return The pathWeight.
+   */
+  double getPathWeight();
+
+  /**
+   * <pre>
+   * true when this node was an entry anchor
+   * </pre>
+   *
+   * <code>bool is_entry_point = 7;</code>
+   * @return The isEntryPoint.
+   */
+  boolean getIsEntryPoint();
+
+  /**
+   * <pre>
+   * knowledge-node description (optional)
+   * </pre>
+   *
+   * <code>string description = 8;</code>
+   * @return The description.
+   */
+  java.lang.String getDescription();
+  /**
+   * <pre>
+   * knowledge-node description (optional)
+   * </pre>
+   *
+   * <code>string description = 8;</code>
+   * @return The bytes for description.
+   */
+  com.google.protobuf.ByteString
+      getDescriptionBytes();
+
+  /**
+   * <code>map&lt;string, string&gt; metadata = 9;</code>
    */
   int getMetadataCount();
   /**
-   * <code>map&lt;string, string&gt; metadata = 6;</code>
+   * <code>map&lt;string, string&gt; metadata = 9;</code>
    */
   boolean containsMetadata(
       java.lang.String key);
@@ -80,12 +124,12 @@ public interface ThoughtEntryOrBuilder extends
   java.util.Map<java.lang.String, java.lang.String>
   getMetadata();
   /**
-   * <code>map&lt;string, string&gt; metadata = 6;</code>
+   * <code>map&lt;string, string&gt; metadata = 9;</code>
    */
   java.util.Map<java.lang.String, java.lang.String>
   getMetadataMap();
   /**
-   * <code>map&lt;string, string&gt; metadata = 6;</code>
+   * <code>map&lt;string, string&gt; metadata = 9;</code>
    */
   /* nullable */
 java.lang.String getMetadataOrDefault(
@@ -93,7 +137,7 @@ java.lang.String getMetadataOrDefault(
       /* nullable */
 java.lang.String defaultValue);
   /**
-   * <code>map&lt;string, string&gt; metadata = 6;</code>
+   * <code>map&lt;string, string&gt; metadata = 9;</code>
    */
   java.lang.String getMetadataOrThrow(
       java.lang.String key);

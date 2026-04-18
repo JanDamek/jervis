@@ -282,6 +282,128 @@ async def get_node_evidence(
     ]
 
 
+async def thought_traverse(
+    *,
+    caller: str,
+    query: str,
+    client_id: str = "",
+    project_id: str = "",
+    group_id: str = "",
+    max_results: int = 20,
+    floor: float = 0.0,
+    max_depth: int = 2,
+    entry_top_k: int = 5,
+    timeout: float = 15.0,
+) -> dict:
+    """Dial KnowledgeGraphService.ThoughtTraverse (spreading activation).
+    Returns a dict with keys `thoughts`, `knowledge`, `activated_thought_ids`,
+    `activated_edge_ids` so callers mirror the legacy REST JSON shape
+    (the REST handler already projected into this same structure).
+    """
+    from jervis.knowledgebase import graph_pb2
+
+    stub = graph_stub()
+    resp = await stub.ThoughtTraverse(
+        graph_pb2.ThoughtTraversalRequest(
+            ctx=build_request_context(caller=caller, client_id=client_id),
+            query=query,
+            client_id=client_id,
+            project_id=project_id,
+            group_id=group_id,
+            max_results=max_results,
+            floor=floor,
+            max_depth=max_depth,
+            entry_top_k=entry_top_k,
+        ),
+        timeout=timeout,
+    )
+
+    def _entry(t: "graph_pb2.ThoughtEntry") -> dict:
+        # Reconstruct the nested shape consumers expect (REST handler returned
+        # {node: {...}, pathWeight, isEntryPoint} per item). Flat proto fields
+        # are projected back into the nested dict so existing formatters stay
+        # source-compatible.
+        return {
+            "node": {
+                "_id": t.id,
+                "id": t.id,
+                "key": t.id,
+                "label": t.label,
+                "summary": t.summary,
+                "description": t.description,
+                "type": t.node_type,
+                "activationScore": t.activation,
+                "metadata": dict(t.metadata),
+            },
+            "pathWeight": t.path_weight,
+            "isEntryPoint": t.is_entry_point,
+        }
+
+    return {
+        "thoughts": [_entry(t) for t in resp.thoughts],
+        "knowledge": [_entry(k) for k in resp.knowledge],
+        "activated_thought_ids": list(resp.activated_thought_ids),
+        "activated_edge_ids": list(resp.activated_edge_ids),
+    }
+
+
+async def thought_reinforce(
+    *,
+    caller: str,
+    thought_keys: list[str],
+    edge_keys: list[str],
+    timeout: float = 10.0,
+) -> bool:
+    from jervis.knowledgebase import graph_pb2
+
+    stub = graph_stub()
+    resp = await stub.ThoughtReinforce(
+        graph_pb2.ThoughtReinforceRequest(
+            ctx=build_request_context(caller=caller),
+            thought_keys=list(thought_keys),
+            edge_keys=list(edge_keys),
+        ),
+        timeout=timeout,
+    )
+    return bool(resp.ok)
+
+
+async def thought_create(
+    *,
+    caller: str,
+    thoughts: list[dict],
+    client_id: str = "",
+    project_id: str = "",
+    group_id: str = "",
+    timeout: float = 30.0,
+) -> tuple[bool, list[str]]:
+    """Accepts legacy dict shape {label, summary, type, related_entities}."""
+    from jervis.knowledgebase import graph_pb2
+
+    seeds = [
+        graph_pb2.ThoughtSeed(
+            label=str(t.get("label", "") or ""),
+            summary=str(t.get("summary", "") or ""),
+            thought_type=str(t.get("type", "") or t.get("thought_type", "") or "topic"),
+            related_entities=list(t.get("related_entities", []) or []),
+        )
+        for t in (thoughts or [])
+    ]
+    stub = graph_stub()
+    resp = await stub.ThoughtCreate(
+        graph_pb2.ThoughtCreateRequest(
+            ctx=build_request_context(caller=caller, client_id=client_id),
+            client_id=client_id,
+            project_id=project_id,
+            group_id=group_id,
+            thoughts=seeds,
+        ),
+        timeout=timeout,
+    )
+    keys = [k for k in (resp.detail or "").split(",") if k]
+    return bool(resp.ok), keys
+
+
 async def close() -> None:
     """Shut down the cached channel. Safe to call multiple times."""
     global _channel, _ingest_stub, _maintenance_stub, _queue_stub, _graph_stub, _retrieve_stub

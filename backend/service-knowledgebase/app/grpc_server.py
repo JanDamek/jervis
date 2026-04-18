@@ -672,6 +672,191 @@ class GraphServicer(graph_pb2_grpc.KnowledgeGraphServiceServicer):
             return graph_pb2.AliasAck(ok=False, error=str(e))
         return graph_pb2.AliasAck(ok=True, error="")
 
+    # ── Thought Map ────────────────────────────────────────────────────
+
+    def _thought_service(self):
+        from app.api import routes as api_routes
+
+        if api_routes.service is None:
+            raise RuntimeError("KnowledgeService not initialized")
+        # thought_service is attached to graph_service, matching the FastAPI wiring.
+        return api_routes.service.thought_service
+
+    def _thought_to_entry(self, t) -> graph_pb2.ThoughtEntry:
+        """Map a ThoughtService.traverse item to proto.
+
+        ThoughtService.traverse returns items of shape {
+            node: {_id/label/type/summary/description/activationScore/...},
+            pathWeight, isEntryPoint,
+        }. We flatten that into ThoughtEntry so consumers don't have to
+        reach through the `node` wrapper on the wire.
+        """
+        if not isinstance(t, dict):
+            t = {}
+        node = t.get("node") if isinstance(t.get("node"), dict) else t
+        meta: dict[str, str] = {}
+        for k, v in (node.get("metadata") or {}).items():
+            if v is None:
+                meta[str(k)] = ""
+            elif isinstance(v, (dict, list)):
+                import json as _json
+                meta[str(k)] = _json.dumps(v, ensure_ascii=False)
+            else:
+                meta[str(k)] = str(v)
+        return graph_pb2.ThoughtEntry(
+            id=str(node.get("_id") or node.get("id") or node.get("_key") or node.get("key") or ""),
+            label=str(node.get("label") or ""),
+            summary=str(node.get("summary") or ""),
+            node_type=str(node.get("type") or node.get("node_type") or ""),
+            activation=float(node.get("activationScore") or node.get("activation") or 0.0),
+            path_weight=float(t.get("pathWeight") or 0.0),
+            is_entry_point=bool(t.get("isEntryPoint") or False),
+            description=str(node.get("description") or ""),
+            metadata=meta,
+        )
+
+    async def ThoughtTraverse(
+        self,
+        request: graph_pb2.ThoughtTraversalRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.ThoughtTraversalResult:
+        svc = self._thought_service()
+        try:
+            result = await svc.traverse(
+                query=request.query,
+                client_id=request.client_id or "",
+                project_id=request.project_id or "",
+                group_id=request.group_id or "",
+                max_results=request.max_results or 20,
+                floor=request.floor or 0.0,
+                max_depth=request.max_depth or 2,
+                entry_top_k=request.entry_top_k or 5,
+            )
+        except Exception as e:
+            logger.warning("THOUGHT_TRAVERSE_ERROR query=%r error=%s", request.query[:120], e)
+            return graph_pb2.ThoughtTraversalResult()
+
+        thoughts = [self._thought_to_entry(t) for t in (result.get("thoughts") or [])]
+        knowledge = [self._thought_to_entry(k) for k in (result.get("knowledge") or [])]
+        return graph_pb2.ThoughtTraversalResult(
+            thoughts=thoughts,
+            knowledge=knowledge,
+            activated_thought_ids=list(result.get("activated_thought_ids") or []),
+            activated_edge_ids=list(result.get("activated_edge_ids") or []),
+        )
+
+    async def ThoughtReinforce(
+        self,
+        request: graph_pb2.ThoughtReinforceRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.ThoughtAck:
+        svc = self._thought_service()
+        try:
+            await svc.reinforce(
+                thought_keys=list(request.thought_keys),
+                edge_keys=list(request.edge_keys),
+            )
+        except Exception as e:
+            logger.warning("THOUGHT_REINFORCE_ERROR error=%s", e)
+            return graph_pb2.ThoughtAck(ok=False, detail=str(e))
+        return graph_pb2.ThoughtAck(ok=True, detail="")
+
+    async def ThoughtCreate(
+        self,
+        request: graph_pb2.ThoughtCreateRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.ThoughtAck:
+        svc = self._thought_service()
+        created_keys: list[str] = []
+        try:
+            for seed in request.thoughts:
+                key = await svc.upsert_thought(
+                    label=seed.label,
+                    summary=seed.summary,
+                    thought_type=seed.thought_type or "topic",
+                    client_id=request.client_id or "",
+                    project_id=request.project_id or "",
+                    group_id=request.group_id or "",
+                    related_entity_keys=list(seed.related_entities),
+                    embedding_priority=2,
+                )
+                if key:
+                    created_keys.append(key)
+        except Exception as e:
+            logger.warning("THOUGHT_CREATE_ERROR error=%s", e)
+            return graph_pb2.ThoughtAck(ok=False, detail=str(e))
+        return graph_pb2.ThoughtAck(ok=True, detail=",".join(created_keys))
+
+    async def ThoughtBootstrap(
+        self,
+        request: graph_pb2.ThoughtBootstrapRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.ThoughtAck:
+        from app.services.llm_router import llm_generate
+        from app.core.config import settings as _settings
+
+        async def _bootstrap_llm(prompt: str, priority: int = 2) -> str:
+            return await llm_generate(
+                prompt=prompt,
+                model=_settings.LLM_MODEL,
+                num_ctx=8192,
+                priority=priority,
+                temperature=0,
+                format_json=False,
+            )
+
+        svc = self._thought_service()
+        try:
+            result = await svc.bootstrap(
+                client_id=request.client_id or "",
+                project_id=request.project_id or "",
+                group_id=request.group_id or "",
+                llm_call_fn=_bootstrap_llm,
+            )
+        except Exception as e:
+            logger.warning("THOUGHT_BOOTSTRAP_ERROR error=%s", e)
+            return graph_pb2.ThoughtAck(ok=False, detail=str(e))
+        detail = "" if not isinstance(result, dict) else str(result.get("status") or "ok")
+        return graph_pb2.ThoughtAck(ok=True, detail=detail)
+
+    async def ThoughtMaintain(
+        self,
+        request: graph_pb2.ThoughtMaintenanceRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.ThoughtAck:
+        svc = self._thought_service()
+        try:
+            if (request.mode or "").lower() == "heavy":
+                from app.services.thought_maintenance import run_heavy_maintenance
+                result = await run_heavy_maintenance(svc, request.client_id or "")
+            else:
+                from app.services.thought_maintenance import run_light_maintenance
+                result = await run_light_maintenance(svc, request.client_id or "")
+        except Exception as e:
+            logger.warning("THOUGHT_MAINTAIN_ERROR mode=%s error=%s", request.mode, e)
+            return graph_pb2.ThoughtAck(ok=False, detail=str(e))
+        detail = "" if not isinstance(result, dict) else str(result.get("status") or "ok")
+        return graph_pb2.ThoughtAck(ok=True, detail=detail)
+
+    async def ThoughtStats(
+        self,
+        request: graph_pb2.ThoughtStatsRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> graph_pb2.ThoughtStatsResult:
+        svc = self._thought_service()
+        try:
+            stats = await svc.get_stats(request.client_id or "")
+        except Exception as e:
+            logger.warning("THOUGHT_STATS_ERROR error=%s", e)
+            return graph_pb2.ThoughtStatsResult()
+
+        return graph_pb2.ThoughtStatsResult(
+            total_thoughts=int(stats.get("totalThoughts", stats.get("nodes", 0)) or 0),
+            active_thoughts=int(stats.get("activeThoughts", stats.get("anchors", 0)) or 0),
+            total_edges=int(stats.get("totalEdges", stats.get("edges", 0)) or 0),
+            avg_activation=float(stats.get("avgActivation", 0.0) or 0.0),
+        )
+
 
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for later cleanup.

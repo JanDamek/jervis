@@ -1103,24 +1103,21 @@ async def _kb_thought_search(
     if not client_id:
         return []
 
-    url = f"{settings.knowledgebase_url}/api/v1/thoughts/traverse"
-    payload = {
-        "query": query,
-        "clientId": client_id,
-        "projectId": project_id or "",
-        "groupId": group_id or "",
-        "maxResults": 10,
-        "floor": 0.1,
-        "maxDepth": 2,
-        "entryTopK": 3,
-    }
+    from jervis_contracts import kb_client
 
     try:
-        timeout = httpx.Timeout(8.0, connect=3.0)  # Short — don't slow down kb_search
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+        data = await kb_client.thought_traverse(
+            caller="orchestrator.tools.kb_thought_search",
+            query=query,
+            client_id=client_id,
+            project_id=project_id or "",
+            group_id=group_id or "",
+            max_results=10,
+            floor=0.1,
+            max_depth=2,
+            entry_top_k=3,
+            timeout=8.0,
+        )
     except Exception as e:
         logger.debug("kb_search: Thought Map traverse failed (non-critical): %s", e)
         return []
