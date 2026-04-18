@@ -293,7 +293,7 @@ Per user directive: **router a server jsou základ, vše ostatní na tom staví.
 - Python: `service-orchestrator/app/tools/kotlin_client.py` fully rewritten to call every server RPC via generated stubs. All `payload = {…}` dicts deleted.
 - **Exit criteria**: router calls and all `/internal/*` traffic flow over gRPC. Python orchestrator can still execute every task. `k8s/build_server.sh` + `k8s/build_orchestrator.sh` + `k8s/redeploy_service.sh ollama-router` succeed. End-to-end: a chat message gets routed, task dispatched, progress streamed back, status finalized — no dicts on wire.
 
-**Phase 2 — KB** — *partially migrated, slice-by-slice*
+**Phase 2 — KB** — ✅ **COMPLETE** (13 slices, 45 RPCs, 0 FastAPI routes left)
 
 - `proto/jervis/knowledgebase/*.proto` — schema defined up front; some
   message shapes reworked as each slice lands to match real Python +
@@ -324,26 +324,28 @@ Per user directive: **router a server jsou základ, vše ostatní na tom staví.
 | 8 | `199bdca` | `KnowledgeGraphService` thought map (Traverse + Reinforce + Create + Bootstrap + Maintain + Stats) + /thoughts/* | orchestrator thought_prefetch + thought_update + executor |
 | 9 | `18c90e3` | `KnowledgeIngestService.Ingest + IngestImmediate + IngestQueue` (/ingest, /ingest-queue, /ingest-immediate) | Kotlin + orchestrator memory/tools/main/persistence/chat + MCP + correction |
 | 10 | `edf39ab` | `KnowledgeRetrieveService.ListChunksByKind + AnalyzeCode + JoernScan` + `KnowledgeGraphService.ListQueryEntities` + `KnowledgeIngestService.Crawl` (/analyze/code, /query/entities, /chunks/by-kind, /joern/scan, /crawl) | orchestrator prefetch/executor + correction |
-| 11 | `7433c78` | `KnowledgeDocumentService` Register + List + Get + Update + Delete + Reindex (/documents/register, /documents, /documents/{id} x3, /documents/{id}/reindex) | Kotlin + MCP + orchestrator qualifier |
+| 11 | `7433c78` | `KnowledgeDocumentService` Register + List + Get + Update + Delete + Reindex | Kotlin + MCP + orchestrator qualifier |
+| 12 | `cef73e0` | `KnowledgeIngestService` IngestFull + IngestFullAsync + IngestFile (multipart routes) | Kotlin AttachmentKbIndexingService + UI upload |
+| 13 | `b7c2299` | `KnowledgeDocumentService` Upload + ExtractText + `KnowledgeRetrieveService.RetrieveHybrid` | Kotlin AttachmentExtractionService + MCP kb_document_upload |
 
-**Cumulative**: 11 slices, ~35 RPCs, ~30 FastAPI routes removed.
+**Cumulative**: 13 slices, 45 RPCs, all KB FastAPI routes removed.
 
-**Still on FastAPI** (multipart binary paths — need the blob side
-channel from §2.3 to land cleanly):
-
-- `/ingest/full`, `/ingest/full/async`, `/ingest/file` — consumed by
-  Kotlin AttachmentKbIndexingService (full-ingest with attachments)
-  and UI direct upload. Async variant pushes progress via the existing
-  KbProgress callback (already gRPC from Phase 1).
-- `/documents/upload` — consumed by MCP kb_document_upload (file bytes
-  from user, no shared-FS storage yet).
-- `/documents/extract-text` — consumed by Kotlin AttachmentExtractionService
-  for qualifier relevance assessment. Pure text extraction; no KB write.
-
-- **Exit criteria** (when the full Phase 2 lands): every KB
-  retrieve/ingest/traverse in prod goes via gRPC. No Pydantic KB DTOs
-  remain in non-KB services. Only multipart blob-bearing routes may
-  stay on FastAPI until the blob side channel lands.
+**Exit state**:
+- Six servicers: KnowledgeMaintenanceService, KnowledgeQueueService,
+  KnowledgeIngestService, KnowledgeGraphService,
+  KnowledgeRetrieveService, KnowledgeDocumentService.
+- `app/api/routes.py` reduced to empty APIRouter placeholders so
+  `main.py` keeps the KB_MODE read/write/all split compiling.
+- 64 MiB channel cap on both ends covers every in-production payload
+  (email + meeting attachments). Larger payloads remain a future
+  blob-side-channel concern (§2.3).
+- Kotlin `KnowledgeServiceRestClient` is now a gRPC-only façade — it
+  keeps the name for stable import paths, but every method body dials
+  one of `Kb{Maintenance,Queue,Ingest,Retrieve,Graph,Document}GrpcClient`.
+  Ready for a future rename + cleanup pass.
+- Python consumers (orchestrator, correction, MCP) route every KB
+  call through `jervis_contracts.kb_client`, which owns a single
+  process-wide gRPC channel + lazy stubs.
 
 **Phase 3 — orchestrator surface**
 
