@@ -6,9 +6,8 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * <pre>
  * ServerUrgencyService exposes urgency config, user presence lookup, and
  * task deadline bumping — feeds the orchestrator's urgency-aware
- * scheduling tools. Config bodies are kotlinx-serialized
- * `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
- * schema, see ServerGuidelinesService for rationale).
+ * scheduling tools. Messages mirror com.jervis.dto.urgency.UrgencyConfigDto
+ * / UserPresenceDto 1:1.
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -20,28 +19,28 @@ public final class ServerUrgencyServiceGrpc {
 
   // Static method descriptors that strictly reflect the proto.
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.GetUrgencyConfigRequest,
-      com.jervis.contracts.server.UrgencyPayload> getGetConfigMethod;
+      com.jervis.contracts.server.UrgencyConfig> getGetConfigMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "GetConfig",
       requestType = com.jervis.contracts.server.GetUrgencyConfigRequest.class,
-      responseType = com.jervis.contracts.server.UrgencyPayload.class,
+      responseType = com.jervis.contracts.server.UrgencyConfig.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.GetUrgencyConfigRequest,
-      com.jervis.contracts.server.UrgencyPayload> getGetConfigMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetUrgencyConfigRequest, com.jervis.contracts.server.UrgencyPayload> getGetConfigMethod;
+      com.jervis.contracts.server.UrgencyConfig> getGetConfigMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetUrgencyConfigRequest, com.jervis.contracts.server.UrgencyConfig> getGetConfigMethod;
     if ((getGetConfigMethod = ServerUrgencyServiceGrpc.getGetConfigMethod) == null) {
       synchronized (ServerUrgencyServiceGrpc.class) {
         if ((getGetConfigMethod = ServerUrgencyServiceGrpc.getGetConfigMethod) == null) {
           ServerUrgencyServiceGrpc.getGetConfigMethod = getGetConfigMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetUrgencyConfigRequest, com.jervis.contracts.server.UrgencyPayload>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetUrgencyConfigRequest, com.jervis.contracts.server.UrgencyConfig>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetConfig"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.GetUrgencyConfigRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.UrgencyPayload.getDefaultInstance()))
+                  com.jervis.contracts.server.UrgencyConfig.getDefaultInstance()))
               .setSchemaDescriptor(new ServerUrgencyServiceMethodDescriptorSupplier("GetConfig"))
               .build();
         }
@@ -51,28 +50,28 @@ public final class ServerUrgencyServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.UpdateUrgencyConfigRequest,
-      com.jervis.contracts.server.UrgencyPayload> getUpdateConfigMethod;
+      com.jervis.contracts.server.UrgencyConfig> getUpdateConfigMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "UpdateConfig",
       requestType = com.jervis.contracts.server.UpdateUrgencyConfigRequest.class,
-      responseType = com.jervis.contracts.server.UrgencyPayload.class,
+      responseType = com.jervis.contracts.server.UrgencyConfig.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.UpdateUrgencyConfigRequest,
-      com.jervis.contracts.server.UrgencyPayload> getUpdateConfigMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.UpdateUrgencyConfigRequest, com.jervis.contracts.server.UrgencyPayload> getUpdateConfigMethod;
+      com.jervis.contracts.server.UrgencyConfig> getUpdateConfigMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.UpdateUrgencyConfigRequest, com.jervis.contracts.server.UrgencyConfig> getUpdateConfigMethod;
     if ((getUpdateConfigMethod = ServerUrgencyServiceGrpc.getUpdateConfigMethod) == null) {
       synchronized (ServerUrgencyServiceGrpc.class) {
         if ((getUpdateConfigMethod = ServerUrgencyServiceGrpc.getUpdateConfigMethod) == null) {
           ServerUrgencyServiceGrpc.getUpdateConfigMethod = getUpdateConfigMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.UpdateUrgencyConfigRequest, com.jervis.contracts.server.UrgencyPayload>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.UpdateUrgencyConfigRequest, com.jervis.contracts.server.UrgencyConfig>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "UpdateConfig"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.UpdateUrgencyConfigRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.UrgencyPayload.getDefaultInstance()))
+                  com.jervis.contracts.server.UrgencyConfig.getDefaultInstance()))
               .setSchemaDescriptor(new ServerUrgencyServiceMethodDescriptorSupplier("UpdateConfig"))
               .build();
         }
@@ -82,28 +81,28 @@ public final class ServerUrgencyServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.GetUserPresenceRequest,
-      com.jervis.contracts.server.UrgencyPayload> getGetPresenceMethod;
+      com.jervis.contracts.server.UserPresence> getGetPresenceMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "GetPresence",
       requestType = com.jervis.contracts.server.GetUserPresenceRequest.class,
-      responseType = com.jervis.contracts.server.UrgencyPayload.class,
+      responseType = com.jervis.contracts.server.UserPresence.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.GetUserPresenceRequest,
-      com.jervis.contracts.server.UrgencyPayload> getGetPresenceMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetUserPresenceRequest, com.jervis.contracts.server.UrgencyPayload> getGetPresenceMethod;
+      com.jervis.contracts.server.UserPresence> getGetPresenceMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetUserPresenceRequest, com.jervis.contracts.server.UserPresence> getGetPresenceMethod;
     if ((getGetPresenceMethod = ServerUrgencyServiceGrpc.getGetPresenceMethod) == null) {
       synchronized (ServerUrgencyServiceGrpc.class) {
         if ((getGetPresenceMethod = ServerUrgencyServiceGrpc.getGetPresenceMethod) == null) {
           ServerUrgencyServiceGrpc.getGetPresenceMethod = getGetPresenceMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetUserPresenceRequest, com.jervis.contracts.server.UrgencyPayload>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetUserPresenceRequest, com.jervis.contracts.server.UserPresence>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetPresence"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.GetUserPresenceRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.UrgencyPayload.getDefaultInstance()))
+                  com.jervis.contracts.server.UserPresence.getDefaultInstance()))
               .setSchemaDescriptor(new ServerUrgencyServiceMethodDescriptorSupplier("GetPresence"))
               .build();
         }
@@ -206,9 +205,8 @@ public final class ServerUrgencyServiceGrpc {
    * <pre>
    * ServerUrgencyService exposes urgency config, user presence lookup, and
    * task deadline bumping — feeds the orchestrator's urgency-aware
-   * scheduling tools. Config bodies are kotlinx-serialized
-   * `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
-   * schema, see ServerGuidelinesService for rationale).
+   * scheduling tools. Messages mirror com.jervis.dto.urgency.UrgencyConfigDto
+   * / UserPresenceDto 1:1.
    * </pre>
    */
   public interface AsyncService {
@@ -216,21 +214,21 @@ public final class ServerUrgencyServiceGrpc {
     /**
      */
     default void getConfig(com.jervis.contracts.server.GetUrgencyConfigRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyConfig> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetConfigMethod(), responseObserver);
     }
 
     /**
      */
     default void updateConfig(com.jervis.contracts.server.UpdateUrgencyConfigRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyConfig> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getUpdateConfigMethod(), responseObserver);
     }
 
     /**
      */
     default void getPresence(com.jervis.contracts.server.GetUserPresenceRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UserPresence> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetPresenceMethod(), responseObserver);
     }
 
@@ -247,9 +245,8 @@ public final class ServerUrgencyServiceGrpc {
    * <pre>
    * ServerUrgencyService exposes urgency config, user presence lookup, and
    * task deadline bumping — feeds the orchestrator's urgency-aware
-   * scheduling tools. Config bodies are kotlinx-serialized
-   * `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
-   * schema, see ServerGuidelinesService for rationale).
+   * scheduling tools. Messages mirror com.jervis.dto.urgency.UrgencyConfigDto
+   * / UserPresenceDto 1:1.
    * </pre>
    */
   public static abstract class ServerUrgencyServiceImplBase
@@ -265,9 +262,8 @@ public final class ServerUrgencyServiceGrpc {
    * <pre>
    * ServerUrgencyService exposes urgency config, user presence lookup, and
    * task deadline bumping — feeds the orchestrator's urgency-aware
-   * scheduling tools. Config bodies are kotlinx-serialized
-   * `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
-   * schema, see ServerGuidelinesService for rationale).
+   * scheduling tools. Messages mirror com.jervis.dto.urgency.UrgencyConfigDto
+   * / UserPresenceDto 1:1.
    * </pre>
    */
   public static final class ServerUrgencyServiceStub
@@ -286,7 +282,7 @@ public final class ServerUrgencyServiceGrpc {
     /**
      */
     public void getConfig(com.jervis.contracts.server.GetUrgencyConfigRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyConfig> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetConfigMethod(), getCallOptions()), request, responseObserver);
     }
@@ -294,7 +290,7 @@ public final class ServerUrgencyServiceGrpc {
     /**
      */
     public void updateConfig(com.jervis.contracts.server.UpdateUrgencyConfigRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyConfig> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getUpdateConfigMethod(), getCallOptions()), request, responseObserver);
     }
@@ -302,7 +298,7 @@ public final class ServerUrgencyServiceGrpc {
     /**
      */
     public void getPresence(com.jervis.contracts.server.GetUserPresenceRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UserPresence> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetPresenceMethod(), getCallOptions()), request, responseObserver);
     }
@@ -321,9 +317,8 @@ public final class ServerUrgencyServiceGrpc {
    * <pre>
    * ServerUrgencyService exposes urgency config, user presence lookup, and
    * task deadline bumping — feeds the orchestrator's urgency-aware
-   * scheduling tools. Config bodies are kotlinx-serialized
-   * `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
-   * schema, see ServerGuidelinesService for rationale).
+   * scheduling tools. Messages mirror com.jervis.dto.urgency.UrgencyConfigDto
+   * / UserPresenceDto 1:1.
    * </pre>
    */
   public static final class ServerUrgencyServiceBlockingV2Stub
@@ -341,21 +336,21 @@ public final class ServerUrgencyServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.UrgencyPayload getConfig(com.jervis.contracts.server.GetUrgencyConfigRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.UrgencyConfig getConfig(com.jervis.contracts.server.GetUrgencyConfigRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getGetConfigMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.UrgencyPayload updateConfig(com.jervis.contracts.server.UpdateUrgencyConfigRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.UrgencyConfig updateConfig(com.jervis.contracts.server.UpdateUrgencyConfigRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getUpdateConfigMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.UrgencyPayload getPresence(com.jervis.contracts.server.GetUserPresenceRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.UserPresence getPresence(com.jervis.contracts.server.GetUserPresenceRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getGetPresenceMethod(), getCallOptions(), request);
     }
@@ -373,9 +368,8 @@ public final class ServerUrgencyServiceGrpc {
    * <pre>
    * ServerUrgencyService exposes urgency config, user presence lookup, and
    * task deadline bumping — feeds the orchestrator's urgency-aware
-   * scheduling tools. Config bodies are kotlinx-serialized
-   * `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
-   * schema, see ServerGuidelinesService for rationale).
+   * scheduling tools. Messages mirror com.jervis.dto.urgency.UrgencyConfigDto
+   * / UserPresenceDto 1:1.
    * </pre>
    */
   public static final class ServerUrgencyServiceBlockingStub
@@ -393,21 +387,21 @@ public final class ServerUrgencyServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.UrgencyPayload getConfig(com.jervis.contracts.server.GetUrgencyConfigRequest request) {
+    public com.jervis.contracts.server.UrgencyConfig getConfig(com.jervis.contracts.server.GetUrgencyConfigRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetConfigMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.UrgencyPayload updateConfig(com.jervis.contracts.server.UpdateUrgencyConfigRequest request) {
+    public com.jervis.contracts.server.UrgencyConfig updateConfig(com.jervis.contracts.server.UpdateUrgencyConfigRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getUpdateConfigMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.UrgencyPayload getPresence(com.jervis.contracts.server.GetUserPresenceRequest request) {
+    public com.jervis.contracts.server.UserPresence getPresence(com.jervis.contracts.server.GetUserPresenceRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetPresenceMethod(), getCallOptions(), request);
     }
@@ -425,9 +419,8 @@ public final class ServerUrgencyServiceGrpc {
    * <pre>
    * ServerUrgencyService exposes urgency config, user presence lookup, and
    * task deadline bumping — feeds the orchestrator's urgency-aware
-   * scheduling tools. Config bodies are kotlinx-serialized
-   * `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
-   * schema, see ServerGuidelinesService for rationale).
+   * scheduling tools. Messages mirror com.jervis.dto.urgency.UrgencyConfigDto
+   * / UserPresenceDto 1:1.
    * </pre>
    */
   public static final class ServerUrgencyServiceFutureStub
@@ -445,7 +438,7 @@ public final class ServerUrgencyServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.UrgencyPayload> getConfig(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.UrgencyConfig> getConfig(
         com.jervis.contracts.server.GetUrgencyConfigRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetConfigMethod(), getCallOptions()), request);
@@ -453,7 +446,7 @@ public final class ServerUrgencyServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.UrgencyPayload> updateConfig(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.UrgencyConfig> updateConfig(
         com.jervis.contracts.server.UpdateUrgencyConfigRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getUpdateConfigMethod(), getCallOptions()), request);
@@ -461,7 +454,7 @@ public final class ServerUrgencyServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.UrgencyPayload> getPresence(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.UserPresence> getPresence(
         com.jervis.contracts.server.GetUserPresenceRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetPresenceMethod(), getCallOptions()), request);
@@ -500,15 +493,15 @@ public final class ServerUrgencyServiceGrpc {
       switch (methodId) {
         case METHODID_GET_CONFIG:
           serviceImpl.getConfig((com.jervis.contracts.server.GetUrgencyConfigRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyPayload>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyConfig>) responseObserver);
           break;
         case METHODID_UPDATE_CONFIG:
           serviceImpl.updateConfig((com.jervis.contracts.server.UpdateUrgencyConfigRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyPayload>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyConfig>) responseObserver);
           break;
         case METHODID_GET_PRESENCE:
           serviceImpl.getPresence((com.jervis.contracts.server.GetUserPresenceRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.UrgencyPayload>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.UserPresence>) responseObserver);
           break;
         case METHODID_BUMP_DEADLINE:
           serviceImpl.bumpDeadline((com.jervis.contracts.server.BumpDeadlineRequest) request,
@@ -537,21 +530,21 @@ public final class ServerUrgencyServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.GetUrgencyConfigRequest,
-              com.jervis.contracts.server.UrgencyPayload>(
+              com.jervis.contracts.server.UrgencyConfig>(
                 service, METHODID_GET_CONFIG)))
         .addMethod(
           getUpdateConfigMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.UpdateUrgencyConfigRequest,
-              com.jervis.contracts.server.UrgencyPayload>(
+              com.jervis.contracts.server.UrgencyConfig>(
                 service, METHODID_UPDATE_CONFIG)))
         .addMethod(
           getGetPresenceMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.GetUserPresenceRequest,
-              com.jervis.contracts.server.UrgencyPayload>(
+              com.jervis.contracts.server.UserPresence>(
                 service, METHODID_GET_PRESENCE)))
         .addMethod(
           getBumpDeadlineMethod(),

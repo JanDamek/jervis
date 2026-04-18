@@ -28,9 +28,8 @@ if _version_not_supported:
 class ServerUrgencyServiceStub(object):
     """ServerUrgencyService exposes urgency config, user presence lookup, and
     task deadline bumping — feeds the orchestrator's urgency-aware
-    scheduling tools. Config bodies are kotlinx-serialized
-    `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
-    schema, see ServerGuidelinesService for rationale).
+    scheduling tools. Messages mirror com.jervis.dto.urgency.UrgencyConfigDto
+    / UserPresenceDto 1:1.
     """
 
     def __init__(self, channel):
@@ -42,17 +41,17 @@ class ServerUrgencyServiceStub(object):
         self.GetConfig = channel.unary_unary(
                 '/jervis.server.ServerUrgencyService/GetConfig',
                 request_serializer=jervis_dot_server_dot_urgency__pb2.GetUrgencyConfigRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_urgency__pb2.UrgencyPayload.FromString,
+                response_deserializer=jervis_dot_server_dot_urgency__pb2.UrgencyConfig.FromString,
                 _registered_method=True)
         self.UpdateConfig = channel.unary_unary(
                 '/jervis.server.ServerUrgencyService/UpdateConfig',
                 request_serializer=jervis_dot_server_dot_urgency__pb2.UpdateUrgencyConfigRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_urgency__pb2.UrgencyPayload.FromString,
+                response_deserializer=jervis_dot_server_dot_urgency__pb2.UrgencyConfig.FromString,
                 _registered_method=True)
         self.GetPresence = channel.unary_unary(
                 '/jervis.server.ServerUrgencyService/GetPresence',
                 request_serializer=jervis_dot_server_dot_urgency__pb2.GetUserPresenceRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_urgency__pb2.UrgencyPayload.FromString,
+                response_deserializer=jervis_dot_server_dot_urgency__pb2.UserPresence.FromString,
                 _registered_method=True)
         self.BumpDeadline = channel.unary_unary(
                 '/jervis.server.ServerUrgencyService/BumpDeadline',
@@ -64,9 +63,8 @@ class ServerUrgencyServiceStub(object):
 class ServerUrgencyServiceServicer(object):
     """ServerUrgencyService exposes urgency config, user presence lookup, and
     task deadline bumping — feeds the orchestrator's urgency-aware
-    scheduling tools. Config bodies are kotlinx-serialized
-    `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
-    schema, see ServerGuidelinesService for rationale).
+    scheduling tools. Messages mirror com.jervis.dto.urgency.UrgencyConfigDto
+    / UserPresenceDto 1:1.
     """
 
     def GetConfig(self, request, context):
@@ -99,17 +97,17 @@ def add_ServerUrgencyServiceServicer_to_server(servicer, server):
             'GetConfig': grpc.unary_unary_rpc_method_handler(
                     servicer.GetConfig,
                     request_deserializer=jervis_dot_server_dot_urgency__pb2.GetUrgencyConfigRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_urgency__pb2.UrgencyPayload.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_urgency__pb2.UrgencyConfig.SerializeToString,
             ),
             'UpdateConfig': grpc.unary_unary_rpc_method_handler(
                     servicer.UpdateConfig,
                     request_deserializer=jervis_dot_server_dot_urgency__pb2.UpdateUrgencyConfigRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_urgency__pb2.UrgencyPayload.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_urgency__pb2.UrgencyConfig.SerializeToString,
             ),
             'GetPresence': grpc.unary_unary_rpc_method_handler(
                     servicer.GetPresence,
                     request_deserializer=jervis_dot_server_dot_urgency__pb2.GetUserPresenceRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_urgency__pb2.UrgencyPayload.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_urgency__pb2.UserPresence.SerializeToString,
             ),
             'BumpDeadline': grpc.unary_unary_rpc_method_handler(
                     servicer.BumpDeadline,
@@ -127,9 +125,8 @@ def add_ServerUrgencyServiceServicer_to_server(servicer, server):
 class ServerUrgencyService(object):
     """ServerUrgencyService exposes urgency config, user presence lookup, and
     task deadline bumping — feeds the orchestrator's urgency-aware
-    scheduling tools. Config bodies are kotlinx-serialized
-    `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
-    schema, see ServerGuidelinesService for rationale).
+    scheduling tools. Messages mirror com.jervis.dto.urgency.UrgencyConfigDto
+    / UserPresenceDto 1:1.
     """
 
     @staticmethod
@@ -148,7 +145,7 @@ class ServerUrgencyService(object):
             target,
             '/jervis.server.ServerUrgencyService/GetConfig',
             jervis_dot_server_dot_urgency__pb2.GetUrgencyConfigRequest.SerializeToString,
-            jervis_dot_server_dot_urgency__pb2.UrgencyPayload.FromString,
+            jervis_dot_server_dot_urgency__pb2.UrgencyConfig.FromString,
             options,
             channel_credentials,
             insecure,
@@ -175,7 +172,7 @@ class ServerUrgencyService(object):
             target,
             '/jervis.server.ServerUrgencyService/UpdateConfig',
             jervis_dot_server_dot_urgency__pb2.UpdateUrgencyConfigRequest.SerializeToString,
-            jervis_dot_server_dot_urgency__pb2.UrgencyPayload.FromString,
+            jervis_dot_server_dot_urgency__pb2.UrgencyConfig.FromString,
             options,
             channel_credentials,
             insecure,
@@ -202,7 +199,7 @@ class ServerUrgencyService(object):
             target,
             '/jervis.server.ServerUrgencyService/GetPresence',
             jervis_dot_server_dot_urgency__pb2.GetUserPresenceRequest.SerializeToString,
-            jervis_dot_server_dot_urgency__pb2.UrgencyPayload.FromString,
+            jervis_dot_server_dot_urgency__pb2.UserPresence.FromString,
             options,
             channel_credentials,
             insecure,

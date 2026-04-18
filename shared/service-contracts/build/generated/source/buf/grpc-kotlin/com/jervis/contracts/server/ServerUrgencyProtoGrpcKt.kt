@@ -32,15 +32,15 @@ public object ServerUrgencyServiceGrpcKt {
   public val serviceDescriptor: ServiceDescriptor
     get() = getServiceDescriptor()
 
-  public val getConfigMethod: MethodDescriptor<GetUrgencyConfigRequest, UrgencyPayload>
+  public val getConfigMethod: MethodDescriptor<GetUrgencyConfigRequest, UrgencyConfig>
     @JvmStatic
     get() = ServerUrgencyServiceGrpc.getGetConfigMethod()
 
-  public val updateConfigMethod: MethodDescriptor<UpdateUrgencyConfigRequest, UrgencyPayload>
+  public val updateConfigMethod: MethodDescriptor<UpdateUrgencyConfigRequest, UrgencyConfig>
     @JvmStatic
     get() = ServerUrgencyServiceGrpc.getUpdateConfigMethod()
 
-  public val getPresenceMethod: MethodDescriptor<GetUserPresenceRequest, UrgencyPayload>
+  public val getPresenceMethod: MethodDescriptor<GetUserPresenceRequest, UserPresence>
     @JvmStatic
     get() = ServerUrgencyServiceGrpc.getGetPresenceMethod()
 
@@ -49,18 +49,21 @@ public object ServerUrgencyServiceGrpcKt {
     get() = ServerUrgencyServiceGrpc.getBumpDeadlineMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.server.ServerUrgencyService service as suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.server.ServerUrgencyService service as suspending
+   * coroutines.
    */
   @StubFor(ServerUrgencyServiceGrpc::class)
   public class ServerUrgencyServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<ServerUrgencyServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions): ServerUrgencyServiceCoroutineStub = ServerUrgencyServiceCoroutineStub(channel, callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions):
+        ServerUrgencyServiceCoroutineStub = ServerUrgencyServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -70,7 +73,8 @@ public object ServerUrgencyServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getConfig(request: GetUrgencyConfigRequest, headers: Metadata = Metadata()): UrgencyPayload = unaryRpc(
+    public suspend fun getConfig(request: GetUrgencyConfigRequest, headers: Metadata = Metadata()):
+        UrgencyConfig = unaryRpc(
       channel,
       ServerUrgencyServiceGrpc.getGetConfigMethod(),
       request,
@@ -80,7 +84,8 @@ public object ServerUrgencyServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -90,7 +95,8 @@ public object ServerUrgencyServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun updateConfig(request: UpdateUrgencyConfigRequest, headers: Metadata = Metadata()): UrgencyPayload = unaryRpc(
+    public suspend fun updateConfig(request: UpdateUrgencyConfigRequest, headers: Metadata =
+        Metadata()): UrgencyConfig = unaryRpc(
       channel,
       ServerUrgencyServiceGrpc.getUpdateConfigMethod(),
       request,
@@ -100,7 +106,8 @@ public object ServerUrgencyServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -110,7 +117,8 @@ public object ServerUrgencyServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getPresence(request: GetUserPresenceRequest, headers: Metadata = Metadata()): UrgencyPayload = unaryRpc(
+    public suspend fun getPresence(request: GetUserPresenceRequest, headers: Metadata = Metadata()):
+        UserPresence = unaryRpc(
       channel,
       ServerUrgencyServiceGrpc.getGetPresenceMethod(),
       request,
@@ -120,7 +128,8 @@ public object ServerUrgencyServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -130,7 +139,8 @@ public object ServerUrgencyServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun bumpDeadline(request: BumpDeadlineRequest, headers: Metadata = Metadata()): BumpDeadlineResponse = unaryRpc(
+    public suspend fun bumpDeadline(request: BumpDeadlineRequest, headers: Metadata = Metadata()):
+        BumpDeadlineResponse = unaryRpc(
       channel,
       ServerUrgencyServiceGrpc.getBumpDeadlineMethod(),
       request,
@@ -140,7 +150,8 @@ public object ServerUrgencyServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.server.ServerUrgencyService service based on Kotlin coroutines.
+   * Skeletal implementation of the jervis.server.ServerUrgencyService service based on Kotlin
+   * coroutines.
    */
   public abstract class ServerUrgencyServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -149,49 +160,57 @@ public object ServerUrgencyServiceGrpcKt {
      * Returns the response to an RPC for jervis.server.ServerUrgencyService.GetConfig.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getConfig(request: GetUrgencyConfigRequest): UrgencyPayload = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerUrgencyService.GetConfig is unimplemented"))
+    public open suspend fun getConfig(request: GetUrgencyConfigRequest): UrgencyConfig = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerUrgencyService.GetConfig is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerUrgencyService.UpdateConfig.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun updateConfig(request: UpdateUrgencyConfigRequest): UrgencyPayload = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerUrgencyService.UpdateConfig is unimplemented"))
+    public open suspend fun updateConfig(request: UpdateUrgencyConfigRequest): UrgencyConfig = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerUrgencyService.UpdateConfig is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerUrgencyService.GetPresence.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getPresence(request: GetUserPresenceRequest): UrgencyPayload = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerUrgencyService.GetPresence is unimplemented"))
+    public open suspend fun getPresence(request: GetUserPresenceRequest): UserPresence = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerUrgencyService.GetPresence is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerUrgencyService.BumpDeadline.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun bumpDeadline(request: BumpDeadlineRequest): BumpDeadlineResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerUrgencyService.BumpDeadline is unimplemented"))
+    public open suspend fun bumpDeadline(request: BumpDeadlineRequest): BumpDeadlineResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerUrgencyService.BumpDeadline is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

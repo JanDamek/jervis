@@ -10,13 +10,12 @@ option java_outer_classname = "ServerUrgencyProto";
 
 // ServerUrgencyService exposes urgency config, user presence lookup, and
 // task deadline bumping — feeds the orchestrator's urgency-aware
-// scheduling tools. Config bodies are kotlinx-serialized
-// `UrgencyConfigDto` / `UserPresenceDto` (shared/common-dto owns the
-// schema, see ServerGuidelinesService for rationale).
+// scheduling tools. Messages mirror com.jervis.dto.urgency.UrgencyConfigDto
+// / UserPresenceDto 1:1.
 service ServerUrgencyService {
-  rpc GetConfig(GetUrgencyConfigRequest) returns (UrgencyPayload);
-  rpc UpdateConfig(UpdateUrgencyConfigRequest) returns (UrgencyPayload);
-  rpc GetPresence(GetUserPresenceRequest) returns (UrgencyPayload);
+  rpc GetConfig(GetUrgencyConfigRequest) returns (UrgencyConfig);
+  rpc UpdateConfig(UpdateUrgencyConfigRequest) returns (UrgencyConfig);
+  rpc GetPresence(GetUserPresenceRequest) returns (UserPresence);
   rpc BumpDeadline(BumpDeadlineRequest) returns (BumpDeadlineResponse);
 }
 
@@ -27,7 +26,7 @@ message GetUrgencyConfigRequest {
 
 message UpdateUrgencyConfigRequest {
   jervis.common.RequestContext ctx = 1;
-  string config_json = 2;      // kotlinx-serialized UrgencyConfigDto
+  UrgencyConfig config = 2;
 }
 
 message GetUserPresenceRequest {
@@ -43,8 +42,37 @@ message BumpDeadlineRequest {
   string reason = 4;
 }
 
-message UrgencyPayload {
-  string body_json = 1;
+// UrgencyConfig mirrors UrgencyConfigDto.
+message UrgencyConfig {
+  string client_id = 1;
+  int32 default_deadline_minutes = 2;              // default 30
+  FastPathDeadlines fast_path_deadline_minutes = 3;
+  PresenceFactor presence_factor = 4;
+  int32 presence_ttl_seconds = 5;                  // default 120
+  int32 classifier_budget_per_hour_per_sender = 6; // default 5
+  double approaching_deadline_threshold_pct = 7;   // default 0.20
+}
+
+message FastPathDeadlines {
+  int32 direct_message = 1;                        // default 2
+  int32 channel_mention = 2;                       // default 5
+  int32 reply_my_thread_active = 3;                // default 5
+  int32 reply_my_thread_stale = 4;                 // default 10
+}
+
+message PresenceFactor {
+  double active = 1;                               // default 1.0
+  double away_recent = 2;                          // default 1.5
+  double away_old = 3;                             // default 5.0
+  double offline = 4;                              // default 10.0
+  double unknown = 5;                              // default 1.0
+}
+
+message UserPresence {
+  string user_id = 1;
+  string platform = 2;
+  string presence = 3;                             // Presence enum string
+  string last_active_at_iso = 4;                   // RFC3339; empty = unknown
 }
 
 message BumpDeadlineResponse {

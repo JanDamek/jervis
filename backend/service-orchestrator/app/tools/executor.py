@@ -4401,11 +4401,67 @@ async def _execute_issue_list(client_id: str, project_id: str) -> str:
 # ── Urgency & Deadline tools ─────────────────────────────────────────────
 
 
+def _urgency_config_to_dict(c) -> dict:
+    fp = c.fast_path_deadline_minutes
+    pf = c.presence_factor
+    return {
+        "clientId": c.client_id,
+        "defaultDeadlineMinutes": c.default_deadline_minutes or 30,
+        "fastPathDeadlineMinutes": {
+            "directMessage": fp.direct_message or 2,
+            "channelMention": fp.channel_mention or 5,
+            "replyMyThreadActive": fp.reply_my_thread_active or 5,
+            "replyMyThreadStale": fp.reply_my_thread_stale or 10,
+        },
+        "presenceFactor": {
+            "active": pf.active or 1.0,
+            "awayRecent": pf.away_recent or 1.5,
+            "awayOld": pf.away_old or 5.0,
+            "offline": pf.offline or 10.0,
+            "unknown": pf.unknown or 1.0,
+        },
+        "presenceTtlSeconds": c.presence_ttl_seconds or 120,
+        "classifierBudgetPerHourPerSender": c.classifier_budget_per_hour_per_sender or 5,
+        "approachingDeadlineThresholdPct": c.approaching_deadline_threshold_pct or 0.20,
+    }
+
+
+def _dict_to_urgency_config(urgency_pb2, config: dict):
+    fp = config.get("fastPathDeadlineMinutes") or {}
+    pf = config.get("presenceFactor") or {}
+    return urgency_pb2.UrgencyConfig(
+        client_id=str(config.get("clientId") or ""),
+        default_deadline_minutes=int(config.get("defaultDeadlineMinutes") or 30),
+        fast_path_deadline_minutes=urgency_pb2.FastPathDeadlines(
+            direct_message=int(fp.get("directMessage") or 2),
+            channel_mention=int(fp.get("channelMention") or 5),
+            reply_my_thread_active=int(fp.get("replyMyThreadActive") or 5),
+            reply_my_thread_stale=int(fp.get("replyMyThreadStale") or 10),
+        ),
+        presence_factor=urgency_pb2.PresenceFactor(
+            active=float(pf.get("active") or 1.0),
+            away_recent=float(pf.get("awayRecent") or 1.5),
+            away_old=float(pf.get("awayOld") or 5.0),
+            offline=float(pf.get("offline") or 10.0),
+            unknown=float(pf.get("unknown") or 1.0),
+        ),
+        presence_ttl_seconds=int(config.get("presenceTtlSeconds") or 120),
+        classifier_budget_per_hour_per_sender=int(
+            config.get("classifierBudgetPerHourPerSender") or 5
+        ),
+        approaching_deadline_threshold_pct=float(
+            config.get("approachingDeadlineThresholdPct") or 0.20
+        ),
+    )
+
+
 async def _execute_get_urgency_config(client_id: str) -> str:
     """Read the urgency / deadline config for a client."""
     if not client_id:
         return "Error: client_id is required."
     try:
+        import json as _json
+
         from app.grpc_server_client import server_urgency_stub
         from jervis.server import urgency_pb2
         from jervis.common import types_pb2
@@ -4417,7 +4473,7 @@ async def _execute_get_urgency_config(client_id: str) -> str:
             urgency_pb2.GetUrgencyConfigRequest(ctx=ctx, client_id=client_id),
             timeout=10.0,
         )
-        return resp.body_json or "{}"
+        return _json.dumps(_urgency_config_to_dict(resp), ensure_ascii=False)
     except Exception as e:
         return f"Error reading urgency config: {e}"
 
@@ -4427,8 +4483,6 @@ async def _execute_update_urgency_config(config: dict) -> str:
     if not isinstance(config, dict) or "clientId" not in config:
         return "Error: config must be an object with at least clientId."
     try:
-        import json as _json
-
         from app.grpc_server_client import server_urgency_stub
         from jervis.server import urgency_pb2
         from jervis.common import types_pb2
@@ -4437,7 +4491,10 @@ async def _execute_update_urgency_config(config: dict) -> str:
         ctx = types_pb2.RequestContext()
         prepare_context(ctx)
         await server_urgency_stub().UpdateConfig(
-            urgency_pb2.UpdateUrgencyConfigRequest(ctx=ctx, config_json=_json.dumps(config)),
+            urgency_pb2.UpdateUrgencyConfigRequest(
+                ctx=ctx,
+                config=_dict_to_urgency_config(urgency_pb2, config),
+            ),
             timeout=10.0,
         )
         return f"Urgency config updated for client {config.get('clientId')}."
@@ -4480,6 +4537,8 @@ async def _execute_get_user_presence(user_id: str, platform: str) -> str:
     if not user_id or not platform:
         return "Error: user_id and platform are required."
     try:
+        import json as _json
+
         from app.grpc_server_client import server_urgency_stub
         from jervis.server import urgency_pb2
         from jervis.common import types_pb2
@@ -4491,6 +4550,14 @@ async def _execute_get_user_presence(user_id: str, platform: str) -> str:
             urgency_pb2.GetUserPresenceRequest(ctx=ctx, user_id=user_id, platform=platform),
             timeout=10.0,
         )
-        return resp.body_json or "{}"
+        return _json.dumps(
+            {
+                "userId": resp.user_id,
+                "platform": resp.platform,
+                "presence": resp.presence,
+                "lastActiveAtIso": resp.last_active_at_iso or None,
+            },
+            ensure_ascii=False,
+        )
     except Exception as e:
         return f"Error reading presence: {e}"

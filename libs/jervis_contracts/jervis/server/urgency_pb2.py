@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1bjervis/server/urgency.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"X\n\x17GetUrgencyConfigRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\"]\n\x1aUpdateUrgencyConfigRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x13\n\x0b\x63onfig_json\x18\x02 \x01(\t\"g\n\x16GetUserPresenceRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07user_id\x18\x02 \x01(\t\x12\x10\n\x08platform\x18\x03 \x01(\t\"x\n\x13\x42umpDeadlineRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\x14\n\x0c\x64\x65\x61\x64line_iso\x18\x03 \x01(\t\x12\x0e\n\x06reason\x18\x04 \x01(\t\"#\n\x0eUrgencyPayload\x12\x11\n\tbody_json\x18\x01 \x01(\t\"1\n\x14\x42umpDeadlineResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t2\xf2\x02\n\x14ServerUrgencyService\x12R\n\tGetConfig\x12&.jervis.server.GetUrgencyConfigRequest\x1a\x1d.jervis.server.UrgencyPayload\x12X\n\x0cUpdateConfig\x12).jervis.server.UpdateUrgencyConfigRequest\x1a\x1d.jervis.server.UrgencyPayload\x12S\n\x0bGetPresence\x12%.jervis.server.GetUserPresenceRequest\x1a\x1d.jervis.server.UrgencyPayload\x12W\n\x0c\x42umpDeadline\x12\".jervis.server.BumpDeadlineRequest\x1a#.jervis.server.BumpDeadlineResponseB3\n\x1b\x63om.jervis.contracts.serverB\x12ServerUrgencyProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1bjervis/server/urgency.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"X\n\x17GetUrgencyConfigRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\"v\n\x1aUpdateUrgencyConfigRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12,\n\x06\x63onfig\x18\x02 \x01(\x0b\x32\x1c.jervis.server.UrgencyConfig\"g\n\x16GetUserPresenceRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07user_id\x18\x02 \x01(\t\x12\x10\n\x08platform\x18\x03 \x01(\t\"x\n\x13\x42umpDeadlineRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\x14\n\x0c\x64\x65\x61\x64line_iso\x18\x03 \x01(\t\x12\x0e\n\x06reason\x18\x04 \x01(\t\"\xbb\x02\n\rUrgencyConfig\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12 \n\x18\x64\x65\x66\x61ult_deadline_minutes\x18\x02 \x01(\x05\x12\x44\n\x1a\x66\x61st_path_deadline_minutes\x18\x03 \x01(\x0b\x32 .jervis.server.FastPathDeadlines\x12\x36\n\x0fpresence_factor\x18\x04 \x01(\x0b\x32\x1d.jervis.server.PresenceFactor\x12\x1c\n\x14presence_ttl_seconds\x18\x05 \x01(\x05\x12-\n%classifier_budget_per_hour_per_sender\x18\x06 \x01(\x05\x12*\n\"approaching_deadline_threshold_pct\x18\x07 \x01(\x01\"\x83\x01\n\x11\x46\x61stPathDeadlines\x12\x16\n\x0e\x64irect_message\x18\x01 \x01(\x05\x12\x17\n\x0f\x63hannel_mention\x18\x02 \x01(\x05\x12\x1e\n\x16reply_my_thread_active\x18\x03 \x01(\x05\x12\x1d\n\x15reply_my_thread_stale\x18\x04 \x01(\x05\"i\n\x0ePresenceFactor\x12\x0e\n\x06\x61\x63tive\x18\x01 \x01(\x01\x12\x13\n\x0b\x61way_recent\x18\x02 \x01(\x01\x12\x10\n\x08\x61way_old\x18\x03 \x01(\x01\x12\x0f\n\x07offline\x18\x04 \x01(\x01\x12\x0f\n\x07unknown\x18\x05 \x01(\x01\"_\n\x0cUserPresence\x12\x0f\n\x07user_id\x18\x01 \x01(\t\x12\x10\n\x08platform\x18\x02 \x01(\t\x12\x10\n\x08presence\x18\x03 \x01(\t\x12\x1a\n\x12last_active_at_iso\x18\x04 \x01(\t\"1\n\x14\x42umpDeadlineResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t2\xee\x02\n\x14ServerUrgencyService\x12Q\n\tGetConfig\x12&.jervis.server.GetUrgencyConfigRequest\x1a\x1c.jervis.server.UrgencyConfig\x12W\n\x0cUpdateConfig\x12).jervis.server.UpdateUrgencyConfigRequest\x1a\x1c.jervis.server.UrgencyConfig\x12Q\n\x0bGetPresence\x12%.jervis.server.GetUserPresenceRequest\x1a\x1b.jervis.server.UserPresence\x12W\n\x0c\x42umpDeadline\x12\".jervis.server.BumpDeadlineRequest\x1a#.jervis.server.BumpDeadlineResponseB3\n\x1b\x63om.jervis.contracts.serverB\x12ServerUrgencyProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,15 +36,21 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_GETURGENCYCONFIGREQUEST']._serialized_start=73
   _globals['_GETURGENCYCONFIGREQUEST']._serialized_end=161
   _globals['_UPDATEURGENCYCONFIGREQUEST']._serialized_start=163
-  _globals['_UPDATEURGENCYCONFIGREQUEST']._serialized_end=256
-  _globals['_GETUSERPRESENCEREQUEST']._serialized_start=258
-  _globals['_GETUSERPRESENCEREQUEST']._serialized_end=361
-  _globals['_BUMPDEADLINEREQUEST']._serialized_start=363
-  _globals['_BUMPDEADLINEREQUEST']._serialized_end=483
-  _globals['_URGENCYPAYLOAD']._serialized_start=485
-  _globals['_URGENCYPAYLOAD']._serialized_end=520
-  _globals['_BUMPDEADLINERESPONSE']._serialized_start=522
-  _globals['_BUMPDEADLINERESPONSE']._serialized_end=571
-  _globals['_SERVERURGENCYSERVICE']._serialized_start=574
-  _globals['_SERVERURGENCYSERVICE']._serialized_end=944
+  _globals['_UPDATEURGENCYCONFIGREQUEST']._serialized_end=281
+  _globals['_GETUSERPRESENCEREQUEST']._serialized_start=283
+  _globals['_GETUSERPRESENCEREQUEST']._serialized_end=386
+  _globals['_BUMPDEADLINEREQUEST']._serialized_start=388
+  _globals['_BUMPDEADLINEREQUEST']._serialized_end=508
+  _globals['_URGENCYCONFIG']._serialized_start=511
+  _globals['_URGENCYCONFIG']._serialized_end=826
+  _globals['_FASTPATHDEADLINES']._serialized_start=829
+  _globals['_FASTPATHDEADLINES']._serialized_end=960
+  _globals['_PRESENCEFACTOR']._serialized_start=962
+  _globals['_PRESENCEFACTOR']._serialized_end=1067
+  _globals['_USERPRESENCE']._serialized_start=1069
+  _globals['_USERPRESENCE']._serialized_end=1164
+  _globals['_BUMPDEADLINERESPONSE']._serialized_start=1166
+  _globals['_BUMPDEADLINERESPONSE']._serialized_end=1215
+  _globals['_SERVERURGENCYSERVICE']._serialized_start=1218
+  _globals['_SERVERURGENCYSERVICE']._serialized_end=1584
 # @@protoc_insertion_point(module_scope)
