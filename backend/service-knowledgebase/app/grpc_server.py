@@ -310,6 +310,30 @@ class IngestServicer(ingest_pb2_grpc.KnowledgeIngestServiceServicer):
             methods_indexed=int(getattr(result, "methodsIndexed", getattr(result, "methods_indexed", 0))),
         )
 
+    async def Purge(
+        self,
+        request: ingest_pb2.PurgeRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> ingest_pb2.PurgeResult:
+        source_urn = request.source_urn
+        if not source_urn:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "source_urn is required")
+        try:
+            result = await self._service().purge(source_urn)
+        except Exception as e:
+            logger.error("PURGE_ERROR sourceUrn=%s error=%s", source_urn, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+
+        # KnowledgeService.purge returns {"chunks_deleted", "nodes_cleaned", ...}
+        return ingest_pb2.PurgeResult(
+            status="success",
+            chunks_deleted=int(result.get("chunks_deleted", 0)),
+            nodes_cleaned=int(result.get("nodes_cleaned", 0)),
+            edges_cleaned=int(result.get("edges_cleaned", 0)),
+            nodes_deleted=int(result.get("nodes_deleted", 0)),
+            edges_deleted=int(result.get("edges_deleted", 0)),
+        )
+
     async def IngestGitCommits(
         self,
         request: ingest_pb2.GitCommitIngestRequest,

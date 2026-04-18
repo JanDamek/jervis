@@ -515,14 +515,8 @@ async def crawl(request: CrawlRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@write_router.post("/purge", response_model=PurgeResult)
-async def purge(request: PurgeRequest):
-    """Delete all RAG chunks and clean graph refs for a sourceUrn."""
-    try:
-        result = await service.purge(request.sourceUrn)
-        return PurgeResult(status="success", **result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /purge migrated to gRPC (KnowledgeIngestService.Purge on :5501 — see
+# app/grpc_server.py).
 
 
 # /maintenance/batch, /retag-project, /retag-group migrated to gRPC

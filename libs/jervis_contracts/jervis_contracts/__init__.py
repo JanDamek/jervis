@@ -5,4 +5,4 @@ Generated Protobuf + gRPC stubs under `_generated/` are populated by
 helpers live next to this file (e.g. `interceptors/`).
 """
 
-__all__ = ["interceptors"]
+__all__ = ["interceptors", "kb_client"]

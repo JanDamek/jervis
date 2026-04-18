@@ -577,29 +577,30 @@ async def kb_delete_by_source(
         source_urn: Source identifier to purge (e.g., "infra://credentials", "agent://claude-code/finding")
         client_id: Optional client ID filter (empty = match any client)
     """
-    payload = {"sourceUrn": source_urn}
-    if client_id:
-        payload["clientId"] = client_id
+    from jervis.knowledgebase import ingest_pb2
+    from jervis_contracts import kb_client
+    import grpc
 
-    async with httpx.AsyncClient(timeout=120) as client:
-        try:
-            resp = await client.post(
-                f"{settings.knowledgebase_write_url}/api/v1/purge",
-                json=payload,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPStatusError as e:
-            detail = e.response.text[:500] if e.response else str(e)
-            return f"Error purging KB (HTTP {e.response.status_code}): {detail}"
+    stub = kb_client.ingest_stub()
+    try:
+        result = await stub.Purge(
+            ingest_pb2.PurgeRequest(
+                ctx=kb_client.build_request_context(caller="service-mcp", client_id=client_id),
+                source_urn=source_urn,
+                client_id=client_id,
+            ),
+            timeout=120.0,
+        )
+    except grpc.aio.AioRpcError as e:
+        return f"Error purging KB ({e.code().name}): {e.details() or ''}"
 
     return (
         f"Purged source_urn='{source_urn}':\n"
-        f"  RAG chunks deleted: {data.get('chunks_deleted', 0)}\n"
-        f"  Graph nodes cleaned: {data.get('nodes_cleaned', 0)}\n"
-        f"  Graph nodes deleted: {data.get('nodes_deleted', 0)}\n"
-        f"  Graph edges cleaned: {data.get('edges_cleaned', 0)}\n"
-        f"  Graph edges deleted: {data.get('edges_deleted', 0)}"
+        f"  RAG chunks deleted: {result.chunks_deleted}\n"
+        f"  Graph nodes cleaned: {result.nodes_cleaned}\n"
+        f"  Graph nodes deleted: {result.nodes_deleted}\n"
+        f"  Graph edges cleaned: {result.edges_cleaned}\n"
+        f"  Graph edges deleted: {result.edges_deleted}"
     )
 
 

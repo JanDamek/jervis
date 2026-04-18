@@ -432,19 +432,14 @@ class KnowledgeServiceRestClient(
 
     override suspend fun purge(sourceUrn: String): Boolean {
         logger.debug { "Calling knowledgebase purge: sourceUrn=$sourceUrn" }
-
         return try {
-            val response: PythonPurgeResult = client.post("$apiBaseUrl/purge") {
-                contentType(ContentType.Application.Json)
-                setBody(PythonPurgeRequest(sourceUrn = sourceUrn))
-            }.body()
-
+            val result = ingestGrpc().purge(sourceUrn)
             logger.info {
-                "Purge complete: chunks=${response.chunksDeleted} " +
-                    "nodes_cleaned=${response.nodesCleaned} edges_cleaned=${response.edgesCleaned} " +
-                    "nodes_deleted=${response.nodesDeleted} edges_deleted=${response.edgesDeleted}"
+                "Purge complete: chunks=${result.chunksDeleted} " +
+                    "nodes_cleaned=${result.nodesCleaned} edges_cleaned=${result.edgesCleaned} " +
+                    "nodes_deleted=${result.nodesDeleted} edges_deleted=${result.edgesDeleted}"
             }
-            response.status == "success"
+            result.status == "success"
         } catch (e: Exception) {
             logger.error(e) { "Failed to purge knowledgebase: ${e.message}" }
             false
@@ -889,25 +884,7 @@ private data class PythonGraphNode(
     val properties: Map<String, String>,
 )
 
-@Serializable
-private data class PythonPurgeRequest(
-    val sourceUrn: String,
-)
-
-@Serializable
-private data class PythonPurgeResult(
-    val status: String,
-    @SerialName("chunks_deleted")
-    val chunksDeleted: Int = 0,
-    @SerialName("nodes_cleaned")
-    val nodesCleaned: Int = 0,
-    @SerialName("edges_cleaned")
-    val edgesCleaned: Int = 0,
-    @SerialName("nodes_deleted")
-    val nodesDeleted: Int = 0,
-    @SerialName("edges_deleted")
-    val edgesDeleted: Int = 0,
-)
+// Purge DTOs moved to gRPC (KbIngestGrpcClient.purge).
 
 @Serializable
 private data class PythonFullIngestResult(

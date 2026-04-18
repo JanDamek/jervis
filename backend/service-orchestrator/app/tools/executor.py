@@ -1177,28 +1177,27 @@ async def _execute_kb_delete(
 
     logger.info("kb_delete: sourceUrn=%r reason=%r clientId=%s", source_urn, reason[:100], client_id)
 
-    kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
-    url = f"{kb_write_url}/purge"
+    from jervis.knowledgebase import ingest_pb2
+    from jervis_contracts import kb_client
+    import grpc
 
-    payload = {
-        "sourceUrn": source_urn,
-        "clientId": client_id,
-    }
-
+    stub = kb_client.ingest_stub()
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.TimeoutException:
-        return f"Error: KB delete timed out after 15s for sourceUrn: {source_urn}"
-    except httpx.HTTPStatusError as e:
-        return f"Error: KB purge returned HTTP {e.response.status_code} for sourceUrn: {source_urn}"
+        result = await stub.Purge(
+            ingest_pb2.PurgeRequest(
+                ctx=kb_client.build_request_context(caller="orchestrator", client_id=client_id),
+                source_urn=source_urn,
+                client_id=client_id,
+            ),
+            timeout=15.0,
+        )
+    except grpc.aio.AioRpcError as e:
+        return f"Error: KB purge returned {e.code().name} for sourceUrn: {source_urn}"
     except Exception as e:
         return f"Error: KB delete failed: {str(e)[:200]}"
 
-    chunks_deleted = data.get("chunks_deleted", 0)
-    nodes_deleted = data.get("nodes_deleted", 0)
+    chunks_deleted = result.chunks_deleted
+    nodes_deleted = result.nodes_deleted
 
     logger.info(
         "kb_delete OK: sourceUrn=%r chunks=%d nodes=%d reason=%r",

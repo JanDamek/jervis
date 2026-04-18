@@ -14,6 +14,8 @@ import com.jervis.contracts.knowledgebase.GitFileInfo
 import com.jervis.contracts.knowledgebase.GitStructureIngestRequest as ProtoGitStructureIngestRequest
 import com.jervis.contracts.knowledgebase.GitStructureIngestResult
 import com.jervis.contracts.knowledgebase.KnowledgeIngestServiceGrpcKt
+import com.jervis.contracts.knowledgebase.PurgeRequest as ProtoPurgeRequest
+import com.jervis.contracts.knowledgebase.PurgeResult
 import com.jervis.knowledgebase.model.CpgIngestRequest
 import com.jervis.knowledgebase.model.GitCommitIngestRequest
 import com.jervis.knowledgebase.model.GitStructureIngestRequest
@@ -125,6 +127,15 @@ class KbIngestGrpcClient(
                 .setProjectId(request.projectId)
                 .setBranch(request.branch)
                 .setWorkspacePath(request.workspacePath)
+                .build(),
+        )
+
+    suspend fun purge(sourceUrn: String, clientId: String = ""): PurgeResult =
+        stub.purge(
+            ProtoPurgeRequest.newBuilder()
+                .setCtx(ctx(clientId))
+                .setSourceUrn(sourceUrn)
+                .setClientId(clientId)
                 .build(),
         )
 }

@@ -114,14 +114,25 @@ class CorrectionAgent:
         }
 
     async def delete_correction(self, source_urn: str) -> dict:
-        """Delete a correction from KB."""
-        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_WRITE) as http:
-            resp = await http.post(
-                f"{self.kb_write_url}/purge",
-                json={"sourceUrn": source_urn},
+        """Delete a correction from KB (gRPC via KnowledgeIngestService.Purge)."""
+        from jervis.knowledgebase import ingest_pb2
+        from jervis_contracts import kb_client
+
+        stub = kb_client.ingest_stub()
+        result = await stub.Purge(
+            ingest_pb2.PurgeRequest(
+                ctx=kb_client.build_request_context(caller="service-correction"),
+                source_urn=source_urn,
             )
-            resp.raise_for_status()
-            return resp.json()
+        )
+        return {
+            "status": result.status,
+            "chunks_deleted": result.chunks_deleted,
+            "nodes_cleaned": result.nodes_cleaned,
+            "edges_cleaned": result.edges_cleaned,
+            "nodes_deleted": result.nodes_deleted,
+            "edges_deleted": result.edges_deleted,
+        }
 
     async def list_corrections(
         self,
