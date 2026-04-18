@@ -293,14 +293,57 @@ Per user directive: **router a server jsou základ, vše ostatní na tom staví.
 - Python: `service-orchestrator/app/tools/kotlin_client.py` fully rewritten to call every server RPC via generated stubs. All `payload = {…}` dicts deleted.
 - **Exit criteria**: router calls and all `/internal/*` traffic flow over gRPC. Python orchestrator can still execute every task. `k8s/build_server.sh` + `k8s/build_orchestrator.sh` + `k8s/redeploy_service.sh ollama-router` succeed. End-to-end: a chat message gets routed, task dispatched, progress streamed back, status finalized — no dicts on wire.
 
-**Phase 2 — KB**
+**Phase 2 — KB** — *partially migrated, slice-by-slice*
 
-- `proto/jervis/knowledgebase/*.proto`.
-- `backend/service-knowledgebase/app/api/routes.py` → gRPC service impl.
-- Blob side channel for `IngestFull` and `Upload` (see §2.3).
-- Kotlin: `KnowledgeServiceRestClient.kt` (all 800+ lines) deleted, replaced with generated client.
-- Python: `service-orchestrator/app/kb/prefetch.py`, correction agent's KB calls, MCP server's `kb_search` proxy — all rewritten.
-- **Exit criteria**: every KB retrieve/ingest/traverse in prod goes via gRPC. No Pydantic KB DTOs remain in non-KB services.
+- `proto/jervis/knowledgebase/*.proto` — schema defined up front; some
+  message shapes reworked as each slice lands to match real Python +
+  Kotlin call signatures (see slice commits for the deltas).
+- `backend/service-knowledgebase/app/grpc_server.py` — additive bootstrap
+  registered in lifespan on `GRPC_PORT` (default `5501`). FastAPI stays
+  live on `:8080` for still-unmigrated routes. Each slice registers one
+  more servicer + grows the reflection list.
+- Kotlin: `KnowledgeServiceRestClient.kt` stays as the façade. Each
+  slice wires a `KbXxxGrpcClient` via ctor and swaps the corresponding
+  method bodies from Ktor `client.post(...)` to the gRPC stub call.
+  `PythonXxx` serializable DTOs are deleted when their last reader
+  goes.
+- K8s: `app_knowledgebase.yaml` exposes `containerPort: 5501` on both
+  read + write Deployments (additive, no impact on existing traffic).
+
+**Slice ledger**
+
+| # | Merge | Surface migrated | Consumer scope |
+|---|-------|------------------|----------------|
+| 1 | `f418e78` | `KnowledgeMaintenanceService.RunBatch + RetagProject + RetagGroup` (maintenance/batch + retag-project + retag-group) | Kotlin only (BackgroundEngine, ProjectService) |
+| 2 | `542c279` | `KnowledgeQueueService.ListQueue` (/queue) | Kotlin only (IndexingQueueRpcImpl) |
+| 3 | `4da4923` | `KnowledgeIngestService.IngestCpg + IngestGitStructure + IngestGitCommits` (ingest/cpg + ingest/git-structure + ingest/git-commits) | Kotlin only (GitContinuousIndexer) |
+
+**Still on FastAPI** (all slices below must rewrite Python consumers
+in the same commit that removes the REST route):
+
+- `/retrieve`, `/retrieve/simple`, `/retrieve/hybrid` — 4+ orchestrator
+  call sites (`app/kb/prefetch.py`, `app/memory/{affairs,agent,action_log}.py`,
+  `app/tools/executor.py`).
+- `/traverse`, `/graph/node`, `/graph/search`, `/graph/node/*/evidence`,
+  `/query/entities`, `/chunks/by-kind` — 10+ orchestrator call sites,
+  heavy graph walks.
+- `/alias/*` (resolve / list / stats / register / merge) — MCP consumer
+  (`service-mcp/app/main.py`).
+- `/ingest`, `/ingest-immediate`, `/ingest-queue`, `/ingest/file`,
+  `/ingest/full`, `/ingest/full/async` — orchestrator + MCP + correction
+  consumers + multipart upload path (see blob side channel in §2.3).
+- `/purge` — Kotlin + correction + orchestrator + MCP consumers.
+- `/documents/upload`, `/documents/register`, `/documents/extract-text`,
+  `/documents`, `/documents/{id}`, `/documents/{id}/delete`,
+  `/documents/{id}/reindex` — Kotlin + MCP + orchestrator consumers
+  (the binary upload path needs the blob side channel from §2.3).
+- `/crawl`, `/joern/scan`, `/analyze/code` — mostly unused externally
+  but listed for completeness.
+- `/thoughts/*` — orchestrator consumers.
+
+- **Exit criteria** (when the full Phase 2 lands): every KB
+  retrieve/ingest/traverse in prod goes via gRPC. No Pydantic KB DTOs
+  remain in non-KB services.
 
 **Phase 3 — orchestrator surface**
 
