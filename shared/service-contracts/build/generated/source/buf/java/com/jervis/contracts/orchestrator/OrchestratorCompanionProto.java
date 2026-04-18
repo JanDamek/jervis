@@ -52,6 +52,11 @@ public final class OrchestratorCompanionProto extends com.google.protobuf.Genera
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_orchestrator_AdhocStatusResponse_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_AdhocResult_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_AdhocResult_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_orchestrator_SessionStartRequest_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
@@ -129,52 +134,55 @@ public final class OrchestratorCompanionProto extends com.google.protobuf.Genera
       "(\t\022\r\n\005error\030\004 \001(\t\"i\n\022AdhocStatusRequest\022" +
       "*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCont" +
       "ext\022\017\n\007task_id\030\002 \001(\t\022\026\n\016workspace_path\030\003" +
-      " \001(\t\"K\n\023AdhocStatusResponse\022\017\n\007task_id\030\001" +
-      " \001(\t\022\016\n\006status\030\002 \001(\t\022\023\n\013result_json\030\003 \001(" +
-      "\t\"\257\002\n\023SessionStartRequest\022*\n\003ctx\030\001 \001(\0132\035" +
-      ".jervis.common.RequestContext\022\022\n\nsession" +
-      "_id\030\002 \001(\t\022\r\n\005brief\030\003 \001(\t\022\021\n\tclient_id\030\004 " +
-      "\001(\t\022\022\n\nproject_id\030\005 \001(\t\022\020\n\010language\030\006 \001(" +
-      "\t\022F\n\007context\030\007 \003(\01325.jervis.orchestrator" +
-      ".SessionStartRequest.ContextEntry\022\030\n\020att" +
-      "achment_paths\030\010 \003(\t\032.\n\014ContextEntry\022\013\n\003k" +
-      "ey\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\"c\n\024SessionSt" +
-      "artResponse\022\020\n\010job_name\030\001 \001(\t\022\026\n\016workspa" +
-      "ce_path\030\002 \001(\t\022\022\n\nsession_id\030\003 \001(\t\022\r\n\005err" +
-      "or\030\004 \001(\t\"\343\001\n\023SessionEventRequest\022*\n\003ctx\030" +
-      "\001 \001(\0132\035.jervis.common.RequestContext\022\022\n\n" +
-      "session_id\030\002 \001(\t\022\014\n\004type\030\003 \001(\t\022\017\n\007conten" +
-      "t\030\004 \001(\t\022@\n\004meta\030\005 \003(\01322.jervis.orchestra" +
-      "tor.SessionEventRequest.MetaEntry\032+\n\tMet" +
-      "aEntry\022\013\n\003key\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\"," +
-      "\n\017SessionEventAck\022\n\n\002ok\030\001 \001(\010\022\r\n\005error\030\002" +
-      " \001(\t\"L\n\nSessionRef\022*\n\003ctx\030\001 \001(\0132\035.jervis" +
-      ".common.RequestContext\022\022\n\nsession_id\030\002 \001" +
-      "(\t\"\'\n\nSessionAck\022\n\n\002ok\030\001 \001(\010\022\r\n\005error\030\002 " +
-      "\001(\t\"o\n\024StreamSessionRequest\022*\n\003ctx\030\001 \001(\013" +
-      "2\035.jervis.common.RequestContext\022\022\n\nsessi" +
-      "on_id\030\002 \001(\t\022\027\n\017max_age_seconds\030\003 \001(\001\"\256\001\n" +
-      "\013OutboxEvent\022\n\n\002ts\030\001 \001(\t\022\014\n\004type\030\002 \001(\t\022\017" +
-      "\n\007content\030\003 \001(\t\022\r\n\005final\030\004 \001(\010\0228\n\004meta\030\005" +
-      " \003(\0132*.jervis.orchestrator.OutboxEvent.M" +
-      "etaEntry\032+\n\tMetaEntry\022\013\n\003key\030\001 \001(\t\022\r\n\005va" +
-      "lue\030\002 \001(\t:\0028\0012\301\004\n\034OrchestratorCompanionS" +
-      "ervice\022I\n\005Adhoc\022!.jervis.orchestrator.Ad" +
-      "hocRequest\032\035.jervis.orchestrator.AdhocAc" +
-      "k\022`\n\013AdhocStatus\022\'.jervis.orchestrator.A" +
-      "dhocStatusRequest\032(.jervis.orchestrator." +
-      "AdhocStatusResponse\022c\n\014StartSession\022(.je" +
-      "rvis.orchestrator.SessionStartRequest\032)." +
-      "jervis.orchestrator.SessionStartResponse" +
-      "\022^\n\014SessionEvent\022(.jervis.orchestrator.S" +
-      "essionEventRequest\032$.jervis.orchestrator" +
-      ".SessionEventAck\022O\n\013StopSession\022\037.jervis" +
-      ".orchestrator.SessionRef\032\037.jervis.orches" +
-      "trator.SessionAck\022^\n\rStreamSession\022).jer" +
-      "vis.orchestrator.StreamSessionRequest\032 ." +
-      "jervis.orchestrator.OutboxEvent0\001BA\n!com" +
-      ".jervis.contracts.orchestratorB\032Orchestr" +
-      "atorCompanionProtoP\001b\006proto3"
+      " \001(\t\"h\n\023AdhocStatusResponse\022\017\n\007task_id\030\001" +
+      " \001(\t\022\016\n\006status\030\002 \001(\t\0220\n\006result\030\003 \001(\0132 .j" +
+      "ervis.orchestrator.AdhocResult\"N\n\013AdhocR" +
+      "esult\022\017\n\007summary\030\001 \001(\t\022\014\n\004mode\030\002 \001(\t\022\021\n\t" +
+      "artifacts\030\003 \003(\t\022\r\n\005error\030\004 \001(\t\"\257\002\n\023Sessi" +
+      "onStartRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.com" +
+      "mon.RequestContext\022\022\n\nsession_id\030\002 \001(\t\022\r" +
+      "\n\005brief\030\003 \001(\t\022\021\n\tclient_id\030\004 \001(\t\022\022\n\nproj" +
+      "ect_id\030\005 \001(\t\022\020\n\010language\030\006 \001(\t\022F\n\007contex" +
+      "t\030\007 \003(\01325.jervis.orchestrator.SessionSta" +
+      "rtRequest.ContextEntry\022\030\n\020attachment_pat" +
+      "hs\030\010 \003(\t\032.\n\014ContextEntry\022\013\n\003key\030\001 \001(\t\022\r\n" +
+      "\005value\030\002 \001(\t:\0028\001\"c\n\024SessionStartResponse" +
+      "\022\020\n\010job_name\030\001 \001(\t\022\026\n\016workspace_path\030\002 \001" +
+      "(\t\022\022\n\nsession_id\030\003 \001(\t\022\r\n\005error\030\004 \001(\t\"\343\001" +
+      "\n\023SessionEventRequest\022*\n\003ctx\030\001 \001(\0132\035.jer" +
+      "vis.common.RequestContext\022\022\n\nsession_id\030" +
+      "\002 \001(\t\022\014\n\004type\030\003 \001(\t\022\017\n\007content\030\004 \001(\t\022@\n\004" +
+      "meta\030\005 \003(\01322.jervis.orchestrator.Session" +
+      "EventRequest.MetaEntry\032+\n\tMetaEntry\022\013\n\003k" +
+      "ey\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\",\n\017SessionEv" +
+      "entAck\022\n\n\002ok\030\001 \001(\010\022\r\n\005error\030\002 \001(\t\"L\n\nSes" +
+      "sionRef\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Req" +
+      "uestContext\022\022\n\nsession_id\030\002 \001(\t\"\'\n\nSessi" +
+      "onAck\022\n\n\002ok\030\001 \001(\010\022\r\n\005error\030\002 \001(\t\"o\n\024Stre" +
+      "amSessionRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.c" +
+      "ommon.RequestContext\022\022\n\nsession_id\030\002 \001(\t" +
+      "\022\027\n\017max_age_seconds\030\003 \001(\001\"\256\001\n\013OutboxEven" +
+      "t\022\n\n\002ts\030\001 \001(\t\022\014\n\004type\030\002 \001(\t\022\017\n\007content\030\003" +
+      " \001(\t\022\r\n\005final\030\004 \001(\010\0228\n\004meta\030\005 \003(\0132*.jerv" +
+      "is.orchestrator.OutboxEvent.MetaEntry\032+\n" +
+      "\tMetaEntry\022\013\n\003key\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\002" +
+      "8\0012\301\004\n\034OrchestratorCompanionService\022I\n\005A" +
+      "dhoc\022!.jervis.orchestrator.AdhocRequest\032" +
+      "\035.jervis.orchestrator.AdhocAck\022`\n\013AdhocS" +
+      "tatus\022\'.jervis.orchestrator.AdhocStatusR" +
+      "equest\032(.jervis.orchestrator.AdhocStatus" +
+      "Response\022c\n\014StartSession\022(.jervis.orches" +
+      "trator.SessionStartRequest\032).jervis.orch" +
+      "estrator.SessionStartResponse\022^\n\014Session" +
+      "Event\022(.jervis.orchestrator.SessionEvent" +
+      "Request\032$.jervis.orchestrator.SessionEve" +
+      "ntAck\022O\n\013StopSession\022\037.jervis.orchestrat" +
+      "or.SessionRef\032\037.jervis.orchestrator.Sess" +
+      "ionAck\022^\n\rStreamSession\022).jervis.orchest" +
+      "rator.StreamSessionRequest\032 .jervis.orch" +
+      "estrator.OutboxEvent0\001BA\n!com.jervis.con" +
+      "tracts.orchestratorB\032OrchestratorCompani" +
+      "onProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -210,9 +218,15 @@ public final class OrchestratorCompanionProto extends com.google.protobuf.Genera
     internal_static_jervis_orchestrator_AdhocStatusResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_AdhocStatusResponse_descriptor,
-        new java.lang.String[] { "TaskId", "Status", "ResultJson", });
-    internal_static_jervis_orchestrator_SessionStartRequest_descriptor =
+        new java.lang.String[] { "TaskId", "Status", "Result", });
+    internal_static_jervis_orchestrator_AdhocResult_descriptor =
       getDescriptor().getMessageTypes().get(4);
+    internal_static_jervis_orchestrator_AdhocResult_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_AdhocResult_descriptor,
+        new java.lang.String[] { "Summary", "Mode", "Artifacts", "Error", });
+    internal_static_jervis_orchestrator_SessionStartRequest_descriptor =
+      getDescriptor().getMessageTypes().get(5);
     internal_static_jervis_orchestrator_SessionStartRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_SessionStartRequest_descriptor,
@@ -224,13 +238,13 @@ public final class OrchestratorCompanionProto extends com.google.protobuf.Genera
         internal_static_jervis_orchestrator_SessionStartRequest_ContextEntry_descriptor,
         new java.lang.String[] { "Key", "Value", });
     internal_static_jervis_orchestrator_SessionStartResponse_descriptor =
-      getDescriptor().getMessageTypes().get(5);
+      getDescriptor().getMessageTypes().get(6);
     internal_static_jervis_orchestrator_SessionStartResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_SessionStartResponse_descriptor,
         new java.lang.String[] { "JobName", "WorkspacePath", "SessionId", "Error", });
     internal_static_jervis_orchestrator_SessionEventRequest_descriptor =
-      getDescriptor().getMessageTypes().get(6);
+      getDescriptor().getMessageTypes().get(7);
     internal_static_jervis_orchestrator_SessionEventRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_SessionEventRequest_descriptor,
@@ -242,31 +256,31 @@ public final class OrchestratorCompanionProto extends com.google.protobuf.Genera
         internal_static_jervis_orchestrator_SessionEventRequest_MetaEntry_descriptor,
         new java.lang.String[] { "Key", "Value", });
     internal_static_jervis_orchestrator_SessionEventAck_descriptor =
-      getDescriptor().getMessageTypes().get(7);
+      getDescriptor().getMessageTypes().get(8);
     internal_static_jervis_orchestrator_SessionEventAck_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_SessionEventAck_descriptor,
         new java.lang.String[] { "Ok", "Error", });
     internal_static_jervis_orchestrator_SessionRef_descriptor =
-      getDescriptor().getMessageTypes().get(8);
+      getDescriptor().getMessageTypes().get(9);
     internal_static_jervis_orchestrator_SessionRef_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_SessionRef_descriptor,
         new java.lang.String[] { "Ctx", "SessionId", });
     internal_static_jervis_orchestrator_SessionAck_descriptor =
-      getDescriptor().getMessageTypes().get(9);
+      getDescriptor().getMessageTypes().get(10);
     internal_static_jervis_orchestrator_SessionAck_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_SessionAck_descriptor,
         new java.lang.String[] { "Ok", "Error", });
     internal_static_jervis_orchestrator_StreamSessionRequest_descriptor =
-      getDescriptor().getMessageTypes().get(10);
+      getDescriptor().getMessageTypes().get(11);
     internal_static_jervis_orchestrator_StreamSessionRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_StreamSessionRequest_descriptor,
         new java.lang.String[] { "Ctx", "SessionId", "MaxAgeSeconds", });
     internal_static_jervis_orchestrator_OutboxEvent_descriptor =
-      getDescriptor().getMessageTypes().get(11);
+      getDescriptor().getMessageTypes().get(12);
     internal_static_jervis_orchestrator_OutboxEvent_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_OutboxEvent_descriptor,

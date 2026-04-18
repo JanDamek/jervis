@@ -30,7 +30,6 @@ private static final long serialVersionUID = 0L;
   private AdhocStatusResponse() {
     taskId_ = "";
     status_ = "";
-    resultJson_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -46,6 +45,7 @@ private static final long serialVersionUID = 0L;
             com.jervis.contracts.orchestrator.AdhocStatusResponse.class, com.jervis.contracts.orchestrator.AdhocStatusResponse.Builder.class);
   }
 
+  private int bitField0_;
   public static final int TASK_ID_FIELD_NUMBER = 1;
   @SuppressWarnings("serial")
   private volatile java.lang.Object taskId_ = "";
@@ -132,51 +132,42 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int RESULT_JSON_FIELD_NUMBER = 3;
-  @SuppressWarnings("serial")
-  private volatile java.lang.Object resultJson_ = "";
+  public static final int RESULT_FIELD_NUMBER = 3;
+  private com.jervis.contracts.orchestrator.AdhocResult result_;
   /**
    * <pre>
-   * JSON-serialised result dict when status=done
+   * populated when status=done
    * </pre>
    *
-   * <code>string result_json = 3;</code>
-   * @return The resultJson.
+   * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+   * @return Whether the result field is set.
    */
   @java.lang.Override
-  public java.lang.String getResultJson() {
-    java.lang.Object ref = resultJson_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
-    } else {
-      com.google.protobuf.ByteString bs = 
-          (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
-      resultJson_ = s;
-      return s;
-    }
+  public boolean hasResult() {
+    return ((bitField0_ & 0x00000001) != 0);
   }
   /**
    * <pre>
-   * JSON-serialised result dict when status=done
+   * populated when status=done
    * </pre>
    *
-   * <code>string result_json = 3;</code>
-   * @return The bytes for resultJson.
+   * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+   * @return The result.
    */
   @java.lang.Override
-  public com.google.protobuf.ByteString
-      getResultJsonBytes() {
-    java.lang.Object ref = resultJson_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
-          com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
-      resultJson_ = b;
-      return b;
-    } else {
-      return (com.google.protobuf.ByteString) ref;
-    }
+  public com.jervis.contracts.orchestrator.AdhocResult getResult() {
+    return result_ == null ? com.jervis.contracts.orchestrator.AdhocResult.getDefaultInstance() : result_;
+  }
+  /**
+   * <pre>
+   * populated when status=done
+   * </pre>
+   *
+   * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.AdhocResultOrBuilder getResultOrBuilder() {
+    return result_ == null ? com.jervis.contracts.orchestrator.AdhocResult.getDefaultInstance() : result_;
   }
 
   private byte memoizedIsInitialized = -1;
@@ -199,8 +190,8 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(status_)) {
       com.google.protobuf.GeneratedMessage.writeString(output, 2, status_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(resultJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 3, resultJson_);
+    if (((bitField0_ & 0x00000001) != 0)) {
+      output.writeMessage(3, getResult());
     }
     getUnknownFields().writeTo(output);
   }
@@ -217,8 +208,9 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(status_)) {
       size += com.google.protobuf.GeneratedMessage.computeStringSize(2, status_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(resultJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, resultJson_);
+    if (((bitField0_ & 0x00000001) != 0)) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(3, getResult());
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -239,8 +231,11 @@ private static final long serialVersionUID = 0L;
         .equals(other.getTaskId())) return false;
     if (!getStatus()
         .equals(other.getStatus())) return false;
-    if (!getResultJson()
-        .equals(other.getResultJson())) return false;
+    if (hasResult() != other.hasResult()) return false;
+    if (hasResult()) {
+      if (!getResult()
+          .equals(other.getResult())) return false;
+    }
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -256,8 +251,10 @@ private static final long serialVersionUID = 0L;
     hash = (53 * hash) + getTaskId().hashCode();
     hash = (37 * hash) + STATUS_FIELD_NUMBER;
     hash = (53 * hash) + getStatus().hashCode();
-    hash = (37 * hash) + RESULT_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getResultJson().hashCode();
+    if (hasResult()) {
+      hash = (37 * hash) + RESULT_FIELD_NUMBER;
+      hash = (53 * hash) + getResult().hashCode();
+    }
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -377,13 +374,19 @@ private static final long serialVersionUID = 0L;
 
     // Construct using com.jervis.contracts.orchestrator.AdhocStatusResponse.newBuilder()
     private Builder() {
-
+      maybeForceBuilderInitialization();
     }
 
     private Builder(
         com.google.protobuf.GeneratedMessage.BuilderParent parent) {
       super(parent);
-
+      maybeForceBuilderInitialization();
+    }
+    private void maybeForceBuilderInitialization() {
+      if (com.google.protobuf.GeneratedMessage
+              .alwaysUseFieldBuilders) {
+        internalGetResultFieldBuilder();
+      }
     }
     @java.lang.Override
     public Builder clear() {
@@ -391,7 +394,11 @@ private static final long serialVersionUID = 0L;
       bitField0_ = 0;
       taskId_ = "";
       status_ = "";
-      resultJson_ = "";
+      result_ = null;
+      if (resultBuilder_ != null) {
+        resultBuilder_.dispose();
+        resultBuilder_ = null;
+      }
       return this;
     }
 
@@ -431,9 +438,14 @@ private static final long serialVersionUID = 0L;
       if (((from_bitField0_ & 0x00000002) != 0)) {
         result.status_ = status_;
       }
+      int to_bitField0_ = 0;
       if (((from_bitField0_ & 0x00000004) != 0)) {
-        result.resultJson_ = resultJson_;
+        result.result_ = resultBuilder_ == null
+            ? result_
+            : resultBuilder_.build();
+        to_bitField0_ |= 0x00000001;
       }
+      result.bitField0_ |= to_bitField0_;
     }
 
     @java.lang.Override
@@ -458,10 +470,8 @@ private static final long serialVersionUID = 0L;
         bitField0_ |= 0x00000002;
         onChanged();
       }
-      if (!other.getResultJson().isEmpty()) {
-        resultJson_ = other.resultJson_;
-        bitField0_ |= 0x00000004;
-        onChanged();
+      if (other.hasResult()) {
+        mergeResult(other.getResult());
       }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
@@ -500,7 +510,9 @@ private static final long serialVersionUID = 0L;
               break;
             } // case 18
             case 26: {
-              resultJson_ = input.readStringRequireUtf8();
+              input.readMessage(
+                  internalGetResultFieldBuilder().getBuilder(),
+                  extensionRegistry);
               bitField0_ |= 0x00000004;
               break;
             } // case 26
@@ -685,96 +697,161 @@ private static final long serialVersionUID = 0L;
       return this;
     }
 
-    private java.lang.Object resultJson_ = "";
+    private com.jervis.contracts.orchestrator.AdhocResult result_;
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.AdhocResult, com.jervis.contracts.orchestrator.AdhocResult.Builder, com.jervis.contracts.orchestrator.AdhocResultOrBuilder> resultBuilder_;
     /**
      * <pre>
-     * JSON-serialised result dict when status=done
+     * populated when status=done
      * </pre>
      *
-     * <code>string result_json = 3;</code>
-     * @return The resultJson.
+     * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+     * @return Whether the result field is set.
      */
-    public java.lang.String getResultJson() {
-      java.lang.Object ref = resultJson_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        resultJson_ = s;
-        return s;
+    public boolean hasResult() {
+      return ((bitField0_ & 0x00000004) != 0);
+    }
+    /**
+     * <pre>
+     * populated when status=done
+     * </pre>
+     *
+     * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+     * @return The result.
+     */
+    public com.jervis.contracts.orchestrator.AdhocResult getResult() {
+      if (resultBuilder_ == null) {
+        return result_ == null ? com.jervis.contracts.orchestrator.AdhocResult.getDefaultInstance() : result_;
       } else {
-        return (java.lang.String) ref;
+        return resultBuilder_.getMessage();
       }
     }
     /**
      * <pre>
-     * JSON-serialised result dict when status=done
+     * populated when status=done
      * </pre>
      *
-     * <code>string result_json = 3;</code>
-     * @return The bytes for resultJson.
+     * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
      */
-    public com.google.protobuf.ByteString
-        getResultJsonBytes() {
-      java.lang.Object ref = resultJson_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        resultJson_ = b;
-        return b;
+    public Builder setResult(com.jervis.contracts.orchestrator.AdhocResult value) {
+      if (resultBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        result_ = value;
       } else {
-        return (com.google.protobuf.ByteString) ref;
+        resultBuilder_.setMessage(value);
       }
-    }
-    /**
-     * <pre>
-     * JSON-serialised result dict when status=done
-     * </pre>
-     *
-     * <code>string result_json = 3;</code>
-     * @param value The resultJson to set.
-     * @return This builder for chaining.
-     */
-    public Builder setResultJson(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      resultJson_ = value;
       bitField0_ |= 0x00000004;
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * JSON-serialised result dict when status=done
+     * populated when status=done
      * </pre>
      *
-     * <code>string result_json = 3;</code>
-     * @return This builder for chaining.
+     * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
      */
-    public Builder clearResultJson() {
-      resultJson_ = getDefaultInstance().getResultJson();
+    public Builder setResult(
+        com.jervis.contracts.orchestrator.AdhocResult.Builder builderForValue) {
+      if (resultBuilder_ == null) {
+        result_ = builderForValue.build();
+      } else {
+        resultBuilder_.setMessage(builderForValue.build());
+      }
+      bitField0_ |= 0x00000004;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * populated when status=done
+     * </pre>
+     *
+     * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+     */
+    public Builder mergeResult(com.jervis.contracts.orchestrator.AdhocResult value) {
+      if (resultBuilder_ == null) {
+        if (((bitField0_ & 0x00000004) != 0) &&
+          result_ != null &&
+          result_ != com.jervis.contracts.orchestrator.AdhocResult.getDefaultInstance()) {
+          getResultBuilder().mergeFrom(value);
+        } else {
+          result_ = value;
+        }
+      } else {
+        resultBuilder_.mergeFrom(value);
+      }
+      if (result_ != null) {
+        bitField0_ |= 0x00000004;
+        onChanged();
+      }
+      return this;
+    }
+    /**
+     * <pre>
+     * populated when status=done
+     * </pre>
+     *
+     * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+     */
+    public Builder clearResult() {
       bitField0_ = (bitField0_ & ~0x00000004);
+      result_ = null;
+      if (resultBuilder_ != null) {
+        resultBuilder_.dispose();
+        resultBuilder_ = null;
+      }
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * JSON-serialised result dict when status=done
+     * populated when status=done
      * </pre>
      *
-     * <code>string result_json = 3;</code>
-     * @param value The bytes for resultJson to set.
-     * @return This builder for chaining.
+     * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
      */
-    public Builder setResultJsonBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      resultJson_ = value;
+    public com.jervis.contracts.orchestrator.AdhocResult.Builder getResultBuilder() {
       bitField0_ |= 0x00000004;
       onChanged();
-      return this;
+      return internalGetResultFieldBuilder().getBuilder();
+    }
+    /**
+     * <pre>
+     * populated when status=done
+     * </pre>
+     *
+     * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+     */
+    public com.jervis.contracts.orchestrator.AdhocResultOrBuilder getResultOrBuilder() {
+      if (resultBuilder_ != null) {
+        return resultBuilder_.getMessageOrBuilder();
+      } else {
+        return result_ == null ?
+            com.jervis.contracts.orchestrator.AdhocResult.getDefaultInstance() : result_;
+      }
+    }
+    /**
+     * <pre>
+     * populated when status=done
+     * </pre>
+     *
+     * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+     */
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.AdhocResult, com.jervis.contracts.orchestrator.AdhocResult.Builder, com.jervis.contracts.orchestrator.AdhocResultOrBuilder> 
+        internalGetResultFieldBuilder() {
+      if (resultBuilder_ == null) {
+        resultBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.orchestrator.AdhocResult, com.jervis.contracts.orchestrator.AdhocResult.Builder, com.jervis.contracts.orchestrator.AdhocResultOrBuilder>(
+                getResult(),
+                getParentForChildren(),
+                isClean());
+        result_ = null;
+      }
+      return resultBuilder_;
     }
 
     // @@protoc_insertion_point(builder_scope:jervis.orchestrator.AdhocStatusResponse)

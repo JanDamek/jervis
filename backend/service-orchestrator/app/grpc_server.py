@@ -784,10 +784,18 @@ class OrchestratorCompanionServicer(companion_pb2_grpc.OrchestratorCompanionServ
         result = companion_runner.collect_adhoc_result(request.workspace_path)
         if result is None:
             return companion_pb2.AdhocStatusResponse(task_id=request.task_id, status="pending")
+
+        raw_artifacts = result.get("artifacts") or []
+        artifacts: list[str] = [str(a) for a in raw_artifacts if a]
         return companion_pb2.AdhocStatusResponse(
             task_id=request.task_id,
             status="done",
-            result_json=json.dumps(result, default=str, ensure_ascii=False),
+            result=companion_pb2.AdhocResult(
+                summary=str(result.get("summary") or ""),
+                mode=str(result.get("mode") or ""),
+                artifacts=artifacts,
+                error=str(result.get("error") or ""),
+            ),
         )
 
     async def StartSession(

@@ -48,7 +48,17 @@ message AdhocStatusRequest {
 message AdhocStatusResponse {
   string task_id = 1;
   string status = 2;                   // "pending" | "done" | "error"
-  string result_json = 3;              // JSON-serialised result dict when status=done
+  AdhocResult result = 3;              // populated when status=done
+}
+
+// AdhocResult mirrors the `{summary, mode, artifacts, error}` shape the
+// companion runner writes to `.jervis/result.json`. Source of truth:
+// `app/agents/companion_runner.py::collect_adhoc_result`.
+message AdhocResult {
+  string summary = 1;
+  string mode = 2;                     // "adhoc" | empty
+  repeated string artifacts = 3;
+  string error = 4;                    // populated when the runner errored out
 }
 
 message SessionStartRequest {

@@ -44,21 +44,28 @@ public interface AdhocStatusResponseOrBuilder extends
 
   /**
    * <pre>
-   * JSON-serialised result dict when status=done
+   * populated when status=done
    * </pre>
    *
-   * <code>string result_json = 3;</code>
-   * @return The resultJson.
+   * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+   * @return Whether the result field is set.
    */
-  java.lang.String getResultJson();
+  boolean hasResult();
   /**
    * <pre>
-   * JSON-serialised result dict when status=done
+   * populated when status=done
    * </pre>
    *
-   * <code>string result_json = 3;</code>
-   * @return The bytes for resultJson.
+   * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+   * @return The result.
    */
-  com.google.protobuf.ByteString
-      getResultJsonBytes();
+  com.jervis.contracts.orchestrator.AdhocResult getResult();
+  /**
+   * <pre>
+   * populated when status=done
+   * </pre>
+   *
+   * <code>.jervis.orchestrator.AdhocResult result = 3;</code>
+   */
+  com.jervis.contracts.orchestrator.AdhocResultOrBuilder getResultOrBuilder();
 }

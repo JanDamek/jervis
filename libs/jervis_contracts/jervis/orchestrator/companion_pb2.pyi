@@ -57,14 +57,26 @@ class AdhocStatusRequest(_message.Message):
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., task_id: _Optional[str] = ..., workspace_path: _Optional[str] = ...) -> None: ...
 
 class AdhocStatusResponse(_message.Message):
-    __slots__ = ("task_id", "status", "result_json")
+    __slots__ = ("task_id", "status", "result")
     TASK_ID_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
-    RESULT_JSON_FIELD_NUMBER: _ClassVar[int]
+    RESULT_FIELD_NUMBER: _ClassVar[int]
     task_id: str
     status: str
-    result_json: str
-    def __init__(self, task_id: _Optional[str] = ..., status: _Optional[str] = ..., result_json: _Optional[str] = ...) -> None: ...
+    result: AdhocResult
+    def __init__(self, task_id: _Optional[str] = ..., status: _Optional[str] = ..., result: _Optional[_Union[AdhocResult, _Mapping]] = ...) -> None: ...
+
+class AdhocResult(_message.Message):
+    __slots__ = ("summary", "mode", "artifacts", "error")
+    SUMMARY_FIELD_NUMBER: _ClassVar[int]
+    MODE_FIELD_NUMBER: _ClassVar[int]
+    ARTIFACTS_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    summary: str
+    mode: str
+    artifacts: _containers.RepeatedScalarFieldContainer[str]
+    error: str
+    def __init__(self, summary: _Optional[str] = ..., mode: _Optional[str] = ..., artifacts: _Optional[_Iterable[str]] = ..., error: _Optional[str] = ...) -> None: ...
 
 class SessionStartRequest(_message.Message):
     __slots__ = ("ctx", "session_id", "brief", "client_id", "project_id", "language", "context", "attachment_paths")
