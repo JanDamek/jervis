@@ -37,6 +37,41 @@ public final class OrchestratorVoiceProto extends com.google.protobuf.GeneratedF
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_orchestrator_VoiceStreamEvent_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_PreliminaryAnswer_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_PreliminaryAnswer_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_Responding_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_Responding_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_Token_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_Token_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_Response_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_Response_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_Stored_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_Stored_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_Done_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_Done_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_ErrorPayload_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_ErrorPayload_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_orchestrator_VoiceHintRequest_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
@@ -63,19 +98,33 @@ public final class OrchestratorVoiceProto extends com.google.protobuf.GeneratedF
       "\n\nproject_id\030\005 \001(\t\022\020\n\010group_id\030\006 \001(\t\022\013\n\003" +
       "tts\030\007 \001(\010\022\022\n\nmeeting_id\030\010 \001(\t\022\023\n\013live_as" +
       "sist\030\t \001(\010\022\023\n\013chunk_index\030\n \001(\005\022\020\n\010is_fi" +
-      "nal\030\013 \001(\010\"4\n\020VoiceStreamEvent\022\r\n\005event\030\001" +
-      " \001(\t\022\021\n\tdata_json\030\002 \001(\t\"s\n\020VoiceHintRequ" +
-      "est\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Request" +
-      "Context\022\014\n\004text\030\002 \001(\t\022\021\n\tclient_id\030\003 \001(\t" +
-      "\022\022\n\nproject_id\030\004 \001(\t\"!\n\021VoiceHintRespons" +
-      "e\022\014\n\004hint\030\001 \001(\t2\317\001\n\030OrchestratorVoiceSer" +
-      "vice\022\\\n\007Process\022(.jervis.orchestrator.Vo" +
-      "iceProcessRequest\032%.jervis.orchestrator." +
-      "VoiceStreamEvent0\001\022U\n\004Hint\022%.jervis.orch" +
-      "estrator.VoiceHintRequest\032&.jervis.orche" +
-      "strator.VoiceHintResponseB=\n!com.jervis." +
-      "contracts.orchestratorB\026OrchestratorVoic" +
-      "eProtoP\001b\006proto3"
+      "nal\030\013 \001(\010\"\210\003\n\020VoiceStreamEvent\022D\n\022prelim" +
+      "inary_answer\030\001 \001(\0132&.jervis.orchestrator" +
+      ".PreliminaryAnswerH\000\0225\n\nresponding\030\002 \001(\013" +
+      "2\037.jervis.orchestrator.RespondingH\000\022+\n\005t" +
+      "oken\030\003 \001(\0132\032.jervis.orchestrator.TokenH\000" +
+      "\0221\n\010response\030\004 \001(\0132\035.jervis.orchestrator" +
+      ".ResponseH\000\022-\n\006stored\030\005 \001(\0132\033.jervis.orc" +
+      "hestrator.StoredH\000\022)\n\004done\030\006 \001(\0132\031.jervi" +
+      "s.orchestrator.DoneH\000\0222\n\005error\030\007 \001(\0132!.j" +
+      "ervis.orchestrator.ErrorPayloadH\000B\t\n\007pay" +
+      "load\"5\n\021PreliminaryAnswer\022\014\n\004text\030\001 \001(\t\022" +
+      "\022\n\nconfidence\030\002 \001(\001\"\014\n\nResponding\"\025\n\005Tok" +
+      "en\022\014\n\004text\030\001 \001(\t\"*\n\010Response\022\014\n\004text\030\001 \001" +
+      "(\t\022\020\n\010complete\030\002 \001(\010\"\'\n\006Stored\022\014\n\004kind\030\001" +
+      " \001(\t\022\017\n\007summary\030\002 \001(\t\"\006\n\004Done\"\034\n\014ErrorPa" +
+      "yload\022\014\n\004text\030\001 \001(\t\"s\n\020VoiceHintRequest\022" +
+      "*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCont" +
+      "ext\022\014\n\004text\030\002 \001(\t\022\021\n\tclient_id\030\003 \001(\t\022\022\n\n" +
+      "project_id\030\004 \001(\t\"!\n\021VoiceHintResponse\022\014\n" +
+      "\004hint\030\001 \001(\t2\317\001\n\030OrchestratorVoiceService" +
+      "\022\\\n\007Process\022(.jervis.orchestrator.VoiceP" +
+      "rocessRequest\032%.jervis.orchestrator.Voic" +
+      "eStreamEvent0\001\022U\n\004Hint\022%.jervis.orchestr" +
+      "ator.VoiceHintRequest\032&.jervis.orchestra" +
+      "tor.VoiceHintResponseB=\n!com.jervis.cont" +
+      "racts.orchestratorB\026OrchestratorVoicePro" +
+      "toP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -93,15 +142,57 @@ public final class OrchestratorVoiceProto extends com.google.protobuf.GeneratedF
     internal_static_jervis_orchestrator_VoiceStreamEvent_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_VoiceStreamEvent_descriptor,
-        new java.lang.String[] { "Event", "DataJson", });
-    internal_static_jervis_orchestrator_VoiceHintRequest_descriptor =
+        new java.lang.String[] { "PreliminaryAnswer", "Responding", "Token", "Response", "Stored", "Done", "Error", "Payload", });
+    internal_static_jervis_orchestrator_PreliminaryAnswer_descriptor =
       getDescriptor().getMessageTypes().get(2);
+    internal_static_jervis_orchestrator_PreliminaryAnswer_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_PreliminaryAnswer_descriptor,
+        new java.lang.String[] { "Text", "Confidence", });
+    internal_static_jervis_orchestrator_Responding_descriptor =
+      getDescriptor().getMessageTypes().get(3);
+    internal_static_jervis_orchestrator_Responding_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_Responding_descriptor,
+        new java.lang.String[] { });
+    internal_static_jervis_orchestrator_Token_descriptor =
+      getDescriptor().getMessageTypes().get(4);
+    internal_static_jervis_orchestrator_Token_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_Token_descriptor,
+        new java.lang.String[] { "Text", });
+    internal_static_jervis_orchestrator_Response_descriptor =
+      getDescriptor().getMessageTypes().get(5);
+    internal_static_jervis_orchestrator_Response_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_Response_descriptor,
+        new java.lang.String[] { "Text", "Complete", });
+    internal_static_jervis_orchestrator_Stored_descriptor =
+      getDescriptor().getMessageTypes().get(6);
+    internal_static_jervis_orchestrator_Stored_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_Stored_descriptor,
+        new java.lang.String[] { "Kind", "Summary", });
+    internal_static_jervis_orchestrator_Done_descriptor =
+      getDescriptor().getMessageTypes().get(7);
+    internal_static_jervis_orchestrator_Done_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_Done_descriptor,
+        new java.lang.String[] { });
+    internal_static_jervis_orchestrator_ErrorPayload_descriptor =
+      getDescriptor().getMessageTypes().get(8);
+    internal_static_jervis_orchestrator_ErrorPayload_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_ErrorPayload_descriptor,
+        new java.lang.String[] { "Text", });
+    internal_static_jervis_orchestrator_VoiceHintRequest_descriptor =
+      getDescriptor().getMessageTypes().get(9);
     internal_static_jervis_orchestrator_VoiceHintRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_VoiceHintRequest_descriptor,
         new java.lang.String[] { "Ctx", "Text", "ClientId", "ProjectId", });
     internal_static_jervis_orchestrator_VoiceHintResponse_descriptor =
-      getDescriptor().getMessageTypes().get(3);
+      getDescriptor().getMessageTypes().get(10);
     internal_static_jervis_orchestrator_VoiceHintResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_VoiceHintResponse_descriptor,

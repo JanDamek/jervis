@@ -27,8 +27,7 @@ if _version_not_supported:
 
 class OrchestratorVoiceServiceStub(object):
     """OrchestratorVoiceService — post-transcription voice pipeline. Process
-    streams the intent-classified agentic reply (preliminary_answer /
-    responding / token / response / stored / done). Hint returns a KB-based
+    streams the intent-classified agentic reply. Hint returns a KB-based
     live-assist hint (single unary response).
     """
 
@@ -52,8 +51,7 @@ class OrchestratorVoiceServiceStub(object):
 
 class OrchestratorVoiceServiceServicer(object):
     """OrchestratorVoiceService — post-transcription voice pipeline. Process
-    streams the intent-classified agentic reply (preliminary_answer /
-    responding / token / response / stored / done). Hint returns a KB-based
+    streams the intent-classified agentic reply. Hint returns a KB-based
     live-assist hint (single unary response).
     """
 
@@ -92,8 +90,7 @@ def add_OrchestratorVoiceServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class OrchestratorVoiceService(object):
     """OrchestratorVoiceService — post-transcription voice pipeline. Process
-    streams the intent-classified agentic reply (preliminary_answer /
-    responding / token / response / stored / done). Hint returns a KB-based
+    streams the intent-classified agentic reply. Hint returns a KB-based
     live-assist hint (single unary response).
     """
 

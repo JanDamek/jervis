@@ -415,32 +415,30 @@ class VoiceWebSocketHandler(
                     groupId = groupId,
                     tts = false,
                 ).collect { event ->
-                    try {
-                        val data = json.parseToJsonElement(event.dataJson).jsonObject
-                        val text = data["text"]?.jsonPrimitive?.content ?: ""
-                        when (event.event) {
-                            "token" -> {
-                                responseText.append(text)
-                                session.sendJsonEvent("token", text)
-                            }
-                            "response" -> {
-                                if (responseText.isEmpty()) responseText.append(text)
-                                session.sendJsonEvent("response", text)
-                                return@collect
-                            }
-                            "stored" -> {
-                                val summary = data["summary"]?.jsonPrimitive?.content ?: transcript.take(80)
-                                session.sendJsonEvent("stored", summary)
-                                if (responseText.isEmpty()) responseText.append("Zaznamenáno.")
-                                return@collect
-                            }
-                            "error" -> {
-                                if (responseText.isEmpty()) responseText.append(text)
-                                return@collect
-                            }
-                            "done" -> return@collect
+                    when (event.payloadCase) {
+                        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.TOKEN -> {
+                            responseText.append(event.token.text)
+                            session.sendJsonEvent("token", event.token.text)
                         }
-                    } catch (_: Exception) {}
+                        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.RESPONSE -> {
+                            val text = event.response.text
+                            if (responseText.isEmpty()) responseText.append(text)
+                            session.sendJsonEvent("response", text)
+                            return@collect
+                        }
+                        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.STORED -> {
+                            val summary = event.stored.summary.ifBlank { transcript.take(80) }
+                            session.sendJsonEvent("stored", summary)
+                            if (responseText.isEmpty()) responseText.append("Zaznamenáno.")
+                            return@collect
+                        }
+                        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.ERROR -> {
+                            if (responseText.isEmpty()) responseText.append(event.error.text)
+                            return@collect
+                        }
+                        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.DONE -> return@collect
+                        else -> {}
+                    }
                 }
             }
 

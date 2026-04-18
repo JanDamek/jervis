@@ -33,12 +33,66 @@ class VoiceProcessRequest(_message.Message):
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., text: _Optional[str] = ..., source: _Optional[str] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ..., group_id: _Optional[str] = ..., tts: bool = ..., meeting_id: _Optional[str] = ..., live_assist: bool = ..., chunk_index: _Optional[int] = ..., is_final: bool = ...) -> None: ...
 
 class VoiceStreamEvent(_message.Message):
-    __slots__ = ("event", "data_json")
-    EVENT_FIELD_NUMBER: _ClassVar[int]
-    DATA_JSON_FIELD_NUMBER: _ClassVar[int]
-    event: str
-    data_json: str
-    def __init__(self, event: _Optional[str] = ..., data_json: _Optional[str] = ...) -> None: ...
+    __slots__ = ("preliminary_answer", "responding", "token", "response", "stored", "done", "error")
+    PRELIMINARY_ANSWER_FIELD_NUMBER: _ClassVar[int]
+    RESPONDING_FIELD_NUMBER: _ClassVar[int]
+    TOKEN_FIELD_NUMBER: _ClassVar[int]
+    RESPONSE_FIELD_NUMBER: _ClassVar[int]
+    STORED_FIELD_NUMBER: _ClassVar[int]
+    DONE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    preliminary_answer: PreliminaryAnswer
+    responding: Responding
+    token: Token
+    response: Response
+    stored: Stored
+    done: Done
+    error: ErrorPayload
+    def __init__(self, preliminary_answer: _Optional[_Union[PreliminaryAnswer, _Mapping]] = ..., responding: _Optional[_Union[Responding, _Mapping]] = ..., token: _Optional[_Union[Token, _Mapping]] = ..., response: _Optional[_Union[Response, _Mapping]] = ..., stored: _Optional[_Union[Stored, _Mapping]] = ..., done: _Optional[_Union[Done, _Mapping]] = ..., error: _Optional[_Union[ErrorPayload, _Mapping]] = ...) -> None: ...
+
+class PreliminaryAnswer(_message.Message):
+    __slots__ = ("text", "confidence")
+    TEXT_FIELD_NUMBER: _ClassVar[int]
+    CONFIDENCE_FIELD_NUMBER: _ClassVar[int]
+    text: str
+    confidence: float
+    def __init__(self, text: _Optional[str] = ..., confidence: _Optional[float] = ...) -> None: ...
+
+class Responding(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class Token(_message.Message):
+    __slots__ = ("text",)
+    TEXT_FIELD_NUMBER: _ClassVar[int]
+    text: str
+    def __init__(self, text: _Optional[str] = ...) -> None: ...
+
+class Response(_message.Message):
+    __slots__ = ("text", "complete")
+    TEXT_FIELD_NUMBER: _ClassVar[int]
+    COMPLETE_FIELD_NUMBER: _ClassVar[int]
+    text: str
+    complete: bool
+    def __init__(self, text: _Optional[str] = ..., complete: bool = ...) -> None: ...
+
+class Stored(_message.Message):
+    __slots__ = ("kind", "summary")
+    KIND_FIELD_NUMBER: _ClassVar[int]
+    SUMMARY_FIELD_NUMBER: _ClassVar[int]
+    kind: str
+    summary: str
+    def __init__(self, kind: _Optional[str] = ..., summary: _Optional[str] = ...) -> None: ...
+
+class Done(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class ErrorPayload(_message.Message):
+    __slots__ = ("text",)
+    TEXT_FIELD_NUMBER: _ClassVar[int]
+    text: str
+    def __init__(self, text: _Optional[str] = ...) -> None: ...
 
 class VoiceHintRequest(_message.Message):
     __slots__ = ("ctx", "text", "client_id", "project_id")

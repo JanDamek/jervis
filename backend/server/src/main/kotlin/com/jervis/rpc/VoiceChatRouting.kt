@@ -341,20 +341,14 @@ fun Routing.installVoiceChatApi(
                         projectId = DEFAULT_PROJECT_ID,
                         tts = tts,
                     ).collect { event ->
-                        sse(event.event, event.dataJson)
-                        if (event.event == "token") {
-                            try {
-                                val tokenJson = Json.parseToJsonElement(event.dataJson)
-                                val text = tokenJson.jsonObject["text"]?.jsonPrimitive?.content ?: ""
-                                responseBuilder.append(text)
-                            } catch (_: Exception) {}
-                        }
-                        if (event.event == "response") {
-                            try {
-                                val respJson = Json.parseToJsonElement(event.dataJson)
-                                val text = respJson.jsonObject["text"]?.jsonPrimitive?.content ?: ""
-                                if (responseBuilder.isEmpty()) responseBuilder.append(text)
-                            } catch (_: Exception) {}
+                        val mapped = event.toSseEvent() ?: return@collect
+                        sse(mapped.name, mapped.dataJson)
+                        when (event.payloadCase) {
+                            com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.TOKEN ->
+                                responseBuilder.append(event.token.text)
+                            com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.RESPONSE ->
+                                if (responseBuilder.isEmpty()) responseBuilder.append(event.response.text)
+                            else -> {}
                         }
                     }
                 } catch (e: Exception) {
@@ -620,18 +614,14 @@ fun Routing.installVoiceChatApi(
                 tts = session.tts,
                 isFinal = true,
             ).collect { event ->
-                session.events.trySend("event: ${event.event}\ndata: ${event.dataJson}\n\n")
-                if (event.event == "token") {
-                    try {
-                        val tokenJson = Json.parseToJsonElement(event.dataJson)
-                        responseBuilder.append(tokenJson.jsonObject["text"]?.jsonPrimitive?.content ?: "")
-                    } catch (_: Exception) {}
-                }
-                if (event.event == "response" && responseBuilder.isEmpty()) {
-                    try {
-                        val respJson = Json.parseToJsonElement(event.dataJson)
-                        responseBuilder.append(respJson.jsonObject["text"]?.jsonPrimitive?.content ?: "")
-                    } catch (_: Exception) {}
+                val mapped = event.toSseEvent() ?: return@collect
+                session.events.trySend("event: ${mapped.name}\ndata: ${mapped.dataJson}\n\n")
+                when (event.payloadCase) {
+                    com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.TOKEN ->
+                        responseBuilder.append(event.token.text)
+                    com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.RESPONSE ->
+                        if (responseBuilder.isEmpty()) responseBuilder.append(event.response.text)
+                    else -> {}
                 }
             }
 
@@ -677,6 +667,41 @@ data class VoiceSessionRequest(
 data class TtsStreamRequest(val text: String, val speed: Float = 1.2f)
 
 /** Escape JSON special chars for SSE data. */
+/** Map a typed VoiceStreamEvent into an SSE-friendly `(eventName, dataJson)` pair.
+ *  Returns null for the reserved `PAYLOAD_NOT_SET` case so callers can skip empty events. */
+internal data class VoiceSseEvent(val name: String, val dataJson: String)
+
+internal fun com.jervis.contracts.orchestrator.VoiceStreamEvent.toSseEvent(): VoiceSseEvent? {
+    fun escape(s: String): String = s.escapeJson()
+    return when (payloadCase) {
+        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.PRELIMINARY_ANSWER ->
+            VoiceSseEvent(
+                "preliminary_answer",
+                """{"text":"${escape(preliminaryAnswer.text)}","confidence":${preliminaryAnswer.confidence}}""",
+            )
+        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.RESPONDING ->
+            VoiceSseEvent("responding", "{}")
+        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.TOKEN ->
+            VoiceSseEvent("token", """{"text":"${escape(token.text)}"}""")
+        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.RESPONSE ->
+            VoiceSseEvent(
+                "response",
+                """{"text":"${escape(response.text)}","complete":${response.complete}}""",
+            )
+        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.STORED ->
+            VoiceSseEvent(
+                "stored",
+                """{"kind":"${escape(stored.kind)}","summary":"${escape(stored.summary)}"}""",
+            )
+        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.DONE ->
+            VoiceSseEvent("done", "{}")
+        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.ERROR ->
+            VoiceSseEvent("error", """{"text":"${escape(error.text)}"}""")
+        com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase.PAYLOAD_NOT_SET -> null
+        else -> null
+    }
+}
+
 private fun String.escapeJson(): String =
     replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
 

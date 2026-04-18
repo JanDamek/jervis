@@ -11,44 +11,109 @@ public interface VoiceStreamEventOrBuilder extends
     com.google.protobuf.MessageOrBuilder {
 
   /**
-   * <pre>
-   * preliminary_answer | responding | token | response | stored | done | error
-   * </pre>
-   *
-   * <code>string event = 1;</code>
-   * @return The event.
+   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+   * @return Whether the preliminaryAnswer field is set.
    */
-  java.lang.String getEvent();
+  boolean hasPreliminaryAnswer();
   /**
-   * <pre>
-   * preliminary_answer | responding | token | response | stored | done | error
-   * </pre>
-   *
-   * <code>string event = 1;</code>
-   * @return The bytes for event.
+   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+   * @return The preliminaryAnswer.
    */
-  com.google.protobuf.ByteString
-      getEventBytes();
+  com.jervis.contracts.orchestrator.PreliminaryAnswer getPreliminaryAnswer();
+  /**
+   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+   */
+  com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder getPreliminaryAnswerOrBuilder();
 
   /**
-   * <pre>
-   * Event payload as JSON — maintains parity with the legacy SSE
-   * `data` field where keys varied per event type.
-   * </pre>
-   *
-   * <code>string data_json = 2;</code>
-   * @return The dataJson.
+   * <code>.jervis.orchestrator.Responding responding = 2;</code>
+   * @return Whether the responding field is set.
    */
-  java.lang.String getDataJson();
+  boolean hasResponding();
   /**
-   * <pre>
-   * Event payload as JSON — maintains parity with the legacy SSE
-   * `data` field where keys varied per event type.
-   * </pre>
-   *
-   * <code>string data_json = 2;</code>
-   * @return The bytes for dataJson.
+   * <code>.jervis.orchestrator.Responding responding = 2;</code>
+   * @return The responding.
    */
-  com.google.protobuf.ByteString
-      getDataJsonBytes();
+  com.jervis.contracts.orchestrator.Responding getResponding();
+  /**
+   * <code>.jervis.orchestrator.Responding responding = 2;</code>
+   */
+  com.jervis.contracts.orchestrator.RespondingOrBuilder getRespondingOrBuilder();
+
+  /**
+   * <code>.jervis.orchestrator.Token token = 3;</code>
+   * @return Whether the token field is set.
+   */
+  boolean hasToken();
+  /**
+   * <code>.jervis.orchestrator.Token token = 3;</code>
+   * @return The token.
+   */
+  com.jervis.contracts.orchestrator.Token getToken();
+  /**
+   * <code>.jervis.orchestrator.Token token = 3;</code>
+   */
+  com.jervis.contracts.orchestrator.TokenOrBuilder getTokenOrBuilder();
+
+  /**
+   * <code>.jervis.orchestrator.Response response = 4;</code>
+   * @return Whether the response field is set.
+   */
+  boolean hasResponse();
+  /**
+   * <code>.jervis.orchestrator.Response response = 4;</code>
+   * @return The response.
+   */
+  com.jervis.contracts.orchestrator.Response getResponse();
+  /**
+   * <code>.jervis.orchestrator.Response response = 4;</code>
+   */
+  com.jervis.contracts.orchestrator.ResponseOrBuilder getResponseOrBuilder();
+
+  /**
+   * <code>.jervis.orchestrator.Stored stored = 5;</code>
+   * @return Whether the stored field is set.
+   */
+  boolean hasStored();
+  /**
+   * <code>.jervis.orchestrator.Stored stored = 5;</code>
+   * @return The stored.
+   */
+  com.jervis.contracts.orchestrator.Stored getStored();
+  /**
+   * <code>.jervis.orchestrator.Stored stored = 5;</code>
+   */
+  com.jervis.contracts.orchestrator.StoredOrBuilder getStoredOrBuilder();
+
+  /**
+   * <code>.jervis.orchestrator.Done done = 6;</code>
+   * @return Whether the done field is set.
+   */
+  boolean hasDone();
+  /**
+   * <code>.jervis.orchestrator.Done done = 6;</code>
+   * @return The done.
+   */
+  com.jervis.contracts.orchestrator.Done getDone();
+  /**
+   * <code>.jervis.orchestrator.Done done = 6;</code>
+   */
+  com.jervis.contracts.orchestrator.DoneOrBuilder getDoneOrBuilder();
+
+  /**
+   * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+   * @return Whether the error field is set.
+   */
+  boolean hasError();
+  /**
+   * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+   * @return The error.
+   */
+  com.jervis.contracts.orchestrator.ErrorPayload getError();
+  /**
+   * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+   */
+  com.jervis.contracts.orchestrator.ErrorPayloadOrBuilder getErrorOrBuilder();
+
+  com.jervis.contracts.orchestrator.VoiceStreamEvent.PayloadCase getPayloadCase();
 }

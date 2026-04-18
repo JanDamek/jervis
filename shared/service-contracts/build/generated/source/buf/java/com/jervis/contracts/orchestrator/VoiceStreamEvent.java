@@ -6,6 +6,13 @@
 package com.jervis.contracts.orchestrator;
 
 /**
+ * <pre>
+ * VoiceStreamEvent carries one of the agentic pipeline's stages. The
+ * payload shapes mirror what app/voice/stream_handler.py +
+ * app/voice/quick_responder.py yield — each variant holds only the
+ * fields actually produced on that branch.
+ * </pre>
+ *
  * Protobuf type {@code jervis.orchestrator.VoiceStreamEvent}
  */
 @com.google.protobuf.Generated
@@ -28,8 +35,6 @@ private static final long serialVersionUID = 0L;
     super(builder);
   }
   private VoiceStreamEvent() {
-    event_ = "";
-    dataJson_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -45,100 +50,273 @@ private static final long serialVersionUID = 0L;
             com.jervis.contracts.orchestrator.VoiceStreamEvent.class, com.jervis.contracts.orchestrator.VoiceStreamEvent.Builder.class);
   }
 
-  public static final int EVENT_FIELD_NUMBER = 1;
+  private int payloadCase_ = 0;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object event_ = "";
-  /**
-   * <pre>
-   * preliminary_answer | responding | token | response | stored | done | error
-   * </pre>
-   *
-   * <code>string event = 1;</code>
-   * @return The event.
-   */
-  @java.lang.Override
-  public java.lang.String getEvent() {
-    java.lang.Object ref = event_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
-    } else {
-      com.google.protobuf.ByteString bs = 
-          (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
-      event_ = s;
-      return s;
+  private java.lang.Object payload_;
+  public enum PayloadCase
+      implements com.google.protobuf.Internal.EnumLite,
+          com.google.protobuf.AbstractMessage.InternalOneOfEnum {
+    PRELIMINARY_ANSWER(1),
+    RESPONDING(2),
+    TOKEN(3),
+    RESPONSE(4),
+    STORED(5),
+    DONE(6),
+    ERROR(7),
+    PAYLOAD_NOT_SET(0);
+    private final int value;
+    private PayloadCase(int value) {
+      this.value = value;
     }
-  }
-  /**
-   * <pre>
-   * preliminary_answer | responding | token | response | stored | done | error
-   * </pre>
-   *
-   * <code>string event = 1;</code>
-   * @return The bytes for event.
-   */
-  @java.lang.Override
-  public com.google.protobuf.ByteString
-      getEventBytes() {
-    java.lang.Object ref = event_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
-          com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
-      event_ = b;
-      return b;
-    } else {
-      return (com.google.protobuf.ByteString) ref;
+    /**
+     * @param value The number of the enum to look for.
+     * @return The enum associated with the given number.
+     * @deprecated Use {@link #forNumber(int)} instead.
+     */
+    @java.lang.Deprecated
+    public static PayloadCase valueOf(int value) {
+      return forNumber(value);
     }
+
+    public static PayloadCase forNumber(int value) {
+      switch (value) {
+        case 1: return PRELIMINARY_ANSWER;
+        case 2: return RESPONDING;
+        case 3: return TOKEN;
+        case 4: return RESPONSE;
+        case 5: return STORED;
+        case 6: return DONE;
+        case 7: return ERROR;
+        case 0: return PAYLOAD_NOT_SET;
+        default: return null;
+      }
+    }
+    public int getNumber() {
+      return this.value;
+    }
+  };
+
+  public PayloadCase
+  getPayloadCase() {
+    return PayloadCase.forNumber(
+        payloadCase_);
   }
 
-  public static final int DATA_JSON_FIELD_NUMBER = 2;
-  @SuppressWarnings("serial")
-  private volatile java.lang.Object dataJson_ = "";
+  public static final int PRELIMINARY_ANSWER_FIELD_NUMBER = 1;
   /**
-   * <pre>
-   * Event payload as JSON — maintains parity with the legacy SSE
-   * `data` field where keys varied per event type.
-   * </pre>
-   *
-   * <code>string data_json = 2;</code>
-   * @return The dataJson.
+   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+   * @return Whether the preliminaryAnswer field is set.
    */
   @java.lang.Override
-  public java.lang.String getDataJson() {
-    java.lang.Object ref = dataJson_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
-    } else {
-      com.google.protobuf.ByteString bs = 
-          (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
-      dataJson_ = s;
-      return s;
-    }
+  public boolean hasPreliminaryAnswer() {
+    return payloadCase_ == 1;
   }
   /**
-   * <pre>
-   * Event payload as JSON — maintains parity with the legacy SSE
-   * `data` field where keys varied per event type.
-   * </pre>
-   *
-   * <code>string data_json = 2;</code>
-   * @return The bytes for dataJson.
+   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+   * @return The preliminaryAnswer.
    */
   @java.lang.Override
-  public com.google.protobuf.ByteString
-      getDataJsonBytes() {
-    java.lang.Object ref = dataJson_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
-          com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
-      dataJson_ = b;
-      return b;
-    } else {
-      return (com.google.protobuf.ByteString) ref;
+  public com.jervis.contracts.orchestrator.PreliminaryAnswer getPreliminaryAnswer() {
+    if (payloadCase_ == 1) {
+       return (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_;
     }
+    return com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
+  }
+  /**
+   * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder getPreliminaryAnswerOrBuilder() {
+    if (payloadCase_ == 1) {
+       return (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_;
+    }
+    return com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
+  }
+
+  public static final int RESPONDING_FIELD_NUMBER = 2;
+  /**
+   * <code>.jervis.orchestrator.Responding responding = 2;</code>
+   * @return Whether the responding field is set.
+   */
+  @java.lang.Override
+  public boolean hasResponding() {
+    return payloadCase_ == 2;
+  }
+  /**
+   * <code>.jervis.orchestrator.Responding responding = 2;</code>
+   * @return The responding.
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.Responding getResponding() {
+    if (payloadCase_ == 2) {
+       return (com.jervis.contracts.orchestrator.Responding) payload_;
+    }
+    return com.jervis.contracts.orchestrator.Responding.getDefaultInstance();
+  }
+  /**
+   * <code>.jervis.orchestrator.Responding responding = 2;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.RespondingOrBuilder getRespondingOrBuilder() {
+    if (payloadCase_ == 2) {
+       return (com.jervis.contracts.orchestrator.Responding) payload_;
+    }
+    return com.jervis.contracts.orchestrator.Responding.getDefaultInstance();
+  }
+
+  public static final int TOKEN_FIELD_NUMBER = 3;
+  /**
+   * <code>.jervis.orchestrator.Token token = 3;</code>
+   * @return Whether the token field is set.
+   */
+  @java.lang.Override
+  public boolean hasToken() {
+    return payloadCase_ == 3;
+  }
+  /**
+   * <code>.jervis.orchestrator.Token token = 3;</code>
+   * @return The token.
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.Token getToken() {
+    if (payloadCase_ == 3) {
+       return (com.jervis.contracts.orchestrator.Token) payload_;
+    }
+    return com.jervis.contracts.orchestrator.Token.getDefaultInstance();
+  }
+  /**
+   * <code>.jervis.orchestrator.Token token = 3;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.TokenOrBuilder getTokenOrBuilder() {
+    if (payloadCase_ == 3) {
+       return (com.jervis.contracts.orchestrator.Token) payload_;
+    }
+    return com.jervis.contracts.orchestrator.Token.getDefaultInstance();
+  }
+
+  public static final int RESPONSE_FIELD_NUMBER = 4;
+  /**
+   * <code>.jervis.orchestrator.Response response = 4;</code>
+   * @return Whether the response field is set.
+   */
+  @java.lang.Override
+  public boolean hasResponse() {
+    return payloadCase_ == 4;
+  }
+  /**
+   * <code>.jervis.orchestrator.Response response = 4;</code>
+   * @return The response.
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.Response getResponse() {
+    if (payloadCase_ == 4) {
+       return (com.jervis.contracts.orchestrator.Response) payload_;
+    }
+    return com.jervis.contracts.orchestrator.Response.getDefaultInstance();
+  }
+  /**
+   * <code>.jervis.orchestrator.Response response = 4;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.ResponseOrBuilder getResponseOrBuilder() {
+    if (payloadCase_ == 4) {
+       return (com.jervis.contracts.orchestrator.Response) payload_;
+    }
+    return com.jervis.contracts.orchestrator.Response.getDefaultInstance();
+  }
+
+  public static final int STORED_FIELD_NUMBER = 5;
+  /**
+   * <code>.jervis.orchestrator.Stored stored = 5;</code>
+   * @return Whether the stored field is set.
+   */
+  @java.lang.Override
+  public boolean hasStored() {
+    return payloadCase_ == 5;
+  }
+  /**
+   * <code>.jervis.orchestrator.Stored stored = 5;</code>
+   * @return The stored.
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.Stored getStored() {
+    if (payloadCase_ == 5) {
+       return (com.jervis.contracts.orchestrator.Stored) payload_;
+    }
+    return com.jervis.contracts.orchestrator.Stored.getDefaultInstance();
+  }
+  /**
+   * <code>.jervis.orchestrator.Stored stored = 5;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.StoredOrBuilder getStoredOrBuilder() {
+    if (payloadCase_ == 5) {
+       return (com.jervis.contracts.orchestrator.Stored) payload_;
+    }
+    return com.jervis.contracts.orchestrator.Stored.getDefaultInstance();
+  }
+
+  public static final int DONE_FIELD_NUMBER = 6;
+  /**
+   * <code>.jervis.orchestrator.Done done = 6;</code>
+   * @return Whether the done field is set.
+   */
+  @java.lang.Override
+  public boolean hasDone() {
+    return payloadCase_ == 6;
+  }
+  /**
+   * <code>.jervis.orchestrator.Done done = 6;</code>
+   * @return The done.
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.Done getDone() {
+    if (payloadCase_ == 6) {
+       return (com.jervis.contracts.orchestrator.Done) payload_;
+    }
+    return com.jervis.contracts.orchestrator.Done.getDefaultInstance();
+  }
+  /**
+   * <code>.jervis.orchestrator.Done done = 6;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.DoneOrBuilder getDoneOrBuilder() {
+    if (payloadCase_ == 6) {
+       return (com.jervis.contracts.orchestrator.Done) payload_;
+    }
+    return com.jervis.contracts.orchestrator.Done.getDefaultInstance();
+  }
+
+  public static final int ERROR_FIELD_NUMBER = 7;
+  /**
+   * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+   * @return Whether the error field is set.
+   */
+  @java.lang.Override
+  public boolean hasError() {
+    return payloadCase_ == 7;
+  }
+  /**
+   * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+   * @return The error.
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.ErrorPayload getError() {
+    if (payloadCase_ == 7) {
+       return (com.jervis.contracts.orchestrator.ErrorPayload) payload_;
+    }
+    return com.jervis.contracts.orchestrator.ErrorPayload.getDefaultInstance();
+  }
+  /**
+   * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.ErrorPayloadOrBuilder getErrorOrBuilder() {
+    if (payloadCase_ == 7) {
+       return (com.jervis.contracts.orchestrator.ErrorPayload) payload_;
+    }
+    return com.jervis.contracts.orchestrator.ErrorPayload.getDefaultInstance();
   }
 
   private byte memoizedIsInitialized = -1;
@@ -155,11 +333,26 @@ private static final long serialVersionUID = 0L;
   @java.lang.Override
   public void writeTo(com.google.protobuf.CodedOutputStream output)
                       throws java.io.IOException {
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(event_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 1, event_);
+    if (payloadCase_ == 1) {
+      output.writeMessage(1, (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(dataJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 2, dataJson_);
+    if (payloadCase_ == 2) {
+      output.writeMessage(2, (com.jervis.contracts.orchestrator.Responding) payload_);
+    }
+    if (payloadCase_ == 3) {
+      output.writeMessage(3, (com.jervis.contracts.orchestrator.Token) payload_);
+    }
+    if (payloadCase_ == 4) {
+      output.writeMessage(4, (com.jervis.contracts.orchestrator.Response) payload_);
+    }
+    if (payloadCase_ == 5) {
+      output.writeMessage(5, (com.jervis.contracts.orchestrator.Stored) payload_);
+    }
+    if (payloadCase_ == 6) {
+      output.writeMessage(6, (com.jervis.contracts.orchestrator.Done) payload_);
+    }
+    if (payloadCase_ == 7) {
+      output.writeMessage(7, (com.jervis.contracts.orchestrator.ErrorPayload) payload_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -170,11 +363,33 @@ private static final long serialVersionUID = 0L;
     if (size != -1) return size;
 
     size = 0;
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(event_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(1, event_);
+    if (payloadCase_ == 1) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(1, (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(dataJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, dataJson_);
+    if (payloadCase_ == 2) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(2, (com.jervis.contracts.orchestrator.Responding) payload_);
+    }
+    if (payloadCase_ == 3) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(3, (com.jervis.contracts.orchestrator.Token) payload_);
+    }
+    if (payloadCase_ == 4) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(4, (com.jervis.contracts.orchestrator.Response) payload_);
+    }
+    if (payloadCase_ == 5) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(5, (com.jervis.contracts.orchestrator.Stored) payload_);
+    }
+    if (payloadCase_ == 6) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(6, (com.jervis.contracts.orchestrator.Done) payload_);
+    }
+    if (payloadCase_ == 7) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(7, (com.jervis.contracts.orchestrator.ErrorPayload) payload_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -191,10 +406,39 @@ private static final long serialVersionUID = 0L;
     }
     com.jervis.contracts.orchestrator.VoiceStreamEvent other = (com.jervis.contracts.orchestrator.VoiceStreamEvent) obj;
 
-    if (!getEvent()
-        .equals(other.getEvent())) return false;
-    if (!getDataJson()
-        .equals(other.getDataJson())) return false;
+    if (!getPayloadCase().equals(other.getPayloadCase())) return false;
+    switch (payloadCase_) {
+      case 1:
+        if (!getPreliminaryAnswer()
+            .equals(other.getPreliminaryAnswer())) return false;
+        break;
+      case 2:
+        if (!getResponding()
+            .equals(other.getResponding())) return false;
+        break;
+      case 3:
+        if (!getToken()
+            .equals(other.getToken())) return false;
+        break;
+      case 4:
+        if (!getResponse()
+            .equals(other.getResponse())) return false;
+        break;
+      case 5:
+        if (!getStored()
+            .equals(other.getStored())) return false;
+        break;
+      case 6:
+        if (!getDone()
+            .equals(other.getDone())) return false;
+        break;
+      case 7:
+        if (!getError()
+            .equals(other.getError())) return false;
+        break;
+      case 0:
+      default:
+    }
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -206,10 +450,38 @@ private static final long serialVersionUID = 0L;
     }
     int hash = 41;
     hash = (19 * hash) + getDescriptor().hashCode();
-    hash = (37 * hash) + EVENT_FIELD_NUMBER;
-    hash = (53 * hash) + getEvent().hashCode();
-    hash = (37 * hash) + DATA_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getDataJson().hashCode();
+    switch (payloadCase_) {
+      case 1:
+        hash = (37 * hash) + PRELIMINARY_ANSWER_FIELD_NUMBER;
+        hash = (53 * hash) + getPreliminaryAnswer().hashCode();
+        break;
+      case 2:
+        hash = (37 * hash) + RESPONDING_FIELD_NUMBER;
+        hash = (53 * hash) + getResponding().hashCode();
+        break;
+      case 3:
+        hash = (37 * hash) + TOKEN_FIELD_NUMBER;
+        hash = (53 * hash) + getToken().hashCode();
+        break;
+      case 4:
+        hash = (37 * hash) + RESPONSE_FIELD_NUMBER;
+        hash = (53 * hash) + getResponse().hashCode();
+        break;
+      case 5:
+        hash = (37 * hash) + STORED_FIELD_NUMBER;
+        hash = (53 * hash) + getStored().hashCode();
+        break;
+      case 6:
+        hash = (37 * hash) + DONE_FIELD_NUMBER;
+        hash = (53 * hash) + getDone().hashCode();
+        break;
+      case 7:
+        hash = (37 * hash) + ERROR_FIELD_NUMBER;
+        hash = (53 * hash) + getError().hashCode();
+        break;
+      case 0:
+      default:
+    }
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -308,6 +580,13 @@ private static final long serialVersionUID = 0L;
     return builder;
   }
   /**
+   * <pre>
+   * VoiceStreamEvent carries one of the agentic pipeline's stages. The
+   * payload shapes mirror what app/voice/stream_handler.py +
+   * app/voice/quick_responder.py yield — each variant holds only the
+   * fields actually produced on that branch.
+   * </pre>
+   *
    * Protobuf type {@code jervis.orchestrator.VoiceStreamEvent}
    */
   public static final class Builder extends
@@ -341,8 +620,29 @@ private static final long serialVersionUID = 0L;
     public Builder clear() {
       super.clear();
       bitField0_ = 0;
-      event_ = "";
-      dataJson_ = "";
+      if (preliminaryAnswerBuilder_ != null) {
+        preliminaryAnswerBuilder_.clear();
+      }
+      if (respondingBuilder_ != null) {
+        respondingBuilder_.clear();
+      }
+      if (tokenBuilder_ != null) {
+        tokenBuilder_.clear();
+      }
+      if (responseBuilder_ != null) {
+        responseBuilder_.clear();
+      }
+      if (storedBuilder_ != null) {
+        storedBuilder_.clear();
+      }
+      if (doneBuilder_ != null) {
+        doneBuilder_.clear();
+      }
+      if (errorBuilder_ != null) {
+        errorBuilder_.clear();
+      }
+      payloadCase_ = 0;
+      payload_ = null;
       return this;
     }
 
@@ -370,17 +670,45 @@ private static final long serialVersionUID = 0L;
     public com.jervis.contracts.orchestrator.VoiceStreamEvent buildPartial() {
       com.jervis.contracts.orchestrator.VoiceStreamEvent result = new com.jervis.contracts.orchestrator.VoiceStreamEvent(this);
       if (bitField0_ != 0) { buildPartial0(result); }
+      buildPartialOneofs(result);
       onBuilt();
       return result;
     }
 
     private void buildPartial0(com.jervis.contracts.orchestrator.VoiceStreamEvent result) {
       int from_bitField0_ = bitField0_;
-      if (((from_bitField0_ & 0x00000001) != 0)) {
-        result.event_ = event_;
+    }
+
+    private void buildPartialOneofs(com.jervis.contracts.orchestrator.VoiceStreamEvent result) {
+      result.payloadCase_ = payloadCase_;
+      result.payload_ = this.payload_;
+      if (payloadCase_ == 1 &&
+          preliminaryAnswerBuilder_ != null) {
+        result.payload_ = preliminaryAnswerBuilder_.build();
       }
-      if (((from_bitField0_ & 0x00000002) != 0)) {
-        result.dataJson_ = dataJson_;
+      if (payloadCase_ == 2 &&
+          respondingBuilder_ != null) {
+        result.payload_ = respondingBuilder_.build();
+      }
+      if (payloadCase_ == 3 &&
+          tokenBuilder_ != null) {
+        result.payload_ = tokenBuilder_.build();
+      }
+      if (payloadCase_ == 4 &&
+          responseBuilder_ != null) {
+        result.payload_ = responseBuilder_.build();
+      }
+      if (payloadCase_ == 5 &&
+          storedBuilder_ != null) {
+        result.payload_ = storedBuilder_.build();
+      }
+      if (payloadCase_ == 6 &&
+          doneBuilder_ != null) {
+        result.payload_ = doneBuilder_.build();
+      }
+      if (payloadCase_ == 7 &&
+          errorBuilder_ != null) {
+        result.payload_ = errorBuilder_.build();
       }
     }
 
@@ -396,15 +724,38 @@ private static final long serialVersionUID = 0L;
 
     public Builder mergeFrom(com.jervis.contracts.orchestrator.VoiceStreamEvent other) {
       if (other == com.jervis.contracts.orchestrator.VoiceStreamEvent.getDefaultInstance()) return this;
-      if (!other.getEvent().isEmpty()) {
-        event_ = other.event_;
-        bitField0_ |= 0x00000001;
-        onChanged();
-      }
-      if (!other.getDataJson().isEmpty()) {
-        dataJson_ = other.dataJson_;
-        bitField0_ |= 0x00000002;
-        onChanged();
+      switch (other.getPayloadCase()) {
+        case PRELIMINARY_ANSWER: {
+          mergePreliminaryAnswer(other.getPreliminaryAnswer());
+          break;
+        }
+        case RESPONDING: {
+          mergeResponding(other.getResponding());
+          break;
+        }
+        case TOKEN: {
+          mergeToken(other.getToken());
+          break;
+        }
+        case RESPONSE: {
+          mergeResponse(other.getResponse());
+          break;
+        }
+        case STORED: {
+          mergeStored(other.getStored());
+          break;
+        }
+        case DONE: {
+          mergeDone(other.getDone());
+          break;
+        }
+        case ERROR: {
+          mergeError(other.getError());
+          break;
+        }
+        case PAYLOAD_NOT_SET: {
+          break;
+        }
       }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
@@ -433,15 +784,54 @@ private static final long serialVersionUID = 0L;
               done = true;
               break;
             case 10: {
-              event_ = input.readStringRequireUtf8();
-              bitField0_ |= 0x00000001;
+              input.readMessage(
+                  internalGetPreliminaryAnswerFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              payloadCase_ = 1;
               break;
             } // case 10
             case 18: {
-              dataJson_ = input.readStringRequireUtf8();
-              bitField0_ |= 0x00000002;
+              input.readMessage(
+                  internalGetRespondingFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              payloadCase_ = 2;
               break;
             } // case 18
+            case 26: {
+              input.readMessage(
+                  internalGetTokenFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              payloadCase_ = 3;
+              break;
+            } // case 26
+            case 34: {
+              input.readMessage(
+                  internalGetResponseFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              payloadCase_ = 4;
+              break;
+            } // case 34
+            case 42: {
+              input.readMessage(
+                  internalGetStoredFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              payloadCase_ = 5;
+              break;
+            } // case 42
+            case 50: {
+              input.readMessage(
+                  internalGetDoneFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              payloadCase_ = 6;
+              break;
+            } // case 50
+            case 58: {
+              input.readMessage(
+                  internalGetErrorFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              payloadCase_ = 7;
+              break;
+            } // case 58
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -457,195 +847,1015 @@ private static final long serialVersionUID = 0L;
       } // finally
       return this;
     }
+    private int payloadCase_ = 0;
+    private java.lang.Object payload_;
+    public PayloadCase
+        getPayloadCase() {
+      return PayloadCase.forNumber(
+          payloadCase_);
+    }
+
+    public Builder clearPayload() {
+      payloadCase_ = 0;
+      payload_ = null;
+      onChanged();
+      return this;
+    }
+
     private int bitField0_;
 
-    private java.lang.Object event_ = "";
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.PreliminaryAnswer, com.jervis.contracts.orchestrator.PreliminaryAnswer.Builder, com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder> preliminaryAnswerBuilder_;
     /**
-     * <pre>
-     * preliminary_answer | responding | token | response | stored | done | error
-     * </pre>
-     *
-     * <code>string event = 1;</code>
-     * @return The event.
+     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+     * @return Whether the preliminaryAnswer field is set.
      */
-    public java.lang.String getEvent() {
-      java.lang.Object ref = event_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        event_ = s;
-        return s;
+    @java.lang.Override
+    public boolean hasPreliminaryAnswer() {
+      return payloadCase_ == 1;
+    }
+    /**
+     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+     * @return The preliminaryAnswer.
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.PreliminaryAnswer getPreliminaryAnswer() {
+      if (preliminaryAnswerBuilder_ == null) {
+        if (payloadCase_ == 1) {
+          return (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_;
+        }
+        return com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
       } else {
-        return (java.lang.String) ref;
+        if (payloadCase_ == 1) {
+          return preliminaryAnswerBuilder_.getMessage();
+        }
+        return com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
       }
     }
     /**
-     * <pre>
-     * preliminary_answer | responding | token | response | stored | done | error
-     * </pre>
-     *
-     * <code>string event = 1;</code>
-     * @return The bytes for event.
+     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
      */
-    public com.google.protobuf.ByteString
-        getEventBytes() {
-      java.lang.Object ref = event_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        event_ = b;
-        return b;
+    public Builder setPreliminaryAnswer(com.jervis.contracts.orchestrator.PreliminaryAnswer value) {
+      if (preliminaryAnswerBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        payload_ = value;
+        onChanged();
       } else {
-        return (com.google.protobuf.ByteString) ref;
+        preliminaryAnswerBuilder_.setMessage(value);
+      }
+      payloadCase_ = 1;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+     */
+    public Builder setPreliminaryAnswer(
+        com.jervis.contracts.orchestrator.PreliminaryAnswer.Builder builderForValue) {
+      if (preliminaryAnswerBuilder_ == null) {
+        payload_ = builderForValue.build();
+        onChanged();
+      } else {
+        preliminaryAnswerBuilder_.setMessage(builderForValue.build());
+      }
+      payloadCase_ = 1;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+     */
+    public Builder mergePreliminaryAnswer(com.jervis.contracts.orchestrator.PreliminaryAnswer value) {
+      if (preliminaryAnswerBuilder_ == null) {
+        if (payloadCase_ == 1 &&
+            payload_ != com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance()) {
+          payload_ = com.jervis.contracts.orchestrator.PreliminaryAnswer.newBuilder((com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_)
+              .mergeFrom(value).buildPartial();
+        } else {
+          payload_ = value;
+        }
+        onChanged();
+      } else {
+        if (payloadCase_ == 1) {
+          preliminaryAnswerBuilder_.mergeFrom(value);
+        } else {
+          preliminaryAnswerBuilder_.setMessage(value);
+        }
+      }
+      payloadCase_ = 1;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+     */
+    public Builder clearPreliminaryAnswer() {
+      if (preliminaryAnswerBuilder_ == null) {
+        if (payloadCase_ == 1) {
+          payloadCase_ = 0;
+          payload_ = null;
+          onChanged();
+        }
+      } else {
+        if (payloadCase_ == 1) {
+          payloadCase_ = 0;
+          payload_ = null;
+        }
+        preliminaryAnswerBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+     */
+    public com.jervis.contracts.orchestrator.PreliminaryAnswer.Builder getPreliminaryAnswerBuilder() {
+      return internalGetPreliminaryAnswerFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder getPreliminaryAnswerOrBuilder() {
+      if ((payloadCase_ == 1) && (preliminaryAnswerBuilder_ != null)) {
+        return preliminaryAnswerBuilder_.getMessageOrBuilder();
+      } else {
+        if (payloadCase_ == 1) {
+          return (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_;
+        }
+        return com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
       }
     }
     /**
-     * <pre>
-     * preliminary_answer | responding | token | response | stored | done | error
-     * </pre>
-     *
-     * <code>string event = 1;</code>
-     * @param value The event to set.
-     * @return This builder for chaining.
+     * <code>.jervis.orchestrator.PreliminaryAnswer preliminary_answer = 1;</code>
      */
-    public Builder setEvent(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      event_ = value;
-      bitField0_ |= 0x00000001;
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.PreliminaryAnswer, com.jervis.contracts.orchestrator.PreliminaryAnswer.Builder, com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder> 
+        internalGetPreliminaryAnswerFieldBuilder() {
+      if (preliminaryAnswerBuilder_ == null) {
+        if (!(payloadCase_ == 1)) {
+          payload_ = com.jervis.contracts.orchestrator.PreliminaryAnswer.getDefaultInstance();
+        }
+        preliminaryAnswerBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.orchestrator.PreliminaryAnswer, com.jervis.contracts.orchestrator.PreliminaryAnswer.Builder, com.jervis.contracts.orchestrator.PreliminaryAnswerOrBuilder>(
+                (com.jervis.contracts.orchestrator.PreliminaryAnswer) payload_,
+                getParentForChildren(),
+                isClean());
+        payload_ = null;
+      }
+      payloadCase_ = 1;
       onChanged();
-      return this;
-    }
-    /**
-     * <pre>
-     * preliminary_answer | responding | token | response | stored | done | error
-     * </pre>
-     *
-     * <code>string event = 1;</code>
-     * @return This builder for chaining.
-     */
-    public Builder clearEvent() {
-      event_ = getDefaultInstance().getEvent();
-      bitField0_ = (bitField0_ & ~0x00000001);
-      onChanged();
-      return this;
-    }
-    /**
-     * <pre>
-     * preliminary_answer | responding | token | response | stored | done | error
-     * </pre>
-     *
-     * <code>string event = 1;</code>
-     * @param value The bytes for event to set.
-     * @return This builder for chaining.
-     */
-    public Builder setEventBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      event_ = value;
-      bitField0_ |= 0x00000001;
-      onChanged();
-      return this;
+      return preliminaryAnswerBuilder_;
     }
 
-    private java.lang.Object dataJson_ = "";
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.Responding, com.jervis.contracts.orchestrator.Responding.Builder, com.jervis.contracts.orchestrator.RespondingOrBuilder> respondingBuilder_;
     /**
-     * <pre>
-     * Event payload as JSON — maintains parity with the legacy SSE
-     * `data` field where keys varied per event type.
-     * </pre>
-     *
-     * <code>string data_json = 2;</code>
-     * @return The dataJson.
+     * <code>.jervis.orchestrator.Responding responding = 2;</code>
+     * @return Whether the responding field is set.
      */
-    public java.lang.String getDataJson() {
-      java.lang.Object ref = dataJson_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        dataJson_ = s;
-        return s;
+    @java.lang.Override
+    public boolean hasResponding() {
+      return payloadCase_ == 2;
+    }
+    /**
+     * <code>.jervis.orchestrator.Responding responding = 2;</code>
+     * @return The responding.
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.Responding getResponding() {
+      if (respondingBuilder_ == null) {
+        if (payloadCase_ == 2) {
+          return (com.jervis.contracts.orchestrator.Responding) payload_;
+        }
+        return com.jervis.contracts.orchestrator.Responding.getDefaultInstance();
       } else {
-        return (java.lang.String) ref;
+        if (payloadCase_ == 2) {
+          return respondingBuilder_.getMessage();
+        }
+        return com.jervis.contracts.orchestrator.Responding.getDefaultInstance();
       }
     }
     /**
-     * <pre>
-     * Event payload as JSON — maintains parity with the legacy SSE
-     * `data` field where keys varied per event type.
-     * </pre>
-     *
-     * <code>string data_json = 2;</code>
-     * @return The bytes for dataJson.
+     * <code>.jervis.orchestrator.Responding responding = 2;</code>
      */
-    public com.google.protobuf.ByteString
-        getDataJsonBytes() {
-      java.lang.Object ref = dataJson_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        dataJson_ = b;
-        return b;
+    public Builder setResponding(com.jervis.contracts.orchestrator.Responding value) {
+      if (respondingBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        payload_ = value;
+        onChanged();
       } else {
-        return (com.google.protobuf.ByteString) ref;
+        respondingBuilder_.setMessage(value);
+      }
+      payloadCase_ = 2;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Responding responding = 2;</code>
+     */
+    public Builder setResponding(
+        com.jervis.contracts.orchestrator.Responding.Builder builderForValue) {
+      if (respondingBuilder_ == null) {
+        payload_ = builderForValue.build();
+        onChanged();
+      } else {
+        respondingBuilder_.setMessage(builderForValue.build());
+      }
+      payloadCase_ = 2;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Responding responding = 2;</code>
+     */
+    public Builder mergeResponding(com.jervis.contracts.orchestrator.Responding value) {
+      if (respondingBuilder_ == null) {
+        if (payloadCase_ == 2 &&
+            payload_ != com.jervis.contracts.orchestrator.Responding.getDefaultInstance()) {
+          payload_ = com.jervis.contracts.orchestrator.Responding.newBuilder((com.jervis.contracts.orchestrator.Responding) payload_)
+              .mergeFrom(value).buildPartial();
+        } else {
+          payload_ = value;
+        }
+        onChanged();
+      } else {
+        if (payloadCase_ == 2) {
+          respondingBuilder_.mergeFrom(value);
+        } else {
+          respondingBuilder_.setMessage(value);
+        }
+      }
+      payloadCase_ = 2;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Responding responding = 2;</code>
+     */
+    public Builder clearResponding() {
+      if (respondingBuilder_ == null) {
+        if (payloadCase_ == 2) {
+          payloadCase_ = 0;
+          payload_ = null;
+          onChanged();
+        }
+      } else {
+        if (payloadCase_ == 2) {
+          payloadCase_ = 0;
+          payload_ = null;
+        }
+        respondingBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Responding responding = 2;</code>
+     */
+    public com.jervis.contracts.orchestrator.Responding.Builder getRespondingBuilder() {
+      return internalGetRespondingFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.orchestrator.Responding responding = 2;</code>
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.RespondingOrBuilder getRespondingOrBuilder() {
+      if ((payloadCase_ == 2) && (respondingBuilder_ != null)) {
+        return respondingBuilder_.getMessageOrBuilder();
+      } else {
+        if (payloadCase_ == 2) {
+          return (com.jervis.contracts.orchestrator.Responding) payload_;
+        }
+        return com.jervis.contracts.orchestrator.Responding.getDefaultInstance();
       }
     }
     /**
-     * <pre>
-     * Event payload as JSON — maintains parity with the legacy SSE
-     * `data` field where keys varied per event type.
-     * </pre>
-     *
-     * <code>string data_json = 2;</code>
-     * @param value The dataJson to set.
-     * @return This builder for chaining.
+     * <code>.jervis.orchestrator.Responding responding = 2;</code>
      */
-    public Builder setDataJson(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      dataJson_ = value;
-      bitField0_ |= 0x00000002;
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.Responding, com.jervis.contracts.orchestrator.Responding.Builder, com.jervis.contracts.orchestrator.RespondingOrBuilder> 
+        internalGetRespondingFieldBuilder() {
+      if (respondingBuilder_ == null) {
+        if (!(payloadCase_ == 2)) {
+          payload_ = com.jervis.contracts.orchestrator.Responding.getDefaultInstance();
+        }
+        respondingBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.orchestrator.Responding, com.jervis.contracts.orchestrator.Responding.Builder, com.jervis.contracts.orchestrator.RespondingOrBuilder>(
+                (com.jervis.contracts.orchestrator.Responding) payload_,
+                getParentForChildren(),
+                isClean());
+        payload_ = null;
+      }
+      payloadCase_ = 2;
       onChanged();
+      return respondingBuilder_;
+    }
+
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.Token, com.jervis.contracts.orchestrator.Token.Builder, com.jervis.contracts.orchestrator.TokenOrBuilder> tokenBuilder_;
+    /**
+     * <code>.jervis.orchestrator.Token token = 3;</code>
+     * @return Whether the token field is set.
+     */
+    @java.lang.Override
+    public boolean hasToken() {
+      return payloadCase_ == 3;
+    }
+    /**
+     * <code>.jervis.orchestrator.Token token = 3;</code>
+     * @return The token.
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.Token getToken() {
+      if (tokenBuilder_ == null) {
+        if (payloadCase_ == 3) {
+          return (com.jervis.contracts.orchestrator.Token) payload_;
+        }
+        return com.jervis.contracts.orchestrator.Token.getDefaultInstance();
+      } else {
+        if (payloadCase_ == 3) {
+          return tokenBuilder_.getMessage();
+        }
+        return com.jervis.contracts.orchestrator.Token.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.orchestrator.Token token = 3;</code>
+     */
+    public Builder setToken(com.jervis.contracts.orchestrator.Token value) {
+      if (tokenBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        payload_ = value;
+        onChanged();
+      } else {
+        tokenBuilder_.setMessage(value);
+      }
+      payloadCase_ = 3;
       return this;
     }
     /**
-     * <pre>
-     * Event payload as JSON — maintains parity with the legacy SSE
-     * `data` field where keys varied per event type.
-     * </pre>
-     *
-     * <code>string data_json = 2;</code>
-     * @return This builder for chaining.
+     * <code>.jervis.orchestrator.Token token = 3;</code>
      */
-    public Builder clearDataJson() {
-      dataJson_ = getDefaultInstance().getDataJson();
-      bitField0_ = (bitField0_ & ~0x00000002);
-      onChanged();
+    public Builder setToken(
+        com.jervis.contracts.orchestrator.Token.Builder builderForValue) {
+      if (tokenBuilder_ == null) {
+        payload_ = builderForValue.build();
+        onChanged();
+      } else {
+        tokenBuilder_.setMessage(builderForValue.build());
+      }
+      payloadCase_ = 3;
       return this;
     }
     /**
-     * <pre>
-     * Event payload as JSON — maintains parity with the legacy SSE
-     * `data` field where keys varied per event type.
-     * </pre>
-     *
-     * <code>string data_json = 2;</code>
-     * @param value The bytes for dataJson to set.
-     * @return This builder for chaining.
+     * <code>.jervis.orchestrator.Token token = 3;</code>
      */
-    public Builder setDataJsonBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      dataJson_ = value;
-      bitField0_ |= 0x00000002;
-      onChanged();
+    public Builder mergeToken(com.jervis.contracts.orchestrator.Token value) {
+      if (tokenBuilder_ == null) {
+        if (payloadCase_ == 3 &&
+            payload_ != com.jervis.contracts.orchestrator.Token.getDefaultInstance()) {
+          payload_ = com.jervis.contracts.orchestrator.Token.newBuilder((com.jervis.contracts.orchestrator.Token) payload_)
+              .mergeFrom(value).buildPartial();
+        } else {
+          payload_ = value;
+        }
+        onChanged();
+      } else {
+        if (payloadCase_ == 3) {
+          tokenBuilder_.mergeFrom(value);
+        } else {
+          tokenBuilder_.setMessage(value);
+        }
+      }
+      payloadCase_ = 3;
       return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Token token = 3;</code>
+     */
+    public Builder clearToken() {
+      if (tokenBuilder_ == null) {
+        if (payloadCase_ == 3) {
+          payloadCase_ = 0;
+          payload_ = null;
+          onChanged();
+        }
+      } else {
+        if (payloadCase_ == 3) {
+          payloadCase_ = 0;
+          payload_ = null;
+        }
+        tokenBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Token token = 3;</code>
+     */
+    public com.jervis.contracts.orchestrator.Token.Builder getTokenBuilder() {
+      return internalGetTokenFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.orchestrator.Token token = 3;</code>
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.TokenOrBuilder getTokenOrBuilder() {
+      if ((payloadCase_ == 3) && (tokenBuilder_ != null)) {
+        return tokenBuilder_.getMessageOrBuilder();
+      } else {
+        if (payloadCase_ == 3) {
+          return (com.jervis.contracts.orchestrator.Token) payload_;
+        }
+        return com.jervis.contracts.orchestrator.Token.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.orchestrator.Token token = 3;</code>
+     */
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.Token, com.jervis.contracts.orchestrator.Token.Builder, com.jervis.contracts.orchestrator.TokenOrBuilder> 
+        internalGetTokenFieldBuilder() {
+      if (tokenBuilder_ == null) {
+        if (!(payloadCase_ == 3)) {
+          payload_ = com.jervis.contracts.orchestrator.Token.getDefaultInstance();
+        }
+        tokenBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.orchestrator.Token, com.jervis.contracts.orchestrator.Token.Builder, com.jervis.contracts.orchestrator.TokenOrBuilder>(
+                (com.jervis.contracts.orchestrator.Token) payload_,
+                getParentForChildren(),
+                isClean());
+        payload_ = null;
+      }
+      payloadCase_ = 3;
+      onChanged();
+      return tokenBuilder_;
+    }
+
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.Response, com.jervis.contracts.orchestrator.Response.Builder, com.jervis.contracts.orchestrator.ResponseOrBuilder> responseBuilder_;
+    /**
+     * <code>.jervis.orchestrator.Response response = 4;</code>
+     * @return Whether the response field is set.
+     */
+    @java.lang.Override
+    public boolean hasResponse() {
+      return payloadCase_ == 4;
+    }
+    /**
+     * <code>.jervis.orchestrator.Response response = 4;</code>
+     * @return The response.
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.Response getResponse() {
+      if (responseBuilder_ == null) {
+        if (payloadCase_ == 4) {
+          return (com.jervis.contracts.orchestrator.Response) payload_;
+        }
+        return com.jervis.contracts.orchestrator.Response.getDefaultInstance();
+      } else {
+        if (payloadCase_ == 4) {
+          return responseBuilder_.getMessage();
+        }
+        return com.jervis.contracts.orchestrator.Response.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.orchestrator.Response response = 4;</code>
+     */
+    public Builder setResponse(com.jervis.contracts.orchestrator.Response value) {
+      if (responseBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        payload_ = value;
+        onChanged();
+      } else {
+        responseBuilder_.setMessage(value);
+      }
+      payloadCase_ = 4;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Response response = 4;</code>
+     */
+    public Builder setResponse(
+        com.jervis.contracts.orchestrator.Response.Builder builderForValue) {
+      if (responseBuilder_ == null) {
+        payload_ = builderForValue.build();
+        onChanged();
+      } else {
+        responseBuilder_.setMessage(builderForValue.build());
+      }
+      payloadCase_ = 4;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Response response = 4;</code>
+     */
+    public Builder mergeResponse(com.jervis.contracts.orchestrator.Response value) {
+      if (responseBuilder_ == null) {
+        if (payloadCase_ == 4 &&
+            payload_ != com.jervis.contracts.orchestrator.Response.getDefaultInstance()) {
+          payload_ = com.jervis.contracts.orchestrator.Response.newBuilder((com.jervis.contracts.orchestrator.Response) payload_)
+              .mergeFrom(value).buildPartial();
+        } else {
+          payload_ = value;
+        }
+        onChanged();
+      } else {
+        if (payloadCase_ == 4) {
+          responseBuilder_.mergeFrom(value);
+        } else {
+          responseBuilder_.setMessage(value);
+        }
+      }
+      payloadCase_ = 4;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Response response = 4;</code>
+     */
+    public Builder clearResponse() {
+      if (responseBuilder_ == null) {
+        if (payloadCase_ == 4) {
+          payloadCase_ = 0;
+          payload_ = null;
+          onChanged();
+        }
+      } else {
+        if (payloadCase_ == 4) {
+          payloadCase_ = 0;
+          payload_ = null;
+        }
+        responseBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Response response = 4;</code>
+     */
+    public com.jervis.contracts.orchestrator.Response.Builder getResponseBuilder() {
+      return internalGetResponseFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.orchestrator.Response response = 4;</code>
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.ResponseOrBuilder getResponseOrBuilder() {
+      if ((payloadCase_ == 4) && (responseBuilder_ != null)) {
+        return responseBuilder_.getMessageOrBuilder();
+      } else {
+        if (payloadCase_ == 4) {
+          return (com.jervis.contracts.orchestrator.Response) payload_;
+        }
+        return com.jervis.contracts.orchestrator.Response.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.orchestrator.Response response = 4;</code>
+     */
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.Response, com.jervis.contracts.orchestrator.Response.Builder, com.jervis.contracts.orchestrator.ResponseOrBuilder> 
+        internalGetResponseFieldBuilder() {
+      if (responseBuilder_ == null) {
+        if (!(payloadCase_ == 4)) {
+          payload_ = com.jervis.contracts.orchestrator.Response.getDefaultInstance();
+        }
+        responseBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.orchestrator.Response, com.jervis.contracts.orchestrator.Response.Builder, com.jervis.contracts.orchestrator.ResponseOrBuilder>(
+                (com.jervis.contracts.orchestrator.Response) payload_,
+                getParentForChildren(),
+                isClean());
+        payload_ = null;
+      }
+      payloadCase_ = 4;
+      onChanged();
+      return responseBuilder_;
+    }
+
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.Stored, com.jervis.contracts.orchestrator.Stored.Builder, com.jervis.contracts.orchestrator.StoredOrBuilder> storedBuilder_;
+    /**
+     * <code>.jervis.orchestrator.Stored stored = 5;</code>
+     * @return Whether the stored field is set.
+     */
+    @java.lang.Override
+    public boolean hasStored() {
+      return payloadCase_ == 5;
+    }
+    /**
+     * <code>.jervis.orchestrator.Stored stored = 5;</code>
+     * @return The stored.
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.Stored getStored() {
+      if (storedBuilder_ == null) {
+        if (payloadCase_ == 5) {
+          return (com.jervis.contracts.orchestrator.Stored) payload_;
+        }
+        return com.jervis.contracts.orchestrator.Stored.getDefaultInstance();
+      } else {
+        if (payloadCase_ == 5) {
+          return storedBuilder_.getMessage();
+        }
+        return com.jervis.contracts.orchestrator.Stored.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.orchestrator.Stored stored = 5;</code>
+     */
+    public Builder setStored(com.jervis.contracts.orchestrator.Stored value) {
+      if (storedBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        payload_ = value;
+        onChanged();
+      } else {
+        storedBuilder_.setMessage(value);
+      }
+      payloadCase_ = 5;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Stored stored = 5;</code>
+     */
+    public Builder setStored(
+        com.jervis.contracts.orchestrator.Stored.Builder builderForValue) {
+      if (storedBuilder_ == null) {
+        payload_ = builderForValue.build();
+        onChanged();
+      } else {
+        storedBuilder_.setMessage(builderForValue.build());
+      }
+      payloadCase_ = 5;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Stored stored = 5;</code>
+     */
+    public Builder mergeStored(com.jervis.contracts.orchestrator.Stored value) {
+      if (storedBuilder_ == null) {
+        if (payloadCase_ == 5 &&
+            payload_ != com.jervis.contracts.orchestrator.Stored.getDefaultInstance()) {
+          payload_ = com.jervis.contracts.orchestrator.Stored.newBuilder((com.jervis.contracts.orchestrator.Stored) payload_)
+              .mergeFrom(value).buildPartial();
+        } else {
+          payload_ = value;
+        }
+        onChanged();
+      } else {
+        if (payloadCase_ == 5) {
+          storedBuilder_.mergeFrom(value);
+        } else {
+          storedBuilder_.setMessage(value);
+        }
+      }
+      payloadCase_ = 5;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Stored stored = 5;</code>
+     */
+    public Builder clearStored() {
+      if (storedBuilder_ == null) {
+        if (payloadCase_ == 5) {
+          payloadCase_ = 0;
+          payload_ = null;
+          onChanged();
+        }
+      } else {
+        if (payloadCase_ == 5) {
+          payloadCase_ = 0;
+          payload_ = null;
+        }
+        storedBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Stored stored = 5;</code>
+     */
+    public com.jervis.contracts.orchestrator.Stored.Builder getStoredBuilder() {
+      return internalGetStoredFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.orchestrator.Stored stored = 5;</code>
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.StoredOrBuilder getStoredOrBuilder() {
+      if ((payloadCase_ == 5) && (storedBuilder_ != null)) {
+        return storedBuilder_.getMessageOrBuilder();
+      } else {
+        if (payloadCase_ == 5) {
+          return (com.jervis.contracts.orchestrator.Stored) payload_;
+        }
+        return com.jervis.contracts.orchestrator.Stored.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.orchestrator.Stored stored = 5;</code>
+     */
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.Stored, com.jervis.contracts.orchestrator.Stored.Builder, com.jervis.contracts.orchestrator.StoredOrBuilder> 
+        internalGetStoredFieldBuilder() {
+      if (storedBuilder_ == null) {
+        if (!(payloadCase_ == 5)) {
+          payload_ = com.jervis.contracts.orchestrator.Stored.getDefaultInstance();
+        }
+        storedBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.orchestrator.Stored, com.jervis.contracts.orchestrator.Stored.Builder, com.jervis.contracts.orchestrator.StoredOrBuilder>(
+                (com.jervis.contracts.orchestrator.Stored) payload_,
+                getParentForChildren(),
+                isClean());
+        payload_ = null;
+      }
+      payloadCase_ = 5;
+      onChanged();
+      return storedBuilder_;
+    }
+
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.Done, com.jervis.contracts.orchestrator.Done.Builder, com.jervis.contracts.orchestrator.DoneOrBuilder> doneBuilder_;
+    /**
+     * <code>.jervis.orchestrator.Done done = 6;</code>
+     * @return Whether the done field is set.
+     */
+    @java.lang.Override
+    public boolean hasDone() {
+      return payloadCase_ == 6;
+    }
+    /**
+     * <code>.jervis.orchestrator.Done done = 6;</code>
+     * @return The done.
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.Done getDone() {
+      if (doneBuilder_ == null) {
+        if (payloadCase_ == 6) {
+          return (com.jervis.contracts.orchestrator.Done) payload_;
+        }
+        return com.jervis.contracts.orchestrator.Done.getDefaultInstance();
+      } else {
+        if (payloadCase_ == 6) {
+          return doneBuilder_.getMessage();
+        }
+        return com.jervis.contracts.orchestrator.Done.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.orchestrator.Done done = 6;</code>
+     */
+    public Builder setDone(com.jervis.contracts.orchestrator.Done value) {
+      if (doneBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        payload_ = value;
+        onChanged();
+      } else {
+        doneBuilder_.setMessage(value);
+      }
+      payloadCase_ = 6;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Done done = 6;</code>
+     */
+    public Builder setDone(
+        com.jervis.contracts.orchestrator.Done.Builder builderForValue) {
+      if (doneBuilder_ == null) {
+        payload_ = builderForValue.build();
+        onChanged();
+      } else {
+        doneBuilder_.setMessage(builderForValue.build());
+      }
+      payloadCase_ = 6;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Done done = 6;</code>
+     */
+    public Builder mergeDone(com.jervis.contracts.orchestrator.Done value) {
+      if (doneBuilder_ == null) {
+        if (payloadCase_ == 6 &&
+            payload_ != com.jervis.contracts.orchestrator.Done.getDefaultInstance()) {
+          payload_ = com.jervis.contracts.orchestrator.Done.newBuilder((com.jervis.contracts.orchestrator.Done) payload_)
+              .mergeFrom(value).buildPartial();
+        } else {
+          payload_ = value;
+        }
+        onChanged();
+      } else {
+        if (payloadCase_ == 6) {
+          doneBuilder_.mergeFrom(value);
+        } else {
+          doneBuilder_.setMessage(value);
+        }
+      }
+      payloadCase_ = 6;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Done done = 6;</code>
+     */
+    public Builder clearDone() {
+      if (doneBuilder_ == null) {
+        if (payloadCase_ == 6) {
+          payloadCase_ = 0;
+          payload_ = null;
+          onChanged();
+        }
+      } else {
+        if (payloadCase_ == 6) {
+          payloadCase_ = 0;
+          payload_ = null;
+        }
+        doneBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.Done done = 6;</code>
+     */
+    public com.jervis.contracts.orchestrator.Done.Builder getDoneBuilder() {
+      return internalGetDoneFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.orchestrator.Done done = 6;</code>
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.DoneOrBuilder getDoneOrBuilder() {
+      if ((payloadCase_ == 6) && (doneBuilder_ != null)) {
+        return doneBuilder_.getMessageOrBuilder();
+      } else {
+        if (payloadCase_ == 6) {
+          return (com.jervis.contracts.orchestrator.Done) payload_;
+        }
+        return com.jervis.contracts.orchestrator.Done.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.orchestrator.Done done = 6;</code>
+     */
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.Done, com.jervis.contracts.orchestrator.Done.Builder, com.jervis.contracts.orchestrator.DoneOrBuilder> 
+        internalGetDoneFieldBuilder() {
+      if (doneBuilder_ == null) {
+        if (!(payloadCase_ == 6)) {
+          payload_ = com.jervis.contracts.orchestrator.Done.getDefaultInstance();
+        }
+        doneBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.orchestrator.Done, com.jervis.contracts.orchestrator.Done.Builder, com.jervis.contracts.orchestrator.DoneOrBuilder>(
+                (com.jervis.contracts.orchestrator.Done) payload_,
+                getParentForChildren(),
+                isClean());
+        payload_ = null;
+      }
+      payloadCase_ = 6;
+      onChanged();
+      return doneBuilder_;
+    }
+
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.ErrorPayload, com.jervis.contracts.orchestrator.ErrorPayload.Builder, com.jervis.contracts.orchestrator.ErrorPayloadOrBuilder> errorBuilder_;
+    /**
+     * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+     * @return Whether the error field is set.
+     */
+    @java.lang.Override
+    public boolean hasError() {
+      return payloadCase_ == 7;
+    }
+    /**
+     * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+     * @return The error.
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.ErrorPayload getError() {
+      if (errorBuilder_ == null) {
+        if (payloadCase_ == 7) {
+          return (com.jervis.contracts.orchestrator.ErrorPayload) payload_;
+        }
+        return com.jervis.contracts.orchestrator.ErrorPayload.getDefaultInstance();
+      } else {
+        if (payloadCase_ == 7) {
+          return errorBuilder_.getMessage();
+        }
+        return com.jervis.contracts.orchestrator.ErrorPayload.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+     */
+    public Builder setError(com.jervis.contracts.orchestrator.ErrorPayload value) {
+      if (errorBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        payload_ = value;
+        onChanged();
+      } else {
+        errorBuilder_.setMessage(value);
+      }
+      payloadCase_ = 7;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+     */
+    public Builder setError(
+        com.jervis.contracts.orchestrator.ErrorPayload.Builder builderForValue) {
+      if (errorBuilder_ == null) {
+        payload_ = builderForValue.build();
+        onChanged();
+      } else {
+        errorBuilder_.setMessage(builderForValue.build());
+      }
+      payloadCase_ = 7;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+     */
+    public Builder mergeError(com.jervis.contracts.orchestrator.ErrorPayload value) {
+      if (errorBuilder_ == null) {
+        if (payloadCase_ == 7 &&
+            payload_ != com.jervis.contracts.orchestrator.ErrorPayload.getDefaultInstance()) {
+          payload_ = com.jervis.contracts.orchestrator.ErrorPayload.newBuilder((com.jervis.contracts.orchestrator.ErrorPayload) payload_)
+              .mergeFrom(value).buildPartial();
+        } else {
+          payload_ = value;
+        }
+        onChanged();
+      } else {
+        if (payloadCase_ == 7) {
+          errorBuilder_.mergeFrom(value);
+        } else {
+          errorBuilder_.setMessage(value);
+        }
+      }
+      payloadCase_ = 7;
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+     */
+    public Builder clearError() {
+      if (errorBuilder_ == null) {
+        if (payloadCase_ == 7) {
+          payloadCase_ = 0;
+          payload_ = null;
+          onChanged();
+        }
+      } else {
+        if (payloadCase_ == 7) {
+          payloadCase_ = 0;
+          payload_ = null;
+        }
+        errorBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+     */
+    public com.jervis.contracts.orchestrator.ErrorPayload.Builder getErrorBuilder() {
+      return internalGetErrorFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+     */
+    @java.lang.Override
+    public com.jervis.contracts.orchestrator.ErrorPayloadOrBuilder getErrorOrBuilder() {
+      if ((payloadCase_ == 7) && (errorBuilder_ != null)) {
+        return errorBuilder_.getMessageOrBuilder();
+      } else {
+        if (payloadCase_ == 7) {
+          return (com.jervis.contracts.orchestrator.ErrorPayload) payload_;
+        }
+        return com.jervis.contracts.orchestrator.ErrorPayload.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.orchestrator.ErrorPayload error = 7;</code>
+     */
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.ErrorPayload, com.jervis.contracts.orchestrator.ErrorPayload.Builder, com.jervis.contracts.orchestrator.ErrorPayloadOrBuilder> 
+        internalGetErrorFieldBuilder() {
+      if (errorBuilder_ == null) {
+        if (!(payloadCase_ == 7)) {
+          payload_ = com.jervis.contracts.orchestrator.ErrorPayload.getDefaultInstance();
+        }
+        errorBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.orchestrator.ErrorPayload, com.jervis.contracts.orchestrator.ErrorPayload.Builder, com.jervis.contracts.orchestrator.ErrorPayloadOrBuilder>(
+                (com.jervis.contracts.orchestrator.ErrorPayload) payload_,
+                getParentForChildren(),
+                isClean());
+        payload_ = null;
+      }
+      payloadCase_ = 7;
+      onChanged();
+      return errorBuilder_;
     }
 
     // @@protoc_insertion_point(builder_scope:jervis.orchestrator.VoiceStreamEvent)

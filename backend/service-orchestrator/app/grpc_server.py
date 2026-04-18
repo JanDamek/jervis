@@ -1074,12 +1074,54 @@ class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
         return chat_pb2.StopChatAck(ok=False, error="no-active-chat")
 
 
+def _voice_event_to_proto(event) -> voice_pb2.VoiceStreamEvent:
+    """Map one VoiceStreamEvent (pydantic, dict-payload) to the typed
+    proto oneof. Unknown `event.event` values fall through to the error
+    variant so the stream never emits an untagged event."""
+    data = event.data or {}
+    kind = event.event
+    if kind == "preliminary_answer":
+        return voice_pb2.VoiceStreamEvent(
+            preliminary_answer=voice_pb2.PreliminaryAnswer(
+                text=str(data.get("text") or ""),
+                confidence=float(data.get("confidence") or 0.0),
+            ),
+        )
+    if kind == "responding":
+        return voice_pb2.VoiceStreamEvent(responding=voice_pb2.Responding())
+    if kind == "token":
+        return voice_pb2.VoiceStreamEvent(
+            token=voice_pb2.Token(text=str(data.get("text") or "")),
+        )
+    if kind == "response":
+        return voice_pb2.VoiceStreamEvent(
+            response=voice_pb2.Response(
+                text=str(data.get("text") or ""),
+                complete=bool(data.get("complete") or False),
+            ),
+        )
+    if kind == "stored":
+        return voice_pb2.VoiceStreamEvent(
+            stored=voice_pb2.Stored(
+                kind=str(data.get("kind") or ""),
+                summary=str(data.get("summary") or ""),
+            ),
+        )
+    if kind == "done":
+        return voice_pb2.VoiceStreamEvent(done=voice_pb2.Done())
+    # "error" or anything else is routed through the error variant so
+    # the client's oneof switch always has a branch.
+    return voice_pb2.VoiceStreamEvent(
+        error=voice_pb2.ErrorPayload(text=str(data.get("text") or kind or "")),
+    )
+
+
 class OrchestratorVoiceServicer(voice_pb2_grpc.OrchestratorVoiceServiceServicer):
     """OrchestratorVoiceService — post-transcription voice pipeline.
 
     Process wraps handle_voice_stream(); Hint wraps generate_hint().
-    Events are projected into VoiceStreamEvent {event, data_json} so the
-    varied per-event-type payload keys ride inline JSON.
+    Each pipeline stage yields a typed oneof payload (see
+    VoiceStreamEvent in voice.proto) — no JSON passthrough on the wire.
     """
 
     async def Process(
@@ -1105,10 +1147,9 @@ class OrchestratorVoiceServicer(voice_pb2_grpc.OrchestratorVoiceServiceServicer)
             )
         except Exception as e:
             yield voice_pb2.VoiceStreamEvent(
-                event="error",
-                data_json=json.dumps({"text": f"Invalid voice request: {e}"}, ensure_ascii=False),
+                error=voice_pb2.ErrorPayload(text=f"Invalid voice request: {e}"),
             )
-            yield voice_pb2.VoiceStreamEvent(event="done", data_json="{}")
+            yield voice_pb2.VoiceStreamEvent(done=voice_pb2.Done())
             return
 
         logger.info(
@@ -1117,17 +1158,13 @@ class OrchestratorVoiceServicer(voice_pb2_grpc.OrchestratorVoiceServiceServicer)
         )
         try:
             async for event in handle_voice_stream(voice_request):
-                yield voice_pb2.VoiceStreamEvent(
-                    event=event.event,
-                    data_json=json.dumps(event.data, ensure_ascii=False, default=str),
-                )
+                yield _voice_event_to_proto(event)
         except Exception as e:
             logger.exception("Voice handler failed: %s", e)
             yield voice_pb2.VoiceStreamEvent(
-                event="error",
-                data_json=json.dumps({"text": str(e)[:100]}, ensure_ascii=False),
+                error=voice_pb2.ErrorPayload(text=str(e)[:100]),
             )
-            yield voice_pb2.VoiceStreamEvent(event="done", data_json="{}")
+            yield voice_pb2.VoiceStreamEvent(done=voice_pb2.Done())
 
     async def Hint(
         self,

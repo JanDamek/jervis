@@ -5,8 +5,7 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 /**
  * <pre>
  * OrchestratorVoiceService — post-transcription voice pipeline. Process
- * streams the intent-classified agentic reply (preliminary_answer /
- * responding / token / response / stored / done). Hint returns a KB-based
+ * streams the intent-classified agentic reply. Hint returns a KB-based
  * live-assist hint (single unary response).
  * </pre>
  */
@@ -142,8 +141,7 @@ public final class OrchestratorVoiceServiceGrpc {
   /**
    * <pre>
    * OrchestratorVoiceService — post-transcription voice pipeline. Process
-   * streams the intent-classified agentic reply (preliminary_answer /
-   * responding / token / response / stored / done). Hint returns a KB-based
+   * streams the intent-classified agentic reply. Hint returns a KB-based
    * live-assist hint (single unary response).
    * </pre>
    */
@@ -168,8 +166,7 @@ public final class OrchestratorVoiceServiceGrpc {
    * Base class for the server implementation of the service OrchestratorVoiceService.
    * <pre>
    * OrchestratorVoiceService — post-transcription voice pipeline. Process
-   * streams the intent-classified agentic reply (preliminary_answer /
-   * responding / token / response / stored / done). Hint returns a KB-based
+   * streams the intent-classified agentic reply. Hint returns a KB-based
    * live-assist hint (single unary response).
    * </pre>
    */
@@ -185,8 +182,7 @@ public final class OrchestratorVoiceServiceGrpc {
    * A stub to allow clients to do asynchronous rpc calls to service OrchestratorVoiceService.
    * <pre>
    * OrchestratorVoiceService — post-transcription voice pipeline. Process
-   * streams the intent-classified agentic reply (preliminary_answer /
-   * responding / token / response / stored / done). Hint returns a KB-based
+   * streams the intent-classified agentic reply. Hint returns a KB-based
    * live-assist hint (single unary response).
    * </pre>
    */
@@ -224,8 +220,7 @@ public final class OrchestratorVoiceServiceGrpc {
    * A stub to allow clients to do synchronous rpc calls to service OrchestratorVoiceService.
    * <pre>
    * OrchestratorVoiceService — post-transcription voice pipeline. Process
-   * streams the intent-classified agentic reply (preliminary_answer /
-   * responding / token / response / stored / done). Hint returns a KB-based
+   * streams the intent-classified agentic reply. Hint returns a KB-based
    * live-assist hint (single unary response).
    * </pre>
    */
@@ -263,8 +258,7 @@ public final class OrchestratorVoiceServiceGrpc {
    * A stub to allow clients to do limited synchronous rpc calls to service OrchestratorVoiceService.
    * <pre>
    * OrchestratorVoiceService — post-transcription voice pipeline. Process
-   * streams the intent-classified agentic reply (preliminary_answer /
-   * responding / token / response / stored / done). Hint returns a KB-based
+   * streams the intent-classified agentic reply. Hint returns a KB-based
    * live-assist hint (single unary response).
    * </pre>
    */
@@ -301,8 +295,7 @@ public final class OrchestratorVoiceServiceGrpc {
    * A stub to allow clients to do ListenableFuture-style rpc calls to service OrchestratorVoiceService.
    * <pre>
    * OrchestratorVoiceService — post-transcription voice pipeline. Process
-   * streams the intent-classified agentic reply (preliminary_answer /
-   * responding / token / response / stored / done). Hint returns a KB-based
+   * streams the intent-classified agentic reply. Hint returns a KB-based
    * live-assist hint (single unary response).
    * </pre>
    */

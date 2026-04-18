@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fjervis/orchestrator/voice.proto\x12\x13jervis.orchestrator\x1a\x19jervis/common/types.proto\"\xf5\x01\n\x13VoiceProcessRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0c\n\x04text\x18\x02 \x01(\t\x12\x0e\n\x06source\x18\x03 \x01(\t\x12\x11\n\tclient_id\x18\x04 \x01(\t\x12\x12\n\nproject_id\x18\x05 \x01(\t\x12\x10\n\x08group_id\x18\x06 \x01(\t\x12\x0b\n\x03tts\x18\x07 \x01(\x08\x12\x12\n\nmeeting_id\x18\x08 \x01(\t\x12\x13\n\x0blive_assist\x18\t \x01(\x08\x12\x13\n\x0b\x63hunk_index\x18\n \x01(\x05\x12\x10\n\x08is_final\x18\x0b \x01(\x08\"4\n\x10VoiceStreamEvent\x12\r\n\x05\x65vent\x18\x01 \x01(\t\x12\x11\n\tdata_json\x18\x02 \x01(\t\"s\n\x10VoiceHintRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0c\n\x04text\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\x12\x12\n\nproject_id\x18\x04 \x01(\t\"!\n\x11VoiceHintResponse\x12\x0c\n\x04hint\x18\x01 \x01(\t2\xcf\x01\n\x18OrchestratorVoiceService\x12\\\n\x07Process\x12(.jervis.orchestrator.VoiceProcessRequest\x1a%.jervis.orchestrator.VoiceStreamEvent0\x01\x12U\n\x04Hint\x12%.jervis.orchestrator.VoiceHintRequest\x1a&.jervis.orchestrator.VoiceHintResponseB=\n!com.jervis.contracts.orchestratorB\x16OrchestratorVoiceProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fjervis/orchestrator/voice.proto\x12\x13jervis.orchestrator\x1a\x19jervis/common/types.proto\"\xf5\x01\n\x13VoiceProcessRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0c\n\x04text\x18\x02 \x01(\t\x12\x0e\n\x06source\x18\x03 \x01(\t\x12\x11\n\tclient_id\x18\x04 \x01(\t\x12\x12\n\nproject_id\x18\x05 \x01(\t\x12\x10\n\x08group_id\x18\x06 \x01(\t\x12\x0b\n\x03tts\x18\x07 \x01(\x08\x12\x12\n\nmeeting_id\x18\x08 \x01(\t\x12\x13\n\x0blive_assist\x18\t \x01(\x08\x12\x13\n\x0b\x63hunk_index\x18\n \x01(\x05\x12\x10\n\x08is_final\x18\x0b \x01(\x08\"\x88\x03\n\x10VoiceStreamEvent\x12\x44\n\x12preliminary_answer\x18\x01 \x01(\x0b\x32&.jervis.orchestrator.PreliminaryAnswerH\x00\x12\x35\n\nresponding\x18\x02 \x01(\x0b\x32\x1f.jervis.orchestrator.RespondingH\x00\x12+\n\x05token\x18\x03 \x01(\x0b\x32\x1a.jervis.orchestrator.TokenH\x00\x12\x31\n\x08response\x18\x04 \x01(\x0b\x32\x1d.jervis.orchestrator.ResponseH\x00\x12-\n\x06stored\x18\x05 \x01(\x0b\x32\x1b.jervis.orchestrator.StoredH\x00\x12)\n\x04\x64one\x18\x06 \x01(\x0b\x32\x19.jervis.orchestrator.DoneH\x00\x12\x32\n\x05\x65rror\x18\x07 \x01(\x0b\x32!.jervis.orchestrator.ErrorPayloadH\x00\x42\t\n\x07payload\"5\n\x11PreliminaryAnswer\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x01\"\x0c\n\nResponding\"\x15\n\x05Token\x12\x0c\n\x04text\x18\x01 \x01(\t\"*\n\x08Response\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x10\n\x08\x63omplete\x18\x02 \x01(\x08\"\'\n\x06Stored\x12\x0c\n\x04kind\x18\x01 \x01(\t\x12\x0f\n\x07summary\x18\x02 \x01(\t\"\x06\n\x04\x44one\"\x1c\n\x0c\x45rrorPayload\x12\x0c\n\x04text\x18\x01 \x01(\t\"s\n\x10VoiceHintRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0c\n\x04text\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\x12\x12\n\nproject_id\x18\x04 \x01(\t\"!\n\x11VoiceHintResponse\x12\x0c\n\x04hint\x18\x01 \x01(\t2\xcf\x01\n\x18OrchestratorVoiceService\x12\\\n\x07Process\x12(.jervis.orchestrator.VoiceProcessRequest\x1a%.jervis.orchestrator.VoiceStreamEvent0\x01\x12U\n\x04Hint\x12%.jervis.orchestrator.VoiceHintRequest\x1a&.jervis.orchestrator.VoiceHintResponseB=\n!com.jervis.contracts.orchestratorB\x16OrchestratorVoiceProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,12 +35,26 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._serialized_options = b'\n!com.jervis.contracts.orchestratorB\026OrchestratorVoiceProtoP\001'
   _globals['_VOICEPROCESSREQUEST']._serialized_start=84
   _globals['_VOICEPROCESSREQUEST']._serialized_end=329
-  _globals['_VOICESTREAMEVENT']._serialized_start=331
-  _globals['_VOICESTREAMEVENT']._serialized_end=383
-  _globals['_VOICEHINTREQUEST']._serialized_start=385
-  _globals['_VOICEHINTREQUEST']._serialized_end=500
-  _globals['_VOICEHINTRESPONSE']._serialized_start=502
-  _globals['_VOICEHINTRESPONSE']._serialized_end=535
-  _globals['_ORCHESTRATORVOICESERVICE']._serialized_start=538
-  _globals['_ORCHESTRATORVOICESERVICE']._serialized_end=745
+  _globals['_VOICESTREAMEVENT']._serialized_start=332
+  _globals['_VOICESTREAMEVENT']._serialized_end=724
+  _globals['_PRELIMINARYANSWER']._serialized_start=726
+  _globals['_PRELIMINARYANSWER']._serialized_end=779
+  _globals['_RESPONDING']._serialized_start=781
+  _globals['_RESPONDING']._serialized_end=793
+  _globals['_TOKEN']._serialized_start=795
+  _globals['_TOKEN']._serialized_end=816
+  _globals['_RESPONSE']._serialized_start=818
+  _globals['_RESPONSE']._serialized_end=860
+  _globals['_STORED']._serialized_start=862
+  _globals['_STORED']._serialized_end=901
+  _globals['_DONE']._serialized_start=903
+  _globals['_DONE']._serialized_end=909
+  _globals['_ERRORPAYLOAD']._serialized_start=911
+  _globals['_ERRORPAYLOAD']._serialized_end=939
+  _globals['_VOICEHINTREQUEST']._serialized_start=941
+  _globals['_VOICEHINTREQUEST']._serialized_end=1056
+  _globals['_VOICEHINTRESPONSE']._serialized_start=1058
+  _globals['_VOICEHINTRESPONSE']._serialized_end=1091
+  _globals['_ORCHESTRATORVOICESERVICE']._serialized_start=1094
+  _globals['_ORCHESTRATORVOICESERVICE']._serialized_end=1301
 # @@protoc_insertion_point(module_scope)

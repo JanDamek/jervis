@@ -9,8 +9,7 @@ option java_multiple_files = true;
 option java_outer_classname = "OrchestratorVoiceProto";
 
 // OrchestratorVoiceService — post-transcription voice pipeline. Process
-// streams the intent-classified agentic reply (preliminary_answer /
-// responding / token / response / stored / done). Hint returns a KB-based
+// streams the intent-classified agentic reply. Hint returns a KB-based
 // live-assist hint (single unary response).
 service OrchestratorVoiceService {
   rpc Process(VoiceProcessRequest) returns (stream VoiceStreamEvent);
@@ -31,12 +30,50 @@ message VoiceProcessRequest {
   bool is_final = 11;
 }
 
+// VoiceStreamEvent carries one of the agentic pipeline's stages. The
+// payload shapes mirror what app/voice/stream_handler.py +
+// app/voice/quick_responder.py yield — each variant holds only the
+// fields actually produced on that branch.
 message VoiceStreamEvent {
-  string event = 1;                    // preliminary_answer | responding | token | response | stored | done | error
-  // Event payload as JSON — maintains parity with the legacy SSE
-  // `data` field where keys varied per event type.
-  string data_json = 2;
+  oneof payload {
+    PreliminaryAnswer preliminary_answer = 1;
+    Responding responding = 2;
+    Token token = 3;
+    Response response = 4;
+    Stored stored = 5;
+    Done done = 6;
+    ErrorPayload error = 7;
+  }
 }
+
+message PreliminaryAnswer {
+  string text = 1;
+  double confidence = 2;              // 0.0–1.0 (quick_responder KB match)
+}
+
+message Responding {}
+
+message Token {
+  string text = 1;
+}
+
+message Response {
+  string text = 1;
+  bool complete = 2;
+}
+
+message Stored {
+  string kind = 1;                    // "finding" etc.
+  string summary = 2;
+}
+
+message Done {}
+
+message ErrorPayload {
+  string text = 1;
+}
+
+// ── Hint ──────────────────────────────────────────────────────────────
 
 message VoiceHintRequest {
   jervis.common.RequestContext ctx = 1;
