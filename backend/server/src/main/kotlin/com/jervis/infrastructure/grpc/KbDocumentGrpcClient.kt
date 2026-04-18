@@ -1,15 +1,19 @@
 package com.jervis.infrastructure.grpc
 
+import com.google.protobuf.ByteString
 import com.jervis.contracts.common.RequestContext
 import com.jervis.contracts.common.Scope
 import com.jervis.contracts.knowledgebase.Document
 import com.jervis.contracts.knowledgebase.DocumentAck
 import com.jervis.contracts.knowledgebase.DocumentCategory
+import com.jervis.contracts.knowledgebase.DocumentExtractRequest
+import com.jervis.contracts.knowledgebase.DocumentExtractResult
 import com.jervis.contracts.knowledgebase.DocumentId
 import com.jervis.contracts.knowledgebase.DocumentList
 import com.jervis.contracts.knowledgebase.DocumentListRequest
 import com.jervis.contracts.knowledgebase.DocumentRegisterRequest
 import com.jervis.contracts.knowledgebase.DocumentUpdateRequest
+import com.jervis.contracts.knowledgebase.DocumentUploadRequest
 import com.jervis.contracts.knowledgebase.KnowledgeDocumentServiceGrpcKt
 import io.grpc.ManagedChannel
 import org.springframework.beans.factory.annotation.Qualifier
@@ -44,6 +48,52 @@ class KbDocumentGrpcClient(
         "OTHER", null, "" -> DocumentCategory.DOCUMENT_CATEGORY_OTHER
         else -> DocumentCategory.DOCUMENT_CATEGORY_OTHER
     }
+
+    suspend fun upload(
+        clientId: String,
+        projectId: String?,
+        filename: String,
+        mimeType: String,
+        sizeBytes: Long,
+        storagePath: String,
+        fileBytes: ByteArray,
+        title: String?,
+        description: String?,
+        category: String,
+        tags: List<String>,
+        contentHash: String?,
+    ): Document =
+        stub.upload(
+            DocumentUploadRequest.newBuilder()
+                .setCtx(ctx(clientId))
+                .setClientId(clientId)
+                .setProjectId(projectId ?: "")
+                .setFilename(filename)
+                .setMimeType(mimeType)
+                .setSizeBytes(sizeBytes)
+                .setStoragePath(storagePath)
+                .setTitle(title ?: "")
+                .setDescription(description ?: "")
+                .setCategory(categoryFromString(category))
+                .addAllTags(tags)
+                .setContentHash(contentHash ?: "")
+                .setData(ByteString.copyFrom(fileBytes))
+                .build(),
+        )
+
+    suspend fun extractText(
+        filename: String,
+        mimeType: String,
+        fileBytes: ByteArray,
+    ): DocumentExtractResult =
+        stub.extractText(
+            DocumentExtractRequest.newBuilder()
+                .setCtx(ctx())
+                .setFilename(filename)
+                .setMimeType(mimeType)
+                .setData(ByteString.copyFrom(fileBytes))
+                .build(),
+        )
 
     suspend fun register(
         clientId: String,

@@ -29,6 +29,9 @@ private static final long serialVersionUID = 0L;
   }
   private DocumentExtractRequest() {
     id_ = "";
+    filename_ = "";
+    mimeType_ = "";
+    data_ = com.google.protobuf.ByteString.EMPTY;
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -75,6 +78,10 @@ private static final long serialVersionUID = 0L;
   @SuppressWarnings("serial")
   private volatile java.lang.Object id_ = "";
   /**
+   * <pre>
+   * set for id-mode
+   * </pre>
+   *
    * <code>string id = 2;</code>
    * @return The id.
    */
@@ -92,6 +99,10 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
+   * <pre>
+   * set for id-mode
+   * </pre>
+   *
    * <code>string id = 2;</code>
    * @return The bytes for id.
    */
@@ -113,12 +124,125 @@ private static final long serialVersionUID = 0L;
   public static final int FORCE_REEXTRACT_FIELD_NUMBER = 3;
   private boolean forceReextract_ = false;
   /**
+   * <pre>
+   * id-mode only
+   * </pre>
+   *
    * <code>bool force_reextract = 3;</code>
    * @return The forceReextract.
    */
   @java.lang.Override
   public boolean getForceReextract() {
     return forceReextract_;
+  }
+
+  public static final int FILENAME_FIELD_NUMBER = 4;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object filename_ = "";
+  /**
+   * <pre>
+   * set for ad-hoc mode
+   * </pre>
+   *
+   * <code>string filename = 4;</code>
+   * @return The filename.
+   */
+  @java.lang.Override
+  public java.lang.String getFilename() {
+    java.lang.Object ref = filename_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      filename_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * set for ad-hoc mode
+   * </pre>
+   *
+   * <code>string filename = 4;</code>
+   * @return The bytes for filename.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getFilenameBytes() {
+    java.lang.Object ref = filename_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      filename_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int MIME_TYPE_FIELD_NUMBER = 5;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object mimeType_ = "";
+  /**
+   * <pre>
+   * set for ad-hoc mode
+   * </pre>
+   *
+   * <code>string mime_type = 5;</code>
+   * @return The mimeType.
+   */
+  @java.lang.Override
+  public java.lang.String getMimeType() {
+    java.lang.Object ref = mimeType_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      mimeType_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * set for ad-hoc mode
+   * </pre>
+   *
+   * <code>string mime_type = 5;</code>
+   * @return The bytes for mimeType.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getMimeTypeBytes() {
+    java.lang.Object ref = mimeType_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      mimeType_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int DATA_FIELD_NUMBER = 6;
+  private com.google.protobuf.ByteString data_ = com.google.protobuf.ByteString.EMPTY;
+  /**
+   * <pre>
+   * inline bytes — 64 MiB max message cap
+   * </pre>
+   *
+   * <code>bytes data = 6;</code>
+   * @return The data.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString getData() {
+    return data_;
   }
 
   private byte memoizedIsInitialized = -1;
@@ -144,6 +268,15 @@ private static final long serialVersionUID = 0L;
     if (forceReextract_ != false) {
       output.writeBool(3, forceReextract_);
     }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(filename_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 4, filename_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(mimeType_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 5, mimeType_);
+    }
+    if (!data_.isEmpty()) {
+      output.writeBytes(6, data_);
+    }
     getUnknownFields().writeTo(output);
   }
 
@@ -163,6 +296,16 @@ private static final long serialVersionUID = 0L;
     if (forceReextract_ != false) {
       size += com.google.protobuf.CodedOutputStream
         .computeBoolSize(3, forceReextract_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(filename_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(4, filename_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(mimeType_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(5, mimeType_);
+    }
+    if (!data_.isEmpty()) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeBytesSize(6, data_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -188,6 +331,12 @@ private static final long serialVersionUID = 0L;
         .equals(other.getId())) return false;
     if (getForceReextract()
         != other.getForceReextract()) return false;
+    if (!getFilename()
+        .equals(other.getFilename())) return false;
+    if (!getMimeType()
+        .equals(other.getMimeType())) return false;
+    if (!getData()
+        .equals(other.getData())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -208,6 +357,12 @@ private static final long serialVersionUID = 0L;
     hash = (37 * hash) + FORCE_REEXTRACT_FIELD_NUMBER;
     hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
         getForceReextract());
+    hash = (37 * hash) + FILENAME_FIELD_NUMBER;
+    hash = (53 * hash) + getFilename().hashCode();
+    hash = (37 * hash) + MIME_TYPE_FIELD_NUMBER;
+    hash = (53 * hash) + getMimeType().hashCode();
+    hash = (37 * hash) + DATA_FIELD_NUMBER;
+    hash = (53 * hash) + getData().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -352,6 +507,9 @@ private static final long serialVersionUID = 0L;
       }
       id_ = "";
       forceReextract_ = false;
+      filename_ = "";
+      mimeType_ = "";
+      data_ = com.google.protobuf.ByteString.EMPTY;
       return this;
     }
 
@@ -398,6 +556,15 @@ private static final long serialVersionUID = 0L;
       if (((from_bitField0_ & 0x00000004) != 0)) {
         result.forceReextract_ = forceReextract_;
       }
+      if (((from_bitField0_ & 0x00000008) != 0)) {
+        result.filename_ = filename_;
+      }
+      if (((from_bitField0_ & 0x00000010) != 0)) {
+        result.mimeType_ = mimeType_;
+      }
+      if (((from_bitField0_ & 0x00000020) != 0)) {
+        result.data_ = data_;
+      }
       result.bitField0_ |= to_bitField0_;
     }
 
@@ -423,6 +590,19 @@ private static final long serialVersionUID = 0L;
       }
       if (other.getForceReextract() != false) {
         setForceReextract(other.getForceReextract());
+      }
+      if (!other.getFilename().isEmpty()) {
+        filename_ = other.filename_;
+        bitField0_ |= 0x00000008;
+        onChanged();
+      }
+      if (!other.getMimeType().isEmpty()) {
+        mimeType_ = other.mimeType_;
+        bitField0_ |= 0x00000010;
+        onChanged();
+      }
+      if (!other.getData().isEmpty()) {
+        setData(other.getData());
       }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
@@ -467,6 +647,21 @@ private static final long serialVersionUID = 0L;
               bitField0_ |= 0x00000004;
               break;
             } // case 24
+            case 34: {
+              filename_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000008;
+              break;
+            } // case 34
+            case 42: {
+              mimeType_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000010;
+              break;
+            } // case 42
+            case 50: {
+              data_ = input.readBytes();
+              bitField0_ |= 0x00000020;
+              break;
+            } // case 50
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -607,6 +802,10 @@ private static final long serialVersionUID = 0L;
 
     private java.lang.Object id_ = "";
     /**
+     * <pre>
+     * set for id-mode
+     * </pre>
+     *
      * <code>string id = 2;</code>
      * @return The id.
      */
@@ -623,6 +822,10 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
+     * <pre>
+     * set for id-mode
+     * </pre>
+     *
      * <code>string id = 2;</code>
      * @return The bytes for id.
      */
@@ -640,6 +843,10 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
+     * <pre>
+     * set for id-mode
+     * </pre>
+     *
      * <code>string id = 2;</code>
      * @param value The id to set.
      * @return This builder for chaining.
@@ -653,6 +860,10 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
+     * <pre>
+     * set for id-mode
+     * </pre>
+     *
      * <code>string id = 2;</code>
      * @return This builder for chaining.
      */
@@ -663,6 +874,10 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
+     * <pre>
+     * set for id-mode
+     * </pre>
+     *
      * <code>string id = 2;</code>
      * @param value The bytes for id to set.
      * @return This builder for chaining.
@@ -679,6 +894,10 @@ private static final long serialVersionUID = 0L;
 
     private boolean forceReextract_ ;
     /**
+     * <pre>
+     * id-mode only
+     * </pre>
+     *
      * <code>bool force_reextract = 3;</code>
      * @return The forceReextract.
      */
@@ -687,6 +906,10 @@ private static final long serialVersionUID = 0L;
       return forceReextract_;
     }
     /**
+     * <pre>
+     * id-mode only
+     * </pre>
+     *
      * <code>bool force_reextract = 3;</code>
      * @param value The forceReextract to set.
      * @return This builder for chaining.
@@ -699,12 +922,244 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
+     * <pre>
+     * id-mode only
+     * </pre>
+     *
      * <code>bool force_reextract = 3;</code>
      * @return This builder for chaining.
      */
     public Builder clearForceReextract() {
       bitField0_ = (bitField0_ & ~0x00000004);
       forceReextract_ = false;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object filename_ = "";
+    /**
+     * <pre>
+     * set for ad-hoc mode
+     * </pre>
+     *
+     * <code>string filename = 4;</code>
+     * @return The filename.
+     */
+    public java.lang.String getFilename() {
+      java.lang.Object ref = filename_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        filename_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * set for ad-hoc mode
+     * </pre>
+     *
+     * <code>string filename = 4;</code>
+     * @return The bytes for filename.
+     */
+    public com.google.protobuf.ByteString
+        getFilenameBytes() {
+      java.lang.Object ref = filename_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        filename_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * set for ad-hoc mode
+     * </pre>
+     *
+     * <code>string filename = 4;</code>
+     * @param value The filename to set.
+     * @return This builder for chaining.
+     */
+    public Builder setFilename(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      filename_ = value;
+      bitField0_ |= 0x00000008;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * set for ad-hoc mode
+     * </pre>
+     *
+     * <code>string filename = 4;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearFilename() {
+      filename_ = getDefaultInstance().getFilename();
+      bitField0_ = (bitField0_ & ~0x00000008);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * set for ad-hoc mode
+     * </pre>
+     *
+     * <code>string filename = 4;</code>
+     * @param value The bytes for filename to set.
+     * @return This builder for chaining.
+     */
+    public Builder setFilenameBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      filename_ = value;
+      bitField0_ |= 0x00000008;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object mimeType_ = "";
+    /**
+     * <pre>
+     * set for ad-hoc mode
+     * </pre>
+     *
+     * <code>string mime_type = 5;</code>
+     * @return The mimeType.
+     */
+    public java.lang.String getMimeType() {
+      java.lang.Object ref = mimeType_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        mimeType_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * set for ad-hoc mode
+     * </pre>
+     *
+     * <code>string mime_type = 5;</code>
+     * @return The bytes for mimeType.
+     */
+    public com.google.protobuf.ByteString
+        getMimeTypeBytes() {
+      java.lang.Object ref = mimeType_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        mimeType_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * set for ad-hoc mode
+     * </pre>
+     *
+     * <code>string mime_type = 5;</code>
+     * @param value The mimeType to set.
+     * @return This builder for chaining.
+     */
+    public Builder setMimeType(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      mimeType_ = value;
+      bitField0_ |= 0x00000010;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * set for ad-hoc mode
+     * </pre>
+     *
+     * <code>string mime_type = 5;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearMimeType() {
+      mimeType_ = getDefaultInstance().getMimeType();
+      bitField0_ = (bitField0_ & ~0x00000010);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * set for ad-hoc mode
+     * </pre>
+     *
+     * <code>string mime_type = 5;</code>
+     * @param value The bytes for mimeType to set.
+     * @return This builder for chaining.
+     */
+    public Builder setMimeTypeBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      mimeType_ = value;
+      bitField0_ |= 0x00000010;
+      onChanged();
+      return this;
+    }
+
+    private com.google.protobuf.ByteString data_ = com.google.protobuf.ByteString.EMPTY;
+    /**
+     * <pre>
+     * inline bytes — 64 MiB max message cap
+     * </pre>
+     *
+     * <code>bytes data = 6;</code>
+     * @return The data.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString getData() {
+      return data_;
+    }
+    /**
+     * <pre>
+     * inline bytes — 64 MiB max message cap
+     * </pre>
+     *
+     * <code>bytes data = 6;</code>
+     * @param value The data to set.
+     * @return This builder for chaining.
+     */
+    public Builder setData(com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      data_ = value;
+      bitField0_ |= 0x00000020;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * inline bytes — 64 MiB max message cap
+     * </pre>
+     *
+     * <code>bytes data = 6;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearData() {
+      bitField0_ = (bitField0_ & ~0x00000020);
+      data_ = getDefaultInstance().getData();
       onChanged();
       return this;
     }

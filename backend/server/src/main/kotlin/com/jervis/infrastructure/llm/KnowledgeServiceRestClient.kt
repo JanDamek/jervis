@@ -476,37 +476,21 @@ class KnowledgeServiceRestClient(
         contentHash: String? = null,
     ): PythonKbDocumentDto {
         logger.info { "KB document upload: filename=$filename client=$clientId" }
-
-        val httpResponse = client.submitFormWithBinaryData(
-            url = "$apiBaseUrl/documents/upload",
-            formData = formData {
-                append("clientId", clientId)
-                projectId?.let { append("projectId", it) }
-                append("filename", filename)
-                append("mimeType", mimeType)
-                append("storagePath", storagePath)
-                title?.let { append("title", it) }
-                description?.let { append("description", it) }
-                append("category", category)
-                if (tags.isNotEmpty()) append("tags", tags.joinToString(","))
-                contentHash?.let { append("contentHash", it) }
-                append(
-                    "file",
-                    fileBytes,
-                    Headers.build {
-                        append(HttpHeaders.ContentDisposition, "filename=\"$filename\"")
-                        append(HttpHeaders.ContentType, mimeType)
-                    },
-                )
-            },
+        val proto = docGrpc().upload(
+            clientId = clientId,
+            projectId = projectId,
+            filename = filename,
+            mimeType = mimeType,
+            sizeBytes = fileBytes.size.toLong(),
+            storagePath = storagePath,
+            fileBytes = fileBytes,
+            title = title,
+            description = description,
+            category = category,
+            tags = tags,
+            contentHash = contentHash,
         )
-
-        if (!httpResponse.status.isSuccess()) {
-            val errorBody = httpResponse.bodyAsText()
-            throw RuntimeException("KB document upload failed ${httpResponse.status}: $errorBody")
-        }
-
-        return httpResponse.body()
+        return protoToDto(proto)
     }
 
     /**
@@ -704,29 +688,12 @@ class KnowledgeServiceRestClient(
         fileBytes: ByteArray,
     ): TextExtractionResult {
         logger.info { "KB extract-text: filename=$filename mime=$mimeType size=${fileBytes.size}" }
-
-        val httpResponse = client.submitFormWithBinaryData(
-            url = "$apiBaseUrl/documents/extract-text",
-            formData = formData {
-                append("filename", filename)
-                append("mimeType", mimeType)
-                append(
-                    "file",
-                    fileBytes,
-                    Headers.build {
-                        append(HttpHeaders.ContentDisposition, "filename=\"$filename\"")
-                        append(HttpHeaders.ContentType, mimeType)
-                    },
-                )
-            },
+        val proto = docGrpc().extractText(filename, mimeType, fileBytes)
+        return TextExtractionResult(
+            extractedText = proto.text,
+            method = proto.method,
+            error = proto.error.takeIf { it.isNotEmpty() },
         )
-
-        if (!httpResponse.status.isSuccess()) {
-            val errorBody = httpResponse.bodyAsText()
-            throw RuntimeException("KB extract-text failed ${httpResponse.status}: $errorBody")
-        }
-
-        return httpResponse.body()
     }
 
     fun close() {

@@ -26,11 +26,19 @@ public interface DocumentExtractRequestOrBuilder extends
   com.jervis.contracts.common.RequestContextOrBuilder getCtxOrBuilder();
 
   /**
+   * <pre>
+   * set for id-mode
+   * </pre>
+   *
    * <code>string id = 2;</code>
    * @return The id.
    */
   java.lang.String getId();
   /**
+   * <pre>
+   * set for id-mode
+   * </pre>
+   *
    * <code>string id = 2;</code>
    * @return The bytes for id.
    */
@@ -38,8 +46,62 @@ public interface DocumentExtractRequestOrBuilder extends
       getIdBytes();
 
   /**
+   * <pre>
+   * id-mode only
+   * </pre>
+   *
    * <code>bool force_reextract = 3;</code>
    * @return The forceReextract.
    */
   boolean getForceReextract();
+
+  /**
+   * <pre>
+   * set for ad-hoc mode
+   * </pre>
+   *
+   * <code>string filename = 4;</code>
+   * @return The filename.
+   */
+  java.lang.String getFilename();
+  /**
+   * <pre>
+   * set for ad-hoc mode
+   * </pre>
+   *
+   * <code>string filename = 4;</code>
+   * @return The bytes for filename.
+   */
+  com.google.protobuf.ByteString
+      getFilenameBytes();
+
+  /**
+   * <pre>
+   * set for ad-hoc mode
+   * </pre>
+   *
+   * <code>string mime_type = 5;</code>
+   * @return The mimeType.
+   */
+  java.lang.String getMimeType();
+  /**
+   * <pre>
+   * set for ad-hoc mode
+   * </pre>
+   *
+   * <code>string mime_type = 5;</code>
+   * @return The bytes for mimeType.
+   */
+  com.google.protobuf.ByteString
+      getMimeTypeBytes();
+
+  /**
+   * <pre>
+   * inline bytes — 64 MiB max message cap
+   * </pre>
+   *
+   * <code>bytes data = 6;</code>
+   * @return The data.
+   */
+  com.google.protobuf.ByteString getData();
 }

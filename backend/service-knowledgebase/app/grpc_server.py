@@ -107,6 +107,84 @@ class DocumentsServicer(documents_pb2_grpc.KnowledgeDocumentServiceServicer):
             raise RuntimeError("KnowledgeService not initialized")
         return api_routes.service
 
+    async def Upload(
+        self,
+        request: documents_pb2.DocumentUploadRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> documents_pb2.Document:
+        from app.api.models import KbDocumentUploadRequest, KbDocumentCategoryEnum
+
+        cat = _DOC_CATEGORY_FROM_PROTO.get(request.category, "OTHER")
+        try:
+            cat_enum = KbDocumentCategoryEnum(cat)
+        except ValueError:
+            cat_enum = KbDocumentCategoryEnum.OTHER
+
+        req = KbDocumentUploadRequest(
+            clientId=request.client_id,
+            projectId=request.project_id or None,
+            filename=request.filename,
+            mimeType=request.mime_type,
+            sizeBytes=request.size_bytes or len(request.data),
+            storagePath=request.storage_path,
+            title=request.title or None,
+            description=request.description or None,
+            category=cat_enum,
+            tags=list(request.tags),
+            contentHash=request.content_hash or None,
+        )
+        try:
+            dto = await self._service().upload_kb_document(req, file_bytes=bytes(request.data) if request.data else None)
+        except Exception as e:
+            logger.warning("DOCUMENT_UPLOAD_ERROR filename=%s error=%s", request.filename, e)
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
+        return _dto_to_document(dto)
+
+    async def ExtractText(
+        self,
+        request: documents_pb2.DocumentExtractRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> documents_pb2.DocumentExtractResult:
+        service = self._service()
+        # ad-hoc mode: bytes + filename + mime_type
+        if request.data:
+            try:
+                result = await service.extract_text_only(
+                    bytes(request.data),
+                    request.filename or "unknown",
+                    request.mime_type or "application/octet-stream",
+                )
+            except Exception as e:
+                logger.warning("EXTRACT_TEXT_ERROR filename=%s error=%s", request.filename, e)
+                return documents_pb2.DocumentExtractResult(status="error", error=str(e))
+            text = result.get("text", "") if isinstance(result, dict) else ""
+            method = result.get("method", "") if isinstance(result, dict) else ""
+            page_count = int(result.get("pageCount", 0) or 0) if isinstance(result, dict) else 0
+            content_hash = str(result.get("contentHash", "") or "") if isinstance(result, dict) else ""
+            return documents_pb2.DocumentExtractResult(
+                status="success",
+                text=str(text or ""),
+                page_count=page_count,
+                content_hash=content_hash,
+                method=str(method or ""),
+            )
+
+        # id-only mode: look up stored document, force-reextract if requested.
+        if not request.id:
+            return documents_pb2.DocumentExtractResult(status="error", error="id or data required")
+        try:
+            dto = await service.get_kb_document(request.id)
+        except Exception as e:
+            return documents_pb2.DocumentExtractResult(status="error", error=str(e))
+        if not dto:
+            return documents_pb2.DocumentExtractResult(status="error", error="not-found")
+        return documents_pb2.DocumentExtractResult(
+            status="success",
+            text=getattr(dto, "extractedTextPreview", None) or "",
+            page_count=int(getattr(dto, "pageCount", 0) or 0),
+            content_hash=str(getattr(dto, "contentHash", None) or ""),
+        )
+
     async def Register(
         self,
         request: documents_pb2.DocumentRegisterRequest,
@@ -896,6 +974,68 @@ class RetrieveServicer(retrieve_pb2_grpc.KnowledgeRetrieveServiceServicer):
             logger.warning("RETRIEVE_SIMPLE_ERROR query=%r error=%s", request.query[:120], e)
             return retrieve_pb2.EvidencePack(items=[])
         return self._evidence_to_proto(pack)
+
+    async def RetrieveHybrid(
+        self,
+        request: retrieve_pb2.HybridRetrievalRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> retrieve_pb2.HybridEvidencePack:
+        """Advanced hybrid retrieve with the full knob set (RRF, graph hops,
+        seed limit, diversity factor, entity extraction)."""
+        from app.api.models import RetrievalRequest as RReq
+
+        try:
+            result = await self._service().hybrid_retriever.retrieve(
+                request=RReq(
+                    query=request.query,
+                    clientId=request.client_id or "",
+                    projectId=request.project_id or None,
+                    groupId=request.group_id or None,
+                    maxResults=request.max_results or 20,
+                    minConfidence=request.min_confidence or 0.0,
+                    expandGraph=request.expand_graph,
+                ),
+                expand_graph=request.expand_graph,
+                extract_entities=request.extract_entities,
+                use_rrf=request.use_rrf,
+                max_graph_hops=request.max_graph_hops or 2,
+                max_seeds=request.max_seeds or 10,
+                diversity_factor=request.diversity_factor or 0.5,
+            )
+        except Exception as e:
+            logger.warning("RETRIEVE_HYBRID_ERROR query=%r error=%s", request.query[:120], e)
+            return retrieve_pb2.HybridEvidencePack()
+
+        items: list[retrieve_pb2.HybridEvidenceItem] = []
+        for it in getattr(result, "items", []) or []:
+            meta: dict[str, str] = {}
+            for k, v in (getattr(it, "metadata", None) or {}).items():
+                meta[str(k)] = "" if v is None else str(v)
+            items.append(
+                retrieve_pb2.HybridEvidenceItem(
+                    content=str(getattr(it, "content", "") or ""),
+                    combined_score=float(getattr(it, "combinedScore", 0.0) or 0.0),
+                    source_urn=str(getattr(it, "sourceUrn", "") or ""),
+                    rag_score=float(getattr(it, "ragScore", 0.0) or 0.0),
+                    graph_score=float(getattr(it, "graphScore", 0.0) or 0.0),
+                    entity_score=float(getattr(it, "entityScore", 0.0) or 0.0),
+                    credibility_boost=float(getattr(it, "credibilityBoost", 0.0) or 0.0),
+                    source=str(getattr(it, "source", "") or ""),
+                    credibility=str(getattr(it, "credibility", "") or ""),
+                    branch_scope=str(getattr(it, "branchScope", "") or ""),
+                    branch_role=str(getattr(it, "branchRole", "") or ""),
+                    graph_distance=int(getattr(it, "graphDistance", 0) or 0),
+                    graph_refs=list(getattr(it, "graphRefs", None) or []),
+                    matched_entity=str(getattr(it, "matchedEntity", "") or ""),
+                    metadata=meta,
+                )
+            )
+        return retrieve_pb2.HybridEvidencePack(
+            items=items,
+            total_found=int(getattr(result, "totalFound", len(items)) or len(items)),
+            query_entities=list(getattr(result, "queryEntities", None) or []),
+            seed_nodes=list(getattr(result, "seedNodes", None) or []),
+        )
 
     async def ListChunksByKind(
         self,

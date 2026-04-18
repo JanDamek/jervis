@@ -135,12 +135,21 @@ message DocumentUpdateRequest {
   repeated string field_mask = 7;
 }
 
-// ── Extract text (reuses extracted content from upload pipeline) ──────
+// ── Extract text ──────────────────────────────────────────────────────
+// Two modes:
+//   1. id-only  — reuse stored document's extracted content (force_reextract
+//      triggers a fresh run against the file on the PVC).
+//   2. ad-hoc  — data bytes + filename + mime_type for one-shot extraction
+//      without DB writes; used by the Kotlin qualifier flow to get text
+//      for relevance scoring before deciding to store.
 
 message DocumentExtractRequest {
   jervis.common.RequestContext ctx = 1;
-  string id = 2;
-  bool force_reextract = 3;
+  string id = 2;                     // set for id-mode
+  bool force_reextract = 3;          // id-mode only
+  string filename = 4;               // set for ad-hoc mode
+  string mime_type = 5;              // set for ad-hoc mode
+  bytes data = 6;                    // inline bytes — 64 MiB max message cap
 }
 
 message DocumentExtractResult {
@@ -149,4 +158,5 @@ message DocumentExtractResult {
   int32 page_count = 3;
   string content_hash = 4;
   string error = 5;
+  string method = 6;                 // "tika" / "pymupdf" / "vlm" / ...
 }

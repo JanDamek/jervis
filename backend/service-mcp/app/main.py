@@ -480,26 +480,38 @@ async def kb_document_upload(
     mime_type, _ = mimetypes.guess_type(file_name)
     mime_type = mime_type or "application/octet-stream"
 
-    # Upload to KB service — returns immediately, extraction runs in background
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"{settings.knowledgebase_write_url}/api/v1/documents/upload",
-            files={"file": (filename, file_bytes, mime_type)},
-            data={
-                "clientId": cid,
-                "projectId": pid or "",
-                "filename": filename,
-                "mimeType": mime_type,
-                "storagePath": "",
-                "title": title or filename,
-                "description": description,
-                "category": category,
-                "tags": tags,
-            },
-        )
-        resp.raise_for_status()
-        result = resp.json()
+    # Upload to KB service — gRPC Upload; extraction runs in background.
+    from jervis.knowledgebase import documents_pb2
+    from jervis_contracts import kb_client
 
+    tag_list = [t.strip() for t in (tags or "").split(",") if t.strip()]
+    try:
+        cat_proto = getattr(
+            documents_pb2,
+            f"DOCUMENT_CATEGORY_{(category or 'OTHER').upper()}",
+            documents_pb2.DOCUMENT_CATEGORY_OTHER,
+        )
+    except AttributeError:
+        cat_proto = documents_pb2.DOCUMENT_CATEGORY_OTHER
+
+    proto_result = await kb_client.documents_stub().Upload(
+        documents_pb2.DocumentUploadRequest(
+            ctx=kb_client.build_request_context(caller="service-mcp.kb_document_upload", client_id=cid),
+            client_id=cid,
+            project_id=pid or "",
+            filename=filename,
+            mime_type=mime_type,
+            size_bytes=len(file_bytes),
+            storage_path="",
+            title=title or filename,
+            description=description or "",
+            category=cat_proto,
+            tags=tag_list,
+            data=file_bytes,
+        ),
+        timeout=60.0,
+    )
+    result = kb_client._document_to_dict(proto_result)
     state = result.get("state", "UNKNOWN")
     doc_id = result.get("id", "")
     return (

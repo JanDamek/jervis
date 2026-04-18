@@ -63,4 +63,24 @@ public interface DocumentExtractResultOrBuilder extends
    */
   com.google.protobuf.ByteString
       getErrorBytes();
+
+  /**
+   * <pre>
+   * "tika" / "pymupdf" / "vlm" / ...
+   * </pre>
+   *
+   * <code>string method = 6;</code>
+   * @return The method.
+   */
+  java.lang.String getMethod();
+  /**
+   * <pre>
+   * "tika" / "pymupdf" / "vlm" / ...
+   * </pre>
+   *
+   * <code>string method = 6;</code>
+   * @return The bytes for method.
+   */
+  com.google.protobuf.ByteString
+      getMethodBytes();
 }

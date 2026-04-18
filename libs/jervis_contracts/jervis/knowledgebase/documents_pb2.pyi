@@ -197,25 +197,33 @@ class DocumentUpdateRequest(_message.Message):
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., id: _Optional[str] = ..., title: _Optional[str] = ..., description: _Optional[str] = ..., category: _Optional[_Union[DocumentCategory, str]] = ..., tags: _Optional[_Iterable[str]] = ..., field_mask: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class DocumentExtractRequest(_message.Message):
-    __slots__ = ("ctx", "id", "force_reextract")
+    __slots__ = ("ctx", "id", "force_reextract", "filename", "mime_type", "data")
     CTX_FIELD_NUMBER: _ClassVar[int]
     ID_FIELD_NUMBER: _ClassVar[int]
     FORCE_REEXTRACT_FIELD_NUMBER: _ClassVar[int]
+    FILENAME_FIELD_NUMBER: _ClassVar[int]
+    MIME_TYPE_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
     ctx: _types_pb2.RequestContext
     id: str
     force_reextract: bool
-    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., id: _Optional[str] = ..., force_reextract: bool = ...) -> None: ...
+    filename: str
+    mime_type: str
+    data: bytes
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., id: _Optional[str] = ..., force_reextract: bool = ..., filename: _Optional[str] = ..., mime_type: _Optional[str] = ..., data: _Optional[bytes] = ...) -> None: ...
 
 class DocumentExtractResult(_message.Message):
-    __slots__ = ("status", "text", "page_count", "content_hash", "error")
+    __slots__ = ("status", "text", "page_count", "content_hash", "error", "method")
     STATUS_FIELD_NUMBER: _ClassVar[int]
     TEXT_FIELD_NUMBER: _ClassVar[int]
     PAGE_COUNT_FIELD_NUMBER: _ClassVar[int]
     CONTENT_HASH_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
+    METHOD_FIELD_NUMBER: _ClassVar[int]
     status: str
     text: str
     page_count: int
     content_hash: str
     error: str
-    def __init__(self, status: _Optional[str] = ..., text: _Optional[str] = ..., page_count: _Optional[int] = ..., content_hash: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...
+    method: str
+    def __init__(self, status: _Optional[str] = ..., text: _Optional[str] = ..., page_count: _Optional[int] = ..., content_hash: _Optional[str] = ..., error: _Optional[str] = ..., method: _Optional[str] = ...) -> None: ...

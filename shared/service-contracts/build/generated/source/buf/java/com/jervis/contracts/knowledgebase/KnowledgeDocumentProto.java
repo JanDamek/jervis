@@ -128,44 +128,46 @@ public final class KnowledgeDocumentProto extends com.google.protobuf.GeneratedF
       "\002id\030\002 \001(\t\022\r\n\005title\030\003 \001(\t\022\023\n\013description\030" +
       "\004 \001(\t\0228\n\010category\030\005 \001(\0162&.jervis.knowled" +
       "gebase.DocumentCategory\022\014\n\004tags\030\006 \003(\t\022\022\n" +
-      "\nfield_mask\030\007 \003(\t\"i\n\026DocumentExtractRequ" +
-      "est\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Request" +
-      "Context\022\n\n\002id\030\002 \001(\t\022\027\n\017force_reextract\030\003" +
-      " \001(\010\"n\n\025DocumentExtractResult\022\016\n\006status\030" +
-      "\001 \001(\t\022\014\n\004text\030\002 \001(\t\022\022\n\npage_count\030\003 \001(\005\022" +
-      "\024\n\014content_hash\030\004 \001(\t\022\r\n\005error\030\005 \001(\t*\241\001\n" +
-      "\rDocumentState\022\036\n\032DOCUMENT_STATE_UNSPECI" +
-      "FIED\020\000\022\033\n\027DOCUMENT_STATE_UPLOADED\020\001\022\034\n\030D" +
-      "OCUMENT_STATE_EXTRACTED\020\002\022\032\n\026DOCUMENT_ST" +
-      "ATE_INDEXED\020\003\022\031\n\025DOCUMENT_STATE_FAILED\020\004" +
-      "*\267\002\n\020DocumentCategory\022!\n\035DOCUMENT_CATEGO" +
-      "RY_UNSPECIFIED\020\000\022\037\n\033DOCUMENT_CATEGORY_TE" +
-      "CHNICAL\020\001\022\036\n\032DOCUMENT_CATEGORY_BUSINESS\020" +
-      "\002\022\033\n\027DOCUMENT_CATEGORY_LEGAL\020\003\022\035\n\031DOCUME" +
-      "NT_CATEGORY_PROCESS\020\004\022#\n\037DOCUMENT_CATEGO" +
-      "RY_MEETING_NOTES\020\005\022\034\n\030DOCUMENT_CATEGORY_" +
-      "REPORT\020\006\022#\n\037DOCUMENT_CATEGORY_SPECIFICAT" +
-      "ION\020\007\022\033\n\027DOCUMENT_CATEGORY_OTHER\020\0102\314\005\n\030K" +
-      "nowledgeDocumentService\022U\n\006Upload\022+.jerv" +
-      "is.knowledgebase.DocumentUploadRequest\032\036" +
-      ".jervis.knowledgebase.Document\022Y\n\010Regist" +
-      "er\022-.jervis.knowledgebase.DocumentRegist" +
-      "erRequest\032\036.jervis.knowledgebase.Documen" +
-      "t\022U\n\004List\022).jervis.knowledgebase.Documen" +
-      "tListRequest\032\".jervis.knowledgebase.Docu" +
-      "mentList\022G\n\003Get\022 .jervis.knowledgebase.D" +
-      "ocumentId\032\036.jervis.knowledgebase.Documen" +
-      "t\022U\n\006Update\022+.jervis.knowledgebase.Docum" +
-      "entUpdateRequest\032\036.jervis.knowledgebase." +
-      "Document\022M\n\006Delete\022 .jervis.knowledgebas" +
-      "e.DocumentId\032!.jervis.knowledgebase.Docu" +
-      "mentAck\022N\n\007Reindex\022 .jervis.knowledgebas" +
-      "e.DocumentId\032!.jervis.knowledgebase.Docu" +
-      "mentAck\022h\n\013ExtractText\022,.jervis.knowledg" +
-      "ebase.DocumentExtractRequest\032+.jervis.kn" +
-      "owledgebase.DocumentExtractResultB>\n\"com" +
-      ".jervis.contracts.knowledgebaseB\026Knowled" +
-      "geDocumentProtoP\001b\006proto3"
+      "\nfield_mask\030\007 \003(\t\"\234\001\n\026DocumentExtractReq" +
+      "uest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Reques" +
+      "tContext\022\n\n\002id\030\002 \001(\t\022\027\n\017force_reextract\030" +
+      "\003 \001(\010\022\020\n\010filename\030\004 \001(\t\022\021\n\tmime_type\030\005 \001" +
+      "(\t\022\014\n\004data\030\006 \001(\014\"~\n\025DocumentExtractResul" +
+      "t\022\016\n\006status\030\001 \001(\t\022\014\n\004text\030\002 \001(\t\022\022\n\npage_" +
+      "count\030\003 \001(\005\022\024\n\014content_hash\030\004 \001(\t\022\r\n\005err" +
+      "or\030\005 \001(\t\022\016\n\006method\030\006 \001(\t*\241\001\n\rDocumentSta" +
+      "te\022\036\n\032DOCUMENT_STATE_UNSPECIFIED\020\000\022\033\n\027DO" +
+      "CUMENT_STATE_UPLOADED\020\001\022\034\n\030DOCUMENT_STAT" +
+      "E_EXTRACTED\020\002\022\032\n\026DOCUMENT_STATE_INDEXED\020" +
+      "\003\022\031\n\025DOCUMENT_STATE_FAILED\020\004*\267\002\n\020Documen" +
+      "tCategory\022!\n\035DOCUMENT_CATEGORY_UNSPECIFI" +
+      "ED\020\000\022\037\n\033DOCUMENT_CATEGORY_TECHNICAL\020\001\022\036\n" +
+      "\032DOCUMENT_CATEGORY_BUSINESS\020\002\022\033\n\027DOCUMEN" +
+      "T_CATEGORY_LEGAL\020\003\022\035\n\031DOCUMENT_CATEGORY_" +
+      "PROCESS\020\004\022#\n\037DOCUMENT_CATEGORY_MEETING_N" +
+      "OTES\020\005\022\034\n\030DOCUMENT_CATEGORY_REPORT\020\006\022#\n\037" +
+      "DOCUMENT_CATEGORY_SPECIFICATION\020\007\022\033\n\027DOC" +
+      "UMENT_CATEGORY_OTHER\020\0102\314\005\n\030KnowledgeDocu" +
+      "mentService\022U\n\006Upload\022+.jervis.knowledge" +
+      "base.DocumentUploadRequest\032\036.jervis.know" +
+      "ledgebase.Document\022Y\n\010Register\022-.jervis." +
+      "knowledgebase.DocumentRegisterRequest\032\036." +
+      "jervis.knowledgebase.Document\022U\n\004List\022)." +
+      "jervis.knowledgebase.DocumentListRequest" +
+      "\032\".jervis.knowledgebase.DocumentList\022G\n\003" +
+      "Get\022 .jervis.knowledgebase.DocumentId\032\036." +
+      "jervis.knowledgebase.Document\022U\n\006Update\022" +
+      "+.jervis.knowledgebase.DocumentUpdateReq" +
+      "uest\032\036.jervis.knowledgebase.Document\022M\n\006" +
+      "Delete\022 .jervis.knowledgebase.DocumentId" +
+      "\032!.jervis.knowledgebase.DocumentAck\022N\n\007R" +
+      "eindex\022 .jervis.knowledgebase.DocumentId" +
+      "\032!.jervis.knowledgebase.DocumentAck\022h\n\013E" +
+      "xtractText\022,.jervis.knowledgebase.Docume" +
+      "ntExtractRequest\032+.jervis.knowledgebase." +
+      "DocumentExtractResultB>\n\"com.jervis.cont" +
+      "racts.knowledgebaseB\026KnowledgeDocumentPr" +
+      "otoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -225,13 +227,13 @@ public final class KnowledgeDocumentProto extends com.google.protobuf.GeneratedF
     internal_static_jervis_knowledgebase_DocumentExtractRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_knowledgebase_DocumentExtractRequest_descriptor,
-        new java.lang.String[] { "Ctx", "Id", "ForceReextract", });
+        new java.lang.String[] { "Ctx", "Id", "ForceReextract", "Filename", "MimeType", "Data", });
     internal_static_jervis_knowledgebase_DocumentExtractResult_descriptor =
       getDescriptor().getMessageTypes().get(9);
     internal_static_jervis_knowledgebase_DocumentExtractResult_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_knowledgebase_DocumentExtractResult_descriptor,
-        new java.lang.String[] { "Status", "Text", "PageCount", "ContentHash", "Error", });
+        new java.lang.String[] { "Status", "Text", "PageCount", "ContentHash", "Error", "Method", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }
