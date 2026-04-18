@@ -1,11 +1,8 @@
 package com.jervis.meeting
 
-import com.jervis.infrastructure.llm.CorrectionAnswerItemDto
-import com.jervis.infrastructure.llm.CorrectionAnswerRequestDto
-import com.jervis.infrastructure.llm.CorrectionRequestDto
-import com.jervis.infrastructure.llm.CorrectionSegmentDto
-import com.jervis.infrastructure.llm.CorrectionTargetedRequestDto
 import com.jervis.agent.PythonOrchestratorClient
+import com.jervis.contracts.correction.CorrectionRule
+import com.jervis.contracts.correction.CorrectionSegment
 import com.jervis.dto.meeting.MeetingStateEnum
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
@@ -68,48 +65,38 @@ class TranscriptCorrectionService(
                 listOf(TranscriptSegment(0.0, 0.0, meeting.transcriptText ?: ""))
             }
 
-            val requestSegments = segments.mapIndexed { i, seg ->
-                CorrectionSegmentDto(
-                    i = i,
-                    startSec = seg.startSec,
-                    endSec = seg.endSec,
-                    text = seg.text,
-                    speaker = seg.speaker,
-                )
-            }
+            val requestSegments = segments.mapIndexed { i, seg -> segmentToProto(i, seg) }
 
             // Build speaker hints from speaker mapping + speaker profiles
             val speakerHints = buildSpeakerHints(meeting)
 
             val result = correctionClient.correctTranscript(
-                CorrectionRequestDto(
-                    clientId = meeting.clientId?.toString().orEmpty(),
-                    projectId = meeting.projectId?.toString(),
-                    meetingId = meetingIdStr,
-                    segments = requestSegments,
-                    speakerHints = speakerHints,
-                ),
+                clientId = meeting.clientId?.toString().orEmpty(),
+                projectId = meeting.projectId?.toString(),
+                meetingId = meetingIdStr,
+                segments = requestSegments,
+                speakerHints = speakerHints ?: emptyMap(),
             )
 
-            var correctedSegments = result.segments.mapIndexed { i, corrSeg ->
+            var correctedSegments = result.segmentsList.mapIndexed { i, corrSeg ->
                 val original = segments.getOrNull(i)
                 TranscriptSegment(
                     startSec = original?.startSec ?: corrSeg.startSec,
                     endSec = original?.endSec ?: corrSeg.endSec,
                     text = corrSeg.text,
-                    speaker = original?.speaker ?: corrSeg.speaker,
+                    speaker = original?.speaker ?: corrSeg.speaker.ifBlank { null },
                 )
             }
 
             // Map questions from Python response
-            var questions = result.questions.map { q ->
+            var questions = result.questionsList.map { q ->
                 CorrectionQuestion(
                     questionId = q.id,
                     segmentIndex = q.i,
                     originalText = q.original,
-                    correctionOptions = q.options,
+                    correctionOptions = q.optionsList,
                     question = q.question,
-                    context = q.context,
+                    context = q.context.ifBlank { null },
                 )
             }
 
@@ -134,45 +121,35 @@ class TranscriptCorrectionService(
                         }
 
                         // Re-run targeted correction on retranscribed segments
-                        val allSegments = mergedSegments.mapIndexed { i, seg ->
-                            CorrectionSegmentDto(
-                                i = i,
-                                startSec = seg.startSec,
-                                endSec = seg.endSec,
-                                text = seg.text,
-                                speaker = seg.speaker,
-                            )
-                        }
+                        val allSegments = mergedSegments.mapIndexed { i, seg -> segmentToProto(i, seg) }
 
                         val targetedResult = correctionClient.correctTargeted(
-                            CorrectionTargetedRequestDto(
-                                clientId = clientIdStr,
-                                projectId = meeting.projectId?.toString(),
-                                meetingId = meetingIdStr,
-                                segments = allSegments,
-                                retranscribedIndices = retranscribed.keys.toList(),
-                                userCorrectedIndices = emptyMap(),
-                            ),
+                            clientId = clientIdStr,
+                            projectId = meeting.projectId?.toString(),
+                            meetingId = meetingIdStr,
+                            segments = allSegments,
+                            retranscribedIndices = retranscribed.keys.toList(),
+                            userCorrectedIndices = emptyMap(),
                         )
 
-                        correctedSegments = targetedResult.segments.mapIndexed { i, corrSeg ->
+                        correctedSegments = targetedResult.segmentsList.mapIndexed { i, corrSeg ->
                             val original = segments.getOrNull(i)
                             TranscriptSegment(
                                 startSec = original?.startSec ?: corrSeg.startSec,
                                 endSec = original?.endSec ?: corrSeg.endSec,
                                 text = corrSeg.text,
-                                speaker = original?.speaker ?: corrSeg.speaker,
+                                speaker = original?.speaker ?: corrSeg.speaker.ifBlank { null },
                             )
                         }
 
-                        questions = targetedResult.questions.map { q ->
+                        questions = targetedResult.questionsList.map { q ->
                             CorrectionQuestion(
                                 questionId = q.id,
                                 segmentIndex = q.i,
                                 originalText = q.original,
-                                correctionOptions = q.options,
+                                correctionOptions = q.optionsList,
                                 question = q.question,
-                                context = q.context,
+                                context = q.context.ifBlank { null },
                             )
                         }
 
@@ -267,19 +244,17 @@ class TranscriptCorrectionService(
 
         // 1. Save known answers as KB correction rules
         if (knownAnswers.isNotEmpty()) {
-            val answerItems = knownAnswers.map { a ->
-                CorrectionAnswerItemDto(
-                    original = a.original,
-                    corrected = a.corrected,
-                    category = a.category,
-                )
+            val answerRules = knownAnswers.map { a ->
+                CorrectionRule.newBuilder()
+                    .setOriginal(a.original)
+                    .setCorrected(a.corrected)
+                    .setCategory(a.category)
+                    .build()
             }
             correctionClient.answerCorrectionQuestions(
-                CorrectionAnswerRequestDto(
-                    clientId = meeting.clientId?.toString().orEmpty(),
-                    projectId = meeting.projectId?.toString(),
-                    answers = answerItems,
-                ),
+                clientId = meeting.clientId?.toString().orEmpty(),
+                projectId = meeting.projectId?.toString(),
+                answers = answerRules,
             )
             logger.info { "Saved ${knownAnswers.size} known answers as KB rules for meeting $meetingId" }
         }
@@ -397,59 +372,46 @@ class TranscriptCorrectionService(
             // 4. Build merged segment list for targeted correction
             val knownAnswersByIndex = knownAnswers.associateBy { it.segmentIndex }
             val allSegments = baseSegments.mapIndexed { i, seg ->
-                val corrSeg = CorrectionSegmentDto(
-                    i = i,
-                    startSec = seg.startSec,
-                    endSec = seg.endSec,
-                    text = seg.text,
-                    speaker = seg.speaker,
-                )
-                when {
-                    // "Nevim" → use new Whisper re-transcription
-                    retranscribedSegments.containsKey(i) ->
-                        corrSeg.copy(text = retranscribedSegments[i]!!.trim())
-                    // Known answer → use user's correction directly
-                    knownAnswersByIndex.containsKey(i) ->
-                        corrSeg.copy(text = knownAnswersByIndex[i]!!.corrected)
-                    // Untouched → keep best-effort correction
-                    else -> corrSeg
+                val overrideText = when {
+                    retranscribedSegments.containsKey(i) -> retranscribedSegments[i]!!.trim()
+                    knownAnswersByIndex.containsKey(i) -> knownAnswersByIndex[i]!!.corrected
+                    else -> null
                 }
+                segmentToProto(i, seg, overrideText)
             }
 
             // 5. Send to targeted correction endpoint
             val correctionResult = correctionClient.correctTargeted(
-                CorrectionTargetedRequestDto(
-                    clientId = clientIdStr,
-                    projectId = meeting.projectId?.toString(),
-                    meetingId = meetingIdStr,
-                    segments = allSegments,
-                    retranscribedIndices = retranscribedSegments.keys.toList(),
-                    userCorrectedIndices = knownAnswers.associate {
-                        it.segmentIndex.toString() to it.corrected
-                    },
-                ),
+                clientId = clientIdStr,
+                projectId = meeting.projectId?.toString(),
+                meetingId = meetingIdStr,
+                segments = allSegments,
+                retranscribedIndices = retranscribedSegments.keys.toList(),
+                userCorrectedIndices = knownAnswers.associate {
+                    it.segmentIndex.toString() to it.corrected
+                },
             )
 
             // 6. Save result
-            val correctedSegments = correctionResult.segments.mapIndexed { i, corrSeg ->
+            val correctedSegments = correctionResult.segmentsList.mapIndexed { i, corrSeg ->
                 val original = baseSegments.getOrNull(i)
                 TranscriptSegment(
                     startSec = original?.startSec ?: corrSeg.startSec,
                     endSec = original?.endSec ?: corrSeg.endSec,
                     text = corrSeg.text,
-                    speaker = original?.speaker ?: corrSeg.speaker,
+                    speaker = original?.speaker ?: corrSeg.speaker.ifBlank { null },
                 )
             }
             val correctedText = correctedSegments.joinToString(" ") { it.text.trim() }
 
-            val questions = correctionResult.questions.map { q ->
+            val questions = correctionResult.questionsList.map { q ->
                 CorrectionQuestion(
                     questionId = q.id,
                     segmentIndex = q.i,
                     originalText = q.original,
-                    correctionOptions = q.options,
+                    correctionOptions = q.optionsList,
                     question = q.question,
-                    context = q.context,
+                    context = q.context.ifBlank { null },
                 )
             }
 
@@ -569,51 +531,39 @@ class TranscriptCorrectionService(
 
             // Merge: retranscribed text replaces original, rest unchanged
             val allSegments = baseSegments.mapIndexed { i, seg ->
-                val corrSeg = CorrectionSegmentDto(
-                    i = i,
-                    startSec = seg.startSec,
-                    endSec = seg.endSec,
-                    text = seg.text,
-                    speaker = seg.speaker,
-                )
-                if (retranscribedSegments.containsKey(i)) {
-                    corrSeg.copy(text = retranscribedSegments[i]!!.trim())
-                } else {
-                    corrSeg
-                }
+                val overrideText = retranscribedSegments[i]?.trim()
+                segmentToProto(i, seg, overrideText)
             }
 
             // Targeted correction
             val correctionResult = correctionClient.correctTargeted(
-                CorrectionTargetedRequestDto(
-                    clientId = clientIdStr,
-                    projectId = meeting.projectId?.toString(),
-                    meetingId = meetingIdStr,
-                    segments = allSegments,
-                    retranscribedIndices = retranscribedSegments.keys.toList(),
-                    userCorrectedIndices = emptyMap(),
-                ),
+                clientId = clientIdStr,
+                projectId = meeting.projectId?.toString(),
+                meetingId = meetingIdStr,
+                segments = allSegments,
+                retranscribedIndices = retranscribedSegments.keys.toList(),
+                userCorrectedIndices = emptyMap(),
             )
 
-            val correctedSegments = correctionResult.segments.mapIndexed { i, corrSeg ->
+            val correctedSegments = correctionResult.segmentsList.mapIndexed { i, corrSeg ->
                 val original = baseSegments.getOrNull(i)
                 TranscriptSegment(
                     startSec = original?.startSec ?: corrSeg.startSec,
                     endSec = original?.endSec ?: corrSeg.endSec,
                     text = corrSeg.text,
-                    speaker = original?.speaker ?: corrSeg.speaker,
+                    speaker = original?.speaker ?: corrSeg.speaker.ifBlank { null },
                 )
             }
             val correctedText = correctedSegments.joinToString(" ") { it.text.trim() }
 
-            val questions = correctionResult.questions.map { q ->
+            val questions = correctionResult.questionsList.map { q ->
                 CorrectionQuestion(
                     questionId = q.id,
                     segmentIndex = q.i,
                     originalText = q.original,
-                    correctionOptions = q.options,
+                    correctionOptions = q.optionsList,
                     question = q.question,
-                    context = q.context,
+                    context = q.context.ifBlank { null },
                 )
             }
 
@@ -731,6 +681,19 @@ class TranscriptCorrectionService(
 
         return hints.ifEmpty { null }
     }
+
+    private fun segmentToProto(
+        i: Int,
+        seg: TranscriptSegment,
+        textOverride: String? = null,
+    ): CorrectionSegment =
+        CorrectionSegment.newBuilder()
+            .setI(i)
+            .setStartSec(seg.startSec)
+            .setEndSec(seg.endSec)
+            .setText(textOverride ?: seg.text)
+            .setSpeaker(seg.speaker ?: "")
+            .build()
 
     private fun isConnectionError(e: Exception): Boolean {
         val cause = e.cause ?: e

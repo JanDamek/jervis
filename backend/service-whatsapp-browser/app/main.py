@@ -43,19 +43,40 @@ session_monitor = SessionMonitor(browser_manager, scraper)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+    import os
+    from app.grpc_server import start_grpc_server
+
     logger.info("Starting WhatsApp Browser on %s:%d", settings.host, settings.port)
     await browser_manager.startup()
     await scrape_storage.start()
     await session_monitor.start()
     await scraper.start()
-    yield
-    await scraper.stop()
-    await session_monitor.stop()
-    await scrape_storage.stop()
-    await browser_manager.shutdown()
-    from app.kotlin_callback import shutdown as callback_shutdown
-    await callback_shutdown()
-    logger.info("WhatsApp Browser stopped")
+
+    grpc_port = int(os.getenv("WHATSAPP_BROWSER_GRPC_PORT", "5501"))
+    grpc_server = await start_grpc_server(
+        browser_manager=browser_manager,
+        scraper=scraper,
+        scrape_storage=scrape_storage,
+        vnc_auth=vnc_auth_manager,
+        port=grpc_port,
+    )
+    app.state.grpc_server = grpc_server
+
+    try:
+        yield
+    finally:
+        try:
+            await asyncio.wait_for(grpc_server.stop(grace=5.0), timeout=10.0)
+        except Exception as e:
+            logger.warning("gRPC shutdown failed: %s", e)
+        await scraper.stop()
+        await session_monitor.stop()
+        await scrape_storage.stop()
+        await browser_manager.shutdown()
+        from app.kotlin_callback import shutdown as callback_shutdown
+        await callback_shutdown()
+        logger.info("WhatsApp Browser stopped")
 
 
 app = FastAPI(

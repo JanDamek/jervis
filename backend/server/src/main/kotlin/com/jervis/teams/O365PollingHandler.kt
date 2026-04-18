@@ -62,6 +62,7 @@ class O365PollingHandler(
     @Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
     private val gatewayUrl: String,
     private val browserPodManager: com.jervis.connection.BrowserPodManager,
+    private val o365BrowserPoolGrpc: com.jervis.infrastructure.grpc.O365BrowserPoolGrpcClient,
 ) : PollingHandler {
     override val provider: ProviderEnum = ProviderEnum.MICROSOFT_TEAMS
 
@@ -103,16 +104,11 @@ class O365PollingHandler(
             // If session is EXPIRED/ERROR, mark connection INVALID immediately
             if (connectionDocument.state in listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING)) {
                 try {
-                    val browserPodUrl = com.jervis.connection.BrowserPodManager.serviceUrl(connectionDocument.id)
-                    val statusResponse = httpClient.get("$browserPodUrl/session/$o365ClientId")
-                    if (statusResponse.status.isSuccess()) {
-                        val statusJson = json.parseToJsonElement(statusResponse.body<String>()).jsonObject
-                        val sessionState = statusJson["state"]?.jsonPrimitive?.content
-                        if (sessionState in listOf("EXPIRED", "ERROR")) {
-                            logger.warn { "Browser pool session $sessionState for '${connectionDocument.name}' -- marking INVALID" }
-                            connectionService.save(connectionDocument.copy(state = ConnectionStateEnum.INVALID))
-                            return PollingResult()
-                        }
+                    val status = o365BrowserPoolGrpc.getSession(connectionDocument.id, o365ClientId)
+                    if (status.state in listOf("EXPIRED", "ERROR")) {
+                        logger.warn { "Browser pool session ${status.state} for '${connectionDocument.name}' -- marking INVALID" }
+                        connectionService.save(connectionDocument.copy(state = ConnectionStateEnum.INVALID))
+                        return PollingResult()
                     }
                 } catch (e: Exception) {
                     logger.warn { "Browser pool unreachable for '${connectionDocument.name}' -- marking INVALID: ${e.message}" }

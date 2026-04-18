@@ -1,274 +1,179 @@
 package com.jervis.infrastructure.llm
 
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.serialization.kotlinx.json.json
-import kotlinx.serialization.json.Json
+import com.jervis.contracts.common.RequestContext
+import com.jervis.contracts.common.Scope
+import com.jervis.contracts.correction.AnswerCorrectionsRequest
+import com.jervis.contracts.correction.AnswerCorrectionsResponse
+import com.jervis.contracts.correction.CorrectResult
+import com.jervis.contracts.correction.CorrectTargetedRequest
+import com.jervis.contracts.correction.CorrectTranscriptRequest
+import com.jervis.contracts.correction.CorrectWithInstructionRequest
+import com.jervis.contracts.correction.CorrectWithInstructionResponse
+import com.jervis.contracts.correction.CorrectionRule
+import com.jervis.contracts.correction.CorrectionSegment
+import com.jervis.contracts.correction.CorrectionServiceGrpcKt
+import com.jervis.contracts.correction.DeleteCorrectionRequest
+import com.jervis.contracts.correction.ListCorrectionsRequest
+import com.jervis.contracts.correction.ListCorrectionsResponse
+import com.jervis.contracts.correction.SubmitCorrectionRequest
+import com.jervis.contracts.correction.SubmitCorrectionResponse
+import com.jervis.infrastructure.grpc.GrpcChannels
+import io.grpc.ManagedChannel
 import mu.KotlinLogging
+import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.stereotype.Component
+import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
 
-/**
- * REST client for the Correction Service.
- *
- * Separated from orchestrator to:
- * - Keep orchestrator focused on task decomposition and coding workflows
- * - Allow independent scaling and deployment of correction service
- * - Enable parallel development by separate teams
- *
- * This service handles transcript correction using KB-stored rules + Ollama GPU.
- */
-class CorrectionClient(baseUrl: String) {
+@Component
+class CorrectionClient(
+    @Qualifier(GrpcChannels.CORRECTION_CHANNEL) channel: ManagedChannel,
+) {
+    private val stub = CorrectionServiceGrpcKt.CorrectionServiceCoroutineStub(channel)
 
-    private val apiBaseUrl = baseUrl.trimEnd('/')
+    private fun ctx(): RequestContext =
+        RequestContext.newBuilder()
+            .setScope(Scope.newBuilder().build())
+            .setRequestId(UUID.randomUUID().toString())
+            .setIssuedAtUnixMs(System.currentTimeMillis())
+            .build()
 
-    private val client = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(
-                Json {
-                    ignoreUnknownKeys = true
-                    isLenient = true
-                    encodeDefaults = true
-                },
-            )
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = Long.MAX_VALUE
-            connectTimeoutMillis = 30_000   // 30s connect timeout only
-            socketTimeoutMillis = Long.MAX_VALUE
-        }
+    suspend fun submitCorrection(
+        clientId: String,
+        projectId: String?,
+        original: String,
+        corrected: String,
+        category: String = "general",
+        context: String? = null,
+    ): SubmitCorrectionResponse {
+        logger.info { "CORRECTION_SUBMIT: '$original' -> '$corrected'" }
+        return stub.submitCorrection(
+            SubmitCorrectionRequest.newBuilder()
+                .setCtx(ctx())
+                .setClientId(clientId)
+                .setProjectId(projectId ?: "")
+                .setOriginal(original)
+                .setCorrected(corrected)
+                .setCategory(category)
+                .setContext(context ?: "")
+                .build(),
+        )
     }
 
-    /**
-     * Submit a correction rule to the correction agent.
-     * Stores it in KB as a chunk with kind="transcript_correction".
-     */
-    suspend fun submitCorrection(request: CorrectionSubmitRequestDto): CorrectionSubmitResultDto {
-        logger.info { "CORRECTION_SUBMIT: '${request.original}' -> '${request.corrected}'" }
-        return client.post("$apiBaseUrl/correction/submit") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }.body()
+    suspend fun correctTranscript(
+        clientId: String,
+        projectId: String?,
+        meetingId: String?,
+        segments: List<CorrectionSegment>,
+        chunkSize: Int = 20,
+        speakerHints: Map<String, String> = emptyMap(),
+    ): CorrectResult {
+        logger.info { "CORRECTION_CORRECT: ${segments.size} segments" }
+        return stub.correctTranscript(
+            CorrectTranscriptRequest.newBuilder()
+                .setCtx(ctx())
+                .setClientId(clientId)
+                .setProjectId(projectId ?: "")
+                .setMeetingId(meetingId ?: "")
+                .addAllSegments(segments)
+                .setChunkSize(chunkSize)
+                .putAllSpeakerHints(speakerHints)
+                .build(),
+        )
     }
 
-    /**
-     * Correct transcript segments using KB-stored corrections + Ollama GPU.
-     */
-    suspend fun correctTranscript(request: CorrectionRequestDto): CorrectionResultDto {
-        logger.info { "CORRECTION_CORRECT: ${request.segments.size} segments" }
-        return client.post("$apiBaseUrl/correction/correct") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }.body()
+    suspend fun listCorrections(
+        clientId: String,
+        projectId: String?,
+        maxResults: Int = 100,
+    ): ListCorrectionsResponse {
+        logger.info { "CORRECTION_LIST: clientId=$clientId" }
+        return stub.listCorrections(
+            ListCorrectionsRequest.newBuilder()
+                .setCtx(ctx())
+                .setClientId(clientId)
+                .setProjectId(projectId ?: "")
+                .setMaxResults(maxResults)
+                .build(),
+        )
     }
 
-    /**
-     * List all stored corrections for a client/project.
-     */
-    suspend fun listCorrections(request: CorrectionListRequestDto): CorrectionListResultDto {
-        logger.info { "CORRECTION_LIST: clientId=${request.clientId}" }
-        return client.post("$apiBaseUrl/correction/list") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }.body()
-    }
-
-    /**
-     * Submit user answers to correction questions as new KB correction rules.
-     */
-    suspend fun answerCorrectionQuestions(request: CorrectionAnswerRequestDto): Boolean {
-        logger.info { "CORRECTION_ANSWER: ${request.answers.size} answers" }
+    suspend fun answerCorrectionQuestions(
+        clientId: String,
+        projectId: String?,
+        answers: List<CorrectionRule>,
+    ): Boolean {
+        logger.info { "CORRECTION_ANSWER: ${answers.size} answers" }
         return try {
-            client.post("$apiBaseUrl/correction/answer") {
-                contentType(ContentType.Application.Json)
-                setBody(request)
-            }
-            true
+            val resp: AnswerCorrectionsResponse = stub.answerCorrectionQuestions(
+                AnswerCorrectionsRequest.newBuilder()
+                    .setCtx(ctx())
+                    .setClientId(clientId)
+                    .setProjectId(projectId ?: "")
+                    .addAllAnswers(answers)
+                    .build(),
+            )
+            resp.status == "success"
         } catch (e: Exception) {
             logger.error { "CORRECTION_ANSWER_FAIL: ${e.message}" }
             false
         }
     }
 
-    /**
-     * Re-correct transcript based on user's natural language instruction.
-     */
-    suspend fun correctWithInstruction(request: CorrectionInstructRequestDto): CorrectionInstructResultDto {
-        logger.info { "CORRECTION_INSTRUCT: ${request.segments.size} segments, instruction='${request.instruction.take(80)}'" }
-        return client.post("$apiBaseUrl/correction/instruct") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }.body()
+    suspend fun correctWithInstruction(
+        clientId: String,
+        projectId: String?,
+        segments: List<CorrectionSegment>,
+        instruction: String,
+    ): CorrectWithInstructionResponse {
+        logger.info { "CORRECTION_INSTRUCT: ${segments.size} segments, instruction='${instruction.take(80)}'" }
+        return stub.correctWithInstruction(
+            CorrectWithInstructionRequest.newBuilder()
+                .setCtx(ctx())
+                .setClientId(clientId)
+                .setProjectId(projectId ?: "")
+                .addAllSegments(segments)
+                .setInstruction(instruction)
+                .build(),
+        )
     }
 
-    /**
-     * Run targeted correction on retranscribed + user-corrected segments.
-     */
-    suspend fun correctTargeted(request: CorrectionTargetedRequestDto): CorrectionResultDto {
-        logger.info { "CORRECTION_TARGETED: ${request.segments.size} segments, ${request.retranscribedIndices.size} retranscribed" }
-        return client.post("$apiBaseUrl/correction/correct-targeted") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }.body()
+    suspend fun correctTargeted(
+        clientId: String,
+        projectId: String?,
+        meetingId: String?,
+        segments: List<CorrectionSegment>,
+        retranscribedIndices: List<Int>,
+        userCorrectedIndices: Map<String, String> = emptyMap(),
+    ): CorrectResult {
+        logger.info { "CORRECTION_TARGETED: ${segments.size} segments, ${retranscribedIndices.size} retranscribed" }
+        return stub.correctTargeted(
+            CorrectTargetedRequest.newBuilder()
+                .setCtx(ctx())
+                .setClientId(clientId)
+                .setProjectId(projectId ?: "")
+                .setMeetingId(meetingId ?: "")
+                .addAllSegments(segments)
+                .addAllRetranscribedIndices(retranscribedIndices)
+                .putAllUserCorrectedIndices(userCorrectedIndices)
+                .build(),
+        )
     }
 
-    /**
-     * Delete a correction rule from KB.
-     */
     suspend fun deleteCorrection(sourceUrn: String): Boolean {
         logger.info { "CORRECTION_DELETE: $sourceUrn" }
         return try {
-            client.post("$apiBaseUrl/correction/delete") {
-                contentType(ContentType.Application.Json)
-                setBody(CorrectionDeleteRequestDto(sourceUrn))
-            }
-            true
+            val resp = stub.deleteCorrection(
+                DeleteCorrectionRequest.newBuilder()
+                    .setCtx(ctx())
+                    .setSourceUrn(sourceUrn)
+                    .build(),
+            )
+            resp.status == "success"
         } catch (e: Exception) {
             logger.error { "CORRECTION_DELETE_FAIL: $sourceUrn ${e.message}" }
             false
         }
     }
 }
-
-// --- Correction Agent DTOs ---
-
-@kotlinx.serialization.Serializable
-data class CorrectionSubmitRequestDto(
-    @kotlinx.serialization.SerialName("clientId") val clientId: String,
-    @kotlinx.serialization.SerialName("projectId") val projectId: String? = null,
-    val original: String,
-    val corrected: String,
-    val category: String = "general",
-    val context: String? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionSubmitResultDto(
-    @kotlinx.serialization.SerialName("correctionId") val correctionId: String = "",
-    @kotlinx.serialization.SerialName("sourceUrn") val sourceUrn: String = "",
-    val status: String = "",
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionRequestDto(
-    @kotlinx.serialization.SerialName("clientId") val clientId: String,
-    @kotlinx.serialization.SerialName("projectId") val projectId: String? = null,
-    @kotlinx.serialization.SerialName("meetingId") val meetingId: String? = null,
-    val segments: List<CorrectionSegmentDto>,
-    @kotlinx.serialization.SerialName("chunkSize") val chunkSize: Int = 20,
-    @kotlinx.serialization.SerialName("speakerHints") val speakerHints: Map<String, String>? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionSegmentDto(
-    val i: Int,
-    @kotlinx.serialization.SerialName("startSec") val startSec: Double,
-    @kotlinx.serialization.SerialName("endSec") val endSec: Double,
-    val text: String,
-    val speaker: String? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionResultDto(
-    val segments: List<CorrectionSegmentDto>,
-    val questions: List<CorrectionQuestionPythonDto> = emptyList(),
-    val status: String,
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionQuestionPythonDto(
-    val id: String,
-    val i: Int,
-    val original: String,
-    val question: String,
-    val options: List<String> = emptyList(),
-    val context: String? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionAnswerRequestDto(
-    @kotlinx.serialization.SerialName("clientId") val clientId: String,
-    @kotlinx.serialization.SerialName("projectId") val projectId: String? = null,
-    val answers: List<CorrectionAnswerItemDto>,
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionAnswerItemDto(
-    val original: String,
-    val corrected: String,
-    val category: String = "general",
-    val context: String? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionListRequestDto(
-    @kotlinx.serialization.SerialName("clientId") val clientId: String,
-    @kotlinx.serialization.SerialName("projectId") val projectId: String? = null,
-    @kotlinx.serialization.SerialName("maxResults") val maxResults: Int = 100,
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionListResultDto(
-    val corrections: List<CorrectionChunkDto> = emptyList(),
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionChunkDto(
-    val content: String = "",
-    @kotlinx.serialization.SerialName("sourceUrn") val sourceUrn: String = "",
-    val metadata: CorrectionChunkMetadataDto = CorrectionChunkMetadataDto(),
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionChunkMetadataDto(
-    val original: String = "",
-    val corrected: String = "",
-    val category: String = "general",
-    val context: String = "",
-    @kotlinx.serialization.SerialName("correctionId") val correctionId: String = "",
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionDeleteRequestDto(
-    @kotlinx.serialization.SerialName("sourceUrn") val sourceUrn: String,
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionTargetedRequestDto(
-    @kotlinx.serialization.SerialName("clientId") val clientId: String,
-    @kotlinx.serialization.SerialName("projectId") val projectId: String? = null,
-    @kotlinx.serialization.SerialName("meetingId") val meetingId: String? = null,
-    val segments: List<CorrectionSegmentDto>,
-    @kotlinx.serialization.SerialName("retranscribedIndices") val retranscribedIndices: List<Int>,
-    @kotlinx.serialization.SerialName("userCorrectedIndices") val userCorrectedIndices: Map<String, String> = emptyMap(),
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionInstructRequestDto(
-    @kotlinx.serialization.SerialName("clientId") val clientId: String,
-    @kotlinx.serialization.SerialName("projectId") val projectId: String? = null,
-    val segments: List<CorrectionSegmentDto>,
-    val instruction: String,
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionInstructResultDto(
-    val segments: List<CorrectionSegmentDto> = emptyList(),
-    @kotlinx.serialization.SerialName("newRules") val newRules: List<CorrectionInstructRuleDto> = emptyList(),
-    val status: String,
-    val summary: String? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class CorrectionInstructRuleDto(
-    @kotlinx.serialization.SerialName("correctionId") val correctionId: String = "",
-    @kotlinx.serialization.SerialName("sourceUrn") val sourceUrn: String = "",
-    val status: String = "",
-)

@@ -1,5 +1,8 @@
-"""Instruction API — JERVIS pushes a text command, the PodAgent picks it up
-as the highest-priority goal and executes it via observe → reason → act loop.
+"""Instruction API — retired REST surface.
+
+The agent accepts text instructions via the O365BrowserPoolService.PushInstruction
+gRPC RPC (see app/grpc_server.py). This module keeps the factory signature so
+main.py's include_router call stays a no-op.
 """
 
 from __future__ import annotations
@@ -18,7 +21,6 @@ logger = logging.getLogger("o365-browser-pool.instruction")
 def create_instruction_router(browser_manager: BrowserManager) -> APIRouter:
     router = APIRouter()
 
-    @router.post("/instruction/{client_id}")
     async def execute_instruction(client_id: str, request: Request):
         body = await request.json()
         instruction = (body.get("instruction") or "").strip()

@@ -33,7 +33,6 @@ def create_scrape_router(
     scrape_storage: ScrapeStorage,
 ) -> APIRouter:
 
-    @router.post("/scrape/{client_id}/trigger")
     async def trigger_scrape(client_id: str, body: ScrapeTriggerRequest) -> dict:
         """Fire-and-forget: trigger a scrape cycle in background.
 
@@ -59,7 +58,6 @@ def create_scrape_router(
         except Exception:
             logger.exception("Background scrape failed for %s", client_id)
 
-    @router.get("/scrape/{client_id}/latest")
     async def get_latest_scrape(client_id: str) -> dict:
         """Get the latest persisted scrape state for a client."""
         state = await scrape_storage.get_sidebar_state(client_id)

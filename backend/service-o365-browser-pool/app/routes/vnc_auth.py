@@ -36,11 +36,8 @@ def _get_vnc_password() -> str:
 
 def create_vnc_auth_router(vnc_auth: VncAuthManager) -> APIRouter:
 
-    @router.post("/vnc-token/{client_id}")
-    async def create_vnc_token(client_id: str) -> dict:
-        """Generate a one-time VNC access token. Called by Kotlin server."""
-        token = vnc_auth.create_token(client_id)
-        return {"token": token, "client_id": client_id}
+    # /vnc-token/{client_id} moved to O365BrowserPoolService.CreateVncToken (gRPC).
+    # /vnc-login + /vnc-auth stay HTTP — they're browser-facing, not pod-to-pod.
 
     @router.get("/vnc-login")
     async def vnc_login(token: str = "") -> Response:

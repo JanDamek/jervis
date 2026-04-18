@@ -10,7 +10,6 @@ import com.jervis.infrastructure.grpc.KbRetrieveGrpcClient
 import com.jervis.infrastructure.grpc.OrchestratorControlGrpcClient
 import com.jervis.infrastructure.grpc.OrchestratorDispatchGrpcClient
 import com.jervis.infrastructure.grpc.OrchestratorGraphGrpcClient
-import com.jervis.infrastructure.llm.CorrectionClient
 import com.jervis.infrastructure.llm.DocumentExtractionClient
 import com.jervis.infrastructure.llm.KnowledgeServiceRestClient
 import com.jervis.common.client.IAtlassianClient
@@ -72,7 +71,6 @@ class RpcClientsConfig(
 
     private var _knowledgeService: KnowledgeServiceRestClient? = null
     private var _pythonOrchestratorClient: PythonOrchestratorClient? = null
-    private var _correctionClient: CorrectionClient? = null
     private var _documentExtractionClient: DocumentExtractionClient? = null
 
     // Provider-specific fine-grained RPC clients (used by indexers and services for data operations)
@@ -91,11 +89,6 @@ class RpcClientsConfig(
                 graphGrpc = orchestratorGraphGrpc,
                 dispatchGrpc = orchestratorDispatchGrpc,
             ).also { _pythonOrchestratorClient = it }
-
-    @Bean
-    fun correctionClient(): CorrectionClient =
-        _correctionClient
-            ?: CorrectionClient(endpoints.correction.baseUrl).also { _correctionClient = it }
 
     @Bean
     fun documentExtractionClient(): DocumentExtractionClient =

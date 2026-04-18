@@ -44,6 +44,7 @@ class UserTaskRpcImpl(
     private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
     private val httpClient: HttpClient,
     private val connectionService: com.jervis.connection.ConnectionService,
+    private val o365BrowserPoolGrpc: com.jervis.infrastructure.grpc.O365BrowserPoolGrpcClient,
 ) : IUserTaskService {
     private val logger = KotlinLogging.logger {}
 
@@ -369,14 +370,9 @@ class UserTaskRpcImpl(
         logger.info { "O365_MFA_RESPONSE | taskId=${task.id} | browserPoolClient=$browserPoolClientId | forwarding code" }
 
         try {
-            val browserPodUrl = resolveBrowserPodUrl(browserPoolClientId)
-            val response = httpClient.post("$browserPodUrl/session/$browserPoolClientId/mfa") {
-                contentType(ContentType.Application.Json)
-                setBody("""{"code":"$mfaCode"}""")
-            }
-
-            val responseText = response.bodyAsText()
-            logger.info { "O365_MFA_FORWARD | status=${response.status} | response=$responseText" }
+            val connectionId = resolveConnectionId(browserPoolClientId)
+            val resp = o365BrowserPoolGrpc.submitMfa(connectionId, browserPoolClientId, mfaCode)
+            logger.info { "O365_MFA_FORWARD | state=${resp.state} | error=${resp.error}" }
 
             // Mark the MFA task as done regardless of result
             // (browser pool will send new notification if MFA fails)
@@ -395,11 +391,10 @@ class UserTaskRpcImpl(
         return task.toUserTaskDto()
     }
 
-    /** Resolve browser pod URL for a given o365ClientId. */
-    private suspend fun resolveBrowserPodUrl(clientId: String): String {
+    private suspend fun resolveConnectionId(clientId: String): com.jervis.common.types.ConnectionId {
         val conn = connectionService.findAll().toList().firstOrNull {
             it.o365ClientId == clientId || it.id.toString() == clientId
         } ?: throw IllegalStateException("No connection found for browser client ID: $clientId")
-        return com.jervis.connection.BrowserPodManager.serviceUrl(conn.id)
+        return conn.id
     }
 }

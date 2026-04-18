@@ -136,6 +136,9 @@ async def _try_self_restore() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import os
+    from app.grpc_server import start_grpc_server
+
     logger.info(
         "Starting O365 Browser Pool on %s:%d (connection=%s)",
         settings.host, settings.port, settings.connection_id,
@@ -148,23 +151,42 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("LangGraph checkpointer init failed — agent will fail to start")
 
+    grpc_port = int(os.getenv("O365_BROWSER_POOL_GRPC_PORT", "5501"))
+    grpc_server = await start_grpc_server(
+        browser_manager=browser_manager,
+        token_extractor=token_extractor,
+        tab_registry=tab_registry,
+        scrape_storage=scrape_storage,
+        meeting_recorder=meeting_recorder,
+        context_store=context_store,
+        vnc_auth_manager=vnc_auth_manager,
+        port=grpc_port,
+    )
+    app.state.grpc_server = grpc_server
+
     if settings.connection_id:
         asyncio.create_task(_try_self_restore())
 
-    yield
-
-    for ag in agent_registry.all():
+    try:
+        yield
+    finally:
         try:
-            await ag.stop()
-        except Exception:
-            logger.exception("Agent stop failed")
-    await scrape_storage.stop()
-    await context_store.stop()
-    shutdown_checkpointer()
-    await browser_manager.shutdown()
-    from app.kotlin_callback import shutdown as callback_shutdown
-    await callback_shutdown()
-    logger.info("O365 Browser Pool stopped")
+            await asyncio.wait_for(grpc_server.stop(grace=5.0), timeout=10.0)
+        except Exception as e:
+            logger.warning("gRPC shutdown failed: %s", e)
+
+        for ag in agent_registry.all():
+            try:
+                await ag.stop()
+            except Exception:
+                logger.exception("Agent stop failed")
+        await scrape_storage.stop()
+        await context_store.stop()
+        shutdown_checkpointer()
+        await browser_manager.shutdown()
+        from app.kotlin_callback import shutdown as callback_shutdown
+        await callback_shutdown()
+        logger.info("O365 Browser Pool stopped")
 
 
 app = FastAPI(

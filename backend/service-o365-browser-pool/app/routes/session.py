@@ -1,13 +1,9 @@
-"""Session endpoints — thin REST façade over the LangGraph agent.
+"""Session endpoints — retired REST surface.
 
-The agent owns all browser behavior. These routes do only three things:
-- `GET  /session/{id}` — inspect current PodState + MFA info
-- `POST /session/{id}/init` — persist init config to PVC + ensure agent running
-- `POST /session/{id}/mfa` — forward MFA code to the agent (credentials nudge)
-- `DELETE /session/{id}` — stop agent + close browser context
-
-No force-setup, no rediscover, no refresh. If the agent got stuck, the
-answer is a better prompt + better tools, not an admin override.
+All pod-to-pod operations moved to gRPC (see app/grpc_server.py ::
+O365BrowserPoolServicer). These function bodies are kept as a reference
+while the migration settles; the create_session_router() factory now
+returns an empty router so main.py's include_router call remains a no-op.
 """
 
 from __future__ import annotations
@@ -87,7 +83,6 @@ def create_session_router(
     context_store: ContextStore,
 ) -> APIRouter:
 
-    @router.get("/session/{client_id}")
     async def get_session(client_id: str) -> SessionStatus:
         sm = get_or_create_state_manager(client_id, client_id)
         d = sm.to_dict()
@@ -101,7 +96,6 @@ def create_session_router(
             mfa_number=d["mfa_number"],
         )
 
-    @router.post("/session/{client_id}/init")
     async def init_session(
         client_id: str,
         request: SessionInitRequest | None = None,
@@ -163,7 +157,6 @@ def create_session_router(
             message=_state_to_message(sm),
         )
 
-    @router.post("/session/{client_id}/mfa")
     async def submit_mfa(client_id: str, body: dict) -> SessionInitResponse:
         code = body.get("code", "")
         if not code:
@@ -189,7 +182,6 @@ def create_session_router(
             message=_state_to_message(sm),
         )
 
-    @router.delete("/session/{client_id}")
     async def delete_session(client_id: str) -> dict:
         agent = agent_registry.get(client_id)
         if agent:

@@ -26,9 +26,11 @@ COPY backend/service-correction/app/ ./app/
 RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /app
 USER 1000
 
+EXPOSE 8000 5501
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health || exit 1
 
-# Run with uvicorn
+# Run with uvicorn (gRPC server boots in FastAPI lifespan on port 5501)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]

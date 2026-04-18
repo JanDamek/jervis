@@ -48,15 +48,20 @@ class BrowserPodManager(
 
         private const val API_PORT = 8090
         private const val NOVNC_PORT = 6080
+        private const val GRPC_PORT = 5501
         private const val STORAGE_SIZE = "5Gi"
 
         fun deploymentName(connectionId: ConnectionId): String = "jervis-browser-${connectionId}"
         fun serviceName(connectionId: ConnectionId): String = "jervis-browser-${connectionId}"
         fun pvcName(connectionId: ConnectionId): String = "jervis-browser-${connectionId}-data"
 
-        /** URL to reach a browser pod's API from within the cluster. */
+        /** HTTP URL for browser-facing routes (/vnc-login, screenshots). */
         fun serviceUrl(connectionId: ConnectionId): String =
             "http://${serviceName(connectionId)}.$NAMESPACE.svc.cluster.local:$API_PORT"
+
+        /** Cluster DNS for the pod-to-pod gRPC channel. */
+        fun grpcHost(connectionId: ConnectionId): String =
+            "${serviceName(connectionId)}.$NAMESPACE.svc.cluster.local"
     }
 
     private fun buildK8sClient(): KubernetesClient {
@@ -103,10 +108,12 @@ class BrowserPodManager(
             val containerPorts = listOf(
                 ContainerPortBuilder().withContainerPort(API_PORT).withName("api").build(),
                 ContainerPortBuilder().withContainerPort(NOVNC_PORT).withName("novnc").build(),
+                ContainerPortBuilder().withContainerPort(GRPC_PORT).withName("grpc").build(),
             )
 
             val envVars = listOf(
                 EnvVarBuilder().withName("CONNECTION_ID").withValue(connectionId.toString()).build(),
+                EnvVarBuilder().withName("O365_BROWSER_POOL_GRPC_PORT").withValue(GRPC_PORT.toString()).build(),
                 EnvVarBuilder()
                     .withName("MONGODB_PASSWORD")
                     .withValueFrom(
@@ -220,6 +227,7 @@ class BrowserPodManager(
             val servicePorts = listOf(
                 ServicePortBuilder().withName("api").withPort(API_PORT).withTargetPort(IntOrString(API_PORT)).build(),
                 ServicePortBuilder().withName("novnc").withPort(NOVNC_PORT).withTargetPort(IntOrString(NOVNC_PORT)).build(),
+                ServicePortBuilder().withName("grpc").withPort(GRPC_PORT).withTargetPort(IntOrString(GRPC_PORT)).build(),
             )
 
             val service = ServiceBuilder()

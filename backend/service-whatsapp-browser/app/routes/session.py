@@ -25,7 +25,6 @@ def create_session_router(
     scrape_storage: ScrapeStorage,
 ) -> APIRouter:
 
-    @router.post("/session/{client_id}/init")
     async def init_session(client_id: str, request: SessionInitRequest) -> SessionInitResponse:
         """Initialize a WhatsApp Web browser session.
 
@@ -63,7 +62,6 @@ def create_session_router(
             message="WhatsApp Web otevřen. Naskenujte QR kód telefonem.",
         )
 
-    @router.get("/session/{client_id}")
     async def get_session_status(client_id: str) -> SessionStatus:
         """Get current session status."""
         state = browser_manager.get_state(client_id)
@@ -81,7 +79,6 @@ def create_session_router(
             message=message,
         )
 
-    @router.delete("/session/{client_id}")
     async def close_session(client_id: str) -> dict:
         """Close and clean up a browser session."""
         context = browser_manager.get_context()

@@ -1,6 +1,5 @@
 package com.jervis.meeting
 
-import com.jervis.infrastructure.llm.CorrectionListRequestDto
 import com.jervis.infrastructure.config.properties.WhisperProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -131,18 +130,22 @@ class WhisperTranscriptionClient(
         if (clientId == null) return null
         return try {
             val globalResult = correctionClient.listCorrections(
-                CorrectionListRequestDto(clientId = clientId, projectId = null, maxResults = 500),
+                clientId = clientId,
+                projectId = null,
+                maxResults = 500,
             )
 
             val projectResult = if (!projectId.isNullOrBlank()) {
                 correctionClient.listCorrections(
-                    CorrectionListRequestDto(clientId = clientId, projectId = projectId, maxResults = 500),
+                    clientId = clientId,
+                    projectId = projectId,
+                    maxResults = 500,
                 )
             } else {
                 null
             }
 
-            val allCorrections = globalResult.corrections + (projectResult?.corrections ?: emptyList())
+            val allCorrections = globalResult.correctionsList + (projectResult?.correctionsList ?: emptyList())
             val terms = allCorrections
                 .flatMap { listOf(it.metadata.corrected, it.metadata.original) }
                 .filter { it.isNotBlank() }

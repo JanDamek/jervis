@@ -11,20 +11,8 @@ import com.jervis.dto.connection.ProviderEnum
 import com.jervis.infrastructure.polling.PollingResult
 import com.jervis.infrastructure.polling.handler.PollingContext
 import com.jervis.infrastructure.polling.handler.PollingHandler
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.request.get
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.http.isSuccess
 import kotlinx.coroutines.flow.toList
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate
 import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
@@ -46,15 +34,11 @@ class WhatsAppPollingHandler(
     private val repository: WhatsAppMessageIndexRepository,
     private val scrapeMessageRepository: WhatsAppScrapeMessageRepository,
     private val connectionService: ConnectionService,
-    private val httpClient: HttpClient,
     private val mongoTemplate: ReactiveMongoTemplate,
     private val cloudModelPolicyResolver: com.jervis.infrastructure.llm.CloudModelPolicyResolver,
-    @Value("\${jervis.whatsapp-browser.url:http://jervis-whatsapp-browser:8091}")
-    private val browserUrl: String,
+    private val whatsAppBrowserGrpc: com.jervis.infrastructure.grpc.WhatsAppBrowserGrpcClient,
 ) : PollingHandler {
     override val provider: ProviderEnum = ProviderEnum.WHATSAPP
-
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true; explicitNulls = false }
 
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean {
         return connectionDocument.availableCapabilities.any {
@@ -75,16 +59,9 @@ class WhatsAppPollingHandler(
         // NEW or INVALID: auto-init to recover session from persistent profile on PVC
         if (connectionDocument.state in listOf(ConnectionStateEnum.NEW, ConnectionStateEnum.INVALID)) {
             try {
-                val healthResponse = httpClient.get("$browserUrl/health")
-                if (healthResponse.status.isSuccess()) {
-                    logger.info { "WhatsApp INVALID recovery: browser healthy, auto-init for '${connectionDocument.name}'" }
-                    httpClient.post("$browserUrl/session/$browserSessionId/init") {
-                        contentType(ContentType.Application.Json)
-                        setBody("""{"login_url":"https://web.whatsapp.com","capabilities":["CHAT_READ"]}""")
-                    }
-                    // Move to DISCOVERING — capabilities callback will finalize
-                    connectionService.save(connectionDocument.copy(state = ConnectionStateEnum.DISCOVERING))
-                }
+                whatsAppBrowserGrpc.initSession(browserSessionId)
+                logger.info { "WhatsApp INVALID recovery: auto-init for '${connectionDocument.name}'" }
+                connectionService.save(connectionDocument.copy(state = ConnectionStateEnum.DISCOVERING))
             } catch (e: Exception) {
                 logger.debug { "WhatsApp INVALID recovery failed: ${e.message}" }
             }
@@ -100,27 +77,17 @@ class WhatsAppPollingHandler(
         // Proactive health check: verify browser session is alive, auto-init if expired
         if (connectionDocument.state == ConnectionStateEnum.VALID) {
             try {
-                val statusResponse = httpClient.get("$browserUrl/session/$browserSessionId")
-                if (statusResponse.status.isSuccess()) {
-                    val statusJson = json.parseToJsonElement(
-                        statusResponse.body<String>()
-                    ).jsonObject
-                    val sessionState = statusJson["state"]?.jsonPrimitive?.content
-                    if (sessionState in listOf("EXPIRED", "ERROR", null)) {
-                        // Auto-init session — browser profile on PVC allows re-login without QR
-                        logger.info { "WhatsApp session $sessionState for '${connectionDocument.name}' — auto-init" }
-                        try {
-                            val initResponse = httpClient.post("$browserUrl/session/$browserSessionId/init") {
-                                contentType(ContentType.Application.Json)
-                                setBody("""{"login_url":"https://web.whatsapp.com","capabilities":["CHAT_READ"]}""")
-                            }
-                            logger.info { "WhatsApp auto-init result: ${initResponse.status}" }
-                        } catch (initEx: Exception) {
-                            logger.warn { "WhatsApp auto-init failed: ${initEx.message}" }
-                        }
-                        // Don't mark INVALID — let next poll cycle check again
-                        return PollingResult()
+                val status = whatsAppBrowserGrpc.getSession(browserSessionId)
+                val sessionState = status.state.ifBlank { null }
+                if (sessionState in listOf("EXPIRED", "ERROR", null)) {
+                    logger.info { "WhatsApp session $sessionState for '${connectionDocument.name}' — auto-init" }
+                    try {
+                        val initResp = whatsAppBrowserGrpc.initSession(browserSessionId)
+                        logger.info { "WhatsApp auto-init result: ${initResp.state}" }
+                    } catch (initEx: Exception) {
+                        logger.warn { "WhatsApp auto-init failed: ${initEx.message}" }
                     }
+                    return PollingResult()
                 }
             } catch (e: Exception) {
                 logger.warn { "WhatsApp browser unreachable for '${connectionDocument.name}': ${e.message}" }
@@ -137,12 +104,11 @@ class WhatsAppPollingHandler(
 
         // Trigger scrape on Python service (fire-and-forget).
         try {
-            httpClient.post("$browserUrl/scrape/$browserSessionId/trigger") {
-                contentType(ContentType.Application.Json)
-                setBody(
-                    """{"max_tier":"$maxTier","processing_mode":"BACKGROUND"}""",
-                )
-            }
+            whatsAppBrowserGrpc.triggerScrape(
+                clientId = browserSessionId,
+                maxTier = maxTier,
+                processingMode = "BACKGROUND",
+            )
         } catch (e: Exception) {
             logger.debug { "WhatsApp scrape trigger for '${connectionDocument.name}': ${e.message}" }
         }

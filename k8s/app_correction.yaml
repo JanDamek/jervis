@@ -23,7 +23,13 @@ spec:
           image: registry.damek-soft.eu/jandamek/jervis-correction:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 8000
+            - name: http
+              containerPort: 8000
+            - name: grpc
+              containerPort: 5501
+          env:
+            - name: CORRECTION_GRPC_PORT
+              value: "5501"
           envFrom:
             - configMapRef:
                 name: jervis-config
@@ -61,3 +67,6 @@ spec:
     - name: http
       port: 8000
       targetPort: 8000
+    - name: grpc
+      port: 5501
+      targetPort: 5501

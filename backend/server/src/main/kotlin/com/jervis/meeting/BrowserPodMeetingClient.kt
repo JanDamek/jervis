@@ -1,17 +1,8 @@
 package com.jervis.meeting
 
 import com.jervis.common.types.ConnectionId
-import com.jervis.connection.BrowserPodManager
 import com.jervis.dto.events.JervisEvent
-import io.ktor.client.HttpClient
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.http.isSuccess
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import com.jervis.infrastructure.grpc.O365BrowserPoolGrpcClient
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
@@ -19,21 +10,16 @@ import org.springframework.stereotype.Component
 private val logger = KotlinLogging.logger {}
 
 /**
- * Dispatches a meeting join instruction into an O365 browser pod.
+ * Dispatches a meeting join/leave instruction into an O365 browser pod via
+ * O365BrowserPoolService.PushInstruction (gRPC, fire-and-forget).
  *
- * When `MeetingRecordingDispatcher` has a calendar-driven TEAMS meeting
- * whose `MeetingMetadata.connectionId` is known, this client POSTs an
- * `INSTRUCTION: join_meeting` payload to the matching pod's
- * `/instruction/{connectionId}` endpoint. The pod's LangGraph agent
- * picks up the HumanMessage and composes navigate + mute + click Join
- * via tools, then calls `start_meeting_recording(joined_by='agent')`.
- *
- * The endpoint is fire-and-forget — the pod answers 202/queued and runs
- * the tool chain asynchronously.
+ * The pod's LangGraph agent picks up the HumanMessage and composes the
+ * navigate + mute + click Join tool chain; this client just fans the text
+ * prompt into the pod.
  */
 @Component
 class BrowserPodMeetingClient(
-    private val httpClient: HttpClient,
+    private val o365BrowserPoolGrpc: O365BrowserPoolGrpcClient,
 ) {
     suspend fun dispatchJoin(
         connectionId: String,
@@ -45,7 +31,6 @@ class BrowserPodMeetingClient(
             logger.warn { "BrowserPodMeetingClient: invalid connectionId=$connectionId" }
             return false
         }
-        val podUrl = BrowserPodManager.serviceUrl(cid)
         val instruction = buildString {
             append("INSTRUCTION: join_meeting. ")
             append("meeting_id=${trigger.taskId}. ")
@@ -65,21 +50,17 @@ class BrowserPodMeetingClient(
             )
         }
         return try {
-            val resp = httpClient.post("$podUrl/instruction/$connectionId") {
-                contentType(ContentType.Application.Json)
-                setBody(buildJsonObject { put("instruction", instruction) }.toString())
-            }
-            if (resp.status.isSuccess()) {
+            val resp = o365BrowserPoolGrpc.pushInstruction(cid, connectionId, instruction)
+            if (resp.status == "queued") {
                 logger.info {
                     "BrowserPodMeetingClient: dispatched join_meeting " +
                         "task=${trigger.taskId} conn=$connectionId"
                 }
                 true
             } else {
-                val bodySnippet = resp.bodyAsText().take(200)
                 logger.warn {
-                    "BrowserPodMeetingClient: pod returned ${resp.status} " +
-                        "for task=${trigger.taskId}: $bodySnippet"
+                    "BrowserPodMeetingClient: pod returned status=${resp.status} " +
+                        "error=${resp.error} for task=${trigger.taskId}"
                 }
                 false
             }
@@ -101,16 +82,12 @@ class BrowserPodMeetingClient(
         } catch (_: Exception) {
             return false
         }
-        val podUrl = BrowserPodManager.serviceUrl(cid)
         val instruction =
             "INSTRUCTION: leave_meeting. meeting_id=$meetingId reason=$reason. " +
                 "Call leave_meeting(meeting_id='$meetingId', reason='$reason')."
         return try {
-            val resp = httpClient.post("$podUrl/instruction/$connectionId") {
-                contentType(ContentType.Application.Json)
-                setBody(buildJsonObject { put("instruction", instruction) }.toString())
-            }
-            resp.status.isSuccess()
+            val resp = o365BrowserPoolGrpc.pushInstruction(cid, connectionId, instruction)
+            resp.status == "queued"
         } catch (e: Exception) {
             logger.warn(e) {
                 "BrowserPodMeetingClient: leave dispatch failed meeting=$meetingId"

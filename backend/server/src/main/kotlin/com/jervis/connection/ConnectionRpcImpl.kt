@@ -30,9 +30,6 @@ import io.ktor.client.plugins.timeout
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
@@ -58,24 +55,12 @@ class ConnectionRpcImpl(
     private val httpClient: io.ktor.client.HttpClient,
     private val discoveredResourceRepository: com.jervis.teams.O365DiscoveredResourceRepository,
     private val browserPodManager: BrowserPodManager,
+    private val o365BrowserPoolGrpc: com.jervis.infrastructure.grpc.O365BrowserPoolGrpcClient,
+    private val whatsAppBrowserGrpc: com.jervis.infrastructure.grpc.WhatsAppBrowserGrpcClient,
     @org.springframework.beans.factory.annotation.Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
     private val o365GatewayUrl: String = "http://jervis-o365-gateway:8080",
-    @org.springframework.beans.factory.annotation.Value("\${jervis.whatsapp-browser.url:http://jervis-whatsapp-browser:8091}")
-    private val whatsAppBrowserUrl: String = "http://jervis-whatsapp-browser:8091",
 ) : IConnectionService {
     private val logger = KotlinLogging.logger {}
-
-    /**
-     * Resolve browser pod URL for a connection by o365ClientId or connectionId.
-     * Each O365/Teams connection gets its own dynamic Deployment:
-     *   http://jervis-browser-{connectionId}.jervis.svc.cluster.local:8090
-     */
-    private suspend fun browserPodUrl(clientId: String): String {
-        val conn = connectionService.findAll().toList().firstOrNull {
-            it.o365ClientId == clientId || it.id.toString() == clientId
-        } ?: throw IllegalArgumentException("No connection found for clientId: $clientId")
-        return BrowserPodManager.serviceUrl(conn.id)
-    }
 
     private val _connectionsFlow = MutableStateFlow<List<ConnectionResponseDto>>(emptyList())
 
@@ -107,13 +92,8 @@ class ConnectionRpcImpl(
                 for (conn in connections) {
                     try {
                         // Check if pod is ready before sending init
-                        val podUrl = BrowserPodManager.serviceUrl(conn.id)
                         try {
-                            val healthResp = httpClient.get("$podUrl/health")
-                            if (!healthResp.status.isSuccess()) {
-                                logger.warn { "Browser pod not ready for ${conn.name} — skipping init" }
-                                continue
-                            }
+                            o365BrowserPoolGrpc.health(conn.id)
                         } catch (e: Exception) {
                             logger.warn { "Browser pod unreachable for ${conn.name} — skipping init" }
                             continue
@@ -122,14 +102,10 @@ class ConnectionRpcImpl(
                         // Check if session already active (self-restored from PVC)
                         val clientId = conn.o365ClientId ?: conn.id.toString()
                         try {
-                            val statusResp = httpClient.get("$podUrl/session/$clientId")
-                            if (statusResp.status.isSuccess()) {
-                                val statusJson = Json.parseToJsonElement(statusResp.bodyAsText()).jsonObject
-                                val state = statusJson["state"]?.jsonPrimitive?.content
-                                if (state == "ACTIVE") {
-                                    logger.info { "Browser session already active for ${conn.name} — skipping init" }
-                                    continue
-                                }
+                            val status = o365BrowserPoolGrpc.getSession(conn.id, clientId)
+                            if (status.state == "ACTIVE") {
+                                logger.info { "Browser session already active for ${conn.name} — skipping init" }
+                                continue
                             }
                         } catch (_: Exception) { /* proceed with init */ }
 
@@ -398,12 +374,12 @@ class ConnectionRpcImpl(
             // Browser Session: check if O365 Gateway can reach the browser pool
             val clientId = connection.o365ClientId
             if (!clientId.isNullOrBlank()) {
-                val response = httpClient.get("${browserPodUrl(clientId)}/session/$clientId")
-                return if (response.status.isSuccess()) {
+                return try {
+                    o365BrowserPoolGrpc.getSession(connection.id, clientId)
                     val withIdentity = detectSelfIdentity(connection.copy(state = ConnectionStateEnum.VALID))
                     connectionService.save(withIdentity)
                     ConnectionTestResultDto(true, "Browser session aktivní")
-                } else {
+                } catch (e: Exception) {
                     connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
                     ConnectionTestResultDto(false, "Browser session neaktivní — přihlaste se přes noVNC")
                 }
@@ -512,20 +488,13 @@ class ConnectionRpcImpl(
             return ConnectionTestResultDto(false, "Žádné browser session ID")
         }
         return try {
-            val response = httpClient.get("$whatsAppBrowserUrl/session/$clientId")
-            if (response.status.isSuccess()) {
-                val body = runCatching { Json.parseToJsonElement(response.bodyAsText()).jsonObject }.getOrNull()
-                val sessionState = body?.get("state")?.jsonPrimitive?.contentOrNull
-                if (sessionState == "ACTIVE") {
-                    connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
-                    ConnectionTestResultDto(true, "WhatsApp Web session aktivní")
-                } else {
-                    connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
-                    ConnectionTestResultDto(false, "WhatsApp Web session: $sessionState — naskenujte QR kód")
-                }
+            val status = whatsAppBrowserGrpc.getSession(clientId)
+            if (status.state == "ACTIVE") {
+                connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
+                ConnectionTestResultDto(true, "WhatsApp Web session aktivní")
             } else {
                 connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
-                ConnectionTestResultDto(false, "WhatsApp browser service nedostupný: ${response.status}")
+                ConnectionTestResultDto(false, "WhatsApp Web session: ${status.state} — naskenujte QR kód")
             }
         } catch (e: Exception) {
             connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
@@ -646,31 +615,26 @@ class ConnectionRpcImpl(
 
         return try {
             // Get session status from browser pool
-            val response = httpClient.get("${browserPodUrl(clientId)}/session/$clientId")
-            if (!response.status.isSuccess()) {
+            val sessionStatus = try {
+                o365BrowserPoolGrpc.getSession(connection.id, clientId)
+            } catch (e: Exception) {
                 // Session status failed but pod may still serve VNC
                 var vncUrl: String? = null
                 try {
-                    val resolvedUrl = browserPodUrl(clientId)
-                    val tokenResponse = httpClient.post("$resolvedUrl/vnc-token/$clientId")
-                    if (tokenResponse.status.isSuccess()) {
-                        val tokenJson = Json { ignoreUnknownKeys = true }.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
-                        vncUrl = tokenJson["token"]?.jsonPrimitive?.content?.let {
-                            "https://jervis-vnc.damek-soft.eu/vnc-login?token=$it"
-                        }
+                    val tokenResp = o365BrowserPoolGrpc.createVncToken(connection.id, clientId)
+                    if (tokenResp.token.isNotBlank()) {
+                        vncUrl = "https://jervis-vnc.damek-soft.eu/vnc-login?token=${tokenResp.token}"
                     }
                 } catch (_: Exception) {}
                 return BrowserSessionStatusDto(
                     state = "ERROR",
-                    message = "Browser pool nedostupný: ${response.status}",
+                    message = "Browser pool nedostupný: ${e.message}",
                     vncUrl = vncUrl,
                 )
             }
 
-            val json = Json { ignoreUnknownKeys = true }
-            val sessionJson = json.parseToJsonElement(response.bodyAsText()).jsonObject
-            var state = sessionJson["state"]?.jsonPrimitive?.content ?: "ERROR"
-            val hasToken = sessionJson["has_token"]?.jsonPrimitive?.booleanOrNull ?: false
+            var state = sessionStatus.state.ifBlank { "ERROR" }
+            val hasToken = sessionStatus.hasToken
 
             // Browser pool session lost (pod restart, session expired, error)
             // → mark connection as INVALID so UI shows "Přihlásit k Teams" button
@@ -685,16 +649,15 @@ class ConnectionRpcImpl(
             if (state == "EXPIRED" && connection.username?.isNotBlank() == true) {
                 try {
                     val capabilities = connection.availableCapabilities.map { it.name }
-                    val initResponse = httpClient.post("${browserPodUrl(clientId)}/session/$clientId/init") {
-                        contentType(ContentType.Application.Json)
-                        setBody(buildJsonObject {
-                            put("login_url", "https://teams.microsoft.com")
-                            putJsonArray("capabilities") { capabilities.forEach { add(it) } }
-                            connection.username?.takeIf { it.isNotBlank() }?.let { put("username", it) }
-                            connection.password?.takeIf { it.isNotBlank() }?.let { put("password", it) }
-                        }.toString())
-                    }
-                    if (initResponse.status.isSuccess()) {
+                    val initResp = o365BrowserPoolGrpc.initSession(
+                        connectionId = connection.id,
+                        clientId = clientId,
+                        loginUrl = "https://teams.microsoft.com",
+                        capabilities = capabilities,
+                        username = connection.username?.takeIf { it.isNotBlank() },
+                        password = connection.password?.takeIf { it.isNotBlank() },
+                    )
+                    if (initResp.error.isBlank()) {
                         state = "PENDING_LOGIN"
                         connectionService.save(connection.copy(state = ConnectionStateEnum.NEW))
                         logger.info { "Auto re-init browser session for $clientId (was EXPIRED, has credentials)" }
@@ -716,24 +679,19 @@ class ConnectionRpcImpl(
             // Generate one-time VNC token ALWAYS — VNC accessible regardless of state
             var vncUrl: String? = null
             try {
-                val resolvedUrl = browserPodUrl(clientId)
-                logger.info { "VNC token request: clientId=$clientId resolvedUrl=$resolvedUrl" }
-                val tokenResponse = httpClient.post("$resolvedUrl/vnc-token/$clientId")
-                if (tokenResponse.status.isSuccess()) {
-                    val tokenJson = json.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
-                    val vncToken = tokenJson["token"]?.jsonPrimitive?.content
-                    if (vncToken != null) {
-                        vncUrl = "https://jervis-vnc.damek-soft.eu/vnc-login?token=$vncToken"
-                    }
+                logger.info { "VNC token request: clientId=$clientId" }
+                val tokenResp = o365BrowserPoolGrpc.createVncToken(connection.id, clientId)
+                if (tokenResp.token.isNotBlank()) {
+                    vncUrl = "https://jervis-vnc.damek-soft.eu/vnc-login?token=${tokenResp.token}"
                 }
             } catch (e: Exception) {
                 logger.warn { "Failed to generate VNC token for $clientId: ${e.message}" }
             }
 
             // MFA info
-            val mfaType = sessionJson["mfa_type"]?.jsonPrimitive?.contentOrNull
-            val mfaMessage = sessionJson["mfa_message"]?.jsonPrimitive?.contentOrNull
-            val mfaNumber = sessionJson["mfa_number"]?.jsonPrimitive?.contentOrNull
+            val mfaType = sessionStatus.mfaType.ifBlank { null }
+            val mfaMessage = sessionStatus.mfaMessage.ifBlank { null }
+            val mfaNumber = sessionStatus.mfaNumber.ifBlank { null }
 
             val message = when (state) {
                 "PENDING_LOGIN" -> "Čeká na přihlášení — otevřete okno pro Microsoft login"
@@ -763,14 +721,9 @@ class ConnectionRpcImpl(
             // Still try to generate VNC URL — pod may be reachable even if session status failed
             var vncUrl: String? = null
             try {
-                val resolvedUrl = BrowserPodManager.serviceUrl(connection.id)
-                val tokenResponse = httpClient.post("$resolvedUrl/vnc-token/$clientId")
-                if (tokenResponse.status.isSuccess()) {
-                    val tokenJson = Json { ignoreUnknownKeys = true }.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
-                    val vncToken = tokenJson["token"]?.jsonPrimitive?.content
-                    if (vncToken != null) {
-                        vncUrl = "https://jervis-vnc.damek-soft.eu/vnc-login?token=$vncToken"
-                    }
+                val tokenResp = o365BrowserPoolGrpc.createVncToken(connection.id, clientId)
+                if (tokenResp.token.isNotBlank()) {
+                    vncUrl = "https://jervis-vnc.damek-soft.eu/vnc-login?token=${tokenResp.token}"
                 }
             } catch (_: Exception) { /* pod truly unreachable */ }
             BrowserSessionStatusDto(
@@ -789,15 +742,9 @@ class ConnectionRpcImpl(
             ?: return BrowserSessionStatusDto(state = "ERROR", message = "Připojení nemá o365ClientId")
 
         return try {
-            val response = httpClient.post("${browserPodUrl(clientId)}/session/$clientId/mfa") {
-                contentType(ContentType.Application.Json)
-                setBody(buildJsonObject { put("code", code) }.toString())
-            }
-            val responseText = response.bodyAsText()
-            val json = Json { ignoreUnknownKeys = true }
-            val responseJson = json.parseToJsonElement(responseText).jsonObject
-            val state = responseJson["state"]?.jsonPrimitive?.content ?: "ERROR"
-            val message = responseJson["message"]?.jsonPrimitive?.content
+            val resp = o365BrowserPoolGrpc.submitMfa(connection.id, clientId, code)
+            val state = resp.state.ifBlank { "ERROR" }
+            val message = resp.message.ifBlank { null }
 
             if (state == "ACTIVE") {
                 // Set DISCOVERING — capabilities callback from browser pool will transition to VALID
@@ -816,30 +763,20 @@ class ConnectionRpcImpl(
     }
 
     override suspend fun rediscoverCapabilities(connectionId: String): BrowserSessionStatusDto {
+        // The /session/{cid}/rediscover endpoint never existed on the browser pool and
+        // no gRPC equivalent is defined — the UI button is now a no-op that just flips
+        // the connection state and relies on the pod's CapabilitiesDiscovered callback
+        // when the agent next probes its tabs.
         val connection = connectionService.findById(ConnectionId.fromString(connectionId))
             ?: throw IllegalArgumentException("Connection not found: $connectionId")
-
-        val clientId = connection.o365ClientId
-            ?: return BrowserSessionStatusDto(state = "ERROR", message = "Připojení nemá o365ClientId")
-
-        // Set state to DISCOVERING while re-checking tabs
-        connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
-
-        return try {
-            val response = httpClient.post("${browserPodUrl(clientId)}/session/$clientId/rediscover")
-            val responseText = response.bodyAsText()
-            logger.info { "Rediscovery triggered for $clientId: $responseText" }
-
-            BrowserSessionStatusDto(
-                state = "DISCOVERING",
-                message = "Znovu zjišťuji dostupné služby...",
-            )
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to trigger rediscovery for $clientId" }
-            // Revert to VALID on error
-            connectionService.save(connection.copy(state = ConnectionStateEnum.VALID))
-            BrowserSessionStatusDto(state = "ERROR", message = "Chyba: ${e.message}")
+        if (connection.o365ClientId.isNullOrBlank()) {
+            return BrowserSessionStatusDto(state = "ERROR", message = "Připojení nemá o365ClientId")
         }
+        connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
+        return BrowserSessionStatusDto(
+            state = "DISCOVERING",
+            message = "Znovu zjišťuji dostupné služby...",
+        )
     }
 
     /**
@@ -853,28 +790,18 @@ class ConnectionRpcImpl(
 
         return try {
             val capabilities = connection.availableCapabilities.map { it.name }
-            val response = httpClient.post("${browserPodUrl(clientId)}/session/$clientId/init") {
-                contentType(ContentType.Application.Json)
-                setBody(buildJsonObject {
-                    put("login_url", "https://teams.microsoft.com")
-                    putJsonArray("capabilities") { capabilities.forEach { add(it) } }
-                    connection.username?.takeIf { it.isNotBlank() }?.let { put("username", it) }
-                    connection.password?.takeIf { it.isNotBlank() }?.let { put("password", it) }
-                }.toString())
-                // Auto-login takes 15-30s (navigate + fill + MFA detect), needs higher timeout
-                timeout {
-                    requestTimeoutMillis = 90_000
-                    socketTimeoutMillis = 90_000
-                }
-            }
-            val responseText = response.bodyAsText()
-            logger.info { "Browser pool session init for $clientId: $responseText" }
+            val resp = o365BrowserPoolGrpc.initSession(
+                connectionId = connection.id,
+                clientId = clientId,
+                loginUrl = "https://teams.microsoft.com",
+                capabilities = capabilities,
+                username = connection.username?.takeIf { it.isNotBlank() },
+                password = connection.password?.takeIf { it.isNotBlank() },
+            )
+            logger.info { "Browser pool session init for $clientId: state=${resp.state} msg=${resp.message}" }
 
-            // Parse response to check for MFA
-            val json = Json { ignoreUnknownKeys = true }
-            val responseJson = json.parseToJsonElement(responseText).jsonObject
-            val state = responseJson["state"]?.jsonPrimitive?.content ?: ""
-            val message = responseJson["message"]?.jsonPrimitive?.content ?: ""
+            val state = resp.state
+            val message = resp.message
 
             when (state) {
                 "ACTIVE" -> {
@@ -1078,87 +1005,11 @@ class ConnectionRpcImpl(
             ) else null
         }
 
-        val stale = cached.isEmpty() || cached.all {
-            it.lastSeenAt.isBefore(java.time.Instant.now().minusSeconds(3600))
-        }
-        if (stale) {
-            @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
-            GlobalScope.launch(Dispatchers.IO) {
-                try {
-                    listO365ResourcesViaScraper(connection, clientId, capability)
-                } catch (e: Exception) {
-                    logger.debug { "Background discover failed for $clientId: ${e.message}" }
-                }
-            }
-        }
-
-        if (mapped.isNotEmpty()) return mapped
-
-        // No cache at all — synchronously trigger scraper so the UI is never empty on first open.
-        return listO365ResourcesViaScraper(connection, clientId, capability)
-    }
-
-    private suspend fun listO365ResourcesViaScraper(
-        connection: ConnectionDocument,
-        clientId: String,
-        capability: ConnectionCapability,
-    ): List<ConnectionResourceDto> {
-        return try {
-            val resp = httpClient.post("${browserPodUrl(clientId)}/scrape/$clientId/discover") {
-                contentType(io.ktor.http.ContentType.Application.Json)
-                setBody(mapOf("capability" to capability.name))
-            }
-            if (!resp.status.isSuccess()) {
-                logger.warn { "Browser pool discovery failed for $clientId (capability=${capability.name}): ${resp.status}" }
-                return emptyList()
-            }
-            val jsonParser = Json { ignoreUnknownKeys = true }
-            val body = jsonParser.parseToJsonElement(resp.bodyAsText()).jsonObject
-            val resources = body["resources"]?.jsonArray ?: return emptyList()
-            val result = mutableListOf<ConnectionResourceDto>()
-
-            for (element in resources) {
-                val obj = element.jsonObject
-                val type = obj["type"]?.jsonPrimitive?.content ?: ""
-                val name = obj["name"]?.jsonPrimitive?.content ?: continue
-                val id = obj["id"]?.jsonPrimitive?.content ?: continue
-                val description = obj["description"]?.jsonPrimitive?.contentOrNull
-
-                // Persist to MongoDB for cache and settings UI
-                try {
-                    val now = java.time.Instant.now()
-                    if (!discoveredResourceRepository.existsByConnectionIdAndExternalId(connection.id, id)) {
-                        discoveredResourceRepository.save(
-                            com.jervis.teams.O365DiscoveredResourceDocument(
-                                connectionId = connection.id,
-                                clientId = null,
-                                resourceType = type,
-                                externalId = id,
-                                displayName = name,
-                                description = description,
-                                discoveredAt = now,
-                                lastSeenAt = now,
-                            )
-                        )
-                    }
-                } catch (e: Exception) {
-                    logger.debug { "Failed to persist discovered resource $id: ${e.message}" }
-                }
-
-                val matches = when (capability) {
-                    ConnectionCapability.CHAT_READ, ConnectionCapability.CHAT_SEND -> type == "chat" || type == "channel"
-                    ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND -> type == "email" || type == "folder"
-                    ConnectionCapability.CALENDAR_READ, ConnectionCapability.CALENDAR_WRITE -> type == "calendar"
-                    else -> false
-                }
-                if (matches) result.add(ConnectionResourceDto(id = id, name = name, description = description, capability = capability))
-            }
-
-            result
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to discover O365 resources via scraper for $clientId" }
-            emptyList()
-        }
+        // The pod upserts o365_discovered_resources on every scrape cycle, so the
+        // cache is authoritative. The former `/scrape/{cid}/discover` endpoint never
+        // existed on the browser pool — we simply return what the pod has persisted
+        // and rely on its scrape cadence to keep the cache fresh.
+        return mapped
     }
 
     private suspend fun listO365ChatsViaGateway(
@@ -1661,22 +1512,13 @@ class ConnectionRpcImpl(
             ?: throw IllegalArgumentException("Connection ${connection.id} has no browser session ID")
 
         return try {
-            val response = httpClient.post("$whatsAppBrowserUrl/session/$clientId/init") {
-                contentType(ContentType.Application.Json)
-                setBody(buildJsonObject {
-                    put("login_url", "https://web.whatsapp.com")
-                    putJsonArray("capabilities") { add("CHAT_READ") }
-                    connection.username?.takeIf { it.isNotBlank() }?.let { put("phone_number", it) }
-                }.toString())
-            }
-            val responseText = response.bodyAsText()
-            logger.info { "WhatsApp browser session init for $clientId: $responseText" }
+            val resp = whatsAppBrowserGrpc.initSession(
+                clientId = clientId,
+                phoneNumber = connection.username?.takeIf { it.isNotBlank() },
+            )
+            logger.info { "WhatsApp browser session init for $clientId: state=${resp.state} msg=${resp.message}" }
 
-            val json = Json { ignoreUnknownKeys = true }
-            val responseJson = json.parseToJsonElement(responseText).jsonObject
-            val state = responseJson["state"]?.jsonPrimitive?.content ?: ""
-
-            when (state) {
+            when (resp.state) {
                 "ACTIVE" -> {
                     connectionService.save(connection.copy(state = ConnectionStateEnum.DISCOVERING))
                     "WhatsApp Web připojeno!"
@@ -1703,17 +1545,8 @@ class ConnectionRpcImpl(
             )
 
         return try {
-            val response = httpClient.get("$whatsAppBrowserUrl/session/$clientId")
-            if (!response.status.isSuccess()) {
-                return BrowserSessionStatusDto(
-                    state = "ERROR",
-                    message = "WhatsApp browser nedostupný: ${response.status}",
-                )
-            }
-
-            val json = Json { ignoreUnknownKeys = true }
-            val sessionJson = json.parseToJsonElement(response.bodyAsText()).jsonObject
-            val state = sessionJson["state"]?.jsonPrimitive?.content ?: "ERROR"
+            val sessionStatus = whatsAppBrowserGrpc.getSession(clientId)
+            val state = sessionStatus.state.ifBlank { "ERROR" }
 
             // Session expired/error → mark connection INVALID
             if (state in listOf("EXPIRED", "ERROR") &&
@@ -1745,13 +1578,9 @@ class ConnectionRpcImpl(
             // (for debugging, watching scrape, scanning QR, monitoring)
             var vncUrl: String? = null
             try {
-                val tokenResponse = httpClient.post("$whatsAppBrowserUrl/vnc-token/$clientId")
-                if (tokenResponse.status.isSuccess()) {
-                    val tokenJson = json.parseToJsonElement(tokenResponse.bodyAsText()).jsonObject
-                    val vncToken = tokenJson["token"]?.jsonPrimitive?.content
-                    if (vncToken != null) {
-                        vncUrl = "https://jervis-whatsapp-vnc.damek-soft.eu/vnc-login?token=$vncToken"
-                    }
+                val tokenResp = whatsAppBrowserGrpc.createVncToken(clientId)
+                if (tokenResp.token.isNotBlank()) {
+                    vncUrl = "https://jervis-whatsapp-vnc.damek-soft.eu/vnc-login?token=${tokenResp.token}"
                 }
             } catch (e: Exception) {
                 logger.warn { "Failed to generate VNC token for WhatsApp $clientId: ${e.message}" }
@@ -1784,37 +1613,20 @@ class ConnectionRpcImpl(
     }
 
     /**
-     * List discovered WhatsApp chats from the browser scraper.
+     * List discovered WhatsApp chats.
+     *
+     * The former `GET /scrape/{cid}/sidebar` endpoint never existed on the
+     * WhatsApp browser pod; the sidebar state lives in MongoDB via
+     * ScrapeStorage. Returning an empty list here is the honest fallback
+     * — a later slice will add a proper ListChats RPC or surface the data
+     * via a KB-backed snapshot.
      */
     private suspend fun listWhatsAppResources(
         connection: ConnectionDocument,
         capability: ConnectionCapability,
     ): List<ConnectionResourceDto> {
-        val clientId = connection.o365ClientId ?: return emptyList()
-
-        return try {
-            val response = httpClient.get("$whatsAppBrowserUrl/scrape/$clientId/sidebar")
-            if (!response.status.isSuccess()) return emptyList()
-
-            val json = Json { ignoreUnknownKeys = true }
-            val responseJson = json.parseToJsonElement(response.bodyAsText()).jsonObject
-            val chats = responseJson["chats"]?.jsonArray ?: return emptyList()
-
-            chats.mapNotNull { chatElement ->
-                val chat = chatElement.jsonObject
-                val name = chat["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                val isGroup = chat["is_group"]?.jsonPrimitive?.booleanOrNull ?: false
-                ConnectionResourceDto(
-                    id = name,
-                    name = name,
-                    description = if (isGroup) "Skupina" else "Chat",
-                    capability = capability,
-                )
-            }
-        } catch (e: Exception) {
-            logger.warn { "Failed to list WhatsApp resources for $clientId: ${e.message}" }
-            emptyList()
-        }
+        connection.o365ClientId ?: return emptyList()
+        return emptyList()
     }
 }
 

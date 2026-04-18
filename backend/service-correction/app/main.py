@@ -10,14 +10,17 @@ This service was separated from the orchestrator to:
 - Keep orchestrator focused on task decomposition and coding workflows
 - Allow independent scaling and deployment
 - Enable parallel development by separate teams
+
+All correction RPCs are served over gRPC on port :5501 (see app.grpc_server).
+The FastAPI app exists only to expose `/health` for K8s probes.
 """
 
+import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
-
-from app.agent import correction_agent
+from fastapi import FastAPI
 
 
 class HealthCheckFilter(logging.Filter):
@@ -33,16 +36,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Filter out healthcheck logs from uvicorn access logger
 logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifecycle manager."""
+    from app.grpc_server import start_grpc_server
+
     logger.info("Correction service starting up")
-    yield
-    logger.info("Correction service shutting down")
+    grpc_port = int(os.getenv("CORRECTION_GRPC_PORT", "5501"))
+    grpc_server = await start_grpc_server(port=grpc_port)
+    app.state.grpc_server = grpc_server
+    try:
+        yield
+    finally:
+        try:
+            await asyncio.wait_for(grpc_server.stop(grace=5.0), timeout=10.0)
+        except Exception as e:
+            logger.warning("gRPC shutdown failed: %s", e)
+        logger.info("Correction service shutting down")
 
 
 app = FastAPI(
@@ -55,137 +67,5 @@ app = FastAPI(
 
 @app.get("/health")
 async def health():
-    """Health check endpoint."""
+    """Health check endpoint for K8s probes."""
     return {"status": "ok", "service": "correction"}
-
-
-@app.post("/correction/submit")
-async def submit_correction(request: dict):
-    """Store a transcript correction rule in KB.
-
-    The correction is stored as a regular KB chunk with kind="transcript_correction",
-    so both the orchestrator and any agent with KB access can retrieve it.
-    """
-    try:
-        result = await correction_agent.submit_correction(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            original=request["original"],
-            corrected=request["corrected"],
-            category=request.get("category", "general"),
-            context=request.get("context"),
-        )
-        return result
-    except Exception as e:
-        logger.exception("Failed to submit correction")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/correct")
-async def correct_transcript(request: dict):
-    """Correct transcript segments using KB-stored corrections + Ollama GPU.
-
-    Returns best-effort corrections + questions when uncertain.
-    Response: {segments: [...], questions: [...], status: "success"|"needs_input"}
-    """
-    try:
-        segments = request["segments"]
-        result = await correction_agent.correct_transcript(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            segments=segments,
-            chunk_size=request.get("chunkSize", 20),
-            meeting_id=request.get("meetingId"),
-            speaker_hints=request.get("speakerHints"),
-        )
-        return result
-    except Exception as e:
-        logger.exception("Failed to correct transcript")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/list")
-async def list_corrections(request: dict):
-    """List all stored corrections for a client/project."""
-    try:
-        corrections = await correction_agent.list_corrections(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            max_results=request.get("maxResults", 100),
-        )
-        return {"corrections": corrections}
-    except Exception as e:
-        logger.exception("Failed to list corrections")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/delete")
-async def delete_correction(request: dict):
-    """Delete a correction rule from KB."""
-    try:
-        result = await correction_agent.delete_correction(request["sourceUrn"])
-        return result
-    except Exception as e:
-        logger.exception("Failed to delete correction")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/instruct")
-async def correct_with_instruction(request: dict):
-    """Re-correct transcript based on user's natural language instruction.
-
-    The user describes what needs to be corrected and the agent applies it
-    across the entire transcript, also extracting reusable rules for KB.
-    """
-    try:
-        result = await correction_agent.correct_with_instruction(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            segments=request["segments"],
-            instruction=request["instruction"],
-        )
-        return result
-    except Exception as e:
-        logger.exception("Failed instruction-based correction")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/correct-targeted")
-async def correct_targeted(request: dict):
-    """Targeted correction for retranscribed segments.
-
-    User corrections are applied directly, retranscribed segments go through
-    the correction agent. Untouched segments pass through as-is.
-    """
-    try:
-        result = await correction_agent.correct_targeted(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            segments=request["segments"],
-            retranscribed_indices=request.get("retranscribedIndices", []),
-            user_corrected_indices=request.get("userCorrectedIndices", {}),
-            meeting_id=request.get("meetingId"),
-        )
-        return result
-    except Exception as e:
-        logger.exception("Failed targeted correction")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/answer")
-async def answer_correction_questions(request: dict):
-    """Store user answers as correction rules in KB.
-
-    Called when user answers questions from the correction agent.
-    Each answer is saved as a correction rule for future use.
-    """
-    try:
-        results = await correction_agent.apply_answers_as_corrections(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            answers=request.get("answers", []),
-        )
-        return {"status": "success", "rulesCreated": len(results)}
-    except Exception as e:
-        logger.exception("Failed to store correction answers")
-        raise HTTPException(status_code=500, detail=str(e))

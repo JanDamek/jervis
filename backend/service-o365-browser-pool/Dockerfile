@@ -32,6 +32,6 @@ RUN mkdir -p /browser-profiles && \
 
 USER 1000
 
-EXPOSE 8090 6080
+EXPOSE 8090 6080 5501
 
 CMD ["/entrypoint.sh"]

@@ -1,7 +1,5 @@
 package com.jervis.meeting
 
-import com.jervis.infrastructure.llm.CorrectionListRequestDto
-import com.jervis.infrastructure.llm.CorrectionSubmitRequestDto
 import com.jervis.agent.PythonOrchestratorClient
 import com.jervis.dto.meeting.TranscriptCorrectionDto
 import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
@@ -18,14 +16,12 @@ class TranscriptCorrectionRpcImpl(
 
     override suspend fun submitCorrection(request: TranscriptCorrectionSubmitDto): TranscriptCorrectionDto {
         val result = correctionClient.submitCorrection(
-            CorrectionSubmitRequestDto(
-                clientId = request.clientId,
-                projectId = request.projectId,
-                original = request.original,
-                corrected = request.corrected,
-                category = request.category,
-                context = request.context,
-            ),
+            clientId = request.clientId,
+            projectId = request.projectId,
+            original = request.original,
+            corrected = request.corrected,
+            category = request.category,
+            context = request.context,
         )
 
         logger.info { "Submitted correction: '${request.original}' -> '${request.corrected}' (${result.sourceUrn})" }
@@ -41,11 +37,9 @@ class TranscriptCorrectionRpcImpl(
     }
 
     override suspend fun listCorrections(clientId: String, projectId: String?): List<TranscriptCorrectionDto> {
-        val result = correctionClient.listCorrections(
-            CorrectionListRequestDto(clientId = clientId, projectId = projectId),
-        )
+        val result = correctionClient.listCorrections(clientId = clientId, projectId = projectId)
 
-        return result.corrections.map { chunk ->
+        return result.correctionsList.map { chunk ->
             TranscriptCorrectionDto(
                 correctionId = chunk.metadata.correctionId,
                 sourceUrn = chunk.sourceUrn,

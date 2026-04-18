@@ -17,10 +17,8 @@ import com.jervis.dto.meeting.MeetingSummaryDto
 import com.jervis.dto.meeting.MeetingTimelineDto
 import com.jervis.dto.meeting.MeetingUploadStateDto
 import com.jervis.dto.meeting.TranscriptSegmentDto
+import com.jervis.contracts.correction.CorrectionSegment
 import com.jervis.service.meeting.IMeetingService
-import com.jervis.infrastructure.llm.CorrectionInstructRequestDto
-import com.jervis.infrastructure.llm.CorrectionSegmentDto
-import com.jervis.infrastructure.llm.CorrectionSubmitRequestDto
 import com.jervis.agent.PythonOrchestratorClient
 import com.jervis.infrastructure.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
@@ -494,12 +492,10 @@ class MeetingRpcImpl(
         // Save as KB correction rule in background
         try {
             correctionClient.submitCorrection(
-                CorrectionSubmitRequestDto(
-                    clientId = meeting.clientId?.toString().orEmpty(),
-                    projectId = meeting.projectId?.toString(),
-                    original = originalText,
-                    corrected = correctedText,
-                ),
+                clientId = meeting.clientId?.toString().orEmpty(),
+                projectId = meeting.projectId?.toString(),
+                original = originalText,
+                corrected = correctedText,
             )
             logger.info { "Saved correction rule: '$originalText' -> '$correctedText'" }
         } catch (e: Exception) {
@@ -792,23 +788,21 @@ class MeetingRpcImpl(
         meetingRepository.save(meeting.copy(correctionChatHistory = chatHistory))
 
         val requestSegments = segments.mapIndexed { i, seg ->
-            CorrectionSegmentDto(
-                i = i,
-                startSec = seg.startSec,
-                endSec = seg.endSec,
-                text = seg.text,
-                speaker = seg.speaker,
-            )
+            CorrectionSegment.newBuilder()
+                .setI(i)
+                .setStartSec(seg.startSec)
+                .setEndSec(seg.endSec)
+                .setText(seg.text)
+                .setSpeaker(seg.speaker ?: "")
+                .build()
         }
 
         val result = try {
             correctionClient.correctWithInstruction(
-                CorrectionInstructRequestDto(
-                    clientId = meeting.clientId?.toString().orEmpty(),
-                    projectId = meeting.projectId?.toString(),
-                    segments = requestSegments,
-                    instruction = instruction,
-                ),
+                clientId = meeting.clientId?.toString().orEmpty(),
+                projectId = meeting.projectId?.toString(),
+                segments = requestSegments,
+                instruction = instruction,
             )
         } catch (e: Exception) {
             // Persist error agent message
@@ -824,24 +818,24 @@ class MeetingRpcImpl(
             throw e
         }
 
-        val correctedSegments = result.segments.mapIndexed { i, corrSeg ->
+        val correctedSegments = result.segmentsList.mapIndexed { i, corrSeg ->
             val original = segments.getOrNull(i)
             TranscriptSegment(
                 startSec = original?.startSec ?: corrSeg.startSec,
                 endSec = original?.endSec ?: corrSeg.endSec,
                 text = corrSeg.text,
-                speaker = original?.speaker ?: corrSeg.speaker,
+                speaker = original?.speaker ?: corrSeg.speaker.ifBlank { null },
             )
         }
 
         val correctedText = correctedSegments.joinToString(" ") { it.text.trim() }
 
         // Persist agent response message
-        val summaryText = result.summary ?: "Opraveno. Pravidel vytvoreno: ${result.newRules.size}."
+        val summaryText = result.summary.ifBlank { "Opraveno. Pravidel vytvoreno: ${result.newRulesList.size}." }
         val agentMessage = CorrectionChatMessage(
             role = "agent",
             text = summaryText,
-            rulesCreated = result.newRules.size,
+            rulesCreated = result.newRulesList.size,
         )
 
         // Re-read to get latest chat history (includes user message saved earlier)
@@ -856,7 +850,7 @@ class MeetingRpcImpl(
 
         logger.info {
             "Instruction correction for meeting $meetingId: " +
-                "${result.newRules.size} new rules saved, ${correctedText.length} chars"
+                "${result.newRulesList.size} new rules saved, ${correctedText.length} chars"
         }
         return saved.toDto()
     }
