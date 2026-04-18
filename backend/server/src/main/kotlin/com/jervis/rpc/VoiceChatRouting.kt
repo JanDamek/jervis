@@ -164,12 +164,17 @@ fun Routing.installVoiceChatApi(
 
             // GPU Whisper on VD — fail-fast, no CPU fallback.
             // vad_filter=false for short recordings (watch audio is typically 2-10s).
-            val whisperOptions = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":false,"language":"cs"}"""
+            val whisperOptions = com.jervis.contracts.whisper.TranscribeOptions.newBuilder()
+                .setModel(whisperProperties.model)
+                .setBeamSize(1)
+                .setVadFilter(false)
+                .setLanguage("cs")
+                .build()
             val whisperResult = try {
                 whisperRestClient.transcribe(
                     baseUrl = whisperProperties.restRemoteUrl,
                     audioFilePath = tempFile.toString(),
-                    optionsJson = whisperOptions,
+                    options = whisperOptions,
                 )
             } finally {
                 Files.deleteIfExists(tempFile)
@@ -296,7 +301,12 @@ fun Routing.installVoiceChatApi(
                 Files.write(tempFile, audio)
 
                 // GPU Whisper on VD — fail-fast, no CPU fallback.
-                val whisperOpts = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":false,"language":"cs"}"""
+                val whisperOpts = com.jervis.contracts.whisper.TranscribeOptions.newBuilder()
+                    .setModel(whisperProperties.model)
+                    .setBeamSize(1)
+                    .setVadFilter(false)
+                    .setLanguage("cs")
+                    .build()
 
                 val whisperResult = try {
                     whisperRestClient.transcribe(whisperProperties.restRemoteUrl, tempFile.toString(), whisperOpts) { percent, segments, elapsed, lastText ->
@@ -524,7 +534,12 @@ fun Routing.installVoiceChatApi(
         Files.write(tempFile, audio)
 
         try {
-            val opts = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":false,"language":"cs"}"""
+            val opts = com.jervis.contracts.whisper.TranscribeOptions.newBuilder()
+                .setModel(whisperProperties.model)
+                .setBeamSize(1)
+                .setVadFilter(false)
+                .setLanguage("cs")
+                .build()
             val result = whisperRestClient.transcribe(whisperProperties.restRemoteUrl, tempFile.toString(), opts)
             val chunkText = result.text.trim()
 

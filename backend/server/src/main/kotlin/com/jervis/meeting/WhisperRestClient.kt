@@ -4,16 +4,14 @@ import com.google.protobuf.ByteString
 import com.jervis.contracts.common.RequestContext
 import com.jervis.contracts.common.Scope
 import com.jervis.contracts.whisper.HealthRequest
+import com.jervis.contracts.whisper.TranscribeEvent
+import com.jervis.contracts.whisper.TranscribeOptions
 import com.jervis.contracts.whisper.TranscribeRequest
 import com.jervis.contracts.whisper.WhisperServiceGrpcKt
 import io.grpc.ManagedChannel
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import jakarta.annotation.PreDestroy
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.net.URI
 import java.nio.file.Files
@@ -24,16 +22,13 @@ import java.util.concurrent.TimeUnit
 
 private val logger = KotlinLogging.logger {}
 
-private val json = Json { ignoreUnknownKeys = true }
-
 /**
  * Client for the Whisper transcription service over gRPC.
  *
- * Name + public shape kept for source-compatibility — internally the
- * transport is now WhisperService.{Transcribe(stream), Health, GpuRelease}.
- * Audio bytes travel inline in the TranscribeRequest (up to 256 MiB);
- * multi-hour meeting audio will migrate to the blob side channel when
- * that lands.
+ * The wire format is fully typed — TranscribeOptions in, TranscribeEvent
+ * (oneof progress | result | error) out. Audio bytes travel inline in
+ * the TranscribeRequest (up to 256 MiB); multi-hour meeting audio will
+ * migrate to the blob side channel when that lands.
  *
  * `baseUrl` is reinterpreted as `host[:port]` for the gRPC channel —
  * callers pass the same URL the REST client used, we strip the scheme +
@@ -87,12 +82,13 @@ class WhisperRestClient {
     /**
      * Send audio file to the Whisper service for transcription via
      * WhisperService.Transcribe (server-streaming). Progress events are
-     * forwarded to `onProgress`; the final result is returned.
+     * forwarded to `onProgress`; the final result is returned as a
+     * [WhisperResult] (persisted to disk as JSON later by the caller).
      */
     suspend fun transcribe(
         baseUrl: String,
         audioFilePath: String,
-        optionsJson: String,
+        options: TranscribeOptions,
         onProgress: (suspend (percent: Double, segmentsDone: Int, elapsedSeconds: Double, lastSegmentText: String?) -> Unit)? = null,
     ): WhisperResult {
         val audioPath = Path.of(audioFilePath)
@@ -105,47 +101,37 @@ class WhisperRestClient {
             .setCtx(ctx())
             .setAudio(ByteString.copyFrom(audioBytes))
             .setFilename(fileName)
-            .setOptionsJson(optionsJson)
+            .setOptions(options)
             .build()
 
         var result: WhisperResult? = null
         try {
             stub.transcribe(req).collect { event ->
-                when (event.event) {
-                    "progress" -> {
-                        val progress = try {
-                            json.decodeFromString<WhisperSseProgress>(event.dataJson)
-                        } catch (e: Exception) {
-                            logger.warn { "Failed to parse progress event: ${event.dataJson.take(200)}" }
-                            null
-                        }
-                        if (progress != null) {
-                            onProgress?.invoke(progress.percent, progress.segmentsDone, progress.elapsedSeconds, progress.lastSegmentText)
-                        }
+                when (event.payloadCase) {
+                    TranscribeEvent.PayloadCase.PROGRESS -> {
+                        val p = event.progress
+                        onProgress?.invoke(
+                            p.percent,
+                            p.segmentsDone,
+                            p.elapsedSeconds,
+                            p.lastSegmentText.ifBlank { null },
+                        )
                     }
-                    "result" -> {
-                        result = try {
-                            json.decodeFromString<WhisperResult>(event.dataJson)
-                        } catch (e: Exception) {
-                            logger.error(e) { "Failed to parse result event: ${event.dataJson.take(500)}" }
-                            WhisperResult(
-                                text = "",
-                                segments = emptyList(),
-                                error = "Failed to parse Whisper result: ${e.message}",
-                            )
-                        }
+                    TranscribeEvent.PayloadCase.RESULT -> {
+                        result = event.result.toWhisperResult()
                     }
-                    "error" -> {
-                        result = try {
-                            json.decodeFromString<WhisperResult>(event.dataJson)
-                        } catch (_: Exception) {
-                            WhisperResult(
-                                text = "",
-                                segments = emptyList(),
-                                error = "Whisper error (unparseable): ${event.dataJson.take(500)}",
-                            )
-                        }
+                    TranscribeEvent.PayloadCase.ERROR -> {
+                        val err = event.error
+                        result = WhisperResult(
+                            text = err.text,
+                            segments = emptyList(),
+                            error = err.error.ifBlank { "Whisper error" },
+                        )
                     }
+                    TranscribeEvent.PayloadCase.PAYLOAD_NOT_SET -> {
+                        logger.warn { "Whisper returned empty TranscribeEvent" }
+                    }
+                    else -> {}
                 }
             }
         } catch (e: Exception) {
@@ -172,14 +158,23 @@ class WhisperRestClient {
     }
 }
 
-/** Progress event payload from the Whisper server (legacy JSON shape). */
-@Serializable
-private data class WhisperSseProgress(
-    val percent: Double = 0.0,
-    @SerialName("segments_done")
-    val segmentsDone: Int = 0,
-    @SerialName("elapsed_seconds")
-    val elapsedSeconds: Double = 0.0,
-    @SerialName("last_segment_text")
-    val lastSegmentText: String? = null,
-)
+private fun com.jervis.contracts.whisper.ResultEvent.toWhisperResult(): WhisperResult =
+    WhisperResult(
+        text = text,
+        segments = segmentsList.map {
+            WhisperSegment(
+                start = it.startSec,
+                end = it.endSec,
+                text = it.text,
+                speaker = it.speaker.ifBlank { null },
+            )
+        },
+        language = language.ifBlank { null },
+        languageProbability = if (languageProbability > 0.0) languageProbability else null,
+        duration = if (duration > 0.0) duration else null,
+        textBySegment = textBySegmentMap.entries.associate { (k, v) -> k.toString() to v },
+        speakers = speakersList.toList().ifEmpty { null },
+        speakerEmbeddings = speakerEmbeddingsList
+            .associate { it.label to it.valuesList.toList() }
+            .ifEmpty { null },
+    )

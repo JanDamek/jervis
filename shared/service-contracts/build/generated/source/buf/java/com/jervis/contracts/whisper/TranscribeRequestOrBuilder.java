@@ -56,30 +56,19 @@ public interface TranscribeRequestOrBuilder extends
       getFilenameBytes();
 
   /**
-   * <pre>
-   * options carries the legacy JSON shape (task, model, language,
-   * beam_size, vad_filter, word_timestamps, initial_prompt,
-   * condition_on_previous_text, no_speech_threshold, extraction_ranges,
-   * diarize).
-   * </pre>
-   *
-   * <code>string options_json = 4;</code>
-   * @return The optionsJson.
+   * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+   * @return Whether the options field is set.
    */
-  java.lang.String getOptionsJson();
+  boolean hasOptions();
   /**
-   * <pre>
-   * options carries the legacy JSON shape (task, model, language,
-   * beam_size, vad_filter, word_timestamps, initial_prompt,
-   * condition_on_previous_text, no_speech_threshold, extraction_ranges,
-   * diarize).
-   * </pre>
-   *
-   * <code>string options_json = 4;</code>
-   * @return The bytes for optionsJson.
+   * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+   * @return The options.
    */
-  com.google.protobuf.ByteString
-      getOptionsJsonBytes();
+  com.jervis.contracts.whisper.TranscribeOptions getOptions();
+  /**
+   * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+   */
+  com.jervis.contracts.whisper.TranscribeOptionsOrBuilder getOptionsOrBuilder();
 
   /**
    * <pre>

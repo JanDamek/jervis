@@ -30,7 +30,6 @@ private static final long serialVersionUID = 0L;
   private TranscribeRequest() {
     audio_ = com.google.protobuf.ByteString.EMPTY;
     filename_ = "";
-    optionsJson_ = "";
     blobRef_ = "";
   }
 
@@ -136,57 +135,30 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int OPTIONS_JSON_FIELD_NUMBER = 4;
-  @SuppressWarnings("serial")
-  private volatile java.lang.Object optionsJson_ = "";
+  public static final int OPTIONS_FIELD_NUMBER = 4;
+  private com.jervis.contracts.whisper.TranscribeOptions options_;
   /**
-   * <pre>
-   * options carries the legacy JSON shape (task, model, language,
-   * beam_size, vad_filter, word_timestamps, initial_prompt,
-   * condition_on_previous_text, no_speech_threshold, extraction_ranges,
-   * diarize).
-   * </pre>
-   *
-   * <code>string options_json = 4;</code>
-   * @return The optionsJson.
+   * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+   * @return Whether the options field is set.
    */
   @java.lang.Override
-  public java.lang.String getOptionsJson() {
-    java.lang.Object ref = optionsJson_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
-    } else {
-      com.google.protobuf.ByteString bs = 
-          (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
-      optionsJson_ = s;
-      return s;
-    }
+  public boolean hasOptions() {
+    return ((bitField0_ & 0x00000002) != 0);
   }
   /**
-   * <pre>
-   * options carries the legacy JSON shape (task, model, language,
-   * beam_size, vad_filter, word_timestamps, initial_prompt,
-   * condition_on_previous_text, no_speech_threshold, extraction_ranges,
-   * diarize).
-   * </pre>
-   *
-   * <code>string options_json = 4;</code>
-   * @return The bytes for optionsJson.
+   * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+   * @return The options.
    */
   @java.lang.Override
-  public com.google.protobuf.ByteString
-      getOptionsJsonBytes() {
-    java.lang.Object ref = optionsJson_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
-          com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
-      optionsJson_ = b;
-      return b;
-    } else {
-      return (com.google.protobuf.ByteString) ref;
-    }
+  public com.jervis.contracts.whisper.TranscribeOptions getOptions() {
+    return options_ == null ? com.jervis.contracts.whisper.TranscribeOptions.getDefaultInstance() : options_;
+  }
+  /**
+   * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.whisper.TranscribeOptionsOrBuilder getOptionsOrBuilder() {
+    return options_ == null ? com.jervis.contracts.whisper.TranscribeOptions.getDefaultInstance() : options_;
   }
 
   public static final int BLOB_REF_FIELD_NUMBER = 5;
@@ -259,8 +231,8 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(filename_)) {
       com.google.protobuf.GeneratedMessage.writeString(output, 3, filename_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(optionsJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 4, optionsJson_);
+    if (((bitField0_ & 0x00000002) != 0)) {
+      output.writeMessage(4, getOptions());
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(blobRef_)) {
       com.google.protobuf.GeneratedMessage.writeString(output, 5, blobRef_);
@@ -285,8 +257,9 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(filename_)) {
       size += com.google.protobuf.GeneratedMessage.computeStringSize(3, filename_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(optionsJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(4, optionsJson_);
+    if (((bitField0_ & 0x00000002) != 0)) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(4, getOptions());
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(blobRef_)) {
       size += com.google.protobuf.GeneratedMessage.computeStringSize(5, blobRef_);
@@ -315,8 +288,11 @@ private static final long serialVersionUID = 0L;
         .equals(other.getAudio())) return false;
     if (!getFilename()
         .equals(other.getFilename())) return false;
-    if (!getOptionsJson()
-        .equals(other.getOptionsJson())) return false;
+    if (hasOptions() != other.hasOptions()) return false;
+    if (hasOptions()) {
+      if (!getOptions()
+          .equals(other.getOptions())) return false;
+    }
     if (!getBlobRef()
         .equals(other.getBlobRef())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
@@ -338,8 +314,10 @@ private static final long serialVersionUID = 0L;
     hash = (53 * hash) + getAudio().hashCode();
     hash = (37 * hash) + FILENAME_FIELD_NUMBER;
     hash = (53 * hash) + getFilename().hashCode();
-    hash = (37 * hash) + OPTIONS_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getOptionsJson().hashCode();
+    if (hasOptions()) {
+      hash = (37 * hash) + OPTIONS_FIELD_NUMBER;
+      hash = (53 * hash) + getOptions().hashCode();
+    }
     hash = (37 * hash) + BLOB_REF_FIELD_NUMBER;
     hash = (53 * hash) + getBlobRef().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
@@ -473,6 +451,7 @@ private static final long serialVersionUID = 0L;
       if (com.google.protobuf.GeneratedMessage
               .alwaysUseFieldBuilders) {
         internalGetCtxFieldBuilder();
+        internalGetOptionsFieldBuilder();
       }
     }
     @java.lang.Override
@@ -486,7 +465,11 @@ private static final long serialVersionUID = 0L;
       }
       audio_ = com.google.protobuf.ByteString.EMPTY;
       filename_ = "";
-      optionsJson_ = "";
+      options_ = null;
+      if (optionsBuilder_ != null) {
+        optionsBuilder_.dispose();
+        optionsBuilder_ = null;
+      }
       blobRef_ = "";
       return this;
     }
@@ -535,7 +518,10 @@ private static final long serialVersionUID = 0L;
         result.filename_ = filename_;
       }
       if (((from_bitField0_ & 0x00000008) != 0)) {
-        result.optionsJson_ = optionsJson_;
+        result.options_ = optionsBuilder_ == null
+            ? options_
+            : optionsBuilder_.build();
+        to_bitField0_ |= 0x00000002;
       }
       if (((from_bitField0_ & 0x00000010) != 0)) {
         result.blobRef_ = blobRef_;
@@ -566,10 +552,8 @@ private static final long serialVersionUID = 0L;
         bitField0_ |= 0x00000004;
         onChanged();
       }
-      if (!other.getOptionsJson().isEmpty()) {
-        optionsJson_ = other.optionsJson_;
-        bitField0_ |= 0x00000008;
-        onChanged();
+      if (other.hasOptions()) {
+        mergeOptions(other.getOptions());
       }
       if (!other.getBlobRef().isEmpty()) {
         blobRef_ = other.blobRef_;
@@ -620,7 +604,9 @@ private static final long serialVersionUID = 0L;
               break;
             } // case 26
             case 34: {
-              optionsJson_ = input.readStringRequireUtf8();
+              input.readMessage(
+                  internalGetOptionsFieldBuilder().getBuilder(),
+                  extensionRegistry);
               bitField0_ |= 0x00000008;
               break;
             } // case 34
@@ -903,111 +889,125 @@ private static final long serialVersionUID = 0L;
       return this;
     }
 
-    private java.lang.Object optionsJson_ = "";
+    private com.jervis.contracts.whisper.TranscribeOptions options_;
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.whisper.TranscribeOptions, com.jervis.contracts.whisper.TranscribeOptions.Builder, com.jervis.contracts.whisper.TranscribeOptionsOrBuilder> optionsBuilder_;
     /**
-     * <pre>
-     * options carries the legacy JSON shape (task, model, language,
-     * beam_size, vad_filter, word_timestamps, initial_prompt,
-     * condition_on_previous_text, no_speech_threshold, extraction_ranges,
-     * diarize).
-     * </pre>
-     *
-     * <code>string options_json = 4;</code>
-     * @return The optionsJson.
+     * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+     * @return Whether the options field is set.
      */
-    public java.lang.String getOptionsJson() {
-      java.lang.Object ref = optionsJson_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        optionsJson_ = s;
-        return s;
+    public boolean hasOptions() {
+      return ((bitField0_ & 0x00000008) != 0);
+    }
+    /**
+     * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+     * @return The options.
+     */
+    public com.jervis.contracts.whisper.TranscribeOptions getOptions() {
+      if (optionsBuilder_ == null) {
+        return options_ == null ? com.jervis.contracts.whisper.TranscribeOptions.getDefaultInstance() : options_;
       } else {
-        return (java.lang.String) ref;
+        return optionsBuilder_.getMessage();
       }
     }
     /**
-     * <pre>
-     * options carries the legacy JSON shape (task, model, language,
-     * beam_size, vad_filter, word_timestamps, initial_prompt,
-     * condition_on_previous_text, no_speech_threshold, extraction_ranges,
-     * diarize).
-     * </pre>
-     *
-     * <code>string options_json = 4;</code>
-     * @return The bytes for optionsJson.
+     * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
      */
-    public com.google.protobuf.ByteString
-        getOptionsJsonBytes() {
-      java.lang.Object ref = optionsJson_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        optionsJson_ = b;
-        return b;
+    public Builder setOptions(com.jervis.contracts.whisper.TranscribeOptions value) {
+      if (optionsBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        options_ = value;
       } else {
-        return (com.google.protobuf.ByteString) ref;
+        optionsBuilder_.setMessage(value);
       }
-    }
-    /**
-     * <pre>
-     * options carries the legacy JSON shape (task, model, language,
-     * beam_size, vad_filter, word_timestamps, initial_prompt,
-     * condition_on_previous_text, no_speech_threshold, extraction_ranges,
-     * diarize).
-     * </pre>
-     *
-     * <code>string options_json = 4;</code>
-     * @param value The optionsJson to set.
-     * @return This builder for chaining.
-     */
-    public Builder setOptionsJson(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      optionsJson_ = value;
       bitField0_ |= 0x00000008;
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * options carries the legacy JSON shape (task, model, language,
-     * beam_size, vad_filter, word_timestamps, initial_prompt,
-     * condition_on_previous_text, no_speech_threshold, extraction_ranges,
-     * diarize).
-     * </pre>
-     *
-     * <code>string options_json = 4;</code>
-     * @return This builder for chaining.
+     * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
      */
-    public Builder clearOptionsJson() {
-      optionsJson_ = getDefaultInstance().getOptionsJson();
+    public Builder setOptions(
+        com.jervis.contracts.whisper.TranscribeOptions.Builder builderForValue) {
+      if (optionsBuilder_ == null) {
+        options_ = builderForValue.build();
+      } else {
+        optionsBuilder_.setMessage(builderForValue.build());
+      }
+      bitField0_ |= 0x00000008;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+     */
+    public Builder mergeOptions(com.jervis.contracts.whisper.TranscribeOptions value) {
+      if (optionsBuilder_ == null) {
+        if (((bitField0_ & 0x00000008) != 0) &&
+          options_ != null &&
+          options_ != com.jervis.contracts.whisper.TranscribeOptions.getDefaultInstance()) {
+          getOptionsBuilder().mergeFrom(value);
+        } else {
+          options_ = value;
+        }
+      } else {
+        optionsBuilder_.mergeFrom(value);
+      }
+      if (options_ != null) {
+        bitField0_ |= 0x00000008;
+        onChanged();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+     */
+    public Builder clearOptions() {
       bitField0_ = (bitField0_ & ~0x00000008);
+      options_ = null;
+      if (optionsBuilder_ != null) {
+        optionsBuilder_.dispose();
+        optionsBuilder_ = null;
+      }
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * options carries the legacy JSON shape (task, model, language,
-     * beam_size, vad_filter, word_timestamps, initial_prompt,
-     * condition_on_previous_text, no_speech_threshold, extraction_ranges,
-     * diarize).
-     * </pre>
-     *
-     * <code>string options_json = 4;</code>
-     * @param value The bytes for optionsJson to set.
-     * @return This builder for chaining.
+     * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
      */
-    public Builder setOptionsJsonBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      optionsJson_ = value;
+    public com.jervis.contracts.whisper.TranscribeOptions.Builder getOptionsBuilder() {
       bitField0_ |= 0x00000008;
       onChanged();
-      return this;
+      return internalGetOptionsFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+     */
+    public com.jervis.contracts.whisper.TranscribeOptionsOrBuilder getOptionsOrBuilder() {
+      if (optionsBuilder_ != null) {
+        return optionsBuilder_.getMessageOrBuilder();
+      } else {
+        return options_ == null ?
+            com.jervis.contracts.whisper.TranscribeOptions.getDefaultInstance() : options_;
+      }
+    }
+    /**
+     * <code>.jervis.whisper.TranscribeOptions options = 4;</code>
+     */
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.whisper.TranscribeOptions, com.jervis.contracts.whisper.TranscribeOptions.Builder, com.jervis.contracts.whisper.TranscribeOptionsOrBuilder> 
+        internalGetOptionsFieldBuilder() {
+      if (optionsBuilder_ == null) {
+        optionsBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.whisper.TranscribeOptions, com.jervis.contracts.whisper.TranscribeOptions.Builder, com.jervis.contracts.whisper.TranscribeOptionsOrBuilder>(
+                getOptions(),
+                getParentForChildren(),
+                isClean());
+        options_ = null;
+      }
+      return optionsBuilder_;
     }
 
     private java.lang.Object blobRef_ = "";

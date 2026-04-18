@@ -28,8 +28,6 @@ private static final long serialVersionUID = 0L;
     super(builder);
   }
   private TranscribeEvent() {
-    event_ = "";
-    dataJson_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -45,96 +43,141 @@ private static final long serialVersionUID = 0L;
             com.jervis.contracts.whisper.TranscribeEvent.class, com.jervis.contracts.whisper.TranscribeEvent.Builder.class);
   }
 
-  public static final int EVENT_FIELD_NUMBER = 1;
+  private int payloadCase_ = 0;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object event_ = "";
-  /**
-   * <pre>
-   * event ∈ {"progress", "result", "error"}.
-   * data_json carries the legacy per-event payload keys (percent /
-   * segments_done / elapsed_seconds / last_segment_text for progress;
-   * full WhisperResult for result; {text, segments, error} for error).
-   * </pre>
-   *
-   * <code>string event = 1;</code>
-   * @return The event.
-   */
-  @java.lang.Override
-  public java.lang.String getEvent() {
-    java.lang.Object ref = event_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
-    } else {
-      com.google.protobuf.ByteString bs = 
-          (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
-      event_ = s;
-      return s;
+  private java.lang.Object payload_;
+  public enum PayloadCase
+      implements com.google.protobuf.Internal.EnumLite,
+          com.google.protobuf.AbstractMessage.InternalOneOfEnum {
+    PROGRESS(1),
+    RESULT(2),
+    ERROR(3),
+    PAYLOAD_NOT_SET(0);
+    private final int value;
+    private PayloadCase(int value) {
+      this.value = value;
     }
-  }
-  /**
-   * <pre>
-   * event ∈ {"progress", "result", "error"}.
-   * data_json carries the legacy per-event payload keys (percent /
-   * segments_done / elapsed_seconds / last_segment_text for progress;
-   * full WhisperResult for result; {text, segments, error} for error).
-   * </pre>
-   *
-   * <code>string event = 1;</code>
-   * @return The bytes for event.
-   */
-  @java.lang.Override
-  public com.google.protobuf.ByteString
-      getEventBytes() {
-    java.lang.Object ref = event_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
-          com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
-      event_ = b;
-      return b;
-    } else {
-      return (com.google.protobuf.ByteString) ref;
+    /**
+     * @param value The number of the enum to look for.
+     * @return The enum associated with the given number.
+     * @deprecated Use {@link #forNumber(int)} instead.
+     */
+    @java.lang.Deprecated
+    public static PayloadCase valueOf(int value) {
+      return forNumber(value);
     }
+
+    public static PayloadCase forNumber(int value) {
+      switch (value) {
+        case 1: return PROGRESS;
+        case 2: return RESULT;
+        case 3: return ERROR;
+        case 0: return PAYLOAD_NOT_SET;
+        default: return null;
+      }
+    }
+    public int getNumber() {
+      return this.value;
+    }
+  };
+
+  public PayloadCase
+  getPayloadCase() {
+    return PayloadCase.forNumber(
+        payloadCase_);
   }
 
-  public static final int DATA_JSON_FIELD_NUMBER = 2;
-  @SuppressWarnings("serial")
-  private volatile java.lang.Object dataJson_ = "";
+  public static final int PROGRESS_FIELD_NUMBER = 1;
   /**
-   * <code>string data_json = 2;</code>
-   * @return The dataJson.
+   * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+   * @return Whether the progress field is set.
    */
   @java.lang.Override
-  public java.lang.String getDataJson() {
-    java.lang.Object ref = dataJson_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
-    } else {
-      com.google.protobuf.ByteString bs = 
-          (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
-      dataJson_ = s;
-      return s;
-    }
+  public boolean hasProgress() {
+    return payloadCase_ == 1;
   }
   /**
-   * <code>string data_json = 2;</code>
-   * @return The bytes for dataJson.
+   * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+   * @return The progress.
    */
   @java.lang.Override
-  public com.google.protobuf.ByteString
-      getDataJsonBytes() {
-    java.lang.Object ref = dataJson_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
-          com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
-      dataJson_ = b;
-      return b;
-    } else {
-      return (com.google.protobuf.ByteString) ref;
+  public com.jervis.contracts.whisper.ProgressEvent getProgress() {
+    if (payloadCase_ == 1) {
+       return (com.jervis.contracts.whisper.ProgressEvent) payload_;
     }
+    return com.jervis.contracts.whisper.ProgressEvent.getDefaultInstance();
+  }
+  /**
+   * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.whisper.ProgressEventOrBuilder getProgressOrBuilder() {
+    if (payloadCase_ == 1) {
+       return (com.jervis.contracts.whisper.ProgressEvent) payload_;
+    }
+    return com.jervis.contracts.whisper.ProgressEvent.getDefaultInstance();
+  }
+
+  public static final int RESULT_FIELD_NUMBER = 2;
+  /**
+   * <code>.jervis.whisper.ResultEvent result = 2;</code>
+   * @return Whether the result field is set.
+   */
+  @java.lang.Override
+  public boolean hasResult() {
+    return payloadCase_ == 2;
+  }
+  /**
+   * <code>.jervis.whisper.ResultEvent result = 2;</code>
+   * @return The result.
+   */
+  @java.lang.Override
+  public com.jervis.contracts.whisper.ResultEvent getResult() {
+    if (payloadCase_ == 2) {
+       return (com.jervis.contracts.whisper.ResultEvent) payload_;
+    }
+    return com.jervis.contracts.whisper.ResultEvent.getDefaultInstance();
+  }
+  /**
+   * <code>.jervis.whisper.ResultEvent result = 2;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.whisper.ResultEventOrBuilder getResultOrBuilder() {
+    if (payloadCase_ == 2) {
+       return (com.jervis.contracts.whisper.ResultEvent) payload_;
+    }
+    return com.jervis.contracts.whisper.ResultEvent.getDefaultInstance();
+  }
+
+  public static final int ERROR_FIELD_NUMBER = 3;
+  /**
+   * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+   * @return Whether the error field is set.
+   */
+  @java.lang.Override
+  public boolean hasError() {
+    return payloadCase_ == 3;
+  }
+  /**
+   * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+   * @return The error.
+   */
+  @java.lang.Override
+  public com.jervis.contracts.whisper.ErrorEvent getError() {
+    if (payloadCase_ == 3) {
+       return (com.jervis.contracts.whisper.ErrorEvent) payload_;
+    }
+    return com.jervis.contracts.whisper.ErrorEvent.getDefaultInstance();
+  }
+  /**
+   * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.whisper.ErrorEventOrBuilder getErrorOrBuilder() {
+    if (payloadCase_ == 3) {
+       return (com.jervis.contracts.whisper.ErrorEvent) payload_;
+    }
+    return com.jervis.contracts.whisper.ErrorEvent.getDefaultInstance();
   }
 
   private byte memoizedIsInitialized = -1;
@@ -151,11 +194,14 @@ private static final long serialVersionUID = 0L;
   @java.lang.Override
   public void writeTo(com.google.protobuf.CodedOutputStream output)
                       throws java.io.IOException {
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(event_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 1, event_);
+    if (payloadCase_ == 1) {
+      output.writeMessage(1, (com.jervis.contracts.whisper.ProgressEvent) payload_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(dataJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 2, dataJson_);
+    if (payloadCase_ == 2) {
+      output.writeMessage(2, (com.jervis.contracts.whisper.ResultEvent) payload_);
+    }
+    if (payloadCase_ == 3) {
+      output.writeMessage(3, (com.jervis.contracts.whisper.ErrorEvent) payload_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -166,11 +212,17 @@ private static final long serialVersionUID = 0L;
     if (size != -1) return size;
 
     size = 0;
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(event_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(1, event_);
+    if (payloadCase_ == 1) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(1, (com.jervis.contracts.whisper.ProgressEvent) payload_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(dataJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, dataJson_);
+    if (payloadCase_ == 2) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(2, (com.jervis.contracts.whisper.ResultEvent) payload_);
+    }
+    if (payloadCase_ == 3) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(3, (com.jervis.contracts.whisper.ErrorEvent) payload_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -187,10 +239,23 @@ private static final long serialVersionUID = 0L;
     }
     com.jervis.contracts.whisper.TranscribeEvent other = (com.jervis.contracts.whisper.TranscribeEvent) obj;
 
-    if (!getEvent()
-        .equals(other.getEvent())) return false;
-    if (!getDataJson()
-        .equals(other.getDataJson())) return false;
+    if (!getPayloadCase().equals(other.getPayloadCase())) return false;
+    switch (payloadCase_) {
+      case 1:
+        if (!getProgress()
+            .equals(other.getProgress())) return false;
+        break;
+      case 2:
+        if (!getResult()
+            .equals(other.getResult())) return false;
+        break;
+      case 3:
+        if (!getError()
+            .equals(other.getError())) return false;
+        break;
+      case 0:
+      default:
+    }
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -202,10 +267,22 @@ private static final long serialVersionUID = 0L;
     }
     int hash = 41;
     hash = (19 * hash) + getDescriptor().hashCode();
-    hash = (37 * hash) + EVENT_FIELD_NUMBER;
-    hash = (53 * hash) + getEvent().hashCode();
-    hash = (37 * hash) + DATA_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getDataJson().hashCode();
+    switch (payloadCase_) {
+      case 1:
+        hash = (37 * hash) + PROGRESS_FIELD_NUMBER;
+        hash = (53 * hash) + getProgress().hashCode();
+        break;
+      case 2:
+        hash = (37 * hash) + RESULT_FIELD_NUMBER;
+        hash = (53 * hash) + getResult().hashCode();
+        break;
+      case 3:
+        hash = (37 * hash) + ERROR_FIELD_NUMBER;
+        hash = (53 * hash) + getError().hashCode();
+        break;
+      case 0:
+      default:
+    }
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -337,8 +414,17 @@ private static final long serialVersionUID = 0L;
     public Builder clear() {
       super.clear();
       bitField0_ = 0;
-      event_ = "";
-      dataJson_ = "";
+      if (progressBuilder_ != null) {
+        progressBuilder_.clear();
+      }
+      if (resultBuilder_ != null) {
+        resultBuilder_.clear();
+      }
+      if (errorBuilder_ != null) {
+        errorBuilder_.clear();
+      }
+      payloadCase_ = 0;
+      payload_ = null;
       return this;
     }
 
@@ -366,17 +452,29 @@ private static final long serialVersionUID = 0L;
     public com.jervis.contracts.whisper.TranscribeEvent buildPartial() {
       com.jervis.contracts.whisper.TranscribeEvent result = new com.jervis.contracts.whisper.TranscribeEvent(this);
       if (bitField0_ != 0) { buildPartial0(result); }
+      buildPartialOneofs(result);
       onBuilt();
       return result;
     }
 
     private void buildPartial0(com.jervis.contracts.whisper.TranscribeEvent result) {
       int from_bitField0_ = bitField0_;
-      if (((from_bitField0_ & 0x00000001) != 0)) {
-        result.event_ = event_;
+    }
+
+    private void buildPartialOneofs(com.jervis.contracts.whisper.TranscribeEvent result) {
+      result.payloadCase_ = payloadCase_;
+      result.payload_ = this.payload_;
+      if (payloadCase_ == 1 &&
+          progressBuilder_ != null) {
+        result.payload_ = progressBuilder_.build();
       }
-      if (((from_bitField0_ & 0x00000002) != 0)) {
-        result.dataJson_ = dataJson_;
+      if (payloadCase_ == 2 &&
+          resultBuilder_ != null) {
+        result.payload_ = resultBuilder_.build();
+      }
+      if (payloadCase_ == 3 &&
+          errorBuilder_ != null) {
+        result.payload_ = errorBuilder_.build();
       }
     }
 
@@ -392,15 +490,22 @@ private static final long serialVersionUID = 0L;
 
     public Builder mergeFrom(com.jervis.contracts.whisper.TranscribeEvent other) {
       if (other == com.jervis.contracts.whisper.TranscribeEvent.getDefaultInstance()) return this;
-      if (!other.getEvent().isEmpty()) {
-        event_ = other.event_;
-        bitField0_ |= 0x00000001;
-        onChanged();
-      }
-      if (!other.getDataJson().isEmpty()) {
-        dataJson_ = other.dataJson_;
-        bitField0_ |= 0x00000002;
-        onChanged();
+      switch (other.getPayloadCase()) {
+        case PROGRESS: {
+          mergeProgress(other.getProgress());
+          break;
+        }
+        case RESULT: {
+          mergeResult(other.getResult());
+          break;
+        }
+        case ERROR: {
+          mergeError(other.getError());
+          break;
+        }
+        case PAYLOAD_NOT_SET: {
+          break;
+        }
       }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
@@ -429,15 +534,26 @@ private static final long serialVersionUID = 0L;
               done = true;
               break;
             case 10: {
-              event_ = input.readStringRequireUtf8();
-              bitField0_ |= 0x00000001;
+              input.readMessage(
+                  internalGetProgressFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              payloadCase_ = 1;
               break;
             } // case 10
             case 18: {
-              dataJson_ = input.readStringRequireUtf8();
-              bitField0_ |= 0x00000002;
+              input.readMessage(
+                  internalGetResultFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              payloadCase_ = 2;
               break;
             } // case 18
+            case 26: {
+              input.readMessage(
+                  internalGetErrorFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              payloadCase_ = 3;
+              break;
+            } // case 26
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -453,185 +569,447 @@ private static final long serialVersionUID = 0L;
       } // finally
       return this;
     }
+    private int payloadCase_ = 0;
+    private java.lang.Object payload_;
+    public PayloadCase
+        getPayloadCase() {
+      return PayloadCase.forNumber(
+          payloadCase_);
+    }
+
+    public Builder clearPayload() {
+      payloadCase_ = 0;
+      payload_ = null;
+      onChanged();
+      return this;
+    }
+
     private int bitField0_;
 
-    private java.lang.Object event_ = "";
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.whisper.ProgressEvent, com.jervis.contracts.whisper.ProgressEvent.Builder, com.jervis.contracts.whisper.ProgressEventOrBuilder> progressBuilder_;
     /**
-     * <pre>
-     * event ∈ {"progress", "result", "error"}.
-     * data_json carries the legacy per-event payload keys (percent /
-     * segments_done / elapsed_seconds / last_segment_text for progress;
-     * full WhisperResult for result; {text, segments, error} for error).
-     * </pre>
-     *
-     * <code>string event = 1;</code>
-     * @return The event.
+     * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+     * @return Whether the progress field is set.
      */
-    public java.lang.String getEvent() {
-      java.lang.Object ref = event_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        event_ = s;
-        return s;
+    @java.lang.Override
+    public boolean hasProgress() {
+      return payloadCase_ == 1;
+    }
+    /**
+     * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+     * @return The progress.
+     */
+    @java.lang.Override
+    public com.jervis.contracts.whisper.ProgressEvent getProgress() {
+      if (progressBuilder_ == null) {
+        if (payloadCase_ == 1) {
+          return (com.jervis.contracts.whisper.ProgressEvent) payload_;
+        }
+        return com.jervis.contracts.whisper.ProgressEvent.getDefaultInstance();
       } else {
-        return (java.lang.String) ref;
+        if (payloadCase_ == 1) {
+          return progressBuilder_.getMessage();
+        }
+        return com.jervis.contracts.whisper.ProgressEvent.getDefaultInstance();
       }
     }
     /**
-     * <pre>
-     * event ∈ {"progress", "result", "error"}.
-     * data_json carries the legacy per-event payload keys (percent /
-     * segments_done / elapsed_seconds / last_segment_text for progress;
-     * full WhisperResult for result; {text, segments, error} for error).
-     * </pre>
-     *
-     * <code>string event = 1;</code>
-     * @return The bytes for event.
+     * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
      */
-    public com.google.protobuf.ByteString
-        getEventBytes() {
-      java.lang.Object ref = event_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        event_ = b;
-        return b;
+    public Builder setProgress(com.jervis.contracts.whisper.ProgressEvent value) {
+      if (progressBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        payload_ = value;
+        onChanged();
       } else {
-        return (com.google.protobuf.ByteString) ref;
+        progressBuilder_.setMessage(value);
+      }
+      payloadCase_ = 1;
+      return this;
+    }
+    /**
+     * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+     */
+    public Builder setProgress(
+        com.jervis.contracts.whisper.ProgressEvent.Builder builderForValue) {
+      if (progressBuilder_ == null) {
+        payload_ = builderForValue.build();
+        onChanged();
+      } else {
+        progressBuilder_.setMessage(builderForValue.build());
+      }
+      payloadCase_ = 1;
+      return this;
+    }
+    /**
+     * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+     */
+    public Builder mergeProgress(com.jervis.contracts.whisper.ProgressEvent value) {
+      if (progressBuilder_ == null) {
+        if (payloadCase_ == 1 &&
+            payload_ != com.jervis.contracts.whisper.ProgressEvent.getDefaultInstance()) {
+          payload_ = com.jervis.contracts.whisper.ProgressEvent.newBuilder((com.jervis.contracts.whisper.ProgressEvent) payload_)
+              .mergeFrom(value).buildPartial();
+        } else {
+          payload_ = value;
+        }
+        onChanged();
+      } else {
+        if (payloadCase_ == 1) {
+          progressBuilder_.mergeFrom(value);
+        } else {
+          progressBuilder_.setMessage(value);
+        }
+      }
+      payloadCase_ = 1;
+      return this;
+    }
+    /**
+     * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+     */
+    public Builder clearProgress() {
+      if (progressBuilder_ == null) {
+        if (payloadCase_ == 1) {
+          payloadCase_ = 0;
+          payload_ = null;
+          onChanged();
+        }
+      } else {
+        if (payloadCase_ == 1) {
+          payloadCase_ = 0;
+          payload_ = null;
+        }
+        progressBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+     */
+    public com.jervis.contracts.whisper.ProgressEvent.Builder getProgressBuilder() {
+      return internalGetProgressFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+     */
+    @java.lang.Override
+    public com.jervis.contracts.whisper.ProgressEventOrBuilder getProgressOrBuilder() {
+      if ((payloadCase_ == 1) && (progressBuilder_ != null)) {
+        return progressBuilder_.getMessageOrBuilder();
+      } else {
+        if (payloadCase_ == 1) {
+          return (com.jervis.contracts.whisper.ProgressEvent) payload_;
+        }
+        return com.jervis.contracts.whisper.ProgressEvent.getDefaultInstance();
       }
     }
     /**
-     * <pre>
-     * event ∈ {"progress", "result", "error"}.
-     * data_json carries the legacy per-event payload keys (percent /
-     * segments_done / elapsed_seconds / last_segment_text for progress;
-     * full WhisperResult for result; {text, segments, error} for error).
-     * </pre>
-     *
-     * <code>string event = 1;</code>
-     * @param value The event to set.
-     * @return This builder for chaining.
+     * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
      */
-    public Builder setEvent(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      event_ = value;
-      bitField0_ |= 0x00000001;
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.whisper.ProgressEvent, com.jervis.contracts.whisper.ProgressEvent.Builder, com.jervis.contracts.whisper.ProgressEventOrBuilder> 
+        internalGetProgressFieldBuilder() {
+      if (progressBuilder_ == null) {
+        if (!(payloadCase_ == 1)) {
+          payload_ = com.jervis.contracts.whisper.ProgressEvent.getDefaultInstance();
+        }
+        progressBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.whisper.ProgressEvent, com.jervis.contracts.whisper.ProgressEvent.Builder, com.jervis.contracts.whisper.ProgressEventOrBuilder>(
+                (com.jervis.contracts.whisper.ProgressEvent) payload_,
+                getParentForChildren(),
+                isClean());
+        payload_ = null;
+      }
+      payloadCase_ = 1;
       onChanged();
-      return this;
-    }
-    /**
-     * <pre>
-     * event ∈ {"progress", "result", "error"}.
-     * data_json carries the legacy per-event payload keys (percent /
-     * segments_done / elapsed_seconds / last_segment_text for progress;
-     * full WhisperResult for result; {text, segments, error} for error).
-     * </pre>
-     *
-     * <code>string event = 1;</code>
-     * @return This builder for chaining.
-     */
-    public Builder clearEvent() {
-      event_ = getDefaultInstance().getEvent();
-      bitField0_ = (bitField0_ & ~0x00000001);
-      onChanged();
-      return this;
-    }
-    /**
-     * <pre>
-     * event ∈ {"progress", "result", "error"}.
-     * data_json carries the legacy per-event payload keys (percent /
-     * segments_done / elapsed_seconds / last_segment_text for progress;
-     * full WhisperResult for result; {text, segments, error} for error).
-     * </pre>
-     *
-     * <code>string event = 1;</code>
-     * @param value The bytes for event to set.
-     * @return This builder for chaining.
-     */
-    public Builder setEventBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      event_ = value;
-      bitField0_ |= 0x00000001;
-      onChanged();
-      return this;
+      return progressBuilder_;
     }
 
-    private java.lang.Object dataJson_ = "";
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.whisper.ResultEvent, com.jervis.contracts.whisper.ResultEvent.Builder, com.jervis.contracts.whisper.ResultEventOrBuilder> resultBuilder_;
     /**
-     * <code>string data_json = 2;</code>
-     * @return The dataJson.
+     * <code>.jervis.whisper.ResultEvent result = 2;</code>
+     * @return Whether the result field is set.
      */
-    public java.lang.String getDataJson() {
-      java.lang.Object ref = dataJson_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        dataJson_ = s;
-        return s;
+    @java.lang.Override
+    public boolean hasResult() {
+      return payloadCase_ == 2;
+    }
+    /**
+     * <code>.jervis.whisper.ResultEvent result = 2;</code>
+     * @return The result.
+     */
+    @java.lang.Override
+    public com.jervis.contracts.whisper.ResultEvent getResult() {
+      if (resultBuilder_ == null) {
+        if (payloadCase_ == 2) {
+          return (com.jervis.contracts.whisper.ResultEvent) payload_;
+        }
+        return com.jervis.contracts.whisper.ResultEvent.getDefaultInstance();
       } else {
-        return (java.lang.String) ref;
+        if (payloadCase_ == 2) {
+          return resultBuilder_.getMessage();
+        }
+        return com.jervis.contracts.whisper.ResultEvent.getDefaultInstance();
       }
     }
     /**
-     * <code>string data_json = 2;</code>
-     * @return The bytes for dataJson.
+     * <code>.jervis.whisper.ResultEvent result = 2;</code>
      */
-    public com.google.protobuf.ByteString
-        getDataJsonBytes() {
-      java.lang.Object ref = dataJson_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        dataJson_ = b;
-        return b;
+    public Builder setResult(com.jervis.contracts.whisper.ResultEvent value) {
+      if (resultBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        payload_ = value;
+        onChanged();
       } else {
-        return (com.google.protobuf.ByteString) ref;
+        resultBuilder_.setMessage(value);
+      }
+      payloadCase_ = 2;
+      return this;
+    }
+    /**
+     * <code>.jervis.whisper.ResultEvent result = 2;</code>
+     */
+    public Builder setResult(
+        com.jervis.contracts.whisper.ResultEvent.Builder builderForValue) {
+      if (resultBuilder_ == null) {
+        payload_ = builderForValue.build();
+        onChanged();
+      } else {
+        resultBuilder_.setMessage(builderForValue.build());
+      }
+      payloadCase_ = 2;
+      return this;
+    }
+    /**
+     * <code>.jervis.whisper.ResultEvent result = 2;</code>
+     */
+    public Builder mergeResult(com.jervis.contracts.whisper.ResultEvent value) {
+      if (resultBuilder_ == null) {
+        if (payloadCase_ == 2 &&
+            payload_ != com.jervis.contracts.whisper.ResultEvent.getDefaultInstance()) {
+          payload_ = com.jervis.contracts.whisper.ResultEvent.newBuilder((com.jervis.contracts.whisper.ResultEvent) payload_)
+              .mergeFrom(value).buildPartial();
+        } else {
+          payload_ = value;
+        }
+        onChanged();
+      } else {
+        if (payloadCase_ == 2) {
+          resultBuilder_.mergeFrom(value);
+        } else {
+          resultBuilder_.setMessage(value);
+        }
+      }
+      payloadCase_ = 2;
+      return this;
+    }
+    /**
+     * <code>.jervis.whisper.ResultEvent result = 2;</code>
+     */
+    public Builder clearResult() {
+      if (resultBuilder_ == null) {
+        if (payloadCase_ == 2) {
+          payloadCase_ = 0;
+          payload_ = null;
+          onChanged();
+        }
+      } else {
+        if (payloadCase_ == 2) {
+          payloadCase_ = 0;
+          payload_ = null;
+        }
+        resultBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.whisper.ResultEvent result = 2;</code>
+     */
+    public com.jervis.contracts.whisper.ResultEvent.Builder getResultBuilder() {
+      return internalGetResultFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.whisper.ResultEvent result = 2;</code>
+     */
+    @java.lang.Override
+    public com.jervis.contracts.whisper.ResultEventOrBuilder getResultOrBuilder() {
+      if ((payloadCase_ == 2) && (resultBuilder_ != null)) {
+        return resultBuilder_.getMessageOrBuilder();
+      } else {
+        if (payloadCase_ == 2) {
+          return (com.jervis.contracts.whisper.ResultEvent) payload_;
+        }
+        return com.jervis.contracts.whisper.ResultEvent.getDefaultInstance();
       }
     }
     /**
-     * <code>string data_json = 2;</code>
-     * @param value The dataJson to set.
-     * @return This builder for chaining.
+     * <code>.jervis.whisper.ResultEvent result = 2;</code>
      */
-    public Builder setDataJson(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      dataJson_ = value;
-      bitField0_ |= 0x00000002;
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.whisper.ResultEvent, com.jervis.contracts.whisper.ResultEvent.Builder, com.jervis.contracts.whisper.ResultEventOrBuilder> 
+        internalGetResultFieldBuilder() {
+      if (resultBuilder_ == null) {
+        if (!(payloadCase_ == 2)) {
+          payload_ = com.jervis.contracts.whisper.ResultEvent.getDefaultInstance();
+        }
+        resultBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.whisper.ResultEvent, com.jervis.contracts.whisper.ResultEvent.Builder, com.jervis.contracts.whisper.ResultEventOrBuilder>(
+                (com.jervis.contracts.whisper.ResultEvent) payload_,
+                getParentForChildren(),
+                isClean());
+        payload_ = null;
+      }
+      payloadCase_ = 2;
       onChanged();
+      return resultBuilder_;
+    }
+
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.whisper.ErrorEvent, com.jervis.contracts.whisper.ErrorEvent.Builder, com.jervis.contracts.whisper.ErrorEventOrBuilder> errorBuilder_;
+    /**
+     * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+     * @return Whether the error field is set.
+     */
+    @java.lang.Override
+    public boolean hasError() {
+      return payloadCase_ == 3;
+    }
+    /**
+     * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+     * @return The error.
+     */
+    @java.lang.Override
+    public com.jervis.contracts.whisper.ErrorEvent getError() {
+      if (errorBuilder_ == null) {
+        if (payloadCase_ == 3) {
+          return (com.jervis.contracts.whisper.ErrorEvent) payload_;
+        }
+        return com.jervis.contracts.whisper.ErrorEvent.getDefaultInstance();
+      } else {
+        if (payloadCase_ == 3) {
+          return errorBuilder_.getMessage();
+        }
+        return com.jervis.contracts.whisper.ErrorEvent.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+     */
+    public Builder setError(com.jervis.contracts.whisper.ErrorEvent value) {
+      if (errorBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        payload_ = value;
+        onChanged();
+      } else {
+        errorBuilder_.setMessage(value);
+      }
+      payloadCase_ = 3;
       return this;
     }
     /**
-     * <code>string data_json = 2;</code>
-     * @return This builder for chaining.
+     * <code>.jervis.whisper.ErrorEvent error = 3;</code>
      */
-    public Builder clearDataJson() {
-      dataJson_ = getDefaultInstance().getDataJson();
-      bitField0_ = (bitField0_ & ~0x00000002);
-      onChanged();
+    public Builder setError(
+        com.jervis.contracts.whisper.ErrorEvent.Builder builderForValue) {
+      if (errorBuilder_ == null) {
+        payload_ = builderForValue.build();
+        onChanged();
+      } else {
+        errorBuilder_.setMessage(builderForValue.build());
+      }
+      payloadCase_ = 3;
       return this;
     }
     /**
-     * <code>string data_json = 2;</code>
-     * @param value The bytes for dataJson to set.
-     * @return This builder for chaining.
+     * <code>.jervis.whisper.ErrorEvent error = 3;</code>
      */
-    public Builder setDataJsonBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      dataJson_ = value;
-      bitField0_ |= 0x00000002;
-      onChanged();
+    public Builder mergeError(com.jervis.contracts.whisper.ErrorEvent value) {
+      if (errorBuilder_ == null) {
+        if (payloadCase_ == 3 &&
+            payload_ != com.jervis.contracts.whisper.ErrorEvent.getDefaultInstance()) {
+          payload_ = com.jervis.contracts.whisper.ErrorEvent.newBuilder((com.jervis.contracts.whisper.ErrorEvent) payload_)
+              .mergeFrom(value).buildPartial();
+        } else {
+          payload_ = value;
+        }
+        onChanged();
+      } else {
+        if (payloadCase_ == 3) {
+          errorBuilder_.mergeFrom(value);
+        } else {
+          errorBuilder_.setMessage(value);
+        }
+      }
+      payloadCase_ = 3;
       return this;
+    }
+    /**
+     * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+     */
+    public Builder clearError() {
+      if (errorBuilder_ == null) {
+        if (payloadCase_ == 3) {
+          payloadCase_ = 0;
+          payload_ = null;
+          onChanged();
+        }
+      } else {
+        if (payloadCase_ == 3) {
+          payloadCase_ = 0;
+          payload_ = null;
+        }
+        errorBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+     */
+    public com.jervis.contracts.whisper.ErrorEvent.Builder getErrorBuilder() {
+      return internalGetErrorFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+     */
+    @java.lang.Override
+    public com.jervis.contracts.whisper.ErrorEventOrBuilder getErrorOrBuilder() {
+      if ((payloadCase_ == 3) && (errorBuilder_ != null)) {
+        return errorBuilder_.getMessageOrBuilder();
+      } else {
+        if (payloadCase_ == 3) {
+          return (com.jervis.contracts.whisper.ErrorEvent) payload_;
+        }
+        return com.jervis.contracts.whisper.ErrorEvent.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+     */
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.whisper.ErrorEvent, com.jervis.contracts.whisper.ErrorEvent.Builder, com.jervis.contracts.whisper.ErrorEventOrBuilder> 
+        internalGetErrorFieldBuilder() {
+      if (errorBuilder_ == null) {
+        if (!(payloadCase_ == 3)) {
+          payload_ = com.jervis.contracts.whisper.ErrorEvent.getDefaultInstance();
+        }
+        errorBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.whisper.ErrorEvent, com.jervis.contracts.whisper.ErrorEvent.Builder, com.jervis.contracts.whisper.ErrorEventOrBuilder>(
+                (com.jervis.contracts.whisper.ErrorEvent) payload_,
+                getParentForChildren(),
+                isClean());
+        payload_ = null;
+      }
+      payloadCase_ = 3;
+      onChanged();
+      return errorBuilder_;
     }
 
     // @@protoc_insertion_point(builder_scope:jervis.whisper.TranscribeEvent)

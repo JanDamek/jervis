@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fjervis/whisper/transcribe.proto\x12\x0ejervis.whisper\x1a\x19jervis/common/types.proto\"\x88\x01\n\x11TranscribeRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\r\n\x05\x61udio\x18\x02 \x01(\x0c\x12\x10\n\x08\x66ilename\x18\x03 \x01(\t\x12\x14\n\x0coptions_json\x18\x04 \x01(\t\x12\x10\n\x08\x62lob_ref\x18\x05 \x01(\t\"3\n\x0fTranscribeEvent\x12\r\n\x05\x65vent\x18\x01 \x01(\t\x12\x11\n\tdata_json\x18\x02 \x01(\t\";\n\rHealthRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"R\n\x0eHealthResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x14\n\x0cmodel_loaded\x18\x03 \x01(\x08\x12\x0e\n\x06\x64\x65tail\x18\x04 \x01(\t\"?\n\x11GpuReleaseRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"&\n\x12GpuReleaseResponse\x12\x10\n\x08released\x18\x01 \x01(\x08\x32\x82\x02\n\x0eWhisperService\x12R\n\nTranscribe\x12!.jervis.whisper.TranscribeRequest\x1a\x1f.jervis.whisper.TranscribeEvent0\x01\x12G\n\x06Health\x12\x1d.jervis.whisper.HealthRequest\x1a\x1e.jervis.whisper.HealthResponse\x12S\n\nGpuRelease\x12!.jervis.whisper.GpuReleaseRequest\x1a\".jervis.whisper.GpuReleaseResponseB.\n\x1c\x63om.jervis.contracts.whisperB\x0cWhisperProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fjervis/whisper/transcribe.proto\x12\x0ejervis.whisper\x1a\x19jervis/common/types.proto\"\xa6\x01\n\x11TranscribeRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\r\n\x05\x61udio\x18\x02 \x01(\x0c\x12\x10\n\x08\x66ilename\x18\x03 \x01(\t\x12\x32\n\x07options\x18\x04 \x01(\x0b\x32!.jervis.whisper.TranscribeOptions\x12\x10\n\x08\x62lob_ref\x18\x05 \x01(\t\"\xa8\x02\n\x11TranscribeOptions\x12\x0c\n\x04task\x18\x01 \x01(\t\x12\r\n\x05model\x18\x02 \x01(\t\x12\x10\n\x08language\x18\x03 \x01(\t\x12\x11\n\tbeam_size\x18\x04 \x01(\x05\x12\x12\n\nvad_filter\x18\x05 \x01(\x08\x12\x17\n\x0fword_timestamps\x18\x06 \x01(\x08\x12\x16\n\x0einitial_prompt\x18\x07 \x01(\t\x12\"\n\x1a\x63ondition_on_previous_text\x18\x08 \x01(\x08\x12\x1b\n\x13no_speech_threshold\x18\t \x01(\x01\x12:\n\x11\x65xtraction_ranges\x18\n \x03(\x0b\x32\x1f.jervis.whisper.ExtractionRange\x12\x0f\n\x07\x64iarize\x18\x0b \x01(\x08\"L\n\x0f\x45xtractionRange\x12\x11\n\tstart_sec\x18\x01 \x01(\x01\x12\x0f\n\x07\x65nd_sec\x18\x02 \x01(\x01\x12\x15\n\rsegment_index\x18\x03 \x01(\x05\"\xab\x01\n\x0fTranscribeEvent\x12\x31\n\x08progress\x18\x01 \x01(\x0b\x32\x1d.jervis.whisper.ProgressEventH\x00\x12-\n\x06result\x18\x02 \x01(\x0b\x32\x1b.jervis.whisper.ResultEventH\x00\x12+\n\x05\x65rror\x18\x03 \x01(\x0b\x32\x1a.jervis.whisper.ErrorEventH\x00\x42\t\n\x07payload\"k\n\rProgressEvent\x12\x0f\n\x07percent\x18\x01 \x01(\x01\x12\x15\n\rsegments_done\x18\x02 \x01(\x05\x12\x17\n\x0f\x65lapsed_seconds\x18\x03 \x01(\x01\x12\x19\n\x11last_segment_text\x18\x04 \x01(\t\"\xe1\x02\n\x0bResultEvent\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x10\n\x08language\x18\x02 \x01(\t\x12\x1c\n\x14language_probability\x18\x03 \x01(\x01\x12\x10\n\x08\x64uration\x18\x04 \x01(\x01\x12\x33\n\x08segments\x18\x05 \x03(\x0b\x32!.jervis.whisper.TranscribeSegment\x12\x10\n\x08speakers\x18\x06 \x03(\t\x12<\n\x12speaker_embeddings\x18\x07 \x03(\x0b\x32 .jervis.whisper.SpeakerEmbedding\x12G\n\x0ftext_by_segment\x18\x08 \x03(\x0b\x32..jervis.whisper.ResultEvent.TextBySegmentEntry\x1a\x34\n\x12TextBySegmentEntry\x12\x0b\n\x03key\x18\x01 \x01(\x05\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"a\n\x11TranscribeSegment\x12\t\n\x01i\x18\x01 \x01(\x05\x12\x11\n\tstart_sec\x18\x02 \x01(\x01\x12\x0f\n\x07\x65nd_sec\x18\x03 \x01(\x01\x12\x0c\n\x04text\x18\x04 \x01(\t\x12\x0f\n\x07speaker\x18\x05 \x01(\t\"1\n\x10SpeakerEmbedding\x12\r\n\x05label\x18\x01 \x01(\t\x12\x0e\n\x06values\x18\x02 \x03(\x02\")\n\nErrorEvent\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\r\n\x05\x65rror\x18\x02 \x01(\t\";\n\rHealthRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"R\n\x0eHealthResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x14\n\x0cmodel_loaded\x18\x03 \x01(\x08\x12\x0e\n\x06\x64\x65tail\x18\x04 \x01(\t\"?\n\x11GpuReleaseRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"&\n\x12GpuReleaseResponse\x12\x10\n\x08released\x18\x01 \x01(\x08\x32\x82\x02\n\x0eWhisperService\x12R\n\nTranscribe\x12!.jervis.whisper.TranscribeRequest\x1a\x1f.jervis.whisper.TranscribeEvent0\x01\x12G\n\x06Health\x12\x1d.jervis.whisper.HealthRequest\x1a\x1e.jervis.whisper.HealthResponse\x12S\n\nGpuRelease\x12!.jervis.whisper.GpuReleaseRequest\x1a\".jervis.whisper.GpuReleaseResponseB.\n\x1c\x63om.jervis.contracts.whisperB\x0cWhisperProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,18 +33,36 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'jervis.whisper.transcribe_p
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n\034com.jervis.contracts.whisperB\014WhisperProtoP\001'
+  _globals['_RESULTEVENT_TEXTBYSEGMENTENTRY']._loaded_options = None
+  _globals['_RESULTEVENT_TEXTBYSEGMENTENTRY']._serialized_options = b'8\001'
   _globals['_TRANSCRIBEREQUEST']._serialized_start=79
-  _globals['_TRANSCRIBEREQUEST']._serialized_end=215
-  _globals['_TRANSCRIBEEVENT']._serialized_start=217
-  _globals['_TRANSCRIBEEVENT']._serialized_end=268
-  _globals['_HEALTHREQUEST']._serialized_start=270
-  _globals['_HEALTHREQUEST']._serialized_end=329
-  _globals['_HEALTHRESPONSE']._serialized_start=331
-  _globals['_HEALTHRESPONSE']._serialized_end=413
-  _globals['_GPURELEASEREQUEST']._serialized_start=415
-  _globals['_GPURELEASEREQUEST']._serialized_end=478
-  _globals['_GPURELEASERESPONSE']._serialized_start=480
-  _globals['_GPURELEASERESPONSE']._serialized_end=518
-  _globals['_WHISPERSERVICE']._serialized_start=521
-  _globals['_WHISPERSERVICE']._serialized_end=779
+  _globals['_TRANSCRIBEREQUEST']._serialized_end=245
+  _globals['_TRANSCRIBEOPTIONS']._serialized_start=248
+  _globals['_TRANSCRIBEOPTIONS']._serialized_end=544
+  _globals['_EXTRACTIONRANGE']._serialized_start=546
+  _globals['_EXTRACTIONRANGE']._serialized_end=622
+  _globals['_TRANSCRIBEEVENT']._serialized_start=625
+  _globals['_TRANSCRIBEEVENT']._serialized_end=796
+  _globals['_PROGRESSEVENT']._serialized_start=798
+  _globals['_PROGRESSEVENT']._serialized_end=905
+  _globals['_RESULTEVENT']._serialized_start=908
+  _globals['_RESULTEVENT']._serialized_end=1261
+  _globals['_RESULTEVENT_TEXTBYSEGMENTENTRY']._serialized_start=1209
+  _globals['_RESULTEVENT_TEXTBYSEGMENTENTRY']._serialized_end=1261
+  _globals['_TRANSCRIBESEGMENT']._serialized_start=1263
+  _globals['_TRANSCRIBESEGMENT']._serialized_end=1360
+  _globals['_SPEAKEREMBEDDING']._serialized_start=1362
+  _globals['_SPEAKEREMBEDDING']._serialized_end=1411
+  _globals['_ERROREVENT']._serialized_start=1413
+  _globals['_ERROREVENT']._serialized_end=1454
+  _globals['_HEALTHREQUEST']._serialized_start=1456
+  _globals['_HEALTHREQUEST']._serialized_end=1515
+  _globals['_HEALTHRESPONSE']._serialized_start=1517
+  _globals['_HEALTHRESPONSE']._serialized_end=1599
+  _globals['_GPURELEASEREQUEST']._serialized_start=1601
+  _globals['_GPURELEASEREQUEST']._serialized_end=1664
+  _globals['_GPURELEASERESPONSE']._serialized_start=1666
+  _globals['_GPURELEASERESPONSE']._serialized_end=1704
+  _globals['_WHISPERSERVICE']._serialized_start=1707
+  _globals['_WHISPERSERVICE']._serialized_end=1965
 # @@protoc_insertion_point(module_scope)

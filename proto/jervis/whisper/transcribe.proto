@@ -11,34 +11,89 @@ option java_outer_classname = "WhisperProto";
 // WhisperService — audio transcription with progress streaming.
 // Transcribe is unary-request → server-streaming-response: the request
 // carries the full audio bytes inline (64 MiB cap; multi-hour meeting
-// audio goes via blob side channel once that lands). Progress + result
-// events stream back over the response.
+// audio goes via the blob side channel once that lands). Progress +
+// result + error events stream back over the response.
 service WhisperService {
   rpc Transcribe(TranscribeRequest) returns (stream TranscribeEvent);
   rpc Health(HealthRequest) returns (HealthResponse);
   rpc GpuRelease(GpuReleaseRequest) returns (GpuReleaseResponse);
 }
 
+// ── Transcribe ──────────────────────────────────────────────────────────
+
 message TranscribeRequest {
   jervis.common.RequestContext ctx = 1;
-  bytes audio = 2;              // inline audio bytes
-  string filename = 3;          // original filename (extension hint)
-  // options carries the legacy JSON shape (task, model, language,
-  // beam_size, vad_filter, word_timestamps, initial_prompt,
-  // condition_on_previous_text, no_speech_threshold, extraction_ranges,
-  // diarize).
-  string options_json = 4;
-  string blob_ref = 5;          // future use — blob side channel pointer
+  bytes audio = 2;                            // inline audio bytes
+  string filename = 3;                        // original filename (extension hint)
+  TranscribeOptions options = 4;
+  string blob_ref = 5;                        // future use — blob side channel pointer
+}
+
+message TranscribeOptions {
+  string task = 1;                            // "transcribe" | "translate"
+  string model = 2;
+  string language = 3;                        // ISO-639 code, empty = auto-detect
+  int32 beam_size = 4;                        // 0 → server default (5)
+  bool vad_filter = 5;
+  bool word_timestamps = 6;
+  string initial_prompt = 7;
+  bool condition_on_previous_text = 8;
+  double no_speech_threshold = 9;             // 0.0 → server default (0.6)
+  repeated ExtractionRange extraction_ranges = 10;
+  bool diarize = 11;
+}
+
+message ExtractionRange {
+  double start_sec = 1;
+  double end_sec = 2;
+  int32 segment_index = 3;                    // original segment index (retranscription remap)
 }
 
 message TranscribeEvent {
-  // event ∈ {"progress", "result", "error"}.
-  // data_json carries the legacy per-event payload keys (percent /
-  // segments_done / elapsed_seconds / last_segment_text for progress;
-  // full WhisperResult for result; {text, segments, error} for error).
-  string event = 1;
-  string data_json = 2;
+  oneof payload {
+    ProgressEvent progress = 1;
+    ResultEvent result = 2;
+    ErrorEvent error = 3;
+  }
 }
+
+message ProgressEvent {
+  double percent = 1;
+  int32 segments_done = 2;
+  double elapsed_seconds = 3;
+  string last_segment_text = 4;
+}
+
+message ResultEvent {
+  string text = 1;
+  string language = 2;
+  double language_probability = 3;
+  double duration = 4;
+  repeated TranscribeSegment segments = 5;
+  repeated string speakers = 6;               // unique speaker labels (diarization only)
+  repeated SpeakerEmbedding speaker_embeddings = 7;
+  map<int32, string> text_by_segment = 8;     // extraction mode: segment_index → re-transcribed text
+}
+
+message TranscribeSegment {
+  int32 i = 1;
+  double start_sec = 2;
+  double end_sec = 3;
+  string text = 4;
+  string speaker = 5;                         // empty = no diarization
+}
+
+message SpeakerEmbedding {
+  string label = 1;                           // e.g. "SPEAKER_00"
+  repeated float values = 2;                  // 256-dim pyannote embedding
+}
+
+message ErrorEvent {
+  string text = 1;                            // best-effort partial transcript, if any
+  string error = 2;                           // human-readable error message
+}
+
+// ── Health ──────────────────────────────────────────────────────────────
 
 message HealthRequest {
   jervis.common.RequestContext ctx = 1;
@@ -50,6 +105,8 @@ message HealthResponse {
   bool model_loaded = 3;
   string detail = 4;
 }
+
+// ── GpuRelease ──────────────────────────────────────────────────────────
 
 message GpuReleaseRequest {
   jervis.common.RequestContext ctx = 1;

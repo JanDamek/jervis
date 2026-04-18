@@ -2,13 +2,12 @@
 
 Hosts WhisperService {Transcribe (stream), Health, GpuRelease} on :5501.
 Transcribe bridges the existing REST handler's thread + progress queue
-pattern into gRPC server streaming.
+pattern into gRPC server streaming with fully-typed events.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import queue
@@ -26,6 +25,83 @@ from jervis.whisper import transcribe_pb2, transcribe_pb2_grpc
 from jervis_contracts.interceptors import ServerContextInterceptor
 
 logger = logging.getLogger("whisper.grpc")
+
+
+def _options_to_dict(options: transcribe_pb2.TranscribeOptions) -> dict:
+    """Convert a typed TranscribeOptions proto into the kwargs dict that
+    ``whisper_rest_server.run_whisper`` expects. Scalars with proto3
+    "absent means zero" semantics fall back to the runner's defaults."""
+    extraction_ranges = [
+        {
+            "start": float(r.start_sec),
+            "end": float(r.end_sec),
+            "segment_index": int(r.segment_index),
+        }
+        for r in options.extraction_ranges
+    ] if options.extraction_ranges else None
+
+    return {
+        "task": options.task or "transcribe",
+        "model": options.model or None,
+        "language": options.language or None,
+        "beam_size": int(options.beam_size) if options.beam_size > 0 else 5,
+        "vad_filter": bool(options.vad_filter),
+        "word_timestamps": bool(options.word_timestamps),
+        "initial_prompt": options.initial_prompt or None,
+        "condition_on_previous_text": bool(options.condition_on_previous_text),
+        "no_speech_threshold": float(options.no_speech_threshold) if options.no_speech_threshold > 0 else 0.6,
+        "extraction_ranges": extraction_ranges,
+        "diarize": bool(options.diarize),
+    }
+
+
+def _segments_to_proto(segments: list[dict]) -> list[transcribe_pb2.TranscribeSegment]:
+    out: list[transcribe_pb2.TranscribeSegment] = []
+    for i, seg in enumerate(segments or []):
+        out.append(transcribe_pb2.TranscribeSegment(
+            i=int(seg.get("i", i)),
+            start_sec=float(seg.get("start", 0.0)),
+            end_sec=float(seg.get("end", 0.0)),
+            text=str(seg.get("text", "")),
+            speaker=str(seg.get("speaker") or ""),
+        ))
+    return out
+
+
+def _result_to_event(result: dict) -> transcribe_pb2.TranscribeEvent:
+    """Convert the whisper runner's result dict into a typed ResultEvent."""
+    speakers = list(result.get("speakers") or [])
+
+    speaker_embeddings: list[transcribe_pb2.SpeakerEmbedding] = []
+    raw_embeddings = result.get("speaker_embeddings") or {}
+    for label, values in raw_embeddings.items():
+        speaker_embeddings.append(transcribe_pb2.SpeakerEmbedding(
+            label=str(label),
+            values=[float(v) for v in values],
+        ))
+
+    # text_by_segment keys are ints (segment indices) in the typed proto,
+    # even though the runner stringifies them for the legacy JSON shape.
+    raw_text_by_segment = result.get("text_by_segment") or {}
+    text_by_segment: dict[int, str] = {}
+    for k, v in raw_text_by_segment.items():
+        try:
+            text_by_segment[int(k)] = str(v)
+        except (TypeError, ValueError):
+            continue
+
+    return transcribe_pb2.TranscribeEvent(
+        result=transcribe_pb2.ResultEvent(
+            text=str(result.get("text", "")),
+            language=str(result.get("language") or ""),
+            language_probability=float(result.get("language_probability") or 0.0),
+            duration=float(result.get("duration") or 0.0),
+            segments=_segments_to_proto(result.get("segments") or []),
+            speakers=speakers,
+            speaker_embeddings=speaker_embeddings,
+            text_by_segment=text_by_segment,
+        ),
+    )
 
 
 class WhisperServicer(transcribe_pb2_grpc.WhisperServiceServicer):
@@ -46,14 +122,9 @@ class WhisperServicer(transcribe_pb2_grpc.WhisperServiceServicer):
         if not request.audio and not request.blob_ref:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "audio or blob_ref required")
 
-        try:
-            opts = json.loads(request.options_json) if request.options_json else {}
-        except Exception as e:
-            yield transcribe_pb2.TranscribeEvent(
-                event="error",
-                data_json=json.dumps({"text": "", "segments": [], "error": f"Invalid options JSON: {e}"}),
-            )
-            return
+        opts = _options_to_dict(request.options)
+        if not opts["model"]:
+            opts["model"] = wrs.DEFAULT_MODEL
 
         work_dir = tempfile.mkdtemp(prefix="whisper_grpc_")
         audio_ext = Path(request.filename or "audio.wav").suffix or ".wav"
@@ -80,7 +151,6 @@ class WhisperServicer(transcribe_pb2_grpc.WhisperServiceServicer):
             result_container: dict = {}
             error_container: dict = {}
             done_event = asyncio.Event()
-            opts.pop("progress_file", None)
 
             def run_in_thread():
                 try:
@@ -121,8 +191,12 @@ class WhisperServicer(transcribe_pb2_grpc.WhisperServiceServicer):
                     if percent != last_percent:
                         last_percent = percent
                         yield transcribe_pb2.TranscribeEvent(
-                            event="progress",
-                            data_json=json.dumps(latest_progress, ensure_ascii=False),
+                            progress=transcribe_pb2.ProgressEvent(
+                                percent=float(percent),
+                                segments_done=int(latest_progress.get("segments_done", 0)),
+                                elapsed_seconds=float(latest_progress.get("elapsed_seconds", 0.0)),
+                                last_segment_text=str(latest_progress.get("last_segment_text") or ""),
+                            ),
                         )
 
             while True:
@@ -133,18 +207,13 @@ class WhisperServicer(transcribe_pb2_grpc.WhisperServiceServicer):
 
             if "error" in error_container:
                 yield transcribe_pb2.TranscribeEvent(
-                    event="error",
-                    data_json=json.dumps({
-                        "text": "",
-                        "segments": [],
-                        "error": f"Whisper gRPC server error: {error_container['error']}",
-                    }, ensure_ascii=False),
+                    error=transcribe_pb2.ErrorEvent(
+                        text="",
+                        error=f"Whisper gRPC server error: {error_container['error']}",
+                    ),
                 )
             else:
-                yield transcribe_pb2.TranscribeEvent(
-                    event="result",
-                    data_json=json.dumps(result_container.get("result") or {}, ensure_ascii=False, default=str),
-                )
+                yield _result_to_event(result_container.get("result") or {})
         finally:
             with wrs._active_lock:
                 wrs._active_transcriptions -= 1

@@ -29,8 +29,8 @@ class WhisperServiceStub(object):
     """WhisperService — audio transcription with progress streaming.
     Transcribe is unary-request → server-streaming-response: the request
     carries the full audio bytes inline (64 MiB cap; multi-hour meeting
-    audio goes via blob side channel once that lands). Progress + result
-    events stream back over the response.
+    audio goes via the blob side channel once that lands). Progress +
+    result + error events stream back over the response.
     """
 
     def __init__(self, channel):
@@ -60,8 +60,8 @@ class WhisperServiceServicer(object):
     """WhisperService — audio transcription with progress streaming.
     Transcribe is unary-request → server-streaming-response: the request
     carries the full audio bytes inline (64 MiB cap; multi-hour meeting
-    audio goes via blob side channel once that lands). Progress + result
-    events stream back over the response.
+    audio goes via the blob side channel once that lands). Progress +
+    result + error events stream back over the response.
     """
 
     def Transcribe(self, request, context):
@@ -112,8 +112,8 @@ class WhisperService(object):
     """WhisperService — audio transcription with progress streaming.
     Transcribe is unary-request → server-streaming-response: the request
     carries the full audio bytes inline (64 MiB cap; multi-hour meeting
-    audio goes via blob side channel once that lands). Progress + result
-    events stream back over the response.
+    audio goes via the blob side channel once that lands). Progress +
+    result + error events stream back over the response.
     """
 
     @staticmethod

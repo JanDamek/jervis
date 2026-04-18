@@ -361,11 +361,16 @@ class VoiceWebSocketHandler(
         val tempFile = Files.createTempFile("voice_ws_", ".wav")
         try {
             Files.write(tempFile, wavBytes)
-            val opts = """{"model":"${whisperProperties.model}","beam_size":1,"vad_filter":true,"language":"cs"}"""
+            val opts = com.jervis.contracts.whisper.TranscribeOptions.newBuilder()
+                .setModel(whisperProperties.model)
+                .setBeamSize(1)
+                .setVadFilter(true)
+                .setLanguage("cs")
+                .build()
             val result = whisperRestClient.transcribe(
                 baseUrl = whisperProperties.restRemoteUrl,
                 audioFilePath = tempFile.toString(),
-                optionsJson = opts,
+                options = opts,
             )
             val text = result.text.trim()
             logger.info { "VOICE_WS: Whisper result: '${text.take(100)}' (${wavBytes.size} bytes)" }

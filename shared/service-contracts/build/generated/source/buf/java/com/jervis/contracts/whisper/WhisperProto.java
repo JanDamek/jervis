@@ -32,10 +32,50 @@ public final class WhisperProto extends com.google.protobuf.GeneratedFile {
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_whisper_TranscribeRequest_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whisper_TranscribeOptions_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whisper_TranscribeOptions_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whisper_ExtractionRange_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whisper_ExtractionRange_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_whisper_TranscribeEvent_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_whisper_TranscribeEvent_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whisper_ProgressEvent_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whisper_ProgressEvent_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whisper_ResultEvent_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whisper_ResultEvent_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whisper_ResultEvent_TextBySegmentEntry_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whisper_ResultEvent_TextBySegmentEntry_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whisper_TranscribeSegment_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whisper_TranscribeSegment_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whisper_SpeakerEmbedding_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whisper_SpeakerEmbedding_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_whisper_ErrorEvent_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_whisper_ErrorEvent_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_whisper_HealthRequest_descriptor;
   static final 
@@ -66,26 +106,56 @@ public final class WhisperProto extends com.google.protobuf.GeneratedFile {
   static {
     java.lang.String[] descriptorData = {
       "\n\037jervis/whisper/transcribe.proto\022\016jervi" +
-      "s.whisper\032\031jervis/common/types.proto\"\210\001\n" +
+      "s.whisper\032\031jervis/common/types.proto\"\246\001\n" +
       "\021TranscribeRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis" +
       ".common.RequestContext\022\r\n\005audio\030\002 \001(\014\022\020\n" +
-      "\010filename\030\003 \001(\t\022\024\n\014options_json\030\004 \001(\t\022\020\n" +
-      "\010blob_ref\030\005 \001(\t\"3\n\017TranscribeEvent\022\r\n\005ev" +
-      "ent\030\001 \001(\t\022\021\n\tdata_json\030\002 \001(\t\";\n\rHealthRe" +
-      "quest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Reque" +
-      "stContext\"R\n\016HealthResponse\022\n\n\002ok\030\001 \001(\010\022" +
-      "\016\n\006status\030\002 \001(\t\022\024\n\014model_loaded\030\003 \001(\010\022\016\n" +
-      "\006detail\030\004 \001(\t\"?\n\021GpuReleaseRequest\022*\n\003ct" +
-      "x\030\001 \001(\0132\035.jervis.common.RequestContext\"&" +
-      "\n\022GpuReleaseResponse\022\020\n\010released\030\001 \001(\0102\202" +
-      "\002\n\016WhisperService\022R\n\nTranscribe\022!.jervis" +
-      ".whisper.TranscribeRequest\032\037.jervis.whis" +
-      "per.TranscribeEvent0\001\022G\n\006Health\022\035.jervis" +
-      ".whisper.HealthRequest\032\036.jervis.whisper." +
-      "HealthResponse\022S\n\nGpuRelease\022!.jervis.wh" +
-      "isper.GpuReleaseRequest\032\".jervis.whisper" +
-      ".GpuReleaseResponseB.\n\034com.jervis.contra" +
-      "cts.whisperB\014WhisperProtoP\001b\006proto3"
+      "\010filename\030\003 \001(\t\0222\n\007options\030\004 \001(\0132!.jervi" +
+      "s.whisper.TranscribeOptions\022\020\n\010blob_ref\030" +
+      "\005 \001(\t\"\250\002\n\021TranscribeOptions\022\014\n\004task\030\001 \001(" +
+      "\t\022\r\n\005model\030\002 \001(\t\022\020\n\010language\030\003 \001(\t\022\021\n\tbe" +
+      "am_size\030\004 \001(\005\022\022\n\nvad_filter\030\005 \001(\010\022\027\n\017wor" +
+      "d_timestamps\030\006 \001(\010\022\026\n\016initial_prompt\030\007 \001" +
+      "(\t\022\"\n\032condition_on_previous_text\030\010 \001(\010\022\033" +
+      "\n\023no_speech_threshold\030\t \001(\001\022:\n\021extractio" +
+      "n_ranges\030\n \003(\0132\037.jervis.whisper.Extracti" +
+      "onRange\022\017\n\007diarize\030\013 \001(\010\"L\n\017ExtractionRa" +
+      "nge\022\021\n\tstart_sec\030\001 \001(\001\022\017\n\007end_sec\030\002 \001(\001\022" +
+      "\025\n\rsegment_index\030\003 \001(\005\"\253\001\n\017TranscribeEve" +
+      "nt\0221\n\010progress\030\001 \001(\0132\035.jervis.whisper.Pr" +
+      "ogressEventH\000\022-\n\006result\030\002 \001(\0132\033.jervis.w" +
+      "hisper.ResultEventH\000\022+\n\005error\030\003 \001(\0132\032.je" +
+      "rvis.whisper.ErrorEventH\000B\t\n\007payload\"k\n\r" +
+      "ProgressEvent\022\017\n\007percent\030\001 \001(\001\022\025\n\rsegmen" +
+      "ts_done\030\002 \001(\005\022\027\n\017elapsed_seconds\030\003 \001(\001\022\031" +
+      "\n\021last_segment_text\030\004 \001(\t\"\341\002\n\013ResultEven" +
+      "t\022\014\n\004text\030\001 \001(\t\022\020\n\010language\030\002 \001(\t\022\034\n\024lan" +
+      "guage_probability\030\003 \001(\001\022\020\n\010duration\030\004 \001(" +
+      "\001\0223\n\010segments\030\005 \003(\0132!.jervis.whisper.Tra" +
+      "nscribeSegment\022\020\n\010speakers\030\006 \003(\t\022<\n\022spea" +
+      "ker_embeddings\030\007 \003(\0132 .jervis.whisper.Sp" +
+      "eakerEmbedding\022G\n\017text_by_segment\030\010 \003(\0132" +
+      "..jervis.whisper.ResultEvent.TextBySegme" +
+      "ntEntry\0324\n\022TextBySegmentEntry\022\013\n\003key\030\001 \001" +
+      "(\005\022\r\n\005value\030\002 \001(\t:\0028\001\"a\n\021TranscribeSegme" +
+      "nt\022\t\n\001i\030\001 \001(\005\022\021\n\tstart_sec\030\002 \001(\001\022\017\n\007end_" +
+      "sec\030\003 \001(\001\022\014\n\004text\030\004 \001(\t\022\017\n\007speaker\030\005 \001(\t" +
+      "\"1\n\020SpeakerEmbedding\022\r\n\005label\030\001 \001(\t\022\016\n\006v" +
+      "alues\030\002 \003(\002\")\n\nErrorEvent\022\014\n\004text\030\001 \001(\t\022" +
+      "\r\n\005error\030\002 \001(\t\";\n\rHealthRequest\022*\n\003ctx\030\001" +
+      " \001(\0132\035.jervis.common.RequestContext\"R\n\016H" +
+      "ealthResponse\022\n\n\002ok\030\001 \001(\010\022\016\n\006status\030\002 \001(" +
+      "\t\022\024\n\014model_loaded\030\003 \001(\010\022\016\n\006detail\030\004 \001(\t\"" +
+      "?\n\021GpuReleaseRequest\022*\n\003ctx\030\001 \001(\0132\035.jerv" +
+      "is.common.RequestContext\"&\n\022GpuReleaseRe" +
+      "sponse\022\020\n\010released\030\001 \001(\0102\202\002\n\016WhisperServ" +
+      "ice\022R\n\nTranscribe\022!.jervis.whisper.Trans" +
+      "cribeRequest\032\037.jervis.whisper.Transcribe" +
+      "Event0\001\022G\n\006Health\022\035.jervis.whisper.Healt" +
+      "hRequest\032\036.jervis.whisper.HealthResponse" +
+      "\022S\n\nGpuRelease\022!.jervis.whisper.GpuRelea" +
+      "seRequest\032\".jervis.whisper.GpuReleaseRes" +
+      "ponseB.\n\034com.jervis.contracts.whisperB\014W" +
+      "hisperProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -97,33 +167,81 @@ public final class WhisperProto extends com.google.protobuf.GeneratedFile {
     internal_static_jervis_whisper_TranscribeRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_whisper_TranscribeRequest_descriptor,
-        new java.lang.String[] { "Ctx", "Audio", "Filename", "OptionsJson", "BlobRef", });
-    internal_static_jervis_whisper_TranscribeEvent_descriptor =
+        new java.lang.String[] { "Ctx", "Audio", "Filename", "Options", "BlobRef", });
+    internal_static_jervis_whisper_TranscribeOptions_descriptor =
       getDescriptor().getMessageTypes().get(1);
+    internal_static_jervis_whisper_TranscribeOptions_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whisper_TranscribeOptions_descriptor,
+        new java.lang.String[] { "Task", "Model", "Language", "BeamSize", "VadFilter", "WordTimestamps", "InitialPrompt", "ConditionOnPreviousText", "NoSpeechThreshold", "ExtractionRanges", "Diarize", });
+    internal_static_jervis_whisper_ExtractionRange_descriptor =
+      getDescriptor().getMessageTypes().get(2);
+    internal_static_jervis_whisper_ExtractionRange_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whisper_ExtractionRange_descriptor,
+        new java.lang.String[] { "StartSec", "EndSec", "SegmentIndex", });
+    internal_static_jervis_whisper_TranscribeEvent_descriptor =
+      getDescriptor().getMessageTypes().get(3);
     internal_static_jervis_whisper_TranscribeEvent_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_whisper_TranscribeEvent_descriptor,
-        new java.lang.String[] { "Event", "DataJson", });
+        new java.lang.String[] { "Progress", "Result", "Error", "Payload", });
+    internal_static_jervis_whisper_ProgressEvent_descriptor =
+      getDescriptor().getMessageTypes().get(4);
+    internal_static_jervis_whisper_ProgressEvent_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whisper_ProgressEvent_descriptor,
+        new java.lang.String[] { "Percent", "SegmentsDone", "ElapsedSeconds", "LastSegmentText", });
+    internal_static_jervis_whisper_ResultEvent_descriptor =
+      getDescriptor().getMessageTypes().get(5);
+    internal_static_jervis_whisper_ResultEvent_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whisper_ResultEvent_descriptor,
+        new java.lang.String[] { "Text", "Language", "LanguageProbability", "Duration", "Segments", "Speakers", "SpeakerEmbeddings", "TextBySegment", });
+    internal_static_jervis_whisper_ResultEvent_TextBySegmentEntry_descriptor =
+      internal_static_jervis_whisper_ResultEvent_descriptor.getNestedTypes().get(0);
+    internal_static_jervis_whisper_ResultEvent_TextBySegmentEntry_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whisper_ResultEvent_TextBySegmentEntry_descriptor,
+        new java.lang.String[] { "Key", "Value", });
+    internal_static_jervis_whisper_TranscribeSegment_descriptor =
+      getDescriptor().getMessageTypes().get(6);
+    internal_static_jervis_whisper_TranscribeSegment_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whisper_TranscribeSegment_descriptor,
+        new java.lang.String[] { "I", "StartSec", "EndSec", "Text", "Speaker", });
+    internal_static_jervis_whisper_SpeakerEmbedding_descriptor =
+      getDescriptor().getMessageTypes().get(7);
+    internal_static_jervis_whisper_SpeakerEmbedding_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whisper_SpeakerEmbedding_descriptor,
+        new java.lang.String[] { "Label", "Values", });
+    internal_static_jervis_whisper_ErrorEvent_descriptor =
+      getDescriptor().getMessageTypes().get(8);
+    internal_static_jervis_whisper_ErrorEvent_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_whisper_ErrorEvent_descriptor,
+        new java.lang.String[] { "Text", "Error", });
     internal_static_jervis_whisper_HealthRequest_descriptor =
-      getDescriptor().getMessageTypes().get(2);
+      getDescriptor().getMessageTypes().get(9);
     internal_static_jervis_whisper_HealthRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_whisper_HealthRequest_descriptor,
         new java.lang.String[] { "Ctx", });
     internal_static_jervis_whisper_HealthResponse_descriptor =
-      getDescriptor().getMessageTypes().get(3);
+      getDescriptor().getMessageTypes().get(10);
     internal_static_jervis_whisper_HealthResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_whisper_HealthResponse_descriptor,
         new java.lang.String[] { "Ok", "Status", "ModelLoaded", "Detail", });
     internal_static_jervis_whisper_GpuReleaseRequest_descriptor =
-      getDescriptor().getMessageTypes().get(4);
+      getDescriptor().getMessageTypes().get(11);
     internal_static_jervis_whisper_GpuReleaseRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_whisper_GpuReleaseRequest_descriptor,
         new java.lang.String[] { "Ctx", });
     internal_static_jervis_whisper_GpuReleaseResponse_descriptor =
-      getDescriptor().getMessageTypes().get(5);
+      getDescriptor().getMessageTypes().get(12);
     internal_static_jervis_whisper_GpuReleaseResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_whisper_GpuReleaseResponse_descriptor,

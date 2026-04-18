@@ -11,40 +11,49 @@ public interface TranscribeEventOrBuilder extends
     com.google.protobuf.MessageOrBuilder {
 
   /**
-   * <pre>
-   * event ∈ {"progress", "result", "error"}.
-   * data_json carries the legacy per-event payload keys (percent /
-   * segments_done / elapsed_seconds / last_segment_text for progress;
-   * full WhisperResult for result; {text, segments, error} for error).
-   * </pre>
-   *
-   * <code>string event = 1;</code>
-   * @return The event.
+   * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+   * @return Whether the progress field is set.
    */
-  java.lang.String getEvent();
+  boolean hasProgress();
   /**
-   * <pre>
-   * event ∈ {"progress", "result", "error"}.
-   * data_json carries the legacy per-event payload keys (percent /
-   * segments_done / elapsed_seconds / last_segment_text for progress;
-   * full WhisperResult for result; {text, segments, error} for error).
-   * </pre>
-   *
-   * <code>string event = 1;</code>
-   * @return The bytes for event.
+   * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+   * @return The progress.
    */
-  com.google.protobuf.ByteString
-      getEventBytes();
+  com.jervis.contracts.whisper.ProgressEvent getProgress();
+  /**
+   * <code>.jervis.whisper.ProgressEvent progress = 1;</code>
+   */
+  com.jervis.contracts.whisper.ProgressEventOrBuilder getProgressOrBuilder();
 
   /**
-   * <code>string data_json = 2;</code>
-   * @return The dataJson.
+   * <code>.jervis.whisper.ResultEvent result = 2;</code>
+   * @return Whether the result field is set.
    */
-  java.lang.String getDataJson();
+  boolean hasResult();
   /**
-   * <code>string data_json = 2;</code>
-   * @return The bytes for dataJson.
+   * <code>.jervis.whisper.ResultEvent result = 2;</code>
+   * @return The result.
    */
-  com.google.protobuf.ByteString
-      getDataJsonBytes();
+  com.jervis.contracts.whisper.ResultEvent getResult();
+  /**
+   * <code>.jervis.whisper.ResultEvent result = 2;</code>
+   */
+  com.jervis.contracts.whisper.ResultEventOrBuilder getResultOrBuilder();
+
+  /**
+   * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+   * @return Whether the error field is set.
+   */
+  boolean hasError();
+  /**
+   * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+   * @return The error.
+   */
+  com.jervis.contracts.whisper.ErrorEvent getError();
+  /**
+   * <code>.jervis.whisper.ErrorEvent error = 3;</code>
+   */
+  com.jervis.contracts.whisper.ErrorEventOrBuilder getErrorOrBuilder();
+
+  com.jervis.contracts.whisper.TranscribeEvent.PayloadCase getPayloadCase();
 }

@@ -1,19 +1,17 @@
 package com.jervis.meeting
 
+import com.jervis.contracts.whisper.TranscribeOptions
 import com.jervis.infrastructure.config.properties.WhisperProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Paths
 
 private val logger = KotlinLogging.logger {}
-
-private val json = Json { ignoreUnknownKeys = true }
 
 /**
  * Whisper transcription client — calls GPU REST server on Ollama VM.
@@ -68,12 +66,12 @@ class WhisperTranscriptionClient(
                 "model=${settings.model}, beam=${settings.beamSize}, diarize=$diarize"
         }
 
-        val optionsJson = buildOptionsJson(settings, autoPrompt, diarize)
+        val options = buildTranscribeOptions(settings, autoPrompt, diarize)
 
         return whisperRestClient.transcribe(
             baseUrl = settings.restRemoteUrl,
             audioFilePath = audioFilePath,
-            optionsJson = optionsJson,
+            options = options,
             onProgress = buildProgressCallback(meetingId, clientId),
         )
     }
@@ -102,16 +100,12 @@ class WhisperTranscriptionClient(
             "Retranscription: ${extractionRanges.size} ranges, ${totalExtractedSeconds}s extracted audio"
         }
 
-        val rangesJson = extractionRanges.joinToString(",", "[", "]") { r ->
-            """{"start":${r.start},"end":${r.end},"segment_index":${r.segmentIndex}}"""
-        }
-
-        val optionsJson = buildRetranscribeOptionsJson(autoPrompt, rangesJson)
+        val options = buildRetranscribeOptions(autoPrompt, extractionRanges)
 
         return whisperRestClient.transcribe(
             baseUrl = whisperProperties.restRemoteUrl,
             audioFilePath = audioFilePath,
-            optionsJson = optionsJson,
+            options = options,
             onProgress = buildProgressCallback(meetingId, clientId),
         )
     }
@@ -165,62 +159,50 @@ class WhisperTranscriptionClient(
         }
     }
 
-    private fun buildOptionsJson(
+    private fun buildTranscribeOptions(
         settings: WhisperProperties,
         initialPrompt: String? = null,
         diarize: Boolean = settings.diarize,
-    ): String {
-        val opts = mutableMapOf<String, Any?>(
-            "task" to "transcribe",
-            "model" to settings.model,
-            "beam_size" to settings.beamSize,
-            "vad_filter" to settings.vadFilter,
-            "word_timestamps" to false,
-            "condition_on_previous_text" to settings.conditionOnPreviousText,
-            "no_speech_threshold" to settings.noSpeechThreshold,
-            "diarize" to diarize,
-        )
-        initialPrompt?.let { opts["initial_prompt"] = it }
-
-        return buildString {
-            append("{")
-            val entries = opts.entries.toList()
-            entries.forEachIndexed { index, (key, value) ->
-                append("\"$key\":")
-                when (value) {
-                    is String -> append("\"${value.replace("\"", "\\\"")}\"")
-                    is Boolean -> append(value)
-                    is Number -> append(value)
-                    null -> append("null")
-                    else -> append("\"$value\"")
-                }
-                if (index < entries.size - 1) append(",")
-            }
-            append("}")
-        }
-    }
+    ): TranscribeOptions =
+        TranscribeOptions.newBuilder()
+            .setTask("transcribe")
+            .setModel(settings.model)
+            .setBeamSize(settings.beamSize)
+            .setVadFilter(settings.vadFilter)
+            .setWordTimestamps(false)
+            .setConditionOnPreviousText(settings.conditionOnPreviousText)
+            .setNoSpeechThreshold(settings.noSpeechThreshold)
+            .setDiarize(diarize)
+            .setInitialPrompt(initialPrompt ?: "")
+            .build()
 
     /**
-     * Build options JSON for retranscription with high-accuracy overrides.
+     * Build options for retranscription with high-accuracy overrides.
      */
-    private fun buildRetranscribeOptionsJson(
+    private fun buildRetranscribeOptions(
         initialPrompt: String?,
-        extractionRangesJson: String,
-    ): String {
-        val parts = mutableListOf<String>()
-        parts.add(""""task":"transcribe"""")
-        parts.add(""""model":"large-v3"""")
-        parts.add(""""beam_size":10""")
-        parts.add(""""vad_filter":true""")
-        parts.add(""""word_timestamps":false""")
-        parts.add(""""condition_on_previous_text":true""")
-        parts.add(""""no_speech_threshold":0.3""")
-        parts.add(""""diarize":false""")
-        parts.add(""""extraction_ranges":$extractionRangesJson""")
-        initialPrompt?.let {
-            parts.add(""""initial_prompt":"${it.replace("\"", "\\\"")}"""")
+        extractionRanges: List<ExtractionRange>,
+    ): TranscribeOptions {
+        val builder = TranscribeOptions.newBuilder()
+            .setTask("transcribe")
+            .setModel("large-v3")
+            .setBeamSize(10)
+            .setVadFilter(true)
+            .setWordTimestamps(false)
+            .setConditionOnPreviousText(true)
+            .setNoSpeechThreshold(0.3)
+            .setDiarize(false)
+            .setInitialPrompt(initialPrompt ?: "")
+        for (range in extractionRanges) {
+            builder.addExtractionRanges(
+                com.jervis.contracts.whisper.ExtractionRange.newBuilder()
+                    .setStartSec(range.start)
+                    .setEndSec(range.end)
+                    .setSegmentIndex(range.segmentIndex)
+                    .build(),
+            )
         }
-        return "{${parts.joinToString(",")}}"
+        return builder.build()
     }
 
     /**

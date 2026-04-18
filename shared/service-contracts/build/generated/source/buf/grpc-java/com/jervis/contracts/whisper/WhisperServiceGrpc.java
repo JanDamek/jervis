@@ -7,8 +7,8 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * WhisperService — audio transcription with progress streaming.
  * Transcribe is unary-request → server-streaming-response: the request
  * carries the full audio bytes inline (64 MiB cap; multi-hour meeting
- * audio goes via blob side channel once that lands). Progress + result
- * events stream back over the response.
+ * audio goes via the blob side channel once that lands). Progress +
+ * result + error events stream back over the response.
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -176,8 +176,8 @@ public final class WhisperServiceGrpc {
    * WhisperService — audio transcription with progress streaming.
    * Transcribe is unary-request → server-streaming-response: the request
    * carries the full audio bytes inline (64 MiB cap; multi-hour meeting
-   * audio goes via blob side channel once that lands). Progress + result
-   * events stream back over the response.
+   * audio goes via the blob side channel once that lands). Progress +
+   * result + error events stream back over the response.
    * </pre>
    */
   public interface AsyncService {
@@ -210,8 +210,8 @@ public final class WhisperServiceGrpc {
    * WhisperService — audio transcription with progress streaming.
    * Transcribe is unary-request → server-streaming-response: the request
    * carries the full audio bytes inline (64 MiB cap; multi-hour meeting
-   * audio goes via blob side channel once that lands). Progress + result
-   * events stream back over the response.
+   * audio goes via the blob side channel once that lands). Progress +
+   * result + error events stream back over the response.
    * </pre>
    */
   public static abstract class WhisperServiceImplBase
@@ -228,8 +228,8 @@ public final class WhisperServiceGrpc {
    * WhisperService — audio transcription with progress streaming.
    * Transcribe is unary-request → server-streaming-response: the request
    * carries the full audio bytes inline (64 MiB cap; multi-hour meeting
-   * audio goes via blob side channel once that lands). Progress + result
-   * events stream back over the response.
+   * audio goes via the blob side channel once that lands). Progress +
+   * result + error events stream back over the response.
    * </pre>
    */
   public static final class WhisperServiceStub
@@ -276,8 +276,8 @@ public final class WhisperServiceGrpc {
    * WhisperService — audio transcription with progress streaming.
    * Transcribe is unary-request → server-streaming-response: the request
    * carries the full audio bytes inline (64 MiB cap; multi-hour meeting
-   * audio goes via blob side channel once that lands). Progress + result
-   * events stream back over the response.
+   * audio goes via the blob side channel once that lands). Progress +
+   * result + error events stream back over the response.
    * </pre>
    */
   public static final class WhisperServiceBlockingV2Stub
@@ -323,8 +323,8 @@ public final class WhisperServiceGrpc {
    * WhisperService — audio transcription with progress streaming.
    * Transcribe is unary-request → server-streaming-response: the request
    * carries the full audio bytes inline (64 MiB cap; multi-hour meeting
-   * audio goes via blob side channel once that lands). Progress + result
-   * events stream back over the response.
+   * audio goes via the blob side channel once that lands). Progress +
+   * result + error events stream back over the response.
    * </pre>
    */
   public static final class WhisperServiceBlockingStub
@@ -369,8 +369,8 @@ public final class WhisperServiceGrpc {
    * WhisperService — audio transcription with progress streaming.
    * Transcribe is unary-request → server-streaming-response: the request
    * carries the full audio bytes inline (64 MiB cap; multi-hour meeting
-   * audio goes via blob side channel once that lands). Progress + result
-   * events stream back over the response.
+   * audio goes via the blob side channel once that lands). Progress +
+   * result + error events stream back over the response.
    * </pre>
    */
   public static final class WhisperServiceFutureStub
