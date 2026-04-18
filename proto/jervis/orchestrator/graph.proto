@@ -9,19 +9,12 @@ option java_multiple_files = true;
 option java_outer_classname = "OrchestratorGraphProto";
 
 // OrchestratorGraphService — AgentGraph lookup + idle maintenance
-// trigger. Administrative vertex CRUD (delete/update/create/cleanup/
-// purge-stale) stays on FastAPI until a cross-service consumer dials
-// it (UI path goes through Kotlin kRPC, not this servicer).
+// trigger. Administrative vertex CRUD + memory search were removed in
+// slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
+// Kotlin server kRPC, not this servicer).
 service OrchestratorGraphService {
   rpc GetTaskGraph(GetTaskGraphRequest) returns (TaskGraphResponse);
   rpc RunMaintenance(MaintenanceRunRequest) returns (MaintenanceRunResult);
-  // Memory graph admin — used by UI proxy path through the Kotlin server.
-  rpc DeleteVertex(VertexIdRequest) returns (VertexMutationAck);
-  rpc UpdateVertex(UpdateVertexRequest) returns (VertexMutationAck);
-  rpc CreateVertex(CreateVertexRequest) returns (VertexMutationAck);
-  rpc ForceCleanup(CleanupRequest) returns (CleanupResult);
-  rpc PurgeStale(PurgeStaleRequest) returns (PurgeStaleResult);
-  rpc MemorySearch(MemorySearchRequest) returns (MemorySearchResult);
 }
 
 message GetTaskGraphRequest {
@@ -55,72 +48,4 @@ message MaintenanceRunResult {
   string next_client_for_phase2 = 6;
   string client_id = 7;
   repeated string findings = 8;
-}
-
-message VertexIdRequest {
-  jervis.common.RequestContext ctx = 1;
-  string vertex_id = 2;
-}
-
-message UpdateVertexRequest {
-  jervis.common.RequestContext ctx = 1;
-  string vertex_id = 2;
-  // Fields JSON keeps the existing Python body shape ({title, description,
-  // parent_id, input_request, status}) — only keys present are applied,
-  // matching the PATCH handler's "apply-on-set" semantics.
-  string fields_json = 3;
-}
-
-message CreateVertexRequest {
-  jervis.common.RequestContext ctx = 1;
-  string vertex_id = 2;                // required
-  string title = 3;
-  string description = 4;
-  string vertex_type = 5;              // GraphVertex VertexType
-  string status = 6;                   // GraphVertex VertexStatus
-  string parent_id = 7;
-  int32 depth = 8;
-  string client_id = 9;
-  string input_request = 10;
-}
-
-message VertexMutationAck {
-  bool ok = 1;
-  string vertex_id = 2;
-  int32 remaining_vertices = 3;
-  string vertex_json = 4;              // updated vertex serialised (update/create)
-  string error = 5;
-}
-
-message CleanupRequest {
-  jervis.common.RequestContext ctx = 1;
-}
-
-message CleanupResult {
-  int32 removed = 1;
-  int32 remaining_vertices = 2;
-}
-
-message PurgeStaleRequest {
-  jervis.common.RequestContext ctx = 1;
-  double max_age_hours = 2;            // 0 → server default
-}
-
-message PurgeStaleResult {
-  int32 purged = 1;
-  int32 remaining = 2;
-  string detail = 3;
-}
-
-message MemorySearchRequest {
-  jervis.common.RequestContext ctx = 1;
-  string query = 2;
-  string client_id = 3;
-}
-
-message MemorySearchResult {
-  // Three-tier search result carried as JSON — each tier has a different
-  // shape (graph vertices, mongo archive, KB chunks) and the UI consumes
-  // the combined structure directly.
-  string result_json = 1;
 }

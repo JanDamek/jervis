@@ -8,57 +8,15 @@ option java_package = "com.jervis.contracts.orchestrator";
 option java_multiple_files = true;
 option java_outer_classname = "OrchestratorCompanionProto";
 
-// OrchestratorCompanionService — Claude companion dispatch + persistent
-// sessions. Adhoc dispatch maps to the existing FastAPI /companion/adhoc
-// route; session RPCs carry live transcript events; StreamSession is the
-// first server-streaming RPC in the orchestrator surface.
+// OrchestratorCompanionService — persistent Claude companion sessions.
+// Adhoc dispatch was removed with slice V3-cleanup (no pod-to-pod
+// consumer existed; the internal orchestrator graph still uses
+// `companion_runner.dispatch_adhoc` directly, not over gRPC).
 service OrchestratorCompanionService {
-  rpc Adhoc(AdhocRequest) returns (AdhocAck);
-  rpc AdhocStatus(AdhocStatusRequest) returns (AdhocStatusResponse);
   rpc StartSession(SessionStartRequest) returns (SessionStartResponse);
   rpc SessionEvent(SessionEventRequest) returns (SessionEventAck);
   rpc StopSession(SessionRef) returns (SessionAck);
   rpc StreamSession(StreamSessionRequest) returns (stream OutboxEvent);
-}
-
-message AdhocRequest {
-  jervis.common.RequestContext ctx = 1;
-  string task_id = 2;
-  string brief = 3;
-  string client_id = 4;
-  string project_id = 5;
-  string language = 6;                 // "cs" default
-  map<string, string> context = 7;
-  repeated string attachment_paths = 8;
-}
-
-message AdhocAck {
-  string job_name = 1;
-  string workspace_path = 2;
-  string mode = 3;
-  string error = 4;                    // populated on dispatch reject (busy)
-}
-
-message AdhocStatusRequest {
-  jervis.common.RequestContext ctx = 1;
-  string task_id = 2;
-  string workspace_path = 3;
-}
-
-message AdhocStatusResponse {
-  string task_id = 1;
-  string status = 2;                   // "pending" | "done" | "error"
-  AdhocResult result = 3;              // populated when status=done
-}
-
-// AdhocResult mirrors the `{summary, mode, artifacts, error}` shape the
-// companion runner writes to `.jervis/result.json`. Source of truth:
-// `app/agents/companion_runner.py::collect_adhoc_result`.
-message AdhocResult {
-  string summary = 1;
-  string mode = 2;                     // "adhoc" | empty
-  repeated string artifacts = 3;
-  string error = 4;                    // populated when the runner errored out
 }
 
 message SessionStartRequest {

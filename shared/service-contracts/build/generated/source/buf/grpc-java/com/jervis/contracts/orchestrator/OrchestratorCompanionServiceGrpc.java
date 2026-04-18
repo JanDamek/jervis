@@ -4,10 +4,10 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 
 /**
  * <pre>
- * OrchestratorCompanionService — Claude companion dispatch + persistent
- * sessions. Adhoc dispatch maps to the existing FastAPI /companion/adhoc
- * route; session RPCs carry live transcript events; StreamSession is the
- * first server-streaming RPC in the orchestrator surface.
+ * OrchestratorCompanionService — persistent Claude companion sessions.
+ * Adhoc dispatch was removed with slice V3-cleanup (no pod-to-pod
+ * consumer existed; the internal orchestrator graph still uses
+ * `companion_runner.dispatch_adhoc` directly, not over gRPC).
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -18,68 +18,6 @@ public final class OrchestratorCompanionServiceGrpc {
   public static final java.lang.String SERVICE_NAME = "jervis.orchestrator.OrchestratorCompanionService";
 
   // Static method descriptors that strictly reflect the proto.
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.AdhocRequest,
-      com.jervis.contracts.orchestrator.AdhocAck> getAdhocMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "Adhoc",
-      requestType = com.jervis.contracts.orchestrator.AdhocRequest.class,
-      responseType = com.jervis.contracts.orchestrator.AdhocAck.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.AdhocRequest,
-      com.jervis.contracts.orchestrator.AdhocAck> getAdhocMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.AdhocRequest, com.jervis.contracts.orchestrator.AdhocAck> getAdhocMethod;
-    if ((getAdhocMethod = OrchestratorCompanionServiceGrpc.getAdhocMethod) == null) {
-      synchronized (OrchestratorCompanionServiceGrpc.class) {
-        if ((getAdhocMethod = OrchestratorCompanionServiceGrpc.getAdhocMethod) == null) {
-          OrchestratorCompanionServiceGrpc.getAdhocMethod = getAdhocMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.orchestrator.AdhocRequest, com.jervis.contracts.orchestrator.AdhocAck>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "Adhoc"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.orchestrator.AdhocRequest.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.orchestrator.AdhocAck.getDefaultInstance()))
-              .setSchemaDescriptor(new OrchestratorCompanionServiceMethodDescriptorSupplier("Adhoc"))
-              .build();
-        }
-      }
-    }
-    return getAdhocMethod;
-  }
-
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.AdhocStatusRequest,
-      com.jervis.contracts.orchestrator.AdhocStatusResponse> getAdhocStatusMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "AdhocStatus",
-      requestType = com.jervis.contracts.orchestrator.AdhocStatusRequest.class,
-      responseType = com.jervis.contracts.orchestrator.AdhocStatusResponse.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.AdhocStatusRequest,
-      com.jervis.contracts.orchestrator.AdhocStatusResponse> getAdhocStatusMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.AdhocStatusRequest, com.jervis.contracts.orchestrator.AdhocStatusResponse> getAdhocStatusMethod;
-    if ((getAdhocStatusMethod = OrchestratorCompanionServiceGrpc.getAdhocStatusMethod) == null) {
-      synchronized (OrchestratorCompanionServiceGrpc.class) {
-        if ((getAdhocStatusMethod = OrchestratorCompanionServiceGrpc.getAdhocStatusMethod) == null) {
-          OrchestratorCompanionServiceGrpc.getAdhocStatusMethod = getAdhocStatusMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.orchestrator.AdhocStatusRequest, com.jervis.contracts.orchestrator.AdhocStatusResponse>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "AdhocStatus"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.orchestrator.AdhocStatusRequest.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.orchestrator.AdhocStatusResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new OrchestratorCompanionServiceMethodDescriptorSupplier("AdhocStatus"))
-              .build();
-        }
-      }
-    }
-    return getAdhocStatusMethod;
-  }
-
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.orchestrator.SessionStartRequest,
       com.jervis.contracts.orchestrator.SessionStartResponse> getStartSessionMethod;
 
@@ -265,27 +203,13 @@ public final class OrchestratorCompanionServiceGrpc {
 
   /**
    * <pre>
-   * OrchestratorCompanionService — Claude companion dispatch + persistent
-   * sessions. Adhoc dispatch maps to the existing FastAPI /companion/adhoc
-   * route; session RPCs carry live transcript events; StreamSession is the
-   * first server-streaming RPC in the orchestrator surface.
+   * OrchestratorCompanionService — persistent Claude companion sessions.
+   * Adhoc dispatch was removed with slice V3-cleanup (no pod-to-pod
+   * consumer existed; the internal orchestrator graph still uses
+   * `companion_runner.dispatch_adhoc` directly, not over gRPC).
    * </pre>
    */
   public interface AsyncService {
-
-    /**
-     */
-    default void adhoc(com.jervis.contracts.orchestrator.AdhocRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.AdhocAck> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getAdhocMethod(), responseObserver);
-    }
-
-    /**
-     */
-    default void adhocStatus(com.jervis.contracts.orchestrator.AdhocStatusRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.AdhocStatusResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getAdhocStatusMethod(), responseObserver);
-    }
 
     /**
      */
@@ -319,10 +243,10 @@ public final class OrchestratorCompanionServiceGrpc {
   /**
    * Base class for the server implementation of the service OrchestratorCompanionService.
    * <pre>
-   * OrchestratorCompanionService — Claude companion dispatch + persistent
-   * sessions. Adhoc dispatch maps to the existing FastAPI /companion/adhoc
-   * route; session RPCs carry live transcript events; StreamSession is the
-   * first server-streaming RPC in the orchestrator surface.
+   * OrchestratorCompanionService — persistent Claude companion sessions.
+   * Adhoc dispatch was removed with slice V3-cleanup (no pod-to-pod
+   * consumer existed; the internal orchestrator graph still uses
+   * `companion_runner.dispatch_adhoc` directly, not over gRPC).
    * </pre>
    */
   public static abstract class OrchestratorCompanionServiceImplBase
@@ -336,10 +260,10 @@ public final class OrchestratorCompanionServiceGrpc {
   /**
    * A stub to allow clients to do asynchronous rpc calls to service OrchestratorCompanionService.
    * <pre>
-   * OrchestratorCompanionService — Claude companion dispatch + persistent
-   * sessions. Adhoc dispatch maps to the existing FastAPI /companion/adhoc
-   * route; session RPCs carry live transcript events; StreamSession is the
-   * first server-streaming RPC in the orchestrator surface.
+   * OrchestratorCompanionService — persistent Claude companion sessions.
+   * Adhoc dispatch was removed with slice V3-cleanup (no pod-to-pod
+   * consumer existed; the internal orchestrator graph still uses
+   * `companion_runner.dispatch_adhoc` directly, not over gRPC).
    * </pre>
    */
   public static final class OrchestratorCompanionServiceStub
@@ -353,22 +277,6 @@ public final class OrchestratorCompanionServiceGrpc {
     protected OrchestratorCompanionServiceStub build(
         io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
       return new OrchestratorCompanionServiceStub(channel, callOptions);
-    }
-
-    /**
-     */
-    public void adhoc(com.jervis.contracts.orchestrator.AdhocRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.AdhocAck> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getAdhocMethod(), getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     */
-    public void adhocStatus(com.jervis.contracts.orchestrator.AdhocStatusRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.AdhocStatusResponse> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getAdhocStatusMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -407,10 +315,10 @@ public final class OrchestratorCompanionServiceGrpc {
   /**
    * A stub to allow clients to do synchronous rpc calls to service OrchestratorCompanionService.
    * <pre>
-   * OrchestratorCompanionService — Claude companion dispatch + persistent
-   * sessions. Adhoc dispatch maps to the existing FastAPI /companion/adhoc
-   * route; session RPCs carry live transcript events; StreamSession is the
-   * first server-streaming RPC in the orchestrator surface.
+   * OrchestratorCompanionService — persistent Claude companion sessions.
+   * Adhoc dispatch was removed with slice V3-cleanup (no pod-to-pod
+   * consumer existed; the internal orchestrator graph still uses
+   * `companion_runner.dispatch_adhoc` directly, not over gRPC).
    * </pre>
    */
   public static final class OrchestratorCompanionServiceBlockingV2Stub
@@ -424,20 +332,6 @@ public final class OrchestratorCompanionServiceGrpc {
     protected OrchestratorCompanionServiceBlockingV2Stub build(
         io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
       return new OrchestratorCompanionServiceBlockingV2Stub(channel, callOptions);
-    }
-
-    /**
-     */
-    public com.jervis.contracts.orchestrator.AdhocAck adhoc(com.jervis.contracts.orchestrator.AdhocRequest request) throws io.grpc.StatusException {
-      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
-          getChannel(), getAdhocMethod(), getCallOptions(), request);
-    }
-
-    /**
-     */
-    public com.jervis.contracts.orchestrator.AdhocStatusResponse adhocStatus(com.jervis.contracts.orchestrator.AdhocStatusRequest request) throws io.grpc.StatusException {
-      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
-          getChannel(), getAdhocStatusMethod(), getCallOptions(), request);
     }
 
     /**
@@ -474,10 +368,10 @@ public final class OrchestratorCompanionServiceGrpc {
   /**
    * A stub to allow clients to do limited synchronous rpc calls to service OrchestratorCompanionService.
    * <pre>
-   * OrchestratorCompanionService — Claude companion dispatch + persistent
-   * sessions. Adhoc dispatch maps to the existing FastAPI /companion/adhoc
-   * route; session RPCs carry live transcript events; StreamSession is the
-   * first server-streaming RPC in the orchestrator surface.
+   * OrchestratorCompanionService — persistent Claude companion sessions.
+   * Adhoc dispatch was removed with slice V3-cleanup (no pod-to-pod
+   * consumer existed; the internal orchestrator graph still uses
+   * `companion_runner.dispatch_adhoc` directly, not over gRPC).
    * </pre>
    */
   public static final class OrchestratorCompanionServiceBlockingStub
@@ -491,20 +385,6 @@ public final class OrchestratorCompanionServiceGrpc {
     protected OrchestratorCompanionServiceBlockingStub build(
         io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
       return new OrchestratorCompanionServiceBlockingStub(channel, callOptions);
-    }
-
-    /**
-     */
-    public com.jervis.contracts.orchestrator.AdhocAck adhoc(com.jervis.contracts.orchestrator.AdhocRequest request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getAdhocMethod(), getCallOptions(), request);
-    }
-
-    /**
-     */
-    public com.jervis.contracts.orchestrator.AdhocStatusResponse adhocStatus(com.jervis.contracts.orchestrator.AdhocStatusRequest request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getAdhocStatusMethod(), getCallOptions(), request);
     }
 
     /**
@@ -540,10 +420,10 @@ public final class OrchestratorCompanionServiceGrpc {
   /**
    * A stub to allow clients to do ListenableFuture-style rpc calls to service OrchestratorCompanionService.
    * <pre>
-   * OrchestratorCompanionService — Claude companion dispatch + persistent
-   * sessions. Adhoc dispatch maps to the existing FastAPI /companion/adhoc
-   * route; session RPCs carry live transcript events; StreamSession is the
-   * first server-streaming RPC in the orchestrator surface.
+   * OrchestratorCompanionService — persistent Claude companion sessions.
+   * Adhoc dispatch was removed with slice V3-cleanup (no pod-to-pod
+   * consumer existed; the internal orchestrator graph still uses
+   * `companion_runner.dispatch_adhoc` directly, not over gRPC).
    * </pre>
    */
   public static final class OrchestratorCompanionServiceFutureStub
@@ -557,22 +437,6 @@ public final class OrchestratorCompanionServiceGrpc {
     protected OrchestratorCompanionServiceFutureStub build(
         io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
       return new OrchestratorCompanionServiceFutureStub(channel, callOptions);
-    }
-
-    /**
-     */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.orchestrator.AdhocAck> adhoc(
-        com.jervis.contracts.orchestrator.AdhocRequest request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getAdhocMethod(), getCallOptions()), request);
-    }
-
-    /**
-     */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.orchestrator.AdhocStatusResponse> adhocStatus(
-        com.jervis.contracts.orchestrator.AdhocStatusRequest request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getAdhocStatusMethod(), getCallOptions()), request);
     }
 
     /**
@@ -600,12 +464,10 @@ public final class OrchestratorCompanionServiceGrpc {
     }
   }
 
-  private static final int METHODID_ADHOC = 0;
-  private static final int METHODID_ADHOC_STATUS = 1;
-  private static final int METHODID_START_SESSION = 2;
-  private static final int METHODID_SESSION_EVENT = 3;
-  private static final int METHODID_STOP_SESSION = 4;
-  private static final int METHODID_STREAM_SESSION = 5;
+  private static final int METHODID_START_SESSION = 0;
+  private static final int METHODID_SESSION_EVENT = 1;
+  private static final int METHODID_STOP_SESSION = 2;
+  private static final int METHODID_STREAM_SESSION = 3;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -624,14 +486,6 @@ public final class OrchestratorCompanionServiceGrpc {
     @java.lang.SuppressWarnings("unchecked")
     public void invoke(Req request, io.grpc.stub.StreamObserver<Resp> responseObserver) {
       switch (methodId) {
-        case METHODID_ADHOC:
-          serviceImpl.adhoc((com.jervis.contracts.orchestrator.AdhocRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.AdhocAck>) responseObserver);
-          break;
-        case METHODID_ADHOC_STATUS:
-          serviceImpl.adhocStatus((com.jervis.contracts.orchestrator.AdhocStatusRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.AdhocStatusResponse>) responseObserver);
-          break;
         case METHODID_START_SESSION:
           serviceImpl.startSession((com.jervis.contracts.orchestrator.SessionStartRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.orchestrator.SessionStartResponse>) responseObserver);
@@ -666,20 +520,6 @@ public final class OrchestratorCompanionServiceGrpc {
 
   public static final io.grpc.ServerServiceDefinition bindService(AsyncService service) {
     return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
-        .addMethod(
-          getAdhocMethod(),
-          io.grpc.stub.ServerCalls.asyncUnaryCall(
-            new MethodHandlers<
-              com.jervis.contracts.orchestrator.AdhocRequest,
-              com.jervis.contracts.orchestrator.AdhocAck>(
-                service, METHODID_ADHOC)))
-        .addMethod(
-          getAdhocStatusMethod(),
-          io.grpc.stub.ServerCalls.asyncUnaryCall(
-            new MethodHandlers<
-              com.jervis.contracts.orchestrator.AdhocStatusRequest,
-              com.jervis.contracts.orchestrator.AdhocStatusResponse>(
-                service, METHODID_ADHOC_STATUS)))
         .addMethod(
           getStartSessionMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -756,8 +596,6 @@ public final class OrchestratorCompanionServiceGrpc {
         if (result == null) {
           serviceDescriptor = result = io.grpc.ServiceDescriptor.newBuilder(SERVICE_NAME)
               .setSchemaDescriptor(new OrchestratorCompanionServiceFileDescriptorSupplier())
-              .addMethod(getAdhocMethod())
-              .addMethod(getAdhocStatusMethod())
               .addMethod(getStartSessionMethod())
               .addMethod(getSessionEventMethod())
               .addMethod(getStopSessionMethod())

@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#jervis/orchestrator/companion.proto\x12\x13jervis.orchestrator\x1a\x19jervis/common/types.proto\"\x9e\x02\n\x0c\x41\x64hocRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\r\n\x05\x62rief\x18\x03 \x01(\t\x12\x11\n\tclient_id\x18\x04 \x01(\t\x12\x12\n\nproject_id\x18\x05 \x01(\t\x12\x10\n\x08language\x18\x06 \x01(\t\x12?\n\x07\x63ontext\x18\x07 \x03(\x0b\x32..jervis.orchestrator.AdhocRequest.ContextEntry\x12\x18\n\x10\x61ttachment_paths\x18\x08 \x03(\t\x1a.\n\x0c\x43ontextEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"Q\n\x08\x41\x64hocAck\x12\x10\n\x08job_name\x18\x01 \x01(\t\x12\x16\n\x0eworkspace_path\x18\x02 \x01(\t\x12\x0c\n\x04mode\x18\x03 \x01(\t\x12\r\n\x05\x65rror\x18\x04 \x01(\t\"i\n\x12\x41\x64hocStatusRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\x16\n\x0eworkspace_path\x18\x03 \x01(\t\"h\n\x13\x41\x64hocStatusResponse\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x30\n\x06result\x18\x03 \x01(\x0b\x32 .jervis.orchestrator.AdhocResult\"N\n\x0b\x41\x64hocResult\x12\x0f\n\x07summary\x18\x01 \x01(\t\x12\x0c\n\x04mode\x18\x02 \x01(\t\x12\x11\n\tartifacts\x18\x03 \x03(\t\x12\r\n\x05\x65rror\x18\x04 \x01(\t\"\xaf\x02\n\x13SessionStartRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\r\n\x05\x62rief\x18\x03 \x01(\t\x12\x11\n\tclient_id\x18\x04 \x01(\t\x12\x12\n\nproject_id\x18\x05 \x01(\t\x12\x10\n\x08language\x18\x06 \x01(\t\x12\x46\n\x07\x63ontext\x18\x07 \x03(\x0b\x32\x35.jervis.orchestrator.SessionStartRequest.ContextEntry\x12\x18\n\x10\x61ttachment_paths\x18\x08 \x03(\t\x1a.\n\x0c\x43ontextEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"c\n\x14SessionStartResponse\x12\x10\n\x08job_name\x18\x01 \x01(\t\x12\x16\n\x0eworkspace_path\x18\x02 \x01(\t\x12\x12\n\nsession_id\x18\x03 \x01(\t\x12\r\n\x05\x65rror\x18\x04 \x01(\t\"\xe3\x01\n\x13SessionEventRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x04 \x01(\t\x12@\n\x04meta\x18\x05 \x03(\x0b\x32\x32.jervis.orchestrator.SessionEventRequest.MetaEntry\x1a+\n\tMetaEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\",\n\x0fSessionEventAck\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"L\n\nSessionRef\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nsession_id\x18\x02 \x01(\t\"\'\n\nSessionAck\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"o\n\x14StreamSessionRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x17\n\x0fmax_age_seconds\x18\x03 \x01(\x01\"\xae\x01\n\x0bOutboxEvent\x12\n\n\x02ts\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t\x12\r\n\x05\x66inal\x18\x04 \x01(\x08\x12\x38\n\x04meta\x18\x05 \x03(\x0b\x32*.jervis.orchestrator.OutboxEvent.MetaEntry\x1a+\n\tMetaEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x32\xc1\x04\n\x1cOrchestratorCompanionService\x12I\n\x05\x41\x64hoc\x12!.jervis.orchestrator.AdhocRequest\x1a\x1d.jervis.orchestrator.AdhocAck\x12`\n\x0b\x41\x64hocStatus\x12\'.jervis.orchestrator.AdhocStatusRequest\x1a(.jervis.orchestrator.AdhocStatusResponse\x12\x63\n\x0cStartSession\x12(.jervis.orchestrator.SessionStartRequest\x1a).jervis.orchestrator.SessionStartResponse\x12^\n\x0cSessionEvent\x12(.jervis.orchestrator.SessionEventRequest\x1a$.jervis.orchestrator.SessionEventAck\x12O\n\x0bStopSession\x12\x1f.jervis.orchestrator.SessionRef\x1a\x1f.jervis.orchestrator.SessionAck\x12^\n\rStreamSession\x12).jervis.orchestrator.StreamSessionRequest\x1a .jervis.orchestrator.OutboxEvent0\x01\x42\x41\n!com.jervis.contracts.orchestratorB\x1aOrchestratorCompanionProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#jervis/orchestrator/companion.proto\x12\x13jervis.orchestrator\x1a\x19jervis/common/types.proto\"\xaf\x02\n\x13SessionStartRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\r\n\x05\x62rief\x18\x03 \x01(\t\x12\x11\n\tclient_id\x18\x04 \x01(\t\x12\x12\n\nproject_id\x18\x05 \x01(\t\x12\x10\n\x08language\x18\x06 \x01(\t\x12\x46\n\x07\x63ontext\x18\x07 \x03(\x0b\x32\x35.jervis.orchestrator.SessionStartRequest.ContextEntry\x12\x18\n\x10\x61ttachment_paths\x18\x08 \x03(\t\x1a.\n\x0c\x43ontextEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"c\n\x14SessionStartResponse\x12\x10\n\x08job_name\x18\x01 \x01(\t\x12\x16\n\x0eworkspace_path\x18\x02 \x01(\t\x12\x12\n\nsession_id\x18\x03 \x01(\t\x12\r\n\x05\x65rror\x18\x04 \x01(\t\"\xe3\x01\n\x13SessionEventRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x04 \x01(\t\x12@\n\x04meta\x18\x05 \x03(\x0b\x32\x32.jervis.orchestrator.SessionEventRequest.MetaEntry\x1a+\n\tMetaEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\",\n\x0fSessionEventAck\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"L\n\nSessionRef\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nsession_id\x18\x02 \x01(\t\"\'\n\nSessionAck\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"o\n\x14StreamSessionRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x17\n\x0fmax_age_seconds\x18\x03 \x01(\x01\"\xae\x01\n\x0bOutboxEvent\x12\n\n\x02ts\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t\x12\r\n\x05\x66inal\x18\x04 \x01(\x08\x12\x38\n\x04meta\x18\x05 \x03(\x0b\x32*.jervis.orchestrator.OutboxEvent.MetaEntry\x1a+\n\tMetaEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x32\x94\x03\n\x1cOrchestratorCompanionService\x12\x63\n\x0cStartSession\x12(.jervis.orchestrator.SessionStartRequest\x1a).jervis.orchestrator.SessionStartResponse\x12^\n\x0cSessionEvent\x12(.jervis.orchestrator.SessionEventRequest\x1a$.jervis.orchestrator.SessionEventAck\x12O\n\x0bStopSession\x12\x1f.jervis.orchestrator.SessionRef\x1a\x1f.jervis.orchestrator.SessionAck\x12^\n\rStreamSession\x12).jervis.orchestrator.StreamSessionRequest\x1a .jervis.orchestrator.OutboxEvent0\x01\x42\x41\n!com.jervis.contracts.orchestratorB\x1aOrchestratorCompanionProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,48 +33,34 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'jervis.orchestrator.compani
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n!com.jervis.contracts.orchestratorB\032OrchestratorCompanionProtoP\001'
-  _globals['_ADHOCREQUEST_CONTEXTENTRY']._loaded_options = None
-  _globals['_ADHOCREQUEST_CONTEXTENTRY']._serialized_options = b'8\001'
   _globals['_SESSIONSTARTREQUEST_CONTEXTENTRY']._loaded_options = None
   _globals['_SESSIONSTARTREQUEST_CONTEXTENTRY']._serialized_options = b'8\001'
   _globals['_SESSIONEVENTREQUEST_METAENTRY']._loaded_options = None
   _globals['_SESSIONEVENTREQUEST_METAENTRY']._serialized_options = b'8\001'
   _globals['_OUTBOXEVENT_METAENTRY']._loaded_options = None
   _globals['_OUTBOXEVENT_METAENTRY']._serialized_options = b'8\001'
-  _globals['_ADHOCREQUEST']._serialized_start=88
-  _globals['_ADHOCREQUEST']._serialized_end=374
-  _globals['_ADHOCREQUEST_CONTEXTENTRY']._serialized_start=328
-  _globals['_ADHOCREQUEST_CONTEXTENTRY']._serialized_end=374
-  _globals['_ADHOCACK']._serialized_start=376
-  _globals['_ADHOCACK']._serialized_end=457
-  _globals['_ADHOCSTATUSREQUEST']._serialized_start=459
-  _globals['_ADHOCSTATUSREQUEST']._serialized_end=564
-  _globals['_ADHOCSTATUSRESPONSE']._serialized_start=566
-  _globals['_ADHOCSTATUSRESPONSE']._serialized_end=670
-  _globals['_ADHOCRESULT']._serialized_start=672
-  _globals['_ADHOCRESULT']._serialized_end=750
-  _globals['_SESSIONSTARTREQUEST']._serialized_start=753
-  _globals['_SESSIONSTARTREQUEST']._serialized_end=1056
-  _globals['_SESSIONSTARTREQUEST_CONTEXTENTRY']._serialized_start=328
-  _globals['_SESSIONSTARTREQUEST_CONTEXTENTRY']._serialized_end=374
-  _globals['_SESSIONSTARTRESPONSE']._serialized_start=1058
-  _globals['_SESSIONSTARTRESPONSE']._serialized_end=1157
-  _globals['_SESSIONEVENTREQUEST']._serialized_start=1160
-  _globals['_SESSIONEVENTREQUEST']._serialized_end=1387
-  _globals['_SESSIONEVENTREQUEST_METAENTRY']._serialized_start=1344
-  _globals['_SESSIONEVENTREQUEST_METAENTRY']._serialized_end=1387
-  _globals['_SESSIONEVENTACK']._serialized_start=1389
-  _globals['_SESSIONEVENTACK']._serialized_end=1433
-  _globals['_SESSIONREF']._serialized_start=1435
-  _globals['_SESSIONREF']._serialized_end=1511
-  _globals['_SESSIONACK']._serialized_start=1513
-  _globals['_SESSIONACK']._serialized_end=1552
-  _globals['_STREAMSESSIONREQUEST']._serialized_start=1554
-  _globals['_STREAMSESSIONREQUEST']._serialized_end=1665
-  _globals['_OUTBOXEVENT']._serialized_start=1668
-  _globals['_OUTBOXEVENT']._serialized_end=1842
-  _globals['_OUTBOXEVENT_METAENTRY']._serialized_start=1344
-  _globals['_OUTBOXEVENT_METAENTRY']._serialized_end=1387
-  _globals['_ORCHESTRATORCOMPANIONSERVICE']._serialized_start=1845
-  _globals['_ORCHESTRATORCOMPANIONSERVICE']._serialized_end=2422
+  _globals['_SESSIONSTARTREQUEST']._serialized_start=88
+  _globals['_SESSIONSTARTREQUEST']._serialized_end=391
+  _globals['_SESSIONSTARTREQUEST_CONTEXTENTRY']._serialized_start=345
+  _globals['_SESSIONSTARTREQUEST_CONTEXTENTRY']._serialized_end=391
+  _globals['_SESSIONSTARTRESPONSE']._serialized_start=393
+  _globals['_SESSIONSTARTRESPONSE']._serialized_end=492
+  _globals['_SESSIONEVENTREQUEST']._serialized_start=495
+  _globals['_SESSIONEVENTREQUEST']._serialized_end=722
+  _globals['_SESSIONEVENTREQUEST_METAENTRY']._serialized_start=679
+  _globals['_SESSIONEVENTREQUEST_METAENTRY']._serialized_end=722
+  _globals['_SESSIONEVENTACK']._serialized_start=724
+  _globals['_SESSIONEVENTACK']._serialized_end=768
+  _globals['_SESSIONREF']._serialized_start=770
+  _globals['_SESSIONREF']._serialized_end=846
+  _globals['_SESSIONACK']._serialized_start=848
+  _globals['_SESSIONACK']._serialized_end=887
+  _globals['_STREAMSESSIONREQUEST']._serialized_start=889
+  _globals['_STREAMSESSIONREQUEST']._serialized_end=1000
+  _globals['_OUTBOXEVENT']._serialized_start=1003
+  _globals['_OUTBOXEVENT']._serialized_end=1177
+  _globals['_OUTBOXEVENT_METAENTRY']._serialized_start=679
+  _globals['_OUTBOXEVENT_METAENTRY']._serialized_end=722
+  _globals['_ORCHESTRATORCOMPANIONSERVICE']._serialized_start=1180
+  _globals['_ORCHESTRATORCOMPANIONSERVICE']._serialized_end=1584
 # @@protoc_insertion_point(module_scope)

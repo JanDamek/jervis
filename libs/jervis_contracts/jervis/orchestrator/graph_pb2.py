@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fjervis/orchestrator/graph.proto\x12\x13jervis.orchestrator\x1a\x19jervis/common/types.proto\"e\n\x13GetTaskGraphRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\"6\n\x11TaskGraphResponse\x12\x12\n\ngraph_json\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"e\n\x15MaintenanceRunRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\r\n\x05phase\x18\x02 \x01(\x05\x12\x11\n\tclient_id\x18\x03 \x01(\t\"\xc8\x01\n\x14MaintenanceRunResult\x12\r\n\x05phase\x18\x01 \x01(\x05\x12\x13\n\x0bmem_removed\x18\x02 \x01(\x05\x12\x18\n\x10thinking_evicted\x18\x03 \x01(\x05\x12\x13\n\x0blqm_drained\x18\x04 \x01(\x05\x12\x18\n\x10\x61\x66\x66\x61irs_archived\x18\x05 \x01(\x05\x12\x1e\n\x16next_client_for_phase2\x18\x06 \x01(\t\x12\x11\n\tclient_id\x18\x07 \x01(\t\x12\x10\n\x08\x66indings\x18\x08 \x03(\t\"P\n\x0fVertexIdRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tvertex_id\x18\x02 \x01(\t\"i\n\x13UpdateVertexRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tvertex_id\x18\x02 \x01(\t\x12\x13\n\x0b\x66ields_json\x18\x03 \x01(\t\"\xe9\x01\n\x13\x43reateVertexRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tvertex_id\x18\x02 \x01(\t\x12\r\n\x05title\x18\x03 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x04 \x01(\t\x12\x13\n\x0bvertex_type\x18\x05 \x01(\t\x12\x0e\n\x06status\x18\x06 \x01(\t\x12\x11\n\tparent_id\x18\x07 \x01(\t\x12\r\n\x05\x64\x65pth\x18\x08 \x01(\x05\x12\x11\n\tclient_id\x18\t \x01(\t\x12\x15\n\rinput_request\x18\n \x01(\t\"r\n\x11VertexMutationAck\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x11\n\tvertex_id\x18\x02 \x01(\t\x12\x1a\n\x12remaining_vertices\x18\x03 \x01(\x05\x12\x13\n\x0bvertex_json\x18\x04 \x01(\t\x12\r\n\x05\x65rror\x18\x05 \x01(\t\"<\n\x0e\x43leanupRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\"<\n\rCleanupResult\x12\x0f\n\x07removed\x18\x01 \x01(\x05\x12\x1a\n\x12remaining_vertices\x18\x02 \x01(\x05\"V\n\x11PurgeStaleRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x15\n\rmax_age_hours\x18\x02 \x01(\x01\"E\n\x10PurgeStaleResult\x12\x0e\n\x06purged\x18\x01 \x01(\x05\x12\x11\n\tremaining\x18\x02 \x01(\x05\x12\x0e\n\x06\x64\x65tail\x18\x03 \x01(\t\"c\n\x13MemorySearchRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\r\n\x05query\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\")\n\x12MemorySearchResult\x12\x13\n\x0bresult_json\x18\x01 \x01(\t2\xa0\x06\n\x18OrchestratorGraphService\x12`\n\x0cGetTaskGraph\x12(.jervis.orchestrator.GetTaskGraphRequest\x1a&.jervis.orchestrator.TaskGraphResponse\x12g\n\x0eRunMaintenance\x12*.jervis.orchestrator.MaintenanceRunRequest\x1a).jervis.orchestrator.MaintenanceRunResult\x12\\\n\x0c\x44\x65leteVertex\x12$.jervis.orchestrator.VertexIdRequest\x1a&.jervis.orchestrator.VertexMutationAck\x12`\n\x0cUpdateVertex\x12(.jervis.orchestrator.UpdateVertexRequest\x1a&.jervis.orchestrator.VertexMutationAck\x12`\n\x0c\x43reateVertex\x12(.jervis.orchestrator.CreateVertexRequest\x1a&.jervis.orchestrator.VertexMutationAck\x12W\n\x0c\x46orceCleanup\x12#.jervis.orchestrator.CleanupRequest\x1a\".jervis.orchestrator.CleanupResult\x12[\n\nPurgeStale\x12&.jervis.orchestrator.PurgeStaleRequest\x1a%.jervis.orchestrator.PurgeStaleResult\x12\x61\n\x0cMemorySearch\x12(.jervis.orchestrator.MemorySearchRequest\x1a\'.jervis.orchestrator.MemorySearchResultB=\n!com.jervis.contracts.orchestratorB\x16OrchestratorGraphProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fjervis/orchestrator/graph.proto\x12\x13jervis.orchestrator\x1a\x19jervis/common/types.proto\"e\n\x13GetTaskGraphRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\"6\n\x11TaskGraphResponse\x12\x12\n\ngraph_json\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"e\n\x15MaintenanceRunRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\r\n\x05phase\x18\x02 \x01(\x05\x12\x11\n\tclient_id\x18\x03 \x01(\t\"\xc8\x01\n\x14MaintenanceRunResult\x12\r\n\x05phase\x18\x01 \x01(\x05\x12\x13\n\x0bmem_removed\x18\x02 \x01(\x05\x12\x18\n\x10thinking_evicted\x18\x03 \x01(\x05\x12\x13\n\x0blqm_drained\x18\x04 \x01(\x05\x12\x18\n\x10\x61\x66\x66\x61irs_archived\x18\x05 \x01(\x05\x12\x1e\n\x16next_client_for_phase2\x18\x06 \x01(\t\x12\x11\n\tclient_id\x18\x07 \x01(\t\x12\x10\n\x08\x66indings\x18\x08 \x03(\t2\xe5\x01\n\x18OrchestratorGraphService\x12`\n\x0cGetTaskGraph\x12(.jervis.orchestrator.GetTaskGraphRequest\x1a&.jervis.orchestrator.TaskGraphResponse\x12g\n\x0eRunMaintenance\x12*.jervis.orchestrator.MaintenanceRunRequest\x1a).jervis.orchestrator.MaintenanceRunResultB=\n!com.jervis.contracts.orchestratorB\x16OrchestratorGraphProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -41,26 +41,6 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_MAINTENANCERUNREQUEST']._serialized_end=343
   _globals['_MAINTENANCERUNRESULT']._serialized_start=346
   _globals['_MAINTENANCERUNRESULT']._serialized_end=546
-  _globals['_VERTEXIDREQUEST']._serialized_start=548
-  _globals['_VERTEXIDREQUEST']._serialized_end=628
-  _globals['_UPDATEVERTEXREQUEST']._serialized_start=630
-  _globals['_UPDATEVERTEXREQUEST']._serialized_end=735
-  _globals['_CREATEVERTEXREQUEST']._serialized_start=738
-  _globals['_CREATEVERTEXREQUEST']._serialized_end=971
-  _globals['_VERTEXMUTATIONACK']._serialized_start=973
-  _globals['_VERTEXMUTATIONACK']._serialized_end=1087
-  _globals['_CLEANUPREQUEST']._serialized_start=1089
-  _globals['_CLEANUPREQUEST']._serialized_end=1149
-  _globals['_CLEANUPRESULT']._serialized_start=1151
-  _globals['_CLEANUPRESULT']._serialized_end=1211
-  _globals['_PURGESTALEREQUEST']._serialized_start=1213
-  _globals['_PURGESTALEREQUEST']._serialized_end=1299
-  _globals['_PURGESTALERESULT']._serialized_start=1301
-  _globals['_PURGESTALERESULT']._serialized_end=1370
-  _globals['_MEMORYSEARCHREQUEST']._serialized_start=1372
-  _globals['_MEMORYSEARCHREQUEST']._serialized_end=1471
-  _globals['_MEMORYSEARCHRESULT']._serialized_start=1473
-  _globals['_MEMORYSEARCHRESULT']._serialized_end=1514
-  _globals['_ORCHESTRATORGRAPHSERVICE']._serialized_start=1517
-  _globals['_ORCHESTRATORGRAPHSERVICE']._serialized_end=2317
+  _globals['_ORCHESTRATORGRAPHSERVICE']._serialized_start=549
+  _globals['_ORCHESTRATORGRAPHSERVICE']._serialized_end=778
 # @@protoc_insertion_point(module_scope)

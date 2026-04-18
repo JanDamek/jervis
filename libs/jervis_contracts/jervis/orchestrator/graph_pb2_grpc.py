@@ -27,9 +27,9 @@ if _version_not_supported:
 
 class OrchestratorGraphServiceStub(object):
     """OrchestratorGraphService — AgentGraph lookup + idle maintenance
-    trigger. Administrative vertex CRUD (delete/update/create/cleanup/
-    purge-stale) stays on FastAPI until a cross-service consumer dials
-    it (UI path goes through Kotlin kRPC, not this servicer).
+    trigger. Administrative vertex CRUD + memory search were removed in
+    slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
+    Kotlin server kRPC, not this servicer).
     """
 
     def __init__(self, channel):
@@ -48,43 +48,13 @@ class OrchestratorGraphServiceStub(object):
                 request_serializer=jervis_dot_orchestrator_dot_graph__pb2.MaintenanceRunRequest.SerializeToString,
                 response_deserializer=jervis_dot_orchestrator_dot_graph__pb2.MaintenanceRunResult.FromString,
                 _registered_method=True)
-        self.DeleteVertex = channel.unary_unary(
-                '/jervis.orchestrator.OrchestratorGraphService/DeleteVertex',
-                request_serializer=jervis_dot_orchestrator_dot_graph__pb2.VertexIdRequest.SerializeToString,
-                response_deserializer=jervis_dot_orchestrator_dot_graph__pb2.VertexMutationAck.FromString,
-                _registered_method=True)
-        self.UpdateVertex = channel.unary_unary(
-                '/jervis.orchestrator.OrchestratorGraphService/UpdateVertex',
-                request_serializer=jervis_dot_orchestrator_dot_graph__pb2.UpdateVertexRequest.SerializeToString,
-                response_deserializer=jervis_dot_orchestrator_dot_graph__pb2.VertexMutationAck.FromString,
-                _registered_method=True)
-        self.CreateVertex = channel.unary_unary(
-                '/jervis.orchestrator.OrchestratorGraphService/CreateVertex',
-                request_serializer=jervis_dot_orchestrator_dot_graph__pb2.CreateVertexRequest.SerializeToString,
-                response_deserializer=jervis_dot_orchestrator_dot_graph__pb2.VertexMutationAck.FromString,
-                _registered_method=True)
-        self.ForceCleanup = channel.unary_unary(
-                '/jervis.orchestrator.OrchestratorGraphService/ForceCleanup',
-                request_serializer=jervis_dot_orchestrator_dot_graph__pb2.CleanupRequest.SerializeToString,
-                response_deserializer=jervis_dot_orchestrator_dot_graph__pb2.CleanupResult.FromString,
-                _registered_method=True)
-        self.PurgeStale = channel.unary_unary(
-                '/jervis.orchestrator.OrchestratorGraphService/PurgeStale',
-                request_serializer=jervis_dot_orchestrator_dot_graph__pb2.PurgeStaleRequest.SerializeToString,
-                response_deserializer=jervis_dot_orchestrator_dot_graph__pb2.PurgeStaleResult.FromString,
-                _registered_method=True)
-        self.MemorySearch = channel.unary_unary(
-                '/jervis.orchestrator.OrchestratorGraphService/MemorySearch',
-                request_serializer=jervis_dot_orchestrator_dot_graph__pb2.MemorySearchRequest.SerializeToString,
-                response_deserializer=jervis_dot_orchestrator_dot_graph__pb2.MemorySearchResult.FromString,
-                _registered_method=True)
 
 
 class OrchestratorGraphServiceServicer(object):
     """OrchestratorGraphService — AgentGraph lookup + idle maintenance
-    trigger. Administrative vertex CRUD (delete/update/create/cleanup/
-    purge-stale) stays on FastAPI until a cross-service consumer dials
-    it (UI path goes through Kotlin kRPC, not this servicer).
+    trigger. Administrative vertex CRUD + memory search were removed in
+    slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
+    Kotlin server kRPC, not this servicer).
     """
 
     def GetTaskGraph(self, request, context):
@@ -94,43 +64,6 @@ class OrchestratorGraphServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def RunMaintenance(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def DeleteVertex(self, request, context):
-        """Memory graph admin — used by UI proxy path through the Kotlin server.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def UpdateVertex(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def CreateVertex(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def ForceCleanup(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def PurgeStale(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def MemorySearch(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -149,36 +82,6 @@ def add_OrchestratorGraphServiceServicer_to_server(servicer, server):
                     request_deserializer=jervis_dot_orchestrator_dot_graph__pb2.MaintenanceRunRequest.FromString,
                     response_serializer=jervis_dot_orchestrator_dot_graph__pb2.MaintenanceRunResult.SerializeToString,
             ),
-            'DeleteVertex': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteVertex,
-                    request_deserializer=jervis_dot_orchestrator_dot_graph__pb2.VertexIdRequest.FromString,
-                    response_serializer=jervis_dot_orchestrator_dot_graph__pb2.VertexMutationAck.SerializeToString,
-            ),
-            'UpdateVertex': grpc.unary_unary_rpc_method_handler(
-                    servicer.UpdateVertex,
-                    request_deserializer=jervis_dot_orchestrator_dot_graph__pb2.UpdateVertexRequest.FromString,
-                    response_serializer=jervis_dot_orchestrator_dot_graph__pb2.VertexMutationAck.SerializeToString,
-            ),
-            'CreateVertex': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateVertex,
-                    request_deserializer=jervis_dot_orchestrator_dot_graph__pb2.CreateVertexRequest.FromString,
-                    response_serializer=jervis_dot_orchestrator_dot_graph__pb2.VertexMutationAck.SerializeToString,
-            ),
-            'ForceCleanup': grpc.unary_unary_rpc_method_handler(
-                    servicer.ForceCleanup,
-                    request_deserializer=jervis_dot_orchestrator_dot_graph__pb2.CleanupRequest.FromString,
-                    response_serializer=jervis_dot_orchestrator_dot_graph__pb2.CleanupResult.SerializeToString,
-            ),
-            'PurgeStale': grpc.unary_unary_rpc_method_handler(
-                    servicer.PurgeStale,
-                    request_deserializer=jervis_dot_orchestrator_dot_graph__pb2.PurgeStaleRequest.FromString,
-                    response_serializer=jervis_dot_orchestrator_dot_graph__pb2.PurgeStaleResult.SerializeToString,
-            ),
-            'MemorySearch': grpc.unary_unary_rpc_method_handler(
-                    servicer.MemorySearch,
-                    request_deserializer=jervis_dot_orchestrator_dot_graph__pb2.MemorySearchRequest.FromString,
-                    response_serializer=jervis_dot_orchestrator_dot_graph__pb2.MemorySearchResult.SerializeToString,
-            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'jervis.orchestrator.OrchestratorGraphService', rpc_method_handlers)
@@ -189,9 +92,9 @@ def add_OrchestratorGraphServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class OrchestratorGraphService(object):
     """OrchestratorGraphService — AgentGraph lookup + idle maintenance
-    trigger. Administrative vertex CRUD (delete/update/create/cleanup/
-    purge-stale) stays on FastAPI until a cross-service consumer dials
-    it (UI path goes through Kotlin kRPC, not this servicer).
+    trigger. Administrative vertex CRUD + memory search were removed in
+    slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
+    Kotlin server kRPC, not this servicer).
     """
 
     @staticmethod
@@ -238,168 +141,6 @@ class OrchestratorGraphService(object):
             '/jervis.orchestrator.OrchestratorGraphService/RunMaintenance',
             jervis_dot_orchestrator_dot_graph__pb2.MaintenanceRunRequest.SerializeToString,
             jervis_dot_orchestrator_dot_graph__pb2.MaintenanceRunResult.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def DeleteVertex(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/jervis.orchestrator.OrchestratorGraphService/DeleteVertex',
-            jervis_dot_orchestrator_dot_graph__pb2.VertexIdRequest.SerializeToString,
-            jervis_dot_orchestrator_dot_graph__pb2.VertexMutationAck.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def UpdateVertex(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/jervis.orchestrator.OrchestratorGraphService/UpdateVertex',
-            jervis_dot_orchestrator_dot_graph__pb2.UpdateVertexRequest.SerializeToString,
-            jervis_dot_orchestrator_dot_graph__pb2.VertexMutationAck.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def CreateVertex(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/jervis.orchestrator.OrchestratorGraphService/CreateVertex',
-            jervis_dot_orchestrator_dot_graph__pb2.CreateVertexRequest.SerializeToString,
-            jervis_dot_orchestrator_dot_graph__pb2.VertexMutationAck.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def ForceCleanup(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/jervis.orchestrator.OrchestratorGraphService/ForceCleanup',
-            jervis_dot_orchestrator_dot_graph__pb2.CleanupRequest.SerializeToString,
-            jervis_dot_orchestrator_dot_graph__pb2.CleanupResult.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def PurgeStale(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/jervis.orchestrator.OrchestratorGraphService/PurgeStale',
-            jervis_dot_orchestrator_dot_graph__pb2.PurgeStaleRequest.SerializeToString,
-            jervis_dot_orchestrator_dot_graph__pb2.PurgeStaleResult.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def MemorySearch(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/jervis.orchestrator.OrchestratorGraphService/MemorySearch',
-            jervis_dot_orchestrator_dot_graph__pb2.MemorySearchRequest.SerializeToString,
-            jervis_dot_orchestrator_dot_graph__pb2.MemorySearchResult.FromString,
             options,
             channel_credentials,
             insecure,

@@ -26,10 +26,10 @@ if _version_not_supported:
 
 
 class OrchestratorCompanionServiceStub(object):
-    """OrchestratorCompanionService — Claude companion dispatch + persistent
-    sessions. Adhoc dispatch maps to the existing FastAPI /companion/adhoc
-    route; session RPCs carry live transcript events; StreamSession is the
-    first server-streaming RPC in the orchestrator surface.
+    """OrchestratorCompanionService — persistent Claude companion sessions.
+    Adhoc dispatch was removed with slice V3-cleanup (no pod-to-pod
+    consumer existed; the internal orchestrator graph still uses
+    `companion_runner.dispatch_adhoc` directly, not over gRPC).
     """
 
     def __init__(self, channel):
@@ -38,16 +38,6 @@ class OrchestratorCompanionServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.Adhoc = channel.unary_unary(
-                '/jervis.orchestrator.OrchestratorCompanionService/Adhoc',
-                request_serializer=jervis_dot_orchestrator_dot_companion__pb2.AdhocRequest.SerializeToString,
-                response_deserializer=jervis_dot_orchestrator_dot_companion__pb2.AdhocAck.FromString,
-                _registered_method=True)
-        self.AdhocStatus = channel.unary_unary(
-                '/jervis.orchestrator.OrchestratorCompanionService/AdhocStatus',
-                request_serializer=jervis_dot_orchestrator_dot_companion__pb2.AdhocStatusRequest.SerializeToString,
-                response_deserializer=jervis_dot_orchestrator_dot_companion__pb2.AdhocStatusResponse.FromString,
-                _registered_method=True)
         self.StartSession = channel.unary_unary(
                 '/jervis.orchestrator.OrchestratorCompanionService/StartSession',
                 request_serializer=jervis_dot_orchestrator_dot_companion__pb2.SessionStartRequest.SerializeToString,
@@ -71,23 +61,11 @@ class OrchestratorCompanionServiceStub(object):
 
 
 class OrchestratorCompanionServiceServicer(object):
-    """OrchestratorCompanionService — Claude companion dispatch + persistent
-    sessions. Adhoc dispatch maps to the existing FastAPI /companion/adhoc
-    route; session RPCs carry live transcript events; StreamSession is the
-    first server-streaming RPC in the orchestrator surface.
+    """OrchestratorCompanionService — persistent Claude companion sessions.
+    Adhoc dispatch was removed with slice V3-cleanup (no pod-to-pod
+    consumer existed; the internal orchestrator graph still uses
+    `companion_runner.dispatch_adhoc` directly, not over gRPC).
     """
-
-    def Adhoc(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def AdhocStatus(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
 
     def StartSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
@@ -116,16 +94,6 @@ class OrchestratorCompanionServiceServicer(object):
 
 def add_OrchestratorCompanionServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'Adhoc': grpc.unary_unary_rpc_method_handler(
-                    servicer.Adhoc,
-                    request_deserializer=jervis_dot_orchestrator_dot_companion__pb2.AdhocRequest.FromString,
-                    response_serializer=jervis_dot_orchestrator_dot_companion__pb2.AdhocAck.SerializeToString,
-            ),
-            'AdhocStatus': grpc.unary_unary_rpc_method_handler(
-                    servicer.AdhocStatus,
-                    request_deserializer=jervis_dot_orchestrator_dot_companion__pb2.AdhocStatusRequest.FromString,
-                    response_serializer=jervis_dot_orchestrator_dot_companion__pb2.AdhocStatusResponse.SerializeToString,
-            ),
             'StartSession': grpc.unary_unary_rpc_method_handler(
                     servicer.StartSession,
                     request_deserializer=jervis_dot_orchestrator_dot_companion__pb2.SessionStartRequest.FromString,
@@ -155,65 +123,11 @@ def add_OrchestratorCompanionServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class OrchestratorCompanionService(object):
-    """OrchestratorCompanionService — Claude companion dispatch + persistent
-    sessions. Adhoc dispatch maps to the existing FastAPI /companion/adhoc
-    route; session RPCs carry live transcript events; StreamSession is the
-    first server-streaming RPC in the orchestrator surface.
+    """OrchestratorCompanionService — persistent Claude companion sessions.
+    Adhoc dispatch was removed with slice V3-cleanup (no pod-to-pod
+    consumer existed; the internal orchestrator graph still uses
+    `companion_runner.dispatch_adhoc` directly, not over gRPC).
     """
-
-    @staticmethod
-    def Adhoc(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/jervis.orchestrator.OrchestratorCompanionService/Adhoc',
-            jervis_dot_orchestrator_dot_companion__pb2.AdhocRequest.SerializeToString,
-            jervis_dot_orchestrator_dot_companion__pb2.AdhocAck.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def AdhocStatus(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/jervis.orchestrator.OrchestratorCompanionService/AdhocStatus',
-            jervis_dot_orchestrator_dot_companion__pb2.AdhocStatusRequest.SerializeToString,
-            jervis_dot_orchestrator_dot_companion__pb2.AdhocStatusResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
 
     @staticmethod
     def StartSession(request,

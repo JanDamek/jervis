@@ -46,56 +46,6 @@ public final class OrchestratorGraphProto extends com.google.protobuf.GeneratedF
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_orchestrator_MaintenanceRunResult_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_orchestrator_VertexIdRequest_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_orchestrator_VertexIdRequest_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_orchestrator_UpdateVertexRequest_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_orchestrator_UpdateVertexRequest_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_orchestrator_CreateVertexRequest_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_orchestrator_CreateVertexRequest_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_orchestrator_VertexMutationAck_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_orchestrator_VertexMutationAck_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_orchestrator_CleanupRequest_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_orchestrator_CleanupRequest_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_orchestrator_CleanupResult_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_orchestrator_CleanupResult_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_orchestrator_PurgeStaleRequest_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_orchestrator_PurgeStaleRequest_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_orchestrator_PurgeStaleResult_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_orchestrator_PurgeStaleResult_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_orchestrator_MemorySearchRequest_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_orchestrator_MemorySearchRequest_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_orchestrator_MemorySearchResult_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_orchestrator_MemorySearchResult_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -118,53 +68,15 @@ public final class OrchestratorGraphProto extends com.google.protobuf.GeneratedF
       " \001(\005\022\030\n\020thinking_evicted\030\003 \001(\005\022\023\n\013lqm_dr" +
       "ained\030\004 \001(\005\022\030\n\020affairs_archived\030\005 \001(\005\022\036\n" +
       "\026next_client_for_phase2\030\006 \001(\t\022\021\n\tclient_" +
-      "id\030\007 \001(\t\022\020\n\010findings\030\010 \003(\t\"P\n\017VertexIdRe" +
-      "quest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Reque" +
-      "stContext\022\021\n\tvertex_id\030\002 \001(\t\"i\n\023UpdateVe" +
-      "rtexRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common" +
-      ".RequestContext\022\021\n\tvertex_id\030\002 \001(\t\022\023\n\013fi" +
-      "elds_json\030\003 \001(\t\"\351\001\n\023CreateVertexRequest\022" +
-      "*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCont" +
-      "ext\022\021\n\tvertex_id\030\002 \001(\t\022\r\n\005title\030\003 \001(\t\022\023\n" +
-      "\013description\030\004 \001(\t\022\023\n\013vertex_type\030\005 \001(\t\022" +
-      "\016\n\006status\030\006 \001(\t\022\021\n\tparent_id\030\007 \001(\t\022\r\n\005de" +
-      "pth\030\010 \001(\005\022\021\n\tclient_id\030\t \001(\t\022\025\n\rinput_re" +
-      "quest\030\n \001(\t\"r\n\021VertexMutationAck\022\n\n\002ok\030\001" +
-      " \001(\010\022\021\n\tvertex_id\030\002 \001(\t\022\032\n\022remaining_ver" +
-      "tices\030\003 \001(\005\022\023\n\013vertex_json\030\004 \001(\t\022\r\n\005erro" +
-      "r\030\005 \001(\t\"<\n\016CleanupRequest\022*\n\003ctx\030\001 \001(\0132\035" +
-      ".jervis.common.RequestContext\"<\n\rCleanup" +
-      "Result\022\017\n\007removed\030\001 \001(\005\022\032\n\022remaining_ver" +
-      "tices\030\002 \001(\005\"V\n\021PurgeStaleRequest\022*\n\003ctx\030" +
-      "\001 \001(\0132\035.jervis.common.RequestContext\022\025\n\r" +
-      "max_age_hours\030\002 \001(\001\"E\n\020PurgeStaleResult\022" +
-      "\016\n\006purged\030\001 \001(\005\022\021\n\tremaining\030\002 \001(\005\022\016\n\006de" +
-      "tail\030\003 \001(\t\"c\n\023MemorySearchRequest\022*\n\003ctx" +
-      "\030\001 \001(\0132\035.jervis.common.RequestContext\022\r\n" +
-      "\005query\030\002 \001(\t\022\021\n\tclient_id\030\003 \001(\t\")\n\022Memor" +
-      "ySearchResult\022\023\n\013result_json\030\001 \001(\t2\240\006\n\030O" +
-      "rchestratorGraphService\022`\n\014GetTaskGraph\022" +
-      "(.jervis.orchestrator.GetTaskGraphReques" +
-      "t\032&.jervis.orchestrator.TaskGraphRespons" +
-      "e\022g\n\016RunMaintenance\022*.jervis.orchestrato" +
-      "r.MaintenanceRunRequest\032).jervis.orchest" +
-      "rator.MaintenanceRunResult\022\\\n\014DeleteVert" +
-      "ex\022$.jervis.orchestrator.VertexIdRequest" +
-      "\032&.jervis.orchestrator.VertexMutationAck" +
-      "\022`\n\014UpdateVertex\022(.jervis.orchestrator.U" +
-      "pdateVertexRequest\032&.jervis.orchestrator" +
-      ".VertexMutationAck\022`\n\014CreateVertex\022(.jer" +
-      "vis.orchestrator.CreateVertexRequest\032&.j" +
-      "ervis.orchestrator.VertexMutationAck\022W\n\014" +
-      "ForceCleanup\022#.jervis.orchestrator.Clean" +
-      "upRequest\032\".jervis.orchestrator.CleanupR" +
-      "esult\022[\n\nPurgeStale\022&.jervis.orchestrato" +
-      "r.PurgeStaleRequest\032%.jervis.orchestrato" +
-      "r.PurgeStaleResult\022a\n\014MemorySearch\022(.jer" +
-      "vis.orchestrator.MemorySearchRequest\032\'.j" +
-      "ervis.orchestrator.MemorySearchResultB=\n" +
-      "!com.jervis.contracts.orchestratorB\026Orch" +
-      "estratorGraphProtoP\001b\006proto3"
+      "id\030\007 \001(\t\022\020\n\010findings\030\010 \003(\t2\345\001\n\030Orchestra" +
+      "torGraphService\022`\n\014GetTaskGraph\022(.jervis" +
+      ".orchestrator.GetTaskGraphRequest\032&.jerv" +
+      "is.orchestrator.TaskGraphResponse\022g\n\016Run" +
+      "Maintenance\022*.jervis.orchestrator.Mainte" +
+      "nanceRunRequest\032).jervis.orchestrator.Ma" +
+      "intenanceRunResultB=\n!com.jervis.contrac" +
+      "ts.orchestratorB\026OrchestratorGraphProtoP" +
+      "\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -195,66 +107,6 @@ public final class OrchestratorGraphProto extends com.google.protobuf.GeneratedF
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_MaintenanceRunResult_descriptor,
         new java.lang.String[] { "Phase", "MemRemoved", "ThinkingEvicted", "LqmDrained", "AffairsArchived", "NextClientForPhase2", "ClientId", "Findings", });
-    internal_static_jervis_orchestrator_VertexIdRequest_descriptor =
-      getDescriptor().getMessageTypes().get(4);
-    internal_static_jervis_orchestrator_VertexIdRequest_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_orchestrator_VertexIdRequest_descriptor,
-        new java.lang.String[] { "Ctx", "VertexId", });
-    internal_static_jervis_orchestrator_UpdateVertexRequest_descriptor =
-      getDescriptor().getMessageTypes().get(5);
-    internal_static_jervis_orchestrator_UpdateVertexRequest_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_orchestrator_UpdateVertexRequest_descriptor,
-        new java.lang.String[] { "Ctx", "VertexId", "FieldsJson", });
-    internal_static_jervis_orchestrator_CreateVertexRequest_descriptor =
-      getDescriptor().getMessageTypes().get(6);
-    internal_static_jervis_orchestrator_CreateVertexRequest_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_orchestrator_CreateVertexRequest_descriptor,
-        new java.lang.String[] { "Ctx", "VertexId", "Title", "Description", "VertexType", "Status", "ParentId", "Depth", "ClientId", "InputRequest", });
-    internal_static_jervis_orchestrator_VertexMutationAck_descriptor =
-      getDescriptor().getMessageTypes().get(7);
-    internal_static_jervis_orchestrator_VertexMutationAck_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_orchestrator_VertexMutationAck_descriptor,
-        new java.lang.String[] { "Ok", "VertexId", "RemainingVertices", "VertexJson", "Error", });
-    internal_static_jervis_orchestrator_CleanupRequest_descriptor =
-      getDescriptor().getMessageTypes().get(8);
-    internal_static_jervis_orchestrator_CleanupRequest_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_orchestrator_CleanupRequest_descriptor,
-        new java.lang.String[] { "Ctx", });
-    internal_static_jervis_orchestrator_CleanupResult_descriptor =
-      getDescriptor().getMessageTypes().get(9);
-    internal_static_jervis_orchestrator_CleanupResult_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_orchestrator_CleanupResult_descriptor,
-        new java.lang.String[] { "Removed", "RemainingVertices", });
-    internal_static_jervis_orchestrator_PurgeStaleRequest_descriptor =
-      getDescriptor().getMessageTypes().get(10);
-    internal_static_jervis_orchestrator_PurgeStaleRequest_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_orchestrator_PurgeStaleRequest_descriptor,
-        new java.lang.String[] { "Ctx", "MaxAgeHours", });
-    internal_static_jervis_orchestrator_PurgeStaleResult_descriptor =
-      getDescriptor().getMessageTypes().get(11);
-    internal_static_jervis_orchestrator_PurgeStaleResult_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_orchestrator_PurgeStaleResult_descriptor,
-        new java.lang.String[] { "Purged", "Remaining", "Detail", });
-    internal_static_jervis_orchestrator_MemorySearchRequest_descriptor =
-      getDescriptor().getMessageTypes().get(12);
-    internal_static_jervis_orchestrator_MemorySearchRequest_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_orchestrator_MemorySearchRequest_descriptor,
-        new java.lang.String[] { "Ctx", "Query", "ClientId", });
-    internal_static_jervis_orchestrator_MemorySearchResult_descriptor =
-      getDescriptor().getMessageTypes().get(13);
-    internal_static_jervis_orchestrator_MemorySearchResult_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_orchestrator_MemorySearchResult_descriptor,
-        new java.lang.String[] { "ResultJson", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }
