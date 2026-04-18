@@ -11,32 +11,19 @@ public interface TaskGraphResponseOrBuilder extends
     com.google.protobuf.MessageOrBuilder {
 
   /**
-   * <pre>
-   * AgentGraph payload is rich + schema-heavy on the Python side
-   * (Pydantic model with nested vertices / edges maps). Instead of
-   * flattening every field into the proto, the entire AgentGraph
-   * arrives as JSON — the caller already deserializes the whole
-   * graph at the domain layer via &#64;SerialName mappings.
-   * </pre>
-   *
-   * <code>string graph_json = 1;</code>
-   * @return The graphJson.
+   * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+   * @return Whether the graph field is set.
    */
-  java.lang.String getGraphJson();
+  boolean hasGraph();
   /**
-   * <pre>
-   * AgentGraph payload is rich + schema-heavy on the Python side
-   * (Pydantic model with nested vertices / edges maps). Instead of
-   * flattening every field into the proto, the entire AgentGraph
-   * arrives as JSON — the caller already deserializes the whole
-   * graph at the domain layer via &#64;SerialName mappings.
-   * </pre>
-   *
-   * <code>string graph_json = 1;</code>
-   * @return The bytes for graphJson.
+   * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+   * @return The graph.
    */
-  com.google.protobuf.ByteString
-      getGraphJsonBytes();
+  com.jervis.contracts.orchestrator.AgentGraph getGraph();
+  /**
+   * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+   */
+  com.jervis.contracts.orchestrator.AgentGraphOrBuilder getGraphOrBuilder();
 
   /**
    * <code>bool found = 2;</code>

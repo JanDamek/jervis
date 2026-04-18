@@ -9,9 +9,7 @@ option java_multiple_files = true;
 option java_outer_classname = "OrchestratorGraphProto";
 
 // OrchestratorGraphService — AgentGraph lookup + idle maintenance
-// trigger. Administrative vertex CRUD + memory search were removed in
-// slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
-// Kotlin server kRPC, not this servicer).
+// trigger.
 service OrchestratorGraphService {
   rpc GetTaskGraph(GetTaskGraphRequest) returns (TaskGraphResponse);
   rpc RunMaintenance(MaintenanceRunRequest) returns (MaintenanceRunResult);
@@ -24,14 +22,70 @@ message GetTaskGraphRequest {
 }
 
 message TaskGraphResponse {
-  // AgentGraph payload is rich + schema-heavy on the Python side
-  // (Pydantic model with nested vertices / edges maps). Instead of
-  // flattening every field into the proto, the entire AgentGraph
-  // arrives as JSON — the caller already deserializes the whole
-  // graph at the domain layer via @SerialName mappings.
-  string graph_json = 1;
+  AgentGraph graph = 1;
   bool found = 2;
 }
+
+// AgentGraph — mirror of app/agent/models.py::AgentGraph trimmed to the
+// fields the UI actually consumes (see TaskGraphDto in common-dto).
+message AgentGraph {
+  string id = 1;
+  string task_id = 2;
+  string client_id = 3;
+  string project_id = 4;
+  string status = 5;                         // GraphStatus string value
+  string graph_type = 6;                     // "memory_graph" | "thinking_graph"
+  string root_vertex_id = 7;
+  string synthesis_vertex_id = 8;
+  map<string, GraphVertex> vertices = 9;
+  repeated GraphEdge edges = 10;
+  string created_at = 11;
+  string completed_at = 12;
+  int32 total_token_count = 13;
+  int32 total_llm_calls = 14;
+  // True when Python flags an old thinking graph for UI dimming
+  // (see _THINKING_GRAPH_HIDE_S cutoff in the servicer).
+  bool hidden = 15;
+}
+
+message GraphVertex {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  string vertex_type = 4;                    // VertexType string value
+  string status = 5;                         // VertexStatus string value
+  string agent_name = 6;
+  string input_request = 7;
+  string result = 8;
+  string result_summary = 9;
+  string local_context = 10;
+  string parent_id = 11;
+  int32 depth = 12;
+  repeated string tools_used = 13;
+  int32 token_count = 14;
+  int32 llm_calls = 15;
+  string started_at = 16;
+  string completed_at = 17;
+  string error = 18;
+  string client_id = 19;
+}
+
+message GraphEdge {
+  string id = 1;
+  string source_id = 2;
+  string target_id = 3;
+  string edge_type = 4;                      // EdgeType string value
+  EdgePayload payload = 5;
+}
+
+message EdgePayload {
+  string source_vertex_id = 1;
+  string source_vertex_title = 2;
+  string summary = 3;
+  string context = 4;                        // reserved — not populated by Python today
+}
+
+// ── Maintenance ──────────────────────────────────────────────────────
 
 message MaintenanceRunRequest {
   jervis.common.RequestContext ctx = 1;

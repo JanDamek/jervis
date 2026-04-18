@@ -37,6 +37,31 @@ public final class OrchestratorGraphProto extends com.google.protobuf.GeneratedF
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_orchestrator_TaskGraphResponse_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_AgentGraph_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_AgentGraph_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_AgentGraph_VerticesEntry_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_AgentGraph_VerticesEntry_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_GraphVertex_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_GraphVertex_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_GraphEdge_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_GraphEdge_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_orchestrator_EdgePayload_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_orchestrator_EdgePayload_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_orchestrator_MaintenanceRunRequest_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
@@ -59,8 +84,36 @@ public final class OrchestratorGraphProto extends com.google.protobuf.GeneratedF
       "s.orchestrator\032\031jervis/common/types.prot" +
       "o\"e\n\023GetTaskGraphRequest\022*\n\003ctx\030\001 \001(\0132\035." +
       "jervis.common.RequestContext\022\017\n\007task_id\030" +
-      "\002 \001(\t\022\021\n\tclient_id\030\003 \001(\t\"6\n\021TaskGraphRes" +
-      "ponse\022\022\n\ngraph_json\030\001 \001(\t\022\r\n\005found\030\002 \001(\010" +
+      "\002 \001(\t\022\021\n\tclient_id\030\003 \001(\t\"R\n\021TaskGraphRes" +
+      "ponse\022.\n\005graph\030\001 \001(\0132\037.jervis.orchestrat" +
+      "or.AgentGraph\022\r\n\005found\030\002 \001(\010\"\332\003\n\nAgentGr" +
+      "aph\022\n\n\002id\030\001 \001(\t\022\017\n\007task_id\030\002 \001(\t\022\021\n\tclie" +
+      "nt_id\030\003 \001(\t\022\022\n\nproject_id\030\004 \001(\t\022\016\n\006statu" +
+      "s\030\005 \001(\t\022\022\n\ngraph_type\030\006 \001(\t\022\026\n\016root_vert" +
+      "ex_id\030\007 \001(\t\022\033\n\023synthesis_vertex_id\030\010 \001(\t" +
+      "\022?\n\010vertices\030\t \003(\0132-.jervis.orchestrator" +
+      ".AgentGraph.VerticesEntry\022-\n\005edges\030\n \003(\013" +
+      "2\036.jervis.orchestrator.GraphEdge\022\022\n\ncrea" +
+      "ted_at\030\013 \001(\t\022\024\n\014completed_at\030\014 \001(\t\022\031\n\021to" +
+      "tal_token_count\030\r \001(\005\022\027\n\017total_llm_calls" +
+      "\030\016 \001(\005\022\016\n\006hidden\030\017 \001(\010\032Q\n\rVerticesEntry\022" +
+      "\013\n\003key\030\001 \001(\t\022/\n\005value\030\002 \001(\0132 .jervis.orc" +
+      "hestrator.GraphVertex:\0028\001\"\366\002\n\013GraphVerte" +
+      "x\022\n\n\002id\030\001 \001(\t\022\r\n\005title\030\002 \001(\t\022\023\n\013descript" +
+      "ion\030\003 \001(\t\022\023\n\013vertex_type\030\004 \001(\t\022\016\n\006status" +
+      "\030\005 \001(\t\022\022\n\nagent_name\030\006 \001(\t\022\025\n\rinput_requ" +
+      "est\030\007 \001(\t\022\016\n\006result\030\010 \001(\t\022\026\n\016result_summ" +
+      "ary\030\t \001(\t\022\025\n\rlocal_context\030\n \001(\t\022\021\n\tpare" +
+      "nt_id\030\013 \001(\t\022\r\n\005depth\030\014 \001(\005\022\022\n\ntools_used" +
+      "\030\r \003(\t\022\023\n\013token_count\030\016 \001(\005\022\021\n\tllm_calls" +
+      "\030\017 \001(\005\022\022\n\nstarted_at\030\020 \001(\t\022\024\n\014completed_" +
+      "at\030\021 \001(\t\022\r\n\005error\030\022 \001(\t\022\021\n\tclient_id\030\023 \001" +
+      "(\t\"\203\001\n\tGraphEdge\022\n\n\002id\030\001 \001(\t\022\021\n\tsource_i" +
+      "d\030\002 \001(\t\022\021\n\ttarget_id\030\003 \001(\t\022\021\n\tedge_type\030" +
+      "\004 \001(\t\0221\n\007payload\030\005 \001(\0132 .jervis.orchestr" +
+      "ator.EdgePayload\"f\n\013EdgePayload\022\030\n\020sourc" +
+      "e_vertex_id\030\001 \001(\t\022\033\n\023source_vertex_title" +
+      "\030\002 \001(\t\022\017\n\007summary\030\003 \001(\t\022\017\n\007context\030\004 \001(\t" +
       "\"e\n\025MaintenanceRunRequest\022*\n\003ctx\030\001 \001(\0132\035" +
       ".jervis.common.RequestContext\022\r\n\005phase\030\002" +
       " \001(\005\022\021\n\tclient_id\030\003 \001(\t\"\310\001\n\024MaintenanceR" +
@@ -94,15 +147,45 @@ public final class OrchestratorGraphProto extends com.google.protobuf.GeneratedF
     internal_static_jervis_orchestrator_TaskGraphResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_TaskGraphResponse_descriptor,
-        new java.lang.String[] { "GraphJson", "Found", });
-    internal_static_jervis_orchestrator_MaintenanceRunRequest_descriptor =
+        new java.lang.String[] { "Graph", "Found", });
+    internal_static_jervis_orchestrator_AgentGraph_descriptor =
       getDescriptor().getMessageTypes().get(2);
+    internal_static_jervis_orchestrator_AgentGraph_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_AgentGraph_descriptor,
+        new java.lang.String[] { "Id", "TaskId", "ClientId", "ProjectId", "Status", "GraphType", "RootVertexId", "SynthesisVertexId", "Vertices", "Edges", "CreatedAt", "CompletedAt", "TotalTokenCount", "TotalLlmCalls", "Hidden", });
+    internal_static_jervis_orchestrator_AgentGraph_VerticesEntry_descriptor =
+      internal_static_jervis_orchestrator_AgentGraph_descriptor.getNestedTypes().get(0);
+    internal_static_jervis_orchestrator_AgentGraph_VerticesEntry_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_AgentGraph_VerticesEntry_descriptor,
+        new java.lang.String[] { "Key", "Value", });
+    internal_static_jervis_orchestrator_GraphVertex_descriptor =
+      getDescriptor().getMessageTypes().get(3);
+    internal_static_jervis_orchestrator_GraphVertex_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_GraphVertex_descriptor,
+        new java.lang.String[] { "Id", "Title", "Description", "VertexType", "Status", "AgentName", "InputRequest", "Result", "ResultSummary", "LocalContext", "ParentId", "Depth", "ToolsUsed", "TokenCount", "LlmCalls", "StartedAt", "CompletedAt", "Error", "ClientId", });
+    internal_static_jervis_orchestrator_GraphEdge_descriptor =
+      getDescriptor().getMessageTypes().get(4);
+    internal_static_jervis_orchestrator_GraphEdge_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_GraphEdge_descriptor,
+        new java.lang.String[] { "Id", "SourceId", "TargetId", "EdgeType", "Payload", });
+    internal_static_jervis_orchestrator_EdgePayload_descriptor =
+      getDescriptor().getMessageTypes().get(5);
+    internal_static_jervis_orchestrator_EdgePayload_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_orchestrator_EdgePayload_descriptor,
+        new java.lang.String[] { "SourceVertexId", "SourceVertexTitle", "Summary", "Context", });
+    internal_static_jervis_orchestrator_MaintenanceRunRequest_descriptor =
+      getDescriptor().getMessageTypes().get(6);
     internal_static_jervis_orchestrator_MaintenanceRunRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_MaintenanceRunRequest_descriptor,
         new java.lang.String[] { "Ctx", "Phase", "ClientId", });
     internal_static_jervis_orchestrator_MaintenanceRunResult_descriptor =
-      getDescriptor().getMessageTypes().get(3);
+      getDescriptor().getMessageTypes().get(7);
     internal_static_jervis_orchestrator_MaintenanceRunResult_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_orchestrator_MaintenanceRunResult_descriptor,

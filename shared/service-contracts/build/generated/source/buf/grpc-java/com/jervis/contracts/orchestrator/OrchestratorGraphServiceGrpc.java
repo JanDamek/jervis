@@ -5,9 +5,7 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 /**
  * <pre>
  * OrchestratorGraphService — AgentGraph lookup + idle maintenance
- * trigger. Administrative vertex CRUD + memory search were removed in
- * slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
- * Kotlin server kRPC, not this servicer).
+ * trigger.
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -142,9 +140,7 @@ public final class OrchestratorGraphServiceGrpc {
   /**
    * <pre>
    * OrchestratorGraphService — AgentGraph lookup + idle maintenance
-   * trigger. Administrative vertex CRUD + memory search were removed in
-   * slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
-   * Kotlin server kRPC, not this servicer).
+   * trigger.
    * </pre>
    */
   public interface AsyncService {
@@ -168,9 +164,7 @@ public final class OrchestratorGraphServiceGrpc {
    * Base class for the server implementation of the service OrchestratorGraphService.
    * <pre>
    * OrchestratorGraphService — AgentGraph lookup + idle maintenance
-   * trigger. Administrative vertex CRUD + memory search were removed in
-   * slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
-   * Kotlin server kRPC, not this servicer).
+   * trigger.
    * </pre>
    */
   public static abstract class OrchestratorGraphServiceImplBase
@@ -185,9 +179,7 @@ public final class OrchestratorGraphServiceGrpc {
    * A stub to allow clients to do asynchronous rpc calls to service OrchestratorGraphService.
    * <pre>
    * OrchestratorGraphService — AgentGraph lookup + idle maintenance
-   * trigger. Administrative vertex CRUD + memory search were removed in
-   * slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
-   * Kotlin server kRPC, not this servicer).
+   * trigger.
    * </pre>
    */
   public static final class OrchestratorGraphServiceStub
@@ -224,9 +216,7 @@ public final class OrchestratorGraphServiceGrpc {
    * A stub to allow clients to do synchronous rpc calls to service OrchestratorGraphService.
    * <pre>
    * OrchestratorGraphService — AgentGraph lookup + idle maintenance
-   * trigger. Administrative vertex CRUD + memory search were removed in
-   * slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
-   * Kotlin server kRPC, not this servicer).
+   * trigger.
    * </pre>
    */
   public static final class OrchestratorGraphServiceBlockingV2Stub
@@ -261,9 +251,7 @@ public final class OrchestratorGraphServiceGrpc {
    * A stub to allow clients to do limited synchronous rpc calls to service OrchestratorGraphService.
    * <pre>
    * OrchestratorGraphService — AgentGraph lookup + idle maintenance
-   * trigger. Administrative vertex CRUD + memory search were removed in
-   * slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
-   * Kotlin server kRPC, not this servicer).
+   * trigger.
    * </pre>
    */
   public static final class OrchestratorGraphServiceBlockingStub
@@ -298,9 +286,7 @@ public final class OrchestratorGraphServiceGrpc {
    * A stub to allow clients to do ListenableFuture-style rpc calls to service OrchestratorGraphService.
    * <pre>
    * OrchestratorGraphService — AgentGraph lookup + idle maintenance
-   * trigger. Administrative vertex CRUD + memory search were removed in
-   * slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
-   * Kotlin server kRPC, not this servicer).
+   * trigger.
    * </pre>
    */
   public static final class OrchestratorGraphServiceFutureStub

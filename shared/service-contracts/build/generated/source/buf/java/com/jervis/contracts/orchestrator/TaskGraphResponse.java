@@ -28,7 +28,6 @@ private static final long serialVersionUID = 0L;
     super(builder);
   }
   private TaskGraphResponse() {
-    graphJson_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -44,59 +43,31 @@ private static final long serialVersionUID = 0L;
             com.jervis.contracts.orchestrator.TaskGraphResponse.class, com.jervis.contracts.orchestrator.TaskGraphResponse.Builder.class);
   }
 
-  public static final int GRAPH_JSON_FIELD_NUMBER = 1;
-  @SuppressWarnings("serial")
-  private volatile java.lang.Object graphJson_ = "";
+  private int bitField0_;
+  public static final int GRAPH_FIELD_NUMBER = 1;
+  private com.jervis.contracts.orchestrator.AgentGraph graph_;
   /**
-   * <pre>
-   * AgentGraph payload is rich + schema-heavy on the Python side
-   * (Pydantic model with nested vertices / edges maps). Instead of
-   * flattening every field into the proto, the entire AgentGraph
-   * arrives as JSON — the caller already deserializes the whole
-   * graph at the domain layer via &#64;SerialName mappings.
-   * </pre>
-   *
-   * <code>string graph_json = 1;</code>
-   * @return The graphJson.
+   * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+   * @return Whether the graph field is set.
    */
   @java.lang.Override
-  public java.lang.String getGraphJson() {
-    java.lang.Object ref = graphJson_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
-    } else {
-      com.google.protobuf.ByteString bs = 
-          (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
-      graphJson_ = s;
-      return s;
-    }
+  public boolean hasGraph() {
+    return ((bitField0_ & 0x00000001) != 0);
   }
   /**
-   * <pre>
-   * AgentGraph payload is rich + schema-heavy on the Python side
-   * (Pydantic model with nested vertices / edges maps). Instead of
-   * flattening every field into the proto, the entire AgentGraph
-   * arrives as JSON — the caller already deserializes the whole
-   * graph at the domain layer via &#64;SerialName mappings.
-   * </pre>
-   *
-   * <code>string graph_json = 1;</code>
-   * @return The bytes for graphJson.
+   * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+   * @return The graph.
    */
   @java.lang.Override
-  public com.google.protobuf.ByteString
-      getGraphJsonBytes() {
-    java.lang.Object ref = graphJson_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
-          com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
-      graphJson_ = b;
-      return b;
-    } else {
-      return (com.google.protobuf.ByteString) ref;
-    }
+  public com.jervis.contracts.orchestrator.AgentGraph getGraph() {
+    return graph_ == null ? com.jervis.contracts.orchestrator.AgentGraph.getDefaultInstance() : graph_;
+  }
+  /**
+   * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+   */
+  @java.lang.Override
+  public com.jervis.contracts.orchestrator.AgentGraphOrBuilder getGraphOrBuilder() {
+    return graph_ == null ? com.jervis.contracts.orchestrator.AgentGraph.getDefaultInstance() : graph_;
   }
 
   public static final int FOUND_FIELD_NUMBER = 2;
@@ -124,8 +95,8 @@ private static final long serialVersionUID = 0L;
   @java.lang.Override
   public void writeTo(com.google.protobuf.CodedOutputStream output)
                       throws java.io.IOException {
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(graphJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 1, graphJson_);
+    if (((bitField0_ & 0x00000001) != 0)) {
+      output.writeMessage(1, getGraph());
     }
     if (found_ != false) {
       output.writeBool(2, found_);
@@ -139,8 +110,9 @@ private static final long serialVersionUID = 0L;
     if (size != -1) return size;
 
     size = 0;
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(graphJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(1, graphJson_);
+    if (((bitField0_ & 0x00000001) != 0)) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(1, getGraph());
     }
     if (found_ != false) {
       size += com.google.protobuf.CodedOutputStream
@@ -161,8 +133,11 @@ private static final long serialVersionUID = 0L;
     }
     com.jervis.contracts.orchestrator.TaskGraphResponse other = (com.jervis.contracts.orchestrator.TaskGraphResponse) obj;
 
-    if (!getGraphJson()
-        .equals(other.getGraphJson())) return false;
+    if (hasGraph() != other.hasGraph()) return false;
+    if (hasGraph()) {
+      if (!getGraph()
+          .equals(other.getGraph())) return false;
+    }
     if (getFound()
         != other.getFound()) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
@@ -176,8 +151,10 @@ private static final long serialVersionUID = 0L;
     }
     int hash = 41;
     hash = (19 * hash) + getDescriptor().hashCode();
-    hash = (37 * hash) + GRAPH_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getGraphJson().hashCode();
+    if (hasGraph()) {
+      hash = (37 * hash) + GRAPH_FIELD_NUMBER;
+      hash = (53 * hash) + getGraph().hashCode();
+    }
     hash = (37 * hash) + FOUND_FIELD_NUMBER;
     hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
         getFound());
@@ -300,19 +277,29 @@ private static final long serialVersionUID = 0L;
 
     // Construct using com.jervis.contracts.orchestrator.TaskGraphResponse.newBuilder()
     private Builder() {
-
+      maybeForceBuilderInitialization();
     }
 
     private Builder(
         com.google.protobuf.GeneratedMessage.BuilderParent parent) {
       super(parent);
-
+      maybeForceBuilderInitialization();
+    }
+    private void maybeForceBuilderInitialization() {
+      if (com.google.protobuf.GeneratedMessage
+              .alwaysUseFieldBuilders) {
+        internalGetGraphFieldBuilder();
+      }
     }
     @java.lang.Override
     public Builder clear() {
       super.clear();
       bitField0_ = 0;
-      graphJson_ = "";
+      graph_ = null;
+      if (graphBuilder_ != null) {
+        graphBuilder_.dispose();
+        graphBuilder_ = null;
+      }
       found_ = false;
       return this;
     }
@@ -347,12 +334,17 @@ private static final long serialVersionUID = 0L;
 
     private void buildPartial0(com.jervis.contracts.orchestrator.TaskGraphResponse result) {
       int from_bitField0_ = bitField0_;
+      int to_bitField0_ = 0;
       if (((from_bitField0_ & 0x00000001) != 0)) {
-        result.graphJson_ = graphJson_;
+        result.graph_ = graphBuilder_ == null
+            ? graph_
+            : graphBuilder_.build();
+        to_bitField0_ |= 0x00000001;
       }
       if (((from_bitField0_ & 0x00000002) != 0)) {
         result.found_ = found_;
       }
+      result.bitField0_ |= to_bitField0_;
     }
 
     @java.lang.Override
@@ -367,10 +359,8 @@ private static final long serialVersionUID = 0L;
 
     public Builder mergeFrom(com.jervis.contracts.orchestrator.TaskGraphResponse other) {
       if (other == com.jervis.contracts.orchestrator.TaskGraphResponse.getDefaultInstance()) return this;
-      if (!other.getGraphJson().isEmpty()) {
-        graphJson_ = other.graphJson_;
-        bitField0_ |= 0x00000001;
-        onChanged();
+      if (other.hasGraph()) {
+        mergeGraph(other.getGraph());
       }
       if (other.getFound() != false) {
         setFound(other.getFound());
@@ -402,7 +392,9 @@ private static final long serialVersionUID = 0L;
               done = true;
               break;
             case 10: {
-              graphJson_ = input.readStringRequireUtf8();
+              input.readMessage(
+                  internalGetGraphFieldBuilder().getBuilder(),
+                  extensionRegistry);
               bitField0_ |= 0x00000001;
               break;
             } // case 10
@@ -428,116 +420,125 @@ private static final long serialVersionUID = 0L;
     }
     private int bitField0_;
 
-    private java.lang.Object graphJson_ = "";
+    private com.jervis.contracts.orchestrator.AgentGraph graph_;
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.AgentGraph, com.jervis.contracts.orchestrator.AgentGraph.Builder, com.jervis.contracts.orchestrator.AgentGraphOrBuilder> graphBuilder_;
     /**
-     * <pre>
-     * AgentGraph payload is rich + schema-heavy on the Python side
-     * (Pydantic model with nested vertices / edges maps). Instead of
-     * flattening every field into the proto, the entire AgentGraph
-     * arrives as JSON — the caller already deserializes the whole
-     * graph at the domain layer via &#64;SerialName mappings.
-     * </pre>
-     *
-     * <code>string graph_json = 1;</code>
-     * @return The graphJson.
+     * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+     * @return Whether the graph field is set.
      */
-    public java.lang.String getGraphJson() {
-      java.lang.Object ref = graphJson_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        graphJson_ = s;
-        return s;
+    public boolean hasGraph() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+     * @return The graph.
+     */
+    public com.jervis.contracts.orchestrator.AgentGraph getGraph() {
+      if (graphBuilder_ == null) {
+        return graph_ == null ? com.jervis.contracts.orchestrator.AgentGraph.getDefaultInstance() : graph_;
       } else {
-        return (java.lang.String) ref;
+        return graphBuilder_.getMessage();
       }
     }
     /**
-     * <pre>
-     * AgentGraph payload is rich + schema-heavy on the Python side
-     * (Pydantic model with nested vertices / edges maps). Instead of
-     * flattening every field into the proto, the entire AgentGraph
-     * arrives as JSON — the caller already deserializes the whole
-     * graph at the domain layer via &#64;SerialName mappings.
-     * </pre>
-     *
-     * <code>string graph_json = 1;</code>
-     * @return The bytes for graphJson.
+     * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
      */
-    public com.google.protobuf.ByteString
-        getGraphJsonBytes() {
-      java.lang.Object ref = graphJson_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        graphJson_ = b;
-        return b;
+    public Builder setGraph(com.jervis.contracts.orchestrator.AgentGraph value) {
+      if (graphBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        graph_ = value;
       } else {
-        return (com.google.protobuf.ByteString) ref;
+        graphBuilder_.setMessage(value);
       }
-    }
-    /**
-     * <pre>
-     * AgentGraph payload is rich + schema-heavy on the Python side
-     * (Pydantic model with nested vertices / edges maps). Instead of
-     * flattening every field into the proto, the entire AgentGraph
-     * arrives as JSON — the caller already deserializes the whole
-     * graph at the domain layer via &#64;SerialName mappings.
-     * </pre>
-     *
-     * <code>string graph_json = 1;</code>
-     * @param value The graphJson to set.
-     * @return This builder for chaining.
-     */
-    public Builder setGraphJson(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      graphJson_ = value;
       bitField0_ |= 0x00000001;
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * AgentGraph payload is rich + schema-heavy on the Python side
-     * (Pydantic model with nested vertices / edges maps). Instead of
-     * flattening every field into the proto, the entire AgentGraph
-     * arrives as JSON — the caller already deserializes the whole
-     * graph at the domain layer via &#64;SerialName mappings.
-     * </pre>
-     *
-     * <code>string graph_json = 1;</code>
-     * @return This builder for chaining.
+     * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
      */
-    public Builder clearGraphJson() {
-      graphJson_ = getDefaultInstance().getGraphJson();
+    public Builder setGraph(
+        com.jervis.contracts.orchestrator.AgentGraph.Builder builderForValue) {
+      if (graphBuilder_ == null) {
+        graph_ = builderForValue.build();
+      } else {
+        graphBuilder_.setMessage(builderForValue.build());
+      }
+      bitField0_ |= 0x00000001;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+     */
+    public Builder mergeGraph(com.jervis.contracts.orchestrator.AgentGraph value) {
+      if (graphBuilder_ == null) {
+        if (((bitField0_ & 0x00000001) != 0) &&
+          graph_ != null &&
+          graph_ != com.jervis.contracts.orchestrator.AgentGraph.getDefaultInstance()) {
+          getGraphBuilder().mergeFrom(value);
+        } else {
+          graph_ = value;
+        }
+      } else {
+        graphBuilder_.mergeFrom(value);
+      }
+      if (graph_ != null) {
+        bitField0_ |= 0x00000001;
+        onChanged();
+      }
+      return this;
+    }
+    /**
+     * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+     */
+    public Builder clearGraph() {
       bitField0_ = (bitField0_ & ~0x00000001);
+      graph_ = null;
+      if (graphBuilder_ != null) {
+        graphBuilder_.dispose();
+        graphBuilder_ = null;
+      }
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * AgentGraph payload is rich + schema-heavy on the Python side
-     * (Pydantic model with nested vertices / edges maps). Instead of
-     * flattening every field into the proto, the entire AgentGraph
-     * arrives as JSON — the caller already deserializes the whole
-     * graph at the domain layer via &#64;SerialName mappings.
-     * </pre>
-     *
-     * <code>string graph_json = 1;</code>
-     * @param value The bytes for graphJson to set.
-     * @return This builder for chaining.
+     * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
      */
-    public Builder setGraphJsonBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      graphJson_ = value;
+    public com.jervis.contracts.orchestrator.AgentGraph.Builder getGraphBuilder() {
       bitField0_ |= 0x00000001;
       onChanged();
-      return this;
+      return internalGetGraphFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+     */
+    public com.jervis.contracts.orchestrator.AgentGraphOrBuilder getGraphOrBuilder() {
+      if (graphBuilder_ != null) {
+        return graphBuilder_.getMessageOrBuilder();
+      } else {
+        return graph_ == null ?
+            com.jervis.contracts.orchestrator.AgentGraph.getDefaultInstance() : graph_;
+      }
+    }
+    /**
+     * <code>.jervis.orchestrator.AgentGraph graph = 1;</code>
+     */
+    private com.google.protobuf.SingleFieldBuilder<
+        com.jervis.contracts.orchestrator.AgentGraph, com.jervis.contracts.orchestrator.AgentGraph.Builder, com.jervis.contracts.orchestrator.AgentGraphOrBuilder> 
+        internalGetGraphFieldBuilder() {
+      if (graphBuilder_ == null) {
+        graphBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.jervis.contracts.orchestrator.AgentGraph, com.jervis.contracts.orchestrator.AgentGraph.Builder, com.jervis.contracts.orchestrator.AgentGraphOrBuilder>(
+                getGraph(),
+                getParentForChildren(),
+                isClean());
+        graph_ = null;
+      }
+      return graphBuilder_;
     }
 
     private boolean found_ ;

@@ -189,15 +189,17 @@ class PythonOrchestratorClient(
     /**
      * Get the full TaskGraph for a given task ID.
      *
-     * Returns the raw JSON string (Python snake_case format).
-     * Caller is responsible for deserialization with @SerialName mappings.
-     *
-     * For master graph (taskId="master"), pass clientId to get client-filtered view.
+     * Returns the typed UI DTO (already mapped from the proto AgentGraph)
+     * — callers don't see the gRPC layer. For master graph
+     * (taskId="master"), pass clientId to get a client-filtered view.
      */
-    suspend fun getTaskGraph(taskId: String, clientId: String? = null): String? =
+    suspend fun getTaskGraph(
+        taskId: String,
+        clientId: String? = null,
+    ): com.jervis.dto.graph.TaskGraphDto? =
         try {
             val resp = graphGrpcOrThrow().getTaskGraph(taskId, clientId)
-            if (resp.found) resp.graphJson else null
+            if (resp.found) resp.graph.toDto() else null
         } catch (e: Exception) {
             logger.warn { "PYTHON_ORCHESTRATOR_GRAPH_FAIL: taskId=$taskId ${e.message}" }
             null
@@ -727,3 +729,66 @@ private fun kotlinx.serialization.json.JsonObject.toEnvironmentContextProto():
 
     return builder.build()
 }
+
+// --------------------------------------------------------------------------
+// AgentGraph proto → UI DTO
+// --------------------------------------------------------------------------
+
+internal fun com.jervis.contracts.orchestrator.AgentGraph.toDto(): com.jervis.dto.graph.TaskGraphDto =
+    com.jervis.dto.graph.TaskGraphDto(
+        id = id,
+        taskId = taskId,
+        clientId = clientId,
+        projectId = projectId.ifBlank { null },
+        status = status,
+        graphType = graphType,
+        rootVertexId = rootVertexId,
+        synthesisVertexId = synthesisVertexId.ifBlank { null },
+        vertices = verticesMap.entries.associate { (k, v) -> k to v.toDto() },
+        edges = edgesList.map { it.toDto() },
+        createdAt = createdAt,
+        completedAt = completedAt.ifBlank { null },
+        totalTokenCount = totalTokenCount,
+        totalLlmCalls = totalLlmCalls,
+        hidden = hidden,
+    )
+
+private fun com.jervis.contracts.orchestrator.GraphVertex.toDto(): com.jervis.dto.graph.GraphVertexDto =
+    com.jervis.dto.graph.GraphVertexDto(
+        id = id,
+        title = title,
+        description = description,
+        vertexType = vertexType,
+        status = status,
+        agentName = agentName.ifBlank { null },
+        inputRequest = inputRequest,
+        result = result,
+        resultSummary = resultSummary,
+        localContext = localContext,
+        parentId = parentId.ifBlank { null },
+        depth = depth,
+        toolsUsed = toolsUsedList.toList(),
+        tokenCount = tokenCount,
+        llmCalls = llmCalls,
+        startedAt = startedAt.ifBlank { null },
+        completedAt = completedAt.ifBlank { null },
+        error = error.ifBlank { null },
+        clientId = clientId,
+    )
+
+private fun com.jervis.contracts.orchestrator.GraphEdge.toDto(): com.jervis.dto.graph.GraphEdgeDto =
+    com.jervis.dto.graph.GraphEdgeDto(
+        id = id,
+        sourceId = sourceId,
+        targetId = targetId,
+        edgeType = edgeType,
+        payload = if (hasPayload()) payload.toDto() else null,
+    )
+
+private fun com.jervis.contracts.orchestrator.EdgePayload.toDto(): com.jervis.dto.graph.EdgePayloadDto =
+    com.jervis.dto.graph.EdgePayloadDto(
+        sourceVertexId = sourceVertexId,
+        sourceVertexTitle = sourceVertexTitle,
+        summary = summary,
+        context = context,
+    )

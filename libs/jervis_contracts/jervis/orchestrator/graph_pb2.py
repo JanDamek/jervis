@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fjervis/orchestrator/graph.proto\x12\x13jervis.orchestrator\x1a\x19jervis/common/types.proto\"e\n\x13GetTaskGraphRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\"6\n\x11TaskGraphResponse\x12\x12\n\ngraph_json\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"e\n\x15MaintenanceRunRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\r\n\x05phase\x18\x02 \x01(\x05\x12\x11\n\tclient_id\x18\x03 \x01(\t\"\xc8\x01\n\x14MaintenanceRunResult\x12\r\n\x05phase\x18\x01 \x01(\x05\x12\x13\n\x0bmem_removed\x18\x02 \x01(\x05\x12\x18\n\x10thinking_evicted\x18\x03 \x01(\x05\x12\x13\n\x0blqm_drained\x18\x04 \x01(\x05\x12\x18\n\x10\x61\x66\x66\x61irs_archived\x18\x05 \x01(\x05\x12\x1e\n\x16next_client_for_phase2\x18\x06 \x01(\t\x12\x11\n\tclient_id\x18\x07 \x01(\t\x12\x10\n\x08\x66indings\x18\x08 \x03(\t2\xe5\x01\n\x18OrchestratorGraphService\x12`\n\x0cGetTaskGraph\x12(.jervis.orchestrator.GetTaskGraphRequest\x1a&.jervis.orchestrator.TaskGraphResponse\x12g\n\x0eRunMaintenance\x12*.jervis.orchestrator.MaintenanceRunRequest\x1a).jervis.orchestrator.MaintenanceRunResultB=\n!com.jervis.contracts.orchestratorB\x16OrchestratorGraphProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fjervis/orchestrator/graph.proto\x12\x13jervis.orchestrator\x1a\x19jervis/common/types.proto\"e\n\x13GetTaskGraphRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\"R\n\x11TaskGraphResponse\x12.\n\x05graph\x18\x01 \x01(\x0b\x32\x1f.jervis.orchestrator.AgentGraph\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"\xda\x03\n\nAgentGraph\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\x11\n\tclient_id\x18\x03 \x01(\t\x12\x12\n\nproject_id\x18\x04 \x01(\t\x12\x0e\n\x06status\x18\x05 \x01(\t\x12\x12\n\ngraph_type\x18\x06 \x01(\t\x12\x16\n\x0eroot_vertex_id\x18\x07 \x01(\t\x12\x1b\n\x13synthesis_vertex_id\x18\x08 \x01(\t\x12?\n\x08vertices\x18\t \x03(\x0b\x32-.jervis.orchestrator.AgentGraph.VerticesEntry\x12-\n\x05\x65\x64ges\x18\n \x03(\x0b\x32\x1e.jervis.orchestrator.GraphEdge\x12\x12\n\ncreated_at\x18\x0b \x01(\t\x12\x14\n\x0c\x63ompleted_at\x18\x0c \x01(\t\x12\x19\n\x11total_token_count\x18\r \x01(\x05\x12\x17\n\x0ftotal_llm_calls\x18\x0e \x01(\x05\x12\x0e\n\x06hidden\x18\x0f \x01(\x08\x1aQ\n\rVerticesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12/\n\x05value\x18\x02 \x01(\x0b\x32 .jervis.orchestrator.GraphVertex:\x02\x38\x01\"\xf6\x02\n\x0bGraphVertex\x12\n\n\x02id\x18\x01 \x01(\t\x12\r\n\x05title\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\x12\x13\n\x0bvertex_type\x18\x04 \x01(\t\x12\x0e\n\x06status\x18\x05 \x01(\t\x12\x12\n\nagent_name\x18\x06 \x01(\t\x12\x15\n\rinput_request\x18\x07 \x01(\t\x12\x0e\n\x06result\x18\x08 \x01(\t\x12\x16\n\x0eresult_summary\x18\t \x01(\t\x12\x15\n\rlocal_context\x18\n \x01(\t\x12\x11\n\tparent_id\x18\x0b \x01(\t\x12\r\n\x05\x64\x65pth\x18\x0c \x01(\x05\x12\x12\n\ntools_used\x18\r \x03(\t\x12\x13\n\x0btoken_count\x18\x0e \x01(\x05\x12\x11\n\tllm_calls\x18\x0f \x01(\x05\x12\x12\n\nstarted_at\x18\x10 \x01(\t\x12\x14\n\x0c\x63ompleted_at\x18\x11 \x01(\t\x12\r\n\x05\x65rror\x18\x12 \x01(\t\x12\x11\n\tclient_id\x18\x13 \x01(\t\"\x83\x01\n\tGraphEdge\x12\n\n\x02id\x18\x01 \x01(\t\x12\x11\n\tsource_id\x18\x02 \x01(\t\x12\x11\n\ttarget_id\x18\x03 \x01(\t\x12\x11\n\tedge_type\x18\x04 \x01(\t\x12\x31\n\x07payload\x18\x05 \x01(\x0b\x32 .jervis.orchestrator.EdgePayload\"f\n\x0b\x45\x64gePayload\x12\x18\n\x10source_vertex_id\x18\x01 \x01(\t\x12\x1b\n\x13source_vertex_title\x18\x02 \x01(\t\x12\x0f\n\x07summary\x18\x03 \x01(\t\x12\x0f\n\x07\x63ontext\x18\x04 \x01(\t\"e\n\x15MaintenanceRunRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\r\n\x05phase\x18\x02 \x01(\x05\x12\x11\n\tclient_id\x18\x03 \x01(\t\"\xc8\x01\n\x14MaintenanceRunResult\x12\r\n\x05phase\x18\x01 \x01(\x05\x12\x13\n\x0bmem_removed\x18\x02 \x01(\x05\x12\x18\n\x10thinking_evicted\x18\x03 \x01(\x05\x12\x13\n\x0blqm_drained\x18\x04 \x01(\x05\x12\x18\n\x10\x61\x66\x66\x61irs_archived\x18\x05 \x01(\x05\x12\x1e\n\x16next_client_for_phase2\x18\x06 \x01(\t\x12\x11\n\tclient_id\x18\x07 \x01(\t\x12\x10\n\x08\x66indings\x18\x08 \x03(\t2\xe5\x01\n\x18OrchestratorGraphService\x12`\n\x0cGetTaskGraph\x12(.jervis.orchestrator.GetTaskGraphRequest\x1a&.jervis.orchestrator.TaskGraphResponse\x12g\n\x0eRunMaintenance\x12*.jervis.orchestrator.MaintenanceRunRequest\x1a).jervis.orchestrator.MaintenanceRunResultB=\n!com.jervis.contracts.orchestratorB\x16OrchestratorGraphProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,14 +33,26 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'jervis.orchestrator.graph_p
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n!com.jervis.contracts.orchestratorB\026OrchestratorGraphProtoP\001'
+  _globals['_AGENTGRAPH_VERTICESENTRY']._loaded_options = None
+  _globals['_AGENTGRAPH_VERTICESENTRY']._serialized_options = b'8\001'
   _globals['_GETTASKGRAPHREQUEST']._serialized_start=83
   _globals['_GETTASKGRAPHREQUEST']._serialized_end=184
   _globals['_TASKGRAPHRESPONSE']._serialized_start=186
-  _globals['_TASKGRAPHRESPONSE']._serialized_end=240
-  _globals['_MAINTENANCERUNREQUEST']._serialized_start=242
-  _globals['_MAINTENANCERUNREQUEST']._serialized_end=343
-  _globals['_MAINTENANCERUNRESULT']._serialized_start=346
-  _globals['_MAINTENANCERUNRESULT']._serialized_end=546
-  _globals['_ORCHESTRATORGRAPHSERVICE']._serialized_start=549
-  _globals['_ORCHESTRATORGRAPHSERVICE']._serialized_end=778
+  _globals['_TASKGRAPHRESPONSE']._serialized_end=268
+  _globals['_AGENTGRAPH']._serialized_start=271
+  _globals['_AGENTGRAPH']._serialized_end=745
+  _globals['_AGENTGRAPH_VERTICESENTRY']._serialized_start=664
+  _globals['_AGENTGRAPH_VERTICESENTRY']._serialized_end=745
+  _globals['_GRAPHVERTEX']._serialized_start=748
+  _globals['_GRAPHVERTEX']._serialized_end=1122
+  _globals['_GRAPHEDGE']._serialized_start=1125
+  _globals['_GRAPHEDGE']._serialized_end=1256
+  _globals['_EDGEPAYLOAD']._serialized_start=1258
+  _globals['_EDGEPAYLOAD']._serialized_end=1360
+  _globals['_MAINTENANCERUNREQUEST']._serialized_start=1362
+  _globals['_MAINTENANCERUNREQUEST']._serialized_end=1463
+  _globals['_MAINTENANCERUNRESULT']._serialized_start=1466
+  _globals['_MAINTENANCERUNRESULT']._serialized_end=1666
+  _globals['_ORCHESTRATORGRAPHSERVICE']._serialized_start=1669
+  _globals['_ORCHESTRATORGRAPHSERVICE']._serialized_end=1898
 # @@protoc_insertion_point(module_scope)

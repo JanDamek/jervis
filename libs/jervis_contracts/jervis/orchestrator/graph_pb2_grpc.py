@@ -27,9 +27,7 @@ if _version_not_supported:
 
 class OrchestratorGraphServiceStub(object):
     """OrchestratorGraphService — AgentGraph lookup + idle maintenance
-    trigger. Administrative vertex CRUD + memory search were removed in
-    slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
-    Kotlin server kRPC, not this servicer).
+    trigger.
     """
 
     def __init__(self, channel):
@@ -52,9 +50,7 @@ class OrchestratorGraphServiceStub(object):
 
 class OrchestratorGraphServiceServicer(object):
     """OrchestratorGraphService — AgentGraph lookup + idle maintenance
-    trigger. Administrative vertex CRUD + memory search were removed in
-    slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
-    Kotlin server kRPC, not this servicer).
+    trigger.
     """
 
     def GetTaskGraph(self, request, context):
@@ -92,9 +88,7 @@ def add_OrchestratorGraphServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class OrchestratorGraphService(object):
     """OrchestratorGraphService — AgentGraph lookup + idle maintenance
-    trigger. Administrative vertex CRUD + memory search were removed in
-    slice V3-cleanup (no pod-to-pod consumer; UI path goes through the
-    Kotlin server kRPC, not this servicer).
+    trigger.
     """
 
     @staticmethod

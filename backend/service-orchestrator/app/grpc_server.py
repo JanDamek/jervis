@@ -256,6 +256,82 @@ class OrchestratorControlServicer(control_pb2_grpc.OrchestratorControlServiceSer
             return control_pb2.InterruptAck(interrupted=False, detail=str(e))
 
 
+def _vertex_to_proto(vid: str, v: dict) -> graph_pb2.GraphVertex:
+    return graph_pb2.GraphVertex(
+        id=str(v.get("id") or vid),
+        title=str(v.get("title") or ""),
+        description=str(v.get("description") or ""),
+        vertex_type=str(v.get("vertex_type") or ""),
+        status=str(v.get("status") or ""),
+        agent_name=str(v.get("agent_name") or ""),
+        input_request=str(v.get("input_request") or ""),
+        result=str(v.get("result") or ""),
+        result_summary=str(v.get("result_summary") or ""),
+        local_context=str(v.get("local_context") or ""),
+        parent_id=str(v.get("parent_id") or ""),
+        depth=int(v.get("depth") or 0),
+        tools_used=[str(t) for t in (v.get("tools_used") or [])],
+        token_count=int(v.get("token_count") or 0),
+        llm_calls=int(v.get("llm_calls") or 0),
+        started_at=str(v.get("started_at") or ""),
+        completed_at=str(v.get("completed_at") or ""),
+        error=str(v.get("error") or ""),
+        client_id=str(v.get("client_id") or ""),
+    )
+
+
+def _edge_to_proto(e: dict) -> graph_pb2.GraphEdge:
+    payload_dict = e.get("payload")
+    payload_proto = None
+    if isinstance(payload_dict, dict):
+        payload_proto = graph_pb2.EdgePayload(
+            source_vertex_id=str(payload_dict.get("source_vertex_id") or ""),
+            source_vertex_title=str(payload_dict.get("source_vertex_title") or ""),
+            summary=str(payload_dict.get("summary") or ""),
+            context=str(payload_dict.get("context") or ""),
+        )
+    return graph_pb2.GraphEdge(
+        id=str(e.get("id") or ""),
+        source_id=str(e.get("source_id") or ""),
+        target_id=str(e.get("target_id") or ""),
+        edge_type=str(e.get("edge_type") or ""),
+        payload=payload_proto,
+    )
+
+
+def _agent_graph_to_proto(payload: dict, hidden: bool = False) -> graph_pb2.AgentGraph:
+    """Convert an AgentGraph pydantic model dump into the typed proto.
+
+    Accepts either the master-graph client-filtered payload (already a
+    dict with vertices keyed by id) or `graph.model_dump()` output.
+    """
+    vertices_raw = payload.get("vertices") or {}
+    vertices: dict[str, graph_pb2.GraphVertex] = {}
+    if isinstance(vertices_raw, dict):
+        for vid, v in vertices_raw.items():
+            if isinstance(v, dict):
+                vertices[str(vid)] = _vertex_to_proto(str(vid), v)
+    edges_raw = payload.get("edges") or []
+    edges = [_edge_to_proto(e) for e in edges_raw if isinstance(e, dict)]
+    return graph_pb2.AgentGraph(
+        id=str(payload.get("id") or ""),
+        task_id=str(payload.get("task_id") or ""),
+        client_id=str(payload.get("client_id") or ""),
+        project_id=str(payload.get("project_id") or ""),
+        status=str(payload.get("status") or ""),
+        graph_type=str(payload.get("graph_type") or ""),
+        root_vertex_id=str(payload.get("root_vertex_id") or ""),
+        synthesis_vertex_id=str(payload.get("synthesis_vertex_id") or ""),
+        vertices=vertices,
+        edges=edges,
+        created_at=str(payload.get("created_at") or ""),
+        completed_at=str(payload.get("completed_at") or ""),
+        total_token_count=int(payload.get("total_token_count") or 0),
+        total_llm_calls=int(payload.get("total_llm_calls") or 0),
+        hidden=bool(hidden or payload.get("hidden") or False),
+    )
+
+
 class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer):
     """OrchestratorGraphService — AgentGraph lookup + maintenance trigger.
 
@@ -279,12 +355,13 @@ class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer)
         task_id = request.task_id
         client_id = request.client_id or None
 
+        hidden = False
         if task_id == "master":
             graph = agent_store.get_memory_graph_cached()
             if not graph:
                 graph = await agent_store.get_or_create_memory_graph()
             if not graph:
-                return graph_pb2.TaskGraphResponse(graph_json="", found=False)
+                return graph_pb2.TaskGraphResponse(found=False)
             if client_id:
                 payload = orch_main._filter_graph_for_client(graph, client_id)
             else:
@@ -296,7 +373,7 @@ class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer)
             if not graph:
                 graph = await agent_store.load_by_graph_id(task_id)
             if not graph:
-                return graph_pb2.TaskGraphResponse(graph_json="", found=False)
+                return graph_pb2.TaskGraphResponse(found=False)
             payload = graph.model_dump()
             if graph.graph_type == GraphType.THINKING_GRAPH:
                 from app.agent.persistence import _THINKING_GRAPH_HIDE_S
@@ -306,10 +383,10 @@ class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer)
                         datetime.now(timezone.utc) - timedelta(seconds=_THINKING_GRAPH_HIDE_S)
                     ).isoformat()
                     if graph.completed_at < hide_cutoff:
-                        payload["hidden"] = True
+                        hidden = True
 
         return graph_pb2.TaskGraphResponse(
-            graph_json=json.dumps(payload, default=str, ensure_ascii=False),
+            graph=_agent_graph_to_proto(payload, hidden=hidden),
             found=True,
         )
 
